@@ -3,22 +3,14 @@
 import { Fragment, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-
-type Level = 'beginner' | 'intermediate' | 'advanced';
-type DurationTarget = '30min' | '1h' | 'weekend';
-
-interface Draft {
-  topic: string;
-  level: Level | null;
-  durationTarget: DurationTarget | null;
-  theoryPracticeRatio: number;
-}
+import Stage3Cascade, { type Draft, type Level, type DurationTarget } from './Stage3Cascade';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
   level: null,
   durationTarget: null,
   theoryPracticeRatio: 50,
+  structure: null,
 };
 
 const STAGES = [
@@ -116,8 +108,19 @@ export default function CreatePage() {
             onBack={() => setStage(1)}
           />
         )}
-        {stage >= 3 && (
-          <Stage3Placeholder onBack={() => setStage(stage - 1)} />
+        {stage === 3 && (
+          <Stage3Cascade
+            draft={draft}
+            setDraft={setDraft}
+            onNext={() => setStage(4)}
+            onBack={() => setStage(2)}
+          />
+        )}
+        {stage === 4 && (
+          <Stage4Preview draft={draft} onBack={() => setStage(3)} />
+        )}
+        {stage === 5 && (
+          <Stage5Placeholder onBack={() => setStage(4)} />
         )}
       </main>
     </div>
@@ -444,13 +447,135 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
   );
 }
 
-// ─── Stage 3 placeholder ─────────────────────────────────────────────────────
+// ─── Stage 4 preview (minimal read-only summary) ─────────────────────────────
 
-function Stage3Placeholder({ onBack }: { onBack: () => void }) {
+function Stage4Preview({ draft, onBack }: { draft: Draft; onBack: () => void }) {
+  const s = draft.structure;
   return (
     <div style={stageWrapStyle}>
       <div
-        data-testid="stage3-placeholder"
+        data-testid="stage4-preview"
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: 'var(--space-7) var(--space-6)',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 720, margin: '0 auto' }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--accent-text)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              fontWeight: 600,
+              marginBottom: 8,
+            }}
+          >
+            Stage 4 of 5 · Final review
+          </div>
+          {s ? (
+            <>
+              <h1
+                data-testid="stage4-course-title"
+                style={{
+                  margin: 0,
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 'var(--fs-2xl)',
+                  fontWeight: 600,
+                  letterSpacing: '-0.02em',
+                }}
+              >
+                {s.courseTitle}
+              </h1>
+              <p
+                data-testid="stage4-course-description"
+                style={{
+                  marginTop: 6,
+                  color: 'var(--text-secondary)',
+                  fontSize: 'var(--fs-sm)',
+                  lineHeight: 1.55,
+                }}
+              >
+                {s.courseDescription}
+              </p>
+              <div
+                style={{
+                  marginTop: 'var(--space-5)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 'var(--space-4)',
+                }}
+              >
+                {s.modules.map((m) => (
+                  <div
+                    key={m.id}
+                    data-testid={`stage4-module-${m.id}`}
+                    style={{
+                      border: '1px solid var(--border)',
+                      background: 'var(--bg-elevated)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: 'var(--space-4)',
+                    }}
+                  >
+                    <div
+                      data-testid={`stage4-module-title-${m.id}`}
+                      style={{
+                        fontSize: 'var(--fs-md)',
+                        fontWeight: 600,
+                        color: 'var(--text)',
+                      }}
+                    >
+                      {m.title}
+                    </div>
+                    <ul
+                      style={{
+                        margin: '8px 0 0',
+                        padding: '0 0 0 18px',
+                        color: 'var(--text-secondary)',
+                        fontSize: 'var(--fs-sm)',
+                      }}
+                    >
+                      {m.lessons.map((l) => (
+                        <li
+                          key={l.id}
+                          data-testid={`stage4-lesson-${l.id}`}
+                          style={{ marginTop: 4 }}
+                        >
+                          {l.title}{' '}
+                          <span
+                            style={{
+                              color: 'var(--text-tertiary)',
+                              fontSize: 'var(--fs-xs)',
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                          >
+                            · {l.estimatedMinutes} min
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--fs-sm)' }}>
+              No structure yet. Go back and build one.
+            </p>
+          )}
+        </div>
+      </div>
+      <Footer onBack={onBack} backLabel="Back" hideNext />
+    </div>
+  );
+}
+
+function Stage5Placeholder({ onBack }: { onBack: () => void }) {
+  return (
+    <div style={stageWrapStyle}>
+      <div
+        data-testid="stage5-placeholder"
         style={{
           flex: 1,
           display: 'flex',
@@ -469,7 +594,7 @@ function Stage3Placeholder({ onBack }: { onBack: () => void }) {
               letterSpacing: '-0.02em',
             }}
           >
-            Stage 3 — Structure
+            Stage 5 — Generate
           </h1>
           <p
             style={{
@@ -479,7 +604,7 @@ function Stage3Placeholder({ onBack }: { onBack: () => void }) {
               lineHeight: 1.55,
             }}
           >
-            The cascade structure editor is coming next. Use Back to revise your refinement.
+            Agent-log view comes next.
           </p>
         </div>
       </div>
