@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { SAMPLE_CODE_BOX_BLUR } from '@/widgets/Code/sample';
+import { SAMPLE_DEMO_GAUSS } from '@/widgets/Demo/sample';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SAMPLE_QUIZ_SINGLE } from '@/widgets/Quiz/sample';
 import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
@@ -26,7 +27,12 @@ const samples: SampleSection[] = [
     status: 'done',
     data: { markdown: SAMPLE_THEORY_MARKDOWN },
   },
-  { type: 'demo', title: 'Gradient descent — drag to explore', status: 'progress' },
+  {
+    type: 'demo',
+    title: 'Gaussian filter — drag σ to explore',
+    status: 'progress',
+    data: SAMPLE_DEMO_GAUSS,
+  },
   {
     type: 'quiz',
     title: 'Pick the correct kernel for an edge filter',

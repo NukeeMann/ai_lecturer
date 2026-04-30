@@ -11,7 +11,7 @@ import {
 
 import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
-import { DemoPlaceholder } from './Demo/DemoPlaceholder';
+import { GaussDemo } from './Demo/GaussDemo';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxPlaceholder } from './Sandbox/SandboxPlaceholder';
 import { TheoryWidget } from './Theory/TheoryWidget';
@@ -45,7 +45,7 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     accentVar: '--widget-code',
   },
   demo: {
-    component: DemoPlaceholder,
+    component: GaussDemo as ComponentType<{ data?: unknown }>,
     label: 'Interactive Demo',
     icon: FlaskConical,
     accentVar: '--widget-demo',

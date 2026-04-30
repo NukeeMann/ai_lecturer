@@ -21,13 +21,17 @@ export interface RunWithTestsResult extends RunResult {
   testResults: TestResult[];
 }
 
+export interface GaussFilterResult {
+  png: Uint8Array;
+}
+
 export interface PyodideTestSpec {
   name: string;
   body: string;
 }
 
 interface PendingHandler {
-  resolve: (value: RunResult | RunWithTestsResult) => void;
+  resolve: (value: RunResult | RunWithTestsResult | GaussFilterResult) => void;
   reject: (err: unknown) => void;
 }
 
@@ -73,7 +77,9 @@ function getOrCreateWorker(): WorkerSingleton {
     const data = event.data as
       | { type: 'ready' }
       | { type: 'error'; error: string }
-      | ({ id: string } & RunResult & Partial<RunWithTestsResult>);
+      | ({ id: string } & Partial<RunResult> &
+          Partial<RunWithTestsResult> &
+          Partial<GaussFilterResult>);
 
     if ('type' in data && data.type === 'ready') {
       setStatus(obj, 'ready');
@@ -92,7 +98,7 @@ function getOrCreateWorker(): WorkerSingleton {
       const handler = obj.pending.get(data.id);
       if (handler) {
         obj.pending.delete(data.id);
-        handler.resolve(data);
+        handler.resolve(data as unknown as RunResult);
       }
     }
   });
@@ -109,11 +115,18 @@ function getOrCreateWorker(): WorkerSingleton {
   return obj;
 }
 
-function callWorker<T extends RunResult>(
-  payload:
-    | { type: 'run'; code: string }
-    | { type: 'runWithTests'; code: string; tests: PyodideTestSpec[] },
-): Promise<T> {
+type WorkerPayload =
+  | { type: 'run'; code: string }
+  | { type: 'runWithTests'; code: string; tests: PyodideTestSpec[] }
+  | {
+      type: 'gaussFilter';
+      pixels: Uint8Array;
+      width: number;
+      height: number;
+      sigma: number;
+    };
+
+function callWorker<T>(payload: WorkerPayload, transfer?: Transferable[]): Promise<T> {
   const s = getOrCreateWorker();
   const id = `req-${++nextId}`;
   return new Promise<T>((resolve, reject) => {
@@ -122,7 +135,13 @@ function callWorker<T extends RunResult>(
       reject,
     });
     s.readyPromise.then(
-      () => s.worker.postMessage({ id, ...payload }),
+      () => {
+        if (transfer && transfer.length > 0) {
+          s.worker.postMessage({ id, ...payload }, transfer);
+        } else {
+          s.worker.postMessage({ id, ...payload });
+        }
+      },
       (err) => {
         s.pending.delete(id);
         reject(err);
@@ -135,6 +154,12 @@ export interface UsePyodideReturn {
   status: PyodideStatus;
   run: (code: string) => Promise<RunResult>;
   runWithTests: (code: string, tests: PyodideTestSpec[]) => Promise<RunWithTestsResult>;
+  gaussFilter: (
+    pixels: Uint8Array,
+    width: number,
+    height: number,
+    sigma: number,
+  ) => Promise<GaussFilterResult>;
 }
 
 function subscribeStatus(callback: () => void): () => void {
@@ -175,5 +200,14 @@ export function usePyodide(): UsePyodideReturn {
     [],
   );
 
-  return { status, run, runWithTests };
+  const gaussFilter = useCallback(
+    (pixels: Uint8Array, width: number, height: number, sigma: number) =>
+      callWorker<GaussFilterResult>(
+        { type: 'gaussFilter', pixels, width, height, sigma },
+        [pixels.buffer],
+      ),
+    [],
+  );
+
+  return { status, run, runWithTests, gaussFilter };
 }
