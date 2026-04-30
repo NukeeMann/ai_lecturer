@@ -1,5 +1,6 @@
 import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
+import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
 
 type WidgetStatus = 'todo' | 'progress' | 'done';
 
@@ -8,10 +9,16 @@ interface SampleSection {
   title: string;
   status: WidgetStatus;
   withFooter?: boolean;
+  data?: unknown;
 }
 
 const samples: SampleSection[] = [
-  { type: 'theory', title: 'What is a convolution?', status: 'done' },
+  {
+    type: 'theory',
+    title: 'What is a convolution?',
+    status: 'done',
+    data: { markdown: SAMPLE_THEORY_MARKDOWN },
+  },
   { type: 'demo', title: 'Gradient descent — drag to explore', status: 'progress' },
   {
     type: 'quiz',
@@ -99,7 +106,7 @@ export default function TestWidgetsPage() {
               status={sample.status}
               footer={footer}
             >
-              <Body />
+              <Body data={sample.data} />
             </Widget>
           );
         })}

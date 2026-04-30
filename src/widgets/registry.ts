@@ -14,7 +14,7 @@ import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { DemoPlaceholder } from './Demo/DemoPlaceholder';
 import { QuizPlaceholder } from './Quiz/QuizPlaceholder';
 import { SandboxPlaceholder } from './Sandbox/SandboxPlaceholder';
-import { TheoryPlaceholder } from './Theory/TheoryPlaceholder';
+import { TheoryWidget } from './Theory/TheoryWidget';
 
 export type WidgetType = 'theory' | 'quiz' | 'code' | 'demo' | 'sandbox' | 'custom';
 
@@ -27,7 +27,7 @@ export interface WidgetRegistryEntry {
 
 export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
   theory: {
-    component: TheoryPlaceholder,
+    component: TheoryWidget as ComponentType<{ data?: unknown }>,
     label: 'Theory',
     icon: FileText,
     accentVar: '--widget-theory',
