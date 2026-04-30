@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import "katex/dist/katex.min.css";
 import "./globals.css";
+import { GlobalShortcutsHost } from "@/components/GlobalShortcutsHost";
 
 export const metadata: Metadata = {
   title: "AI Lecturer",
@@ -30,7 +31,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <GlobalShortcutsHost />
+      </body>
     </html>
   );
 }
