@@ -23,16 +23,21 @@ interface PyodideAPI {
 
 interface WorkerScope {
   importScripts: (...urls: string[]) => void;
-  postMessage: (msg: unknown) => void;
+  postMessage: (msg: unknown, transfer?: Transferable[]) => void;
   addEventListener: (type: string, listener: (e: MessageEvent) => void) => void;
   loadPyodide?: (cfg?: { indexURL?: string }) => Promise<PyodideAPI>;
 }
 
 interface RunRequest {
   id: string;
-  type: 'run' | 'runWithTests';
-  code: string;
+  type: 'run' | 'runWithTests' | 'gaussFilter';
+  code?: string;
   tests?: Array<{ name: string; body: string }>;
+  // gaussFilter payload
+  pixels?: Uint8Array;
+  width?: number;
+  height?: number;
+  sigma?: number;
 }
 
 const ctx = self as unknown as WorkerScope;
@@ -42,6 +47,8 @@ const PYODIDE_INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full
 
 let pyodidePromise: Promise<PyodideAPI> | null = null;
 let runnerInstalled = false;
+let gaussInstalled = false;
+let pillowPromise: Promise<void> | null = null;
 
 function loadPyodideOnce(): Promise<PyodideAPI> {
   if (!pyodidePromise) {
@@ -122,6 +129,46 @@ async function ensureRunner(py: PyodideAPI): Promise<void> {
   runnerInstalled = true;
 }
 
+// Gauss filter routine — installed lazily on first gaussFilter request so the
+// Code widget's startup path doesn't pay for Pillow. Reads RGBA bytes from the
+// `__gauss_pixels__` global, blurs each color channel via
+// scipy.ndimage.gaussian_filter (alpha untouched), encodes PNG via Pillow,
+// and stashes the bytes in `__gauss_png__` for the JS side to read.
+const GAUSS_PY = `
+import numpy as _np
+import io as _io
+from PIL import Image as _Image
+from scipy.ndimage import gaussian_filter as _gauss
+
+def __ai_gauss(__pixels, __w, __h, __sigma):
+    # __pixels arrives as a JsProxy over Uint8Array — to_py() yields a memoryview
+    # over the underlying ArrayBuffer that np.frombuffer accepts.
+    buf = __pixels.to_py() if hasattr(__pixels, 'to_py') else __pixels
+    arr = _np.frombuffer(buf, dtype=_np.uint8).reshape(__h, __w, 4)
+    out = _np.empty_like(arr)
+    s = float(__sigma)
+    if s <= 0:
+        out[:] = arr
+    else:
+        for c in range(3):
+            out[..., c] = _gauss(arr[..., c], sigma=s, mode='reflect')
+        out[..., 3] = arr[..., 3]
+    img = _Image.fromarray(out, mode='RGBA')
+    buf = _io.BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+`;
+
+async function ensureGauss(py: PyodideAPI): Promise<void> {
+  if (gaussInstalled) return;
+  if (!pillowPromise) {
+    pillowPromise = py.loadPackage(['Pillow']);
+  }
+  await pillowPromise;
+  await py.runPythonAsync(GAUSS_PY);
+  gaussInstalled = true;
+}
+
 function formatTraceback(err: unknown): string {
   if (err instanceof Error) {
     return err.message || err.toString();
@@ -138,7 +185,13 @@ loadPyodideOnce().then(
 
 ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
   const data = event.data;
-  if (!data || (data.type !== 'run' && data.type !== 'runWithTests')) return;
+  if (
+    !data ||
+    (data.type !== 'run' &&
+      data.type !== 'runWithTests' &&
+      data.type !== 'gaussFilter')
+  )
+    return;
   const { id, type, code, tests } = data;
 
   const stdoutBuf: string[] = [];
@@ -151,7 +204,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
 
     if (type === 'run') {
       try {
-        await py.runPythonAsync(code);
+        await py.runPythonAsync(code ?? '');
         ctx.postMessage({
           id,
           stdout: stdoutBuf.join(''),
@@ -168,9 +221,34 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
       return;
     }
 
+    if (type === 'gaussFilter') {
+      try {
+        await ensureGauss(py);
+        py.globals.set('__gauss_pixels__', data.pixels ?? new Uint8Array());
+        py.globals.set('__gauss_w__', data.width ?? 0);
+        py.globals.set('__gauss_h__', data.height ?? 0);
+        py.globals.set('__gauss_sigma__', data.sigma ?? 0);
+        const proxy = (await py.runPythonAsync(
+          '__ai_gauss(__gauss_pixels__, __gauss_w__, __gauss_h__, __gauss_sigma__)',
+        )) as PyProxyLike;
+        const png = proxy?.toJs ? (proxy.toJs() as Uint8Array) : (proxy as unknown as Uint8Array);
+        proxy?.destroy?.();
+        const bytes = png instanceof Uint8Array ? png : new Uint8Array(png as ArrayBufferLike);
+        ctx.postMessage({ id, png: bytes }, [bytes.buffer]);
+      } catch (err) {
+        ctx.postMessage({
+          id,
+          stdout: stdoutBuf.join(''),
+          stderr: stderrBuf.join(''),
+          traceback: formatTraceback(err),
+        });
+      }
+      return;
+    }
+
     // runWithTests
     await ensureRunner(py);
-    py.globals.set('__ai_user_code__', code);
+    py.globals.set('__ai_user_code__', code ?? '');
     py.globals.set('__ai_tests__', tests ?? []);
     let testResults: unknown = [];
     let traceback: string | undefined;
