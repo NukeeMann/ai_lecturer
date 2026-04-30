@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
+  Pencil,
 } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
@@ -37,6 +38,7 @@ import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progres
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
+import { TheoryEditor } from '@/widgets/Theory/TheoryEditor';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
@@ -72,6 +74,13 @@ export default function LessonShellPage({
   const [tocCollapsed, setTocCollapsed] = useState(false);
   // Per-module expansion state (default: all open). Keyed by module.id.
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
+  // Per-section edit-mode flags for inline theory editing (US-022). Keyed by
+  // section.id; true means the editor is rendered in place of the read-mode
+  // body. Each TheoryEditor instance owns its own draft, so opening edit mode
+  // on multiple sections does not lose drafts in the others.
+  const [editingSections, setEditingSections] = useState<Record<string, boolean>>(
+    {},
+  );
   // Chat is closed by default in MVP.
   const [chatOpen] = useState(false);
   // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
@@ -419,6 +428,57 @@ export default function LessonShellPage({
     router.push(`/courses/${slug}/lessons/${prevLesson.slug}`);
   }, [prevLesson, router, slug]);
 
+  const handleToggleEdit = useCallback((sectionId: string) => {
+    setEditingSections((prev) => {
+      if (prev[sectionId]) {
+        const copy = { ...prev };
+        delete copy[sectionId];
+        return copy;
+      }
+      return { ...prev, [sectionId]: true };
+    });
+  }, []);
+
+  const handleSaveTheory = useCallback(
+    async (sectionId: string, nextMarkdown: string) => {
+      if (!lesson) {
+        throw new Error('Lesson not loaded');
+      }
+      const next: Lesson = {
+        ...lesson,
+        sections: lesson.sections.map((s) =>
+          s.id === sectionId && s.type === 'theory'
+            ? { ...s, data: { ...s.data, markdown: nextMarkdown } }
+            : s,
+        ),
+      };
+      const res = await fetch(`/api/courses/${slug}/lessons/${lessonSlug}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) {
+        let message = `Save failed (${res.status})`;
+        try {
+          const detail = (await res.json()) as { error?: string };
+          if (detail?.error) message = detail.error;
+        } catch {
+          // Fall through to status-only message.
+        }
+        throw new Error(message);
+      }
+      const saved = (await res.json()) as Lesson;
+      setLesson(saved);
+      setEditingSections((prev) => {
+        if (!prev[sectionId]) return prev;
+        const copy = { ...prev };
+        delete copy[sectionId];
+        return copy;
+      });
+    },
+    [lesson, slug, lessonSlug],
+  );
+
   const handleToggleFocus = useCallback(() => {
     if (focusModeRef.current.active) {
       setTocCollapsed(focusModeRef.current.previousToc);
@@ -529,6 +589,9 @@ export default function LessonShellPage({
             slug={slug}
             lessonSlug={lessonSlug}
             progress={progress}
+            editingSections={editingSections}
+            onToggleEdit={handleToggleEdit}
+            onSaveTheory={handleSaveTheory}
           />
         ) : null}
       </main>
@@ -1470,6 +1533,9 @@ interface LessonStreamProps {
   slug: string;
   lessonSlug: string;
   progress: Progress | null;
+  editingSections: Record<string, boolean>;
+  onToggleEdit: (sectionId: string) => void;
+  onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
 }
 
 function LessonStream({
@@ -1478,6 +1544,9 @@ function LessonStream({
   slug,
   lessonSlug,
   progress,
+  editingSections,
+  onToggleEdit,
+  onSaveTheory,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
@@ -1532,6 +1601,9 @@ function LessonStream({
             courseSlug={slug}
             lessonSlug={lessonSlug}
             onComplete={() => markSectionDone(section.id)}
+            editing={editingSections[section.id] === true}
+            onToggleEdit={onToggleEdit}
+            onSaveTheory={onSaveTheory}
           />
         );
       })}
@@ -1607,6 +1679,9 @@ interface SectionRendererProps {
   courseSlug: string;
   lessonSlug: string;
   onComplete: () => void;
+  editing: boolean;
+  onToggleEdit: (sectionId: string) => void;
+  onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
 }
 
 function SectionRenderer({
@@ -1617,6 +1692,9 @@ function SectionRenderer({
   courseSlug,
   lessonSlug,
   onComplete,
+  editing,
+  onToggleEdit,
+  onSaveTheory,
 }: SectionRendererProps) {
   // Runtime check guards against unknown widget types (e.g. malformed lesson
   // JSON or future schema additions); the static union covers the 6 known ones.
@@ -1644,6 +1722,7 @@ function SectionRenderer({
   };
 
   let body: ReactNode;
+  let headerActions: ReactNode | undefined;
   if (section.type === 'quiz') {
     body = <QuizWidget data={section.data} onCorrect={onComplete} />;
   } else if (section.type === 'code') {
@@ -1663,6 +1742,42 @@ function SectionRenderer({
         progressKey={progressKey}
       />
     );
+  } else if (section.type === 'theory') {
+    if (editing) {
+      body = (
+        <TheoryEditor
+          initialMarkdown={section.data.markdown}
+          onCancel={() => onToggleEdit(section.id)}
+          onSave={(next) => onSaveTheory(section.id, next)}
+        />
+      );
+    } else {
+      const Body = widgetRegistry.theory.component;
+      body = <Body data={section.data} />;
+    }
+    headerActions = (
+      <button
+        type="button"
+        data-testid="theory-edit-btn"
+        aria-label={editing ? 'Close edit' : 'Edit theory'}
+        aria-pressed={editing}
+        onClick={() => onToggleEdit(section.id)}
+        style={{
+          width: 28,
+          height: 28,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid transparent',
+          background: editing ? 'var(--bg-active)' : 'transparent',
+          color: editing ? 'var(--text)' : 'var(--text-tertiary)',
+          cursor: 'pointer',
+        }}
+      >
+        <Pencil size={14} strokeWidth={2} aria-hidden />
+      </button>
+    );
   } else {
     const Body = widgetRegistry[section.type as WidgetType].component;
     body = <Body data={section.data} />;
@@ -1673,12 +1788,14 @@ function SectionRenderer({
       id={`section-${section.id}`}
       data-section-id={section.id}
       data-section-type={section.type}
+      data-section-editing={editing ? 'true' : 'false'}
     >
       <Widget
         type={section.type as WidgetType}
         sectionNumber={sectionNumber}
         title={section.title}
         status={status}
+        headerActions={headerActions}
       >
         {body}
       </Widget>
