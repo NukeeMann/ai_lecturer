@@ -10,6 +10,7 @@ export interface WidgetProps {
   status: WidgetStatus;
   children: ReactNode;
   footer?: ReactNode;
+  headerActions?: ReactNode;
 }
 
 const containerStyle: CSSProperties = {
@@ -125,6 +126,7 @@ export function Widget({
   status,
   children,
   footer,
+  headerActions,
 }: WidgetProps) {
   const meta = widgetRegistry[type];
   const accent = `var(${meta.accentVar})`;
@@ -150,6 +152,14 @@ export function Widget({
           </div>
           <h3 style={titleStyle}>{title}</h3>
         </div>
+        {headerActions !== undefined && (
+          <div
+            data-widget-header-actions
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            {headerActions}
+          </div>
+        )}
         <StatusBadge status={status} />
       </header>
       <div data-widget-body>{children}</div>
