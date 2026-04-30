@@ -2,8 +2,14 @@
 
 import { Fragment, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
-import Stage3Cascade, { type Draft, type Level, type DurationTarget } from './Stage3Cascade';
+import Link from 'next/link';
+import { ArrowLeft, ArrowRight, Check, Copy, Sparkles } from 'lucide-react';
+import Stage3Cascade, {
+  type Draft,
+  type Level,
+  type DurationTarget,
+  type StructureDraft,
+} from './Stage3Cascade';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -63,6 +69,9 @@ export default function CreatePage() {
   const router = useRouter();
   const [stage, setStage] = useState<number>(1);
   const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submittedSlug, setSubmittedSlug] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -84,6 +93,65 @@ export default function CreatePage() {
 
   const handleStepperJump = (id: number) => {
     if (id < stage) setStage(id);
+  };
+
+  const handleGenerate = async () => {
+    if (submitting) return;
+    if (!draft.structure || !draft.level || !draft.durationTarget) return;
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      let title = draft.structure.courseTitle;
+      // Retry loop for 409 collisions: prompt for a new title and try again.
+      while (true) {
+        const spec = buildCourseSpec(draft, { ...draft.structure, courseTitle: title });
+        const res = await fetch('/api/courses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(spec),
+        });
+        if (res.status === 201) {
+          const body = (await res.json()) as { slug: string };
+          // Persist the (possibly renamed) title back into the draft.
+          if (title !== draft.structure.courseTitle) {
+            setDraft((d) =>
+              d.structure ? { ...d, structure: { ...d.structure, courseTitle: title } } : d,
+            );
+          }
+          setSubmittedSlug(body.slug);
+          setStage(5);
+          return;
+        }
+        if (res.status === 409) {
+          const next = window.prompt(
+            `A course with that name already exists. Pick a different title:`,
+            title,
+          );
+          if (next === null) return; // User cancelled — stay on Stage 4.
+          const trimmed = next.trim();
+          if (trimmed.length === 0) {
+            setSubmitError('Course title cannot be empty.');
+            return;
+          }
+          title = trimmed;
+          continue;
+        }
+        // Any other status — surface a clear inline error and bail out.
+        let message = `Server returned ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body && typeof body.error === 'string') message = body.error;
+        } catch {
+          /* non-JSON body */
+        }
+        setSubmitError(message);
+        return;
+      }
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -117,14 +185,48 @@ export default function CreatePage() {
           />
         )}
         {stage === 4 && (
-          <Stage4Preview draft={draft} onBack={() => setStage(3)} />
+          <Stage4Approval
+            draft={draft}
+            onBack={() => setStage(3)}
+            onGenerate={handleGenerate}
+            submitting={submitting}
+            submitError={submitError}
+          />
         )}
-        {stage === 5 && (
-          <Stage5Placeholder onBack={() => setStage(4)} />
-        )}
+        {stage === 5 && submittedSlug && <Stage5Export slug={submittedSlug} />}
       </main>
     </div>
   );
+}
+
+// Strip client-side ids and serialize draft into a CourseSpec payload.
+function buildCourseSpec(draft: Draft, structure: StructureDraft) {
+  return {
+    topic: draft.topic.trim(),
+    level: draft.level,
+    durationTarget: draft.durationTarget,
+    theoryPracticeRatio: clampRatio(draft.theoryPracticeRatio / 100),
+    draftStructure: {
+      courseTitle: structure.courseTitle.trim(),
+      courseDescription: structure.courseDescription.trim(),
+      modules: structure.modules.map((m) => ({
+        title: m.title.trim(),
+        lessons: m.lessons.map((l) => ({
+          title: l.title.trim(),
+          summary: l.summary.trim(),
+          estimatedMinutes: l.estimatedMinutes,
+        })),
+      })),
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function clampRatio(n: number): number {
+  if (Number.isNaN(n)) return 0.5;
+  if (n < 0) return 0;
+  if (n > 1) return 1;
+  return n;
 }
 
 // ─── Stepper ─────────────────────────────────────────────────────────────────
@@ -447,14 +549,35 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
   );
 }
 
-// ─── Stage 4 preview (minimal read-only summary) ─────────────────────────────
+// ─── Stage 4 — Approval ──────────────────────────────────────────────────────
 
-function Stage4Preview({ draft, onBack }: { draft: Draft; onBack: () => void }) {
+function Stage4Approval({
+  draft,
+  onBack,
+  onGenerate,
+  submitting,
+  submitError,
+}: {
+  draft: Draft;
+  onBack: () => void;
+  onGenerate: () => void;
+  submitting: boolean;
+  submitError: string | null;
+}) {
   const s = draft.structure;
+  const lessonCount = s ? s.modules.reduce((sum, m) => sum + m.lessons.length, 0) : 0;
+  const totalMinutes = s
+    ? s.modules.reduce(
+        (sum, m) => sum + m.lessons.reduce((ms, l) => ms + l.estimatedMinutes, 0),
+        0,
+      )
+    : 0;
+  const generationMinutes = lessonCount * 3;
+
   return (
     <div style={stageWrapStyle}>
       <div
-        data-testid="stage4-preview"
+        data-testid="stage4-approval"
         style={{
           flex: 1,
           overflow: 'auto',
@@ -500,6 +623,17 @@ function Stage4Preview({ draft, onBack }: { draft: Draft; onBack: () => void }) 
                 {s.courseDescription}
               </p>
               <div
+                data-testid="stage4-totals"
+                style={{
+                  marginTop: 'var(--space-3)',
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                {s.modules.length} modules · {lessonCount} lessons · ~{totalMinutes} min total
+              </div>
+              <div
                 style={{
                   marginTop: 'var(--space-5)',
                   display: 'flex',
@@ -507,57 +641,156 @@ function Stage4Preview({ draft, onBack }: { draft: Draft; onBack: () => void }) 
                   gap: 'var(--space-4)',
                 }}
               >
-                {s.modules.map((m) => (
-                  <div
-                    key={m.id}
-                    data-testid={`stage4-module-${m.id}`}
-                    style={{
-                      border: '1px solid var(--border)',
-                      background: 'var(--bg-elevated)',
-                      borderRadius: 'var(--radius-md)',
-                      padding: 'var(--space-4)',
-                    }}
-                  >
+                {s.modules.map((m, idx) => {
+                  const moduleMinutes = m.lessons.reduce((ms, l) => ms + l.estimatedMinutes, 0);
+                  return (
                     <div
-                      data-testid={`stage4-module-title-${m.id}`}
+                      key={m.id}
+                      data-testid={`stage4-module-${m.id}`}
                       style={{
-                        fontSize: 'var(--fs-md)',
-                        fontWeight: 600,
-                        color: 'var(--text)',
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-elevated)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: 'var(--space-4)',
                       }}
                     >
-                      {m.title}
-                    </div>
-                    <ul
-                      style={{
-                        margin: '8px 0 0',
-                        padding: '0 0 0 18px',
-                        color: 'var(--text-secondary)',
-                        fontSize: 'var(--fs-sm)',
-                      }}
-                    >
-                      {m.lessons.map((l) => (
-                        <li
-                          key={l.id}
-                          data-testid={`stage4-lesson-${l.id}`}
-                          style={{ marginTop: 4 }}
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'baseline',
+                          justifyContent: 'space-between',
+                          gap: 'var(--space-3)',
+                        }}
+                      >
+                        <div
+                          data-testid={`stage4-module-title-${m.id}`}
+                          style={{
+                            fontSize: 'var(--fs-md)',
+                            fontWeight: 600,
+                            color: 'var(--text)',
+                          }}
                         >
-                          {l.title}{' '}
-                          <span
+                          {m.title}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--text-tertiary)',
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          {m.lessons.length} lessons · ~{moduleMinutes} min
+                        </span>
+                      </div>
+                      <ul
+                        style={{
+                          margin: '10px 0 0',
+                          padding: 0,
+                          listStyle: 'none',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 6,
+                        }}
+                      >
+                        {m.lessons.map((l) => (
+                          <li
+                            key={l.id}
+                            data-testid={`stage4-lesson-${l.id}`}
                             style={{
-                              color: 'var(--text-tertiary)',
-                              fontSize: 'var(--fs-xs)',
-                              fontFamily: 'var(--font-mono)',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              padding: '8px 10px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--bg)',
+                              border: '1px solid var(--border)',
                             }}
                           >
-                            · {l.estimatedMinutes} min
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'baseline',
+                                justifyContent: 'space-between',
+                                gap: 'var(--space-3)',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 'var(--fs-sm)',
+                                  fontWeight: 500,
+                                  color: 'var(--text)',
+                                }}
+                              >
+                                {l.title}
+                              </span>
+                              <span
+                                style={{
+                                  flexShrink: 0,
+                                  fontSize: 'var(--fs-xs)',
+                                  color: 'var(--text-tertiary)',
+                                  fontFamily: 'var(--font-mono)',
+                                }}
+                              >
+                                {l.estimatedMinutes} min
+                              </span>
+                            </div>
+                            {l.summary && (
+                              <span
+                                style={{
+                                  marginTop: 2,
+                                  fontSize: 'var(--fs-xs)',
+                                  color: 'var(--text-secondary)',
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                {l.summary}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      {idx < s.modules.length - 1 ? null : null}
+                    </div>
+                  );
+                })}
               </div>
+
+              <div
+                data-testid="stage4-cost-estimate"
+                style={{
+                  marginTop: 'var(--space-6)',
+                  padding: 'var(--space-4)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--accent-subtle)',
+                  color: 'var(--accent-text)',
+                  fontSize: 'var(--fs-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Sparkles size={14} strokeWidth={2} />
+                <span>
+                  ≈ {generationMinutes} minutes to generate, {lessonCount} lessons
+                </span>
+              </div>
+
+              {submitError && (
+                <div
+                  data-testid="stage4-error"
+                  role="alert"
+                  style={{
+                    marginTop: 'var(--space-4)',
+                    padding: 'var(--space-3) var(--space-4)',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--danger-subtle, rgba(220, 38, 38, 0.08))',
+                    color: 'var(--danger, #b91c1c)',
+                    fontSize: 'var(--fs-sm)',
+                    border: '1px solid var(--danger, #fca5a5)',
+                  }}
+                >
+                  {submitError}
+                </div>
+              )}
             </>
           ) : (
             <p style={{ color: 'var(--text-tertiary)', fontSize: 'var(--fs-sm)' }}>
@@ -566,50 +799,320 @@ function Stage4Preview({ draft, onBack }: { draft: Draft; onBack: () => void }) 
           )}
         </div>
       </div>
-      <Footer onBack={onBack} backLabel="Back" hideNext />
+
+      {/* Sticky bottom bar */}
+      <div
+        style={{
+          borderTop: '1px solid var(--border)',
+          background: 'var(--bg-elevated)',
+          padding: 'var(--space-4) var(--space-6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <button
+          type="button"
+          data-testid="wizard-back"
+          onClick={onBack}
+          disabled={submitting}
+          style={ghostBtnStyle}
+        >
+          <ArrowLeft size={14} strokeWidth={2} />
+          Back
+        </button>
+        <button
+          type="button"
+          data-testid="stage4-generate"
+          onClick={onGenerate}
+          disabled={!s || submitting}
+          style={primaryBtnStyle(!s || submitting)}
+        >
+          <Sparkles size={14} strokeWidth={2} />
+          {submitting ? 'Saving…' : 'Generate course'}
+        </button>
+      </div>
     </div>
   );
 }
 
-function Stage5Placeholder({ onBack }: { onBack: () => void }) {
+// ─── Stage 5 — Export ────────────────────────────────────────────────────────
+
+function Stage5Export({ slug }: { slug: string }) {
+  const specPath = `/courses/${slug}/course-spec.json`;
+  const claudeCmd = `claude`;
+  const skillCmd = `/init_course ${slug}`;
+  const ralphCmd = `./scripts/ralph/ralph.sh`;
+
   return (
     <div style={stageWrapStyle}>
       <div
-        data-testid="stage5-placeholder"
+        data-testid="stage5-export"
         style={{
           flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          overflow: 'auto',
           padding: 'var(--space-7) var(--space-6)',
         }}
       >
-        <div style={{ textAlign: 'center', maxWidth: 480 }}>
-          <h1
+        <div style={{ width: '100%', maxWidth: 720, margin: '0 auto' }}>
+          <div
             style={{
-              margin: 0,
-              fontFamily: 'var(--font-display)',
-              fontSize: 'var(--fs-2xl)',
+              fontSize: 10.5,
+              color: 'var(--accent-text)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
               fontWeight: 600,
-              letterSpacing: '-0.02em',
+              marginBottom: 8,
             }}
           >
-            Stage 5 — Generate
-          </h1>
-          <p
+            Stage 5 of 5 · Saved
+          </div>
+
+          <div
             style={{
-              marginTop: 12,
-              color: 'var(--text-secondary)',
-              fontSize: 'var(--fs-sm)',
-              lineHeight: 1.55,
+              border: '1px solid var(--border)',
+              background: 'var(--bg-elevated)',
+              borderRadius: 'var(--radius-lg, 12px)',
+              padding: 'var(--space-6)',
             }}
           >
-            Agent-log view comes next.
-          </p>
+            <div
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 36,
+                height: 36,
+                borderRadius: '50%',
+                background: 'var(--success, #10b981)',
+                color: 'white',
+                marginBottom: 'var(--space-4)',
+              }}
+            >
+              <Check size={18} strokeWidth={3} />
+            </div>
+            <h1
+              style={{
+                margin: 0,
+                fontFamily: 'var(--font-display)',
+                fontSize: 'var(--fs-2xl)',
+                fontWeight: 600,
+                letterSpacing: '-0.02em',
+              }}
+            >
+              Course spec saved
+            </h1>
+            <p
+              data-testid="stage5-confirm"
+              style={{
+                marginTop: 6,
+                color: 'var(--text-secondary)',
+                fontSize: 'var(--fs-sm)',
+                lineHeight: 1.55,
+              }}
+            >
+              Course spec saved to{' '}
+              <code
+                data-testid="stage5-spec-path"
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'var(--fs-xs)',
+                  background: 'var(--bg)',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {specPath}
+              </code>
+            </p>
+
+            <div
+              style={{
+                marginTop: 'var(--space-5)',
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text)',
+                fontWeight: 500,
+              }}
+            >
+              Run these commands to generate the lessons:
+            </div>
+            <ol
+              style={{
+                marginTop: 'var(--space-3)',
+                padding: 0,
+                listStyle: 'none',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <CommandRow step={1} command={claudeCmd} testId="stage5-cmd-claude" hint="Open Claude Code in this repo." />
+              <CommandRow step={2} command={skillCmd} testId="stage5-cmd-init" hint={`Invoke the init_course skill with slug ${slug}.`} />
+              <CommandRow step={3} command={ralphCmd} testId="stage5-cmd-ralph" hint="Run the agent loop until all lessons are generated." />
+            </ol>
+
+            <p
+              data-testid="stage5-note"
+              style={{
+                marginTop: 'var(--space-5)',
+                color: 'var(--text-tertiary)',
+                fontSize: 'var(--fs-sm)',
+                lineHeight: 1.5,
+              }}
+            >
+              The course will appear on your dashboard once generation completes.
+            </p>
+
+            <div style={{ marginTop: 'var(--space-5)' }}>
+              <Link
+                href="/"
+                data-testid="stage5-back-to-dashboard"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--accent-text)',
+                  textDecoration: 'none',
+                  fontWeight: 500,
+                }}
+              >
+                <ArrowLeft size={14} strokeWidth={2} />
+                Back to dashboard
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
-      <Footer onBack={onBack} backLabel="Back" hideNext />
     </div>
+  );
+}
+
+function CommandRow({
+  step,
+  command,
+  testId,
+  hint,
+}: {
+  step: number;
+  command: string;
+  testId: string;
+  hint: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(command);
+      } else if (typeof document !== 'undefined') {
+        const ta = document.createElement('textarea');
+        ta.value = command;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try {
+          document.execCommand('copy');
+        } finally {
+          document.body.removeChild(ta);
+        }
+      }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* ignore — non-secure contexts may block clipboard */
+    }
+  };
+
+  return (
+    <li
+      data-testid={testId}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 8,
+          background: 'var(--bg)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          padding: '8px 10px',
+        }}
+      >
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-tertiary)',
+            fontSize: 'var(--fs-xs)',
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {step}
+        </span>
+        <code
+          data-testid={`${testId}-text`}
+          style={{
+            flex: 1,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text)',
+            background: 'transparent',
+            whiteSpace: 'pre',
+            overflow: 'auto',
+            alignSelf: 'center',
+          }}
+        >
+          {command}
+        </code>
+        <button
+          type="button"
+          data-testid={`${testId}-copy`}
+          onClick={handleCopy}
+          aria-label={`Copy command: ${command}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-elevated)',
+            color: copied ? 'var(--success, #10b981)' : 'var(--text-secondary)',
+            fontSize: 'var(--fs-xs)',
+            fontFamily: 'inherit',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} strokeWidth={2} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <span
+        style={{
+          fontSize: 'var(--fs-xs)',
+          color: 'var(--text-tertiary)',
+          marginLeft: 30,
+        }}
+      >
+        {hint}
+      </span>
+    </li>
   );
 }
 
