@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import { use } from 'react';
 import Link from 'next/link';
@@ -19,8 +20,13 @@ import {
 
 import { Callout } from '@/components/Callout';
 import type { Course } from '@/lib/schemas/course';
-import type { Lesson } from '@/lib/schemas/lesson';
+import type { Lesson, Section } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress } from '@/lib/schemas/progress';
+import { CodeWidget } from '@/widgets/Code/CodeWidget';
+import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
+import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
+import { Widget, type WidgetStatus } from '@/widgets/Widget';
+import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
 const TOC_COLLAPSED_KEY = 'toc-collapsed';
 
@@ -219,10 +225,15 @@ export default function LessonShellPage({
           <ContentSkeleton />
         ) : error ? (
           <LessonNotFound slug={slug} message={error} />
-        ) : (
-          // Center column ready for US-017 content stream.
-          <div data-testid="lesson-content-ready" />
-        )}
+        ) : lesson ? (
+          <LessonStream
+            course={course}
+            lesson={lesson}
+            slug={slug}
+            lessonSlug={lessonSlug}
+            progress={progress}
+          />
+        ) : null}
       </main>
 
       <ChatColumn open={chatOpen} />
@@ -942,6 +953,228 @@ function ContentSkeleton() {
       <div style={{ ...bar, height: 220 }} />
       <div style={{ ...bar, height: 280 }} />
       <div style={{ ...bar, height: 240 }} />
+    </div>
+  );
+}
+
+interface LessonStreamProps {
+  course: Course | null;
+  lesson: Lesson;
+  slug: string;
+  lessonSlug: string;
+  progress: Progress | null;
+}
+
+function LessonStream({
+  course,
+  lesson,
+  slug,
+  lessonSlug,
+  progress,
+}: LessonStreamProps) {
+  const sectionState =
+    progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
+
+  // Sections completed in-session (quiz answered correctly, code submitted
+  // passing). Persisted completions come from sectionState[id].done.
+  const [autoDone, setAutoDone] = useState<Record<string, boolean>>({});
+  const markSectionDone = useCallback((sectionId: string) => {
+    setAutoDone((prev) =>
+      prev[sectionId] ? prev : { ...prev, [sectionId]: true },
+    );
+  }, []);
+
+  const { moduleN, lessonM } = useMemo(() => {
+    if (!course) return { moduleN: 0, lessonM: 0 };
+    const mIdx = course.modules.findIndex((m) => m.id === lesson.moduleId);
+    if (mIdx < 0) return { moduleN: 0, lessonM: 0 };
+    const lIdx = course.modules[mIdx].lessons.findIndex(
+      (l) => l.slug === lesson.slug,
+    );
+    return { moduleN: mIdx + 1, lessonM: lIdx >= 0 ? lIdx + 1 : 0 };
+  }, [course, lesson]);
+
+  return (
+    <div
+      data-testid="lesson-stream"
+      style={{
+        maxWidth: 760,
+        margin: '0 auto',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-section)',
+      }}
+    >
+      <LessonHeader
+        moduleN={moduleN}
+        lessonM={lessonM}
+        title={lesson.title}
+        description={lesson.description}
+      />
+      {lesson.sections.map((section, idx) => {
+        const persistedDone = sectionState[section.id]?.done === true;
+        const live = autoDone[section.id] === true;
+        const status: WidgetStatus = persistedDone || live ? 'done' : 'todo';
+        return (
+          <SectionRenderer
+            key={section.id}
+            section={section}
+            sectionNumber={idx + 1}
+            status={status}
+            initialUserCode={sectionState[section.id]?.userCode}
+            courseSlug={slug}
+            lessonSlug={lessonSlug}
+            onComplete={() => markSectionDone(section.id)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function LessonHeader({
+  moduleN,
+  lessonM,
+  title,
+  description,
+}: {
+  moduleN: number;
+  lessonM: number;
+  title: string;
+  description: string;
+}) {
+  return (
+    <header
+      data-testid="lesson-header"
+      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+    >
+      <div
+        data-testid="lesson-header-eyebrow"
+        style={{
+          fontSize: 'var(--fs-xs)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          fontWeight: 600,
+          color: 'var(--text-tertiary)',
+          lineHeight: 1.2,
+        }}
+      >
+        Module {moduleN} · Lesson {lessonM}
+      </div>
+      <h1
+        data-testid="lesson-header-title"
+        style={{
+          margin: 0,
+          fontSize: 'var(--fs-3xl)',
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          fontFamily: 'var(--font-display)',
+          color: 'var(--text)',
+          lineHeight: 1.15,
+        }}
+      >
+        {title}
+      </h1>
+      {description ? (
+        <p
+          data-testid="lesson-header-description"
+          style={{
+            margin: 0,
+            fontSize: 'var(--fs-md)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}
+        >
+          {description}
+        </p>
+      ) : null}
+    </header>
+  );
+}
+
+interface SectionRendererProps {
+  section: Section;
+  sectionNumber: number;
+  status: WidgetStatus;
+  initialUserCode?: string;
+  courseSlug: string;
+  lessonSlug: string;
+  onComplete: () => void;
+}
+
+function SectionRenderer({
+  section,
+  sectionNumber,
+  status,
+  initialUserCode,
+  courseSlug,
+  lessonSlug,
+  onComplete,
+}: SectionRendererProps) {
+  // Runtime check guards against unknown widget types (e.g. malformed lesson
+  // JSON or future schema additions); the static union covers the 6 known ones.
+  if (!(section.type in widgetRegistry)) {
+    return (
+      <div
+        id={`section-${section.id}`}
+        data-section-id={section.id}
+        data-widget-unknown
+      >
+        <Callout tone="warning">
+          Unsupported widget type:{' '}
+          <code style={{ fontFamily: 'var(--font-mono)' }}>
+            {(section as { type: string }).type}
+          </code>
+        </Callout>
+      </div>
+    );
+  }
+
+  const progressKey = {
+    courseSlug,
+    lessonSlug,
+    sectionId: section.id,
+  };
+
+  let body: ReactNode;
+  if (section.type === 'quiz') {
+    body = <QuizWidget data={section.data} onCorrect={onComplete} />;
+  } else if (section.type === 'code') {
+    body = (
+      <CodeWidget
+        data={section.data}
+        initialCode={initialUserCode}
+        progressKey={progressKey}
+        onComplete={onComplete}
+      />
+    );
+  } else if (section.type === 'sandbox') {
+    body = (
+      <SandboxWidget
+        data={section.data}
+        initialCode={initialUserCode}
+        progressKey={progressKey}
+      />
+    );
+  } else {
+    const Body = widgetRegistry[section.type as WidgetType].component;
+    body = <Body data={section.data} />;
+  }
+
+  return (
+    <div
+      id={`section-${section.id}`}
+      data-section-id={section.id}
+      data-section-type={section.type}
+    >
+      <Widget
+        type={section.type as WidgetType}
+        sectionNumber={sectionNumber}
+        title={section.title}
+        status={status}
+      >
+        {body}
+      </Widget>
     </div>
   );
 }
