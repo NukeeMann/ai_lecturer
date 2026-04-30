@@ -12,7 +12,7 @@ import {
 import { CodePlaceholder } from './Code/CodePlaceholder';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { DemoPlaceholder } from './Demo/DemoPlaceholder';
-import { QuizPlaceholder } from './Quiz/QuizPlaceholder';
+import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxPlaceholder } from './Sandbox/SandboxPlaceholder';
 import { TheoryWidget } from './Theory/TheoryWidget';
 
@@ -33,7 +33,7 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     accentVar: '--widget-theory',
   },
   quiz: {
-    component: QuizPlaceholder,
+    component: QuizWidget as ComponentType<{ data?: unknown }>,
     label: 'Quiz',
     icon: Target,
     accentVar: '--widget-quiz',
