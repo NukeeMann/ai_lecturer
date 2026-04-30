@@ -141,9 +141,40 @@ export default function LessonShellPage({
         lessonSlug,
         markVisited: true,
       };
-      if (currentStatus === undefined || currentStatus === 'not_started') {
+      const upgrading =
+        currentStatus === undefined || currentStatus === 'not_started';
+      if (upgrading) {
         body.status = 'started';
       }
+      // Optimistically reflect the markVisited intent in local state so the
+      // TOC dot for the current lesson flips to 'started' (and lastVisitedAt
+      // updates) without waiting for the PATCH round-trip.
+      const optimisticAt = new Date().toISOString();
+      setProgress((prev) => {
+        const base: Progress = prev ?? { courses: {} };
+        const courses = { ...base.courses };
+        const cp = courses[slug]
+          ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+          : { lessons: {} };
+        const existingLesson = cp.lessons[lessonSlug] ?? {
+          status: 'not_started' as LessonStatus,
+        };
+        const nextStatus: LessonStatus = upgrading
+          ? 'started'
+          : existingLesson.status;
+        cp.lessons[lessonSlug] = {
+          ...existingLesson,
+          status: nextStatus,
+          startedAt:
+            nextStatus !== 'not_started' && !existingLesson.startedAt
+              ? optimisticAt
+              : existingLesson.startedAt,
+        };
+        cp.lastVisitedAt = optimisticAt;
+        cp.lastVisitedLessonSlug = lessonSlug;
+        courses[slug] = cp;
+        return { ...base, courses };
+      });
       await fetch('/api/progress', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
