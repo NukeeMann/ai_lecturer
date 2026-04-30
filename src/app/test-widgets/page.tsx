@@ -6,6 +6,7 @@ import { SAMPLE_CODE_BOX_BLUR } from '@/widgets/Code/sample';
 import { SAMPLE_DEMO_GAUSS } from '@/widgets/Demo/sample';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SAMPLE_QUIZ_SINGLE } from '@/widgets/Quiz/sample';
+import { SAMPLE_SANDBOX_GAUSS } from '@/widgets/Sandbox/sample';
 import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
 import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
@@ -49,7 +50,7 @@ const samples: SampleSection[] = [
     type: 'sandbox',
     title: 'Try changing the sigma — nothing breaks',
     status: 'todo',
-    withFooter: true,
+    data: SAMPLE_SANDBOX_GAUSS,
   },
   { type: 'custom', title: 'Custom histogram viz', status: 'todo' },
 ];

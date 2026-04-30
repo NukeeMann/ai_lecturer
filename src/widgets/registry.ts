@@ -13,7 +13,7 @@ import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
 import { QuizWidget } from './Quiz/QuizWidget';
-import { SandboxPlaceholder } from './Sandbox/SandboxPlaceholder';
+import { SandboxWidget } from './Sandbox/SandboxWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 
 export type WidgetType = 'theory' | 'quiz' | 'code' | 'demo' | 'sandbox' | 'custom';
@@ -51,7 +51,7 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     accentVar: '--widget-demo',
   },
   sandbox: {
-    component: SandboxPlaceholder,
+    component: SandboxWidget as ComponentType<{ data?: unknown }>,
     label: 'Sandbox',
     icon: Terminal,
     accentVar: '--widget-sandbox',
