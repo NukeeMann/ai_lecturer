@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import { EditorState } from '@codemirror/state';
 import {
@@ -39,17 +40,39 @@ export interface CodeRunnerProgressKey {
   sectionId: string;
 }
 
+export type CodeRunnerPrimaryActionVariant = 'primary' | 'secondary' | 'ghost';
+
+export interface CodeRunnerPrimaryAction {
+  label: string;
+  icon?: ReactNode;
+  onClick: () => void | Promise<void>;
+  disabled?: boolean;
+  variant?: CodeRunnerPrimaryActionVariant;
+  ariaLabel?: string;
+  testId?: string;
+}
+
 export interface CodeRunnerProps {
   starterCode: string;
   initialCode?: string;
   progressKey?: CodeRunnerProgressKey;
+  /** Slot rendered between the output panel and the footer (e.g. tests panel). */
+  extraPanel?: ReactNode;
+  /** Replace the default ▶ Run primary button. Pass `null` to hide it. */
+  primaryAction?: CodeRunnerPrimaryAction | null;
+  /** Notified whenever the editor doc changes. */
+  onCodeChange?: (code: string) => void;
+  /** Notified after Reset has cleared the editor. */
+  onReset?: () => void;
+  /** Override the output panel placeholder text (default: "Press ▶ Run to execute."). */
+  outputPlaceholder?: string;
 }
 
 const FONT_SIZE = '13px';
 const LINE_HEIGHT = 1.55;
 const SAVE_DEBOUNCE_MS = 800;
 
-const editorTheme = EditorView.theme({
+export const codeRunnerEditorTheme = EditorView.theme({
   '&': {
     background: 'var(--code-bg)',
     color: 'var(--code-text)',
@@ -93,7 +116,7 @@ const editorTheme = EditorView.theme({
   },
 });
 
-const highlightStyle = HighlightStyle.define([
+export const codeRunnerHighlightStyle = HighlightStyle.define([
   {
     tag: [
       t.keyword,
@@ -147,7 +170,7 @@ const footerStyle: CSSProperties = {
   background: 'var(--bg-elevated)',
 };
 
-const buttonBase: CSSProperties = {
+export const codeRunnerButtonBase: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
@@ -161,7 +184,7 @@ const buttonBase: CSSProperties = {
 };
 
 const ghostButtonStyle: CSSProperties = {
-  ...buttonBase,
+  ...codeRunnerButtonBase,
   background: 'transparent',
   color: 'var(--text-secondary)',
   border: '1px solid transparent',
@@ -169,13 +192,39 @@ const ghostButtonStyle: CSSProperties = {
 
 function secondaryButtonStyle(disabled: boolean): CSSProperties {
   return {
-    ...buttonBase,
+    ...codeRunnerButtonBase,
     background: disabled ? 'var(--bg-active)' : 'var(--bg-elevated)',
     color: disabled ? 'var(--text-tertiary)' : 'var(--text)',
     border: '1px solid var(--border-strong)',
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.7 : 1,
   };
+}
+
+function primaryButtonStyle(disabled: boolean): CSSProperties {
+  return {
+    ...codeRunnerButtonBase,
+    background: disabled ? 'var(--bg-active)' : 'var(--accent)',
+    color: disabled ? 'var(--text-tertiary)' : 'var(--text-on-accent)',
+    border: '1px solid transparent',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.7 : 1,
+  };
+}
+
+function actionStyleFor(
+  variant: CodeRunnerPrimaryActionVariant | undefined,
+  disabled: boolean,
+): CSSProperties {
+  if (variant === 'primary') return primaryButtonStyle(disabled);
+  if (variant === 'ghost') {
+    return {
+      ...ghostButtonStyle,
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.7 : 1,
+    };
+  }
+  return secondaryButtonStyle(disabled);
 }
 
 function LoadingIndicator() {
@@ -231,9 +280,11 @@ function ErrorCallout() {
 function OutputBody({
   output,
   running,
+  placeholder,
 }: {
   output: RunResult | null;
   running: boolean;
+  placeholder: string;
 }) {
   if (running) {
     return (
@@ -260,7 +311,7 @@ function OutputBody({
           fontStyle: 'italic',
         }}
       >
-        Press ▶ Run to execute.
+        {placeholder}
       </span>
     );
   }
@@ -333,11 +384,21 @@ export function CodeRunner({
   starterCode,
   initialCode,
   progressKey,
+  extraPanel,
+  primaryAction,
+  onCodeChange,
+  onReset,
+  outputPlaceholder = 'Press ▶ Run to execute.',
 }: CodeRunnerProps) {
   const { status, run } = usePyodide();
   const [code, setCode] = useState<string>(initialCode ?? starterCode);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
+
+  const onCodeChangeRef = useRef(onCodeChange);
+  useEffect(() => {
+    onCodeChangeRef.current = onCodeChange;
+  }, [onCodeChange]);
 
   const editorParentRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -402,14 +463,17 @@ export function CodeRunner({
     if (progressKey) {
       void patchProgress(progressKey, {});
     }
-  }, [starterCode, progressKey]);
+    onReset?.();
+  }, [starterCode, progressKey, onReset]);
 
   useEffect(() => {
     if (!editorParentRef.current) return;
 
     const updateListener = EditorView.updateListener.of((update) => {
       if (update.docChanged) {
-        setCode(update.state.doc.toString());
+        const next = update.state.doc.toString();
+        setCode(next);
+        onCodeChangeRef.current?.(next);
       }
     });
 
@@ -436,8 +500,8 @@ export function CodeRunner({
           indentOnInput(),
           bracketMatching(),
           python(),
-          syntaxHighlighting(highlightStyle),
-          editorTheme,
+          syntaxHighlighting(codeRunnerHighlightStyle),
+          codeRunnerEditorTheme,
           runKeymap,
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           updateListener,
@@ -470,6 +534,10 @@ export function CodeRunner({
 
   const runDisabled = status !== 'ready' || running;
 
+  const showDefaultRun = primaryAction === undefined;
+  const customAction = primaryAction ?? null;
+  const customDisabled = customAction?.disabled ?? false;
+
   return (
     <div data-coderunner>
       <style>{LOADING_KEYFRAMES}</style>
@@ -486,9 +554,16 @@ export function CodeRunner({
         ) : status === 'error' ? (
           <ErrorCallout />
         ) : (
-          <OutputBody output={output} running={running} />
+          <OutputBody
+            output={output}
+            running={running}
+            placeholder={outputPlaceholder}
+          />
         )}
       </div>
+      {extraPanel !== undefined && (
+        <div data-coderunner-extra>{extraPanel}</div>
+      )}
       <div style={footerStyle}>
         <button
           type="button"
@@ -500,17 +575,32 @@ export function CodeRunner({
           <RotateCcw size={14} aria-hidden />
           Reset
         </button>
-        <button
-          type="button"
-          data-coderunner-run
-          onClick={() => void handleRun()}
-          disabled={runDisabled}
-          style={secondaryButtonStyle(runDisabled)}
-          aria-label="Run code"
-        >
-          <Play size={14} aria-hidden />
-          Run
-        </button>
+        {showDefaultRun ? (
+          <button
+            type="button"
+            data-coderunner-run
+            onClick={() => void handleRun()}
+            disabled={runDisabled}
+            style={secondaryButtonStyle(runDisabled)}
+            aria-label="Run code"
+          >
+            <Play size={14} aria-hidden />
+            Run
+          </button>
+        ) : customAction !== null ? (
+          <button
+            type="button"
+            data-coderunner-action
+            data-testid={customAction.testId}
+            onClick={() => void customAction.onClick()}
+            disabled={customDisabled}
+            style={actionStyleFor(customAction.variant, customDisabled)}
+            aria-label={customAction.ariaLabel ?? customAction.label}
+          >
+            {customAction.icon}
+            {customAction.label}
+          </button>
+        ) : null}
       </div>
     </div>
   );

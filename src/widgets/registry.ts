@@ -9,7 +9,7 @@ import {
   Terminal,
 } from 'lucide-react';
 
-import { CodePlaceholder } from './Code/CodePlaceholder';
+import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { DemoPlaceholder } from './Demo/DemoPlaceholder';
 import { QuizWidget } from './Quiz/QuizWidget';
@@ -39,7 +39,7 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     accentVar: '--widget-quiz',
   },
   code: {
-    component: CodePlaceholder,
+    component: CodeWidget as ComponentType<{ data?: unknown }>,
     label: 'Code Exercise',
     icon: Code,
     accentVar: '--widget-code',
