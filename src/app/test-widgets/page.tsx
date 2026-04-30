@@ -1,6 +1,12 @@
+'use client';
+
+import { useState } from 'react';
+
+import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
+import { SAMPLE_QUIZ_SINGLE } from '@/widgets/Quiz/sample';
+import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
 import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
-import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
 
 type WidgetStatus = 'todo' | 'progress' | 'done';
 
@@ -24,6 +30,7 @@ const samples: SampleSection[] = [
     type: 'quiz',
     title: 'Pick the correct kernel for an edge filter',
     status: 'todo',
+    data: SAMPLE_QUIZ_SINGLE,
   },
   {
     type: 'code',
@@ -41,6 +48,8 @@ const samples: SampleSection[] = [
 ];
 
 export default function TestWidgetsPage() {
+  const [quizStatus, setQuizStatus] = useState<WidgetStatus>('todo');
+
   return (
     <main
       style={{
@@ -85,7 +94,6 @@ export default function TestWidgetsPage() {
         }}
       >
         {samples.map((sample, index) => {
-          const Body = widgetRegistry[sample.type].component;
           const footer = sample.withFooter ? (
             <div
               style={{
@@ -97,6 +105,26 @@ export default function TestWidgetsPage() {
               Footer slot — controls live here.
             </div>
           ) : undefined;
+
+          if (sample.type === 'quiz') {
+            return (
+              <Widget
+                key={sample.type}
+                type={sample.type}
+                sectionNumber={index + 1}
+                title={sample.title}
+                status={quizStatus}
+                footer={footer}
+              >
+                <QuizWidget
+                  data={SAMPLE_QUIZ_SINGLE}
+                  onCorrect={() => setQuizStatus('done')}
+                />
+              </Widget>
+            );
+          }
+
+          const Body = widgetRegistry[sample.type].component;
           return (
             <Widget
               key={sample.type}
