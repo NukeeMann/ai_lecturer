@@ -10,7 +10,11 @@ import {
 } from 'react';
 import { use } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -47,12 +51,14 @@ export default function LessonShellPage({
   params: Promise<RouteParams>;
 }) {
   const { slug, lessonSlug } = use(params);
+  const router = useRouter();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
 
   // TOC collapse, persisted to localStorage['toc-collapsed'].
   const [tocCollapsed, setTocCollapsed] = useState(false);
@@ -186,8 +192,72 @@ export default function LessonShellPage({
     overflow: 'hidden',
     background: 'var(--bg)',
     color: 'var(--text)',
-    transition: 'grid-template-columns 180ms ease',
+    opacity: advancing ? 0 : 1,
+    transition:
+      'grid-template-columns 180ms ease, opacity 600ms ease',
   };
+
+  const flatLessons = useMemo(() => {
+    if (!course) return [] as Array<{ slug: string; title: string }>;
+    return course.modules.flatMap((m) =>
+      m.lessons.map((l) => ({ slug: l.slug, title: l.title })),
+    );
+  }, [course]);
+
+  const { prevLesson, nextLesson } = useMemo(() => {
+    const idx = flatLessons.findIndex((l) => l.slug === lessonSlug);
+    if (idx < 0) return { prevLesson: null, nextLesson: null };
+    return {
+      prevLesson: idx > 0 ? flatLessons[idx - 1] : null,
+      nextLesson: idx < flatLessons.length - 1 ? flatLessons[idx + 1] : null,
+    };
+  }, [flatLessons, lessonSlug]);
+
+  const lessonStatus: LessonStatus =
+    progress?.courses?.[slug]?.lessons?.[lessonSlug]?.status ?? 'not_started';
+
+  const handleNavigate = useCallback(
+    (targetSlug: string) => {
+      router.push(`/courses/${slug}/lessons/${targetSlug}`);
+    },
+    [router, slug],
+  );
+
+  const handleMarkComplete = useCallback(async () => {
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const courses = { ...prev.courses };
+      const cp = courses[slug]
+        ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+        : { lessons: {} };
+      const existing = cp.lessons[lessonSlug] ?? { status: 'not_started' as LessonStatus };
+      cp.lessons[lessonSlug] = { ...existing, status: 'finished' };
+      courses[slug] = cp;
+      return { ...prev, courses };
+    });
+
+    try {
+      await fetch('/api/progress', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseSlug: slug,
+          lessonSlug,
+          status: 'finished',
+        }),
+      });
+    } catch {
+      // Local optimistic update already applied; surfacing the error here
+      // would require an inline toast we don't have yet.
+    }
+
+    if (nextLesson) {
+      setAdvancing(true);
+      window.setTimeout(() => {
+        router.push(`/courses/${slug}/lessons/${nextLesson.slug}`);
+      }, 600);
+    }
+  }, [slug, lessonSlug, nextLesson, router]);
 
   return (
     <div data-testid="lesson-shell" style={shellStyle}>
@@ -238,7 +308,13 @@ export default function LessonShellPage({
 
       <ChatColumn open={chatOpen} />
 
-      <BottomBar />
+      <BottomBar
+        prevLesson={prevLesson}
+        nextLesson={nextLesson}
+        status={lessonStatus}
+        onMarkComplete={handleMarkComplete}
+        onNavigate={handleNavigate}
+      />
     </div>
   );
 }
@@ -916,7 +992,27 @@ function ChatColumn({ open }: { open: boolean }) {
   );
 }
 
-function BottomBar() {
+interface LessonRefMin {
+  slug: string;
+  title: string;
+}
+
+interface BottomBarProps {
+  prevLesson: LessonRefMin | null;
+  nextLesson: LessonRefMin | null;
+  status: LessonStatus;
+  onMarkComplete: () => void;
+  onNavigate: (slug: string) => void;
+}
+
+function BottomBar({
+  prevLesson,
+  nextLesson,
+  status,
+  onMarkComplete,
+  onNavigate,
+}: BottomBarProps) {
+  const isFinished = status === 'finished';
   return (
     <footer
       data-testid="lesson-bottom-bar"
@@ -926,8 +1022,190 @@ function BottomBar() {
         height: BOTTOM_H,
         borderTop: '1px solid var(--border)',
         background: 'var(--bg-elevated)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '0 var(--space-5)',
+        gap: 'var(--space-3)',
       }}
-    />
+    >
+      <NavButton
+        side="prev"
+        target={prevLesson}
+        onClick={onNavigate}
+      />
+      <MarkCompleteButton finished={isFinished} onClick={onMarkComplete} />
+      <NavButton
+        side="next"
+        target={nextLesson}
+        onClick={onNavigate}
+      />
+    </footer>
+  );
+}
+
+function NavButton({
+  side,
+  target,
+  onClick,
+}: {
+  side: 'prev' | 'next';
+  target: LessonRefMin | null;
+  onClick: (slug: string) => void;
+}) {
+  const disabled = target === null;
+  const isPrev = side === 'prev';
+  const eyebrow = isPrev ? 'Previous' : 'Next';
+  const testId = isPrev ? 'bottom-bar-prev' : 'bottom-bar-next';
+  const label = target?.title ?? '';
+
+  const inner = (
+    <>
+      {isPrev && (
+        <ArrowLeft
+          size={14}
+          strokeWidth={2}
+          style={{ flexShrink: 0, opacity: disabled ? 0.5 : 1 }}
+        />
+      )}
+      <span
+        style={{
+          display: 'inline-flex',
+          flexDirection: 'column',
+          alignItems: isPrev ? 'flex-start' : 'flex-end',
+          lineHeight: 1.1,
+          minWidth: 0,
+        }}
+      >
+        <span
+          style={{
+            fontSize: '10.5px',
+            color: 'var(--text-tertiary)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            fontWeight: 600,
+          }}
+        >
+          {eyebrow}
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--fs-sm)',
+            color: disabled ? 'var(--text-quaternary)' : 'var(--text)',
+            fontWeight: 500,
+            maxWidth: 200,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={label}
+        >
+          {label || '—'}
+        </span>
+      </span>
+      {!isPrev && (
+        <ArrowRight
+          size={14}
+          strokeWidth={2}
+          style={{ flexShrink: 0, opacity: disabled ? 0.5 : 1 }}
+        />
+      )}
+    </>
+  );
+
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-disabled={disabled ? 'true' : 'false'}
+      aria-label={
+        disabled
+          ? `${eyebrow} lesson (none)`
+          : `${eyebrow} lesson: ${label}`
+      }
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled && target) onClick(target.slug);
+      }}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        height: 40,
+        padding: '0 12px',
+        background: 'transparent',
+        border: '1px solid transparent',
+        borderRadius: 'var(--radius-md)',
+        color: 'var(--text-secondary)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.55 : 1,
+        textAlign: 'left',
+        minWidth: 0,
+      }}
+    >
+      {inner}
+    </button>
+  );
+}
+
+function MarkCompleteButton({
+  finished,
+  onClick,
+}: {
+  finished: boolean;
+  onClick: () => void;
+}) {
+  const baseStyle: CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 32,
+    padding: '0 14px',
+    fontSize: 'var(--fs-sm)',
+    fontWeight: 500,
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid transparent',
+    cursor: 'pointer',
+    lineHeight: 1,
+    whiteSpace: 'nowrap',
+  };
+
+  if (finished) {
+    return (
+      <button
+        type="button"
+        data-testid="bottom-bar-mark-complete"
+        data-finished="true"
+        onClick={onClick}
+        style={{
+          ...baseStyle,
+          background: 'transparent',
+          color: 'var(--text-secondary)',
+        }}
+        aria-label="Lesson completed"
+      >
+        <Check size={14} strokeWidth={2.25} />
+        Lesson completed
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      data-testid="bottom-bar-mark-complete"
+      data-finished="false"
+      onClick={onClick}
+      style={{
+        ...baseStyle,
+        background: 'var(--accent)',
+        color: 'var(--text-on-accent)',
+      }}
+      aria-label="Mark lesson complete"
+    >
+      Mark lesson complete
+    </button>
   );
 }
 
