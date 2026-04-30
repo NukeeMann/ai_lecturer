@@ -25,6 +25,7 @@ import {
 
 import { Callout } from '@/components/Callout';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
+import { SidePanel } from '@/components/SidePanel';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   isMod,
@@ -35,8 +36,12 @@ import {
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progress';
+import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
+import { DemoEditor } from '@/widgets/Demo/DemoEditor';
+import { QuizEditor } from '@/widgets/Quiz/QuizEditor';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
+import { SandboxEditor } from '@/widgets/Sandbox/SandboxEditor';
 import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
 import { TheoryEditor } from '@/widgets/Theory/TheoryEditor';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
@@ -81,6 +86,9 @@ export default function LessonShellPage({
   const [editingSections, setEditingSections] = useState<Record<string, boolean>>(
     {},
   );
+  // Side-panel edit (US-023): non-theory widgets open a 320px side panel
+  // instead of an inline editor. At most one panel is open at a time.
+  const [panelSectionId, setPanelSectionId] = useState<string | null>(null);
   // Chat is closed by default in MVP.
   const [chatOpen] = useState(false);
   // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
@@ -439,19 +447,8 @@ export default function LessonShellPage({
     });
   }, []);
 
-  const handleSaveTheory = useCallback(
-    async (sectionId: string, nextMarkdown: string) => {
-      if (!lesson) {
-        throw new Error('Lesson not loaded');
-      }
-      const next: Lesson = {
-        ...lesson,
-        sections: lesson.sections.map((s) =>
-          s.id === sectionId && s.type === 'theory'
-            ? { ...s, data: { ...s.data, markdown: nextMarkdown } }
-            : s,
-        ),
-      };
+  const persistLesson = useCallback(
+    async (next: Lesson): Promise<Lesson> => {
       const res = await fetch(`/api/courses/${slug}/lessons/${lessonSlug}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -467,7 +464,25 @@ export default function LessonShellPage({
         }
         throw new Error(message);
       }
-      const saved = (await res.json()) as Lesson;
+      return (await res.json()) as Lesson;
+    },
+    [slug, lessonSlug],
+  );
+
+  const handleSaveTheory = useCallback(
+    async (sectionId: string, nextMarkdown: string) => {
+      if (!lesson) {
+        throw new Error('Lesson not loaded');
+      }
+      const next: Lesson = {
+        ...lesson,
+        sections: lesson.sections.map((s) =>
+          s.id === sectionId && s.type === 'theory'
+            ? { ...s, data: { ...s.data, markdown: nextMarkdown } }
+            : s,
+        ),
+      };
+      const saved = await persistLesson(next);
       setLesson(saved);
       setEditingSections((prev) => {
         if (!prev[sectionId]) return prev;
@@ -476,8 +491,36 @@ export default function LessonShellPage({
         return copy;
       });
     },
-    [lesson, slug, lessonSlug],
+    [lesson, persistLesson],
   );
+
+  const handleSavePanelSection = useCallback(
+    async (sectionId: string, nextData: unknown) => {
+      if (!lesson) {
+        throw new Error('Lesson not loaded');
+      }
+      const next: Lesson = {
+        ...lesson,
+        sections: lesson.sections.map((s) =>
+          s.id === sectionId
+            ? ({ ...s, data: nextData } as Section)
+            : s,
+        ),
+      };
+      const saved = await persistLesson(next);
+      setLesson(saved);
+      setPanelSectionId((cur) => (cur === sectionId ? null : cur));
+    },
+    [lesson, persistLesson],
+  );
+
+  const handleOpenPanel = useCallback((sectionId: string) => {
+    setPanelSectionId((cur) => (cur === sectionId ? null : sectionId));
+  }, []);
+
+  const handleClosePanel = useCallback(() => {
+    setPanelSectionId(null);
+  }, []);
 
   const handleToggleFocus = useCallback(() => {
     if (focusModeRef.current.active) {
@@ -546,6 +589,11 @@ export default function LessonShellPage({
 
   useKeyboardShortcuts(shortcuts);
 
+  const panelSection = useMemo(() => {
+    if (!lesson || !panelSectionId) return null;
+    return lesson.sections.find((s) => s.id === panelSectionId) ?? null;
+  }, [lesson, panelSectionId]);
+
   return (
     <div data-testid="lesson-shell" style={shellStyle}>
       <Toolbar
@@ -592,6 +640,8 @@ export default function LessonShellPage({
             editingSections={editingSections}
             onToggleEdit={handleToggleEdit}
             onSaveTheory={handleSaveTheory}
+            panelSectionId={panelSectionId}
+            onOpenPanel={handleOpenPanel}
           />
         ) : null}
       </main>
@@ -605,7 +655,66 @@ export default function LessonShellPage({
         onMarkComplete={handleMarkComplete}
         onNavigate={handleNavigate}
       />
+
+      <WidgetEditPanel
+        section={panelSection}
+        open={panelSectionId !== null && panelSection !== null}
+        onClose={handleClosePanel}
+        onSave={handleSavePanelSection}
+      />
     </div>
+  );
+}
+
+interface WidgetEditPanelProps {
+  section: Section | null;
+  open: boolean;
+  onClose: () => void;
+  onSave: (sectionId: string, data: unknown) => Promise<void>;
+}
+
+function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProps) {
+  const title = section ? `Edit ${widgetRegistry[section.type as WidgetType].label}` : 'Edit';
+  return (
+    <SidePanel
+      open={open}
+      onClose={onClose}
+      title={title}
+      testId="widget-edit-panel"
+    >
+      {section?.type === 'quiz' && (
+        <QuizEditor
+          key={section.id}
+          initial={section.data}
+          onCancel={onClose}
+          onSave={(next) => onSave(section.id, next)}
+        />
+      )}
+      {section?.type === 'code' && (
+        <CodeEditor
+          key={section.id}
+          initial={section.data}
+          onCancel={onClose}
+          onSave={(next) => onSave(section.id, next)}
+        />
+      )}
+      {section?.type === 'demo' && (
+        <DemoEditor
+          key={section.id}
+          initial={section.data}
+          onCancel={onClose}
+          onSave={(next) => onSave(section.id, next)}
+        />
+      )}
+      {section?.type === 'sandbox' && (
+        <SandboxEditor
+          key={section.id}
+          initial={section.data}
+          onCancel={onClose}
+          onSave={(next) => onSave(section.id, next)}
+        />
+      )}
+    </SidePanel>
   );
 }
 
@@ -1536,6 +1645,8 @@ interface LessonStreamProps {
   editingSections: Record<string, boolean>;
   onToggleEdit: (sectionId: string) => void;
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
+  panelSectionId: string | null;
+  onOpenPanel: (sectionId: string) => void;
 }
 
 function LessonStream({
@@ -1547,6 +1658,8 @@ function LessonStream({
   editingSections,
   onToggleEdit,
   onSaveTheory,
+  panelSectionId,
+  onOpenPanel,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
@@ -1604,6 +1717,8 @@ function LessonStream({
             editing={editingSections[section.id] === true}
             onToggleEdit={onToggleEdit}
             onSaveTheory={onSaveTheory}
+            panelOpen={panelSectionId === section.id}
+            onOpenPanel={onOpenPanel}
           />
         );
       })}
@@ -1682,6 +1797,8 @@ interface SectionRendererProps {
   editing: boolean;
   onToggleEdit: (sectionId: string) => void;
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
+  panelOpen: boolean;
+  onOpenPanel: (sectionId: string) => void;
 }
 
 function SectionRenderer({
@@ -1695,6 +1812,8 @@ function SectionRenderer({
   editing,
   onToggleEdit,
   onSaveTheory,
+  panelOpen,
+  onOpenPanel,
 }: SectionRendererProps) {
   // Runtime check guards against unknown widget types (e.g. malformed lesson
   // JSON or future schema additions); the static union covers the 6 known ones.
@@ -1723,8 +1842,46 @@ function SectionRenderer({
 
   let body: ReactNode;
   let headerActions: ReactNode | undefined;
+
+  function pencilButton(
+    pressed: boolean,
+    label: string,
+    onClick: () => void,
+    testId: string,
+  ): ReactNode {
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        aria-label={label}
+        aria-pressed={pressed}
+        onClick={onClick}
+        style={{
+          width: 28,
+          height: 28,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid transparent',
+          background: pressed ? 'var(--bg-active)' : 'transparent',
+          color: pressed ? 'var(--text)' : 'var(--text-tertiary)',
+          cursor: 'pointer',
+        }}
+      >
+        <Pencil size={14} strokeWidth={2} aria-hidden />
+      </button>
+    );
+  }
+
   if (section.type === 'quiz') {
     body = <QuizWidget data={section.data} onCorrect={onComplete} />;
+    headerActions = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit quiz',
+      () => onOpenPanel(section.id),
+      'quiz-edit-btn',
+    );
   } else if (section.type === 'code') {
     body = (
       <CodeWidget
@@ -1734,6 +1891,12 @@ function SectionRenderer({
         onComplete={onComplete}
       />
     );
+    headerActions = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit code exercise',
+      () => onOpenPanel(section.id),
+      'code-edit-btn',
+    );
   } else if (section.type === 'sandbox') {
     body = (
       <SandboxWidget
@@ -1741,6 +1904,21 @@ function SectionRenderer({
         initialCode={initialUserCode}
         progressKey={progressKey}
       />
+    );
+    headerActions = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit sandbox',
+      () => onOpenPanel(section.id),
+      'sandbox-edit-btn',
+    );
+  } else if (section.type === 'demo') {
+    const Body = widgetRegistry.demo.component;
+    body = <Body data={section.data} />;
+    headerActions = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit demo',
+      () => onOpenPanel(section.id),
+      'demo-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {
@@ -1755,28 +1933,11 @@ function SectionRenderer({
       const Body = widgetRegistry.theory.component;
       body = <Body data={section.data} />;
     }
-    headerActions = (
-      <button
-        type="button"
-        data-testid="theory-edit-btn"
-        aria-label={editing ? 'Close edit' : 'Edit theory'}
-        aria-pressed={editing}
-        onClick={() => onToggleEdit(section.id)}
-        style={{
-          width: 28,
-          height: 28,
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: 'var(--radius-sm)',
-          border: '1px solid transparent',
-          background: editing ? 'var(--bg-active)' : 'transparent',
-          color: editing ? 'var(--text)' : 'var(--text-tertiary)',
-          cursor: 'pointer',
-        }}
-      >
-        <Pencil size={14} strokeWidth={2} aria-hidden />
-      </button>
+    headerActions = pencilButton(
+      editing,
+      editing ? 'Close edit' : 'Edit theory',
+      () => onToggleEdit(section.id),
+      'theory-edit-btn',
     );
   } else {
     const Body = widgetRegistry[section.type as WidgetType].component;
@@ -1788,7 +1949,7 @@ function SectionRenderer({
       id={`section-${section.id}`}
       data-section-id={section.id}
       data-section-type={section.type}
-      data-section-editing={editing ? 'true' : 'false'}
+      data-section-editing={editing || panelOpen ? 'true' : 'false'}
     >
       <Widget
         type={section.type as WidgetType}
