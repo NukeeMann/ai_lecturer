@@ -9,12 +9,20 @@ import {
 } from 'react';
 import { use } from 'react';
 import Link from 'next/link';
-import { HelpCircle, Sun } from 'lucide-react';
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  HelpCircle,
+  Sun,
+} from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress } from '@/lib/schemas/progress';
+
+const TOC_COLLAPSED_KEY = 'toc-collapsed';
 
 interface RouteParams {
   slug: string;
@@ -40,10 +48,45 @@ export default function LessonShellPage({
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  // TOC state — collapse comes in US-016 but we render the column at the right width.
-  const [tocCollapsed] = useState(false);
+  // TOC collapse, persisted to localStorage['toc-collapsed'].
+  const [tocCollapsed, setTocCollapsed] = useState(false);
+  // Per-module expansion state (default: all open). Keyed by module.id.
+  const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   // Chat is closed by default in MVP.
   const [chatOpen] = useState(false);
+
+  // Hydrate collapse state from localStorage on mount. Lazy useState init can't
+  // touch window during SSR, so we read after mount and accept a one-frame flash.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(TOC_COLLAPSED_KEY);
+      if (stored === 'true') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setTocCollapsed(true);
+      }
+    } catch {
+      // localStorage unavailable (SSR / privacy mode) — fall back to default.
+    }
+  }, []);
+
+  const toggleToc = useCallback(() => {
+    setTocCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(TOC_COLLAPSED_KEY, next ? 'true' : 'false');
+      } catch {
+        // Persistence unavailable — toggle still works for the session.
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleModule = useCallback((moduleId: string) => {
+    setOpenModules((prev) => ({
+      ...prev,
+      [moduleId]: prev[moduleId] === undefined ? false : !prev[moduleId],
+    }));
+  }, []);
 
   const loadAll = useCallback(async () => {
     setError(null);
@@ -137,6 +180,7 @@ export default function LessonShellPage({
     overflow: 'hidden',
     background: 'var(--bg)',
     color: 'var(--text)',
+    transition: 'grid-template-columns 180ms ease',
   };
 
   return (
@@ -149,7 +193,16 @@ export default function LessonShellPage({
         sectionTotals={sectionTotals}
       />
 
-      <TocColumn collapsed={tocCollapsed} />
+      <TocColumn
+        collapsed={tocCollapsed}
+        onToggle={toggleToc}
+        course={course}
+        progress={progress}
+        slug={slug}
+        lessonSlug={lessonSlug}
+        openModules={openModules}
+        onToggleModule={toggleModule}
+      />
 
       <main
         data-testid="lesson-content"
@@ -411,7 +464,27 @@ function ToolbarIconBtn({
   );
 }
 
-function TocColumn({ collapsed }: { collapsed: boolean }) {
+interface TocColumnProps {
+  collapsed: boolean;
+  onToggle: () => void;
+  course: Course | null;
+  progress: Progress | null;
+  slug: string;
+  lessonSlug: string;
+  openModules: Record<string, boolean>;
+  onToggleModule: (moduleId: string) => void;
+}
+
+function TocColumn({
+  collapsed,
+  onToggle,
+  course,
+  progress,
+  slug,
+  lessonSlug,
+  openModules,
+  onToggleModule,
+}: TocColumnProps) {
   return (
     <aside
       data-testid="lesson-toc"
@@ -422,8 +495,381 @@ function TocColumn({ collapsed }: { collapsed: boolean }) {
         borderRight: '1px solid var(--border)',
         background: 'var(--bg-elevated)',
         overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+      }}
+    >
+      <TocHeader collapsed={collapsed} onToggle={onToggle} course={course} />
+      <div
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: collapsed
+            ? 'var(--space-3) 0'
+            : 'var(--space-2) var(--space-3) var(--space-4)',
+        }}
+      >
+        {collapsed ? (
+          <TocCollapsedDots
+            course={course}
+            progress={progress}
+            slug={slug}
+            currentLessonSlug={lessonSlug}
+          />
+        ) : (
+          <TocExpanded
+            course={course}
+            progress={progress}
+            slug={slug}
+            currentLessonSlug={lessonSlug}
+            openModules={openModules}
+            onToggleModule={onToggleModule}
+          />
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function TocHeader({
+  collapsed,
+  onToggle,
+  course,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  course: Course | null;
+}) {
+  return (
+    <div
+      data-testid="toc-header"
+      style={{
+        padding: collapsed
+          ? 'var(--space-3) 0'
+          : 'var(--space-4) var(--space-3) var(--space-3)',
+        borderBottom: '1px solid var(--border)',
+        display: 'flex',
+        alignItems: collapsed ? 'center' : 'flex-start',
+        justifyContent: collapsed ? 'center' : 'space-between',
+        gap: 'var(--space-2)',
+        minWidth: 0,
+      }}
+    >
+      {!collapsed && (
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <Link
+            href="/"
+            data-testid="toc-all-courses"
+            style={{
+              display: 'block',
+              fontSize: 'var(--fs-xs)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              fontWeight: 600,
+              color: 'var(--text-tertiary)',
+              textDecoration: 'none',
+              marginBottom: 4,
+            }}
+          >
+            All courses
+          </Link>
+          <div
+            data-testid="toc-course-title"
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 600,
+              color: 'var(--text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={course?.title ?? ''}
+          >
+            {course?.title ?? '—'}
+          </div>
+        </div>
+      )}
+      <button
+        type="button"
+        data-testid="toc-toggle"
+        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        onClick={onToggle}
+        style={{
+          width: 28,
+          height: 28,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+          border: '1px solid transparent',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--text-tertiary)',
+          cursor: 'pointer',
+          flexShrink: 0,
+        }}
+      >
+        {collapsed ? (
+          <ChevronRight size={14} strokeWidth={2} />
+        ) : (
+          <ChevronLeft size={14} strokeWidth={2} />
+        )}
+      </button>
+    </div>
+  );
+}
+
+interface TocExpandedProps {
+  course: Course | null;
+  progress: Progress | null;
+  slug: string;
+  currentLessonSlug: string;
+  openModules: Record<string, boolean>;
+  onToggleModule: (moduleId: string) => void;
+}
+
+function TocExpanded({
+  course,
+  progress,
+  slug,
+  currentLessonSlug,
+  openModules,
+  onToggleModule,
+}: TocExpandedProps) {
+  if (!course) return null;
+  const lessonsState = progress?.courses?.[slug]?.lessons ?? {};
+  return (
+    <nav
+      data-testid="toc-modules"
+      style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+    >
+      {course.modules.map((mod) => {
+        const open = openModules[mod.id] !== false; // default open
+        return (
+          <div key={mod.id} data-testid="toc-module" data-module-id={mod.id}>
+            <button
+              type="button"
+              data-testid="toc-module-header"
+              aria-expanded={open}
+              onClick={() => onToggleModule(mod.id)}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '6px 8px',
+                background: 'transparent',
+                border: 'none',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+                textAlign: 'left',
+                color: 'var(--text)',
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 600,
+              }}
+            >
+              <ChevronDown
+                size={12}
+                strokeWidth={2.25}
+                style={{
+                  color: 'var(--text-tertiary)',
+                  transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+                  transition: 'transform 120ms ease',
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {mod.title}
+              </span>
+            </button>
+            {open && (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  marginTop: 2,
+                  marginBottom: 4,
+                }}
+              >
+                {mod.lessons.map((les) => {
+                  const status: LessonStatus =
+                    lessonsState[les.slug]?.status ?? 'not_started';
+                  const isActive = les.slug === currentLessonSlug;
+                  return (
+                    <TocLessonRow
+                      key={les.slug}
+                      title={les.title}
+                      slug={les.slug}
+                      courseSlug={slug}
+                      status={status}
+                      active={isActive}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function TocLessonRow({
+  title,
+  slug,
+  courseSlug,
+  status,
+  active,
+}: {
+  title: string;
+  slug: string;
+  courseSlug: string;
+  status: LessonStatus;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={`/courses/${courseSlug}/lessons/${slug}`}
+      data-testid="toc-lesson"
+      data-lesson-slug={slug}
+      data-active={active ? 'true' : 'false'}
+      data-status={status}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-2)',
+        height: 28,
+        padding: '0 12px',
+        fontSize: 'var(--fs-sm)',
+        fontWeight: active ? 600 : 400,
+        color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+        background: active ? 'var(--accent-subtle)' : 'transparent',
+        borderRadius: 'var(--radius-sm)',
+        textDecoration: 'none',
+        minWidth: 0,
+      }}
+    >
+      {active && (
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: -1,
+            top: 4,
+            bottom: 4,
+            width: 2,
+            background: 'var(--accent)',
+            borderRadius: 999,
+          }}
+        />
+      )}
+      <StatusDot status={status} />
+      <span
+        style={{
+          flex: 1,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+        title={title}
+      >
+        {title}
+      </span>
+    </Link>
+  );
+}
+
+function StatusDot({ status }: { status: LessonStatus }) {
+  const base: CSSProperties = {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    flexShrink: 0,
+    display: 'inline-block',
+  };
+  if (status === 'finished') {
+    return <span data-status-dot="finished" style={{ ...base, background: 'var(--success)' }} />;
+  }
+  if (status === 'started') {
+    return <span data-status-dot="started" style={{ ...base, background: 'var(--accent)' }} />;
+  }
+  return (
+    <span
+      data-status-dot="not_started"
+      style={{
+        ...base,
+        background: 'transparent',
+        boxShadow: 'inset 0 0 0 1.5px var(--border-strong)',
       }}
     />
+  );
+}
+
+interface TocCollapsedDotsProps {
+  course: Course | null;
+  progress: Progress | null;
+  slug: string;
+  currentLessonSlug: string;
+}
+
+function TocCollapsedDots({
+  course,
+  progress,
+  slug,
+  currentLessonSlug,
+}: TocCollapsedDotsProps) {
+  if (!course) return null;
+  const lessonsState = progress?.courses?.[slug]?.lessons ?? {};
+  const flat = course.modules.flatMap((m) => m.lessons);
+  return (
+    <div
+      data-testid="toc-collapsed-dots"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 12,
+        padding: '4px 0',
+      }}
+    >
+      {flat.map((les) => {
+        const status: LessonStatus =
+          lessonsState[les.slug]?.status ?? 'not_started';
+        const isActive = les.slug === currentLessonSlug;
+        return (
+          <Link
+            key={les.slug}
+            href={`/courses/${slug}/lessons/${les.slug}`}
+            data-testid="toc-collapsed-dot"
+            data-lesson-slug={les.slug}
+            data-active={isActive ? 'true' : 'false'}
+            title={les.title}
+            aria-label={les.title}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 20,
+              height: 20,
+              borderRadius: 'var(--radius-sm)',
+              background: isActive ? 'var(--accent-subtle)' : 'transparent',
+              textDecoration: 'none',
+            }}
+          >
+            <StatusDot status={status} />
+          </Link>
+        );
+      })}
+    </div>
   );
 }
 
