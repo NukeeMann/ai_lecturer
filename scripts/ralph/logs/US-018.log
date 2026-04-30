@@ -1,0 +1,9 @@
+US-018 implemented and committed (cee211c).
+
+**Summary:**
+- Replaced the placeholder `BottomBar` in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` with a real 56px footer hosting prev / Mark complete / next.
+- Prev/next resolution flattens `course.modules.flatMap(m => m.lessons)` and uses index-1 / index+1 lookups, crossing module boundaries; first/last lesson disables the corresponding button.
+- Center button shows "Mark lesson complete" (primary) when status ≠ finished, morphs to "Lesson completed" with check icon (ghost) once finished.
+- Click → optimistic local state update + `PATCH /api/progress { status: 'finished' }`. If a next lesson exists, the shell fades opacity 0 over 600ms and `router.push` to it.
+- Verified end-to-end with playwright against a temp `test-nav` fixture (3 lessons, 2 modules): 56px height, correct labels/disabled states, ~743ms auto-advance, finished status persists, no console errors.
+- `npm run lint`, `npm run typecheck`, `npm run test` all pass; progress.txt appended with new pattern + iteration notes.

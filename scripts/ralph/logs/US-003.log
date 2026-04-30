@@ -1,0 +1,12 @@
+US-003 done and committed as `db83ae9` on `ralph/us-003`.
+
+**Summary of changes:**
+- Per-widget Zod data schemas: `src/widgets/{Theory,Quiz,Code,Demo,Sandbox}/schema.ts`
+- Top-level schemas: `src/lib/schemas/{course,lesson,progress,courseSpec}.ts` — `LessonSchema` uses a `z.discriminatedUnion('type', …)` over `theory|quiz|code|demo|sandbox|custom`
+- JSON Schema export: `src/widgets/schemas/build.ts` + `npm run build:schemas`; generated `theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json` are committed
+- Vitest config + 20 unit tests covering minimal-valid parse, missing-required-field rejection, and unknown-discriminator rejection
+- `zod` pinned to `^3.25.76` (v4 is incompatible with `zod-to-json-schema`)
+
+**Quality:** `typecheck` ✓, `lint` ✓ (0 warnings), `test` ✓ (20/20), `build:schemas` ✓, `next build` ✓.
+
+Key learnings flagged in `progress.txt` (Codebase Patterns section): zod v3 pin requirement, vitest needs its own `resolve.alias` for `@/*`, and the "drop one field" test fixture pattern that lints clean.

@@ -1,0 +1,673 @@
+{
+  "project": "AI Lecturer",
+  "branchName": "ralph/ai-lecturer-mvp",
+  "description": "Lokalna single-user aplikacja webowa do tworzenia i przechodzenia interaktywnych kursów. Architektura: Next.js (App Router) + TS + Tailwind + shadcn/ui. Persystencja plikowa: kursy w /courses/<slug>/ jako JSON, postęp w ~/.ai-lecturer/progress.json. Lekcje to statyczne artefakty (sekcje + widgety) generowane offline przez ralph loop przy użyciu skili init_course / generate_lesson — webapp tylko renderuje, edytuje, i zbiera spec do generacji. Widgety MVP: theory (markdown + KaTeX), quiz ABCD, code exercise z Pyodide i ukrytymi testami, demo Gauss filter, sandbox. Wizualnie wysoka wierność do specyfikacji w claude/design/ (tokens.css → CSS vars konsumowane przez Tailwind). LessonChat (AI tutor) i live agent log są poza MVP.",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Scaffold Next.js + TS + Tailwind + shadcn/ui",
+      "description": "As a developer, I want a clean Next.js scaffold with TypeScript, Tailwind, and shadcn/ui initialized so future stories have a stable base.",
+      "acceptanceCriteria": [
+        "Next.js 15+ App Router project initialized at repo root with TypeScript strict mode",
+        "Tailwind CSS v3+ configured (postcss + tailwind.config.ts)",
+        "shadcn/ui CLI initialized (components.json present, /src/components/ui directory exists)",
+        "Folder structure created: /src/app, /src/components, /src/widgets, /src/lib, /src/lib/schemas",
+        "package.json scripts include dev, build, start, lint, typecheck",
+        "npm run dev serves a placeholder home page on http://localhost:3000",
+        "npm run build succeeds",
+        ".gitignore covers node_modules, .next, .env*, /courses/*/lessons/*.tmp",
+        "README.md updated with one-paragraph project description and run instructions",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "US-002",
+      "title": "Port design tokens + theme system + Geist font",
+      "description": "As a developer, I want the design tokens from claude/design/source/tokens.css ported as CSS vars and consumed by Tailwind so all components share a single semantic token system across light/dark/accent/density modes.",
+      "acceptanceCriteria": [
+        "src/styles/tokens.css contains the canonical CSS vars from claude/design/source/tokens.css (colors, type scale, spacing, radii, shadows, easings, widget accents)",
+        "Vars defined under :root[data-theme='light'], :root[data-theme='dark'], :root[data-accent='default|black|indigo|terracotta|emerald'], :root[data-density='compact|comfortable|spacious']",
+        "tokens.css imported in src/app/globals.css",
+        "tailwind.config.ts theme.extend reads CSS vars (e.g. colors: { bg: 'var(--bg)', text: 'var(--text)', accent: 'var(--accent)' }) so utility classes resolve to tokens",
+        "Geist Sans + Geist Mono loaded via next/font and applied as defaults; --font-prose, --font-sans, --font-mono CSS vars wired to font CSS variables",
+        "<html> ships with data-theme='light' data-accent='default' data-density='comfortable' as defaults",
+        "@media (prefers-reduced-motion: reduce) override applied per design INTERACTIONS.md",
+        "Demo route /test-theme renders 6 sample text/bg/border swatches and a sample H1 + body paragraph + accent button to verify tokens visually",
+        "Verify in browser using playwright-skill: load /test-theme, screenshot light mode, switch data-theme to 'dark' via JS eval, screenshot, confirm bg + text colors change",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "Zod schemas + JSON Schema export for widgets and progress",
+      "description": "As an agent generating lessons (and the webapp validating them), I want a single source of truth for Course / Module / Lesson / Section / Widget / Progress / CourseSpec data shapes so I produce and consume valid JSON without drift.",
+      "acceptanceCriteria": [
+        "src/lib/schemas/course.ts exports CourseSchema (Zod): { slug, title, description, accentColor: 'default'|'indigo'|'emerald'|'terracotta'|'black', icon: string, modules: ModuleSchema[], createdAt, updatedAt }",
+        "ModuleSchema: { id, title, summary, lessons: LessonRefSchema[] }; LessonRefSchema: { slug, title, estimatedMinutes }",
+        "src/lib/schemas/lesson.ts exports LessonSchema: { slug, courseSlug, moduleId, title, eyebrow, description, estimatedMinutes, sections: SectionSchema[] }",
+        "SectionSchema is a Zod discriminated union on `type`: 'theory'|'quiz'|'code'|'demo'|'sandbox'|'custom' with per-type `data` shape",
+        "Per-widget data schemas in src/widgets/<Name>/schema.ts: TheoryData { markdown }, QuizData { question, options[], correct[], explanation, multiSelect }, CodeData { taskMarkdown, starterCode, tests: [{ name, body, hidden? (default true) }] }, DemoData { demoType: 'gauss', imageSrc, params: { sigmaMin, sigmaMax, sigmaDefault } }, SandboxData { starterCode, encouragement }",
+        "src/lib/schemas/progress.ts exports ProgressSchema: { courses: { [slug]: { lastVisitedLessonSlug?, lastVisitedAt?, lessons: { [slug]: { status: 'not_started'|'started'|'finished', startedAt?, finishedAt?, sectionState?: { [sectionId]: { userCode?, quizSubmission? } } } } } } }",
+        "src/lib/schemas/courseSpec.ts exports CourseSpecSchema (wizard output): { topic, level: 'beginner'|'intermediate'|'advanced', durationTarget: '30min'|'1h'|'weekend', theoryPracticeRatio: number, draftStructure: { courseTitle, courseDescription, modules: [{ title, lessons: [{ title, summary, estimatedMinutes }] }] }, createdAt }",
+        "src/widgets/schemas/ exports JSON Schema files (one per widget type) generated via zod-to-json-schema, used by generate_lesson skill",
+        "Build script src/widgets/schemas/build.ts regenerates JSON Schema files from Zod sources; npm run build:schemas runs it; output is committed",
+        "Vitest unit tests cover: each schema parses minimal valid object, throws on missing required field, discriminated union rejects unknown widget type",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "US-004",
+      "title": "Courses/lessons file API routes",
+      "description": "As the webapp, I want REST endpoints for reading and writing course and lesson JSON files so UI components don't touch the filesystem directly and all writes are Zod-validated.",
+      "acceptanceCriteria": [
+        "GET /api/courses returns list of all courses (reads /courses/*/course.json, validates with CourseSchema, skips invalid with console.warn)",
+        "GET /api/courses/[slug] returns single course or 404",
+        "GET /api/courses/[slug]/lessons/[lessonSlug] returns single lesson or 404",
+        "PUT /api/courses/[slug] writes course.json after CourseSchema.parse; returns 400 with Zod issues on invalid input",
+        "PUT /api/courses/[slug]/lessons/[lessonSlug] writes lesson JSON after LessonSchema.parse",
+        "POST /api/courses creates new course-spec.json under /courses/<slug>/course-spec.json (slug derived via slugify from CourseSpec.draftStructure.courseTitle); returns 409 if slug collision",
+        "All file paths constructed via path.join against process.cwd() + '/courses'; reject any slug containing '/' or '..' (path traversal protection)",
+        "Atomic writes (write to <file>.tmp + rename) so a crash mid-write doesn't corrupt the file",
+        "Vitest tests cover: list with 0/1/many courses, schema-rejection 400, path-traversal rejection, atomic-write leaves no .tmp on success",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "US-005",
+      "title": "Progress file API route",
+      "description": "As the webapp, I want a single endpoint to read/patch ~/.ai-lecturer/progress.json so user progress survives across sessions and is the same source of truth for TOC, dashboard, and lesson view.",
+      "acceptanceCriteria": [
+        "GET /api/progress returns content of ~/.ai-lecturer/progress.json (creates the file with { courses: {} } if missing; auto-creates parent dir)",
+        "PATCH /api/progress accepts { courseSlug, lessonSlug, status?: 'started'|'finished', markVisited?: boolean, sectionState?: object } and merges into the appropriate course/lesson, sets lastVisitedAt = now() when markVisited=true or status changes",
+        "Path uses os.homedir() + '/.ai-lecturer/progress.json' for cross-platform support",
+        "Atomic write (write .tmp + rename); validates payload with Zod (returns 400 on invalid)",
+        "Vitest tests cover: missing file gets created with default shape, status update persists, lastVisitedAt updates only when intended, atomic write does not leave .tmp on success",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "US-006",
+      "title": "Widget registry + base Widget container",
+      "description": "As a developer, I want a Widget container component with the design's chrome (header, accent rail, status badge) and a registry mapping section type to component, so adding new widget types is declarative and consistent.",
+      "acceptanceCriteria": [
+        "src/widgets/registry.ts exports widgetRegistry: Record<WidgetType, { component, label, icon, accentVar }> with entries for all 6 types (theory, quiz, code, demo, sandbox, custom) — placeholder components for now",
+        "src/widgets/Widget.tsx is the shared container: 1px --border, --radius-lg, --bg-elevated, --shadow-xs",
+        "Header: --bg-elevated bg, padding var(--space-4) var(--space-5), border-bottom 1px --border; left-side 28x28 round icon (--bg-subtle bg, accent color from --widget-{type} CSS var, 14px lucide icon); eyebrow [TYPE LABEL] · §N (--fs-xs weight 600 letter-spacing 0.06em uppercase --text-tertiary); title --fs-md weight 600 --text",
+        "1px-tall accent rail along TOP edge of header using var(--widget-{type}) — not the left edge",
+        "Right-side status badge: 'Completed' (--success), 'In progress' (--accent), absent for 'todo'",
+        "Body has NO padding by default — children control",
+        "Optional footer slot with 1px --border top divider when used",
+        "props: { type: WidgetType, sectionNumber: number, title: string, status: 'todo'|'progress'|'done', children, footer? }",
+        "Demo route /test-widgets renders one of each type as placeholder body so chrome can be inspected",
+        "Verify in browser using playwright-skill: screenshot /test-widgets in light + dark, confirm 6 widgets render with distinct accent rails and consistent header shape",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Theory widget — markdown + KaTeX + callouts",
+      "description": "As a learner, I want theory sections to render rich markdown with inline math, code blocks, and themed callouts so I can read the lesson narrative comfortably.",
+      "acceptanceCriteria": [
+        "src/widgets/Theory/TheoryWidget.tsx renders `markdown` field via react-markdown + remark-math + rehype-katex; KaTeX CSS imported once at app level",
+        "Inline math \\(...\\) and block math \\[...\\] / $$...$$ render correctly",
+        "Body padding var(--space-5) var(--space-6); --font-prose; --fs-md (16px); line-height 1.7; text-wrap: pretty on paragraphs",
+        "Inline code: --font-mono, 0.88em, --bg-subtle bg, 1px --border, --radius-xs, padding 2px 5px",
+        "Math blocks: centered, --bg-subtle bg, 1px --border, --radius-md, padding var(--space-4) var(--space-5), var(--space-4) vertical margin",
+        "H2 inside theory: --fs-lg weight 600 with var(--space-5) margin-top",
+        "Callout component (src/components/Callout.tsx) supports four tones — info / insight / warning / danger — each with tinted bg (--{tone}-subtle), 1px tinted border (--{tone}-border), --radius-md, padding var(--space-4) var(--space-5), icon (left, in tone's solid color), title (weight 600), body in --text-secondary",
+        "Callouts authored via remark-directive syntax :::callout{type='info' title='Why this matters'} ... ::: parsed into Callout component",
+        "Sample test theory section with all 4 callouts + inline math + block math + code block renders without console errors and visually matches design WIDGETS.md → Theory",
+        "Verify in browser using playwright-skill: render /test-widgets theory sample, screenshot light + dark",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-008",
+      "title": "Quiz ABCD widget — single + multi-select with always-shown explanation",
+      "description": "As a learner, I want to answer single- or multi-select multiple-choice questions and always see an explanation after submitting so I learn the why, not just the answer.",
+      "acceptanceCriteria": [
+        "src/widgets/Quiz/QuizWidget.tsx renders question (--fs-md weight 500) + N option cards stacked with --space-3 gap",
+        "Each option card: 1px --border-strong, --radius-md, padding var(--space-4) var(--space-5), --bg-elevated; A/B/C/D letter prefix in --font-mono --text-tertiary; option text in --fs-sm",
+        "Pre-submit hover: border --accent-border, bg --accent-subtle",
+        "Pre-submit selected: border --accent, bg --accent-subtle, weight 500",
+        "multiSelect=false uses radio behavior; multiSelect=true uses checkboxes",
+        "Submit button enabled only when ≥1 option selected; primary if not submitted",
+        "Post-submit states: correct option (regardless of selection) gets --success-border + --success-subtle + check icon; user's incorrect choices get --danger-border + --danger-subtle + x icon; untouched options dimmed (--text-tertiary)",
+        "Explanation block always rendered below options after submit (Callout-styled, neutral tone)",
+        "Submit button morphs to 'Try again' (ghost) post-submit; clicking resets selection state but keeps explanation visible",
+        "Section status auto-becomes 'done' on first correct submission (correct[] === selected[] as set equality)",
+        "Verify in browser using playwright-skill: take quiz with wrong answer (red x + explanation), retry with correct (green checks + status badge updates)",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Pyodide Web Worker service",
+      "description": "As the webapp, I want Pyodide running in a Web Worker with a request/response API so Python execution does not block the main thread, does not run on SSR, and is shared across all widgets that need it.",
+      "acceptanceCriteria": [
+        "src/lib/pyodide/worker.ts is a Web Worker that loads Pyodide v0.26+ from CDN, preinstalls numpy and scipy (needed for Gauss demo), and accepts messages { id, type: 'run'|'runWithTests', code, tests? } and replies with { id, stdout, stderr, traceback?, testResults? }",
+        "src/lib/pyodide/client.ts exports usePyodide() React hook returning { status: 'idle'|'loading'|'ready'|'error', run(code), runWithTests(code, tests) } with id-keyed promise resolution",
+        "Pyodide loads ONLY when first widget needing it mounts (lazy) — not on dashboard, not during SSR; gated behind typeof window !== 'undefined' + dynamic import",
+        "Singleton worker instance shared across all widget instances",
+        "runWithTests injects tests into the Pyodide runtime, runs them via pytest (preinstalled in venv) or a thin custom runner if pytest is too heavy, captures per-test pass/fail + stack trace, returns array of { name, passed, traceback?, assertionDetail? }",
+        "npm run build succeeds with no SSR-related errors involving Pyodide imports",
+        "Smoke test: a small browser-side test page /test-pyodide runs print('hello') and asserts stdout contains 'hello'",
+        "Verify in browser using playwright-skill: load /test-pyodide, wait for ready status, run sample, confirm stdout",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Note: pytest in Pyodide is heavy. If install size becomes a problem, implement a minimal runner that exec()s each test body in isolation and catches AssertionError — adjust testResults shape accordingly.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-010",
+      "title": "Code widget shell — CodeMirror 6 editor + Pyodide execution + output panel",
+      "description": "As a learner, I want to edit Python code, run it, and see stdout/stderr/tracebacks inline so I can experiment with concepts. Reusable by both Code Exercise and Sandbox widgets.",
+      "acceptanceCriteria": [
+        "src/widgets/Code/CodeRunner.tsx is a reusable component used by both Code Exercise and Sandbox: contains the editor + output panel only (no test panel)",
+        "CodeMirror 6 with @codemirror/lang-python; theme honors --code-bg, --code-fg, --code-keyword, --code-string, --code-comment etc. CSS vars",
+        "Editor: --font-mono, 13px, line-height 1.55, line numbers in --text-quaternary, active line subtly tinted",
+        "Editor pre-populated with starterCode prop",
+        "Footer controls (right-aligned): ↻ Reset (ghost — restores starter code), ▶ Run (secondary — runs via usePyodide().run(code))",
+        "⌘+Enter (or Ctrl+Enter) triggers Run",
+        "Output panel below editor: --bg-subtle bg, padding var(--space-4) var(--space-5); contains Stdout (--font-mono --fs-sm) and, if any, Traceback (in --danger color, monospace, preserved indentation)",
+        "While Pyodide status='loading': output panel shows 'Loading Python runtime…' with a 4-dot bouncing animation in --text-tertiary; Run button disabled",
+        "If Pyodide status='error': output panel shows --danger-subtle callout 'Python runtime unavailable. Refresh to retry.' with Run button disabled",
+        "Code edits debounced 800ms → PATCH /api/progress with sectionState.userCode so user's draft survives reload",
+        "Reset clears userCode from sectionState in progress",
+        "Verify in browser using playwright-skill: type print('hi'), press ⌘+Enter, see 'hi' in stdout; type 1/0, see ZeroDivisionError traceback in --danger color",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-011",
+      "title": "Code Exercise widget — tests panel with hidden-by-default tests",
+      "description": "As a learner, I want a graded code exercise that shows test names but hides test code by default, with optional peek and clear pass/fail feedback, so I can self-check without spoiling solutions.",
+      "acceptanceCriteria": [
+        "src/widgets/Code/CodeWidget.tsx wraps CodeRunner from US-010 and adds a tests panel between the output panel and the footer",
+        "Tests panel shows checklist of tests, each row: [status icon] [test name] in --font-mono 12px; statuses — untested = neutral hollow circle, passed = ✓ in --success, failed = ✗ in --danger",
+        "Test bodies HIDDEN by default — clicking a test name expands an inline read-only CodeMirror block (Python syntax-highlighted) showing the test code",
+        "'Show all tests' / 'Hide all tests' toggle button at top of panel toggles all expansions at once; label flips based on current state",
+        "After Submit, failed tests when expanded show below the test code: 'Assertion mismatch' sub-block with `expected:` / `actual:` (parsed from pytest assertion output where possible) + a 3-line traceback excerpt",
+        "Stdout from user code shown in a separate sub-section above test results, labeled 'Output'",
+        "✓ Submit button (primary footer button) runs all tests via pyodide.runWithTests(code, tests); replaces Run as the primary action when tests exist",
+        "On all-pass: section status → 'done' (PATCH /api/progress), status badge in widget header updates, Submit button morphs to ghost 'Submitted ✓'",
+        "On partial fail: brief inline warning Callout below tests panel ('X of Y tests passed — keep going'), Submit re-enabled to retry",
+        "No celebration animation, no confetti — only status badge + dot change",
+        "Verify in browser using playwright-skill: load Code widget with 3 tests, submit failing code, see ✗ + assertion detail; click a test name to expand body; fix code, resubmit, see all ✓ + Submitted badge",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-012",
+      "title": "Demo widget — Gaussian filter with live slider",
+      "description": "As a learner, I want to drag a sigma slider on a sample image and watch the Gaussian-blurred result update live so I build intuition for the filter.",
+      "acceptanceCriteria": [
+        "Bundle 3 demo images at public/demo-images/cameraman.jpg, lena.jpg, noise-test.png (sourced from public-domain CV references; commit alongside)",
+        "src/widgets/Demo/GaussDemo.tsx reads imageSrc + params: { sigmaMin, sigmaMax, sigmaDefault } from widget data",
+        "Layout: image area top (~260px tall, full-width, object-fit: contain), controls below with padding var(--space-4) var(--space-5)",
+        "Single slider row: [label 'σ'] [value in --font-mono --fs-sm] [────●────]; track 4px tall --bg-subtle with --accent fill from min to value; thumb 14px round --accent --shadow-sm",
+        "Slider drag → debounced 60ms → posts to Pyodide worker running scipy.ndimage.gaussian_filter(img_array, sigma=<value>); result encoded as PNG bytes, drawn back to a <canvas> overlaid on the original image area",
+        "Original image visible instantly on first render; blurred overlay appears once Pyodide responds (no flash)",
+        "↻ Reset ghost button bottom-right of controls restores sigmaDefault",
+        "<details>-style 'What just happened?' footer below controls (--bg-subtle bg, 1px --border top): text adapts to current sigma value — sigma<1: 'Filter is doing little — kernel is too narrow to suppress noise.', 1≤sigma<3: 'Mild smoothing — high-frequency noise reduced, edges preserved.', 3≤sigma<6: 'Moderate blur — fine texture is gone, large structures remain.', sigma≥6: 'Heavy blur — fine details lost, image looks dreamy.'",
+        "Demo widget registry entry uses --widget-demo accent var",
+        "Verify in browser using playwright-skill: render demo, drag slider from 0 to 8, screenshot before/after, confirm visual blur change",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": true,
+      "notes": "Use a small image (e.g. 256x256) by default to keep slider feedback responsive even with Pyodide round-trip. If 60ms debounce + scipy turns out laggy on user's hardware, fall back to canvas-side gaussian convolution but keep Pyodide path as default — note this in widget code.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-013",
+      "title": "Sandbox widget — pure exploration, no tests",
+      "description": "As a learner, I want a no-stakes Python playground in lessons so I can experiment freely without a graded gate.",
+      "acceptanceCriteria": [
+        "src/widgets/Sandbox/SandboxWidget.tsx wraps the same CodeRunner from US-010 — no test panel, no Submit button — only ↻ Reset and ▶ Run",
+        "Encouragement copy above editor: italic line in --text-secondary --fs-sm; content from `encouragement` field (default placeholder 'Try changing values and see what happens. Nothing breaks.')",
+        "Widget registry entry uses --widget-sandbox (amber) accent var",
+        "No completion gate — section status remains 'todo' even after running; user can manually mark complete only if a 'Mark section complete' button is present in the section footer (optional, MVP can omit)",
+        "Verify in browser using playwright-skill: load sandbox in /test-widgets, run code, confirm output appears and status badge stays 'todo'",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-014",
+      "title": "Dashboard — course grid + Continue learning hero + New course CTA",
+      "description": "As a learner, I want a home screen showing my courses and a clear way to create new ones so I know where to start each session.",
+      "acceptanceCriteria": [
+        "Route / is the dashboard",
+        "Top header (64px): logo/app name left, search input centered (decorative placeholder for MVP — no behavior), theme toggle slot + settings icon + avatar right",
+        "Max-width 1080px content area, padding var(--space-7) var(--space-6)",
+        "'Continue learning' hero card visible only when at least one course has lastVisitedAt: full content-width, --radius-xl, --bg-elevated, 1px --border; left side has accent-tinted course icon + breadcrumb + lesson title (--fs-2xl weight 600); right side has big 'Resume' primary button → routes to /courses/[slug]/lessons/[lessonSlug]",
+        "When no progress, hero is hidden (no stub)",
+        "Course grid: CSS grid `repeat(auto-fill, minmax(320px, 1fr))`, gap var(--space-5)",
+        "Each card: --bg-elevated, --radius-lg, 1px --border, padding var(--space-5); 36px round icon (color = course's accentColor from schema, lucide icon from course.icon); title (--fs-lg weight 600); 1-line description; status badge ('New' / 'In progress · X/Y' / 'Completed'); 4px progress bar at bottom",
+        "Hover: border darkens to --border-strong + subtle --shadow-sm lift",
+        "Empty state (when 0 courses): replace grid with centered 'Create your first course' card (--bg-elevated, --radius-xl, padding generous) + 4 starter topic chips ('Linear algebra basics', 'How transformers work', 'Computer vision basics', 'Bayesian statistics') — chips route to /create with topic prefilled via query string",
+        "'+ Nowy kurs' primary button top-right of content area, routes to /create",
+        "Dashboard re-fetches GET /api/courses + GET /api/progress on mount; refetch on window focus",
+        "Verify in browser using playwright-skill: with 0 courses → empty state visible; with mock courses + progress → grid + hero render; click a card → navigates to lesson",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-015",
+      "title": "Lesson view shell — 3-col layout + toolbar + bottom bar placeholders",
+      "description": "As a learner, I want a 3-column lesson layout with a top toolbar and bottom bar so the full notebook-style learning surface is in place for content + navigation.",
+      "acceptanceCriteria": [
+        "Route /courses/[slug]/lessons/[lessonSlug] renders the lesson shell",
+        "CSS grid: grid-template-columns: <tocCol> minmax(0,1fr) <chatCol>, rows '52px 1fr 56px'; tocCol = 276px expanded / 52px collapsed; chatCol = 320px when chat open / 0 when closed (chat closed by default in MVP)",
+        "Toolbar 52px: breadcrumb left ('Course › Module › Lesson', lesson name in --text, others --text-tertiary, --fs-sm, clickable), spacer flex-1, section progress pill (N/M mono in --bg-subtle 1px --border --radius-md padding 4px 10px) + 60×4px segmented progress bar, vertical 1px×22px --border divider, theme toggle slot, icon button '?' for shortcuts, icon button '⌘.' for tutor (disabled / greyed in MVP since tutor not implemented)",
+        "Right column placeholder: empty <aside> with width 0 in MVP; when expanded, shows a single centered note 'AI tutor — coming soon'",
+        "Bottom bar 56px: empty placeholder for prev/mark/next (filled in US-018)",
+        "Center column: ready to host content stream from US-017",
+        "Lesson data fetched from GET /api/courses/[slug]/lessons/[lessonSlug] on mount; loading state = skeleton bars (3 stacked bars matching widget heights) in content area; error state = Callout 'Lesson not found' with link back to course",
+        "On lesson mount: PATCH /api/progress with { courseSlug, lessonSlug, status: 'started', markVisited: true } — but only update status if currently 'not_started' (don't downgrade 'finished' to 'started')",
+        "Verify in browser using playwright-skill: navigate to a stub lesson, confirm 3-col layout + toolbar + bottom bar render in both light and dark",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-016",
+      "title": "TOC sidebar — modules, lessons, status dots, collapse",
+      "description": "As a learner, I want a left sidebar listing all modules and lessons in this course with my progress status, so I can navigate at any time.",
+      "acceptanceCriteria": [
+        "Left column 276px expanded, 52px collapsed; toggle persists to localStorage['toc-collapsed']",
+        "Header: 'All courses' eyebrow link (back to dashboard, --fs-xs uppercase letter-spacing 0.06em weight 600 --text-tertiary) above course title (--fs-sm weight 600)",
+        "Each module is a collapsible group with header (--fs-sm weight 600) and chevron; click toggles expansion of its lessons",
+        "Each lesson row: 28px tall, padding 0 12px, --fs-sm, gap-2 between status dot + label, label truncated with ellipsis on overflow",
+        "Status dot 6px circle: --success solid (finished), --accent solid (started), --border-strong hollow ring (not_started); reads from progress",
+        "Active lesson row: --accent-subtle bg, label color --accent-text, weight 600, 2px-wide left accent border bleeding into row",
+        "Click on lesson row → router.push to that lesson",
+        "Collapsed state (52px): only status dots visible vertically stacked; hover on dot → tooltip with lesson title",
+        "180ms width transition on collapse/expand",
+        "Toggle button (icon-only chevron) in TOC header right-side",
+        "Verify in browser using playwright-skill: render lesson with course of 2 modules × 3 lessons, click another lesson → confirm navigation; toggle collapse → confirm width animation + tooltips on dots",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-017",
+      "title": "Content stream — lesson header + widgets in order",
+      "description": "As a learner, I want the lesson content to flow as a vertical stack of typed widgets so each section is self-contained and the lesson reads like a notebook.",
+      "acceptanceCriteria": [
+        "Center column: vertical scroll, max-content-width 760px, centered, with --space-6 horizontal padding",
+        "Lesson header above first widget: eyebrow 'Module N · Lesson M' (--fs-xs uppercase letter-spacing 0.06em weight 600 --text-tertiary), H1 lesson title (--fs-3xl weight 600 letter-spacing -0.02em), 1-line description (--text-secondary --fs-md)",
+        "Section widgets stacked with var(--space-section) gaps; rendered by looking up section.type in widgetRegistry and rendering its component with section.data",
+        "Each section gets id='section-<sectionId>' so TOC + scrollIntoView + URL hash navigation can target it",
+        "Unknown widget type renders a fallback Callout 'Unsupported widget type: <type>' (warning tone)",
+        "Section number (§N) auto-derived from index in lesson.sections[]",
+        "Widget header status badge derived per section from progress.sectionState (if any) or from completion auto-detection (e.g. quiz answered correctly, code submitted passing)",
+        "Verify in browser using playwright-skill: render a lesson stub with all 5 widget types in sequence, confirm all render with correct accent rails and spacing",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-018",
+      "title": "Bottom bar — prev / mark complete / next + auto-advance",
+      "description": "As a learner, I want prev/next navigation and a Mark complete button at the bottom of every lesson so I can move through the course at my own pace.",
+      "acceptanceCriteria": [
+        "Bottom bar 56px filled per design",
+        "Prev button (left, ghost): eyebrow 'Previous' + previous lesson title (truncated); disabled when first lesson in course; click → router.push to prev lesson",
+        "Center: 'Mark lesson complete' button — primary if lesson status !== 'finished', otherwise rendered as 'Lesson completed' with check icon (ghost styling)",
+        "Click on Mark complete → PATCH /api/progress with { status: 'finished' }, button morphs to 'Lesson completed'",
+        "Next button (right, ghost): eyebrow 'Next' + next lesson title; disabled when last lesson; click → router.push to next lesson",
+        "Auto-advance: when 'Mark complete' clicked AND a next lesson exists in this course, after 600ms fade-out animation, router.push to next lesson",
+        "Prev/next resolution: walk course.modules → flatten to ordered list of lessons across all modules in display order, find current lesson index, prev = index-1 if exists, next = index+1 if exists",
+        "Verify in browser using playwright-skill: navigate to middle lesson, click Mark complete, observe 600ms fade + auto-advance to next; confirm finished status persists",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-019",
+      "title": "Progress wiring — TOC dots + dashboard cards/hero stay in sync",
+      "description": "As a learner, I want my progress (started/finished) reflected consistently in the TOC dots, dashboard cards, and Continue learning hero so the UI never lies about my state.",
+      "acceptanceCriteria": [
+        "All three surfaces (TOC, dashboard cards, dashboard hero) read the same GET /api/progress endpoint and reflect current status",
+        "Course card status badge derived as: 0 lessons started → 'New'; any started but not all finished → 'In progress · X/Y' (X=finished count, Y=total lessons); all finished → 'Completed'",
+        "Course card progress bar fill = finishedCount / totalLessons",
+        "Continue learning hero on dashboard reads lastVisitedAt across all courses, picks the one with the latest timestamp, shows its lastVisitedLessonSlug",
+        "When the user clicks Mark complete in lesson view (US-018) and returns to dashboard via prev navigation or 'All courses' link, dashboard reflects new status without manual refresh (refetch on focus is enough)",
+        "TOC dots in lesson view live-update when current lesson is marked complete (no full reload required)",
+        "Verify in browser using playwright-skill: complete one lesson, return to dashboard, confirm card badge changes to 'In progress · 1/N' and hero shows that course",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-020",
+      "title": "Theme toggle (light/dark) in dashboard header + lesson toolbar",
+      "description": "As a learner, I want a sun/moon button in both the dashboard header and the lesson toolbar to switch between light and dark mode, with my choice remembered.",
+      "acceptanceCriteria": [
+        "<ThemeToggle /> component renders a 28px icon button: shows sun icon when current data-theme='dark' (clicking → switches to light), moon icon when current data-theme='light' (clicking → switches to dark)",
+        "Click toggles <html data-theme> attribute and persists choice to localStorage['theme']",
+        "On app boot: an inline blocking script in <head> reads localStorage['theme'] and applies before React hydrates (prevents FOUC); fallback: prefers-color-scheme when localStorage['theme'] unset",
+        "Mounted in dashboard header (between settings and avatar) AND in lesson toolbar (between section progress pill and shortcuts button '?')",
+        "120ms transition on icon swap (opacity + 180° rotate)",
+        "Respects prefers-color-scheme on first load only; subsequent loads honor user's last manual choice",
+        "Verify in browser using playwright-skill: load dashboard in light mode, click toggle, confirm CSS vars switch (background changes, all sample swatches recolor); reload page, confirm dark mode persisted; same flow inside a lesson view",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-021",
+      "title": "Keyboard shortcuts + shortcuts modal",
+      "description": "As a learner, I want comprehensive keyboard navigation in the lesson view and a shortcuts modal showing all bindings, so I can move through lessons without a mouse.",
+      "acceptanceCriteria": [
+        "Global hook src/lib/hooks/useKeyboardShortcuts.ts registers handlers; ignores keys when active element is input/textarea/contentEditable/CodeMirror",
+        "Lesson view shortcuts: j or ↓ → next section (smooth scroll to next #section-…), k or ↑ → previous section, ⌘B → toggle TOC, ⌘. → toggle tutor (no-op visible state in MVP), Space → mark current section complete (if section supports it), n → next lesson when current marked complete, p → previous lesson, f → focus mode (collapses both panels)",
+        "Global: '?' opens shortcuts modal, Esc closes any open modal",
+        "Shortcuts modal: list grouped by category (Global / Lesson / Code editor / Chat composer); each row shows the key combo (in --font-mono in a small pill) + action description; styled per design tokens with --bg-elevated, --radius-xl, max-width 520px, 1px --border; backdrop blur-sm + 50% black overlay; click backdrop or Esc closes",
+        "@media (prefers-reduced-motion: reduce) disables smooth scrolling triggered by j/k",
+        "Verify in browser using playwright-skill: press '?', screenshot modal in light + dark; press Esc, confirm closed; press 'j' in a lesson, confirm scrollY increases",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-022",
+      "title": "Inline edit for Theory widget — markdown editor + preview",
+      "description": "As a course author, I want to edit theory markdown directly in the lesson view with a live preview so I can polish content without leaving the app.",
+      "acceptanceCriteria": [
+        "Theory widget header gets an 'Edit' icon button (pencil) in addition to existing controls",
+        "Click 'Edit' → swaps body to a CodeMirror block with markdown syntax highlighting, seeded with current `markdown` field",
+        "Toggle within edit mode: 'Write' / 'Preview' segmented control; Preview renders the same react-markdown + KaTeX pipeline used in read mode",
+        "Footer in edit mode: 'Cancel' (ghost — reverts to original, exits edit mode) | 'Save' (primary — disabled if content unchanged)",
+        "Save → PUT /api/courses/[slug]/lessons/[lessonSlug] with the section's markdown patched; on success, exits edit mode and re-renders with new content",
+        "On save error (e.g. validation): show inline Callout in danger tone; do not exit edit mode",
+        "Editing one section does not lose unsaved edits in another section (per-section local state)",
+        "Verify in browser using playwright-skill: click Edit, change text, toggle Preview, save, reload page, confirm new text persists",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-023",
+      "title": "Edit widget params — generic forms for quiz / code / demo / sandbox",
+      "description": "As a course author, I want a per-widget editor for parameters (questions, options, starter code, tests, sigma defaults, etc.) so I can tweak generated content without editing JSON by hand.",
+      "acceptanceCriteria": [
+        "Each non-theory widget gets an 'Edit' icon button (pencil) in its header",
+        "Click 'Edit' → opens a side panel (320px from the right edge, slides over content) with a form rendered for the specific widget type",
+        "Quiz editor: question textarea, options list (each row: option text + 'correct' checkbox + drag handle + remove button), 'Add option' button, multiSelect toggle, explanation textarea",
+        "Code editor: task description (markdown textarea), starter code (CodeMirror Python), tests list — each test row: name input + body (CodeMirror Python collapsible per-row) + remove button, 'Add test' button",
+        "Demo editor: image src dropdown (auto-populated from /public/demo-images/), sigmaMin / sigmaMax / sigmaDefault number inputs",
+        "Sandbox editor: starter code (CodeMirror) + encouragement text input",
+        "Footer: 'Cancel' (ghost) + 'Save' (primary, disabled when content unchanged)",
+        "Save → PUT lesson JSON via API; success closes panel and re-renders widget with new data",
+        "Validation: client-side Zod parse before sending PUT; field-level error messages rendered inline in red below the offending input",
+        "Verify in browser using playwright-skill: edit a quiz's options (rename, mark different one correct, save), retake the quiz with the new options, confirm correct/incorrect logic still works",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-024",
+      "title": "Course creation wizard — Stage 1 (Topic) + Stage 2 (Refinement structured form)",
+      "description": "As a learner starting a new course, I want to enter a topic and answer a few structured questions so the system has enough info to plan the course.",
+      "acceptanceCriteria": [
+        "Route /create is the wizard",
+        "Step indicator at top (5 circles connected by 1px line, labels Topic / Refine / Structure / Approve / Generate); active = --accent filled, completed = --success check, future = outlined --border-strong; clicking a completed step jumps back to it",
+        "Stage 1 (Topic): centered max-width 640px vertically centered; eyebrow 'What do you want to learn?' (--fs-sm --text-tertiary); big text input (--fs-2xl weight 500, --border underline only — no full border); placeholder cycles through 4 example topics every 3s; below input: 4 chip suggestions ('Backpropagation', 'Linear algebra for ML', 'How GPT works', 'Bayesian statistics') that pre-fill the input on click; 'Next' primary button right-aligned, enabled only when input has ≥3 words; pre-fills from ?topic=… query string when present (for Dashboard empty-state chips)",
+        "Stage 2 (Refinement): centered max-width 720px; structured form (no LLM chat in MVP):  'What's your level?' 3 radio button cards (Beginner / Some experience / I know the basics);  'How long should this take?' 3 chip selectors (30 min / An hour / A weekend deep dive);  'Theory or practice?' slider 0–100 with label that updates live ('Mostly theory' / 'Balanced' / 'Mostly practice')",
+        "Both stages persist draft to in-memory state (Zustand or React context); refresh resets state",
+        "'Back' (ghost left) + 'Next' (primary right) footer; 'Back' from Stage 1 returns to dashboard with confirm dialog if input non-empty",
+        "Verify in browser using playwright-skill: fill topic, click Next, fill refine form (level, duration, slider), click Next → lands on Stage 3 placeholder",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-025",
+      "title": "Course creation wizard — Stage 3 (Structure cascade)",
+      "description": "As a learner, I want to see a draft course structure (modules + lessons) and edit it before generation so I can shape what the agent produces.",
+      "acceptanceCriteria": [
+        "Stage 3: 3-column cascade layout — Course | Modules | Lessons",
+        "Column 1 (Course): single card showing course title (inline-editable) + 1-line description (inline-editable)",
+        "Column 2 (Modules): list of 3-5 module cards seeded with placeholder defaults derived from the topic + level (simple template: 'Module 1: Intro to <topic>', 'Module 2: Core concepts', etc.); each card click selects → highlights + updates Column 3",
+        "Drag-to-reorder modules (use @dnd-kit/sortable); '+' button at end of list to add a new module; trash icon on each card to remove (with inline confirm)",
+        "Inline rename: click title to edit, blur or Enter to save",
+        "Column 3 (Lessons of selected module): list of 4–8 lesson rows (title + 1-line description + estimated minutes); drag-to-reorder, inline rename, +/trash; defaults seeded similarly",
+        "All edits persist into the in-memory draft (which becomes course-spec.json on Stage 5)",
+        "Sticky bottom bar: 'Back' (ghost) | 'Looks good — generate' (primary) → advances to Stage 4",
+        "Verify in browser using playwright-skill: reorder modules via drag-and-drop, rename a lesson, advance to Stage 4, confirm Stage 4 shows updated structure",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-026",
+      "title": "Course creation wizard — Stage 4 (Approval) + Stage 5 (Export to course-spec.json)",
+      "description": "As a learner, I want to review the full course outline and get a clear command to run for generation, so the workflow from spec to generated lessons is unambiguous.",
+      "acceptanceCriteria": [
+        "Stage 4 (Approval): read-only summary of full outline rendered as a clean document — course title + description, then per module: module title, list of lessons with descriptions + estimated minutes, total time estimate; cost-estimate line ('≈ X minutes to generate, Y lessons' computed as lessonCount * 3min as a rough placeholder); big 'Generate course' primary button at bottom",
+        "Stage 5 (Export): on click 'Generate course', POST /api/courses with the in-memory draft serialized as CourseSpec; API writes /courses/<slug>/course-spec.json (slug derived via slugify from courseTitle); on 409 (slug collision) prompts user to pick a different title",
+        "Stage 5 view: success card with — (a) confirmation 'Course spec saved to /courses/<slug>/course-spec.json'; (b) monospace command block showing the next step: `claude` then invoke `init_course` skill with arg `<slug>` then `./scripts/ralph/ralph.sh`; with 'Copy' button per command; (c) friendly note 'The course will appear on your dashboard once generation completes'; (d) 'Back to dashboard' link",
+        "Verify in browser using playwright-skill: walk through wizard end-to-end (Stage 1 → 2 → 3 → 4 → 5), confirm course-spec.json exists at expected path with expected contents (read file post-test and compare to schema)",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-027",
+      "title": "Ralph skill: init_course (course-spec → course-prd with research + per-lesson stories)",
+      "description": "As an agent invoked by the user via Claude Code CLI, I want a SKILL.md that tells me how to convert a course-spec.json into a fresh course-prd.json with research + architect + per-lesson stories so ralph loop can iterate the course generation in separate, focused contexts.",
+      "acceptanceCriteria": [
+        "File: scripts/ralph/skills/init_course/SKILL.md",
+        "Frontmatter: name: init_course, user-invocable: true, description triggers on phrases like 'init course', 'generate course from spec', 'create course prd', 'wygeneruj kurs', 'ralph init course'",
+        "Skill expects argument: course slug (e.g. 'gauss-basics'); reads /courses/<slug>/course-spec.json, validates it against CourseSpecSchema",
+        "Step 1 — Archive existing scripts/ralph/prd.json: if present and branchName differs from `ralph/course-<slug>`, copy current prd.json + progress.txt to scripts/ralph/archive/YYYY-MM-DD-<old-branchName>/ and reset progress.txt with fresh header",
+        "Step 2 — Research pass: synthesize key concepts, prerequisites, common misconceptions, suggested ordering for the topic; write to /courses/<slug>/research.md",
+        "Step 3 — Architect pass: refine course-spec.draftStructure into final modules + lessons (may merge / split / rename / reorder), write /courses/<slug>/course.json validated against CourseSchema",
+        "Step 4 — Generate course-prd.json with stories: US-001 'Compile research notes for course <title>' (output research.md), US-002 'Finalize course structure' (output course.json), US-003..N one per lesson 'Generate lesson: <lesson title>' (output /courses/<slug>/lessons/<lesson-slug>.json) with notes field carrying lesson summary + scope + level context, optional final story 'Review pass: validate all lessons against schema and fix issues'",
+        "Each per-lesson story acceptanceCriteria includes: 'Lesson JSON validates against LessonSchema', 'Uses ≥3 widget types where the topic permits', 'Uses generate_lesson skill', 'Typecheck passes' (symbolic — story changes JSON not TS, but kept for ralph's standard validation)",
+        "branchName for the new prd.json: `ralph/course-<slug>`",
+        "SKILL.md instructs the agent to invoke generate_lesson skill when picking up per-lesson stories",
+        "SKILL.md includes a worked example: input course-spec for 'edge-detection-basics', output prd.json structure with research + 4 lessons",
+        "SKILL.md follows the same Step/Checklist pattern as scripts/ralph/skills/prd_init/SKILL.md (use it as a template)",
+        "Manual smoke test: drop a sample course-spec.json into a test directory, run skill mentally (or live with claude), confirm prd.json structure matches schema",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": "Important: while running this skill is acceptable, the user must not be expected to invoke it during MVP development since prd.json IS the MVP plan. Skill is functional for end-users post-MVP-merge.",
+      "tags": []
+    },
+    {
+      "id": "US-028",
+      "title": "Ralph skill: generate_lesson (lesson plan → validated lesson JSON)",
+      "description": "As an agent picking up a 'Generate lesson X' story from a course-prd.json, I want a SKILL.md that tells me how to author a single lesson JSON file conforming to widget schemas with a good mix of widget types.",
+      "acceptanceCriteria": [
+        "File: scripts/ralph/skills/generate_lesson/SKILL.md",
+        "Frontmatter: name: generate_lesson, user-invocable: false (auto-discovered by ralph agents picking up lesson stories triggered by init_course-generated prd)",
+        "Skill instructs agent to: read lesson plan from current ralph story (title + summary + scope from notes/description), read course context from /courses/<slug>/research.md and /courses/<slug>/course.json, read widget JSON Schemas from src/widgets/schemas/",
+        "Generation rules documented in SKILL.md: 4–8 sections per lesson; mix widget types (at least 1 theory; 1 quiz where conceptual checking helps; 1 code or 1 demo where topic permits hands-on); theory uses markdown with KaTeX where math is relevant; each code exercise has 2–4 named tests with descriptive names + meaningful (but small) bodies; quiz has plausible distractors and a clear explanation; sandbox encouragement copy is one tasteful sentence",
+        "Output written to /courses/<slug>/lessons/<lesson-slug>.json, validated against LessonSchema before commit; on validation failure, agent must read the Zod error, fix the JSON, retry — never commit invalid",
+        "SKILL.md includes a worked example: a 4-section lesson on 'Median filter' showing theory + quiz + code (with tests) + sandbox JSON",
+        "SKILL.md cross-references init_course skill for context on how the lesson story landed in prd.json",
+        "Reviewer can read SKILL.md cold and produce a valid lesson JSON",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": "",
+      "tags": []
+    },
+    {
+      "id": "US-029",
+      "title": "Seed course — Podstawy filtrowania Gaussa w wizji komputerowej",
+      "description": "As a reviewer / first-time user, I want a hand-authored sample course exercising every MVP widget type so the app is demoable end-to-end and serves as a reference for the generate_lesson skill.",
+      "acceptanceCriteria": [
+        "/courses/gauss-basics/course.json validates against CourseSchema; has 1 module with 2 lessons; accentColor: 'indigo'; icon: 'image'",
+        "Lesson 1 'Wprowadzenie do filtrowania obrazów' (/courses/gauss-basics/lessons/wprowadzenie-do-filtrowania.json) — 4 sections: theory (intro + co to konwolucja, with one block KaTeX formula and one info Callout), quiz (single-select ABCD: 'Czym jest kernel?' with 4 options + explanation), sandbox (eksperymentuj z numpy: oblicz średnią z 2D array, encouragement set), theory (krótki przegląd typów filtrów — LP/HP, przejście do filtrów Gaussa)",
+        "Lesson 2 'Filtr Gaussa w praktyce' (/courses/gauss-basics/lessons/filtr-gaussa-w-praktyce.json) — 5 sections: theory (czym jest Gaussian, math z 2D Gauss formula, callout o właściwościach: separability, izotropowość), demo (Gauss filter na cameraman.jpg, sigma 0.5–8 default 2), code (graded: napisz `gauss_blur(img, sigma)` z 3 testami: 1) sprawdza shape wynikowej tablicy, 2) sprawdza wartości pikseli na fixture, 3) sprawdza obsługę sigma=0 → identity), quiz (multi-select: 'Które stwierdzenia o Gaussie są prawdziwe?' z explanation), sandbox (eksperymentuj ze scipy.ndimage filters)",
+        "All lesson JSON files validate against LessonSchema; widget data fields validate against per-widget schemas",
+        "Manual integration smoke test (documented in progress.txt): launch dev server, navigate dashboard → seed course → lesson 1, complete each section, advance to lesson 2, complete code exercise (passing all 3 tests), drag demo slider, return to dashboard, confirm progress shows 'In progress · 2/2' or 'Completed' depending on completion",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": "Story content is JSON not UI code, but functions as the integration smoke test of all prior widget + view stories. Keep the lesson copy in Polish to match the user's working language.",
+      "tags": []
+    },
+    {
+      "id": "US-030",
+      "title": "Custom widget extensibility — README + Histogram example widget",
+      "description": "As a developer adding a new widget type, I want clear documentation and a working example showing the contract, so I can extend the system without touching core code.",
+      "acceptanceCriteria": [
+        "src/widgets/README.md documents the contract: how to add a new widget type — (1) add a CSS var --widget-<name> in tokens.css, (2) define Zod data schema in src/widgets/<Name>/schema.ts and export JSON Schema via build:schemas, (3) add an entry to widgetRegistry with { component, label, icon (lucide name), accentVar }, (4) add a per-widget editor form (per US-023 pattern), (5) optionally extend SectionSchema discriminated union",
+        "Example custom widget: src/widgets/Histogram/HistogramWidget.tsx takes { binEdges: number[], counts: number[] }, renders SVG histogram + a single horizontal slider that selects one bin and shows its count + range as a callout; visual style follows Demo widget conventions",
+        "Histogram widget registered in widgetRegistry under type='histogram' with a fresh --widget-histogram CSS var (a tasteful muted color distinct from existing widget accents)",
+        "Histogram widget editor form added per the US-023 pattern (binEdges editable as comma-separated number list, counts likewise)",
+        "One section using histogram added to seed course Lesson 2 (between demo and code, e.g. 'Histogram intensywności pikseli przed/po rozmyciu' with two histogram widgets) — validates against LessonSchema (histogram added to discriminated union)",
+        "Verify in browser using playwright-skill: navigate to seed course Lesson 2, scroll to histogram section, confirm widget renders with its accent rail and the slider selects bins correctly",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    }
+  ]
+}

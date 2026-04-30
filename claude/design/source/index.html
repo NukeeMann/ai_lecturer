@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Lecturer · Design</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" />
+
+  <link rel="stylesheet" href="tokens.css" />
+
+  <style>
+    html, body, #root { height: 100%; }
+    body { margin: 0; }
+
+    /* Hide native scrollbar inside artboards but keep functional */
+    .artboard-host { background: var(--bg); color: var(--text); }
+  </style>
+
+  <!-- React + Babel -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Components and screens -->
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="screen-system.jsx"></script>
+  <script type="text/babel" src="screen-dashboard.jsx"></script>
+  <script type="text/babel" src="screen-lesson.jsx"></script>
+  <script type="text/babel" src="screen-create.jsx"></script>
+
+  <!-- Tweaks + design canvas -->
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "light",
+      "accent": "blue",
+      "density": "compact",
+      "font": "geist"
+    }/*EDITMODE-END*/;
+
+    // Wrapper that scopes theme/accent/density/font to a particular subtree
+    // (so the canvas can show light + dark side by side).
+    const Themed = ({ theme, accent, density, font, children, style }) => (
+      <div
+        data-theme={theme}
+        data-accent={accent}
+        data-density={density}
+        data-font={font}
+        className="artboard-host"
+        style={{
+          width: '100%',
+          height: '100%',
+          background: 'var(--bg)',
+          color: 'var(--text)',
+          fontFamily: 'var(--font-sans)',
+          overflow: 'hidden',
+          ...style,
+        }}
+      >
+        {children}
+      </div>
+    );
+
+    const accentLabels = { blue: 'Blue', black: 'Mono', indigo: 'Indigo', terracotta: 'Terracotta', emerald: 'Emerald' };
+
+    function App() {
+      const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      // sync tweaks to the design-canvas chrome (which sits OUTSIDE artboards),
+      // so its own surface follows light/dark too.
+      useEffect(() => {
+        document.documentElement.setAttribute('data-theme', tweaks.theme);
+        document.documentElement.setAttribute('data-accent', tweaks.accent);
+        document.documentElement.setAttribute('data-density', tweaks.density);
+        document.documentElement.setAttribute('data-font', tweaks.font);
+      }, [tweaks]);
+
+      // Helper to render a screen with given theme override
+      const themed = (overrides, El) => (
+        <Themed
+          theme={overrides.theme || tweaks.theme}
+          accent={overrides.accent || tweaks.accent}
+          density={overrides.density || tweaks.density}
+          font={overrides.font || tweaks.font}
+        >
+          {El}
+        </Themed>
+      );
+
+      return (
+        <>
+          <DesignCanvas title="AI Lecturer · Hi-fi explorations">
+            {/* ─────────── Section 1 — Lesson view (the heart of the app) ─────────── */}
+            <DCSection id="lesson" title="Lesson view · the notebook" defaultOpen>
+              <DCArtboard id="lesson-light" label={`Lesson view · light · ${accentLabels[tweaks.accent]}`} width={1280} height={840}>
+                {themed({ theme: 'light' }, <LessonView />)}
+              </DCArtboard>
+              <DCArtboard id="lesson-dark" label="Lesson view · dark" width={1280} height={840}>
+                {themed({ theme: 'dark' }, <LessonView />)}
+              </DCArtboard>
+              <DCArtboard id="lesson-focus" label="Lesson · notes panel collapsed (focus mode)" width={1100} height={840}>
+                {themed({}, <LessonView initialNotesOpen={false} />)}
+              </DCArtboard>
+            </DCSection>
+
+            {/* ─────────── Section 2 — Course creation (5 stages) ─────────── */}
+            <DCSection id="create" title="Create a course · agent chain" defaultOpen>
+              <DCArtboard id="create-1" label="Stage 1 · Topic" width={1100} height={780}>
+                {themed({}, <CreateView initialStage={1} />)}
+              </DCArtboard>
+              <DCArtboard id="create-2" label="Stage 2 · Refine (chat with structure)" width={1100} height={780}>
+                {themed({}, <CreateView initialStage={2} />)}
+              </DCArtboard>
+              <DCArtboard id="create-3" label="Stage 3 · Structure (cascade)" width={1280} height={780}>
+                {themed({}, <CreateView initialStage={3} />)}
+              </DCArtboard>
+              <DCArtboard id="create-4" label="Stage 4 · Approve" width={1100} height={780}>
+                {themed({}, <CreateView initialStage={4} />)}
+              </DCArtboard>
+              <DCArtboard id="create-5" label="Stage 5 · Generate (live agent log)" width={1100} height={840}>
+                {themed({}, <CreateView initialStage={5} />)}
+              </DCArtboard>
+              <DCArtboard id="create-5-dark" label="Stage 5 · dark variant" width={1100} height={840}>
+                {themed({ theme: 'dark' }, <CreateView initialStage={5} />)}
+              </DCArtboard>
+            </DCSection>
+
+            {/* ─────────── Section 3 — Dashboard ─────────── */}
+            <DCSection id="dashboard" title="Dashboard · my courses" defaultOpen>
+              <DCArtboard id="dashboard-light" label="Dashboard · light" width={1280} height={840}>
+                {themed({ theme: 'light' }, <DashboardView />)}
+              </DCArtboard>
+              <DCArtboard id="dashboard-dark" label="Dashboard · dark" width={1280} height={840}>
+                {themed({ theme: 'dark' }, <DashboardView />)}
+              </DCArtboard>
+            </DCSection>
+
+            {/* ─────────── Section 4 — Design system reference ─────────── */}
+            <DCSection id="system" title="Design system" defaultOpen>
+              <DCArtboard id="system-light" label="Foundations · light" width={1280} height={1400}>
+                {themed({ theme: 'light' }, <SystemView />)}
+              </DCArtboard>
+              <DCArtboard id="system-dark" label="Foundations · dark" width={1280} height={1400}>
+                {themed({ theme: 'dark' }, <SystemView />)}
+              </DCArtboard>
+            </DCSection>
+
+            {/* ─────────── Section 5 — Notes for the manager ─────────── */}
+            <DCSection id="notes" title="Designer's notes" defaultOpen>
+              <DCArtboard id="notes" label="Why these choices" width={760} height={900}>
+                {themed({}, <DesignerNotes />)}
+              </DCArtboard>
+            </DCSection>
+          </DesignCanvas>
+
+          {/* Tweaks */}
+          <TweaksPanel title="Tweaks">
+            <TweakSection label="Theme">
+              <TweakRadio
+                label="Mode"
+                value={tweaks.theme}
+                onChange={(v) => setTweak('theme', v)}
+                options={[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }]}
+              />
+            </TweakSection>
+            <TweakSection label="Accent color">
+              <TweakSelect
+                label="Accent"
+                value={tweaks.accent}
+                onChange={(v) => setTweak('accent', v)}
+                options={[
+                  { value: 'blue', label: 'Blue (default)' },
+                  { value: 'black', label: 'Mono (no color)' },
+                  { value: 'indigo', label: 'Indigo' },
+                  { value: 'terracotta', label: 'Terracotta' },
+                  { value: 'emerald', label: 'Emerald' },
+                ]}
+              />
+            </TweakSection>
+            <TweakSection label="Layout">
+              <TweakRadio
+                label="Density"
+                value={tweaks.density}
+                onChange={(v) => setTweak('density', v)}
+                options={[
+                  { value: 'compact', label: 'Compact' },
+                  { value: 'comfortable', label: 'Comfortable' },
+                  { value: 'spacious', label: 'Spacious' },
+                ]}
+              />
+            </TweakSection>
+            <TweakSection label="Typography">
+              <TweakSelect
+                label="Font system"
+                value={tweaks.font}
+                onChange={(v) => setTweak('font', v)}
+                options={[
+                  { value: 'geist', label: 'Geist (default)' },
+                  { value: 'plex', label: 'IBM Plex' },
+                  { value: 'serif', label: 'Geist UI + Source Serif prose' },
+                ]}
+              />
+            </TweakSection>
+          </TweaksPanel>
+        </>
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    function DesignerNotes() {
+      const note = (heading, body) => (
+        <div style={{ marginBottom: 24 }}>
+          <h3 style={{
+            margin: '0 0 6px',
+            fontFamily: 'var(--font-display)',
+            fontSize: 16,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+          }}>{heading}</h3>
+          <p style={{
+            margin: 0,
+            fontFamily: 'var(--font-prose)',
+            fontSize: 14,
+            lineHeight: 1.6,
+            color: 'var(--text-secondary)',
+          }}>{body}</p>
+        </div>
+      );
+      return (
+        <div style={{ padding: 40, height: '100%', overflow: 'auto' }}>
+          <div style={{ fontSize: 11, color: 'var(--accent-text)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600, marginBottom: 8 }}>Designer's notes</div>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 600, letterSpacing: '-0.02em', marginBottom: 24 }}>Why these choices</h1>
+
+          {note('Warm neutrals, not cold gray',
+            'The base is #fdfcfa / #18171a — closer to Notion than Linear. A learning tool should feel inviting, like reading. Pure gray reads "tool"; warm neutrals read "page."')}
+          {note('One accent, used sparingly',
+            'Blue (#2563eb) is the only chromatic UI color. Everything else — widget rails, status badges — uses subtle semantic tones (green/violet/amber) at low saturation. The accent is for primary actions, current state, and the "you are here" markers in TOCs.')}
+          {note('Widget colors as hairlines, not fills',
+            'Each widget type has a 2px left rail in its accent color and an icon-tint. Backgrounds stay neutral. This way 5 widgets stacked don\'t look like a candy box, but you still get instant scannability when reviewing a lesson.')}
+          {note('Geist + Geist Mono',
+            'Geist is geometric, dense, and reads well at small sizes. Mono is reserved for code, numerics (progress 42/100), keyboard hints, and IDs (§3, L05) — anything where alignment matters. Long prose can be switched to Source Serif for the Distill vibe via tweaks.')}
+          {note('The cascade structure view (stage 3)',
+            'Most "AI generates a course outline" UIs throw a flat tree at you. We use Course → Modules → Lessons in three connected columns: when you click a module, its lessons appear to the right. It scales: a 50-lesson course is no different from a 5-lesson one. Reordering is local to a column.')}
+          {note('The agent log (stage 5)',
+            'Not a terminal. The 5 agents are stacked as cards: completed ones collapse to a single line, the active one expands with checkmark sub-tasks streaming in. The user always sees what the AI is doing and why — transparency was a hard requirement.')}
+          {note('Keyboard first',
+            'Every primary action shows its kbd shortcut inline (⇧⏎ on Run, ⌘N on New course, ⌘→ on Next lesson). The "?" key would open a global cheatsheet (designed but not implemented in this canvas).')}
+          {note('Light + dark are equal citizens',
+            'Both modes get matching saturation and contrast — dark mode shifts the accent slightly lighter to keep WCAG AA ratios. Inverse text is never pure white; the warm neutral carries through.')}
+          {note('Density mode',
+            'Three settings (compact/comfortable/spacious) re-scale the spacing tokens globally. A power user reading 40 widgets wants compact; someone settling in for a long study session wants spacious. Same components, different scale.')}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

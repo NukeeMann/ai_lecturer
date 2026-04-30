@@ -1,0 +1,7 @@
+US-009 done and committed as `feb45f1`. Summary:
+
+- **`src/lib/pyodide/worker.ts`** — classic Web Worker, loads Pyodide v0.26.4 from jsdelivr CDN via `importScripts`, preinstalls numpy + scipy, handles `run`/`runWithTests` with id-keyed responses. Custom Python test runner (no pytest) exec()s each test body in a fresh namespace copy and surfaces `AssertionError` detail separately.
+- **`src/lib/pyodide/client.ts`** — `'use client'` hook `usePyodide()` returning `{ status, run, runWithTests }`. Singleton worker created lazily on first `useSyncExternalStore` subscription (post-mount, browser-only). Id-keyed promise resolution via `Map`.
+- **`/test-pyodide`** — smoke page; playwright-verified that `print('hello')` lands in stdout and the 3-test runWithTests suite returns `[{passed:true}, {passed:true}, {passed:false, traceback, assertionDetail}]` shape, 0 console errors. Screenshot at `/tmp/us-009-pyodide.png`.
+
+Quality: `typecheck` ✓, `lint` ✓ (0 warnings), `test` ✓ (57/57), `build` ✓ (9 routes, `/test-pyodide` static). Progress + Codebase Patterns appended to `scripts/ralph/progress.txt`.

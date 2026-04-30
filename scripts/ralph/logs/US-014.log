@@ -1,0 +1,12 @@
+US-014 done — committed as `4ea5ade`.
+
+**Summary:**
+- Replaced the placeholder home page with a full dashboard at `/` (`src/app/page.tsx`).
+- Sticky 64px header (logo + name, decorative search, theme-toggle slot, settings, avatar).
+- 1080px max-width content; `var(--space-7) var(--space-6)` padding.
+- "Continue learning" hero — visible only when at least one course has `lastVisitedAt`; resume routes to `/courses/[slug]/lessons/[lessonSlug]`.
+- Course grid `repeat(auto-fill, minmax(320px, 1fr))` with accent-tinted Lucide icon (via `lucide-react/dynamic` keyed off `course.icon`, palette keyed off `course.accentColor`), `New` / `In progress · X/Y` / `Completed` status badge, 4px progress bar, hover → `--border-strong` + `--shadow-sm`.
+- Empty state: centered "Create your first course" card, 4 starter chips routing to `/create?topic=…`, primary `+ Nowy kurs` CTA. Top-right `+ Nowy kurs` shown only when ≥1 course exists.
+- Parallel `GET /api/courses` + `GET /api/progress` on mount and on window focus.
+- Card click navigates to a lesson (last-visited if present, else first lesson; falls back to course landing if zero lessons).
+- Quality: typecheck, lint, vitest 57/57. Playwright-verified both empty (no `/courses/` dir) and populated (mocked via `page.route`) flows; screenshots at `/tmp/us014-empty.png` and `/tmp/us014-populated.png`.

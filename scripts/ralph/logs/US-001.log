@@ -1,0 +1,14 @@
+US-001 complete. Committed as `fb8fcfd` on `ralph/us-001`.
+
+**What shipped**
+- Next.js 16.2.4 (App Router) + TS strict, Tailwind v3 (`tailwind.config.ts` + `postcss.config.js`), shadcn/ui initialized (`components.json` + `src/components/ui/`).
+- Layout: `src/{app,components,widgets,lib,lib/schemas}`.
+- Scripts: `dev`, `build`, `start`, `lint`, `typecheck`.
+- `.gitignore` covers node_modules, `.next`, `.env*`, `/courses/*/lessons/*.tmp`. README rewritten with project description + run instructions.
+
+**Quality checks**: typecheck ✓, lint ✓, build ✓, dev server returns HTTP 200 with the placeholder ("AI Lecturer" / "Scaffold ready").
+
+**Notable decisions** (logged to `scripts/ralph/progress.txt`):
+- Worktree dir is `US-001` (capitalized) → npm rejects it as a package name. Scaffolded into `/tmp/ai-lecturer-scaffold` and copied in.
+- `shadcn@latest` (4.x) emits Tailwind v4 / `base-nova` style, incompatible with v3. Used `shadcn@2.3.0` for the init, then reset its mismatched theme/CSS — token system is US-002's job.
+- AC said "Tailwind v3+" alongside `tailwind.config.ts`; picked v3 as the conservative interpretation since US-002 expects classic v3-style theme.extend config.

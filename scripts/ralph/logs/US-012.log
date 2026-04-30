@@ -1,0 +1,16 @@
+US-012 done — commit `d998ab9` on `ralph/us-012`.
+
+**What shipped:**
+- `src/widgets/Demo/GaussDemo.tsx` — full widget per spec: 260px image area with `<img>` original + `<canvas>` overlay, single σ slider row (`label`/`value`/`track`/`thumb`), debounced 60ms, Reset ghost button, sigma-aware footer.
+- Pyodide worker extended with `gaussFilter` message type that runs `scipy.ndimage.gaussian_filter` on each color channel and encodes the result as PNG via Pillow (loaded lazily so it doesn't slow the Code widget).
+- Three public-domain images at `public/demo-images/`: cameraman (skimage classic), lena (saved name; content is the NASA astronaut public-domain alternative), and a synthetic noise-test.
+- Registry now wires `demo` → `GaussDemo`; old `DemoPlaceholder` removed.
+
+**Browser verification (playwright-skill, headless):** original visible immediately; first canvas overlay appeared at 4.5s after numpy/scipy/Pillow loaded; canvas 512×512 (matches cameraman). Slider drag from 1.5 → 0 → 8 → reset confirmed footer text changes per band, value display matches, and PNG file sizes drop with sigma (114 KB → 96 KB → 72 KB), i.e. the blur is real. Screenshots at `/tmp/us012-sigma-{default,0,8}.png`.
+
+**Learnings for next iteration:**
+- Pyodide does NOT auto-convert a JS `Uint8Array` into Python `bytes` when passed via `globals.set` — it stays as a `JsProxy`, which `np.frombuffer` rejects with `TypeError: a bytes-like object is required, not 'pyodide.ffi.JsProxy'`. Call `.to_py()` inside Python to get a `memoryview` over the underlying ArrayBuffer first.
+- The DedicatedWorkerGlobalScope `postMessage` signature includes a `transfer?: Transferable[]` second arg; if you stub the worker scope yourself you must declare it or `tsc` rejects the transferable form.
+- Pillow is in stock Pyodide and loads quickly on top of an already-loaded numpy/scipy environment (~1s in the test). Keeping it lazy (only loaded on first `gaussFilter`) means the Code widget's startup path stays unchanged.
+- Image area sizing: `<img>` with `object-fit: contain` plus a sibling `<canvas>` with `position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain` works visually because canvas dimensions are set to the source image's pixel size — the browser scales the canvas the same way it scales the img.
+- HMR on a Pyodide-heavy page is fragile; if the dev server hangs after a hot edit during a Pyodide download, it's faster to restart on a fresh port than to wait it out.

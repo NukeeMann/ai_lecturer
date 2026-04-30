@@ -1,0 +1,10 @@
+US-005 complete and committed as `9ddb94b feat: US-005 - Progress file API route` on `ralph/us-005`.
+
+**What shipped:**
+- `src/app/api/progress/route.ts` — `GET` (auto-creates file + parent dir with `{ courses: {} }`) and `PATCH` (Zod-validated payload, merges into the right course/lesson, sets `lastVisitedAt` only when `markVisited=true` or status actually changes)
+- `src/lib/server/progress.ts` — `progressFile()` (resolves `os.homedir() + '/.ai-lecturer/progress.json'`, with `PROGRESS_FILE_OVERRIDE` testing seam), `defaultProgress()`, `readOrInitProgress()`, `ProgressPatchSchema`, pure `applyProgressPatch(current, patch, now)`
+- `src/lib/server/progress.test.ts` — 13 new Vitest tests covering all AC bullets (file auto-creation, status persistence, lastVisitedAt-only-when-intended, atomic-write-leaves-no-.tmp, plus invalid-payload 400s and merge semantics)
+
+**Quality checks:** typecheck ✓, lint ✓ (0 warnings), test 57/57 ✓, build ✓ (6 routes — added `/api/progress`).
+
+Progress notes appended to `scripts/ralph/progress.txt` per Ralph instructions.

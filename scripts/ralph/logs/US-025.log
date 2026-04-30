@@ -1,0 +1,10 @@
+US-025 (Stage 3 cascade) shipped on branch `ralph/us-025` as commit `f56f0db`.
+
+**What's in it:**
+- New `src/app/create/Stage3Cascade.tsx` — 3-column cascade (Course | Modules | Lessons) with seeded defaults derived from topic + level, drag-to-reorder via `@dnd-kit/sortable`, inline rename (click → blur/Enter), add/delete with inline confirm, sticky bottom bar.
+- `src/app/create/page.tsx` — wired Stage 3, plus a minimal read-only `Stage4Preview` so the AC verification of "Stage 4 shows updated structure" holds.
+- Three new dependencies: `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`.
+
+**Quality:** `typecheck` ✓, `lint` ✓, `test` (57/57) ✓. Playwright verified 26/26 assertions including drag-reorder, rename via Enter and blur, add/delete with confirm flow, stage 4 propagation, and Back-preserves-edits.
+
+Key design decision worth flagging: the AC says both "card click selects" and "click title to edit" — I resolved the conflict by making the title editable only when the module is already selected (`editEnabled={selected}` on the InlineEdit). First click selects, subsequent click on the title renames. Lesson rows in column 3 don't have a selection model, so they always allow click-to-edit.

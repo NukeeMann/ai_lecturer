@@ -1,0 +1,14 @@
+US-016 complete and committed as `55d9a31`.
+
+**Summary of what shipped:**
+- Filled the previously empty TOC `<aside>` in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`.
+- 276px expanded / 52px collapsed with a 180ms grid-template-columns transition; collapse state persisted to `localStorage['toc-collapsed']`.
+- Header: "All courses" eyebrow link → `/`, course title, right-side icon-only chevron toggle.
+- Modules render as collapsible `<button>` headers with rotating chevron; per-module open state in a `Record<string, boolean>` keyed by module.id (default open).
+- Lesson rows are `<Link>`s — 28px tall, 12px H-padding, 6px status dot (`--success`/`--accent`/hollow `--border-strong` ring), ellipsised title.
+- Active row: `--accent-subtle` bg + `--accent-text` color + weight 600 + 2px left accent bar at `left: -1px`.
+- Collapsed mode: lessons flattened into a vertical stack of dots with native `title` tooltips for the AC's hover requirement.
+
+**Quality:** typecheck ✓, lint ✓, vitest 57/57 ✓.
+
+**Browser verification:** 23 playwright assertions pass on a stub course (2 modules × 3 lessons), incl. lesson-row click → URL change, toggle → 276→52→276 width animation + tooltips on dots, and a reload-with-stored-collapsed run that confirms the localStorage hydration path. Screenshots: `/tmp/us016-expanded.png`, `/tmp/us016-collapsed.png`.

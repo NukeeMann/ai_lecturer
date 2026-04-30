@@ -1,0 +1,12 @@
+US-026 is committed on branch `ralph/us-026`.
+
+**What changed**
+- `src/app/create/page.tsx` — replaced the US-025 placeholder `Stage4Preview`/`Stage5Placeholder` with full `Stage4Approval` and `Stage5Export` components.
+
+**Stage 4 (Approval)** — read-only summary at `max-width: 720px`: course title + description, totals line (`<n> modules · <n> lessons · ~<min> min total`), per-module cards each with their own count/duration header and lesson rows showing description + estimated minutes, plus an `--accent-subtle` cost-estimate banner (`≈ <lessonCount * 3> minutes to generate, <lessonCount> lessons`). Sticky bottom bar: ghost Back + primary `Generate course`.
+
+**Stage 5 (Export)** — success card with a green check, "Course spec saved to /courses/<slug>/course-spec.json", three numbered command rows (`claude` / `/init_course <slug>` / `./scripts/ralph/ralph.sh`) each with a Copy button, the friendly note, and a "Back to dashboard" link.
+
+**Submission flow** — `CreatePage` owns `submitting` / `submitError` / `submittedSlug`. `handleGenerate()` builds a CourseSpec (strips client-side ids, divides ratio by 100, stamps `createdAt`), POSTs `/api/courses`, advances to Stage 5 on 201. On 409 it `window.prompt`s for a new title and retries in a loop; cancel keeps the user on Stage 4.
+
+**Verification** — `npm run typecheck` / `lint` / `test` (57/57). Browser-verified via playwright-skill against `PORT=3026 COURSES_ROOT_OVERRIDE=/tmp/us026-courses npm run dev`: 40/40 assertions, including end-to-end walk through stages 1→5, the resulting `course-spec.json` read off disk and validated (no `id` keys, `theoryPracticeRatio === 0.5`, ISO `createdAt`, 3 modules / 12 lessons), and the 409-retry path with a `window.prompt` rename round-trip.

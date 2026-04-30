@@ -1,0 +1,7 @@
+US-019 done. Audit found that dashboard cards (`StatusBadge`, progress bar) and Continue learning hero (`pickResumeTarget` over `lastVisitedAt`) were already wired correctly; only the lesson page had a real gap — the markVisited PATCH never updated local state, so the TOC dot of the freshly-opened lesson stayed `not_started` until reload.
+
+Fix in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`: optimistically apply the patch (`status: 'started'`, `startedAt`, `lastVisitedAt`, `lastVisitedLessonSlug`) to local `progress` state right before the network PATCH.
+
+Verified end-to-end via playwright (20/20 assertions, all six screenshots) with two fixture courses, confirming the full AC: New → In progress · 1/2 → Completed badge transitions, 0/50/100% progress fill, hero appears + tracks most-recent `lastVisitedAt` across courses, TOC dot flips on open and on Mark complete without reload, last-lesson Mark complete does not auto-advance.
+
+Quality green: typecheck, lint, tests (57/57). Committed as `8790e3d`.

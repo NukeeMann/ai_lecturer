@@ -1,0 +1,7 @@
+US-004 complete and committed (b19396e):
+
+- **Routes**: `GET/POST /api/courses`, `GET/PUT /api/courses/[slug]`, `GET/PUT /api/courses/[slug]/lessons/[lessonSlug]`.
+- **Helpers**: `src/lib/server/paths.ts` (`coursesRoot`, `assertSafeSlug`, `slugify`, path builders) and `src/lib/server/atomic.ts` (`atomicWriteJson` writes `.tmp` then `fs.rename`).
+- **Validation**: every PUT/POST runs `safeParse` and returns 400 with `issues` on failure; every path goes through `assertSafeSlug` rejecting `/`, `\`, `..`, or empty.
+- **Quality**: typecheck ✓, lint ✓ (0 warnings), 44/44 tests ✓, build ✓ (3 new dynamic API routes).
+- Tests use a per-test temp dir via `COURSES_ROOT_OVERRIDE`. Coverage hits all AC test points: 0/1/many list, console.warn-skip-invalid, schema-400, traversal-400 on every route, atomic-write-leaves-no-.tmp, 409 collision, slugify-empty 400, bad-JSON 400.
