@@ -7,6 +7,7 @@ export type LessonStatus = z.infer<typeof LessonStatusSchema>;
 export const SectionStateSchema = z.object({
   userCode: z.string().optional(),
   quizSubmission: z.array(z.number().int().nonnegative()).optional(),
+  done: z.boolean().optional(),
 });
 
 export type SectionState = z.infer<typeof SectionStateSchema>;

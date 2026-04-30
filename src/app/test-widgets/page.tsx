@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 
+import { SAMPLE_CODE_BOX_BLUR } from '@/widgets/Code/sample';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SAMPLE_QUIZ_SINGLE } from '@/widgets/Quiz/sample';
 import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
@@ -36,7 +37,7 @@ const samples: SampleSection[] = [
     type: 'code',
     title: 'Implement a 3×3 box blur',
     status: 'progress',
-    withFooter: true,
+    data: SAMPLE_CODE_BOX_BLUR,
   },
   {
     type: 'sandbox',
