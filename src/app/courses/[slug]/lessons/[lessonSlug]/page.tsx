@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
@@ -22,10 +23,17 @@ import {
 } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
+import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import {
+  isMod,
+  preferredScrollBehavior,
+  useKeyboardShortcuts,
+  type KeyboardShortcut,
+} from '@/lib/hooks/useKeyboardShortcuts';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section } from '@/lib/schemas/lesson';
-import type { LessonStatus, Progress } from '@/lib/schemas/progress';
+import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progress';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
@@ -66,6 +74,12 @@ export default function LessonShellPage({
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   // Chat is closed by default in MVP.
   const [chatOpen] = useState(false);
+  // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
+  // toggled off, the previous TOC-collapsed state is restored.
+  const focusModeRef = useRef<{ active: boolean; previousToc: boolean }>({
+    active: false,
+    previousToc: false,
+  });
 
   // Hydrate collapse state from localStorage on mount. Lazy useState init can't
   // touch window during SSR, so we read after mount and accept a one-frame flash.
@@ -290,6 +304,188 @@ export default function LessonShellPage({
     }
   }, [slug, lessonSlug, nextLesson, router]);
 
+  // Computes a position offset for each section relative to the main content
+  // scroll container's content origin. Plus identifies the "current" section
+  // (the last one whose top has scrolled past the viewport top).
+  const getSectionState = useCallback(() => {
+    const main = document.querySelector(
+      '[data-testid="lesson-content"]',
+    ) as HTMLElement | null;
+    if (!main) return null;
+    const sections = Array.from(
+      main.querySelectorAll<HTMLElement>('[data-section-id]'),
+    );
+    if (sections.length === 0) return null;
+    const mainRect = main.getBoundingClientRect();
+    const offsets = sections.map(
+      (s) => s.getBoundingClientRect().top - mainRect.top + main.scrollTop,
+    );
+    const buffer = 8;
+    // "current" = last section whose top has scrolled to/past the viewport top.
+    let currentIdx = 0;
+    for (let i = 0; i < offsets.length; i++) {
+      if (offsets[i] <= main.scrollTop + buffer) currentIdx = i;
+    }
+    return { main, sections, offsets, currentIdx, buffer };
+  }, []);
+
+  const scrollToSection = useCallback(
+    (direction: 'next' | 'prev') => {
+      const state = getSectionState();
+      if (!state) return;
+      const { main, offsets, buffer } = state;
+      // For 'next': first section whose top is strictly below viewport top.
+      // For 'prev': last section whose top is strictly above viewport top.
+      let targetIdx = -1;
+      if (direction === 'next') {
+        for (let i = 0; i < offsets.length; i++) {
+          if (offsets[i] > main.scrollTop + buffer) {
+            targetIdx = i;
+            break;
+          }
+        }
+      } else {
+        for (let i = 0; i < offsets.length; i++) {
+          if (offsets[i] < main.scrollTop - buffer) {
+            targetIdx = i;
+          }
+        }
+      }
+      if (targetIdx < 0) return;
+      main.scrollTo({
+        top: Math.max(0, offsets[targetIdx] - buffer),
+        behavior: preferredScrollBehavior(),
+      });
+    },
+    [getSectionState],
+  );
+
+  const handleSpaceMarkSection = useCallback(() => {
+    const state = getSectionState();
+    if (!state) return;
+    const { sections, currentIdx } = state;
+    const target = sections[currentIdx];
+    const sectionId = target.getAttribute('data-section-id');
+    if (!sectionId) return;
+
+    const current: SectionState =
+      progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState?.[sectionId] ??
+      {};
+    if (current.done) return; // Already complete — Space is a no-op.
+    const nextState: SectionState = { ...current, done: true };
+
+    // Optimistic local update so the toolbar pill / TOC reflect immediately.
+    setProgress((prev) => {
+      const base: Progress = prev ?? { courses: {} };
+      const courses = { ...base.courses };
+      const cp = courses[slug]
+        ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+        : { lessons: {} };
+      const existingLesson = cp.lessons[lessonSlug] ?? {
+        status: 'not_started' as LessonStatus,
+      };
+      cp.lessons[lessonSlug] = {
+        ...existingLesson,
+        sectionState: {
+          ...(existingLesson.sectionState ?? {}),
+          [sectionId]: nextState,
+        },
+      };
+      courses[slug] = cp;
+      return { ...base, courses };
+    });
+
+    void fetch('/api/progress', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        courseSlug: slug,
+        lessonSlug,
+        sectionState: { [sectionId]: nextState },
+      }),
+    }).catch(() => {
+      // Optimistic update already applied; no inline error UI yet.
+    });
+  }, [getSectionState, progress, slug, lessonSlug]);
+
+  const handleNextLesson = useCallback(() => {
+    if (lessonStatus !== 'finished') return;
+    if (!nextLesson) return;
+    router.push(`/courses/${slug}/lessons/${nextLesson.slug}`);
+  }, [lessonStatus, nextLesson, router, slug]);
+
+  const handlePrevLesson = useCallback(() => {
+    if (!prevLesson) return;
+    router.push(`/courses/${slug}/lessons/${prevLesson.slug}`);
+  }, [prevLesson, router, slug]);
+
+  const handleToggleFocus = useCallback(() => {
+    if (focusModeRef.current.active) {
+      setTocCollapsed(focusModeRef.current.previousToc);
+      focusModeRef.current.active = false;
+    } else {
+      focusModeRef.current.previousToc = tocCollapsed;
+      setTocCollapsed(true);
+      focusModeRef.current.active = true;
+    }
+  }, [tocCollapsed]);
+
+  const shortcuts: KeyboardShortcut[] = useMemo(
+    () => [
+      {
+        match: (e) => !isMod(e) && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'ArrowDown'),
+        handler: () => scrollToSection('next'),
+      },
+      {
+        match: (e) => !isMod(e) && !e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'ArrowUp'),
+        handler: () => scrollToSection('prev'),
+      },
+      {
+        match: (e) => isMod(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b',
+        handler: () => toggleToc(),
+      },
+      {
+        match: (e) => isMod(e) && !e.shiftKey && !e.altKey && e.key === '.',
+        handler: () => {
+          // Tutor toggle is a no-op visible state in MVP — the chat panel
+          // stays closed (see CHAT_OPEN constant).
+        },
+      },
+      {
+        match: (e) =>
+          e.code === 'Space' &&
+          !isMod(e) &&
+          !e.shiftKey &&
+          !e.altKey &&
+          !(e.target instanceof HTMLButtonElement) &&
+          !(e.target instanceof HTMLAnchorElement),
+        handler: () => handleSpaceMarkSection(),
+      },
+      {
+        match: (e) => !isMod(e) && !e.shiftKey && !e.altKey && e.key === 'n',
+        handler: () => handleNextLesson(),
+      },
+      {
+        match: (e) => !isMod(e) && !e.shiftKey && !e.altKey && e.key === 'p',
+        handler: () => handlePrevLesson(),
+      },
+      {
+        match: (e) => !isMod(e) && !e.shiftKey && !e.altKey && e.key === 'f',
+        handler: () => handleToggleFocus(),
+      },
+    ],
+    [
+      scrollToSection,
+      toggleToc,
+      handleSpaceMarkSection,
+      handleNextLesson,
+      handlePrevLesson,
+      handleToggleFocus,
+    ],
+  );
+
+  useKeyboardShortcuts(shortcuts);
+
   return (
     <div data-testid="lesson-shell" style={shellStyle}>
       <Toolbar
@@ -403,7 +599,11 @@ function Toolbar({
 
       <ThemeToggle />
 
-      <ToolbarIconBtn testId="shortcuts-btn" ariaLabel="Keyboard shortcuts">
+      <ToolbarIconBtn
+        testId="shortcuts-btn"
+        ariaLabel="Keyboard shortcuts"
+        onClick={openShortcutsModal}
+      >
         <HelpCircle size={16} strokeWidth={2} />
       </ToolbarIconBtn>
 
@@ -546,11 +746,13 @@ function ToolbarIconBtn({
   testId,
   ariaLabel,
   disabled,
+  onClick,
 }: {
   children: React.ReactNode;
   testId: string;
   ariaLabel: string;
   disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <button
@@ -558,6 +760,7 @@ function ToolbarIconBtn({
       data-testid={testId}
       aria-label={ariaLabel}
       disabled={disabled}
+      onClick={onClick}
       style={{
         width: 32,
         height: 32,
