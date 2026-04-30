@@ -19,10 +19,10 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
-  Sun,
 } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress } from '@/lib/schemas/progress';
@@ -401,12 +401,7 @@ function Toolbar({
         }}
       />
 
-      <ToolbarIconBtn
-        testId="theme-toggle-slot"
-        ariaLabel="Toggle theme"
-      >
-        <Sun size={16} strokeWidth={2} />
-      </ToolbarIconBtn>
+      <ThemeToggle />
 
       <ToolbarIconBtn testId="shortcuts-btn" ariaLabel="Keyboard shortcuts">
         <HelpCircle size={16} strokeWidth={2} />

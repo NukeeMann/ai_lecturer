@@ -10,10 +10,10 @@ import {
   Search,
   Settings,
   Sparkles,
-  Sun,
 } from 'lucide-react';
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 
+import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 
@@ -736,17 +736,10 @@ export default function DashboardPage() {
           />
         </div>
         <div style={headerRightStyle}>
-          <button
-            data-testid="theme-toggle-slot"
-            type="button"
-            aria-label="Toggle theme"
-            style={headerIconBtnStyle}
-          >
-            <Sun size={16} strokeWidth={2} />
-          </button>
           <button type="button" aria-label="Settings" style={headerIconBtnStyle}>
             <Settings size={16} strokeWidth={2} />
           </button>
+          <ThemeToggle />
           <div style={avatarStyle} aria-label="Account">
             U
           </div>

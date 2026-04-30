@@ -9,6 +9,10 @@ export const metadata: Metadata = {
   description: "Single-user local web app for interactive AI-generated lessons.",
 };
 
+// Runs synchronously in <head> before paint to prevent a flash of the wrong
+// theme. Reads localStorage['theme']; falls back to prefers-color-scheme.
+const themeBootstrap = `(function(){try{var s=localStorage.getItem('theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -21,7 +25,11 @@ export default function RootLayout({
       data-accent="default"
       data-density="comfortable"
       className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
