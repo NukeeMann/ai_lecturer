@@ -24,6 +24,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 
+import { AppLogoLink } from '@/components/AppLogo';
 import { Callout } from '@/components/Callout';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { SidePanel } from '@/components/SidePanel';
@@ -814,6 +815,18 @@ function Toolbar({
         background: 'var(--bg-elevated)',
       }}
     >
+      <AppLogoLink collapseLabelOnNarrow maxWidth={180} />
+
+      <div
+        aria-hidden
+        style={{
+          width: 1,
+          height: 22,
+          background: 'var(--border)',
+          margin: '0 var(--space-2)',
+        }}
+      />
+
       <Breadcrumb
         course={course}
         lesson={lesson}
