@@ -34,6 +34,8 @@ import {
   labelStyle,
   type FieldErrors,
 } from '@/components/EditorForm';
+import { SourcesField } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 
 import {
   codeRunnerEditorTheme,
@@ -43,8 +45,9 @@ import { SandboxDataSchema, type SandboxData } from './schema';
 
 export interface SandboxEditorProps {
   initial: SandboxData;
+  initialSources?: Source[];
   onCancel: () => void;
-  onSave: (next: SandboxData) => Promise<void>;
+  onSave: (next: SandboxData, sources?: Source[]) => Promise<void>;
 }
 
 function flattenIssues(error: z.ZodError<unknown>): FieldErrors {
@@ -63,9 +66,10 @@ const cmContainerStyle: CSSProperties = {
   overflow: 'hidden',
 };
 
-export function SandboxEditor({ initial, onCancel, onSave }: SandboxEditorProps) {
+export function SandboxEditor({ initial, initialSources, onCancel, onSave }: SandboxEditorProps) {
   const [starterCode, setStarterCode] = useState(initial.starterCode);
   const [encouragement, setEncouragement] = useState(initial.encouragement);
+  const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -111,10 +115,10 @@ export function SandboxEditor({ initial, onCancel, onSave }: SandboxEditorProps)
     [starterCode, encouragement],
   );
 
-  const dirty = useMemo(
-    () => JSON.stringify(current) !== JSON.stringify(initial),
-    [current, initial],
-  );
+  const dirty = useMemo(() => {
+    if (JSON.stringify(current) !== JSON.stringify(initial)) return true;
+    return JSON.stringify(sources ?? null) !== JSON.stringify(initialSources ?? null);
+  }, [current, initial, sources, initialSources]);
 
   const handleSave = useCallback(async () => {
     if (!dirty || saving) return;
@@ -127,13 +131,13 @@ export function SandboxEditor({ initial, onCancel, onSave }: SandboxEditorProps)
     setSaveError(null);
     setSaving(true);
     try {
-      await onSave(result.data);
+      await onSave(result.data, sources);
       setSaving(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [current, dirty, onSave, saving]);
+  }, [current, dirty, onSave, saving, sources]);
 
   const starterError = errors.starterCode;
   const encouragementError = errors.encouragement;
@@ -172,6 +176,8 @@ export function SandboxEditor({ initial, onCancel, onSave }: SandboxEditorProps)
             </div>
           )}
         </label>
+
+        <SourcesField sources={sources} onChange={setSources} />
       </div>
 
       <EditorFormSaveError message={saveError} />

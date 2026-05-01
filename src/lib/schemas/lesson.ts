@@ -6,9 +6,23 @@ import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 
+export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
+
+export const SourceSchema = z.object({
+  url: z.string().url(),
+  title: z.string().min(1),
+  kind: SourceKindSchema,
+  author: z.string().optional(),
+  year: z.number().int().optional(),
+});
+
+export type SourceKind = z.infer<typeof SourceKindSchema>;
+export type Source = z.infer<typeof SourceSchema>;
+
 const sectionBase = {
   id: z.string(),
   title: z.string(),
+  sources: z.array(SourceSchema).optional(),
 };
 
 export const TheorySectionSchema = z.object({
@@ -76,6 +90,7 @@ export const LessonSchema = z.object({
   estimatedMinutes: z.number().int().positive(),
   pythonSession: z.enum(['shared', 'isolated']).optional(),
   sections: z.array(SectionSchema),
+  sources: z.array(SourceSchema).optional(),
 });
 
 export type Lesson = z.infer<typeof LessonSchema>;

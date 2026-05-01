@@ -28,7 +28,14 @@
           "sigmaMax": 8,
           "sigmaDefault": 2
         }
-      }
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Cameraman_(test_image)",
+          "title": "Cameraman test image — origin & history",
+          "kind": "article"
+        }
+      ]
     },
     {
       "id": "s2a-histogram-before",
@@ -101,6 +108,30 @@
         "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, uniform_filter, sobel\n\n# Syntetyczny obraz: dwie półpłaszczyzny (krawędź pionowa) + lekki szum\nrng = np.random.default_rng(42)\nimg = np.zeros((20, 20), dtype=float)\nimg[:, 10:] = 1.0\nimg += 0.05 * rng.standard_normal(img.shape)\n\n# Filtr Gaussa o różnych sigma\nfor s in (0.5, 1.5, 3.0):\n    g = gaussian_filter(img, sigma=s)\n    print(f\"Gauss sigma={s} -> min/max: {g.min():.3f} / {g.max():.3f}\")\n\n# Box blur 5x5 dla porównania\nu = uniform_filter(img, size=5)\nprint(f\"Uniform 5x5 -> min/max: {u.min():.3f} / {u.max():.3f}\")\n\n# Sobel-x: gradient poziomy (krawędzie pionowe). Na rozmytym obrazie krawędź staje się gładsza.\nsx = sobel(gaussian_filter(img, sigma=1.5), axis=1)\nprint(f\"Sobel-x po Gaussie -> max |grad|: {np.abs(sx).max():.3f}\")\n",
         "encouragement": "Spróbuj złożyć dwa filtry: najpierw Gauss, potem Sobel — to klasyczna baza detektora krawędzi (np. Canny). Zmień sigma i obserwuj, jak zmienia się amplituda gradientu. Niczego nie zepsujesz, eksperymentuj śmiało."
       }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Gaussian_filter",
+      "title": "Gaussian filter — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/auto_examples/filters/plot_blur_effect.html",
+      "title": "scikit-image — Estimate blur effect (Gaussian)",
+      "kind": "article",
+      "author": "scikit-image maintainers"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html",
+      "title": "OpenCV — Smoothing Images tutorial",
+      "kind": "article",
+      "author": "OpenCV docs"
+    },
+    {
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.gaussian_filter.html",
+      "title": "scipy.ndimage.gaussian_filter — API reference",
+      "kind": "article"
     }
   ]
 }

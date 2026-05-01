@@ -139,6 +139,43 @@ describe('LessonSchema + SectionSchema', () => {
       SectionSchema.parse({ id: 's', title: 't', type: 'mystery', data: {} }),
     ).toThrow();
   });
+
+  it('accepts lesson-level + section-level sources', () => {
+    const lessonWithSources = {
+      ...lesson,
+      sources: [
+        {
+          url: 'https://example.com/a',
+          title: 'A',
+          kind: 'paper',
+          author: 'A. Author',
+          year: 2024,
+        },
+      ],
+      sections: [
+        {
+          id: 's1',
+          title: 'Read',
+          type: 'theory',
+          data: { markdown: '# hi' },
+          sources: [
+            { url: 'https://example.com/v', title: 'Vid', kind: 'video' },
+          ],
+        },
+      ],
+    };
+    const parsed = LessonSchema.parse(lessonWithSources);
+    expect(parsed.sources?.[0].kind).toBe('paper');
+    expect(parsed.sections[0].sources?.[0].kind).toBe('video');
+  });
+
+  it('rejects sources with an unknown kind', () => {
+    const bad = {
+      ...lesson,
+      sources: [{ url: 'https://example.com', title: 'T', kind: 'tweet' }],
+    };
+    expect(() => LessonSchema.parse(bad)).toThrow();
+  });
 });
 
 describe('Per-widget data schemas', () => {
