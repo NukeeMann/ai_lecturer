@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 
 import { AppLogoLink } from '@/components/AppLogo';
+import { AvatarMenu } from '@/components/AvatarMenu';
 import { Callout } from '@/components/Callout';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { SidePanel } from '@/components/SidePanel';
@@ -881,6 +882,8 @@ function Toolbar({
           ⌘.
         </span>
       </ToolbarIconBtn>
+
+      <AvatarMenu />
     </header>
   );
 }

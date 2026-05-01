@@ -13,6 +13,7 @@ import {
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 
 import { AppLogoLink } from '@/components/AppLogo';
+import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
@@ -156,20 +157,6 @@ const headerIconBtnStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   cursor: 'pointer',
-};
-
-const avatarStyle: CSSProperties = {
-  width: 30,
-  height: 30,
-  borderRadius: '50%',
-  background: 'var(--accent-subtle)',
-  color: 'var(--accent-text)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: 'var(--fs-xs)',
-  fontWeight: 600,
-  marginLeft: 4,
 };
 
 const contentWrapStyle: CSSProperties = {
@@ -706,9 +693,7 @@ export default function DashboardPage() {
             <Settings size={16} strokeWidth={2} />
           </button>
           <ThemeToggle />
-          <div style={avatarStyle} aria-label="Account">
-            U
-          </div>
+          <AvatarMenu />
         </div>
       </header>
 
