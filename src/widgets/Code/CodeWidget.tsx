@@ -17,6 +17,7 @@ import { python } from '@codemirror/lang-python';
 
 import { Callout } from '@/components/Callout';
 import {
+  PyodideStopError,
   usePyodide,
   type RunWithTestsResult,
   type TestResult,
@@ -477,6 +478,16 @@ export function CodeWidget({
         setSubmission('submitted-fail');
       }
     } catch (err) {
+      if (err instanceof PyodideStopError) {
+        // CodeRunner output panel surfaces the restart Callout. Reset our
+        // local submission state so the user can press Submit again on the
+        // fresh worker.
+        setStdout('');
+        setTraceback(undefined);
+        setResults(null);
+        setSubmission('idle');
+        return;
+      }
       setStdout('');
       setTraceback(err instanceof Error ? err.message : String(err));
       setResults(
@@ -642,6 +653,7 @@ export function CodeWidget({
       extraPanel={extraPanel}
       primaryAction={tests.length > 0 ? primaryAction : undefined}
       outputPlaceholder={placeholder}
+      actionRunning={submission === 'submitting'}
     />
   );
 }

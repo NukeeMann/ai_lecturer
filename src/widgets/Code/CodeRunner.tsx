@@ -30,9 +30,16 @@ import {
 } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
-import { Play, RotateCcw } from 'lucide-react';
+import { Play, RotateCcw, Square } from 'lucide-react';
 
-import { usePyodide, type RunResult } from '@/lib/pyodide/client';
+import { Callout } from '@/components/Callout';
+import {
+  PyodideStopError,
+  subscribePyodideRestart,
+  usePyodide,
+  type PyodideStopReason,
+  type RunResult,
+} from '@/lib/pyodide/client';
 
 export interface CodeRunnerProgressKey {
   courseSlug: string;
@@ -66,6 +73,12 @@ export interface CodeRunnerProps {
   onReset?: () => void;
   /** Override the output panel placeholder text (default: "Press ▶ Run to execute."). */
   outputPlaceholder?: string;
+  /**
+   * When true, treat the parent-provided `primaryAction` as in-flight:
+   * morph it to a Stop button (US-039). Used by widgets whose primary action
+   * runs Python via `runWithTests` (e.g. Code).
+   */
+  actionRunning?: boolean;
 }
 
 const FONT_SIZE = '13px';
@@ -211,6 +224,14 @@ function primaryButtonStyle(disabled: boolean): CSSProperties {
     opacity: disabled ? 0.7 : 1,
   };
 }
+
+const stopButtonStyle: CSSProperties = {
+  ...codeRunnerButtonBase,
+  background: 'var(--danger)',
+  color: 'var(--text-on-accent)',
+  border: '1px solid transparent',
+  cursor: 'pointer',
+};
 
 function actionStyleFor(
   variant: CodeRunnerPrimaryActionVariant | undefined,
@@ -389,11 +410,15 @@ export function CodeRunner({
   onCodeChange,
   onReset,
   outputPlaceholder = 'Press ▶ Run to execute.',
+  actionRunning = false,
 }: CodeRunnerProps) {
-  const { status, run } = usePyodide();
+  const { status, run, stop } = usePyodide();
   const [code, setCode] = useState<string>(initialCode ?? starterCode);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
+  const [restartReason, setRestartReason] = useState<PyodideStopReason | null>(
+    null,
+  );
 
   const onCodeChangeRef = useRef(onCodeChange);
   useEffect(() => {
@@ -421,19 +446,50 @@ export function CodeRunner({
   const handleRun = useCallback(async () => {
     if (statusRef.current !== 'ready' || running) return;
     setRunning(true);
+    setOutput(null);
+    setRestartReason(null);
     try {
       const result = await runRef.current(codeRef.current);
       setOutput(result);
     } catch (err) {
-      setOutput({
-        stdout: '',
-        stderr: '',
-        traceback: err instanceof Error ? err.message : String(err),
-      });
+      if (err instanceof PyodideStopError) {
+        setRestartReason(err.reason);
+      } else {
+        setOutput({
+          stdout: '',
+          stderr: '',
+          traceback: err instanceof Error ? err.message : String(err),
+        });
+      }
     } finally {
       setRunning(false);
     }
   }, [running]);
+
+  const handleStop = useCallback(() => {
+    stop('user');
+  }, [stop]);
+
+  // Mirror the running flags into refs so the restart-event subscriber
+  // (set up once on mount) reads the latest values.
+  const runningRef = useRef(running);
+  const actionRunningRef = useRef(actionRunning);
+  useEffect(() => {
+    runningRef.current = running;
+  }, [running]);
+  useEffect(() => {
+    actionRunningRef.current = actionRunning;
+  }, [actionRunning]);
+
+  // Subscribe to global restart events so the Callout shows even when the
+  // in-flight call belongs to the parent (e.g. Code widget Submit).
+  useEffect(() => {
+    return subscribePyodideRestart((reason) => {
+      if (runningRef.current || actionRunningRef.current) {
+        setRestartReason(reason);
+      }
+    });
+  }, []);
 
   const handleRunRef = useRef(handleRun);
   useEffect(() => {
@@ -458,6 +514,7 @@ export function CodeRunner({
     }
     setCode(starterCode);
     setOutput(null);
+    setRestartReason(null);
     pristineRef.current = starterCode;
     skipNextSaveRef.current = true;
     if (progressKey) {
@@ -538,6 +595,11 @@ export function CodeRunner({
   const customAction = primaryAction ?? null;
   const customDisabled = customAction?.disabled ?? false;
 
+  // Stop button replaces the primary action whenever Pyodide is mid-execution
+  // for THIS widget — either the default Run is running, or the parent's
+  // custom action is running (US-039).
+  const showStop = running || actionRunning;
+
   return (
     <div data-coderunner>
       <style>{LOADING_KEYFRAMES}</style>
@@ -553,6 +615,14 @@ export function CodeRunner({
           <LoadingIndicator />
         ) : status === 'error' ? (
           <ErrorCallout />
+        ) : restartReason ? (
+          <div data-coderunner-restart data-restart-reason={restartReason}>
+            <Callout tone="warning">
+              {restartReason === 'timeout'
+                ? 'Execution timed out after 30s. Session restarted.'
+                : 'Session restarted — re-run previous cells if needed.'}
+            </Callout>
+          </div>
         ) : (
           <OutputBody
             output={output}
@@ -575,7 +645,19 @@ export function CodeRunner({
           <RotateCcw size={14} aria-hidden />
           Reset
         </button>
-        {showDefaultRun ? (
+        {showStop ? (
+          <button
+            type="button"
+            data-coderunner-stop
+            data-testid="coderunner-stop"
+            onClick={handleStop}
+            style={stopButtonStyle}
+            aria-label="Stop running code"
+          >
+            <Square size={14} aria-hidden fill="currentColor" />
+            Stop
+          </button>
+        ) : showDefaultRun ? (
           <button
             type="button"
             data-coderunner-run
