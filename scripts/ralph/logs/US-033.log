@@ -1,0 +1,13 @@
+US-033 done.
+
+**Root cause** — purely a CSS stacking bug, not a shimmer/skeleton or pseudo-element. The Continue learning hero `<section>` has three children: (1) an `position: absolute` radial-gradient overlay at the right edge, (2) a `position: relative` text+icon container, (3) the Resume `<Link>` with no `position` set (default `static`). Per CSS paint order, positioned siblings (auto z-index) paint above non-positioned siblings — the overlay covered the right edge of the "Resume" label, producing the user-reported darker strip.
+
+**Fix** — one inline-style line on the Resume Link in `src/app/page.tsx:381`: `position: 'relative'`. All three children are now in the positioned painting tier; tree order puts the Link on top.
+
+**Tests** — `src/lib/dashboard.test.ts` (new, 2 cases): verifies bug condition exists in markup + asserts the fix is in place via source-text inspection. Failed on unfixed source, passes now.
+
+**Quality gates** — typecheck clean; 73/73 vitest pass.
+
+**Browser verification** — playwright-skill, headless, port 3000, with seeded `~/.ai-lecturer/progress.json` so the Continue learning hero renders. Inspected light + dark × default/hover/focus (6 cases): each asserts (a) `getComputedStyle(resume).position === 'relative'`, (b) overlay rect geometrically overlaps the button rect (bug condition present in runtime DOM), (c) `elementsFromPoint(buttonCenter)` returns the Resume `<a>` at index 0 (front-most). All 6 pass; screenshots saved to `/tmp/us033-{light,dark}-{default,hover,focus}.png`.
+
+Committed as `389d37a`.

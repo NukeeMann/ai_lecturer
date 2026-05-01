@@ -1,0 +1,11 @@
+US-034 shipped on `ralph/us-034` (commit `5944544`).
+
+**What changed**
+- New `src/components/AppLogo.tsx` exporting `AppLogoLink` (Next `<Link href="/">` with the 28px accent box + "AI Lecturer" label, `data-testid="app-logo-link"`, `aria-label`, hover opacity 0.8, cursor pointer) and `AppLogoMark` (the SVG, previously private to `page.tsx`).
+- Dashboard header (`src/app/page.tsx`) now uses `<AppLogoLink />`; removed the now-dead `LogoMark` / `logoStyle` / `headerNameStyle` / `LucideProps` import.
+- Lesson toolbar (`src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`) gets `<AppLogoLink collapseLabelOnNarrow maxWidth={180} />` as the first child, then a 1×22px `var(--border)` divider, then the existing `<Breadcrumb>`.
+- `src/app/globals.css`: `.app-logo-link:hover { opacity: 0.8 }` + `@media (max-width: 600px) { .app-logo-link[data-collapse-narrow] .app-logo-label { display: none } }`.
+
+**Quality gates** — `typecheck` clean, `vitest` 73/73 pass, `lint` clean on touched files.
+
+**Browser test (playwright, UI tag)** — all 15 assertions pass: dashboard click stays on `/` with no reload (page-scoped marker survives); lesson logo precedes breadcrumb, width 121.3px (≤180), toolbar 52px, vertically centered (top=11.5/bottom=12.5), hover opacity 0.8; click navigates router to `/` (`Promise.all([waitForURL, click])`); idle opacity 1 in both themes after `mouse.move(0,0)`; label hidden at 375px viewport in lesson but still visible on dashboard. Screenshots: `/tmp/us034-{dashboard,toolbar-light,toolbar-dark,narrow-lesson}.png`. Backup of `~/.ai-lecturer/progress.json` restored.

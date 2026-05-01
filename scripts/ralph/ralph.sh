@@ -14,7 +14,7 @@ PRD_DIR="$SCRIPT_DIR"
 STORIES_FIELD=""
 INSTALL_CMD="npm install --ignore-scripts --no-audit --no-fund"
 VALIDATE_CMD=""
-TASK_TIMEOUT_SEC=1800
+TASK_TIMEOUT_SEC=3600
 PROGRESS_ROTATE_LINES=200
 if [ -f "$CONFIG_FILE" ]; then
   source "$CONFIG_FILE"

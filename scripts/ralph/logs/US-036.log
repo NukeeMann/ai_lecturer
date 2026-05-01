@@ -1,0 +1,8 @@
+US-036 implemented and committed (`8636bb4`).
+
+**What shipped:**
+- `src/lib/search/dashboardSearch.ts` — pure search index + query parser + scoped match logic. Theory-only indexing (quiz/code/demo/sandbox/histogram excluded — invariant guarded by a unit test using `SECRET_QUIZ_TEXT` markers).
+- `src/lib/search/dashboardSearch.test.ts` — 20 tests covering four-state parser (`empty` / `global` / `slug-typing` / `slug-scoped`), match across title+description+theory, prefix autocomplete, snippet truncation.
+- `src/app/page.tsx` — wired the existing decorative input: 150ms debounce, fan-out lesson fetch on mount to build the index, absolute autocomplete `<ul role="listbox">` for slug-typing mode (uses `onMouseDown`+`preventDefault` to avoid blur race), `ScopedResultsPanel` replacing the grid in scoped mode, `NoMatchesState` when no global matches, empty input restores grid.
+
+**Quality gates:** typecheck clean, vitest 93/93 (was 73; +20), no new lint errors. Playwright headless run verified all five AC scenarios on the seed `gauss-basics` course.

@@ -1,0 +1,10 @@
+US-032 done. Committed as `caaada4`.
+
+**Root cause:** `worker.ts` was using `stdoutBuf.join('')` to assemble Pyodide's batched stdout chunks. Pyodide's `setStdout({ batched })` fires once per line and strips the trailing `\n`, so `print('a'); print('b')` produced two callbacks (`'a'`, `'b'`) which the empty-string join collapsed into `'ab'`. CSS `white-space: pre-wrap` was already correct on `<pre data-coderunner-stdout>` — there were just no newlines for it to honour.
+
+**Fix:** New `src/lib/pyodide/stdout.ts` exports `formatStdoutChunks` — joins with `\n`, then per-line keeps only the substring after the last `\r` (terminal-style in-place overwrite, prevents bare CRs from rendering as line breaks). Worker delegates to it for stdout/stderr across all run/runWithTests/gaussFilter branches.
+
+**Verification:**
+- 7 unit tests + 3 pyodide-in-node integration tests in `stdout.test.ts` (all green; 71/71 total).
+- Typecheck + lint clean.
+- Browser test (playwright): `for i in range(3): print(i)` → 3 separate lines `'0','1','2'`; `print('a'); print('b')` → 2 lines `'a','b'`. Computed `clientHeight: 59px` ≈ 3 × 19.5px line-height confirms visual rendering. Screenshots at `/tmp/us032-three-lines.png`, `/tmp/us032-ab-two-lines.png`.
