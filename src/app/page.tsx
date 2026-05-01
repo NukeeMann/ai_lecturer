@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   ArrowRight,
   BookOpen,
-  type LucideProps,
   Plus,
   Search,
   Settings,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 
+import { AppLogoLink } from '@/components/AppLogo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
@@ -112,29 +112,11 @@ const headerStyle: CSSProperties = {
   zIndex: 1,
 };
 
-const logoStyle: CSSProperties = {
-  width: 28,
-  height: 28,
-  borderRadius: 'var(--radius-md)',
-  background: 'var(--accent)',
-  color: 'var(--text-on-accent)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  flexShrink: 0,
-};
-
 const headerLeftStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 10,
   minWidth: 0,
-};
-
-const headerNameStyle: CSSProperties = {
-  fontSize: 'var(--fs-md)',
-  fontWeight: 600,
-  letterSpacing: '-0.01em',
 };
 
 const headerSearchWrapStyle: CSSProperties = {
@@ -645,24 +627,6 @@ function EmptyState() {
   );
 }
 
-function LogoMark(props: LucideProps) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      width={16}
-      height={16}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M2 4h6M2 8h12M2 12h8" />
-    </svg>
-  );
-}
-
 // ------- main page ------------------------------------------------------------
 
 export default function DashboardPage() {
@@ -717,10 +681,7 @@ export default function DashboardPage() {
     <div style={pageStyle}>
       <header data-testid="dashboard-header" style={headerStyle}>
         <div style={headerLeftStyle}>
-          <div style={logoStyle} aria-hidden>
-            <LogoMark />
-          </div>
-          <span style={headerNameStyle}>AI Lecturer</span>
+          <AppLogoLink />
         </div>
         <div style={headerSearchWrapStyle}>
           <Search
