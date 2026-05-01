@@ -223,3 +223,26 @@ Previous log archived to: archive/progress-2026-05-01-0005.txt
   - **Avatar with dropdown = wrap div + button + conditionally-rendered menu, NOT a `<details>/<summary>`.** Native `<details>` has a 12px disclosure triangle that's hard to hide cross-browser, doesn't fire close on outside click, and has limited ARIA. For an avatar dropdown the explicit React state pattern is cleaner: `useState(open)`, button has `aria-expanded={open}`, an effect handles outside-click + Esc, the menu is rendered inside `{open && (...)}`. Same component shape works for any header-anchored menu (settings, notifications, etc) — the AvatarMenu is a near-perfect template if a future story needs more menu items.
   - **`pkill -f "next dev"` exits 143 (signal-killed by itself).** When the Bash tool reports exit 143/144 for the pkill teardown, the dev server *did* stop — pkill kills the process by signal, then exits with the signal number. Don't retry; just verify with `curl -o /dev/null -w "%{http_code}" http://localhost:<port>` (curl 7 = "couldn't connect" = server is down).
 ---
+
+## 2026-05-01 - US-035 (re-iteration verification)
+- Re-iteration of US-035 on the existing `ralph/us-035` worktree branch — the prior iteration's commit `f9b4e23 feat: US-035 - User avatar dropdown with My courses link` is already on this branch. Working tree clean at start.
+- Verified all AC met against live source:
+  - `src/components/AvatarMenu.tsx` (170 lines): `<button>` with `aria-haspopup="menu"`, `aria-expanded={open}`, `aria-controls={open ? menuId : undefined}`, `aria-label="Account menu"`, `data-testid="avatar-menu-button"`. Toggles `<div role="menu" data-testid="avatar-menu-dropdown">` containing one `<Link href="/" role="menuitem" data-testid="avatar-menu-my-courses">My courses</Link>`. Esc + outside-click handlers in `useEffect([open])`; viewport-clamp via `useLayoutEffect([open])` measuring un-transformed rect.
+  - Dashboard (`src/app/page.tsx:696`) renders `<AvatarMenu />` inside `headerRightStyle` row.
+  - Lesson toolbar (`src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx:886`) renders `<AvatarMenu />` as last child of `<header data-testid="lesson-toolbar">`, after the `tutor-btn`.
+  - `globals.css` has `.avatar-menu-item:hover, .avatar-menu-item:focus-visible { background: var(--accent-subtle); color: var(--accent-text); }`.
+- Quality gates: `npm run typecheck` clean. `npm test` 73/73 pass.
+- **Browser test (playwright-skill, UI tag).** Started `npm run dev` (port 3000 — no port bump this run), backed up `~/.ai-lecturer/progress.json`, ran `/tmp/playwright-test-us035.js` headless via `cd scripts/ralph/skills/playwright-skill && node run.js`, restored backup, stopped dev server (verified via `curl` returning 000). 23 assertions covered:
+  1. Dashboard: avatar button present with `aria-haspopup="menu"`, `aria-expanded="false"` initially, dropdown not in DOM when closed.
+  2. Click → dropdown appears, `aria-expanded="true"`, dropdown `role="menu"`, single menu item with `role="menuitem"` and `href="/"`.
+  3. Esc closes; outside click closes.
+  4. Lesson view: avatar present in `[data-testid="lesson-toolbar"]`, `compareDocumentPosition` proves it follows `tutor-btn` (avatarLeft=1230 > tutorLeft=1186).
+  5. Click avatar → dropdown opens; click "My courses" → `Promise.all([waitForURL(p='/'), click])` resolves within 8s.
+  6. Light theme computed style: `background: rgb(255,255,255)`, `border: 1px solid rgb(232,228,220)`, `border-radius: 7px`, `box-shadow: rgba(24,23,26,0.06) 0 2px 6px, rgba(24,23,26,0.04) 0 4px 12px`, `padding: 8px`, `position: absolute` — matches all design-token AC.
+  7. Dark theme: bg `rgb(24,23,26)` (differs from light bg) — confirms theme switch works.
+  8. Menu item hover: `rgb(234,240,253)` (= `var(--accent-subtle)` light) ≠ idle `rgba(0,0,0,0)` — confirms `:hover` rule fires.
+  9. Narrow viewport (375×800): dropdown rect `{ left: 187, right: 367, width: 180, vw: 375 }` — viewport-clamp keeps right edge inside viewport (367 ≤ 375).
+- All 23 assertions pass. No code changes required this iteration; this commit logs verification so the orchestrator sees a `feat: US-035 - ...` commit on the branch.
+- **Learnings for future iterations:**
+  - **When the orchestrator re-spawns a story whose work is already on the branch (commit pre-exists, working tree clean), the right move is the same as for "already on main": verify AC via fresh playwright run + typecheck + tests, then commit a no-op verification entry to progress.txt.** The verification commit is what the orchestrator's "did this iteration produce a `feat: US-XXX` commit?" check looks for; an empty/unrelated commit would not satisfy that check, and a code change would risk breaking already-validated behavior. This is the second time this pattern has shown up (US-027 was the first); both times the branch had the prior iteration's commit and the only legitimate output was a verification entry.
+---
