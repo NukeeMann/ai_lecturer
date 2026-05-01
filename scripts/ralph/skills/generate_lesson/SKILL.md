@@ -86,7 +86,7 @@ Open the per-widget JSON Schemas under `src/widgets/schemas/`:
 
 - `theory.json` — `{ markdown: string }`
 - `quiz.json` — `{ question, options[≥2], correct[≥1], explanation, multiSelect }`
-- `code.json` — `{ taskMarkdown, starterCode, tests: [{ name, body, hidden? }] }`
+- `code.json` — `{ taskMarkdown, starterCode, tests: [{ name, body, hidden? }], solution? }`
 - `demo.json` — `{ demoType: "gauss", imageSrc, params: { sigmaMin, sigmaMax, sigmaDefault } }` — **gauss only for now**; do not invent new `demoType` values
 - `sandbox.json` — `{ starterCode, encouragement }`
 
@@ -160,6 +160,7 @@ The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
   - has a **meaningful but small `body`** — one or two `assert` lines at most. Tests run via the in-worker `__ai_run_tests` runner (no pytest), so plain `assert` works. Use `==`, not `np.allclose` unless floating point demands it; if it does, set `atol`/`rtol` explicitly.
   - omit `hidden` to default to `true` (hidden-with-peek), or set `hidden: false` to expose a sample test that the learner can read while solving. A common pattern: one visible "smoke test" + 1–3 hidden grading tests. (See memory: *Code widget tests hidden by default* — final UI is hidden-with-peek.)
 - Test bodies must reference the function/variable the learner is meant to define. Don't redefine helpers inside test bodies; the learner's namespace is in scope.
+- **Always populate `solution`** with a runnable reference implementation that would pass every test. The learner reaches it via the always-available *Peek solution* button (US-038); never leave `solution` empty for a code exercise. Keep the solution idiomatic and minimal — one clean implementation, not the full set of edge-case branches you'd put in production.
 
 #### Demo (`type: "demo"`)
 - Only `demoType: "gauss"` is registered (see `src/widgets/registry.ts`). Don't invent new types.
@@ -305,7 +306,8 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
             "name": "k_equals_1_is_identity",
             "body": "assert median_filter_1d([3, 1, 4, 1, 5, 9], 1) == [3, 1, 4, 1, 5, 9]"
           }
-        ]
+        ],
+        "solution": "from statistics import median\n\ndef median_filter_1d(signal, k):\n    n = len(signal)\n    half = k // 2\n    out = []\n    for i in range(n):\n        window = []\n        for j in range(i - half, i + half + 1):\n            j_clamped = max(0, min(n - 1, j))\n            window.append(signal[j_clamped])\n        out.append(median(window))\n    return out\n"
       }
     },
     {
@@ -346,6 +348,7 @@ Why this lesson works as a worked example:
 - [ ] At least one of `code` or `demo` (where the topic permits hands-on).
 - [ ] All `section.id` values are unique within the lesson.
 - [ ] Each `code` section has 2–4 tests, each with a descriptive `name` and a small meaningful `body`.
+- [ ] Each `code` section has a non-empty `solution` field with a runnable reference implementation (US-038).
 - [ ] Each `quiz` has ≥ 2 options, ≥ 1 correct, plausible distractors, non-empty `explanation`, and `multiSelect` set explicitly.
 - [ ] Each `theory.markdown` uses KaTeX *only where math is genuinely relevant*.
 - [ ] Each `sandbox.encouragement` is one tasteful sentence.

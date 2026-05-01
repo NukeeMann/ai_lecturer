@@ -3,12 +3,13 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
 } from 'react';
-import { Check, ChevronDown, ChevronRight, Circle, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Circle, Eye, EyeOff, X } from 'lucide-react';
 import { EditorState } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
 import { syntaxHighlighting } from '@codemirror/language';
@@ -229,6 +230,69 @@ function ReadOnlyTestEditor({ body }: ReadOnlyTestEditorProps) {
   return <div ref={parentRef} data-codewidget-test-body />;
 }
 
+const peekRowStyle: CSSProperties = {
+  display: 'flex',
+  justifyContent: 'flex-start',
+};
+
+const peekButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 28,
+  padding: '0 10px',
+  background: 'transparent',
+  border: '1px solid transparent',
+  borderRadius: 'var(--radius-md)',
+  color: 'var(--text-secondary)',
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 500,
+  cursor: 'pointer',
+};
+
+const solutionPanelStyle: CSSProperties = {
+  background: 'var(--bg-subtle)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  overflow: 'hidden',
+};
+
+const solutionLabelStyle: CSSProperties = {
+  ...sectionLabelStyle,
+  padding: 'var(--space-3) var(--space-4) 0',
+};
+
+interface ReadOnlySolutionEditorProps {
+  source: string;
+}
+
+function ReadOnlySolutionEditor({ source }: ReadOnlySolutionEditorProps) {
+  const parentRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!parentRef.current) return;
+    const view = new EditorView({
+      parent: parentRef.current,
+      state: EditorState.create({
+        doc: source,
+        extensions: [
+          lineNumbers(),
+          python(),
+          syntaxHighlighting(codeRunnerHighlightStyle),
+          codeRunnerEditorTheme,
+          EditorState.readOnly.of(true),
+          EditorView.editable.of(false),
+        ],
+      }),
+    });
+    return () => {
+      view.destroy();
+    };
+  }, [source]);
+
+  return <div ref={parentRef} data-codewidget-solution-body />;
+}
+
 interface TestRowProps {
   index: number;
   test: CodeTest;
@@ -354,6 +418,8 @@ export function CodeWidget({
   const [stdout, setStdout] = useState<string>('');
   const [traceback, setTraceback] = useState<string | undefined>(undefined);
   const [submission, setSubmission] = useState<SubmissionState>('idle');
+  const [solutionOpen, setSolutionOpen] = useState(false);
+  const solutionPanelId = useId();
 
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
@@ -528,6 +594,40 @@ export function CodeWidget({
             {passedCount} of {total} test{total === 1 ? '' : 's'} passed — keep going.
           </Callout>
         </div>
+      )}
+
+      {data.solution && (
+        <>
+          <div style={peekRowStyle}>
+            <button
+              type="button"
+              data-testid="codewidget-peek-solution"
+              data-codewidget-peek
+              aria-expanded={solutionOpen}
+              aria-controls={solutionPanelId}
+              onClick={() => setSolutionOpen((v) => !v)}
+              style={peekButtonStyle}
+            >
+              {solutionOpen ? (
+                <EyeOff size={14} aria-hidden />
+              ) : (
+                <Eye size={14} aria-hidden />
+              )}
+              {solutionOpen ? 'Hide solution' : 'Peek solution'}
+            </button>
+          </div>
+          {solutionOpen && (
+            <div
+              id={solutionPanelId}
+              data-testid="codewidget-solution-panel"
+              data-codewidget-solution
+              style={solutionPanelStyle}
+            >
+              <div style={solutionLabelStyle}>Reference solution</div>
+              <ReadOnlySolutionEditor source={data.solution} />
+            </div>
+          )}
+        </>
       )}
     </div>
   );
