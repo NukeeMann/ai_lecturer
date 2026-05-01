@@ -4,15 +4,21 @@
 // Pyodide is fetched from the jsdelivr CDN; numpy + scipy are preinstalled
 // (numpy is needed by scipy and by the Gauss demo widget).
 
+import { RUNNER_PY } from './runnerPython';
+
 interface PyProxyLike {
   toJs?: (opts?: { dict_converter?: typeof Object.fromEntries }) => unknown;
   destroy?: () => void;
 }
 
+interface PyRunOptions {
+  globals?: PyProxyLike;
+}
+
 interface PyodideAPI {
   loadPackage: (names: string | string[]) => Promise<void>;
-  runPython: (code: string) => unknown;
-  runPythonAsync: (code: string) => Promise<unknown>;
+  runPython: (code: string, options?: PyRunOptions) => unknown;
+  runPythonAsync: (code: string, options?: PyRunOptions) => Promise<unknown>;
   globals: {
     set: (key: string, value: unknown) => void;
     get: (key: string) => unknown;
@@ -30,9 +36,10 @@ interface WorkerScope {
 
 interface RunRequest {
   id: string;
-  type: 'run' | 'runWithTests' | 'gaussFilter';
+  type: 'run' | 'runWithTests' | 'gaussFilter' | 'resetNamespace';
   code?: string;
   tests?: Array<{ name: string; body: string }>;
+  lessonSlug?: string;
   // gaussFilter payload
   pixels?: Uint8Array;
   width?: number;
@@ -49,6 +56,13 @@ let pyodidePromise: Promise<PyodideAPI> | null = null;
 let runnerInstalled = false;
 let gaussInstalled = false;
 let pillowPromise: Promise<void> | null = null;
+// Per-lesson Python namespace. The Python dict lives in worker globals as
+// `__ai_lesson_globals`; this proxy is captured once after the runner is
+// installed and reused for every `'run'` exec so user-defined names persist
+// across calls within the same lesson. `'resetNamespace'` wipes the dict
+// in-place (so the proxy stays valid) and stores the new lesson slug.
+let lessonGlobalsProxy: PyProxyLike | null = null;
+let currentLessonSlug: string | null = null;
 
 function loadPyodideOnce(): Promise<PyodideAPI> {
   if (!pyodidePromise) {
@@ -65,67 +79,10 @@ function loadPyodideOnce(): Promise<PyodideAPI> {
   return pyodidePromise;
 }
 
-// Custom test runner — much smaller than pulling pytest. Each test body is
-// exec()'d in a copy of the namespace produced by the user's code, so tests
-// can't pollute one another. AssertionError → assertionDetail; any other
-// exception → traceback. Stdout from tests is suppressed via redirect_stdout
-// so test prints don't leak into the user-visible stdout.
-const RUNNER_PY = `
-import sys as _sys
-import io as _io
-import traceback as _tb
-import contextlib as _cl
-
-def __ai_run_tests(__user_code, __tests):
-    results = []
-    user_ns = {'__name__': '__main__'}
-    try:
-        exec(__user_code, user_ns)
-    except Exception:
-        tb = _tb.format_exc()
-        for t in __tests:
-            results.append({
-                'name': t['name'],
-                'passed': False,
-                'traceback': tb,
-                'assertionDetail': None,
-            })
-        return results
-    for t in __tests:
-        test_ns = dict(user_ns)
-        sink = _io.StringIO()
-        try:
-            with _cl.redirect_stdout(sink), _cl.redirect_stderr(sink):
-                exec(t['body'], test_ns)
-            results.append({
-                'name': t['name'],
-                'passed': True,
-                'traceback': None,
-                'assertionDetail': None,
-            })
-        except AssertionError as e:
-            tb = _tb.format_exc()
-            detail = str(e) if str(e) else None
-            results.append({
-                'name': t['name'],
-                'passed': False,
-                'traceback': tb,
-                'assertionDetail': detail,
-            })
-        except Exception:
-            tb = _tb.format_exc()
-            results.append({
-                'name': t['name'],
-                'passed': False,
-                'traceback': tb,
-                'assertionDetail': None,
-            })
-    return results
-`;
-
 async function ensureRunner(py: PyodideAPI): Promise<void> {
   if (runnerInstalled) return;
   await py.runPythonAsync(RUNNER_PY);
+  lessonGlobalsProxy = py.globals.get('__ai_lesson_globals') as PyProxyLike;
   runnerInstalled = true;
 }
 
@@ -189,7 +146,8 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     !data ||
     (data.type !== 'run' &&
       data.type !== 'runWithTests' &&
-      data.type !== 'gaussFilter')
+      data.type !== 'gaussFilter' &&
+      data.type !== 'resetNamespace')
   )
     return;
   const { id, type, code, tests } = data;
@@ -202,9 +160,27 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     py.setStdout({ batched: (s) => stdoutBuf.push(s) });
     py.setStderr({ batched: (s) => stderrBuf.push(s) });
 
+    if (type === 'resetNamespace') {
+      try {
+        await ensureRunner(py);
+        await py.runPythonAsync('__ai_reset_namespace()');
+        currentLessonSlug = data.lessonSlug ?? null;
+        ctx.postMessage({ id, lessonSlug: currentLessonSlug });
+      } catch (err) {
+        ctx.postMessage({
+          id,
+          traceback: formatTraceback(err),
+        });
+      }
+      return;
+    }
+
     if (type === 'run') {
       try {
-        await py.runPythonAsync(code ?? '');
+        await ensureRunner(py);
+        await py.runPythonAsync(code ?? '', {
+          globals: lessonGlobalsProxy ?? undefined,
+        });
         ctx.postMessage({
           id,
           stdout: stdoutBuf.join(''),

@@ -25,13 +25,23 @@ export interface GaussFilterResult {
   png: Uint8Array;
 }
 
+export interface ResetNamespaceResult {
+  lessonSlug: string | null;
+}
+
 export interface PyodideTestSpec {
   name: string;
   body: string;
 }
 
 interface PendingHandler {
-  resolve: (value: RunResult | RunWithTestsResult | GaussFilterResult) => void;
+  resolve: (
+    value:
+      | RunResult
+      | RunWithTestsResult
+      | GaussFilterResult
+      | ResetNamespaceResult,
+  ) => void;
   reject: (err: unknown) => void;
 }
 
@@ -79,7 +89,8 @@ function getOrCreateWorker(): WorkerSingleton {
       | { type: 'error'; error: string }
       | ({ id: string } & Partial<RunResult> &
           Partial<RunWithTestsResult> &
-          Partial<GaussFilterResult>);
+          Partial<GaussFilterResult> &
+          Partial<ResetNamespaceResult>);
 
     if ('type' in data && data.type === 'ready') {
       setStatus(obj, 'ready');
@@ -124,7 +135,8 @@ type WorkerPayload =
       width: number;
       height: number;
       sigma: number;
-    };
+    }
+  | { type: 'resetNamespace'; lessonSlug: string };
 
 function callWorker<T>(payload: WorkerPayload, transfer?: Transferable[]): Promise<T> {
   const s = getOrCreateWorker();
@@ -160,6 +172,7 @@ export interface UsePyodideReturn {
     height: number,
     sigma: number,
   ) => Promise<GaussFilterResult>;
+  resetNamespace: (lessonSlug: string) => Promise<ResetNamespaceResult>;
 }
 
 function subscribeStatus(callback: () => void): () => void {
@@ -209,5 +222,11 @@ export function usePyodide(): UsePyodideReturn {
     [],
   );
 
-  return { status, run, runWithTests, gaussFilter };
+  const resetNamespace = useCallback(
+    (lessonSlug: string) =>
+      callWorker<ResetNamespaceResult>({ type: 'resetNamespace', lessonSlug }),
+    [],
+  );
+
+  return { status, run, runWithTests, gaussFilter, resetNamespace };
 }

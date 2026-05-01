@@ -21,6 +21,7 @@ import {
   ChevronRight,
   HelpCircle,
   Pencil,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
@@ -33,6 +34,7 @@ import {
   useKeyboardShortcuts,
   type KeyboardShortcut,
 } from '@/lib/hooks/useKeyboardShortcuts';
+import { usePyodide } from '@/lib/pyodide/client';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progress';
@@ -68,6 +70,7 @@ export default function LessonShellPage({
 }) {
   const { slug, lessonSlug } = use(params);
   const router = useRouter();
+  const { resetNamespace } = usePyodide();
 
   const [course, setCourse] = useState<Course | null>(null);
   const [lesson, setLesson] = useState<Lesson | null>(null);
@@ -75,6 +78,7 @@ export default function LessonShellPage({
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [advancing, setAdvancing] = useState(false);
+  const [sessionToast, setSessionToast] = useState<string | null>(null);
 
   // TOC collapse, persisted to localStorage['toc-collapsed'].
   const [tocCollapsed, setTocCollapsed] = useState(false);
@@ -225,6 +229,29 @@ export default function LessonShellPage({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadAll();
   }, [loadAll]);
+
+  // Wipe the Pyodide lesson namespace whenever the active lesson changes.
+  // Queues behind the worker's readyPromise — safe to call before Pyodide
+  // finishes loading. Errors are non-fatal (Python widgets surface their own).
+  useEffect(() => {
+    void resetNamespace(lessonSlug).catch(() => {});
+  }, [resetNamespace, lessonSlug]);
+
+  const handleResetSession = useCallback(() => {
+    void resetNamespace(lessonSlug)
+      .then(() => {
+        setSessionToast('Python session reset');
+      })
+      .catch(() => {
+        setSessionToast('Could not reset session');
+      });
+  }, [resetNamespace, lessonSlug]);
+
+  useEffect(() => {
+    if (!sessionToast) return;
+    const handle = window.setTimeout(() => setSessionToast(null), 2000);
+    return () => window.clearTimeout(handle);
+  }, [sessionToast]);
 
   const moduleTitle = useMemo(() => {
     if (!course || !lesson) return '';
@@ -603,6 +630,7 @@ export default function LessonShellPage({
         moduleTitle={moduleTitle}
         slug={slug}
         sectionTotals={sectionTotals}
+        onResetSession={handleResetSession}
       />
 
       <TocColumn
@@ -663,6 +691,33 @@ export default function LessonShellPage({
         onClose={handleClosePanel}
         onSave={handleSavePanelSection}
       />
+
+      {sessionToast && <SessionToast message={sessionToast} />}
+    </div>
+  );
+}
+
+function SessionToast({ message }: { message: string }) {
+  return (
+    <div
+      data-testid="session-toast"
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        top: TOOLBAR_H + 12,
+        right: 16,
+        zIndex: 50,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        color: 'var(--text)',
+        fontSize: 'var(--fs-sm)',
+        padding: '8px 14px',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12))',
+      }}
+    >
+      {message}
     </div>
   );
 }
@@ -733,6 +788,7 @@ interface ToolbarProps {
   moduleTitle: string;
   slug: string;
   sectionTotals: { total: number; done: number };
+  onResetSession: () => void;
 }
 
 function Toolbar({
@@ -741,6 +797,7 @@ function Toolbar({
   moduleTitle,
   slug,
   sectionTotals,
+  onResetSession,
 }: ToolbarProps) {
   return (
     <header
@@ -779,6 +836,14 @@ function Toolbar({
       />
 
       <ThemeToggle />
+
+      <ToolbarIconBtn
+        testId="reset-session-btn"
+        ariaLabel="Reset Python session"
+        onClick={onResetSession}
+      >
+        <RefreshCw size={16} strokeWidth={2} />
+      </ToolbarIconBtn>
 
       <ToolbarIconBtn
         testId="shortcuts-btn"

@@ -73,6 +73,7 @@ export const LessonSchema = z.object({
   eyebrow: z.string(),
   description: z.string(),
   estimatedMinutes: z.number().int().positive(),
+  pythonSession: z.enum(['shared', 'isolated']).optional(),
   sections: z.array(SectionSchema),
 });
 
