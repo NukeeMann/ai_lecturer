@@ -28,6 +28,7 @@ export const ModuleSchema = z.object({
 export type Module = z.infer<typeof ModuleSchema>;
 
 export const CourseSchema = z.object({
+  schemaVersion: z.number().int().default(1),
   slug: z.string(),
   title: z.string(),
   description: z.string(),

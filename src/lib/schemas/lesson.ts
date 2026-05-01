@@ -66,6 +66,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
 export type Section = z.infer<typeof SectionSchema>;
 
 export const LessonSchema = z.object({
+  schemaVersion: z.number().int().default(1),
   slug: z.string(),
   courseSlug: z.string(),
   moduleId: z.string(),

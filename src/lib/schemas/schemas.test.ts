@@ -35,6 +35,16 @@ describe('CourseSchema', () => {
     delete broken.slug;
     expect(() => CourseSchema.parse(broken)).toThrow();
   });
+
+  it('defaults schemaVersion to 1 when missing', () => {
+    const parsed = CourseSchema.parse(minimal);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('parses successfully when schemaVersion: 1 is present', () => {
+    const parsed = CourseSchema.parse({ ...minimal, schemaVersion: 1 });
+    expect(parsed.schemaVersion).toBe(1);
+  });
 });
 
 describe('LessonSchema + SectionSchema', () => {
@@ -59,6 +69,16 @@ describe('LessonSchema + SectionSchema', () => {
     const broken: Partial<typeof lesson> = { ...lesson };
     delete broken.title;
     expect(() => LessonSchema.parse(broken)).toThrow();
+  });
+
+  it('defaults schemaVersion to 1 when missing', () => {
+    const parsed = LessonSchema.parse(lesson);
+    expect(parsed.schemaVersion).toBe(1);
+  });
+
+  it('parses successfully when schemaVersion: 1 is present', () => {
+    const parsed = LessonSchema.parse({ ...lesson, schemaVersion: 1 });
+    expect(parsed.schemaVersion).toBe(1);
   });
 
   it('discriminated union accepts each known widget type', () => {

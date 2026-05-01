@@ -102,6 +102,7 @@ These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/sch
 
 ```ts
 {
+  schemaVersion: 1,             // forward-compat baseline (US-037)
   slug: "<lesson-slug>",        // matches /courses/<courseSlug>/lessons/<lesson-slug>.json
   courseSlug: "<courseSlug>",
   moduleId: "<m1 | m2 | ...>",  // from course.json
@@ -245,6 +246,7 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
 
 ```json
 {
+  "schemaVersion": 1,
   "slug": "median-filter",
   "courseSlug": "image-denoising",
   "moduleId": "m2",
@@ -332,7 +334,8 @@ Why this lesson works as a worked example:
 ## Validation Checklist Before Committing
 
 - [ ] File written at `/courses/<courseSlug>/lessons/<lessonSlug>.json`.
-- [ ] Top-level fields: `slug`, `courseSlug`, `moduleId`, `title`, `eyebrow`, `description`, `estimatedMinutes`, `sections` — all present.
+- [ ] Top-level fields: `schemaVersion`, `slug`, `courseSlug`, `moduleId`, `title`, `eyebrow`, `description`, `estimatedMinutes`, `sections` — all present.
+- [ ] `schemaVersion` is `1` (forward-compat baseline; US-037).
 - [ ] `slug` matches the filename and the slug listed in `course.json`.
 - [ ] `courseSlug` matches the directory.
 - [ ] `moduleId` matches the parent module in `course.json`.

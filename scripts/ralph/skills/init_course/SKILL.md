@@ -117,6 +117,7 @@ Write to `/courses/<slug>/course.json` and validate against `CourseSchema` (`src
 
 ```ts
 {
+  schemaVersion: 1,           // forward-compat baseline (US-037)
   slug: "<slug>",
   title: courseSpec.draftStructure.courseTitle,
   description: courseSpec.draftStructure.courseDescription,
@@ -309,6 +310,7 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
 
 ```json
 {
+  "schemaVersion": 1,
   "slug": "edge-detection-basics",
   "title": "Edge Detection Basics",
   "description": "How edge detectors find boundaries in images, from gradient operators to Canny.",
@@ -515,6 +517,7 @@ The orchestrator flips `passes` to `true` after a successful iteration; do not f
 - [ ] Existing `scripts/ralph/prd.json` archived if its `branchName` differs from `ralph/course-<slug>`; `progress.txt` reset with fresh header.
 - [ ] `/courses/<slug>/research.md` written with all six template sections.
 - [ ] `/courses/<slug>/course.json` written and parses with `CourseSchema`.
+- [ ] `course.json` includes `"schemaVersion": 1` (forward-compat baseline; US-037).
 - [ ] Lesson slugs in `course.json` are unique and derived via slugify().
 - [ ] One US story per lesson, in display order, with priority incrementing.
 - [ ] Every per-lesson story has the four required AC strings verbatim.
