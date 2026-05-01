@@ -1,0 +1,9 @@
+US-030 is committed as `d12ae2c` on `ralph/us-030`.
+
+**What shipped**
+- `src/widgets/README.md` — 5-step extension contract (CSS var → schema → registry entry → editor → SectionSchema variant) with copy-pasteable Histogram snippets and a pre-commit checklist.
+- `src/widgets/Histogram/{schema,HistogramWidget,HistogramEditor,sample}.ts(x)` — Zod schema with `binEdges.length === counts.length + 1` refine, SVG bar chart + horizontal slider with a `Bin N/total · [lo, hi) · count = …` callout, US-023-style editor with comma-separated number-list inputs.
+- Wired `histogram` into `widgetRegistry` (`BarChart3` icon, `--widget-histogram` accent = muted teal `#4e7a85` light / `#82b3bd` dark), `SectionSchema` discriminated union, `build:schemas`, and the lesson page panel + section renderer.
+- Seed `gauss-basics` Lesson 2 gains 2 histogram sections between demo and code (intensity histogram before/after Gauss σ=2).
+
+**Verification** — `npm run typecheck` clean, `npx vitest run` 57/57, `npm run build:schemas` regenerates `histogram.json`, and a playwright run on the live dev server confirmed: 2 histogram sections, accent rail computed `rgb(78, 122, 133)`, slider drives selected bar to bin 4, callout updates to `Bin 5/8 · [128, 160) · count = 690`, header eyebrow `HISTOGRAM · §3`, pencil opens the editor with hydrated values, `0/7` in the section progress pill. Screenshots at `/tmp/us030-{before,after,editor}.png`.

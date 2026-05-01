@@ -608,7 +608,7 @@
         "Typecheck passes"
       ],
       "priority": 27,
-      "passes": false,
+      "passes": true,
       "notes": "Important: while running this skill is acceptable, the user must not be expected to invoke it during MVP development since prd.json IS the MVP plan. Skill is functional for end-users post-MVP-merge.",
       "tags": []
     },
@@ -628,7 +628,7 @@
         "Typecheck passes"
       ],
       "priority": 28,
-      "passes": false,
+      "passes": true,
       "notes": "",
       "tags": []
     },
@@ -645,7 +645,7 @@
         "Typecheck passes"
       ],
       "priority": 29,
-      "passes": false,
+      "passes": true,
       "notes": "Story content is JSON not UI code, but functions as the integration smoke test of all prior widget + view stories. Keep the lesson copy in Polish to match the user's working language.",
       "tags": []
     },
@@ -663,11 +663,644 @@
         "Typecheck passes"
       ],
       "priority": 30,
+      "passes": true,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-031",
+      "title": "Pyodide shared lesson session + namespace reset between lessons",
+      "description": "As a learner with multiple Python widgets in a lesson, I want them to share a Python namespace within the lesson but reset between lessons, so I can build on previous cells like in Jupyter without state contamination across lessons.",
+      "acceptanceCriteria": [
+        "Pyodide Worker maintains per-lesson namespace dict keyed on `lessonSlug` (currentLessonSlug stored)",
+        "New worker message type `'resetNamespace'` clears namespace and stores new `lessonSlug`",
+        "Client hook `usePyodide()` exposes `resetNamespace(lessonSlug)`; lesson page calls it on mount",
+        "All Python-executing widgets (Code, Sandbox, future PythonPlot, ParametricExplorer) share the same namespace within a lesson via `exec(code, globals=lessonGlobals)`",
+        "Test runner in Code widget executes each test against `dict(lessonGlobals)` copy, NOT the reference (verify by test that defines a global in lesson, then ensures graded test cannot see it unless explicitly imported)",
+        "Lesson toolbar exposes 'Reset session' icon button that triggers namespace clear without lesson navigation; brief toast confirms",
+        "Optional `pythonSession?: 'shared' | 'isolated'` field in LessonSchema, default `'shared'`",
+        "Vitest unit tests cover: namespace persists across runs in same lesson; namespace clears on lesson change; test runner isolation",
+        "Verify in browser using playwright-skill: define `helper()` in Code widget, call from later Sandbox cell — succeeds; navigate to other lesson and back — call fails (namespace cleared)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": "Foundation for PythonPlot, ParametricExplorer, CodeCloze. See scripts/ralph/widget-extensions-brief.md section 2 for full rationale.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-032",
+      "title": "Fix: Pyodide stdout collapses consecutive print() calls into a single line",
+      "description": "As a learner running Python code in any Pyodide-backed widget, when I call print() multiple times in a row, each call should produce a separate line in the output panel instead of being concatenated with a space.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix: running `print('a'); print('b')` in Sandbox/Code widget should produce two lines in the output panel, not 'a b' on one line",
+        "Identify root cause — investigate (a) CSS `white-space` on output panel, (b) how worker concatenates stdout chunks across messages, (c) whether React re-render strips whitespace",
+        "Fix preserves newline characters from Python's stdout in the rendered output (e.g. `white-space: pre-wrap` plus correct chunk concatenation in worker)",
+        "Carriage return `\\r` (used for in-place updates) still works as expected — does not insert visible CR glyph",
+        "Tracebacks and stderr likewise render with preserved newlines and indentation",
+        "Verify in browser using playwright-skill: type `for i in range(3): print(i)` in Sandbox widget, run, confirm three separate lines '0', '1', '2' in output panel",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 32,
+      "passes": false,
+      "notes": "Reproduction confirmed by user: two consecutive print() calls show as 'a b' instead of two separate lines. Affects all Pyodide-backed widgets (Code, Sandbox, Demo).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-033",
+      "title": "Fix: Resume button visual artifact (stuck shimmer/gradient overlay)",
+      "description": "As a learner viewing the dashboard with a Continue learning hero card, the Resume button should render cleanly without a stuck shimmer/gradient overlay obscuring part of the button text.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix: render the dashboard hero card, screenshot the Resume button, assert via pixel comparison or DOM inspection that no extraneous dark gradient/overlay covers part of the button",
+        "Identify root cause — investigate (a) loading-skeleton shimmer that did not unmount, (b) leftover pseudo-element ::before/::after with gradient, (c) hover/focus state stuck due to bad CSS specificity, (d) mismatched z-index layering",
+        "Fix removes the artifact in default state; hover/focus/active states still produce intentional visual feedback per design tokens",
+        "Verify in browser using playwright-skill: load dashboard with at least one course where lastVisitedAt is set, screenshot Resume button in default + hover + focus states, all clean in both light and dark themes",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 33,
+      "passes": false,
+      "notes": "Reproduction: dashboard with a course in progress; user-attached screenshot shows a darker vertical strip/gradient over the 'Resume' label as if a shimmer or pseudo-element overlay never cleared.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-034",
+      "title": "Clickable AI Lecturer logo — links home from dashboard AND visible in lesson view",
+      "description": "As a user navigating the app, I want the 'AI Lecturer' logo (top-left) to be clickable and link to the dashboard, and to remain visible from inside lessons so I always have a way home.",
+      "acceptanceCriteria": [
+        "Dashboard header logo wraps in a Next `<Link href='/'>` so click navigates to dashboard (no full reload)",
+        "Logo + name added to lesson view top toolbar (extending US-015 toolbar) on the far left, before the breadcrumb area",
+        "Logo in lesson toolbar is also a `<Link href='/'>` → navigates to dashboard",
+        "Hover state: subtle opacity change (0.8) consistent with other interactive elements; cursor pointer",
+        "Logo aligned vertically center, sized to fit within toolbar 52px height; overall logo region ≤180px wide so breadcrumb has room",
+        "On mobile/narrow viewports inside lesson, logo collapses to icon-only (label hidden) to save horizontal space",
+        "Verify in browser using playwright-skill: click logo on dashboard (no-op, same page), enter a lesson, click logo, confirm router lands on '/'; screenshot lesson toolbar in both themes confirming logo present and aligned",
+        "Typecheck passes"
+      ],
+      "priority": 34,
       "passes": false,
       "notes": "",
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-035",
+      "title": "User avatar dropdown with My courses link — visible in dashboard AND lesson view",
+      "description": "As a user, I want the avatar in the top header to expand into a dropdown with a 'My courses' link, and I want this avatar visible both on the dashboard and inside lessons so navigation is consistent.",
+      "acceptanceCriteria": [
+        "Dashboard header avatar (existing slot from US-014) becomes a button that toggles a dropdown menu on click",
+        "Dropdown menu (MVP scope): a single 'My courses' item that navigates to '/' (dashboard)",
+        "Avatar + dropdown also rendered in lesson view top toolbar (extending US-015), positioned at the far right after the existing tutor button",
+        "Click outside or Esc closes the dropdown; ARIA roles set correctly (button[aria-expanded] + menu/menuitem)",
+        "Dropdown styled per design tokens: --bg-elevated bg, 1px --border, --radius-md, --shadow-md, padding var(--space-2); menu item hover --accent-subtle bg",
+        "Dropdown anchored to avatar with small offset; clamps inside viewport on narrow screens",
+        "Verify in browser using playwright-skill: click avatar on dashboard → dropdown appears → click 'My courses' → no navigation needed (already at /); enter lesson → click avatar → dropdown shows → click 'My courses' → routes to '/'; press Esc to close in both contexts",
+        "Verify in both light and dark themes",
+        "Typecheck passes"
+      ],
+      "priority": 35,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-036",
+      "title": "Search bar functional — title/description/theory content with <slug>: autocomplete",
+      "description": "As a user with multiple courses, I want the dashboard search bar to filter courses by title, description, and theory content (markdown only — not widget data like quiz/code), with a `<slug>:` prefix to scope searches into a single course.",
+      "acceptanceCriteria": [
+        "Dashboard search input (existing decorative input from US-014) wires to live filtering",
+        "Search index built client-side on dashboard mount: { courseSlug, courseTitle, courseDescription, theoryContent: concatenated markdown of all theory sections across all lessons in the course } — quiz/code/demo/sandbox data NOT indexed",
+        "Default mode (no `<slug>:` prefix): substring match (case-insensitive) against title + description + theoryContent of all courses; matching courses shown in grid, non-matching hidden; 'No courses match' empty state when nothing matches",
+        "Slug-prefix mode: typing `<slug>:` (e.g. `gauss-basics:`) restricts search to that course's content; matching shown as result list under the input with lesson title + snippet (≤120 chars around match) + click navigates to /courses/<slug>/lessons/<lesson-slug>",
+        "Autocomplete: while typing slug name (before colon), show dropdown of matching course slugs as suggestions; selecting one fills `<slug>:` into input and focuses cursor after the colon",
+        "Empty input restores full grid (no filtering)",
+        "Debounce input 150ms; case-insensitive throughout; accent-stripping for Polish characters welcome but not required",
+        "Verify in browser using playwright-skill: with seed gauss-basics course, type 'gauss', confirm card visible; type 'nonsense', confirm grid empty + 'no matches' state; type 'gauss-b', see autocomplete suggesting gauss-basics; type 'gauss-basics: kernel', see results from theory containing 'kernel'",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 36,
+      "passes": false,
+      "notes": "Widget content (quiz questions, code task descriptions, demo params) explicitly excluded from index per user decision.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-037",
+      "title": "Add schemaVersion field to Course and Lesson schemas (forward-compat only)",
+      "description": "As a developer maintaining the app long-term, I want a schemaVersion field on Course and Lesson JSON so future schema migrations have a known baseline; no migration logic in MVP — field only.",
+      "acceptanceCriteria": [
+        "CourseSchema in src/lib/schemas/course.ts gains `schemaVersion: number` field, default 1; missing field on parse defaults to 1",
+        "LessonSchema in src/lib/schemas/lesson.ts gains `schemaVersion: number` field, default 1; missing field on parse defaults to 1",
+        "init_course skill writes schemaVersion: 1 in generated course.json",
+        "generate_lesson skill writes schemaVersion: 1 in generated lesson JSON",
+        "Existing seed course gauss-basics course.json + both lessons updated to include schemaVersion: 1",
+        "JSON Schemas regenerated via `npm run build:schemas`; schemaVersion appears in src/widgets/schemas/course.json and lesson.json",
+        "Vitest tests cover: parse succeeds when schemaVersion missing (defaults to 1); parse succeeds when schemaVersion: 1 present",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 37,
+      "passes": false,
+      "notes": "Forward-compat field only — no migration logic in MVP per user decision.",
+      "tags": []
+    },
+    {
+      "id": "US-038",
+      "title": "Peek solution button in Code widget — always available, no confirm",
+      "description": "As a learner stuck on a code exercise, I want a 'Peek solution' button always available that reveals the reference solution in a read-only block, so I can unblock myself without confirmation friction.",
+      "acceptanceCriteria": [
+        "CodeData schema in src/widgets/Code/schema.ts gains optional field `solution?: string` (Python source); zod-to-json-schema regenerates code.json",
+        "Code Exercise widget footer adds a 'Peek solution' ghost button when `solution` field is present in section data; button absent when no solution defined",
+        "Click 'Peek solution' → expands an inline read-only CodeMirror block (Python syntax-highlighted, --bg-subtle bg, 1px --border, --radius-md) below the test panel labeled 'Reference solution'; no modal, no confirm dialog",
+        "Button label flips to 'Hide solution' while expanded; click again collapses",
+        "Solution NOT auto-injected into editor — user must manually copy if they want to use it",
+        "WidgetEditPanel for Code widget gains a 'Solution (optional)' CodeMirror Python field; saving persists into lesson JSON",
+        "Solution panel renders BELOW test results so it doesn't compete for attention with the user's own attempt",
+        "Seed course gauss-basics Lesson 2 code exercise (gauss_blur) updated to include a sample reference solution",
+        "generate_lesson skill (SKILL.md) updated to instruct: populate `solution` field for every code exercise it generates",
+        "Verify in browser using playwright-skill: load Code widget with solution defined, click 'Peek solution', confirm panel expands with solution code; click again, confirm collapses; load Code widget without solution, confirm button absent",
+        "Typecheck passes"
+      ],
+      "priority": 38,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-039",
+      "title": "Stop running code — terminate Pyodide worker + restart with notice",
+      "description": "As a learner who started a long-running or infinite-loop Python execution, I want a Stop button that terminates the worker and gives me a clear message so I can continue working without reloading the page.",
+      "acceptanceCriteria": [
+        "CodeRunner (US-010) Run button morphs into 'Stop' (--danger styling) while Pyodide execution is in flight; same morph in Sandbox, ParametricExplorer, PythonPlot widgets",
+        "Click 'Stop' → calls worker.terminate() on the Pyodide Web Worker, spawns a fresh worker, marks pyodide status='loading' until new worker is ready",
+        "After restart: lesson namespace from US-031 is cleared (new worker has no state); output panel shows a Callout (warning tone): 'Session restarted — re-run previous cells if needed.'",
+        "Default execution timeout (30s) auto-triggers same termination + slightly different Callout: 'Execution timed out after 30s. Session restarted.'",
+        "Restart re-installs matplotlib / numpy / scipy lazily on next use (singleton flags reset alongside worker)",
+        "All Python-executing widgets in current lesson reflect the cleared-namespace state on next interaction",
+        "Verify in browser using playwright-skill: type `while True: pass` in Sandbox, click Run, confirm Run button morphs to Stop; click Stop; confirm output shows 'Session restarted' Callout; then run `print(1+1)` and confirm it works without page reload",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 39,
+      "passes": false,
+      "notes": "Pyodide does not support native Python interrupt; full worker termination is the only reliable path. User accepted the trade-off of losing namespace per option B.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-040",
+      "title": "Sources/citations on Lesson + per-section — schema + render expandable panel",
+      "description": "As a learner, I want each lesson to expose a clickable list of sources (papers, videos, articles, books) both at lesson-level (overall references) and at section-level (per-topic citations), so I can dig deeper into the material.",
+      "acceptanceCriteria": [
+        "LessonSchema gains `sources?: Array<{ url: string, title: string, kind: 'paper' | 'video' | 'article' | 'book', author?: string, year?: number }>` (lesson-level)",
+        "SectionSchema base gains `sources?: Array<...same shape...>` (section-level, optional on every section type via the discriminated union)",
+        "Lesson view bottom area (above bottom bar) renders a collapsible 'Źródła / Sources' section listing all lesson-level sources as clickable cards: icon per kind (paper=FileText, video=Video, article=Newspaper, book=BookOpen — lucide), title, author/year inline, URL displayed in --text-tertiary",
+        "Each section widget header gets a small lucide Link icon (16px) next to the status badge when section.sources is non-empty; click opens a popover listing that section's sources",
+        "Cards open URL in new tab (target='_blank' rel='noopener noreferrer')",
+        "Editor (lesson-level): in lesson edit context (or via a 'Lesson sources' button in the lesson header), simple list with add/remove + url/title/kind/author/year fields; per-section sources editor folded into existing WidgetEditPanel as an optional 'Sources' section at bottom",
+        "JSON Schemas regenerated via npm run build:schemas",
+        "Seed course gauss-basics gets at least 3 lesson-level sources added (e.g. Wikipedia Gaussian filter, scikit-image docs, OpenCV tutorial)",
+        "Verify in browser using playwright-skill: open seed lesson 2, expand sources section, confirm 3+ cards rendered with correct icons; click one and verify target='_blank'; check section-level icon on a section that has sources",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 40,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-041",
+      "title": "Update generate_lesson + init_course skills — emphasize sources/publications/videos",
+      "description": "As an agent generating lessons, I want explicit guidance to research and cite sources before writing content, so generated lessons include credible references in the new sources field from US-040.",
+      "acceptanceCriteria": [
+        "scripts/ralph/skills/generate_lesson/SKILL.md updated with new section 'Source Research' before generation rules",
+        "Skill instructs: before generating content, perform a research pass to identify ≥3 credible sources (papers with DOI/arxiv, textbook chapters, reputable articles, recognized educational videos like 3Blue1Brown / StatQuest); record them",
+        "Skill instructs: populate lesson-level `sources` field with ≥3 entries; populate section-level `sources` for theory sections that draw on a specific reference",
+        "Skill instructs: prefer URLs that are stable (DOI, arxiv, official docs, Wikipedia for foundational concepts, official YouTube channels); avoid blog hosts likely to break (medium, towardsdatascience)",
+        "Skill instructs: every source MUST have non-empty title; author + year strongly preferred for papers/books",
+        "scripts/ralph/skills/init_course/SKILL.md updated: research step (Step 2) now explicitly produces a sources.md file alongside research.md, listing collected references; per-lesson stories in generated prd.json carry source hints in notes field so generate_lesson can pick them up",
+        "Worked example in generate_lesson SKILL.md updated to show populated lesson-level sources (3+ entries) and one section-level source",
+        "Worked example in init_course SKILL.md updated to show sources.md output",
+        "Typecheck passes"
+      ],
+      "priority": 41,
+      "passes": false,
+      "notes": "Skill-only changes (markdown + worked examples). No code changes.",
+      "tags": []
+    },
+    {
+      "id": "US-042",
+      "title": "Lesson count variability — extend durationTarget enum + wizard chip update",
+      "description": "As a course author, I want the duration target to support short (3–5 lessons) up to comprehensive (40+ lessons) courses so the system can plan appropriately for both narrow and broad topics.",
+      "acceptanceCriteria": [
+        "CourseSpecSchema.durationTarget enum extended to: `'short' | 'standard' | 'extensive' | 'comprehensive'` (replaces existing `'30min' | '1h' | 'weekend'`)",
+        "Mapping documented in src/lib/schemas/courseSpec.ts (jsdoc on field): short = 3–5 lessons / 30–60 min; standard = 8–12 lessons / 1–3h; extensive = 20–30 lessons / 5–10h; comprehensive = 40+ lessons / 15h+",
+        "Backwards-compat parser: incoming legacy values map to new enum: '30min'→'short', '1h'→'standard', 'weekend'→'extensive' (so any pre-existing course-spec.json files still validate)",
+        "Course creation wizard Stage 2 (US-024) duration chip selector updated from 3 to 4 chips: 'Short (3–5 lessons)' / 'Standard (8–12)' / 'Extensive (20–30)' / 'Comprehensive (40+)'",
+        "init_course skill (scripts/ralph/skills/init_course/SKILL.md) updated: architect step uses durationTarget to bound module/lesson count when refining draftStructure; comprehensive courses generate 5–8 modules with 6–10 lessons each",
+        "JSON Schemas regenerated via npm run build:schemas",
+        "Vitest tests cover: parse succeeds for each new enum value; legacy values map correctly; out-of-enum value rejected",
+        "Verify in browser using playwright-skill: walk through wizard Stage 2, confirm 4 chips appear, select 'Comprehensive', advance to Stage 3, confirm Stage 3 seeds 5+ modules",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 42,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-043",
+      "title": "New widget — PlotImage (static matplotlib output + asset API route)",
+      "description": "As a course author, I want a widget that displays a static PNG plot pre-rendered by matplotlib at lesson generation time, so lessons can show high-quality visualizations without requiring browser-side Python execution.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/PlotImage/schema.ts defines PlotImageData: { src: string, alt: string (required), caption?: string, sourceCode?: string, sourceLanguage?: 'python' | 'r' }",
+        "JSON Schema regenerates via `npm run build:schemas` and is committed to src/widgets/schemas/plot-image.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'plotImage'",
+        "PlotImageSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-plot-image` CSS var defined in both `:root[data-theme='light']` and `:root[data-theme='dark']` blocks of src/styles/tokens.css (tasteful muted color, distinct from existing widget accents)",
+        "PlotImageEditor.tsx follows US-023 pattern (src input as text or file upload, alt input, caption input, sourceCode CodeMirror with language toggle); wired into WidgetEditPanel and SectionRenderer in lesson page",
+        "Sample data file src/widgets/PlotImage/sample.ts exports a minimal valid instance",
+        "Asset API route GET /api/courses/[slug]/assets/[...path] serves files from courses/<slug>/assets/; rejects path traversal via assertSafeSlug pattern; returns proper Content-Type for png/jpg/svg",
+        "Widget renders <figure> with <img src alt /> + optional <figcaption> for caption; image max-width 100%, object-fit contain, --radius-md, 1px --border",
+        "Collapsible 'Show source' section uses read-only CodeMirror with same theme as Code widget; sourceLanguage drives syntax highlighting; defaults to python when omitted",
+        "PUT API endpoint accepts file upload to courses/<slug>/assets/plots/<filename>; editor wires upload via this endpoint",
+        "Vitest unit tests cover: schema parses minimal valid object, rejects missing src/alt; asset API rejects ../ traversal",
+        "Verify in browser using playwright-skill: render lesson with PlotImage section, confirm image displays in light + dark, click 'Show source' to reveal code, screenshot",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 43,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-044",
+      "title": "New widget — PythonPlot (live matplotlib in Pyodide)",
+      "description": "As a learner working with Python in lessons, I want to write code that produces a matplotlib figure and see it rendered live in the output panel, so I can experiment with visualization parameters interactively.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/PythonPlot/schema.ts defines PythonPlotData: { taskMarkdown?: string, starterCode: string, expectedFigures?: number (default 1), height?: number (canvas px) }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/python-plot.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'pythonPlot'",
+        "PythonPlotSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-python-plot` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "PythonPlotEditor.tsx follows US-023 pattern; wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/PythonPlot/sample.ts exports a minimal valid instance (e.g. plot of sin(x))",
+        "Worker message type 'runWithPlot' accepts { code }, returns { pngBase64, stdout, error?, figureCount }",
+        "First load: matplotlib installs lazily via pyodide.loadPackage('matplotlib'); subsequent loads skip install (singleton flag matplotlibInstalled, analogous to existing gaussInstalled pattern)",
+        "Code injection wraps user code with: `matplotlib.use('AGG'); <user code>; plt.gcf().savefig(buf, format='png', dpi=110, bbox_inches='tight'); plt.close('all')`",
+        "Output panel renders <img src='data:image/png;base64,...'> sized to optional height (default 360px); loading state visible while running",
+        "Error path: Python error renders in red panel as in Code widget; figureCount=0 renders 'No figure produced — did you call plt.show() or create a figure?' hint",
+        "Shares Pyodide namespace with other Python widgets in the same lesson (depends on US-031)",
+        "Vitest unit tests cover: schema parses minimal valid object, rejects missing starterCode",
+        "Verify in browser using playwright-skill: render PythonPlot section with sin(x) starter code, click Run, wait for matplotlib to install on first load, confirm PNG appears; modify code to plot cos(x), Run again, confirm new image",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 44,
+      "passes": false,
+      "notes": "depends on US-031",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-045",
+      "title": "New widget — ParametricExplorer (generalizes Demo)",
+      "description": "As a course author, I want a generalized version of the Demo widget — sliders/select/toggle params injected as Python globals into a render code block — so I can build interactive explorations beyond just Gaussian filtering.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/ParametricExplorer/schema.ts defines ParametricExplorerData: { setupCode: string, renderCode: string, params: Array<{ name, label, type: 'slider'|'select'|'toggle', min?, max?, step?, default, options? }>, outputType: 'plot'|'value'|'both', debounceMs?: number (default 150) }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/parametric-explorer.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'parametricExplorer'",
+        "ParametricExplorerSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-parametric-explorer` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "ParametricExplorerEditor.tsx follows US-023 pattern (param list editor with type-specific inputs, setupCode + renderCode CodeMirror Python); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/ParametricExplorer/sample.ts exports a minimal valid instance",
+        "Worker exposes message type 'runWithPlotParam' accepting { setupCode, renderCode, params: {[name]: value} }",
+        "setupCode runs once per lesson session (cached via setupCode hash in worker); renderCode runs on every param change",
+        "Slider input uses native setter override pattern (per progress.txt patterns) — verified by playwright that drag events fire correctly",
+        "Debounce 150ms by default; configurable per widget via debounceMs",
+        "outputType='plot' renders PNG output as in PythonPlot; outputType='value' renders text/number output from a `result` global; outputType='both' shows both stacked",
+        "Existing Demo widget remains unchanged — gauss-basics seed course is NOT migrated (Demo continues to work)",
+        "Vitest unit tests cover: schema parses minimal valid object; param injection serialization (slider→float, toggle→bool, select→string)",
+        "Verify in browser using playwright-skill: render a ParametricExplorer with one slider param affecting a sin-frequency plot, drag slider, confirm plot redraws within debounce; switch to value-output variant, confirm number updates",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 45,
+      "passes": false,
+      "notes": "depends on US-031, US-044",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-046",
+      "title": "New widget — CodeCloze (fill-in-the-blanks)",
+      "description": "As a learner with low Python syntax confidence, I want fill-in-the-blank coding exercises with per-slot validation and progressive hints, so I can focus on logic rather than fighting syntax.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/CodeCloze/schema.ts defines CodeClozeData: { taskMarkdown?: string, template: string (with {{slotId}} placeholders), slots: Array<{ id, hint?, validation: { kind: 'exact'|'regex'|'oneOf', value?/pattern?/values? } }>, finalTests?: Array<{ name, body, hidden? }>, hints?: Array<{ revealAfterAttempts: number, markdown: string }> }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/code-cloze.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'codeCloze'",
+        "CodeClozeSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-code-cloze` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "CodeClozeEditor.tsx follows US-023 pattern (template CodeMirror Python, slots list editor with validation type per slot, finalTests editor reusing Code widget's tests editor pattern, hints list); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/CodeCloze/sample.ts exports a minimal valid instance",
+        "Each {{slotId}} in template renders as inline editable input sized to its current content (min 60px); other code is read-only and syntax-highlighted",
+        "Per-slot validation runs on blur: correct → green border + check icon, incorrect → red border + slot.hint shown inline below the slot",
+        "All slots correct → finalTests run in copy of lesson namespace (test isolation per US-031); pass → section marked done via PATCH /api/progress",
+        "Hints reveal progressively: on each failed validation attempt for a slot, count attempts; reveal the next hint from `hints` array when its revealAfterAttempts threshold is hit",
+        "Vitest unit tests cover: schema parses minimal valid object; per-validation kind (exact/regex/oneOf) verification",
+        "Verify in browser using playwright-skill: render a CodeCloze with 2 slots, fill one wrong, see red + hint; fix it, see green; fill the other, finalTests run; pass → status badge updates",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 46,
+      "passes": false,
+      "notes": "depends on US-031",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-047",
+      "title": "New widget — DragMatch (drag items to zones)",
+      "description": "As a course author, I want a drag-and-drop matching widget for term↔definition, category↔example, label↔diagram, so I can author varied recall exercises with low friction.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/DragMatch/schema.ts defines DragMatchData: { prompt: string, items: Array<{id, label}>, zones: Array<{id, label, accepts: string[]}>, multipleItemsPerZone?: boolean (default false), explanation?: string }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/drag-match.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'dragMatch'",
+        "DragMatchSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-drag-match` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "DragMatchEditor.tsx follows US-023 pattern (items list editor, zones list editor with multi-select for accepts, multipleItemsPerZone toggle, explanation textarea); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/DragMatch/sample.ts exports a minimal valid instance",
+        "Dependency added to package.json: @dnd-kit/core + @dnd-kit/sortable (run `npm install` and commit lockfile)",
+        "Items draggable from item bank panel (top); zones are valid drop targets with visual hover highlight (--accent-subtle bg) when an item is being dragged over",
+        "Submit button validates: each zone contains exactly the items in `accepts` (multipleItemsPerZone respected for ordering)",
+        "Visual feedback after submit: correct zones --success-border + --success-subtle; wrong zones --danger-border + --danger-subtle; misplaced item gets a subtle outline pointing back to its expected zone",
+        "Explanation always shown after submit (Callout-styled, neutral tone — per Quiz widget pattern)",
+        "Keyboard accessibility: dnd-kit's keyboard sensors enabled (Tab+Space to lift, arrows to move, Space to drop)",
+        "Section status auto-becomes 'done' on first all-correct submission (PATCH /api/progress)",
+        "Vitest unit tests cover: schema parses minimal valid object; correctness validation logic (single-zone and multi-zone)",
+        "Verify in browser using playwright-skill: render DragMatch with 3 items + 3 zones, drag one wrong, submit, see red feedback + explanation; rearrange, submit, see green + status badge updates",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 47,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-048",
+      "title": "New widget — DataTable (sortable, filterable, paginated)",
+      "description": "As a course author, I want a sortable/filterable table widget so I can present datasets, results, or comparisons inline in lessons.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/DataTable/schema.ts defines DataTableData: { columns: Array<{ key, label, type?: 'string'|'number'|'boolean', sortable? (default true), filterable? (default false) }>, rows: Array<Record<string, string|number|boolean|null>>, initialSort?: { key, dir: 'asc'|'desc' }, pageSize?: number (default 25) }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/data-table.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'dataTable'",
+        "DataTableSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-data-table` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "DataTableEditor.tsx follows US-023 pattern (columns list editor with type/sortable/filterable per column, rows editor as JSON textarea with live validation, pageSize input); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/DataTable/sample.ts exports a minimal valid instance",
+        "Click column header → sort ascending; second click → descending; third click → unsorted (back to row insertion order); sort indicator chevron shown next to header label",
+        "Filter input per filterable column (text contains for string type, range min/max inputs for number type)",
+        "Pagination controls if rows.length > pageSize: prev/next buttons + 'Page X of Y' indicator centered below table",
+        "Numeric columns formatted via toLocaleString() for thousand separators; boolean columns render as ✓/—",
+        "Sticky header on scroll within table body (when table height exceeds viewport portion)",
+        "Vitest unit tests cover: schema parses minimal valid object; sort logic (asc/desc/unsorted); filter logic (string contains + number range)",
+        "Verify in browser using playwright-skill: render DataTable with 30 rows × 4 cols, click sort on numeric column, confirm rows reorder; filter a string column, confirm rows hidden; navigate pagination",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 48,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-049",
+      "title": "New widget — Video (YouTube/MP4 with clickable transcript)",
+      "description": "As a course author, I want to embed YouTube or MP4 videos with optional clickable transcripts, so external high-quality content (3Blue1Brown, StatQuest) can supplement lessons.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/Video/schema.ts defines VideoData: { kind: 'youtube'|'mp4', src: string, title?, durationSeconds?, transcript?: Array<{tStart: number, tEnd?: number, text: string, speaker?: string}>, autoplay? (default false), startAt?: number }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/video.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'video'",
+        "VideoSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-video` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "VideoEditor.tsx follows US-023 pattern (kind toggle, src input, optional title/duration/startAt/autoplay, transcript list editor with tStart/tEnd/text/speaker per row); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/Video/sample.ts exports a minimal valid instance",
+        "YouTube: embed via <iframe src='https://www.youtube-nocookie.com/embed/<id>?...'> with proper width/height responsive container (16:9 aspect-ratio CSS); src may be a video ID or a YouTube URL (parser extracts ID)",
+        "MP4: HTML5 <video controls> tag; supports MP4 hosted in courses/<slug>/assets/ via the asset API route from US-043",
+        "startAt parameter passes ?start=<sec> for YouTube and currentTime=<sec> for video element on load",
+        "Transcript panel (collapsible) renders below video; click on segment seeks player to tStart (postMessage to YouTube iframe API; currentTime= for MP4)",
+        "Active transcript segment highlights as player progresses (--accent-subtle bg) — driven by timeupdate listener (MP4) or YouTube iframe API",
+        "Speaker labels rendered as small uppercase prefix when present (--text-tertiary --fs-xs weight 600 letter-spacing 0.06em)",
+        "Vitest unit tests cover: schema parses minimal valid object (both kinds); YouTube ID extraction from URL formats",
+        "Verify in browser using playwright-skill: render YouTube embed with transcript, click a transcript segment, confirm player seeks (test via window.postMessage spy or iframe currentTime check)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 49,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-050",
+      "title": "New widget — Image (URL src + local prefetch cache)",
+      "description": "As a course author, I want an Image widget that takes a URL and locally caches the image into the course's assets folder on first save, so lessons remain available offline and source attribution is preserved.",
+      "acceptanceCriteria": [
+        "Zod schema in src/widgets/Image/schema.ts defines ImageData: { src: string (URL or local relative path), alt: string (required), caption?: string, attribution?: { text: string, url?: string }, maxWidth?: string (px or %, default '100%') }",
+        "JSON Schema regenerates via `npm run build:schemas`; committed to src/widgets/schemas/image.json",
+        "Registry entry added in src/widgets/registry.ts; WidgetType union extended with 'image'",
+        "ImageSectionSchema variant added to SectionSchema discriminated union in src/lib/schemas/lesson.ts",
+        "`--widget-image` CSS var defined in both light + dark blocks of src/styles/tokens.css",
+        "ImageEditor.tsx follows US-023 pattern (src input as text URL, alt input, caption textarea, attribution.text + attribution.url, maxWidth input); wired into WidgetEditPanel and SectionRenderer",
+        "Sample data file src/widgets/Image/sample.ts exports a minimal valid instance",
+        "On lesson save (PUT /api/courses/[slug]/lessons/[lessonSlug]): if any Image section has an external URL src (http/https), server-side fetch the image, store in courses/<slug>/assets/images/<sha256(url).slice(0,16)>.<ext>, rewrite src in saved JSON to local relative path '/api/courses/<slug>/assets/images/<filename>'",
+        "Asset API route extends US-043 to serve courses/<slug>/assets/images/ subdirectory",
+        "Widget renders <figure>: <img src alt style={{maxWidth}}> + optional <figcaption> with caption text + attribution (linked if attribution.url present, plain text otherwise)",
+        "Caching is idempotent: same URL hashes to same filename → no duplicate downloads",
+        "Failed fetch on save: log warning, keep original URL in saved JSON (graceful degradation), return 200 with a warning field in response body",
+        "Vitest tests cover: schema parses minimal valid object; hash-based filename generation; URL→local rewrite happy path; failed-fetch graceful path",
+        "Verify in browser using playwright-skill: render lesson with Image section using a local cached path, confirm image displays in light + dark with caption + attribution link",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 50,
+      "passes": false,
+      "notes": "Caches at lesson-save time, not at view time. Path traversal protected via assertSafeSlug.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-051",
+      "title": "Update generate_lesson skill — encourage inline markdown images + Image widget for key illustrations",
+      "description": "As an agent generating lessons, I want explicit guidance to use inline markdown images and the Image widget for key illustrations, so generated lessons are visually rich rather than wall-of-text.",
+      "acceptanceCriteria": [
+        "scripts/ralph/skills/generate_lesson/SKILL.md updated with a new section 'Visual Illustrations' immediately after the Source Research section from US-041",
+        "Skill instructs: every theory section ≥300 chars long should include at least one inline markdown image `![alt](url)` where it makes pedagogical sense",
+        "Skill instructs: use the Image widget (US-050) as a standalone section for hero illustrations, diagrams, or figures that warrant their own caption + attribution treatment",
+        "Skill instructs: prefer Wikimedia Commons, public-domain repositories, official documentation diagrams (scikit-image, OpenCV, matplotlib), arxiv figure references; AVOID hotlinking from blog hosts likely to break (medium, towardsdatascience, personal blogs)",
+        "Skill instructs: every image (inline or widget) MUST have meaningful alt text describing what is shown — never empty alt, never 'image' placeholder",
+        "Skill instructs: provide attribution for Image widget when source mandates (Wikimedia → 'Wikimedia Commons, <author>, <license>')",
+        "Worked example in SKILL.md updated to include one inline markdown image (with Wikimedia URL) and one Image widget section",
+        "Typecheck passes"
+      ],
+      "priority": 51,
+      "passes": false,
+      "notes": "Skill-only changes (markdown + worked examples).",
+      "tags": []
+    },
+    {
+      "id": "US-052",
+      "title": "LessonChat — sliding side panel UI scaffold + persisted draft in localStorage",
+      "description": "As a learner, I want a sliding side panel inside lessons where I can compose questions to an AI tutor and have my draft preserved across page reloads, so I can come back to a question without retyping.",
+      "acceptanceCriteria": [
+        "Right column of lesson view (US-015 chatCol) becomes a controlled panel: 0px when closed, 320px when open; transition 180ms; prefers-reduced-motion disables animation",
+        "Toggle: existing tutor button (⌘.) in lesson toolbar (currently disabled/grey from US-015) becomes active and toggles the panel; ⌘. keyboard shortcut (US-021) likewise toggles",
+        "Panel chrome: header with 'AI Tutor' title + close X button; scrollable body for message list; sticky footer with composer (textarea + Send button + Stop button placeholder)",
+        "Composer textarea autoresizes (max 6 lines); Enter inserts newline; ⌘+Enter (or Ctrl+Enter) triggers Send; Send button disabled when textarea empty or whitespace-only",
+        "Message list area shows placeholder copy when empty: 'Ask anything about this lesson — I have its content as context.' centered, --text-tertiary --fs-sm",
+        "Send (in this story) appends a user-message bubble to the message list and clears the textarea — no backend call yet (backend lands in US-053); a placeholder assistant bubble with 'Backend not connected — try again after US-053 ships' is appended for visibility during dev",
+        "Draft persistence: textarea value mirrored to `localStorage['lessonChatDraft:<courseSlug>:<lessonSlug>']` on each keystroke (debounced 200ms); restored on mount",
+        "Draft cleared from localStorage when message Send appends to message list (text now lives in chat history)",
+        "Panel state (open/closed) persisted to `localStorage['lessonChat-open']` (boolean string)",
+        "Verify in browser using playwright-skill: open lesson, click ⌘. button, confirm panel slides open; type a draft, reload page, confirm draft restored; send message, confirm appears in list and draft cleared from localStorage",
+        "Typecheck passes"
+      ],
+      "priority": 52,
+      "passes": false,
+      "notes": "UI scaffold only — no Claude integration in this story. US-053 wires backend.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-053",
+      "title": "LessonChat — backend integration (Claude Agent SDK with Max plan, fallback to claude -p subprocess)",
+      "description": "As the LessonChat panel, I want a backend route that calls Claude either via the Claude Agent SDK (using the user's Claude Max plan) or by spawning the `claude -p` subprocess as a fallback, so users don't pay per-token.",
+      "acceptanceCriteria": [
+        "POST /api/lesson-chat accepts { courseSlug, lessonSlug, sectionId?, message, history?: Array<{role: 'user'|'assistant', content: string}> }; returns { assistant: string } as full block (no streaming yet — streaming lands in US-055)",
+        "Server-side connector module src/lib/lessonChat/connector.ts with two implementations: (a) agentSdkConnector — uses @anthropic-ai/claude-agent-sdk authenticated via the local Claude Code subscription/session (no API key); (b) subprocessConnector — spawns `claude -p \"<prompt>\" --output-format json` via child_process.spawn, parses JSON output, extracts assistant text",
+        "Connector selection at server boot: try Agent SDK first — verify it can authenticate against local Claude subscription without an explicit API key; if SDK unavailable, package missing, or auth fails, fall back to subprocess; selection cached per server process (not re-detected per request)",
+        "If neither works: API returns 503 with body `{ error: 'AI Tutor unavailable: install Claude Code CLI or sign in to Claude Max.' }` — UI surfaces this in the chat panel as an error bubble",
+        "Subprocess connector enforces 60s timeout via child.kill('SIGTERM') with an additional 5s SIGKILL grace",
+        "Prompt assembly is a stub in this story: just `message` prefixed with 'You are an AI tutor for an interactive course. Answer concisely.' — full lesson context wiring lands in US-054",
+        "Wire LessonChat panel (US-052) Send button to POST this route; show a typing-indicator (animated dots) bubble while awaiting; render assistant bubble on response; on 503 render error bubble with the message",
+        "Vitest tests cover: subprocess connector with mocked spawn returns parsed text; non-zero exit handled; timeout handled; selection logic falls back when SDK throws",
+        "Verify in browser using playwright-skill (in environment with `claude` CLI available): send a simple question 'What is this app?', confirm a response bubble renders within 30s",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 53,
+      "passes": false,
+      "notes": "If Claude Agent SDK does not currently support Max-plan auth without an API key, ship subprocess-only and document the SDK enable path for future. Verify SDK feasibility before committing to dual-path code.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-054",
+      "title": "LessonChat — context builder (active section + lesson metadata → prompt assembly)",
+      "description": "As the LessonChat backend, I want to build a focused prompt context from the active lesson section + lesson metadata (not the whole lesson), so prompts stay small and responses stay relevant.",
+      "acceptanceCriteria": [
+        "src/lib/lessonChat/context.ts exports buildPromptContext({ lesson, currentSectionId? }) → { systemPrompt: string, contextBlock: string }",
+        "systemPrompt template: 'You are an AI tutor for an interactive online course. Answer concisely (≤200 words unless code is needed). Stay focused on the lesson topic. If asked off-topic, redirect politely.'",
+        "contextBlock includes: lesson.title, lesson.eyebrow, lesson.description, lesson.estimatedMinutes; if currentSectionId given, append the active section's data serialized as text (theory.markdown for theory; question + options for quiz; taskMarkdown for code; etc.)",
+        "If currentSectionId not given, append a brief outline: titles of all sections in lesson with their type",
+        "Context capped at ~4000 chars total; if exceeded, truncate active section text first and append '… [truncated]'",
+        "POST /api/lesson-chat (US-053) wired through buildPromptContext: call with { lesson: <fetched from disk>, currentSectionId: req.body.sectionId }; pass result to connector as { systemPrompt, userMessage: '<contextBlock>\\n\\nUser question: <message>' }",
+        "LessonChat panel (US-052) tracks current scroll position → maps to nearest section heading via IntersectionObserver → sends sectionId in POST body",
+        "Vitest tests cover: context built with theory section, with quiz section, without section; truncation when content exceeds 4000 chars",
+        "Verify in browser using playwright-skill: scroll to a quiz section in seed lesson, ask 'What is this question testing?', confirm response references the quiz topic specifically (not generic lesson summary)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 54,
+      "passes": false,
+      "notes": "depends on US-052 + US-053",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-055",
+      "title": "LessonChat — streaming responses + Stop/cancel button",
+      "description": "As a user reading AI tutor responses, I want to see them stream token-by-token and have a Stop button to cancel mid-response, so long answers feel responsive and I can abort if the answer is going off-track.",
+      "acceptanceCriteria": [
+        "POST /api/lesson-chat extended to support `Accept: text/event-stream` and respond with SSE stream of assistant tokens (one event per token chunk, with final 'done' event)",
+        "Agent SDK connector: use streaming API; subprocess connector: read stdout line-by-line and forward each line as SSE event; close stream on subprocess exit",
+        "LessonChat panel (US-052) calls SSE endpoint via EventSource for new messages; appends streamed tokens to assistant bubble in real time",
+        "Stop button (placeholder from US-052) becomes active during streaming; click → aborts EventSource on client AND sends DELETE /api/lesson-chat/<requestId> server-side which kills the subprocess / aborts SDK stream",
+        "On stop: assistant bubble keeps the partial text + appends italic '— stopped by user' suffix on its own line in --text-tertiary",
+        "Server tracks in-flight requests in a Map<requestId, AbortController | childProcess> so DELETE can resolve which to terminate",
+        "Auto-cleanup of finished requests from Map after stream end (avoid memory leak)",
+        "requestId generated server-side and returned in the first SSE event so client knows what to DELETE",
+        "Verify in browser using playwright-skill: send a question that requires a long answer, observe tokens streaming into the assistant bubble, click Stop mid-response, confirm bubble shows partial text + 'stopped by user' suffix, then send a new question and confirm it works",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 55,
+      "passes": false,
+      "notes": "depends on US-053",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-056",
+      "title": "Author end-to-end QA test plan markdown (test-plan.md)",
+      "description": "As a maintainer of this app, I want a single markdown file describing how to manually verify all features end-to-end, including which test courses to generate and which user flows to walk through, so I can sanity-check a release in under an hour.",
+      "acceptanceCriteria": [
+        "File written: test-plan.md at repo root",
+        "Document structure: Setup section (npm install, npm run dev, etc.) → 'Test Courses to Generate' (≥3 distinct topics chosen to exercise different widget mixes, e.g. one Short narrow topic, one Standard ML topic, one Comprehensive math/CV topic) → 'Walkthroughs' (numbered checklists per area)",
+        "Each test course entry includes: topic prompt to enter in Stage 1, refinement choices for Stage 2 (level + duration + theory/practice slider), expected approximate lesson count + module count, which widgets the course is expected to exercise",
+        "Walkthrough sections cover at minimum: dashboard (empty state + populated + Continue learning hero + search bar substring + slug-prefix), course creation wizard end-to-end (all 5 stages), lesson navigation (TOC, prev/next, mark complete, auto-advance, keyboard shortcuts j/k/⌘B/⌘., Reset session), each widget type (Theory, Quiz single + multi, Code with peek + stop, Demo, Sandbox, PlotImage, PythonPlot, ParametricExplorer, CodeCloze, DragMatch, DataTable, Video, Image, Histogram), LessonChat (open, ask question with section context, stop mid-stream, draft persistence), theme toggle persistence, sources panel (lesson-level + section-level), schemaVersion present in JSON, logo navigates home, user avatar dropdown",
+        "Each walkthrough item is a checkbox with explicit pass criterion (e.g. 'button morphs to Submitted ✓', 'card badge shows In progress · 1/N', 'PNG appears within 10s after first matplotlib install') — no vague 'works correctly'",
+        "Document references the relevant US-NNN for each section so failures can be traced back to the originating story",
+        "Document includes 'Known limitations' section listing things explicitly out of MVP (multi-user, IndexedDB, tutor without Claude CLI installed, etc.)",
+        "Document targets ≤30 minutes for an experienced reviewer to walk through, ≤60 for a new reviewer",
+        "Typecheck passes"
+      ],
+      "priority": 56,
+      "passes": false,
+      "notes": "Documentation-only — no code changes. Output: test-plan.md at repo root.",
+      "tags": []
     }
   ]
 }
