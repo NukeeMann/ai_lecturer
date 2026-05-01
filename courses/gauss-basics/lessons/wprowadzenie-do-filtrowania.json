@@ -1,0 +1,53 @@
+{
+  "slug": "wprowadzenie-do-filtrowania",
+  "courseSlug": "gauss-basics",
+  "moduleId": "m1",
+  "title": "Wprowadzenie do filtrowania obrazów",
+  "eyebrow": "Moduł 1 · Lekcja 1",
+  "description": "Czym jest filtrowanie obrazu, czym jest konwolucja i jaką rolę pełni kernel — przygotowanie do filtrów Gaussa.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "s1-theory-intro",
+      "title": "Konwolucja i kernel — fundament filtrowania",
+      "type": "theory",
+      "data": {
+        "markdown": "## Po co filtrujemy obrazy?\n\nObrazy z prawdziwych sensorów zawsze zawierają **szum**: ziarno z ISO, błędy sensora, kompresję. Większość algorytmów wizji komputerowej (detektory krawędzi, deskryptory cech, segmentacja) zakłada, że wejściowy obraz jest *gładki na małej skali*. Pierwszym krokiem prawie każdego pipeline'u jest więc filtr wygładzający.\n\nNajprostszą i jednocześnie najpotężniejszą operacją filtrującą jest **konwolucja**. Każdy piksel wynikowy jest ważoną sumą sąsiadów piksela wejściowego, gdzie wagi pochodzą z małej macierzy nazywanej *kernelem* (lub *maską*).\n\nFormalnie, dla obrazu \\(I\\) i kernela \\(K\\) o rozmiarze \\((2r+1) \\times (2r+1)\\):\n\n\\[\n(I * K)(x, y) = \\sum_{i=-r}^{r} \\sum_{j=-r}^{r} K(i, j) \\cdot I(x - i, y - j)\n\\]\n\nWzór wygląda groźnie, ale intuicja jest prosta: nakładamy kernel na każdy piksel, mnożymy element po elemencie z lokalnym otoczeniem i sumujemy.\n\n:::callout{type=\"info\" title=\"Dlaczego to jest takie ważne\"}\nCała klasyczna wizja komputerowa (pre-deep-learning) opierała się na konwolucjach — Sobel, Prewitt, Laplacian, DoG, Gabor. Nawet sieci konwolucyjne (CNN) uczą się **kerneli**, tylko zamiast ręcznie dobranych wag mają wagi optymalizowane gradientem.\n:::\n\nKernel `[[1/9, 1/9, 1/9], [1/9, 1/9, 1/9], [1/9, 1/9, 1/9]]` to klasyczny **box blur** — każdy piksel staje się średnią z otoczenia 3×3. Jest to najbardziej naiwny filtr wygładzający i będzie naszym punktem wyjścia, zanim przejdziemy do Gaussa."
+      }
+    },
+    {
+      "id": "s2-quiz-kernel",
+      "title": "Sprawdź się: czym jest kernel?",
+      "type": "quiz",
+      "data": {
+        "question": "Czym jest kernel w kontekście filtrowania obrazów?",
+        "options": [
+          "Pojedynczy piksel wejściowego obrazu, na którym wykonujemy operację",
+          "Mała macierz wag, którą nakładamy na sąsiedztwo piksela i sumujemy iloczyny",
+          "Funkcja aktywacji w sieci neuronowej, np. ReLU lub sigmoid",
+          "Format kompresji obrazu (np. JPEG czy PNG), który decyduje o jakości"
+         ],
+        "correct": [1],
+        "explanation": "Kernel (zwany też maską lub filtrem) to mała macierz wag — typowo 3×3, 5×5, 7×7 — którą \"przesuwamy\" po obrazie. Dla każdego piksela wyjściowego wykonujemy iloczyn skalarny kernela z lokalnym otoczeniem piksela wejściowego. Pojedynczy piksel to dane wejściowe, nie kernel; ReLU to funkcja aktywacji w sieciach neuronowych; JPEG/PNG to formaty kompresji.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s3-sandbox-numpy",
+      "title": "Piaskownica: średnia z 2D arraya w numpy",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Mały, syntetyczny \"obraz\" 4x4 — zmieniaj wartości i obserwuj wynik.\nimg = np.array([\n    [10, 12, 11,  9],\n    [11, 13, 12, 10],\n    [12, 14, 13, 11],\n    [10, 12, 11,  9],\n], dtype=float)\n\n# Średnia globalna całego obrazu (jedna liczba):\nprint(\"Średnia globalna:\", img.mean())\n\n# Średnia lokalna 3x3 wokół środkowego piksela [1,1]:\nlocal = img[0:3, 0:3]\nprint(\"Średnia lokalna 3x3 (lewy-górny):\", local.mean())\n\n# Spróbuj: zmień wycinek (np. img[1:4, 1:4]) i porównaj wyniki.\n",
+        "encouragement": "Spróbuj dobrać sobie wycinki obrazu i policzyć średnią ręcznie — tak właśnie działa box blur, tylko że przesuwa się po wszystkich pikselach jednocześnie. Nic się nie zepsuje, eksperymentuj swobodnie."
+      }
+    },
+    {
+      "id": "s4-theory-types",
+      "title": "Krótki przegląd typów filtrów: LP vs HP",
+      "type": "theory",
+      "data": {
+        "markdown": "## Filtry dolnoprzepustowe i górnoprzepustowe\n\nKonwolucję można zaprojektować tak, żeby **przepuszczała** wybrane częstotliwości obrazu, a tłumiła pozostałe. Dwie podstawowe rodziny filtrów to:\n\n- **Low-pass (LP)** — przepuszczają niskie częstotliwości (gładkie zmiany jasności), tłumią wysokie (drobne szczegóły, szum). Efekt: rozmycie, wygładzenie. Przykłady: box blur, **Gauss**, mediana (nieliniowa, ale w tej samej rodzinie zastosowań).\n- **High-pass (HP)** — przepuszczają wysokie częstotliwości (krawędzie, tekstura), tłumią niskie (jednolite obszary). Efekt: wyostrzenie lub wyłapywanie krawędzi. Przykłady: Laplacian, Sobel, Prewitt.\n\nLP i HP można też składać: typowy **band-pass** (np. Difference of Gaussians, DoG) odejmuje dwa rozmycia o różnym \\(\\sigma\\), zostawiając tylko \"średnie\" częstotliwości — klasyczna baza dla detektora SIFT.\n\n:::callout{type=\"info\" title=\"Po co rozróżniać?\"}\nWybór filtru LP determinuje, *które* szczegóły przeżyją a które znikną. Box blur traktuje wszystkie piksele w sąsiedztwie tak samo, przez co wprowadza wyraźne, nienaturalne artefakty kwadratowe. Gauss waży piksele wedle odległości od środka — bliższe sąsiady mają większy wpływ — i daje znacznie bardziej naturalne rozmycie. To dlatego w praktyce filtr Gaussa jest **domyślnym filtrem dolnoprzepustowym** w wizji komputerowej i przejdziemy do niego w następnej lekcji.\n:::\n\nW Lekcji 2 zdefiniujemy formalnie 2D Gaussa, zobaczymy jego własności (separowalność, izotropowość) i napiszemy własną funkcję `gauss_blur(img, sigma)` z testami."
+      }
+    }
+  ]
+}

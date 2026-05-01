@@ -1,0 +1,86 @@
+{
+  "slug": "filtr-gaussa-w-praktyce",
+  "courseSlug": "gauss-basics",
+  "moduleId": "m1",
+  "title": "Filtr Gaussa w praktyce",
+  "eyebrow": "Moduł 1 · Lekcja 2",
+  "description": "Definicja 2D Gaussa, jego własności (separowalność, izotropowość), interaktywne demo, ćwiczenie programistyczne i piaskownica.",
+  "estimatedMinutes": 25,
+  "sections": [
+    {
+      "id": "s1-theory-gauss-math",
+      "title": "Czym jest filtr Gaussa?",
+      "type": "theory",
+      "data": {
+        "markdown": "## Definicja\n\nFiltr Gaussa to konwolucja z kernelem zbudowanym z **dwuwymiarowego rozkładu Gaussa**. Wagi kernela wokół środka \\((0, 0)\\) wyrażają się wzorem:\n\n\\[\nG(x, y) = \\frac{1}{2\\pi\\sigma^{2}} \\, e^{-\\frac{x^{2} + y^{2}}{2\\sigma^{2}}}\n\\]\n\nParametr \\(\\sigma\\) (sigma) to **odchylenie standardowe** Gaussa i jest jedynym, który decyduje o sile filtru. Im większe \\(\\sigma\\), tym szerszy kernel, tym więcej sąsiadów wpływa na każdy piksel — i tym silniejsze rozmycie.\n\nW praktyce kernel jest **dyskretny** i **obcięty**: liczy się go na siatce pikseli o promieniu zwykle \\(\\lceil 3\\sigma \\rceil\\) (poza tym promieniem wagi są pomijalnie małe), a następnie normalizuje, żeby suma wag wynosiła dokładnie 1 — dzięki temu filtr nie zmienia średniej jasności obrazu.\n\n:::callout{type=\"info\" title=\"Dwie kluczowe własności\"}\n**Separowalność:** dwuwymiarowy Gauss jest iloczynem dwóch jednowymiarowych — \\(G(x, y) = G_1(x) \\cdot G_1(y)\\). Dzięki temu konwolucję 2D z kernelem \\(k \\times k\\) można zastąpić dwiema konwolucjami 1D: poziomą i pionową. Złożoność obliczeniowa spada z \\(O(k^2)\\) do \\(O(2k)\\) na piksel — kluczowe dla dużych obrazów.\n\n**Izotropowość:** Gauss zależy tylko od \\(x^{2} + y^{2}\\), czyli od *odległości* od środka, a nie od kierunku. Filtr działa identycznie wzdłuż każdej osi i nie wprowadza preferowanego kierunku — w odróżnieniu np. od filtru Sobela. To dlatego Gauss jest naturalnym \"neutralnym\" wygładzaczem.\n:::\n\nW kolejnej sekcji zobaczysz Gaussa w akcji: przesuń suwak \\(\\sigma\\) i obserwuj, jak zmienia się rozmycie standardowego obrazu testowego *cameraman*."
+      }
+    },
+    {
+      "id": "s2-demo-gauss",
+      "title": "Demo: Gauss na cameraman.jpg",
+      "type": "demo",
+      "data": {
+        "demoType": "gauss",
+        "imageSrc": "/demo-images/cameraman.jpg",
+        "params": {
+          "sigmaMin": 0.5,
+          "sigmaMax": 8,
+          "sigmaDefault": 2
+        }
+      }
+    },
+    {
+      "id": "s3-code-gauss-blur",
+      "title": "Ćwiczenie: napisz gauss_blur(img, sigma)",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `gauss_blur(img, sigma)` która:\n\n- przyjmuje 2D `numpy.ndarray` (obraz w skali szarości jako `float`) oraz wartość `sigma >= 0`,\n- zwraca obraz tej samej *shape* po filtrowaniu Gaussa,\n- dla `sigma == 0` zwraca obraz **niezmieniony** (filtr identycznościowy).\n\nMożesz korzystać z `scipy.ndimage.gaussian_filter` — w bibliotece numpy/scipy filtr jest już zaimplementowany separowalnie i obsługuje `sigma=0` poprawnie.\n\nZobaczysz 3 testy: kontrola *shape*, zgodność z referencją scipy na fixture, oraz `sigma=0` → identyczność.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter\n\n\ndef gauss_blur(img, sigma):\n    \"\"\"Wygładź `img` filtrem Gaussa o danym `sigma`. Zwróć ndarray tej samej shape.\n\n    Wskazówka: użyj scipy.ndimage.gaussian_filter; pamiętaj o przypadku sigma=0\n    (powinien zwracać oryginalny obraz).\n    \"\"\"\n    # TODO: zaimplementuj\n    return img\n",
+        "tests": [
+          {
+            "name": "wynik ma tę samą shape co wejście",
+            "hidden": true,
+            "body": "import numpy as np\nimg = np.zeros((10, 10), dtype=float)\nout = gauss_blur(img, sigma=1.5)\nassert hasattr(out, 'shape'), 'gauss_blur powinno zwracać numpy.ndarray'\nassert out.shape == img.shape, f'oczekiwano shape {img.shape}, otrzymano {out.shape}'\n"
+          },
+          {
+            "name": "wartości zgadzają się z scipy.ndimage.gaussian_filter na fixture",
+            "hidden": true,
+            "body": "import numpy as np\nfrom scipy.ndimage import gaussian_filter\nimg = np.array([\n    [0.0, 0.0, 0.0, 0.0, 0.0],\n    [0.0, 0.0, 0.0, 0.0, 0.0],\n    [0.0, 0.0, 1.0, 0.0, 0.0],\n    [0.0, 0.0, 0.0, 0.0, 0.0],\n    [0.0, 0.0, 0.0, 0.0, 0.0],\n])\nout = gauss_blur(img, sigma=1.0)\nexpected = gaussian_filter(img, sigma=1.0)\nnp.testing.assert_allclose(out, expected, atol=1e-6)\n"
+          },
+          {
+            "name": "sigma=0 zwraca obraz bez zmian (identity)",
+            "hidden": true,
+            "body": "import numpy as np\nimg = np.array([\n    [1.0, 2.0, 3.0],\n    [4.0, 5.0, 6.0],\n    [7.0, 8.0, 9.0],\n])\nout = gauss_blur(img, sigma=0)\nnp.testing.assert_allclose(out, img, atol=1e-9), 'sigma=0 powinno zwracać oryginalny obraz'\n"
+          }
+        ]
+      }
+    },
+    {
+      "id": "s4-quiz-properties",
+      "title": "Quiz: które stwierdzenia o Gaussie są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o filtrze Gaussa są prawdziwe? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Filtr Gaussa jest separowalny — konwolucję 2D można zrealizować dwoma konwolucjami 1D",
+          "Filtr Gaussa jest izotropowy — działa tak samo we wszystkich kierunkach",
+          "Większe sigma daje silniejsze rozmycie i większy efektywny promień kernela",
+          "Filtr Gaussa wyostrza krawędzie — należy do filtrów górnoprzepustowych (HP)",
+          "Filtr Gaussa działa tylko na obrazach kolorowych (RGB), nie na obrazach w skali szarości"
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "Pierwsze trzy są prawdziwe. **Separowalność** wynika z faktu, że \\(G(x,y) = G_1(x)\\cdot G_1(y)\\) — implementacja jako dwie 1D konwolucje obniża koszt z \\(O(k^2)\\) do \\(O(2k)\\) na piksel. **Izotropowość** wynika z zależności kernela tylko od \\(x^2+y^2\\), a nie od kąta. **Większe sigma** = szerszy kernel = silniejsze rozmycie. Czwarte stwierdzenie jest fałszywe — Gauss to filtr **dolnoprzepustowy** (LP) i wygładza, a nie wyostrza; wyostrzaniem zajmują się np. Laplacian czy unsharp mask. Piąte też jest fałszywe — Gauss działa na dowolnych danych 2D (lub n-D), niezależnie od liczby kanałów.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "s5-sandbox-scipy",
+      "title": "Piaskownica: pobaw się scipy.ndimage",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, uniform_filter, sobel\n\n# Syntetyczny obraz: dwie półpłaszczyzny (krawędź pionowa) + lekki szum\nrng = np.random.default_rng(42)\nimg = np.zeros((20, 20), dtype=float)\nimg[:, 10:] = 1.0\nimg += 0.05 * rng.standard_normal(img.shape)\n\n# Filtr Gaussa o różnych sigma\nfor s in (0.5, 1.5, 3.0):\n    g = gaussian_filter(img, sigma=s)\n    print(f\"Gauss sigma={s} -> min/max: {g.min():.3f} / {g.max():.3f}\")\n\n# Box blur 5x5 dla porównania\nu = uniform_filter(img, size=5)\nprint(f\"Uniform 5x5 -> min/max: {u.min():.3f} / {u.max():.3f}\")\n\n# Sobel-x: gradient poziomy (krawędzie pionowe). Na rozmytym obrazie krawędź staje się gładsza.\nsx = sobel(gaussian_filter(img, sigma=1.5), axis=1)\nprint(f\"Sobel-x po Gaussie -> max |grad|: {np.abs(sx).max():.3f}\")\n",
+        "encouragement": "Spróbuj złożyć dwa filtry: najpierw Gauss, potem Sobel — to klasyczna baza detektora krawędzi (np. Canny). Zmień sigma i obserwuj, jak zmienia się amplituda gradientu. Niczego nie zepsujesz, eksperymentuj śmiało."
+      }
+    }
+  ]
+}
