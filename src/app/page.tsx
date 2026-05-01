@@ -380,6 +380,11 @@ function ContinueLearningHero({ resume }: { resume: ResumeTarget }) {
           height: 44,
           padding: '0 22px',
           fontSize: 'var(--fs-md)',
+          // Without an explicit position, the static button paints below its
+          // absolutely-positioned radial-gradient overlay sibling and the
+          // overlay covers the right edge of the label. Joining the
+          // positioned painting tier puts the button on top via tree order.
+          position: 'relative',
         }}
       >
         Resume
