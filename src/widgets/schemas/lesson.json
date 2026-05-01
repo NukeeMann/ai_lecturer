@@ -1,0 +1,388 @@
+{
+  "$ref": "#/definitions/lesson",
+  "definitions": {
+    "lesson": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "integer",
+          "default": 1
+        },
+        "slug": {
+          "type": "string"
+        },
+        "courseSlug": {
+          "type": "string"
+        },
+        "moduleId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "eyebrow": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "estimatedMinutes": {
+          "type": "integer",
+          "exclusiveMinimum": 0
+        },
+        "pythonSession": {
+          "type": "string",
+          "enum": [
+            "shared",
+            "isolated"
+          ]
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "theory"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "markdown": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "markdown"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "quiz"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "question": {
+                        "type": "string"
+                      },
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "minItems": 2
+                      },
+                      "correct": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "minItems": 1
+                      },
+                      "explanation": {
+                        "type": "string"
+                      },
+                      "multiSelect": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "question",
+                      "options",
+                      "correct",
+                      "explanation",
+                      "multiSelect"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "code"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "taskMarkdown": {
+                        "type": "string"
+                      },
+                      "starterCode": {
+                        "type": "string"
+                      },
+                      "tests": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "body": {
+                              "type": "string"
+                            },
+                            "hidden": {
+                              "type": "boolean",
+                              "default": true
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "body"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "taskMarkdown",
+                      "starterCode",
+                      "tests"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "demo"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "demoType": {
+                        "type": "string",
+                        "const": "gauss"
+                      },
+                      "imageSrc": {
+                        "type": "string"
+                      },
+                      "params": {
+                        "type": "object",
+                        "properties": {
+                          "sigmaMin": {
+                            "type": "number"
+                          },
+                          "sigmaMax": {
+                            "type": "number"
+                          },
+                          "sigmaDefault": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "sigmaMin",
+                          "sigmaMax",
+                          "sigmaDefault"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "demoType",
+                      "imageSrc",
+                      "params"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "sandbox"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "starterCode": {
+                        "type": "string"
+                      },
+                      "encouragement": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "starterCode",
+                      "encouragement"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "histogram"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "binEdges": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        },
+                        "minItems": 2
+                      },
+                      "counts": {
+                        "type": "array",
+                        "items": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "minItems": 1
+                      }
+                    },
+                    "required": [
+                      "binEdges",
+                      "counts"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "custom"
+                  },
+                  "data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "slug",
+        "courseSlug",
+        "moduleId",
+        "title",
+        "eyebrow",
+        "description",
+        "estimatedMinutes",
+        "sections"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

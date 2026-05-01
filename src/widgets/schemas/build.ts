@@ -10,6 +10,8 @@ import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
+import { CourseSchema } from '@/lib/schemas/course';
+import { LessonSchema } from '@/lib/schemas/lesson';
 
 const widgets: Record<string, ZodSchema> = {
   theory: TheoryDataSchema,
@@ -20,11 +22,23 @@ const widgets: Record<string, ZodSchema> = {
   histogram: HistogramDataSchema,
 };
 
+const topLevel: Record<string, ZodSchema> = {
+  course: CourseSchema,
+  lesson: LessonSchema,
+};
+
 const outDir = dirname(fileURLToPath(import.meta.url));
 mkdirSync(outDir, { recursive: true });
 
 for (const [name, schema] of Object.entries(widgets)) {
   const jsonSchema = zodToJsonSchema(schema, { name: `${name}Data`, target: 'jsonSchema7' });
+  const outPath = join(outDir, `${name}.json`);
+  writeFileSync(outPath, JSON.stringify(jsonSchema, null, 2) + '\n', 'utf8');
+  console.log(`wrote ${outPath}`);
+}
+
+for (const [name, schema] of Object.entries(topLevel)) {
+  const jsonSchema = zodToJsonSchema(schema, { name, target: 'jsonSchema7' });
   const outPath = join(outDir, `${name}.json`);
   writeFileSync(outPath, JSON.stringify(jsonSchema, null, 2) + '\n', 'utf8');
   console.log(`wrote ${outPath}`);

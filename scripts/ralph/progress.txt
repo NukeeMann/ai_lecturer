@@ -32,3 +32,17 @@ Previous log archived to: archive/progress-2026-05-01-0819.txt
 - **Browser tests touching Code/Sandbox widgets must clear `~/.ai-lecturer/progress.json` per-section state first.** Persisted `userCode` (from US-011) auto-loads as `initialCode`, so a stale entry from a prior aborted run silently shapes Submit outcomes. Wipe via `node -e` JSON edit or use a throwaway course slug.
 - **CodeMirror typing in playwright auto-indents on `\n`.** `keyboard.type('def f():\\n    return 42\\n')` produces compound indents. Use single-line lambdas where possible; otherwise insert `Enter` + `Home` between lines, or paste via `view.dispatch({changes:{...}})`.
 - **Pyodide batched stdout strips `\n` (US-032).** `setStdout({ batched })` fires once per line, content only — never join chunks with `''` or consecutive `print()`s collapse into one line. Use the `formatStdoutChunks` helper at `src/lib/pyodide/stdout.ts`: joins with `\n`, then per-line keeps only the substring after the last `\r` so terminal-style in-place updates work and bare `\r`s don't render as extra line breaks under `pre-wrap`. The CodeRunner output panel already uses `whiteSpace: 'pre-wrap'`, so once newlines actually exist in the text, multi-line output renders correctly.
+
+## 2026-05-01 - US-037
+- Added `schemaVersion: z.number().int().default(1)` to CourseSchema and LessonSchema. Missing field on parse defaults to 1; explicit `schemaVersion: 1` parses cleanly.
+- Extended `src/widgets/schemas/build.ts` to also emit `course.json` and `lesson.json` alongside the per-widget JSON Schemas (so the AC-mandated files exist under `src/widgets/schemas/`).
+- Updated init_course SKILL.md and generate_lesson SKILL.md so future agent-authored course/lesson JSON includes `schemaVersion: 1`.
+- Updated seed course `gauss-basics/course.json` and both lessons to include `schemaVersion: 1`.
+- Added vitest cases: defaults schemaVersion to 1 when missing, parses with explicit `schemaVersion: 1`, for both Course and Lesson.
+- Files changed: `src/lib/schemas/{course,lesson}.ts`, `src/lib/schemas/schemas.test.ts`, `src/widgets/schemas/build.ts`, `src/widgets/schemas/{course,lesson}.json` (new), `courses/gauss-basics/course.json`, `courses/gauss-basics/lessons/{wprowadzenie-do-filtrowania,filtr-gaussa-w-praktyce}.json`, `scripts/ralph/skills/{init_course,generate_lesson}/SKILL.md`.
+- Quality: typecheck clean, schemas.test.ts 24/24, full test suite 77/77, no new lint issues on changed files.
+- **Learnings for future iterations:**
+  - **Forward-compat schema versioning pattern.** `z.number().int().default(1)` on a top-level field means: if a JSON file is missing the field, `.parse()` fills in 1; if present, it must still be an integer. Use this any time you want to introduce a baseline version field without breaking existing JSON. No migration logic in MVP — just the field.
+  - **`build:schemas` now emits course/lesson too.** `src/widgets/schemas/build.ts` has two loops: per-widget `data` schemas (theory/quiz/code/demo/sandbox/histogram) AND top-level (course/lesson). Both run on `npm run build:schemas`. If you add another top-level zod schema later (e.g. ProgressSchema), append it to the `topLevel` map in `build.ts`.
+  - **`zodToJsonSchema` `name` option** drives the `$ref` and the key under `definitions`. We use `course`/`lesson` for top-level files (matching the filename) and `${name}Data` for widgets.
+---
