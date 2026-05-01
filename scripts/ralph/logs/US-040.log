@@ -1,0 +1,8 @@
+US-040 implemented and committed (`050d57a`). 
+
+Summary of what shipped:
+- **Schema** (`src/lib/schemas/lesson.ts`): added `SourceSchema` (`{ url, title, kind: 'paper'|'video'|'article'|'book', author?, year? }`) + optional `sources?` on `LessonSchema` and the section discriminated-union base. Regenerated `src/widgets/schemas/lesson.json`.
+- **UI** (`src/components/Sources.tsx`): `SourceCard` (clickable target=_blank, icon per kind), `LessonSourcesPanel` (collapsible "Źródła / Sources" below sections), `SectionSourcesPopover` (Link icon trigger in widget header + popover), and `SourcesField` (reusable inline editor).
+- **Lesson page**: "Lesson sources" header button opens a new side-panel editor; each WidgetEditPanel editor (Quiz/Code/Demo/Sandbox/Histogram) now also edits per-section sources. Section header gets the Link icon when `section.sources` is non-empty.
+- **Seed**: `filtr-gaussa-w-praktyce.json` ships 4 lesson-level sources (Wikipedia, scikit-image, OpenCV, scipy.ndimage) + 1 on the demo section.
+- **Quality**: typecheck clean, 90/90 vitest (was 88; +2 new), lint clean for touched files. Browser test confirms collapse panel renders 4 cards with target=_blank, the demo section's Link icon opens a popover, and the lesson-sources editor opens with prepopulated rows. Screenshots in `/tmp/us040-*.png`.

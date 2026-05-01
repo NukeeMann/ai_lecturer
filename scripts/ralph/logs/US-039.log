@@ -1,0 +1,12 @@
+US-039 shipped on `ralph/us-039` as commit `91308ff`. The leftover `.temp-execution-…js` in the playwright skill folder is a transient artifact from `run.js` and was deliberately not staged.
+
+**What landed**
+
+- `src/lib/pyodide/client.ts` — `PyodideStopError(reason)`, `stopPyodide()`, 30s default timeout on `run`/`runWithTests`, `subscribePyodideRestart()`, listeners hoisted out of the singleton so they survive worker recreation. Late `'ready'`/`'error'` events from a replaced worker are ignored.
+- `src/widgets/Code/CodeRunner.tsx` — Run button morphs to a `--danger` Stop button (`[data-testid="coderunner-stop"]`) while local Run OR the new `actionRunning` prop is in flight; output panel renders a `<Callout tone="warning">` with the appropriate user/timeout copy after restart.
+- `src/widgets/Code/CodeWidget.tsx` — passes `actionRunning={submission === 'submitting'}`; Submit's `PyodideStopError` resets to `idle` so the user can resubmit.
+- `src/lib/pyodide/clientStop.test.ts` — 11 cases (mock Worker + fake timers).
+
+**Quality**: typecheck clean, `vitest` 88/88, lint clean on changed files.
+
+**Browser verification**: typed `while True: pass` in Sandbox → Run morphed to Stop → click Stop → warning Callout `Session restarted — re-run previous cells if needed.` → fresh worker booted → ran `print(1+1)` and got `2` without page reload. Screenshots at `/tmp/us039-stop-visible.png`, `/tmp/us039-restart-callout.png`, `/tmp/us039-fresh-run.png`. Zero console errors.

@@ -1,0 +1,9 @@
+US-037 implemented and committed (`041e8a1`).
+
+**Summary:**
+- `CourseSchema` and `LessonSchema` gained `schemaVersion: z.number().int().default(1)` — missing field defaults to 1 on parse; explicit 1 also parses.
+- `src/widgets/schemas/build.ts` extended with a top-level loop that emits `course.json` and `lesson.json`; both new files include `schemaVersion`.
+- Seed `gauss-basics` course.json and both lesson JSON files updated with `"schemaVersion": 1`.
+- `init_course` and `generate_lesson` skill docs updated so future agent-authored files include the field.
+- Vitest covers: parse defaults `schemaVersion` to 1 when missing, parse succeeds with explicit `schemaVersion: 1`, for both Course and Lesson.
+- Quality: typecheck clean, all 77 tests pass, no new lint errors on changed files.
