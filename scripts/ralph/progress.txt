@@ -42,3 +42,12 @@ Previous log archived to: archive/progress-2026-05-01-0005.txt
   - The course.json shape is `{ slug, title, description, accentColor, icon, modules:[{id,title,summary,lessons:[{slug,title,estimatedMinutes}]}], createdAt, updatedAt }` — id format `m1`/`m2`/... is a convention this skill establishes (CourseSchema only requires `id: string`).
   - course-spec.json sits at `/courses/<slug>/course-spec.json`; the wizard writes it via POST `/api/courses` (US-026). init_course is the bridge from spec → prd.json.
 ---
+
+## 2026-05-01 - US-027 (re-iteration verification)
+- Re-iteration of US-027 on a fresh `ralph/us-027` worktree branched from `main`. The SKILL.md from the prior iteration was already merged into `main` (via merge commit 8df7fec) and is present on this branch.
+- Verified `scripts/ralph/skills/init_course/SKILL.md` (543 lines) satisfies all AC: frontmatter (`name: init_course`, `user-invocable: true`, PL+EN trigger phrases); slug-arg + CourseSpecSchema validation; Step 1 archive; Step 2 research.md; Step 3 architect→course.json; Step 4 prd.json with US-001/US-002/US-003..N + optional review pass; per-lesson AC strings verbatim; `branchName: ralph/course-<slug>`; instructs `generate_lesson` handoff; worked example for `edge-detection-basics`; manual smoke test; Step/Checklist pattern matches `prd_init`.
+- `npm run typecheck` clean (markdown-only skill, no TS impact).
+- No code changes required this iteration; this commit only logs the verification so the orchestrator sees a `feat: US-027` commit on the branch.
+- **Learnings for future iterations:**
+  - When ralph re-spawns a story whose work is already on `main`, the worktree will land on a clean tree. The right move is to verify AC + typecheck and commit a no-op verification entry to progress.txt with the standard `feat: US-XXX - ...` message — that gives the orchestrator the commit signal it expects without forcing speculative changes.
+---
