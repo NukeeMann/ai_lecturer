@@ -51,3 +51,33 @@ Previous log archived to: archive/progress-2026-05-01-0005.txt
 - **Learnings for future iterations:**
   - When ralph re-spawns a story whose work is already on `main`, the worktree will land on a clean tree. The right move is to verify AC + typecheck and commit a no-op verification entry to progress.txt with the standard `feat: US-XXX - ...` message — that gives the orchestrator the commit signal it expects without forcing speculative changes.
 ---
+
+## 2026-05-01 - US-029 (Seed course: Podstawy filtrowania Gaussa)
+- Authored hand-written seed course at `/courses/gauss-basics/` exercising every MVP widget type (theory, quiz, code, demo, sandbox) — content in Polish per the story note.
+- Files created:
+  - `courses/gauss-basics/course.json` — slug `gauss-basics`, `accentColor: 'indigo'`, `icon: 'image'`, 1 module (`m1` "Filtry liniowe i Gauss") with 2 lessons; `createdAt`/`updatedAt` 2026-05-01.
+  - `courses/gauss-basics/lessons/wprowadzenie-do-filtrowania.json` — 4 sections: theory (intro + konwolucja, block KaTeX `(I*K)(x,y)=…`, info Callout) → quiz single-select ABCD "Czym jest kernel?" (4 options, correct=B/index 1, full explanation) → sandbox numpy 2D array średnia (encouragement set) → theory LP/HP overview + przejście do Gaussa (info Callout).
+  - `courses/gauss-basics/lessons/filtr-gaussa-w-praktyce.json` — 5 sections: theory (2D Gauss formula KaTeX + info Callout o separability/izotropowości) → demo gauss `cameraman.jpg` sigma 0.5–8 default 2 → code graded `gauss_blur(img, sigma)` with 3 hidden tests (shape / scipy-reference values on 5×5 delta fixture / sigma=0 identity) → quiz multi-select 5 opcji 3 correct ("separability", "izotropowość", "większe sigma → silniejsze rozmycie"; distractors: "Gauss wyostrza" / "tylko RGB") with full explanation → sandbox `scipy.ndimage` (gaussian_filter / uniform_filter / sobel) z encouragement.
+- Validated all three JSONs against `CourseSchema` and `LessonSchema` with a tsx script (`/tmp/validate-us029.ts`) using `@/lib/schemas/...` imports — all pass; per-AC structural assertions also pass (1 module / 2 lessons, lesson1 = 4 sections in order theory→quiz→sandbox→theory, lesson2 = 5 sections theory→demo→code→quiz→sandbox, code has 3 tests, demo params 0.5/8/2, quiz1 single-select 4 opts, quiz2 multi-select).
+- `npm run typecheck` clean.
+- **Manual integration smoke test** (to be performed by reviewer with dev server up):
+  1. `npm run dev` → open `http://localhost:3000` (Dashboard).
+  2. Confirm "Podstawy filtrowania Gaussa…" course card renders with indigo accent + image icon, badge "New".
+  3. Click card → navigate into Lesson 1 "Wprowadzenie do filtrowania obrazów". Confirm theory section renders KaTeX `(I*K)(x,y)=…` block + info Callout; eyebrow "Moduł 1 · Lekcja 1".
+  4. Take the quiz (correct answer is B "Mała macierz wag…"); confirm explanation appears with green checkmark on B.
+  5. Run the sandbox cell (numpy mean) and confirm output appears.
+  6. Read the second theory section (LP/HP overview); click "Mark lesson complete" at the bottom bar.
+  7. Auto-advance kicks in (600ms fade) → land on Lesson 2 "Filtr Gaussa w praktyce".
+  8. Drag the σ slider on the demo from min to max and back; confirm canvas overlay updates and "What just happened?" footer text adapts.
+  9. In the code section, replace the body of `gauss_blur` with `return gaussian_filter(img, sigma=sigma)`, click Submit, confirm all 3 tests pass (✓ shape / ✓ scipy reference / ✓ sigma=0 identity) and section badge flips to "done".
+  10. Take the multi-select quiz, pick A+B+C, confirm correct + explanation; the two distractors should show as untouched dimmed.
+  11. Run sandbox 5 (scipy.ndimage), confirm prints.
+  12. Click "Mark lesson complete"; navigate "All courses" back to dashboard.
+  13. Confirm course card now shows "Completed" (or "In progress · 2/2" if any lesson still 'started') and Continue learning hero shows the most recent lesson.
+- **Learnings for future iterations:**
+  - **Seed-course validation pattern.** Drop a tsx script at `/tmp/validate-<story>.ts` that imports `CourseSchema` / `LessonSchema` via `@/lib/schemas/...` and `JSON.parse(readFileSync(...))`s the artifact files, then asserts AC-shaped invariants (section count, type order, quiz multi/single, demo params). Run with `./node_modules/.bin/tsx <path>`. tsx auto-resolves the `@` alias from `tsconfig.json#paths` — no extra config needed (unlike vitest, which needs its own alias in `vitest.config.ts`).
+  - **`/courses/` is committed seed data.** `.gitignore` only excludes `*.tmp` under `/courses/**`, so JSON artifacts land in git as-is. The seed course is meant to ship with the app — don't add `/courses/` to ignore.
+  - **JSON-with-KaTeX requires double-escaping inside string literals.** Inside lesson JSON markdown strings, `\\(...\\)` (inline) and `\\[...\\]` (block) survive JSON parsing → arrive as `\(...\)` / `\[...\]` for remark-math. Same for `\\sigma`, `\\frac`, etc. Compare against `src/widgets/Theory/sample.ts` (TS template literal, only single backslash needed).
+  - **Code widget tests use `gauss_blur` directly without import.** Test bodies are exec'd in the same namespace as user code (per US-009 worker), so referencing `gauss_blur` works without `from solution import …`. Each test file can `import numpy as np` independently — re-imports are cheap inside Pyodide.
+  - **scipy.ndimage.gaussian_filter handles sigma=0 as identity natively.** Test 3 (sigma=0 → identity) passes "for free" if the user just delegates to `gaussian_filter`. The starter `return img` placeholder still fails test 2 (delta fixture comparison), so the story still requires real implementation.
+---
