@@ -4,6 +4,7 @@ import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
+import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 
 const sectionBase = {
   id: z.string(),
@@ -40,6 +41,12 @@ export const SandboxSectionSchema = z.object({
   data: SandboxDataSchema,
 });
 
+export const HistogramSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('histogram'),
+  data: HistogramDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -52,6 +59,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   CodeSectionSchema,
   DemoSectionSchema,
   SandboxSectionSchema,
+  HistogramSectionSchema,
   CustomSectionSchema,
 ]);
 
