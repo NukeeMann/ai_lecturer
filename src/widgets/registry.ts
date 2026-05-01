@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import {
+  BarChart3,
   Code,
   FileText,
   FlaskConical,
@@ -12,11 +13,19 @@ import {
 import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
+import { HistogramWidget } from './Histogram/HistogramWidget';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxWidget } from './Sandbox/SandboxWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 
-export type WidgetType = 'theory' | 'quiz' | 'code' | 'demo' | 'sandbox' | 'custom';
+export type WidgetType =
+  | 'theory'
+  | 'quiz'
+  | 'code'
+  | 'demo'
+  | 'sandbox'
+  | 'histogram'
+  | 'custom';
 
 export interface WidgetRegistryEntry {
   component: ComponentType<{ data?: unknown }>;
@@ -55,6 +64,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Sandbox',
     icon: Terminal,
     accentVar: '--widget-sandbox',
+  },
+  histogram: {
+    component: HistogramWidget as ComponentType<{ data?: unknown }>,
+    label: 'Histogram',
+    icon: BarChart3,
+    accentVar: '--widget-histogram',
   },
   custom: {
     component: CustomPlaceholder,

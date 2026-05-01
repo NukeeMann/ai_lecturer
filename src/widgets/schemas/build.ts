@@ -9,6 +9,7 @@ import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
+import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 
 const widgets: Record<string, ZodSchema> = {
   theory: TheoryDataSchema,
@@ -16,6 +17,7 @@ const widgets: Record<string, ZodSchema> = {
   code: CodeDataSchema,
   demo: DemoDataSchema,
   sandbox: SandboxDataSchema,
+  histogram: HistogramDataSchema,
 };
 
 const outDir = dirname(fileURLToPath(import.meta.url));

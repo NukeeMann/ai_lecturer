@@ -39,6 +39,7 @@ import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progres
 import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
+import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { QuizEditor } from '@/widgets/Quiz/QuizEditor';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SandboxEditor } from '@/widgets/Sandbox/SandboxEditor';
@@ -708,6 +709,14 @@ function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProp
       )}
       {section?.type === 'sandbox' && (
         <SandboxEditor
+          key={section.id}
+          initial={section.data}
+          onCancel={onClose}
+          onSave={(next) => onSave(section.id, next)}
+        />
+      )}
+      {section?.type === 'histogram' && (
+        <HistogramEditor
           key={section.id}
           initial={section.data}
           onCancel={onClose}
@@ -1919,6 +1928,15 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit demo',
       () => onOpenPanel(section.id),
       'demo-edit-btn',
+    );
+  } else if (section.type === 'histogram') {
+    const Body = widgetRegistry.histogram.component;
+    body = <Body data={section.data} />;
+    headerActions = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit histogram',
+      () => onOpenPanel(section.id),
+      'histogram-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {
