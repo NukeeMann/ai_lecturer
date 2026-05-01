@@ -5,6 +5,7 @@
 // (numpy is needed by scipy and by the Gauss demo widget).
 
 import { RUNNER_PY } from './runnerPython';
+import { formatStdoutChunks } from './stdout';
 
 interface PyProxyLike {
   toJs?: (opts?: { dict_converter?: typeof Object.fromEntries }) => unknown;
@@ -183,14 +184,14 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
         });
         ctx.postMessage({
           id,
-          stdout: stdoutBuf.join(''),
-          stderr: stderrBuf.join(''),
+          stdout: formatStdoutChunks(stdoutBuf),
+          stderr: formatStdoutChunks(stderrBuf),
         });
       } catch (err) {
         ctx.postMessage({
           id,
-          stdout: stdoutBuf.join(''),
-          stderr: stderrBuf.join(''),
+          stdout: formatStdoutChunks(stdoutBuf),
+          stderr: formatStdoutChunks(stderrBuf),
           traceback: formatTraceback(err),
         });
       }
@@ -214,8 +215,8 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
       } catch (err) {
         ctx.postMessage({
           id,
-          stdout: stdoutBuf.join(''),
-          stderr: stderrBuf.join(''),
+          stdout: formatStdoutChunks(stdoutBuf),
+          stderr: formatStdoutChunks(stderrBuf),
           traceback: formatTraceback(err),
         });
       }
@@ -241,16 +242,16 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     }
     ctx.postMessage({
       id,
-      stdout: stdoutBuf.join(''),
-      stderr: stderrBuf.join(''),
+      stdout: formatStdoutChunks(stdoutBuf),
+      stderr: formatStdoutChunks(stderrBuf),
       traceback,
       testResults,
     });
   } catch (err) {
     ctx.postMessage({
       id,
-      stdout: stdoutBuf.join(''),
-      stderr: stderrBuf.join(''),
+      stdout: formatStdoutChunks(stdoutBuf),
+      stderr: formatStdoutChunks(stderrBuf),
       traceback: formatTraceback(err),
     });
   }
