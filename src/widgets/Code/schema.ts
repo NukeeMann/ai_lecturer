@@ -10,6 +10,7 @@ export const CodeDataSchema = z.object({
   taskMarkdown: z.string(),
   starterCode: z.string(),
   tests: z.array(CodeTestSchema),
+  solution: z.string().optional(),
 });
 
 export type CodeTest = z.infer<typeof CodeTestSchema>;

@@ -71,7 +71,8 @@
             "hidden": true,
             "body": "import numpy as np\nimg = np.array([\n    [1.0, 2.0, 3.0],\n    [4.0, 5.0, 6.0],\n    [7.0, 8.0, 9.0],\n])\nout = gauss_blur(img, sigma=0)\nnp.testing.assert_allclose(out, img, atol=1e-9), 'sigma=0 powinno zwracać oryginalny obraz'\n"
           }
-        ]
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import gaussian_filter\n\n\ndef gauss_blur(img, sigma):\n    \"\"\"Wygładź `img` filtrem Gaussa o danym `sigma`.\n\n    Dla sigma == 0 zwracamy obraz bez zmian (filtr identycznościowy).\n    Dla sigma > 0 delegujemy do scipy.ndimage.gaussian_filter, który\n    realizuje konwolucję separowalną i zachowuje shape wejścia.\n    \"\"\"\n    if sigma == 0:\n        return img\n    return gaussian_filter(img, sigma=sigma)\n"
       }
     },
     {

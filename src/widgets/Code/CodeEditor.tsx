@@ -195,6 +195,7 @@ function PythonEditor({ initial, onChange, testId }: PythonEditorProps) {
 export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
   const [taskMarkdown, setTaskMarkdown] = useState(initial.taskMarkdown);
   const [starterCode, setStarterCode] = useState(initial.starterCode);
+  const [solution, setSolution] = useState<string>(initial.solution ?? '');
   const [tests, setTests] = useState<TestRow[]>(() => dataToTestRows(initial.tests));
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -206,8 +207,9 @@ export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
       taskMarkdown,
       starterCode,
       tests: rowsToTests(tests),
+      ...(solution.trim() ? { solution } : {}),
     }),
-    [taskMarkdown, starterCode, tests],
+    [taskMarkdown, starterCode, solution, tests],
   );
 
   const dirty = useMemo(
@@ -308,6 +310,15 @@ export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
               {starterError}
             </div>
           )}
+        </div>
+
+        <div style={fieldStyle}>
+          <span style={labelStyle}>Solution (optional)</span>
+          <PythonEditor
+            initial={initial.solution ?? ''}
+            onChange={setSolution}
+            testId="code-edit-solution"
+          />
         </div>
 
         <div style={fieldStyle}>
