@@ -22,13 +22,16 @@ import {
   textareaStyle,
   type FieldErrors,
 } from '@/components/EditorForm';
+import { SourcesField } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 
 import { QuizDataSchema, type QuizData } from './schema';
 
 export interface QuizEditorProps {
   initial: QuizData;
+  initialSources?: Source[];
   onCancel: () => void;
-  onSave: (next: QuizData) => Promise<void>;
+  onSave: (next: QuizData, sources?: Source[]) => Promise<void>;
 }
 
 interface OptionRow {
@@ -138,11 +141,12 @@ const toggleRowStyle: CSSProperties = {
   color: 'var(--text)',
 };
 
-export function QuizEditor({ initial, onCancel, onSave }: QuizEditorProps) {
+export function QuizEditor({ initial, initialSources, onCancel, onSave }: QuizEditorProps) {
   const [question, setQuestion] = useState(initial.question);
   const [rows, setRows] = useState<OptionRow[]>(() => dataToRows(initial));
   const [multiSelect, setMultiSelect] = useState(initial.multiSelect);
   const [explanation, setExplanation] = useState(initial.explanation);
+  const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -163,8 +167,9 @@ export function QuizEditor({ initial, onCancel, onSave }: QuizEditorProps) {
     if (current.correct.length !== initial.correct.length) return true;
     const initialCorrect = [...initial.correct].sort((a, b) => a - b);
     const currentCorrect = [...current.correct].sort((a, b) => a - b);
-    return currentCorrect.some((c, i) => c !== initialCorrect[i]);
-  }, [current, initial]);
+    if (currentCorrect.some((c, i) => c !== initialCorrect[i])) return true;
+    return JSON.stringify(sources ?? null) !== JSON.stringify(initialSources ?? null);
+  }, [current, initial, sources, initialSources]);
 
   const handleAddOption = useCallback(() => {
     setRows((prev) => [...prev, { id: makeRowId(), text: '', correct: false }]);
@@ -247,13 +252,13 @@ export function QuizEditor({ initial, onCancel, onSave }: QuizEditorProps) {
     setSaveError(null);
     setSaving(true);
     try {
-      await onSave(result.data);
+      await onSave(result.data, sources);
       setSaving(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [current, dirty, onSave, saving]);
+  }, [current, dirty, onSave, saving, sources]);
 
   const questionError = errors.question;
   const optionsError = pickFieldError(errors, 'options');
@@ -391,6 +396,8 @@ export function QuizEditor({ initial, onCancel, onSave }: QuizEditorProps) {
             </div>
           )}
         </label>
+
+        <SourcesField sources={sources} onChange={setSources} />
       </div>
 
       <EditorFormSaveError message={saveError} />

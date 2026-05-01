@@ -18,13 +18,16 @@ import {
   labelStyle,
   type FieldErrors,
 } from '@/components/EditorForm';
+import { SourcesField } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 
 import { HistogramDataSchema, type HistogramData } from './schema';
 
 export interface HistogramEditorProps {
   initial: HistogramData;
+  initialSources?: Source[];
   onCancel: () => void;
-  onSave: (next: HistogramData) => Promise<void>;
+  onSave: (next: HistogramData, sources?: Source[]) => Promise<void>;
 }
 
 function flattenIssues(error: z.ZodError<unknown>): FieldErrors {
@@ -62,9 +65,10 @@ const helpTextStyle: CSSProperties = {
   lineHeight: 1.4,
 };
 
-export function HistogramEditor({ initial, onCancel, onSave }: HistogramEditorProps) {
+export function HistogramEditor({ initial, initialSources, onCancel, onSave }: HistogramEditorProps) {
   const [edgesText, setEdgesText] = useState(formatList(initial.binEdges));
   const [countsText, setCountsText] = useState(formatList(initial.counts));
+  const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -79,8 +83,9 @@ export function HistogramEditor({ initial, onCancel, onSave }: HistogramEditorPr
     if (parsed.edges.error || parsed.counts.error) return true;
     const next = JSON.stringify({ binEdges: parsed.edges.values, counts: parsed.counts.values });
     const prev = JSON.stringify({ binEdges: initial.binEdges, counts: initial.counts });
-    return next !== prev;
-  }, [initial.binEdges, initial.counts, parsed]);
+    if (next !== prev) return true;
+    return JSON.stringify(sources ?? null) !== JSON.stringify(initialSources ?? null);
+  }, [initial.binEdges, initial.counts, parsed, sources, initialSources]);
 
   const handleSave = useCallback(async () => {
     if (!dirty || saving) return;
@@ -105,13 +110,13 @@ export function HistogramEditor({ initial, onCancel, onSave }: HistogramEditorPr
     setSaveError(null);
     setSaving(true);
     try {
-      await onSave(result.data);
+      await onSave(result.data, sources);
       setSaving(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [dirty, onSave, parsed, saving]);
+  }, [dirty, onSave, parsed, saving, sources]);
 
   const edgesError = errors.binEdges || parsed.edges.error || undefined;
   const countsError = errors.counts || parsed.counts.error || undefined;
@@ -169,6 +174,8 @@ export function HistogramEditor({ initial, onCancel, onSave }: HistogramEditorPr
             </div>
           )}
         </label>
+
+        <SourcesField sources={sources} onChange={setSources} />
       </div>
 
       <EditorFormSaveError message={saveError} />

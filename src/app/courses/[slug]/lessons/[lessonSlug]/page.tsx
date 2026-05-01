@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
+  Library,
   Pencil,
   RefreshCw,
 } from 'lucide-react';
@@ -27,8 +28,18 @@ import {
 import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { Callout } from '@/components/Callout';
+import {
+  EditorFormFooter,
+  EditorFormSaveError,
+  formBodyStyle,
+} from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { SidePanel } from '@/components/SidePanel';
+import {
+  LessonSourcesPanel,
+  SectionSourcesPopover,
+  SourcesField,
+} from '@/components/Sources';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   isMod,
@@ -38,7 +49,7 @@ import {
 } from '@/lib/hooks/useKeyboardShortcuts';
 import { usePyodide } from '@/lib/pyodide/client';
 import type { Course } from '@/lib/schemas/course';
-import type { Lesson, Section } from '@/lib/schemas/lesson';
+import type { Lesson, Section, Source } from '@/lib/schemas/lesson';
 import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progress';
 import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
@@ -96,6 +107,8 @@ export default function LessonShellPage({
   // Side-panel edit (US-023): non-theory widgets open a 320px side panel
   // instead of an inline editor. At most one panel is open at a time.
   const [panelSectionId, setPanelSectionId] = useState<string | null>(null);
+  // Lesson-level sources side panel (US-040). Independent of section panel.
+  const [lessonSourcesPanelOpen, setLessonSourcesPanelOpen] = useState(false);
   // Chat is closed by default in MVP.
   const [chatOpen] = useState(false);
   // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
@@ -525,21 +538,47 @@ export default function LessonShellPage({
   );
 
   const handleSavePanelSection = useCallback(
-    async (sectionId: string, nextData: unknown) => {
+    async (sectionId: string, nextData: unknown, nextSources?: Source[]) => {
       if (!lesson) {
         throw new Error('Lesson not loaded');
       }
       const next: Lesson = {
         ...lesson,
-        sections: lesson.sections.map((s) =>
-          s.id === sectionId
-            ? ({ ...s, data: nextData } as Section)
-            : s,
-        ),
+        sections: lesson.sections.map((s) => {
+          if (s.id !== sectionId) return s;
+          const updated: Record<string, unknown> = {
+            ...s,
+            data: nextData,
+          };
+          if (nextSources && nextSources.length > 0) {
+            updated.sources = nextSources;
+          } else {
+            delete updated.sources;
+          }
+          return updated as Section;
+        }),
       };
       const saved = await persistLesson(next);
       setLesson(saved);
       setPanelSectionId((cur) => (cur === sectionId ? null : cur));
+    },
+    [lesson, persistLesson],
+  );
+
+  const handleSaveLessonSources = useCallback(
+    async (nextSources: Source[] | undefined) => {
+      if (!lesson) {
+        throw new Error('Lesson not loaded');
+      }
+      const next: Lesson = { ...lesson };
+      if (nextSources && nextSources.length > 0) {
+        next.sources = nextSources;
+      } else {
+        delete next.sources;
+      }
+      const saved = await persistLesson(next);
+      setLesson(saved);
+      setLessonSourcesPanelOpen(false);
     },
     [lesson, persistLesson],
   );
@@ -673,6 +712,7 @@ export default function LessonShellPage({
             onSaveTheory={handleSaveTheory}
             panelSectionId={panelSectionId}
             onOpenPanel={handleOpenPanel}
+            onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
           />
         ) : null}
       </main>
@@ -692,6 +732,13 @@ export default function LessonShellPage({
         open={panelSectionId !== null && panelSection !== null}
         onClose={handleClosePanel}
         onSave={handleSavePanelSection}
+      />
+
+      <LessonSourcesEditPanel
+        open={lessonSourcesPanelOpen}
+        sources={lesson?.sources}
+        onClose={() => setLessonSourcesPanelOpen(false)}
+        onSave={handleSaveLessonSources}
       />
 
       {sessionToast && <SessionToast message={sessionToast} />}
@@ -728,7 +775,7 @@ interface WidgetEditPanelProps {
   section: Section | null;
   open: boolean;
   onClose: () => void;
-  onSave: (sectionId: string, data: unknown) => Promise<void>;
+  onSave: (sectionId: string, data: unknown, sources?: Source[]) => Promise<void>;
 }
 
 function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProps) {
@@ -744,42 +791,125 @@ function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProp
         <QuizEditor
           key={section.id}
           initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
-          onSave={(next) => onSave(section.id, next)}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
         />
       )}
       {section?.type === 'code' && (
         <CodeEditor
           key={section.id}
           initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
-          onSave={(next) => onSave(section.id, next)}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
         />
       )}
       {section?.type === 'demo' && (
         <DemoEditor
           key={section.id}
           initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
-          onSave={(next) => onSave(section.id, next)}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
         />
       )}
       {section?.type === 'sandbox' && (
         <SandboxEditor
           key={section.id}
           initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
-          onSave={(next) => onSave(section.id, next)}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
         />
       )}
       {section?.type === 'histogram' && (
         <HistogramEditor
           key={section.id}
           initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
-          onSave={(next) => onSave(section.id, next)}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
         />
       )}
+    </SidePanel>
+  );
+}
+
+interface LessonSourcesEditPanelProps {
+  open: boolean;
+  sources: Source[] | undefined;
+  onClose: () => void;
+  onSave: (next: Source[] | undefined) => Promise<void>;
+}
+
+function LessonSourcesEditPanel({
+  open,
+  sources,
+  onClose,
+  onSave,
+}: LessonSourcesEditPanelProps) {
+  const initialKey = useMemo(
+    () => JSON.stringify(sources ?? null),
+    [sources],
+  );
+  const [draft, setDraft] = useState<Source[] | undefined>(sources);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Re-sync draft from server-saved sources when the panel opens or upstream changes.
+  const lastInitialKey = useRef(initialKey);
+  useEffect(() => {
+    if (lastInitialKey.current !== initialKey) {
+      lastInitialKey.current = initialKey;
+      setDraft(sources);
+    }
+  }, [initialKey, sources]);
+
+  const dirty = JSON.stringify(draft ?? null) !== initialKey;
+
+  const handleSave = useCallback(async () => {
+    if (!dirty || saving) return;
+    setSaveError(null);
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setSaving(false);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaving(false);
+    }
+  }, [dirty, draft, onSave, saving]);
+
+  return (
+    <SidePanel
+      open={open}
+      onClose={onClose}
+      title="Lesson sources"
+      testId="lesson-sources-edit-panel"
+    >
+      <div
+        data-testid="lesson-sources-editor"
+        style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
+      >
+        <div style={formBodyStyle}>
+          <SourcesField
+            sources={draft}
+            onChange={setDraft}
+            label="Lesson-level sources"
+            testId="lesson-sources-field"
+          />
+        </div>
+        <EditorFormSaveError message={saveError} />
+        <EditorFormFooter
+          saving={saving}
+          saveDisabled={!dirty}
+          onCancel={onClose}
+          onSave={() => void handleSave()}
+          cancelTestId="lesson-sources-cancel"
+          saveTestId="lesson-sources-save"
+        />
+      </div>
     </SidePanel>
   );
 }
@@ -1737,6 +1867,7 @@ interface LessonStreamProps {
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
   panelSectionId: string | null;
   onOpenPanel: (sectionId: string) => void;
+  onOpenLessonSources: () => void;
 }
 
 function LessonStream({
@@ -1750,6 +1881,7 @@ function LessonStream({
   onSaveTheory,
   panelSectionId,
   onOpenPanel,
+  onOpenLessonSources,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
@@ -1789,6 +1921,8 @@ function LessonStream({
         lessonM={lessonM}
         title={lesson.title}
         description={lesson.description}
+        sourcesCount={lesson.sources?.length ?? 0}
+        onOpenLessonSources={onOpenLessonSources}
       />
       {lesson.sections.map((section, idx) => {
         const persistedDone = sectionState[section.id]?.done === true;
@@ -1812,6 +1946,9 @@ function LessonStream({
           />
         );
       })}
+      {lesson.sources && lesson.sources.length > 0 && (
+        <LessonSourcesPanel sources={lesson.sources} />
+      )}
     </div>
   );
 }
@@ -1821,11 +1958,15 @@ function LessonHeader({
   lessonM,
   title,
   description,
+  sourcesCount,
+  onOpenLessonSources,
 }: {
   moduleN: number;
   lessonM: number;
   title: string;
   description: string;
+  sourcesCount: number;
+  onOpenLessonSources: () => void;
 }) {
   return (
     <header
@@ -1845,20 +1986,63 @@ function LessonHeader({
       >
         Module {moduleN} · Lesson {lessonM}
       </div>
-      <h1
-        data-testid="lesson-header-title"
+      <div
         style={{
-          margin: 0,
-          fontSize: 'var(--fs-3xl)',
-          fontWeight: 600,
-          letterSpacing: '-0.02em',
-          fontFamily: 'var(--font-display)',
-          color: 'var(--text)',
-          lineHeight: 1.15,
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 'var(--space-3)',
         }}
       >
-        {title}
-      </h1>
+        <h1
+          data-testid="lesson-header-title"
+          style={{
+            margin: 0,
+            flex: 1,
+            fontSize: 'var(--fs-3xl)',
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            fontFamily: 'var(--font-display)',
+            color: 'var(--text)',
+            lineHeight: 1.15,
+          }}
+        >
+          {title}
+        </h1>
+        <button
+          type="button"
+          data-testid="lesson-header-sources-btn"
+          onClick={onOpenLessonSources}
+          aria-label="Edit lesson sources"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 30,
+            padding: '0 10px',
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          <Library size={14} aria-hidden />
+          Lesson sources
+          {sourcesCount > 0 && (
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              {sourcesCount}
+            </span>
+          )}
+        </button>
+      </div>
       {description ? (
         <p
           data-testid="lesson-header-description"
@@ -1931,7 +2115,11 @@ function SectionRenderer({
   };
 
   let body: ReactNode;
-  let headerActions: ReactNode | undefined;
+  let pencilNode: ReactNode | undefined;
+  const sourcesNode: ReactNode | undefined =
+    section.sources && section.sources.length > 0 ? (
+      <SectionSourcesPopover sources={section.sources} sectionId={section.id} />
+    ) : undefined;
 
   function pencilButton(
     pressed: boolean,
@@ -1966,7 +2154,7 @@ function SectionRenderer({
 
   if (section.type === 'quiz') {
     body = <QuizWidget data={section.data} onCorrect={onComplete} />;
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit quiz',
       () => onOpenPanel(section.id),
@@ -1981,7 +2169,7 @@ function SectionRenderer({
         onComplete={onComplete}
       />
     );
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit code exercise',
       () => onOpenPanel(section.id),
@@ -1995,7 +2183,7 @@ function SectionRenderer({
         progressKey={progressKey}
       />
     );
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit sandbox',
       () => onOpenPanel(section.id),
@@ -2004,7 +2192,7 @@ function SectionRenderer({
   } else if (section.type === 'demo') {
     const Body = widgetRegistry.demo.component;
     body = <Body data={section.data} />;
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit demo',
       () => onOpenPanel(section.id),
@@ -2013,7 +2201,7 @@ function SectionRenderer({
   } else if (section.type === 'histogram') {
     const Body = widgetRegistry.histogram.component;
     body = <Body data={section.data} />;
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit histogram',
       () => onOpenPanel(section.id),
@@ -2032,7 +2220,7 @@ function SectionRenderer({
       const Body = widgetRegistry.theory.component;
       body = <Body data={section.data} />;
     }
-    headerActions = pencilButton(
+    pencilNode = pencilButton(
       editing,
       editing ? 'Close edit' : 'Edit theory',
       () => onToggleEdit(section.id),
@@ -2042,6 +2230,14 @@ function SectionRenderer({
     const Body = widgetRegistry[section.type as WidgetType].component;
     body = <Body data={section.data} />;
   }
+
+  const headerActions: ReactNode | undefined =
+    sourcesNode || pencilNode ? (
+      <>
+        {sourcesNode}
+        {pencilNode}
+      </>
+    ) : undefined;
 
   return (
     <div

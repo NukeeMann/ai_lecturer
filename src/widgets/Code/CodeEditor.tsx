@@ -36,6 +36,8 @@ import {
   textareaStyle,
   type FieldErrors,
 } from '@/components/EditorForm';
+import { SourcesField } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 
 import {
   codeRunnerEditorTheme,
@@ -45,8 +47,9 @@ import { CodeDataSchema, type CodeData, type CodeTest } from './schema';
 
 export interface CodeEditorProps {
   initial: CodeData;
+  initialSources?: Source[];
   onCancel: () => void;
-  onSave: (next: CodeData) => Promise<void>;
+  onSave: (next: CodeData, sources?: Source[]) => Promise<void>;
 }
 
 interface TestRow extends CodeTest {
@@ -192,11 +195,12 @@ function PythonEditor({ initial, onChange, testId }: PythonEditorProps) {
   return <div ref={parentRef} data-testid={testId} style={cmContainerStyle} />;
 }
 
-export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
+export function CodeEditor({ initial, initialSources, onCancel, onSave }: CodeEditorProps) {
   const [taskMarkdown, setTaskMarkdown] = useState(initial.taskMarkdown);
   const [starterCode, setStarterCode] = useState(initial.starterCode);
   const [solution, setSolution] = useState<string>(initial.solution ?? '');
   const [tests, setTests] = useState<TestRow[]>(() => dataToTestRows(initial.tests));
+  const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
@@ -212,10 +216,10 @@ export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
     [taskMarkdown, starterCode, solution, tests],
   );
 
-  const dirty = useMemo(
-    () => JSON.stringify(current) !== JSON.stringify(initial),
-    [current, initial],
-  );
+  const dirty = useMemo(() => {
+    if (JSON.stringify(current) !== JSON.stringify(initial)) return true;
+    return JSON.stringify(sources ?? null) !== JSON.stringify(initialSources ?? null);
+  }, [current, initial, sources, initialSources]);
 
   const handleAddTest = useCallback(() => {
     const newRow: TestRow = {
@@ -260,13 +264,13 @@ export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
     setSaveError(null);
     setSaving(true);
     try {
-      await onSave(result.data);
+      await onSave(result.data, sources);
       setSaving(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [current, dirty, onSave, saving]);
+  }, [current, dirty, onSave, saving, sources]);
 
   const taskError = errors.taskMarkdown;
   const starterError = errors.starterCode;
@@ -402,6 +406,8 @@ export function CodeEditor({ initial, onCancel, onSave }: CodeEditorProps) {
             <Plus size={12} aria-hidden /> Add test
           </button>
         </div>
+
+        <SourcesField sources={sources} onChange={setSources} />
       </div>
 
       <EditorFormSaveError message={saveError} />

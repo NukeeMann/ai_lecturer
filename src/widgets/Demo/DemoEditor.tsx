@@ -19,13 +19,16 @@ import {
   labelStyle,
   type FieldErrors,
 } from '@/components/EditorForm';
+import { SourcesField } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 
 import { DemoDataSchema, type DemoData } from './schema';
 
 export interface DemoEditorProps {
   initial: DemoData;
+  initialSources?: Source[];
   onCancel: () => void;
-  onSave: (next: DemoData) => Promise<void>;
+  onSave: (next: DemoData, sources?: Source[]) => Promise<void>;
 }
 
 function flattenIssues(error: z.ZodError<unknown>): FieldErrors {
@@ -49,13 +52,14 @@ const numberRowStyle: CSSProperties = {
   gap: 'var(--space-2)',
 };
 
-export function DemoEditor({ initial, onCancel, onSave }: DemoEditorProps) {
+export function DemoEditor({ initial, initialSources, onCancel, onSave }: DemoEditorProps) {
   const [imageSrc, setImageSrc] = useState(initial.imageSrc);
   const [sigmaMin, setSigmaMin] = useState(String(initial.params.sigmaMin));
   const [sigmaMax, setSigmaMax] = useState(String(initial.params.sigmaMax));
   const [sigmaDefault, setSigmaDefault] = useState(
     String(initial.params.sigmaDefault),
   );
+  const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [images, setImages] = useState<string[]>([]);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
@@ -97,10 +101,10 @@ export function DemoEditor({ initial, onCancel, onSave }: DemoEditorProps) {
     };
   }, [initial.demoType, imageSrc, sigmaMin, sigmaMax, sigmaDefault]);
 
-  const dirty = useMemo(
-    () => JSON.stringify(current) !== JSON.stringify(initial),
-    [current, initial],
-  );
+  const dirty = useMemo(() => {
+    if (JSON.stringify(current) !== JSON.stringify(initial)) return true;
+    return JSON.stringify(sources ?? null) !== JSON.stringify(initialSources ?? null);
+  }, [current, initial, sources, initialSources]);
 
   const handleSave = useCallback(async () => {
     if (!dirty || saving) return;
@@ -123,13 +127,13 @@ export function DemoEditor({ initial, onCancel, onSave }: DemoEditorProps) {
     setSaveError(null);
     setSaving(true);
     try {
-      await onSave(result.data);
+      await onSave(result.data, sources);
       setSaving(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [current, dirty, onSave, saving]);
+  }, [current, dirty, onSave, saving, sources]);
 
   const imageError = errors.imageSrc;
   const minError = errors['params.sigmaMin'];
@@ -256,6 +260,8 @@ export function DemoEditor({ initial, onCancel, onSave }: DemoEditorProps) {
             </div>
           )}
         </div>
+
+        <SourcesField sources={sources} onChange={setSources} />
       </div>
 
       <EditorFormSaveError message={saveError} />
