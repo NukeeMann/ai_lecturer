@@ -157,6 +157,38 @@ log_task() {
   echo -e "[$(_ts)] [$tid] $*"
 }
 
+# Extract human-readable text from a JSONL stream-json log so failure reports
+# and retry prompts stay readable. Falls back to a raw tail when the log isn't
+# JSONL (older runs, or non-JSON stderr noise from `timeout` / shell wrappers).
+format_log_tail() {
+  local logfile="$1"
+  local n_lines="${2:-40}"
+  [ -s "$logfile" ] || return 0
+  local extracted
+  extracted=$(jq -R -r 'try (fromjson |
+      if .type == "assistant" then
+        (.message.content // []) | map(
+          if .type == "text" then .text
+          elif .type == "tool_use" then "→ " + .name + " " + ((.input // {}) | tostring | .[0:200])
+          else empty end
+        ) | join("\n")
+      elif .type == "user" then
+        (.message.content // []) | map(
+          if .type == "tool_result" then
+            "  ← " + (if (.content | type) == "string" then .content else (.content | tostring) end | .[0:300])
+          else empty end
+        ) | join("\n")
+      elif .type == "result" then
+        "RESULT (" + (.subtype // "?") + "): " + (.result // "(no result)")
+      else empty end
+    ) catch empty' "$logfile" 2>/dev/null | sed '/^$/d' | tail -n "$n_lines")
+  if [ -n "$extracted" ]; then
+    printf '%s\n' "$extracted"
+  else
+    tail -n "$n_lines" "$logfile"
+  fi
+}
+
 # ============================================================================
 # Signal handling: propagate Ctrl+C to active workers and their subprocesses
 # ============================================================================
@@ -204,7 +236,7 @@ report_failure() {
   local logfile="$LOG_DIR/${task_id}.log"
   local last_lines=""
   if [ -f "$logfile" ]; then
-    last_lines=$(tail -20 "$logfile" | jq -Rs .)
+    last_lines=$(format_log_tail "$logfile" 20 | jq -Rs .)
   else
     last_lines='""'
   fi
@@ -361,9 +393,11 @@ capture_failure_context() {
         echo ""
       fi
     fi
-    if [ -f "$logfile" ]; then
+    if [ -s "$logfile" ]; then
       echo "Last 40 lines of agent output:"
-      tail -40 "$logfile" 2>/dev/null || true
+      format_log_tail "$logfile" 40 2>/dev/null || true
+    elif [ -f "$logfile" ]; then
+      echo "Agent log was empty — process likely killed before any output was flushed."
     fi
   } > "$last_failure_file" 2>/dev/null || true
 }
@@ -516,6 +550,8 @@ $recent_progress")"
     --model "$MODEL" \
     --dangerously-skip-permissions \
     --print \
+    --output-format stream-json \
+    --verbose \
     -p "$enriched_prompt" \
     2>&1 | tee "$logfile" || exit_code=$?
 
