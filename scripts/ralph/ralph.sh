@@ -157,29 +157,22 @@ log_task() {
   echo -e "[$(_ts)] [$tid] $*"
 }
 
-# Extract human-readable text from a JSONL stream-json log so failure reports
-# and retry prompts stay readable. Falls back to a raw tail when the log isn't
-# JSONL (older runs, or non-JSON stderr noise from `timeout` / shell wrappers).
+# Extract a short, human-readable tail from a JSONL stream-json log for retry
+# prompts. Keeps only assistant text and the final result line — tool calls and
+# tool results are deliberately dropped to keep the snippet compact. The full
+# transcript stays at $logfile if deeper inspection is needed.
 format_log_tail() {
   local logfile="$1"
-  local n_lines="${2:-40}"
+  local n_lines="${2:-12}"
   [ -s "$logfile" ] || return 0
   local extracted
   extracted=$(jq -R -r 'try (fromjson |
       if .type == "assistant" then
         (.message.content // []) | map(
-          if .type == "text" then .text
-          elif .type == "tool_use" then "→ " + .name + " " + ((.input // {}) | tostring | .[0:200])
-          else empty end
-        ) | join("\n")
-      elif .type == "user" then
-        (.message.content // []) | map(
-          if .type == "tool_result" then
-            "  ← " + (if (.content | type) == "string" then .content else (.content | tostring) end | .[0:300])
-          else empty end
+          if .type == "text" then .text else empty end
         ) | join("\n")
       elif .type == "result" then
-        "RESULT (" + (.subtype // "?") + "): " + (.result // "(no result)")
+        "RESULT (" + (.subtype // "?") + "): " + ((.result // "(no result)") | .[0:200])
       else empty end
     ) catch empty' "$logfile" 2>/dev/null | sed '/^$/d' | tail -n "$n_lines")
   if [ -n "$extracted" ]; then
@@ -227,6 +220,10 @@ cleanup_on_interrupt() {
 # Core helpers
 # ============================================================================
 
+# Append/replace a row in failed_report.json. Acts as a compact index of failed
+# attempts — id, title, retry count, gave_up flag, and a pointer to the full
+# log file. The agent transcript itself stays in $logfile so this report
+# doesn't bloat with duplicated output.
 report_failure() {
   local task_id="$1"
   local attempt="$2"
@@ -234,12 +231,6 @@ report_failure() {
   local t_title
   t_title=$(jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\") | .title" "$PRD")
   local logfile="$LOG_DIR/${task_id}.log"
-  local last_lines=""
-  if [ -f "$logfile" ]; then
-    last_lines=$(format_log_tail "$logfile" 20 | jq -Rs .)
-  else
-    last_lines='""'
-  fi
 
   local tmp="$FAILED_REPORT.tmp.$$"
   jq --arg id "$task_id" \
@@ -248,7 +239,6 @@ report_failure() {
      --argjson max "$max" \
      --arg time "$(date -Iseconds)" \
      --arg log "$logfile" \
-     --argjson tail "$last_lines" \
      '. |= map(select(.id != $id)) + [{
        id: $id,
        title: $title,
@@ -256,8 +246,7 @@ report_failure() {
        max_retries: $max,
        gave_up: ($attempt > $max),
        timestamp: $time,
-       logfile: $log,
-       last_output: $tail
+       logfile: $log
      }]' "$FAILED_REPORT" > "$tmp" && mv "$tmp" "$FAILED_REPORT"
 }
 
@@ -363,11 +352,11 @@ git_unlock() {
   fi
 }
 
-# Persist a failure note for the next retry attempt. Captures the agent's last
-# stdout, plus git status / diff stats from the worktree so the next iteration
-# knows what was attempted (file paths, scope) before the worktree was wiped.
-# MUST be called before `git worktree remove` — once the worktree is gone, the
-# uncommitted diff is unrecoverable.
+# Persist a compact failure note for the next retry attempt: the failure
+# reason, the names of files the previous attempt touched in the worktree,
+# and a short tail of the agent's output. The next prompt embeds this verbatim
+# so it stays brief on purpose. MUST be called before `git worktree remove` —
+# once the worktree is gone, the uncommitted file list is unrecoverable.
 capture_failure_context() {
   local task_id="$1"
   local worktree_dir="$2"
@@ -377,27 +366,19 @@ capture_failure_context() {
 
   {
     echo "$reason"
-    echo ""
     if [ -d "$worktree_dir/.git" ] || [ -f "$worktree_dir/.git" ]; then
-      local status diffstat
-      status=$(git -C "$worktree_dir" status --short 2>/dev/null || true)
-      diffstat=$(git -C "$worktree_dir" diff --stat 2>/dev/null || true)
+      local status
+      status=$(git -C "$worktree_dir" status --short 2>/dev/null | head -20 || true)
       if [ -n "$status" ]; then
-        echo "Uncommitted changes in worktree (lost on retry):"
+        echo ""
+        echo "Files touched (lost on retry):"
         echo "$status"
-        echo ""
-      fi
-      if [ -n "$diffstat" ]; then
-        echo "Diff stats:"
-        echo "$diffstat"
-        echo ""
       fi
     fi
     if [ -s "$logfile" ]; then
-      echo "Last 40 lines of agent output:"
-      format_log_tail "$logfile" 40 2>/dev/null || true
-    elif [ -f "$logfile" ]; then
-      echo "Agent log was empty — process likely killed before any output was flushed."
+      echo ""
+      echo "Last agent output:"
+      format_log_tail "$logfile" 12 2>/dev/null || true
     fi
   } > "$last_failure_file" 2>/dev/null || true
 }
@@ -426,16 +407,19 @@ run_worker() {
   if [ -d "$worktree_dir" ]; then
     git worktree remove "$worktree_dir" --force 2>/dev/null || rm -rf "$worktree_dir"
   fi
-  git worktree add "$worktree_dir" "$branch"
+  git worktree add "$worktree_dir" "$branch" >/dev/null 2>&1
 
   git_unlock
 
-  # Install dependencies in the worktree
+  # Install dependencies in the worktree. Output is discarded — npm chatter
+  # on a warm cache ("up to date in 470ms") is not worth a per-task log file.
+  # Install failures are flagged so the operator can re-run install manually;
+  # the agent still gets to attempt the task and may succeed if cache is good.
   cd "$worktree_dir"
   log_task "$task_id" "Installing dependencies..."
-  eval "$INSTALL_CMD" > "$logfile.npm" 2>&1 || {
-    log_task "$task_id" "Dependency install failed (check $logfile.npm)"
-  }
+  if ! eval "$INSTALL_CMD" >/dev/null 2>&1; then
+    log_task "$task_id" "Dependency install failed — agent will need to resolve"
+  fi
 
   # Build enriched prompt with story context
   local story_json
@@ -618,7 +602,7 @@ $recent_progress")"
   # Push branch. Plain push (no --force-with-lease): this branch was just
   # created from BASE_BRANCH and has no prior remote state to protect against.
   cd "$worktree_dir"
-  if ! git push -u origin "$branch"; then
+  if ! git push -u origin "$branch" >/dev/null 2>&1; then
     log_task "$task_id" "${RED}Push failed${RST} — task will be retried"
     git_lock
     cd "$REPO_ROOT"
@@ -652,8 +636,8 @@ merge_tasks() {
   log "Merging ${#tasks[@]} branch(es) -> $BASE_BRANCH"
 
   cd "$REPO_ROOT"
-  git checkout "$BASE_BRANCH"
-  git pull --rebase origin "$BASE_BRANCH" 2>/dev/null || true
+  git checkout "$BASE_BRANCH" >/dev/null 2>&1
+  git pull --rebase origin "$BASE_BRANCH" >/dev/null 2>&1 || true
 
   for task_id in "${tasks[@]}"; do
     local branch
@@ -667,7 +651,7 @@ merge_tasks() {
     fi
 
     local merge_status="clean"
-    if git merge --no-ff --no-edit "$branch" 2>&1; then
+    if git merge --no-ff --no-edit "$branch" >/dev/null 2>&1; then
       :
     else
       merge_status="conflict"
@@ -712,7 +696,7 @@ merge_tasks() {
       done
 
       git add -A
-      git commit --no-edit -m "merge: $task_id with auto-resolved conflicts" || true
+      git commit --no-edit -m "merge: $task_id with auto-resolved conflicts" >/dev/null 2>&1 || true
     fi
 
     # One-line merge summary
@@ -740,7 +724,7 @@ merge_tasks() {
     commit_progress "chore(ralph): mark ${merged_ok[*]} done + update logs"
   fi
 
-  git push origin "$BASE_BRANCH" || true
+  git push origin "$BASE_BRANCH" >/dev/null 2>&1 || true
   log_ok "Pushed to $BASE_BRANCH"
 }
 
@@ -833,7 +817,7 @@ reconcile_merged_prs() {
   local reconciled=0
   cd "$REPO_ROOT"
   git checkout "$BASE_BRANCH" >/dev/null 2>&1
-  git pull --rebase origin "$BASE_BRANCH" 2>/dev/null || true
+  git pull --rebase origin "$BASE_BRANCH" >/dev/null 2>&1 || true
 
   for tid in $(jq -r ".${STORIES_FIELD}[] | select(.passes == false) | .id" "$PRD" 2>/dev/null); do
     local branch
@@ -847,7 +831,7 @@ reconcile_merged_prs() {
 
   if [ "$reconciled" -gt 0 ]; then
     commit_progress "chore(ralph): reconcile $reconciled merged PR(s) into prd.json"
-    git push origin "$BASE_BRANCH" || true
+    git push origin "$BASE_BRANCH" >/dev/null 2>&1 || true
     log_ok "Reconciled $reconciled merged PR(s) and pushed to $BASE_BRANCH"
   fi
 }
@@ -874,8 +858,8 @@ else
 fi
 
 cd "$REPO_ROOT"
-git checkout "$BASE_BRANCH"
-git pull --rebase origin "$BASE_BRANCH" 2>/dev/null || true
+git checkout "$BASE_BRANCH" >/dev/null 2>&1
+git pull --rebase origin "$BASE_BRANCH" >/dev/null 2>&1 || true
 
 # In PR mode, pick up stories whose PRs got merged since last run before we
 # count totals or pick tasks. This is the closest we get to "sync".
