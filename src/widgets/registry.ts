@@ -4,6 +4,7 @@ import {
   Code,
   FileText,
   FlaskConical,
+  Image as ImageIcon,
   Layers,
   type LucideProps,
   Target,
@@ -14,6 +15,7 @@ import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
 import { HistogramWidget } from './Histogram/HistogramWidget';
+import { PlotImageWidget } from './PlotImage/PlotImageWidget';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxWidget } from './Sandbox/SandboxWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
@@ -25,6 +27,7 @@ export type WidgetType =
   | 'demo'
   | 'sandbox'
   | 'histogram'
+  | 'plotImage'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -70,6 +73,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Histogram',
     icon: BarChart3,
     accentVar: '--widget-histogram',
+  },
+  plotImage: {
+    component: PlotImageWidget as ComponentType<{ data?: unknown }>,
+    label: 'Plot Image',
+    icon: ImageIcon,
+    accentVar: '--widget-plot-image',
   },
   custom: {
     component: CustomPlaceholder,

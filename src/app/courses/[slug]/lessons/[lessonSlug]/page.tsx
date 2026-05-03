@@ -55,6 +55,7 @@ import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
+import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
 import { QuizEditor } from '@/widgets/Quiz/QuizEditor';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SandboxEditor } from '@/widgets/Sandbox/SandboxEditor';
@@ -729,6 +730,7 @@ export default function LessonShellPage({
 
       <WidgetEditPanel
         section={panelSection}
+        courseSlug={slug}
         open={panelSectionId !== null && panelSection !== null}
         onClose={handleClosePanel}
         onSave={handleSavePanelSection}
@@ -773,12 +775,13 @@ function SessionToast({ message }: { message: string }) {
 
 interface WidgetEditPanelProps {
   section: Section | null;
+  courseSlug: string;
   open: boolean;
   onClose: () => void;
   onSave: (sectionId: string, data: unknown, sources?: Source[]) => Promise<void>;
 }
 
-function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProps) {
+function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetEditPanelProps) {
   const title = section ? `Edit ${widgetRegistry[section.type as WidgetType].label}` : 'Edit';
   return (
     <SidePanel
@@ -828,6 +831,16 @@ function WidgetEditPanel({ section, open, onClose, onSave }: WidgetEditPanelProp
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'plotImage' && (
+        <PlotImageEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          courseSlug={courseSlug}
           onCancel={onClose}
           onSave={(next, sources) => onSave(section.id, next, sources)}
         />
@@ -2206,6 +2219,15 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit histogram',
       () => onOpenPanel(section.id),
       'histogram-edit-btn',
+    );
+  } else if (section.type === 'plotImage') {
+    const Body = widgetRegistry.plotImage.component;
+    body = <Body data={section.data} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit plot image',
+      () => onOpenPanel(section.id),
+      'plot-image-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {
