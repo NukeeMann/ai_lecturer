@@ -3,6 +3,7 @@ import { TheoryDataSchema } from '@/widgets/Theory/schema';
 import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { CodeClozeDataSchema } from '@/widgets/CodeCloze/schema';
+import { DataTableDataSchema } from '@/widgets/DataTable/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { DragMatchDataSchema } from '@/widgets/DragMatch/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
@@ -89,6 +90,12 @@ export const DragMatchSectionSchema = z.object({
   data: DragMatchDataSchema,
 });
 
+export const DataTableSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('dataTable'),
+  data: DataTableDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -106,6 +113,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   PlotImageSectionSchema,
   ParametricExplorerSectionSchema,
   DragMatchSectionSchema,
+  DataTableSectionSchema,
   CustomSectionSchema,
 ]);
 

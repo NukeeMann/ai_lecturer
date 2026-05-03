@@ -56,6 +56,7 @@ import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
 import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
+import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
@@ -869,6 +870,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'dragMatch' && (
         <DragMatchEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'dataTable' && (
+        <DataTableEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -2306,6 +2316,15 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit drag match',
       () => onOpenPanel(section.id),
       'drag-match-edit-btn',
+    );
+  } else if (section.type === 'dataTable') {
+    const Body = widgetRegistry.dataTable.component;
+    body = <Body data={section.data} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit data table',
+      () => onOpenPanel(section.id),
+      'data-table-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {
