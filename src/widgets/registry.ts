@@ -13,6 +13,7 @@ import {
   Table as TableIcon,
   Target,
   Terminal,
+  Video as VideoIcon,
 } from 'lucide-react';
 
 import { CodeWidget } from './Code/CodeWidget';
@@ -27,6 +28,7 @@ import { PlotImageWidget } from './PlotImage/PlotImageWidget';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxWidget } from './Sandbox/SandboxWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
+import { VideoWidget } from './Video/VideoWidget';
 
 export type WidgetType =
   | 'theory'
@@ -40,6 +42,7 @@ export type WidgetType =
   | 'parametricExplorer'
   | 'dragMatch'
   | 'dataTable'
+  | 'video'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -115,6 +118,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Data Table',
     icon: TableIcon,
     accentVar: '--widget-data-table',
+  },
+  video: {
+    component: VideoWidget as ComponentType<{ data?: unknown }>,
+    label: 'Video',
+    icon: VideoIcon,
+    accentVar: '--widget-video',
   },
   custom: {
     component: CustomPlaceholder,

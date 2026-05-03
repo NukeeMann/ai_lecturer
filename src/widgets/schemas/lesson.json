@@ -949,6 +949,95 @@
                   },
                   "type": {
                     "type": "string",
+                    "const": "video"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "youtube",
+                          "mp4"
+                        ]
+                      },
+                      "src": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "durationSeconds": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "transcript": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "tStart": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "tEnd": {
+                              "type": "number",
+                              "minimum": 0
+                            },
+                            "text": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "speaker": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "tStart",
+                            "text"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "autoplay": {
+                        "type": "boolean",
+                        "default": false
+                      },
+                      "startAt": {
+                        "type": "number",
+                        "minimum": 0
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "src"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "sources": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/sources"
+                  },
+                  "type": {
+                    "type": "string",
                     "const": "custom"
                   },
                   "data": {

@@ -15,6 +15,7 @@ import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
+import { VideoDataSchema } from '@/widgets/Video/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 
@@ -30,6 +31,7 @@ const widgets: Record<string, ZodSchema> = {
   'parametric-explorer': ParametricExplorerDataSchema,
   'drag-match': DragMatchDataSchema,
   'data-table': DataTableDataSchema,
+  video: VideoDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {

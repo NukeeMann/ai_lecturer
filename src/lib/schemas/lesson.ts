@@ -10,6 +10,7 @@ import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
+import { VideoDataSchema } from '@/widgets/Video/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -96,6 +97,12 @@ export const DataTableSectionSchema = z.object({
   data: DataTableDataSchema,
 });
 
+export const VideoSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('video'),
+  data: VideoDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -114,6 +121,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   ParametricExplorerSectionSchema,
   DragMatchSectionSchema,
   DataTableSectionSchema,
+  VideoSectionSchema,
   CustomSectionSchema,
 ]);
 
