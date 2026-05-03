@@ -17,12 +17,13 @@ This skill is the back half of the course-generation pipeline. The front half is
 ## The Job
 
 1. Read the **current ralph story** from `scripts/ralph/prd.json` (the story whose `id` matches `RALPH_TASK_ID`, or the highest-priority `passes: false` story otherwise — same rule as `scripts/ralph/CLAUDE.md`).
-2. Read **course context**: `/courses/<slug>/research.md` and `/courses/<slug>/course.json`.
+2. Read **course context**: `/courses/<slug>/research.md`, `/courses/<slug>/sources.md` (if present), and `/courses/<slug>/course.json`.
 3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`).
-4. Compose a lesson with **4–8 sections** mixing widget types (rules below).
-5. Write `/courses/<slug>/lessons/<lesson-slug>.json`.
-6. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never commit invalid JSON.
-7. Stop. The skill ends after the lesson file is written and validates.
+4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Prefer stable URLs (DOI, arxiv, official docs, Wikipedia for foundational concepts, official YouTube channels). See Step 4 for the full rules.
+5. Compose a lesson with **4–8 sections** mixing widget types (rules below).
+6. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
+7. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never commit invalid JSON.
+8. Stop. The skill ends after the lesson file is written and validates.
 
 ---
 
@@ -69,9 +70,10 @@ If `notes` is missing or unparseable, fall back to `description` and `course.jso
 
 ## Step 2: Read Course Context
 
-Open both files. They are the shared memory across all per-lesson agents.
+Open the shared course files. They are the working memory across all per-lesson agents.
 
 - `/courses/<slug>/research.md` — narrative reference: prerequisites, key concepts, common misconceptions, suggested ordering, and per-lesson hints under `## Notes for lesson generation`. Lean on its `Common misconceptions` for plausible quiz distractors. Lean on `Notes for lesson generation` for cues like *"Where math/KaTeX is appropriate"*, *"Where a code exercise is more illuminating than a quiz"*, *"Where a Demo widget would help"*, *"Where a Sandbox is a good fit"*.
+- `/courses/<slug>/sources.md` — *if present*, this is the curated reference list `init_course` collected during its research pass. The story's `notes` field will usually carry **Source hints** pointing at specific entries here; treat those as the seed for your own Step 4 source research. If the file is missing (older course or hand-written prd), fall back to your own research.
 - `/courses/<slug>/course.json` — authoritative structure. Use it to look up the parent module (so you can fill `moduleId`) and confirm the lesson's `estimatedMinutes`.
 
 Find the matching lesson by `slug`. Note its parent `moduleId` (e.g. `m1`, `m2`) and `estimatedMinutes` — both are required fields in the lesson JSON.
@@ -96,7 +98,59 @@ These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/sch
 
 ---
 
-## Step 4: Compose the Lesson
+## Step 4: Source Research
+
+**Do this before writing content.** Lessons without credible references are out of scope; the `sources` field on `LessonSchema` (US-040) exists precisely so the learner can verify and dig deeper.
+
+### What to collect
+
+Identify **at least 3 credible sources** for this lesson. Aim for a mix:
+
+- **Papers** — original or canonical results, ideally with a DOI or arxiv URL (`https://doi.org/...`, `https://arxiv.org/abs/...`).
+- **Textbook chapters** — named chapter from a recognised textbook (e.g. *Gonzalez & Woods, "Digital Image Processing", Ch. 5*). Use the publisher / archive URL where available.
+- **Reputable articles** — Wikipedia for foundational concepts (it is stable and well-edited for established maths/CS topics), official documentation pages (`scikit-image`, `numpy`, `scipy`, `pytorch`), MDN / W3C, IETF RFCs.
+- **Recognised educational videos** — channels with editorial standards: 3Blue1Brown, StatQuest with Josh Starmer, Computerphile, Two Minute Papers, MIT OpenCourseWare, Khan Academy. Use the canonical YouTube URL.
+
+### URL stability rules
+
+Prefer URLs that are unlikely to rot:
+
+- **Yes:** DOI links, arxiv abstract pages, `en.wikipedia.org/wiki/...`, official project docs at versioned or stable paths, official YouTube channel video URLs, IETF / W3C standards, university course pages.
+- **No:** medium.com, towardsdatascience.com, dev.to, personal blogs on substack/wordpress/blogspot, Quora / StackOverflow answers (use as research input, not as a cited source), random Google Drive / Dropbox PDFs, social media posts.
+
+When in doubt, prefer the *primary* source: cite the arxiv paper rather than a blog post that summarises it; cite the official docs rather than a tutorial that wraps them.
+
+### Per-source fields
+
+Every source object must conform to `SourceSchema` (`src/lib/schemas/lesson.ts`):
+
+```ts
+{
+  url: string,                                  // valid URL — must parse
+  title: string,                                // non-empty — REQUIRED
+  kind: "paper" | "video" | "article" | "book", // REQUIRED
+  author?: string,                              // strongly preferred for papers/books
+  year?: number,                                // strongly preferred for papers/books
+}
+```
+
+- **`title`** must always be non-empty. The schema enforces `min(1)`; an empty title is a validation error.
+- **`author` + `year`** are *strongly preferred* for `kind: "paper"` and `kind: "book"` — the learner needs them to look the source up if the URL ever rots. For Wikipedia / official-docs articles and YouTube videos, `author` and `year` are optional (they are recoverable from the URL).
+- **`kind`** picks the rendered icon and grouping in the UI (`LessonSourcesPanel`). Use `paper` for arxiv/DOI works, `book` for textbook chapters, `article` for Wikipedia / official docs / blog-style references, `video` for educational videos.
+
+### Where the sources go
+
+- **Lesson-level `sources`** (top-level `lesson.sources`) — populate with **at least 3 entries** that cover the lesson's overall scope. These are the references the learner sees in the lesson-wide *Sources / Źródła* panel.
+- **Section-level `section.sources`** (any `section.sources`) — for **theory sections that draw on a specific reference** (e.g. a section on Canny's hysteresis that quotes Canny's 1986 paper), attach the matching source *also* to that section. Do not duplicate the entire lesson list onto every section — only attach references the section specifically leans on. Sections with no specific reference omit the field.
+- The schema permits `section.sources` on every section type (`theory`, `quiz`, `code`, `demo`, `sandbox`, `histogram`, `custom`), but in practice it is most useful on `theory` sections. Quiz/code/demo sections inherit credibility from the lesson-level list.
+
+### Recording in `sources.md` (optional but encouraged)
+
+If you discover useful sources beyond what `init_course` recorded in `/courses/<slug>/sources.md`, append them to that file under a `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `init_course` or by other per-lesson agents.
+
+---
+
+## Step 5: Compose the Lesson
 
 ### Top-level shape
 
@@ -111,6 +165,7 @@ These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/sch
   description: "<one-sentence lesson description>",
   estimatedMinutes: <int>,      // from course.json
   sections: [ ... ],            // 4–8 entries; see below
+  sources: [ ... ],             // ≥3 entries; see Step 4
 }
 ```
 
@@ -185,7 +240,7 @@ The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
 
 ---
 
-## Step 5: Write and Validate
+## Step 6: Write and Validate
 
 Write `/courses/<courseSlug>/lessons/<lessonSlug>.json` directly via the Write tool (or `node:fs/promises#writeFile`). The webapp uses an atomic-write helper (`src/lib/server/atomic.ts → atomicWriteJson`) — for a one-shot author flow, a plain write is fine.
 
@@ -220,7 +275,7 @@ Only commit when the validator prints `OK`.
 
 ---
 
-## Step 6: Stop
+## Step 7: Stop
 
 You're done. The orchestrator flips `passes: true` for the story when the validation step succeeds. Do not edit `prd.json` yourself. Do not author further lessons in the same iteration.
 
@@ -262,7 +317,14 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
       "type": "theory",
       "data": {
         "markdown": "Salt-and-pepper noise plants a few extreme outliers in an otherwise clean signal. A **mean** filter spreads those outliers across their neighbours; a **median** filter throws them away.\n\nFor a window $W$ of size $k \\times k$ centred at pixel $(i, j)$, the median filter outputs:\n\n$$ \\hat I(i, j) = \\operatorname{median}\\bigl(\\{\\, I(p, q) : (p, q) \\in W \\,\\}\\bigr) $$\n\nBecause the median is robust to a small fraction of outliers (it ignores up to $\\lfloor (k^2 - 1)/2 \\rfloor$ of them), salt-and-pepper noise vanishes — and crucially, **edges are preserved**: at a step edge, the median snaps to one of the two flat regions instead of averaging across them."
-      }
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Median_filter",
+          "title": "Median filter — Wikipedia",
+          "kind": "article"
+        }
+      ]
     },
     {
       "id": "check-mean-vs-median",
@@ -319,6 +381,30 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
         "encouragement": "Try different window sizes and noise rates and see when the median finally cracks."
       }
     }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Median_filter",
+      "title": "Median filter — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.median",
+      "title": "skimage.filters.median — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/digital-image-processing/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 5 (Image Restoration and Reconstruction)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=7FP7ndMEfsc",
+      "title": "Computerphile — Image Filtering",
+      "kind": "video"
+    }
   ]
 }
 ```
@@ -326,10 +412,11 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
 Why this lesson works as a worked example:
 
 - **4 sections** (the floor of the 4–8 range) — appropriate for a 12-minute beginner lesson with a 0.4 theory/practice mix.
-- **1 theory** opens with intuition + KaTeX formula + one explicit edge-preservation claim.
+- **1 theory** opens with intuition + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference; the lesson-level list still covers the rest.
 - **1 quiz** uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors — all three are mistakes a learner who skimmed the theory could realistically make. The explanation justifies the right answer specifically (median ignores outliers; mean/Gaussian average them).
 - **1 code exercise** has 4 tests with descriptive names and small bodies. One test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
 - **1 sandbox** closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and see the median's failure mode.
+- **Lesson-level `sources` has 4 entries** mixing kinds (`article`, `book`, `video`) — comfortably above the ≥ 3 floor. The book entry carries `author` + `year` because for textbook chapters those are strongly preferred. The Wikipedia + scikit-image entries omit `author`/`year` (recoverable from the URL). All URLs are stable: Wikipedia, official scikit-image docs, the publisher's catalogue page, and an official Computerphile YouTube video — no medium / towardsdatascience.
 
 ---
 
@@ -353,6 +440,12 @@ Why this lesson works as a worked example:
 - [ ] Each `theory.markdown` uses KaTeX *only where math is genuinely relevant*.
 - [ ] Each `sandbox.encouragement` is one tasteful sentence.
 - [ ] No `additionalProperties` smuggled into any widget `data` object.
+- [ ] **Lesson-level `sources` has ≥ 3 entries** (US-040 / US-041).
+- [ ] Every source has a non-empty `title`, a valid `url`, and a `kind` ∈ `{paper, video, article, book}`.
+- [ ] Every source with `kind: "paper"` or `kind: "book"` carries `author` + `year` (strongly preferred — only omit if you genuinely cannot recover them).
+- [ ] No source URL points at `medium.com`, `towardsdatascience.com`, `dev.to`, or other rot-prone blog hosts.
+- [ ] At least one theory section that draws on a specific reference also carries a `section.sources` entry (omit on sections without a specific reference).
+- [ ] `section.sources` lives at the section root (next to `id` / `title` / `type` / `data`), **not** inside `data`.
 - [ ] `LessonSchema.safeParse` returns `success: true`.
 - [ ] `npm run typecheck` passes (it should — this is a JSON-only change).
 
