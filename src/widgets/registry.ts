@@ -10,6 +10,7 @@ import {
   Move,
   PenLine,
   Sliders,
+  Table as TableIcon,
   Target,
   Terminal,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ import {
 import { CodeWidget } from './Code/CodeWidget';
 import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
+import { DataTableWidget } from './DataTable/DataTableWidget';
 import { GaussDemo } from './Demo/GaussDemo';
 import { DragMatchWidget } from './DragMatch/DragMatchWidget';
 import { HistogramWidget } from './Histogram/HistogramWidget';
@@ -37,6 +39,7 @@ export type WidgetType =
   | 'plotImage'
   | 'parametricExplorer'
   | 'dragMatch'
+  | 'dataTable'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -106,6 +109,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Drag Match',
     icon: Move,
     accentVar: '--widget-drag-match',
+  },
+  dataTable: {
+    component: DataTableWidget as ComponentType<{ data?: unknown }>,
+    label: 'Data Table',
+    icon: TableIcon,
+    accentVar: '--widget-data-table',
   },
   custom: {
     component: CustomPlaceholder,

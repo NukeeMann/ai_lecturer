@@ -13,6 +13,12 @@ import {
 } from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import {
+  DataTableDataSchema,
+  filterRows,
+  sortRows,
+  type DataTableRow,
+} from '@/widgets/DataTable/schema';
+import {
   DragMatchDataSchema,
   validateDragMatch,
   type DragMatchData,
@@ -179,6 +185,15 @@ describe('LessonSchema + SectionSchema', () => {
           prompt: 'Match each item.',
           items: [{ id: 'a', label: 'A' }],
           zones: [{ id: 'z', label: 'Z', accepts: ['a'] }],
+        },
+      },
+      {
+        id: 's-dt',
+        title: 't',
+        type: 'dataTable',
+        data: {
+          columns: [{ key: 'name', label: 'Name' }],
+          rows: [{ name: 'Ada' }],
         },
       },
     ];
@@ -636,6 +651,194 @@ describe('DragMatch validateDragMatch', () => {
       __bank__: [],
     });
     expect(result.allCorrect).toBe(true);
+  });
+});
+
+describe('DataTableData schema', () => {
+  it('parses a minimal valid object and applies pageSize default', () => {
+    const parsed = DataTableDataSchema.parse({
+      columns: [{ key: 'name', label: 'Name' }],
+      rows: [{ name: 'Ada' }],
+    });
+    expect(parsed.pageSize).toBe(25);
+    expect(parsed.columns[0].type).toBe('string');
+    expect(parsed.columns[0].sortable).toBe(true);
+    expect(parsed.columns[0].filterable).toBe(false);
+  });
+
+  it('rejects empty columns array', () => {
+    expect(() =>
+      DataTableDataSchema.parse({ columns: [], rows: [] }),
+    ).toThrow();
+  });
+
+  it('rejects non-positive pageSize', () => {
+    expect(() =>
+      DataTableDataSchema.parse({
+        columns: [{ key: 'a', label: 'A' }],
+        rows: [],
+        pageSize: 0,
+      }),
+    ).toThrow();
+  });
+
+  it('accepts initialSort with key + dir', () => {
+    const parsed = DataTableDataSchema.parse({
+      columns: [{ key: 'a', label: 'A' }],
+      rows: [],
+      initialSort: { key: 'a', dir: 'desc' },
+    });
+    expect(parsed.initialSort?.dir).toBe('desc');
+  });
+
+  it('rejects initialSort with unknown direction', () => {
+    expect(() =>
+      DataTableDataSchema.parse({
+        columns: [{ key: 'a', label: 'A' }],
+        rows: [],
+        initialSort: { key: 'a', dir: 'sideways' },
+      }),
+    ).toThrow();
+  });
+
+  it('accepts row cells of mixed primitive types and null', () => {
+    const parsed = DataTableDataSchema.parse({
+      columns: [
+        { key: 'name', label: 'Name', type: 'string' },
+        { key: 'score', label: 'Score', type: 'number' },
+        { key: 'passed', label: 'Passed', type: 'boolean' },
+      ],
+      rows: [
+        { name: 'Ada', score: 92, passed: true },
+        { name: 'Linus', score: null, passed: false },
+      ],
+    });
+    expect(parsed.rows.length).toBe(2);
+  });
+});
+
+describe('DataTable sortRows', () => {
+  const columns = [
+    { key: 'name', label: 'Name', type: 'string' as const, sortable: true, filterable: false },
+    { key: 'score', label: 'Score', type: 'number' as const, sortable: true, filterable: false },
+  ];
+  const rows: DataTableRow[] = [
+    { name: 'Bob', score: 10 },
+    { name: 'Alice', score: 30 },
+    { name: 'Cara', score: 20 },
+  ];
+
+  it('returns rows in original order when sort is null', () => {
+    const result = sortRows({ rows, sort: null, columns });
+    expect(result.map((r) => r.name)).toEqual(['Bob', 'Alice', 'Cara']);
+  });
+
+  it('sorts ascending by string', () => {
+    const result = sortRows({ rows, sort: { key: 'name', dir: 'asc' }, columns });
+    expect(result.map((r) => r.name)).toEqual(['Alice', 'Bob', 'Cara']);
+  });
+
+  it('sorts descending by number', () => {
+    const result = sortRows({ rows, sort: { key: 'score', dir: 'desc' }, columns });
+    expect(result.map((r) => r.score)).toEqual([30, 20, 10]);
+  });
+
+  it('sorts ascending by number', () => {
+    const result = sortRows({ rows, sort: { key: 'score', dir: 'asc' }, columns });
+    expect(result.map((r) => r.score)).toEqual([10, 20, 30]);
+  });
+
+  it('null/undefined cells sort to the end', () => {
+    const sparse: DataTableRow[] = [
+      { name: 'A', score: 10 },
+      { name: 'B', score: null },
+      { name: 'C', score: 5 },
+    ];
+    const asc = sortRows({ rows: sparse, sort: { key: 'score', dir: 'asc' }, columns });
+    expect(asc.map((r) => r.name)).toEqual(['C', 'A', 'B']);
+  });
+
+  it('does not mutate the input array', () => {
+    const original = rows.slice();
+    sortRows({ rows, sort: { key: 'name', dir: 'desc' }, columns });
+    expect(rows).toEqual(original);
+  });
+});
+
+describe('DataTable filterRows', () => {
+  const columns = [
+    { key: 'name', label: 'Name', type: 'string' as const, sortable: true, filterable: true },
+    { key: 'score', label: 'Score', type: 'number' as const, sortable: true, filterable: true },
+    { key: 'tag', label: 'Tag', type: 'string' as const, sortable: true, filterable: false },
+  ];
+  const rows: DataTableRow[] = [
+    { name: 'Alice', score: 80, tag: 'gold' },
+    { name: 'Bob', score: 60, tag: 'silver' },
+    { name: 'Bobby', score: 95, tag: 'gold' },
+    { name: 'Cara', score: 40, tag: 'bronze' },
+  ];
+
+  it('string contains filter is case-insensitive', () => {
+    const result = filterRows({
+      rows,
+      filters: { name: 'bob' },
+      columns,
+    });
+    expect(result.map((r) => r.name)).toEqual(['Bob', 'Bobby']);
+  });
+
+  it('number range filter respects both bounds', () => {
+    const result = filterRows({
+      rows,
+      filters: { score: { min: 50, max: 90 } },
+      columns,
+    });
+    expect(result.map((r) => r.name)).toEqual(['Alice', 'Bob']);
+  });
+
+  it('number range filter accepts only min', () => {
+    const result = filterRows({
+      rows,
+      filters: { score: { min: 70 } },
+      columns,
+    });
+    expect(result.map((r) => r.name)).toEqual(['Alice', 'Bobby']);
+  });
+
+  it('number range filter accepts only max', () => {
+    const result = filterRows({
+      rows,
+      filters: { score: { max: 60 } },
+      columns,
+    });
+    expect(result.map((r) => r.name)).toEqual(['Bob', 'Cara']);
+  });
+
+  it('combines multiple column filters with AND', () => {
+    const result = filterRows({
+      rows,
+      filters: { name: 'bob', score: { min: 70 } },
+      columns,
+    });
+    expect(result.map((r) => r.name)).toEqual(['Bobby']);
+  });
+
+  it('ignores filters on non-filterable columns', () => {
+    const result = filterRows({
+      rows,
+      filters: { tag: 'gold' },
+      columns,
+    });
+    expect(result.length).toBe(rows.length);
+  });
+
+  it('empty/undefined filter values pass through every row', () => {
+    const result = filterRows({
+      rows,
+      filters: { name: '', score: {} },
+      columns,
+    });
+    expect(result.length).toBe(rows.length);
   });
 });
 
