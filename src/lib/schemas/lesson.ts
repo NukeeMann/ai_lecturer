@@ -5,6 +5,7 @@ import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
+import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -61,6 +62,12 @@ export const HistogramSectionSchema = z.object({
   data: HistogramDataSchema,
 });
 
+export const PlotImageSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('plotImage'),
+  data: PlotImageDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -74,6 +81,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   DemoSectionSchema,
   SandboxSectionSchema,
   HistogramSectionSchema,
+  PlotImageSectionSchema,
   CustomSectionSchema,
 ]);
 

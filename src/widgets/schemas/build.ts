@@ -10,6 +10,7 @@ import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
+import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 
@@ -20,6 +21,7 @@ const widgets: Record<string, ZodSchema> = {
   demo: DemoDataSchema,
   sandbox: SandboxDataSchema,
   histogram: HistogramDataSchema,
+  'plot-image': PlotImageDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {

@@ -9,6 +9,7 @@ import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
+import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 
 describe('CourseSchema', () => {
   const minimal = {
@@ -230,6 +231,45 @@ describe('Per-widget data schemas', () => {
       SandboxDataSchema.parse({ starterCode: 'x', encouragement: 'go' }),
     ).not.toThrow();
     expect(() => SandboxDataSchema.parse({ starterCode: 'x' })).toThrow();
+  });
+
+  it('PlotImageData: parses a minimal valid object', () => {
+    const ok = { src: '/foo.png', alt: 'A plot' };
+    expect(() => PlotImageDataSchema.parse(ok)).not.toThrow();
+  });
+
+  it('PlotImageData: parses with all optional fields', () => {
+    const full = {
+      src: '/x.png',
+      alt: 'desc',
+      caption: 'cap',
+      sourceCode: 'plt.show()',
+      sourceLanguage: 'python' as const,
+    };
+    const parsed = PlotImageDataSchema.parse(full);
+    expect(parsed.sourceLanguage).toBe('python');
+  });
+
+  it('PlotImageData: rejects missing src', () => {
+    const broken = { alt: 'A plot' } as Record<string, unknown>;
+    expect(() => PlotImageDataSchema.parse(broken)).toThrow();
+  });
+
+  it('PlotImageData: rejects missing alt', () => {
+    const broken = { src: '/foo.png' } as Record<string, unknown>;
+    expect(() => PlotImageDataSchema.parse(broken)).toThrow();
+  });
+
+  it('PlotImageData: rejects empty alt', () => {
+    expect(() =>
+      PlotImageDataSchema.parse({ src: '/foo.png', alt: '' }),
+    ).toThrow();
+  });
+
+  it('PlotImageData: rejects sourceLanguage outside the enum', () => {
+    expect(() =>
+      PlotImageDataSchema.parse({ src: '/x.png', alt: 'a', sourceLanguage: 'js' }),
+    ).toThrow();
   });
 });
 

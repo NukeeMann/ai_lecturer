@@ -12,6 +12,10 @@ import {
   GET as getLesson,
   PUT as putLesson,
 } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/route';
+import {
+  GET as getAsset,
+  PUT as putAsset,
+} from '@/app/api/courses/[slug]/assets/[...path]/route';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
 
@@ -339,6 +343,119 @@ describe('PUT /api/courses/[slug]/lessons/[lessonSlug]', () => {
     });
     const res = await putLesson(req, {
       params: Promise.resolve({ slug: 'algebra', lessonSlug: 'intro' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/courses/[slug]/assets/[...path]', () => {
+  it('serves a png with the right Content-Type', async () => {
+    const dir = path.join(coursesRoot, 'algebra', 'assets', 'plots');
+    await fs.mkdir(dir, { recursive: true });
+    // Minimal 1x1 PNG.
+    const pngBytes = Buffer.from(
+      '89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000A49444154789C6300010000000500010D0A2DB40000000049454E44AE426082',
+      'hex',
+    );
+    await fs.writeFile(path.join(dir, 'fig.png'), pngBytes);
+
+    const res = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/plots/fig.png'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['plots', 'fig.png'] }) },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/png');
+  });
+
+  it('returns 404 for a missing asset', async () => {
+    const res = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/missing.png'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['missing.png'] }) },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects ../ traversal in the asset path', async () => {
+    const res = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/..'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['..'] }) },
+    );
+    expect(res.status).toBe(400);
+
+    const res2 = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/plots/..'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['plots', '..', 'secret.png'] }) },
+    );
+    expect(res2.status).toBe(400);
+  });
+
+  it('rejects ../ traversal in the slug', async () => {
+    const res = await getAsset(
+      new Request('http://x/api/courses/../assets/x.png'),
+      { params: Promise.resolve({ slug: '..', path: ['x.png'] }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects path segments containing slashes', async () => {
+    const res = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/foo'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['foo/bar'] }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns the right Content-Type for svg', async () => {
+    const dir = path.join(coursesRoot, 'algebra', 'assets');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'icon.svg'), '<svg/>', 'utf8');
+    const res = await getAsset(
+      new Request('http://x/api/courses/algebra/assets/icon.svg'),
+      { params: Promise.resolve({ slug: 'algebra', path: ['icon.svg'] }) },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toBe('image/svg+xml');
+  });
+});
+
+describe('PUT /api/courses/[slug]/assets/[...path]', () => {
+  it('writes an uploaded png under courses/<slug>/assets/...', async () => {
+    const body = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const req = new Request(
+      'http://x/api/courses/algebra/assets/plots/up.png',
+      { method: 'PUT', body, headers: { 'Content-Type': 'image/png' } },
+    );
+    const res = await putAsset(req, {
+      params: Promise.resolve({ slug: 'algebra', path: ['plots', 'up.png'] }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { src: string };
+    expect(json.src).toBe('/api/courses/algebra/assets/plots/up.png');
+
+    const written = await fs.readFile(
+      path.join(coursesRoot, 'algebra', 'assets', 'plots', 'up.png'),
+    );
+    expect(written.equals(body)).toBe(true);
+  });
+
+  it('rejects unsupported extensions on PUT', async () => {
+    const req = new Request(
+      'http://x/api/courses/algebra/assets/plots/bad.exe',
+      { method: 'PUT', body: Buffer.from('x') },
+    );
+    const res = await putAsset(req, {
+      params: Promise.resolve({ slug: 'algebra', path: ['plots', 'bad.exe'] }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects ../ traversal on PUT', async () => {
+    const req = new Request(
+      'http://x/api/courses/algebra/assets/..',
+      { method: 'PUT', body: Buffer.from('x'), headers: { 'Content-Type': 'image/png' } },
+    );
+    const res = await putAsset(req, {
+      params: Promise.resolve({ slug: 'algebra', path: ['..', 'secret.png'] }),
     });
     expect(res.status).toBe(400);
   });
