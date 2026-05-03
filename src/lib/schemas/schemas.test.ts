@@ -9,6 +9,7 @@ import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
+import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 
 describe('CourseSchema', () => {
@@ -128,6 +129,27 @@ describe('LessonSchema + SectionSchema', () => {
         title: 't',
         type: 'custom',
         data: { whatever: 1 },
+      },
+      {
+        id: 's7',
+        title: 't',
+        type: 'parametricExplorer',
+        data: {
+          setupCode: '',
+          renderCode: 'plt.plot([0, freq])',
+          params: [
+            {
+              name: 'freq',
+              label: 'Freq',
+              type: 'slider',
+              min: 0,
+              max: 5,
+              step: 0.1,
+              default: 1,
+            },
+          ],
+          outputType: 'plot',
+        },
       },
     ];
     for (const section of cases) {
@@ -270,6 +292,97 @@ describe('Per-widget data schemas', () => {
     expect(() =>
       PlotImageDataSchema.parse({ src: '/x.png', alt: 'a', sourceLanguage: 'js' }),
     ).toThrow();
+  });
+
+  it('ParametricExplorerData: parses a minimal valid object', () => {
+    const ok = {
+      setupCode: '',
+      renderCode: 'plt.plot([0, freq])',
+      params: [
+        {
+          name: 'freq',
+          label: 'Freq',
+          type: 'slider',
+          min: 0,
+          max: 5,
+          step: 0.1,
+          default: 1,
+        },
+      ],
+      outputType: 'plot',
+    };
+    expect(() => ParametricExplorerDataSchema.parse(ok)).not.toThrow();
+  });
+
+  it('ParametricExplorerData: parses select + toggle params', () => {
+    const ok = {
+      setupCode: '',
+      renderCode: '',
+      params: [
+        { name: 'mode', label: 'Mode', type: 'select', options: ['a', 'b'], default: 'a' },
+        { name: 'flag', label: 'Flag', type: 'toggle', default: true },
+      ],
+      outputType: 'value',
+    };
+    expect(() => ParametricExplorerDataSchema.parse(ok)).not.toThrow();
+  });
+
+  it('ParametricExplorerData: rejects unknown outputType', () => {
+    expect(() =>
+      ParametricExplorerDataSchema.parse({
+        setupCode: '',
+        renderCode: '',
+        params: [],
+        outputType: 'png',
+      }),
+    ).toThrow();
+  });
+
+  it('ParametricExplorerData: accepts optional debounceMs', () => {
+    const parsed = ParametricExplorerDataSchema.parse({
+      setupCode: '',
+      renderCode: '',
+      params: [],
+      outputType: 'plot',
+      debounceMs: 250,
+    });
+    expect(parsed.debounceMs).toBe(250);
+  });
+});
+
+describe('ParametricExplorer param value serialization', () => {
+  // Param values are passed to Pyodide as a plain JS object — Pyodide's
+  // automatic JS↔Python conversion turns:
+  //   number → float, boolean → bool, string → str
+  // These tests pin the serialized shape that the worker forwards to Python
+  // so a future refactor doesn't silently change types under the user's code.
+  it('slider param serializes as a JS number (→ Python float)', () => {
+    const params: Record<string, number | string | boolean> = { freq: 1.5 };
+    expect(typeof params.freq).toBe('number');
+    expect(Number.isFinite(params.freq as number)).toBe(true);
+  });
+
+  it('toggle param serializes as a JS boolean (→ Python bool)', () => {
+    const params: Record<string, number | string | boolean> = { on: true };
+    expect(typeof params.on).toBe('boolean');
+    expect(params.on).toBe(true);
+  });
+
+  it('select param serializes as a JS string (→ Python str)', () => {
+    const params: Record<string, number | string | boolean> = { mode: 'fast' };
+    expect(typeof params.mode).toBe('string');
+    expect(params.mode).toBe('fast');
+  });
+
+  it('mixed params object preserves each per-param type', () => {
+    const params: Record<string, number | string | boolean> = {
+      freq: 2,
+      mode: 'fast',
+      on: false,
+    };
+    expect(typeof params.freq).toBe('number');
+    expect(typeof params.mode).toBe('string');
+    expect(typeof params.on).toBe('boolean');
   });
 });
 
