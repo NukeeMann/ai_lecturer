@@ -1,0 +1,10 @@
+US-043 done and committed (255f417 on `ralph/us-043`).
+
+**Summary**
+- New `PlotImage` widget: schema, widget (figure + img + optional figcaption + collapsible read-only CodeMirror "Show source"), editor (src input + file upload + alt + caption + Python/R lang toggle + source-code field), sample.
+- `--widget-plot-image` CSS token in light + dark, registry entry with lucide `Image` icon, `WidgetType` union extended with `'plotImage'`, `PlotImageSectionSchema` added to the discriminated union, `npm run build:schemas` regenerated `plot-image.json` + `lesson.json`.
+- `GET/PUT /api/courses/[slug]/assets/[...path]` route with two-layer path-traversal defence (per-segment + `path.resolve` containment), extension whitelist on PUT, image/* Content-Types on GET.
+- Editor wired into `WidgetEditPanel` (now passes `courseSlug` so uploads target the right course) and `SectionRenderer`.
+- Vitest 108/108 (+15 new: 6 schema + 9 asset). Typecheck clean. Lint clean for changed files.
+- Browser test (playwright headless): renders Gaussian 1D plot section in light + dark, "Show source" mounts read-only Python CodeMirror, editor opens with prefilled values, file upload PUT → 200 + new `src` URL written into the editor.
+- Seed `gauss-basics` lesson 1 gets a working PlotImage example with a procedurally-generated 1.6 KB PNG so the feature can be exercised end-to-end without external assets.

@@ -1,0 +1,8 @@
+US-044 committed as `2696f4b`. PythonPlot widget renders live matplotlib output via Pyodide:
+
+- **Schema** at `src/widgets/PythonPlot/schema.ts` (`taskMarkdown?`, `starterCode` ≥1, `expectedFigures` default 1, `height?`).
+- **Worker** gained a `runWithPlot` message type with lazy `matplotlib` install (mirrors `gaussInstalled` pattern), an AGG-backend wrapper around user code, and PNG → base64 capture.
+- **Client** exposes `runWithPlot(code)` on `usePyodide()`.
+- **Wiring**: registry (`pythonPlot`), `SectionSchema` discriminated union, build:schemas, `--widget-python-plot` CSS var (light + dark), lesson page (`WidgetEditPanel` + `SectionRenderer`).
+- **Tests**: 4 new schema tests; full suite 112/112; typecheck + lint clean; `python-plot.json` regenerated.
+- **Browser verified**: sin(x) renders on first Run (38 KB PNG), cos(x) renders after editing (37 KB PNG, different image), zero console errors. Screenshots at `/tmp/us-044-{1-initial,2-first-plot,3-second-plot}.png`.
