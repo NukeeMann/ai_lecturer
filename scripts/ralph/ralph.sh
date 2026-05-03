@@ -553,7 +553,7 @@ $recent_progress")"
     --output-format stream-json \
     --verbose \
     -p "$enriched_prompt" \
-    2>&1 | tee "$logfile" || exit_code=$?
+    > "$logfile" 2>&1 || exit_code=$?
 
   if [ $exit_code -eq 124 ]; then
     log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — task will be retried"
