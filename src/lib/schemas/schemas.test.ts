@@ -12,6 +12,11 @@ import {
   validateSlotValue,
 } from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
+import {
+  DragMatchDataSchema,
+  validateDragMatch,
+  type DragMatchData,
+} from '@/widgets/DragMatch/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
@@ -164,6 +169,16 @@ describe('LessonSchema + SectionSchema', () => {
             },
           ],
           outputType: 'plot',
+        },
+      },
+      {
+        id: 's-dm',
+        title: 't',
+        type: 'dragMatch',
+        data: {
+          prompt: 'Match each item.',
+          items: [{ id: 'a', label: 'A' }],
+          zones: [{ id: 'z', label: 'Z', accepts: ['a'] }],
         },
       },
     ];
@@ -419,6 +434,61 @@ describe('Per-widget data schemas', () => {
       }),
     ).toThrow();
   });
+
+  it('DragMatchData: parses a minimal valid object and defaults multipleItemsPerZone', () => {
+    const ok = {
+      prompt: 'Match each.',
+      items: [{ id: 'a', label: 'A' }],
+      zones: [{ id: 'z', label: 'Zone', accepts: ['a'] }],
+    };
+    const parsed = DragMatchDataSchema.parse(ok);
+    expect(parsed.multipleItemsPerZone).toBe(false);
+  });
+
+  it('DragMatchData: parses with explanation and multipleItemsPerZone=true', () => {
+    const parsed = DragMatchDataSchema.parse({
+      prompt: 'Order steps.',
+      items: [
+        { id: 'a', label: 'first' },
+        { id: 'b', label: 'second' },
+      ],
+      zones: [{ id: 'order', label: 'Order', accepts: ['a', 'b'] }],
+      multipleItemsPerZone: true,
+      explanation: 'Steps in order.',
+    });
+    expect(parsed.multipleItemsPerZone).toBe(true);
+    expect(parsed.explanation).toBe('Steps in order.');
+  });
+
+  it('DragMatchData: rejects empty items array', () => {
+    expect(() =>
+      DragMatchDataSchema.parse({
+        prompt: 'p',
+        items: [],
+        zones: [{ id: 'z', label: 'Z', accepts: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it('DragMatchData: rejects empty zones array', () => {
+    expect(() =>
+      DragMatchDataSchema.parse({
+        prompt: 'p',
+        items: [{ id: 'a', label: 'A' }],
+        zones: [],
+      }),
+    ).toThrow();
+  });
+
+  it('DragMatchData: rejects items with empty id or label', () => {
+    expect(() =>
+      DragMatchDataSchema.parse({
+        prompt: 'p',
+        items: [{ id: '', label: 'A' }],
+        zones: [{ id: 'z', label: 'Z', accepts: [] }],
+      }),
+    ).toThrow();
+  });
 });
 
 describe('CodeCloze validateSlotValue', () => {
@@ -454,6 +524,118 @@ describe('CodeCloze validateSlotValue', () => {
   it('regex: invalid pattern returns false instead of throwing', () => {
     const v = { kind: 'regex' as const, pattern: '(' };
     expect(validateSlotValue(v, 'x')).toBe(false);
+  });
+});
+
+describe('DragMatch validateDragMatch', () => {
+  const singleZoneData: DragMatchData = {
+    prompt: 'Match each programming term.',
+    items: [
+      { id: 'i-var', label: 'Variable' },
+      { id: 'i-fn', label: 'Function' },
+      { id: 'i-loop', label: 'Loop' },
+    ],
+    zones: [
+      { id: 'z-var', label: 'Storage', accepts: ['i-var'] },
+      { id: 'z-fn', label: 'Reusable code', accepts: ['i-fn'] },
+      { id: 'z-loop', label: 'Repeats', accepts: ['i-loop'] },
+    ],
+    multipleItemsPerZone: false,
+  };
+
+  it('single-zone: all items in correct zones is allCorrect', () => {
+    const result = validateDragMatch(singleZoneData, {
+      'z-var': ['i-var'],
+      'z-fn': ['i-fn'],
+      'z-loop': ['i-loop'],
+      __bank__: [],
+    });
+    expect(result.allCorrect).toBe(true);
+    expect(result.zoneCorrect['z-var']).toBe(true);
+    expect(result.misplacedItemIds.size).toBe(0);
+  });
+
+  it('single-zone: one swapped pair flags exactly two misplaced items', () => {
+    const result = validateDragMatch(singleZoneData, {
+      'z-var': ['i-fn'],
+      'z-fn': ['i-var'],
+      'z-loop': ['i-loop'],
+      __bank__: [],
+    });
+    expect(result.allCorrect).toBe(false);
+    expect(result.zoneCorrect['z-var']).toBe(false);
+    expect(result.zoneCorrect['z-fn']).toBe(false);
+    expect(result.zoneCorrect['z-loop']).toBe(true);
+    expect(result.misplacedItemIds.has('i-var')).toBe(true);
+    expect(result.misplacedItemIds.has('i-fn')).toBe(true);
+    expect(result.misplacedItemIds.has('i-loop')).toBe(false);
+  });
+
+  it('single-zone: item left in bank is misplaced and zone is empty/incorrect', () => {
+    const result = validateDragMatch(singleZoneData, {
+      'z-var': ['i-var'],
+      'z-fn': ['i-fn'],
+      'z-loop': [],
+      __bank__: ['i-loop'],
+    });
+    expect(result.allCorrect).toBe(false);
+    expect(result.zoneCorrect['z-loop']).toBe(false);
+    expect(result.misplacedItemIds.has('i-loop')).toBe(true);
+  });
+
+  const multiZoneData: DragMatchData = {
+    prompt: 'Group fruits and vegetables.',
+    items: [
+      { id: 'apple', label: 'Apple' },
+      { id: 'banana', label: 'Banana' },
+      { id: 'carrot', label: 'Carrot' },
+    ],
+    zones: [
+      { id: 'fruit', label: 'Fruit', accepts: ['apple', 'banana'] },
+      { id: 'veg', label: 'Vegetable', accepts: ['carrot'] },
+    ],
+    multipleItemsPerZone: true,
+  };
+
+  it('multi-zone (ordered): exact accepts order is correct', () => {
+    const result = validateDragMatch(multiZoneData, {
+      fruit: ['apple', 'banana'],
+      veg: ['carrot'],
+      __bank__: [],
+    });
+    expect(result.allCorrect).toBe(true);
+  });
+
+  it('multi-zone (ordered): wrong order in zone is incorrect', () => {
+    const result = validateDragMatch(multiZoneData, {
+      fruit: ['banana', 'apple'],
+      veg: ['carrot'],
+      __bank__: [],
+    });
+    expect(result.allCorrect).toBe(false);
+    expect(result.zoneCorrect['fruit']).toBe(false);
+    expect(result.zoneCorrect['veg']).toBe(true);
+  });
+
+  it('multi-zone (ordered): missing one item in zone is incorrect', () => {
+    const result = validateDragMatch(multiZoneData, {
+      fruit: ['apple'],
+      veg: ['carrot'],
+      __bank__: ['banana'],
+    });
+    expect(result.allCorrect).toBe(false);
+    expect(result.zoneCorrect['fruit']).toBe(false);
+    expect(result.misplacedItemIds.has('banana')).toBe(true);
+  });
+
+  it('multi-zone (unordered, multipleItemsPerZone=false): set equality wins', () => {
+    const data: DragMatchData = { ...multiZoneData, multipleItemsPerZone: false };
+    const result = validateDragMatch(data, {
+      fruit: ['banana', 'apple'],
+      veg: ['carrot'],
+      __bank__: [],
+    });
+    expect(result.allCorrect).toBe(true);
   });
 });
 

@@ -56,6 +56,7 @@ import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
 import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
+import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
 import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
@@ -859,6 +860,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'parametricExplorer' && (
         <ParametricExplorerEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'dragMatch' && (
+        <DragMatchEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -2277,6 +2287,25 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit parametric explorer',
       () => onOpenPanel(section.id),
       'parametric-explorer-edit-btn',
+    );
+  } else if (section.type === 'dragMatch') {
+    const Body = widgetRegistry.dragMatch.component as ComponentType<{
+      data?: unknown;
+      progressKey?: typeof progressKey;
+      onComplete?: () => void;
+    }>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit drag match',
+      () => onOpenPanel(section.id),
+      'drag-match-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

@@ -9,6 +9,7 @@ import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
 import { CodeClozeDataSchema } from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
+import { DragMatchDataSchema } from '@/widgets/DragMatch/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
@@ -26,6 +27,7 @@ const widgets: Record<string, ZodSchema> = {
   histogram: HistogramDataSchema,
   'plot-image': PlotImageDataSchema,
   'parametric-explorer': ParametricExplorerDataSchema,
+  'drag-match': DragMatchDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {

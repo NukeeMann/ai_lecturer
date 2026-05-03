@@ -7,6 +7,7 @@ import {
   Image as ImageIcon,
   Layers,
   type LucideProps,
+  Move,
   PenLine,
   Sliders,
   Target,
@@ -17,6 +18,7 @@ import { CodeWidget } from './Code/CodeWidget';
 import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
+import { DragMatchWidget } from './DragMatch/DragMatchWidget';
 import { HistogramWidget } from './Histogram/HistogramWidget';
 import { ParametricExplorerWidget } from './ParametricExplorer/ParametricExplorerWidget';
 import { PlotImageWidget } from './PlotImage/PlotImageWidget';
@@ -34,6 +36,7 @@ export type WidgetType =
   | 'histogram'
   | 'plotImage'
   | 'parametricExplorer'
+  | 'dragMatch'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -97,6 +100,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Parametric Explorer',
     icon: Sliders,
     accentVar: '--widget-parametric-explorer',
+  },
+  dragMatch: {
+    component: DragMatchWidget as ComponentType<{ data?: unknown }>,
+    label: 'Drag Match',
+    icon: Move,
+    accentVar: '--widget-drag-match',
   },
   custom: {
     component: CustomPlaceholder,
