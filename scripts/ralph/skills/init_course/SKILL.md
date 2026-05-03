@@ -19,9 +19,9 @@ The output prd.json is what `ralph.sh` will iterate over. Each per-lesson story 
 1. Receive a course **slug** as the argument (e.g. `gauss-basics`, `edge-detection-basics`).
 2. Read `/courses/<slug>/course-spec.json` and validate it against `CourseSpecSchema` (`src/lib/schemas/courseSpec.ts`).
 3. Archive the existing `scripts/ralph/prd.json` if it belongs to a different branch.
-4. Run a **research pass** — synthesise key concepts, prerequisites, common misconceptions, and suggested ordering. Write `/courses/<slug>/research.md`.
+4. Run a **research pass** — synthesise key concepts, prerequisites, common misconceptions, and suggested ordering. Write `/courses/<slug>/research.md`. Alongside it, collect ≥ 3 credible references per lesson and write `/courses/<slug>/sources.md` so per-lesson agents can reuse them.
 5. Run an **architect pass** — refine `course-spec.draftStructure` into final modules + lessons (merge / split / rename / reorder as needed). Write `/courses/<slug>/course.json` and validate against `CourseSchema` (`src/lib/schemas/course.ts`).
-6. Write `scripts/ralph/prd.json` with stories: research → structure → one per lesson → optional review pass.
+6. Write `scripts/ralph/prd.json` with stories: research → structure → one per lesson (each carrying source hints in its `notes` field) → optional review pass.
 
 ---
 
@@ -69,9 +69,14 @@ This mirrors the archiving rule in `prd_init`'s SKILL.md.
 
 ## Step 2: Research Pass
 
-Synthesise (no web fetch required — use what you know plus the course-spec contents) and write `/courses/<slug>/research.md`. The research note is the working memory the per-lesson agents lean on.
+This step produces **two** artefacts under `/courses/<slug>/`:
 
-Output structure:
+1. `research.md` — narrative reference (key concepts, misconceptions, ordering).
+2. `sources.md` — curated reference list (≥ 3 entries per planned lesson) the `generate_lesson` skill leans on for the lesson's `sources` field (US-040 / US-041).
+
+Synthesise (no web fetch required — use what you know plus the course-spec contents). Both files are read by future agents but never parsed against a schema.
+
+### `research.md` output structure
 
 ```markdown
 # Research: <courseTitle>
@@ -105,7 +110,40 @@ Output structure:
 
 Tailor depth to `courseSpec.level` (beginner / intermediate / advanced) and `courseSpec.durationTarget` (30min / 1h / weekend). Respect `courseSpec.theoryPracticeRatio` when describing Notes for lesson generation — a low ratio (0.2) means lean hands-on, a high ratio (0.8) means lean theory.
 
-This file is not validated against any schema — it is read by future agents but never parsed.
+### `sources.md` output structure
+
+Group references by lesson (use the planned lesson titles from `course-spec.draftStructure` — they may be refined in the architect pass, but this file is a working list, not a schema-validated artefact). Aim for **≥ 3 stable, credible sources per lesson**.
+
+```markdown
+# Sources: <courseTitle>
+
+> Working bibliography for course generation. Each entry must conform to
+> `SourceSchema` (`src/lib/schemas/lesson.ts`) when copied into a lesson:
+>   { url, title, kind: "paper" | "video" | "article" | "book", author?, year? }
+> Prefer DOI / arxiv / Wikipedia / official docs / official YouTube channels.
+> Avoid medium.com, towardsdatascience.com, dev.to, personal blogs.
+
+## Course-wide references
+- [<title>](<url>) — kind: <paper|video|article|book>; author: <…>; year: <…>; <one-line why this is relevant>
+- ...
+
+## <Lesson 1 title>
+- [<title>](<url>) — kind: <…>; author: <…>; year: <…>; <one-line why>
+- [<title>](<url>) — kind: <…>; <one-line why>
+- [<title>](<url>) — kind: <…>; <one-line why>
+
+## <Lesson 2 title>
+- ...
+```
+
+Rules:
+
+- **≥ 3 entries per lesson** so the per-lesson agent can populate `lesson.sources` (≥ 3) directly from this list without re-doing the research.
+- Always include `kind`. Always include `author` + `year` for `kind: "paper"` and `kind: "book"`; optional otherwise.
+- Stable URLs only — DOI, arxiv, `en.wikipedia.org`, official project docs, IETF / W3C, official YouTube channel videos. **Do not** cite medium.com, towardsdatascience.com, dev.to, personal blogs, social-media posts, or random PDFs on Google Drive / Dropbox.
+- Re-use the same source across multiple lessons where it covers the lesson's scope — duplication across lesson sub-sections is fine and expected. Course-wide references (textbooks that span the whole topic) live under `## Course-wide references` and can be cited from any lesson.
+
+Per-lesson stories generated in Step 4 will reference the matching lesson section here through a **Source hints** line in the story `notes` field, so `generate_lesson` can pick them up without re-deriving the bibliography.
 
 ---
 
@@ -165,7 +203,7 @@ Write `scripts/ralph/prd.json` directly. Schema mirrors what `prd_init` produces
 {
   "project": "Course: <courseTitle>",
   "branchName": "ralph/course-<slug>",
-  "description": "Generate the lessons for /courses/<slug>/ from the course-spec, research notes, and finalized course.json. Each story below produces one artefact (research.md, course.json, or one lesson JSON). Driven by the generate_lesson skill.",
+  "description": "Generate the lessons for /courses/<slug>/ from the course-spec, research notes, sources.md bibliography, and finalized course.json. Each story below produces one artefact (research.md + sources.md, course.json, or one lesson JSON). Driven by the generate_lesson skill.",
   "stories": [ ... ]
 }
 ```
@@ -176,20 +214,21 @@ Write `scripts/ralph/prd.json` directly. Schema mirrors what `prd_init` produces
 {
   "id": "US-001",
   "title": "Compile research notes for course <courseTitle>",
-  "description": "As an agent, I want a research note synthesising key concepts, prerequisites, misconceptions, and ordering for <courseTitle>, so per-lesson agents have shared context.",
+  "description": "As an agent, I want a research note synthesising key concepts, prerequisites, misconceptions, and ordering for <courseTitle>, plus a curated /courses/<slug>/sources.md bibliography (≥3 stable, credible references per planned lesson), so per-lesson agents have shared context and a ready-made source list.",
   "acceptanceCriteria": [
     "/courses/<slug>/research.md exists and follows the init_course research template",
     "Sections present: Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation",
+    "/courses/<slug>/sources.md exists and lists ≥3 stable, credible references per planned lesson (DOI / arxiv / Wikipedia / official docs / official YouTube channels; no medium.com / towardsdatascience.com / personal blogs)",
     "Typecheck passes"
   ],
   "priority": 1,
   "passes": true,
-  "notes": "research.md was authored by init_course; this story is marked passes=true so ralph skips re-running it. Flip to false to force regeneration.",
+  "notes": "research.md and sources.md were authored by init_course; this story is marked passes=true so ralph skips re-running it. Flip to false to force regeneration.",
   "tags": []
 }
 ```
 
-> The research file is *already written* by Step 2 of this skill, so US-001 ships with `passes: true`. The story is kept in the prd.json so the artefact is auditable in the story list. The same applies to US-002.
+> Both `research.md` and `sources.md` are *already written* by Step 2 of this skill, so US-001 ships with `passes: true`. The story is kept in the prd.json so the artefacts are auditable in the story list. The same applies to US-002.
 
 ### Story 2 — Finalized course structure
 
@@ -224,16 +263,19 @@ Walk `course.json.modules.flatMap(m => m.lessons)` in order. For lesson at index
     "Lesson JSON validates against LessonSchema",
     "Uses ≥3 widget types where the topic permits",
     "Uses generate_lesson skill",
+    "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/<slug>/sources.md (or fresh research if a source is missing)",
     "Typecheck passes"
   ],
   "priority": <3 + i>,
   "passes": false,
-  "notes": "Module: <module title>\nSummary: <lesson summary from course-spec or architect>\nScope: <bulleted list of subtopics this lesson must cover, drawn from research.md>\nLevel: <courseSpec.level>\nDuration target: <lesson estimatedMinutes> min\nTheory/practice mix: <courseSpec.theoryPracticeRatio> (0=practice, 1=theory)",
+  "notes": "Module: <module title>\nSummary: <lesson summary from course-spec or architect>\nScope: <bulleted list of subtopics this lesson must cover, drawn from research.md>\nLevel: <courseSpec.level>\nDuration target: <lesson estimatedMinutes> min\nTheory/practice mix: <courseSpec.theoryPracticeRatio> (0=practice, 1=theory)\nSource hints: see /courses/<slug>/sources.md → ## <lesson title>; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
   "tags": []
 }
 ```
 
-**Always include all four AC strings verbatim**, even though "Typecheck passes" and "Uses generate_lesson skill" are symbolic for a JSON-only story — they keep ralph's standard validation pipeline uniform across all stories.
+**Always include all five AC strings verbatim**, even though "Typecheck passes" and "Uses generate_lesson skill" are symbolic for a JSON-only story — they keep ralph's standard validation pipeline uniform across all stories.
+
+The **Source hints** line in `notes` points at the matching `## <lesson title>` heading inside `/courses/<slug>/sources.md`. If the architect pass renamed the lesson, update the heading in `sources.md` to match — the hint is a deterministic pointer, not free text.
 
 > "Uses ≥3 widget types where the topic permits" is a *guideline*, not a hard gate. If a lesson is genuinely a pure-theory recap (e.g. summary lesson at the end of a module), it can use fewer widget types — `generate_lesson` will document that choice in the lesson notes. The criterion stays in the AC for the common case.
 
@@ -306,7 +348,44 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
 
 **Output 1** — `/courses/edge-detection-basics/research.md` (per Step 2 template — covers prerequisites like "basic numpy, what a 2D array is", key concepts like "discrete derivative, kernel, convolution, gradient magnitude, hysteresis", common misconceptions like "thinking Canny is a single threshold", suggested ordering: gradients → operators → NMS → Canny).
 
-**Output 2** — `/courses/edge-detection-basics/course.json` (architect pass kept the 2-module / 4-lesson shape; refined titles + added module summaries):
+**Output 2** — `/courses/edge-detection-basics/sources.md` (curated bibliography — ≥ 3 stable references per planned lesson; per Step 2 template):
+
+```markdown
+# Sources: Edge Detection Basics
+
+> Working bibliography for course generation. Each entry must conform to
+> `SourceSchema` (`src/lib/schemas/lesson.ts`) when copied into a lesson:
+>   { url, title, kind: "paper" | "video" | "article" | "book", author?, year? }
+> Prefer DOI / arxiv / Wikipedia / official docs / official YouTube channels.
+> Avoid medium.com, towardsdatascience.com, dev.to, personal blogs.
+
+## Course-wide references
+- [Digital Image Processing, 4th ed.](https://www.cambridge.org/core/books/digital-image-processing/) — kind: book; author: Rafael C. Gonzalez and Richard E. Woods; year: 2018; canonical textbook covering gradients, Sobel/Prewitt, and Canny across Ch. 3 and Ch. 10.
+- [Computer Vision: Algorithms and Applications, 2nd ed. (online)](https://szeliski.org/Book/) — kind: book; author: Richard Szeliski; year: 2022; freely-available textbook with chapters on linear filtering and edge detection.
+
+## What is an image gradient?
+- [Image gradient — Wikipedia](https://en.wikipedia.org/wiki/Image_gradient) — kind: article; foundational definition + visual examples; stable.
+- [scipy.ndimage.sobel — SciPy documentation](https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.sobel.html) — kind: article; official API reference for the gradient operator the learner will eventually call.
+- [3Blue1Brown — But what is a partial derivative?](https://www.youtube.com/watch?v=AXqhWeUEtQU) — kind: video; partial-derivative intuition that transfers cleanly to the discrete 2D case.
+
+## Sobel and Prewitt operators
+- [Sobel operator — Wikipedia](https://en.wikipedia.org/wiki/Sobel_operator) — kind: article; canonical entry covering both Sobel and Prewitt with kernel matrices.
+- [skimage.filters.sobel — scikit-image documentation](https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.sobel) — kind: article; official API + worked example.
+- [Prewitt, J. M. S. — *Object enhancement and extraction* (1970)](https://doi.org/10.1016/S0079-7421(08)60353-7) — kind: paper; author: Judith M. S. Prewitt; year: 1970; original Prewitt-operator reference.
+
+## Non-maximum suppression and thresholding
+- [Non-maximum suppression — Wikipedia (Canny edge detector § Edge thinning)](https://en.wikipedia.org/wiki/Canny_edge_detector#Edge_thinning) — kind: article; concise definition with the standard 8-neighbour rule.
+- [skimage.feature.canny — scikit-image documentation](https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.canny) — kind: article; official implementation reference (low/high threshold, σ).
+- [Computerphile — Finding Edges (Canny)](https://www.youtube.com/watch?v=uihBwtPIBxM) — kind: video; clean visual walkthrough of NMS and double thresholding.
+
+## The Canny edge detector
+- [Canny, J. — *A Computational Approach to Edge Detection* (1986)](https://doi.org/10.1109/TPAMI.1986.4767851) — kind: paper; author: John Canny; year: 1986; the original paper — non-negotiable primary source.
+- [Canny edge detector — Wikipedia](https://en.wikipedia.org/wiki/Canny_edge_detector) — kind: article; readable summary of the four stages.
+- [OpenCV — Canny Edge Detection tutorial](https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html) — kind: article; official tutorial with parameter-tuning intuition.
+```
+
+**Output 3** — `/courses/edge-detection-basics/course.json` (architect pass kept the 2-module / 4-lesson shape; refined titles + added module summaries):
+
 
 ```json
 {
@@ -341,26 +420,27 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
 }
 ```
 
-**Output 3** — `scripts/ralph/prd.json`:
+**Output 4** — `scripts/ralph/prd.json`:
 
 ```json
 {
   "project": "Course: Edge Detection Basics",
   "branchName": "ralph/course-edge-detection-basics",
-  "description": "Generate the lessons for /courses/edge-detection-basics/ from the course-spec, research notes, and finalized course.json. Each story below produces one artefact (research.md, course.json, or one lesson JSON). Driven by the generate_lesson skill.",
+  "description": "Generate the lessons for /courses/edge-detection-basics/ from the course-spec, research notes, sources.md bibliography, and finalized course.json. Each story below produces one artefact (research.md + sources.md, course.json, or one lesson JSON). Driven by the generate_lesson skill.",
   "stories": [
     {
       "id": "US-001",
       "title": "Compile research notes for course Edge Detection Basics",
-      "description": "As an agent, I want a research note synthesising key concepts, prerequisites, misconceptions, and ordering for Edge Detection Basics, so per-lesson agents have shared context.",
+      "description": "As an agent, I want a research note synthesising key concepts, prerequisites, misconceptions, and ordering for Edge Detection Basics, plus a curated /courses/edge-detection-basics/sources.md bibliography (≥3 stable, credible references per planned lesson), so per-lesson agents have shared context and a ready-made source list.",
       "acceptanceCriteria": [
         "/courses/edge-detection-basics/research.md exists and follows the init_course research template",
         "Sections present: Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation",
+        "/courses/edge-detection-basics/sources.md exists and lists ≥3 stable, credible references per planned lesson (DOI / arxiv / Wikipedia / official docs / official YouTube channels; no medium.com / towardsdatascience.com / personal blogs)",
         "Typecheck passes"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "research.md was authored by init_course; this story is marked passes=true so ralph skips re-running it. Flip to false to force regeneration.",
+      "notes": "research.md and sources.md were authored by init_course; this story is marked passes=true so ralph skips re-running it. Flip to false to force regeneration.",
       "tags": []
     },
     {
@@ -386,11 +466,12 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
         "Lesson JSON validates against LessonSchema",
         "Uses ≥3 widget types where the topic permits",
         "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/edge-detection-basics/sources.md (or fresh research if a source is missing)",
         "Typecheck passes"
       ],
       "priority": 3,
       "passes": false,
-      "notes": "Module: Gradients in images\nSummary: Discrete derivatives in 2D and what they mean.\nScope: definition of discrete partial derivative; Ix and Iy as forward differences; visualising gradient as a vector field; magnitude vs. direction.\nLevel: beginner\nDuration target: 10 min\nTheory/practice mix: 0.45",
+      "notes": "Module: Gradients in images\nSummary: Discrete derivatives in 2D and what they mean.\nScope: definition of discrete partial derivative; Ix and Iy as forward differences; visualising gradient as a vector field; magnitude vs. direction.\nLevel: beginner\nDuration target: 10 min\nTheory/practice mix: 0.45\nSource hints: see /courses/edge-detection-basics/sources.md → ## What is an image gradient?; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
       "tags": []
     },
     {
@@ -401,11 +482,12 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
         "Lesson JSON validates against LessonSchema",
         "Uses ≥3 widget types where the topic permits",
         "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/edge-detection-basics/sources.md (or fresh research if a source is missing)",
         "Typecheck passes"
       ],
       "priority": 4,
       "passes": false,
-      "notes": "Module: Gradients in images\nSummary: Kernels, separability, magnitude/direction.\nScope: 3x3 Sobel and Prewitt kernels; separability proof for Sobel; computing magnitude and direction from Ix, Iy; comparison code exercise.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.45",
+      "notes": "Module: Gradients in images\nSummary: Kernels, separability, magnitude/direction.\nScope: 3x3 Sobel and Prewitt kernels; separability proof for Sobel; computing magnitude and direction from Ix, Iy; comparison code exercise.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.45\nSource hints: see /courses/edge-detection-basics/sources.md → ## Sobel and Prewitt operators; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. the Prewitt 1970 paper on the operators section)",
       "tags": []
     },
     {
@@ -416,11 +498,12 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
         "Lesson JSON validates against LessonSchema",
         "Uses ≥3 widget types where the topic permits",
         "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/edge-detection-basics/sources.md (or fresh research if a source is missing)",
         "Typecheck passes"
       ],
       "priority": 5,
       "passes": false,
-      "notes": "Module: From gradients to edges\nSummary: How to turn a gradient map into a clean edge map.\nScope: thinning by NMS along the gradient direction; single vs. double threshold; hysteresis preview.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.45",
+      "notes": "Module: From gradients to edges\nSummary: How to turn a gradient map into a clean edge map.\nScope: thinning by NMS along the gradient direction; single vs. double threshold; hysteresis preview.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.45\nSource hints: see /courses/edge-detection-basics/sources.md → ## Non-maximum suppression and thresholding; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
       "tags": []
     },
     {
@@ -431,11 +514,12 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
         "Lesson JSON validates against LessonSchema",
         "Uses ≥3 widget types where the topic permits",
         "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/edge-detection-basics/sources.md (or fresh research if a source is missing)",
         "Typecheck passes"
       ],
       "priority": 6,
       "passes": false,
-      "notes": "Module: From gradients to edges\nSummary: Putting it all together: blur → gradient → NMS → hysteresis.\nScope: the four Canny stages; tuning sigma and the two thresholds; demo widget on cameraman.jpg; quiz on stage ordering.\nLevel: beginner\nDuration target: 15 min\nTheory/practice mix: 0.45",
+      "notes": "Module: From gradients to edges\nSummary: Putting it all together: blur → gradient → NMS → hysteresis.\nScope: the four Canny stages; tuning sigma and the two thresholds; demo widget on cameraman.jpg; quiz on stage ordering.\nLevel: beginner\nDuration target: 15 min\nTheory/practice mix: 0.45\nSource hints: see /courses/edge-detection-basics/sources.md → ## The Canny edge detector; the Canny 1986 paper is the primary source — attach it as section.sources on the theory section that walks through the four stages",
       "tags": []
     },
     {
@@ -466,10 +550,10 @@ That prd.json is what `./scripts/ralph/ralph.sh` will iterate on.
 
 When ralph picks up a `Generate lesson: ...` story, the agent invokes the **`generate_lesson`** skill (`scripts/ralph/skills/generate_lesson/SKILL.md`). That skill:
 
-- reads the story's `notes` field for module / summary / scope / level / duration / theory-practice context
-- reads `/courses/<slug>/research.md` and `/courses/<slug>/course.json` for shared context
+- reads the story's `notes` field for module / summary / scope / level / duration / theory-practice context, including the `Source hints:` line pointing at the matching `## <lesson title>` heading in `sources.md`
+- reads `/courses/<slug>/research.md`, `/courses/<slug>/sources.md`, and `/courses/<slug>/course.json` for shared context
 - reads the JSON Schemas under `src/widgets/schemas/` for widget data shapes
-- writes `/courses/<slug>/lessons/<lesson-slug>.json` validated against `LessonSchema`
+- writes `/courses/<slug>/lessons/<lesson-slug>.json` validated against `LessonSchema`, populating `lesson.sources` (≥ 3 entries) and any relevant `section.sources`
 
 `init_course` does not author lesson content. Its job ends with `prd.json`.
 
@@ -487,12 +571,13 @@ Each `Generate lesson: ...` story is one ralph iteration. If the architect pass 
 
 ### Acceptance criteria — verbatim
 
-Per-lesson stories use exactly these four criteria, in this order:
+Per-lesson stories use exactly these five criteria, in this order:
 
 ```
 "Lesson JSON validates against LessonSchema"
 "Uses ≥3 widget types where the topic permits"
 "Uses generate_lesson skill"
+"Lesson JSON populates `sources` with ≥3 entries drawn from /courses/<slug>/sources.md (or fresh research if a source is missing)"
 "Typecheck passes"
 ```
 
@@ -516,11 +601,14 @@ The orchestrator flips `passes` to `true` after a successful iteration; do not f
 - [ ] `/courses/<slug>/course-spec.json` parsed cleanly with `CourseSpecSchema`.
 - [ ] Existing `scripts/ralph/prd.json` archived if its `branchName` differs from `ralph/course-<slug>`; `progress.txt` reset with fresh header.
 - [ ] `/courses/<slug>/research.md` written with all six template sections.
+- [ ] `/courses/<slug>/sources.md` written with ≥ 3 stable, credible references per planned lesson (no medium / towardsdatascience / personal blogs).
+- [ ] Every entry in `sources.md` carries `kind` ∈ `{paper, video, article, book}`; `author` + `year` set for every `paper`/`book`.
 - [ ] `/courses/<slug>/course.json` written and parses with `CourseSchema`.
 - [ ] `course.json` includes `"schemaVersion": 1` (forward-compat baseline; US-037).
 - [ ] Lesson slugs in `course.json` are unique and derived via slugify().
 - [ ] One US story per lesson, in display order, with priority incrementing.
-- [ ] Every per-lesson story has the four required AC strings verbatim.
+- [ ] Every per-lesson story has the five required AC strings verbatim.
+- [ ] Every per-lesson story `notes` contains a `Source hints:` line pointing at the matching `## <lesson title>` heading in `sources.md`.
 - [ ] Optional review pass story added at the end.
 - [ ] `branchName` is `ralph/course-<slug>`.
 - [ ] No story is tagged `"ui"`.
