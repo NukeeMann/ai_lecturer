@@ -15,6 +15,11 @@ STORIES_FIELD=""
 INSTALL_CMD="npm install --ignore-scripts --no-audit --no-fund"
 VALIDATE_CMD=""
 TASK_TIMEOUT_SEC=2400
+# Reserve the last N seconds of TASK_TIMEOUT_SEC as a soft-deadline buffer.
+# When the agent crosses (TASK_TIMEOUT_SEC - SOFT_DEADLINE_BUFFER_SEC) it must
+# stop, print a TIMEOUT REPORT to stdout, and exit cleanly so the next retry
+# has a real failure note instead of a SIGKILL'd transcript.
+SOFT_DEADLINE_BUFFER_SEC=600
 PROGRESS_ROTATE_LINES=200
 if [ -f "$CONFIG_FILE" ]; then
   source "$CONFIG_FILE"
@@ -449,6 +454,17 @@ run_worker() {
     last_failure=$(cat "$last_failure_file" 2>/dev/null || true)
   fi
 
+  # Compute soft-deadline window so the agent has time to write a graceful
+  # failure report before SIGKILL. If the configured buffer would leave less
+  # than 60s of working time, fall back to half the timeout — still better
+  # than nothing, and obvious to the agent that the task is too tight.
+  local soft_deadline_sec deadline_epoch
+  soft_deadline_sec=$(( TASK_TIMEOUT_SEC - SOFT_DEADLINE_BUFFER_SEC ))
+  if [ "$soft_deadline_sec" -lt 60 ]; then
+    soft_deadline_sec=$(( TASK_TIMEOUT_SEC / 2 ))
+  fi
+  deadline_epoch=$(( $(date +%s) + soft_deadline_sec ))
+
   local enriched_prompt
   enriched_prompt="You are Ralph, an autonomous coding agent. Read scripts/ralph/CLAUDE.md and follow ALL instructions there.
 
@@ -467,6 +483,17 @@ $last_failure
 
 Fix these issues specifically.")
 
+TIME BUDGET (HARD CONSTRAINT):
+- Hard timeout: ${TASK_TIMEOUT_SEC}s. After this you are SIGKILLed mid-step — no chance to write anything.
+- Soft deadline: ${soft_deadline_sec}s from agent start (= hard timeout minus a ${SOFT_DEADLINE_BUFFER_SEC}s graceful-shutdown buffer).
+- Absolute deadline epoch is exposed as env var \$RALPH_DEADLINE_EPOCH. Check elapsed periodically with: test \$(date +%s) -ge \$RALPH_DEADLINE_EPOCH
+- When you reach the soft deadline, regardless of progress:
+  1. STOP. No new file edits. No new tool calls except printing your final report.
+  2. Print a clearly-marked block to stdout starting with the literal line 'TIMEOUT REPORT:' followed by:
+     - what you attempted, what's working, what's blocking, exact file/line where you stopped.
+  3. Do NOT commit partial work. Exit cleanly with no commits — the orchestrator detects 0 commits, captures your TIMEOUT REPORT from stdout, and feeds it to the next retry.
+- The 10-minute buffer is reserved for steps 1-3. Do not eat into it with 'just one more thing'.
+
 RULES:
 - Work ONLY on task $task_id. Do NOT touch other stories.
 - You are already on the correct branch - do NOT switch branches.
@@ -477,10 +504,14 @@ RECENT PROGRESS (from prior iterations):
 $recent_progress")"
 
   # Run claude in worktree (wrapped in timeout — kills hung agents)
-  log_task "$task_id" "Running claude in worktree (timeout ${TASK_TIMEOUT_SEC}s)..."
+  log_task "$task_id" "Running claude in worktree (hard ${TASK_TIMEOUT_SEC}s, soft ${soft_deadline_sec}s)..."
 
   local exit_code=0
-  RALPH_TASK_ID="$task_id" timeout --foreground "$TASK_TIMEOUT_SEC" \
+  RALPH_TASK_ID="$task_id" \
+  RALPH_TIMEOUT_SEC="$TASK_TIMEOUT_SEC" \
+  RALPH_SOFT_DEADLINE_SEC="$soft_deadline_sec" \
+  RALPH_DEADLINE_EPOCH="$deadline_epoch" \
+  timeout --foreground "$TASK_TIMEOUT_SEC" \
     stdbuf -oL claude \
     --model "$MODEL" \
     --dangerously-skip-permissions \
