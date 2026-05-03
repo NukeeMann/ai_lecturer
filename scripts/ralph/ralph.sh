@@ -311,6 +311,43 @@ git_unlock() {
   fi
 }
 
+# Persist a failure note for the next retry attempt. Captures the agent's last
+# stdout, plus git status / diff stats from the worktree so the next iteration
+# knows what was attempted (file paths, scope) before the worktree was wiped.
+# MUST be called before `git worktree remove` — once the worktree is gone, the
+# uncommitted diff is unrecoverable.
+capture_failure_context() {
+  local task_id="$1"
+  local worktree_dir="$2"
+  local logfile="$3"
+  local last_failure_file="$4"
+  local reason="$5"
+
+  {
+    echo "$reason"
+    echo ""
+    if [ -d "$worktree_dir/.git" ] || [ -f "$worktree_dir/.git" ]; then
+      local status diffstat
+      status=$(git -C "$worktree_dir" status --short 2>/dev/null || true)
+      diffstat=$(git -C "$worktree_dir" diff --stat 2>/dev/null || true)
+      if [ -n "$status" ]; then
+        echo "Uncommitted changes in worktree (lost on retry):"
+        echo "$status"
+        echo ""
+      fi
+      if [ -n "$diffstat" ]; then
+        echo "Diff stats:"
+        echo "$diffstat"
+        echo ""
+      fi
+    fi
+    if [ -f "$logfile" ]; then
+      echo "Last 40 lines of agent output:"
+      tail -40 "$logfile" 2>/dev/null || true
+    fi
+  } > "$last_failure_file" 2>/dev/null || true
+}
+
 # ============================================================================
 # Worker: runs one task in a worktree
 # ============================================================================
@@ -410,7 +447,7 @@ $story_criteria")
 $([ -n "$story_tags" ] && echo "
 TAGS: $story_tags")
 $([ -n "$last_failure" ] && echo "
-PREVIOUS ATTEMPT FAILED VALIDATION WITH:
+PREVIOUS ATTEMPT FAILED:
 $last_failure
 
 Fix these issues specifically.")
@@ -438,6 +475,8 @@ $recent_progress")"
 
   if [ $exit_code -eq 124 ]; then
     log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — task will be retried"
+    capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" \
+      "TIMEOUT after ${TASK_TIMEOUT_SEC}s. Agent was killed mid-run — likely scope too large, infinite loop, or stuck on a single problem. Narrow your approach and commit incrementally."
     git_lock
     cd "$REPO_ROOT"
     git worktree remove "$worktree_dir" --force 2>/dev/null || true
@@ -457,6 +496,8 @@ $recent_progress")"
 
   if [ "$commits_ahead" -eq 0 ]; then
     log_task "$task_id" "${RED}Agent did not commit${RST} — task will be retried"
+    capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" \
+      "Agent finished but produced 0 commits. You MUST run 'git commit' before exiting — uncommitted work is discarded."
     git_lock
     cd "$REPO_ROOT"
     git worktree remove "$worktree_dir" --force 2>/dev/null || true
@@ -473,7 +514,12 @@ $recent_progress")"
     eval "$VALIDATE_CMD" > "$logfile.validate" 2>&1 || val_exit=$?
     if [ $val_exit -ne 0 ]; then
       log_task "$task_id" "${RED}Validation FAILED${RST} (exit $val_exit) — see $logfile.validate"
-      tail -50 "$logfile.validate" > "$last_failure_file" 2>/dev/null || true
+      {
+        echo "Validation command failed: $VALIDATE_CMD (exit $val_exit)"
+        echo ""
+        echo "Last 50 lines of validation output:"
+        tail -50 "$logfile.validate" 2>/dev/null || true
+      } > "$last_failure_file" 2>/dev/null || true
       git_lock
       cd "$REPO_ROOT"
       git worktree remove "$worktree_dir" --force 2>/dev/null || true
