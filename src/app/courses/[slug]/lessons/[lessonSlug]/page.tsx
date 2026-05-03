@@ -66,6 +66,7 @@ import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SandboxEditor } from '@/widgets/Sandbox/SandboxEditor';
 import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
 import { TheoryEditor } from '@/widgets/Theory/TheoryEditor';
+import { VideoEditor } from '@/widgets/Video/VideoEditor';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
@@ -879,6 +880,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'dataTable' && (
         <DataTableEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'video' && (
+        <VideoEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -2325,6 +2335,15 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit data table',
       () => onOpenPanel(section.id),
       'data-table-edit-btn',
+    );
+  } else if (section.type === 'video') {
+    const Body = widgetRegistry.video.component;
+    body = <Body data={section.data} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit video',
+      () => onOpenPanel(section.id),
+      'video-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

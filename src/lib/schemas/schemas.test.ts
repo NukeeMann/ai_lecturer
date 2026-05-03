@@ -26,6 +26,10 @@ import {
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
+import {
+  VideoDataSchema,
+  extractYouTubeId,
+} from '@/widgets/Video/schema';
 
 describe('CourseSchema', () => {
   const minimal = {
@@ -196,6 +200,12 @@ describe('LessonSchema + SectionSchema', () => {
           rows: [{ name: 'Ada' }],
         },
       },
+      {
+        id: 's-vid',
+        title: 't',
+        type: 'video',
+        data: { kind: 'youtube', src: 'aircAruvnKk' },
+      },
     ];
     for (const section of cases) {
       expect(() => SectionSchema.parse(section)).not.toThrow();
@@ -337,6 +347,111 @@ describe('Per-widget data schemas', () => {
     expect(() =>
       PlotImageDataSchema.parse({ src: '/x.png', alt: 'a', sourceLanguage: 'js' }),
     ).toThrow();
+  });
+
+  it('VideoData: parses a minimal valid YouTube object', () => {
+    const ok = { kind: 'youtube', src: 'aircAruvnKk' };
+    const parsed = VideoDataSchema.parse(ok);
+    expect(parsed.kind).toBe('youtube');
+    expect(parsed.autoplay).toBe(false);
+  });
+
+  it('VideoData: parses a minimal valid MP4 object', () => {
+    const ok = { kind: 'mp4', src: '/api/courses/abc/assets/intro.mp4' };
+    const parsed = VideoDataSchema.parse(ok);
+    expect(parsed.kind).toBe('mp4');
+    expect(parsed.autoplay).toBe(false);
+  });
+
+  it('VideoData: parses with full transcript and optional fields', () => {
+    const full = {
+      kind: 'youtube',
+      src: 'https://youtu.be/aircAruvnKk',
+      title: 'Hello',
+      durationSeconds: 600,
+      autoplay: true,
+      startAt: 30,
+      transcript: [
+        { tStart: 0, tEnd: 5, text: 'Intro', speaker: 'Grant' },
+        { tStart: 5, text: 'Continuation' },
+      ],
+    };
+    const parsed = VideoDataSchema.parse(full);
+    expect(parsed.transcript).toHaveLength(2);
+    expect(parsed.transcript?.[0].speaker).toBe('Grant');
+    expect(parsed.transcript?.[1].tEnd).toBeUndefined();
+  });
+
+  it('VideoData: rejects unknown kind', () => {
+    expect(() =>
+      VideoDataSchema.parse({ kind: 'webm', src: '/x.webm' }),
+    ).toThrow();
+  });
+
+  it('VideoData: rejects empty src', () => {
+    expect(() =>
+      VideoDataSchema.parse({ kind: 'mp4', src: '' }),
+    ).toThrow();
+  });
+
+  it('VideoData: rejects empty transcript text', () => {
+    expect(() =>
+      VideoDataSchema.parse({
+        kind: 'mp4',
+        src: '/x.mp4',
+        transcript: [{ tStart: 0, text: '' }],
+      }),
+    ).toThrow();
+  });
+
+  it('VideoData: rejects negative tStart', () => {
+    expect(() =>
+      VideoDataSchema.parse({
+        kind: 'mp4',
+        src: '/x.mp4',
+        transcript: [{ tStart: -1, text: 'oops' }],
+      }),
+    ).toThrow();
+  });
+
+  it('extractYouTubeId: returns the bare 11-char id unchanged', () => {
+    expect(extractYouTubeId('aircAruvnKk')).toBe('aircAruvnKk');
+    expect(extractYouTubeId('  aircAruvnKk  ')).toBe('aircAruvnKk');
+  });
+
+  it('extractYouTubeId: parses youtu.be short links', () => {
+    expect(extractYouTubeId('https://youtu.be/aircAruvnKk')).toBe('aircAruvnKk');
+    expect(extractYouTubeId('https://youtu.be/aircAruvnKk?t=42')).toBe(
+      'aircAruvnKk',
+    );
+  });
+
+  it('extractYouTubeId: parses watch?v= URLs', () => {
+    expect(
+      extractYouTubeId('https://www.youtube.com/watch?v=aircAruvnKk'),
+    ).toBe('aircAruvnKk');
+    expect(
+      extractYouTubeId('https://m.youtube.com/watch?v=aircAruvnKk&t=10s'),
+    ).toBe('aircAruvnKk');
+  });
+
+  it('extractYouTubeId: parses /embed/ and /shorts/ URLs', () => {
+    expect(
+      extractYouTubeId('https://www.youtube.com/embed/aircAruvnKk'),
+    ).toBe('aircAruvnKk');
+    expect(
+      extractYouTubeId('https://www.youtube.com/shorts/aircAruvnKk'),
+    ).toBe('aircAruvnKk');
+    expect(
+      extractYouTubeId('https://www.youtube-nocookie.com/embed/aircAruvnKk'),
+    ).toBe('aircAruvnKk');
+  });
+
+  it('extractYouTubeId: returns null for non-YouTube URLs and bad input', () => {
+    expect(extractYouTubeId('https://vimeo.com/123456')).toBeNull();
+    expect(extractYouTubeId('not a url')).toBeNull();
+    expect(extractYouTubeId('')).toBeNull();
+    expect(extractYouTubeId('https://www.youtube.com/watch?v=tooShort')).toBeNull();
   });
 
   it('ParametricExplorerData: parses a minimal valid object', () => {
