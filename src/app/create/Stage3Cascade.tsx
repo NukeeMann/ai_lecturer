@@ -34,7 +34,7 @@ import { GripVertical, Plus, Trash2, ArrowLeft, Sparkles } from 'lucide-react';
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type Level = 'beginner' | 'intermediate' | 'advanced';
-export type DurationTarget = '30min' | '1h' | 'weekend';
+export type DurationTarget = 'short' | 'standard' | 'extensive' | 'comprehensive';
 
 export interface LessonDraft {
   id: string;
@@ -102,25 +102,72 @@ const MODULE_TEMPLATES: { title: (topic: string) => string; lessons: string[] }[
       'Where to go next',
     ],
   },
+  {
+    title: () => `Module 4: Advanced techniques`,
+    lessons: [
+      'Going deeper',
+      'Optimization tricks',
+      'Less obvious pitfalls',
+      'Hands-on advanced practice',
+    ],
+  },
+  {
+    title: () => `Module 5: Capstone & next steps`,
+    lessons: [
+      'A capstone project',
+      'Comparing to alternatives',
+      'How experts approach this',
+      'Curated reading list',
+    ],
+  },
+  {
+    title: () => `Module 6: Specialised topics`,
+    lessons: [
+      'Niche application 1',
+      'Niche application 2',
+      'Edge-of-field research',
+      'Open problems',
+    ],
+  },
 ];
 
-export function seedStructure(rawTopic: string, level: Level | null): StructureDraft {
+const DURATION_PROFILE: Record<DurationTarget, { moduleCount: number; lessonsPerModule: number }> = {
+  short: { moduleCount: 1, lessonsPerModule: 4 },
+  standard: { moduleCount: 3, lessonsPerModule: 4 },
+  extensive: { moduleCount: 4, lessonsPerModule: 6 },
+  comprehensive: { moduleCount: 6, lessonsPerModule: 8 },
+};
+
+export function seedStructure(
+  rawTopic: string,
+  level: Level | null,
+  durationTarget: DurationTarget | null = null,
+): StructureDraft {
   const topic = rawTopic.trim() || 'this topic';
   const titleTopic = capitalize(topic);
   const lvl = level ?? 'beginner';
+  const profile = DURATION_PROFILE[durationTarget ?? 'standard'];
+  const moduleCount = Math.min(profile.moduleCount, MODULE_TEMPLATES.length);
   return {
     courseTitle: titleTopic,
     courseDescription: `${LEVEL_DESCRIPTORS[lvl]} to ${topic}.`,
-    modules: MODULE_TEMPLATES.map((tpl) => ({
-      id: makeId(),
-      title: tpl.title(titleTopic),
-      lessons: tpl.lessons.map((lessonTitle, i) => ({
+    modules: MODULE_TEMPLATES.slice(0, moduleCount).map((tpl) => {
+      const baseLessons = tpl.lessons;
+      const lessons: string[] = [];
+      for (let i = 0; i < profile.lessonsPerModule; i++) {
+        lessons.push(baseLessons[i % baseLessons.length]);
+      }
+      return {
         id: makeId(),
-        title: `Lesson ${i + 1}: ${lessonTitle}`,
-        summary: 'Brief 1-line description.',
-        estimatedMinutes: 10,
-      })),
-    })),
+        title: tpl.title(titleTopic),
+        lessons: lessons.map((lessonTitle, i) => ({
+          id: makeId(),
+          title: `Lesson ${i + 1}: ${lessonTitle}`,
+          summary: 'Brief 1-line description.',
+          estimatedMinutes: 10,
+        })),
+      };
+    }),
   };
 }
 
@@ -137,7 +184,11 @@ export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage
   // Seed on first entry
   useEffect(() => {
     if (!draft.structure) {
-      setDraft((d) => (d.structure ? d : { ...d, structure: seedStructure(d.topic, d.level) }));
+      setDraft((d) =>
+        d.structure
+          ? d
+          : { ...d, structure: seedStructure(d.topic, d.level, d.durationTarget) },
+      );
     }
   }, [draft.structure, setDraft]);
 

@@ -108,7 +108,7 @@ Synthesise (no web fetch required — use what you know plus the course-spec con
 - Where a Sandbox is a good fit (exploration with no grading gate)
 ```
 
-Tailor depth to `courseSpec.level` (beginner / intermediate / advanced) and `courseSpec.durationTarget` (30min / 1h / weekend). Respect `courseSpec.theoryPracticeRatio` when describing Notes for lesson generation — a low ratio (0.2) means lean hands-on, a high ratio (0.8) means lean theory.
+Tailor depth to `courseSpec.level` (beginner / intermediate / advanced) and `courseSpec.durationTarget` (short / standard / extensive / comprehensive — see Step 3 sizing table for the lesson-count budget). Respect `courseSpec.theoryPracticeRatio` when describing Notes for lesson generation — a low ratio (0.2) means lean hands-on, a high ratio (0.8) means lean theory.
 
 ### `sources.md` output structure
 
@@ -185,9 +185,19 @@ Write to `/courses/<slug>/course.json` and validate against `CourseSchema` (`src
 **Lesson slug derivation:** lowercase, replace whitespace with `-`, strip non `[a-z0-9-]`, collapse repeated `-`. Same rule the webapp uses in `src/lib/server/paths.ts → slugify()`.
 
 **Sizing rules:**
-- 2–6 modules total.
-- Each module has 2–6 lessons.
-- Each lesson is small enough that one agent in one ralph iteration can author it (≈ 4–8 sections).
+
+Use `courseSpec.durationTarget` to bound the planned size of `course.json`. The wizard's draft structure is intentionally rough — this is where you commit to a real shape:
+
+| `durationTarget`  | modules | lessons / module | typical total | rough wall-clock |
+|-------------------|---------|------------------|---------------|------------------|
+| `short`           | 1–2     | 3–5              | 3–5 lessons   | 30–60 min        |
+| `standard`        | 2–3     | 3–5              | 8–12 lessons  | 1–3 h            |
+| `extensive`       | 4–5     | 5–7              | 20–30 lessons | 5–10 h           |
+| `comprehensive`   | 5–8     | 6–10             | 40+ lessons   | 15 h+            |
+
+- Each lesson is small enough that one agent in one ralph iteration can author it (≈ 4–8 sections). This applies regardless of `durationTarget` — bigger courses use *more* lessons, not bigger lessons.
+- For `comprehensive` courses (5–8 modules with 6–10 lessons each) you will be generating 40+ lesson JSON files; pace the per-lesson stories accordingly so each one has a clear, narrow scope and the bibliography in `sources.md` covers it.
+- For `short` courses, prefer one tightly-scoped module over forcing a thin 2-module split.
 
 If `CourseSchema.parse()` fails, read the Zod issues, fix the JSON, and retry. Never write an invalid `course.json`.
 
@@ -320,7 +330,7 @@ No story in this prd.json gets `"ui"` — these stories produce JSON, not user-f
 {
   "topic": "Edge detection in computer vision — Sobel, Prewitt, Canny",
   "level": "beginner",
-  "durationTarget": "1h",
+  "durationTarget": "standard",
   "theoryPracticeRatio": 0.45,
   "draftStructure": {
     "courseTitle": "Edge Detection Basics",

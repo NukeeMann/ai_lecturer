@@ -308,4 +308,27 @@ describe('CourseSpecSchema', () => {
   it('rejects an unknown level', () => {
     expect(() => CourseSpecSchema.parse({ ...minimal, level: 'expert' })).toThrow();
   });
+
+  it('parses each new durationTarget enum value', () => {
+    for (const dt of ['short', 'standard', 'extensive', 'comprehensive'] as const) {
+      const parsed = CourseSpecSchema.parse({ ...minimal, durationTarget: dt });
+      expect(parsed.durationTarget).toBe(dt);
+    }
+  });
+
+  it('maps legacy durationTarget values to the new enum', () => {
+    const cases: { input: string; expected: 'short' | 'standard' | 'extensive' }[] = [
+      { input: '30min', expected: 'short' },
+      { input: '1h', expected: 'standard' },
+      { input: 'weekend', expected: 'extensive' },
+    ];
+    for (const { input, expected } of cases) {
+      const parsed = CourseSpecSchema.parse({ ...minimal, durationTarget: input });
+      expect(parsed.durationTarget).toBe(expected);
+    }
+  });
+
+  it('rejects an out-of-enum durationTarget value', () => {
+    expect(() => CourseSpecSchema.parse({ ...minimal, durationTarget: 'forever' })).toThrow();
+  });
 });
