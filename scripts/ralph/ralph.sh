@@ -27,6 +27,7 @@ PRD="$PRD_DIR/prd.json"
 PRD_REL="${PRD#$REPO_ROOT/}"
 WORKTREE_BASE="$REPO_ROOT/.worktrees"
 LOG_DIR="$SCRIPT_DIR/logs"
+LOG_DIR_REL="${LOG_DIR#$REPO_ROOT/}"
 LOCK_DIR="$REPO_ROOT/.ralph-locks"
 
 # Auto-detect stories field if not set in config
@@ -290,6 +291,20 @@ mark_done() {
   local task_id="$1"
   local tmp="$PRD.tmp.$$"
   jq "(.${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes) = true" "$PRD" > "$tmp" && mv "$tmp" "$PRD"
+}
+
+# Stage prd.json + ralph logs and create a commit on BASE_BRANCH so completion
+# state and run logs persist across runs. Idempotent — exits cleanly when
+# nothing is staged. Caller is responsible for `git push` afterwards.
+commit_progress() {
+  local message="$1"
+  cd "$REPO_ROOT"
+  git add "$PRD_REL" "$LOG_DIR_REL" 2>/dev/null || true
+  if git diff --cached --quiet 2>/dev/null; then
+    return 0
+  fi
+  git commit -m "$message" >/dev/null || return 1
+  log_ok "Committed ralph progress: $message"
 }
 
 branch_name() {
@@ -566,6 +581,7 @@ $recent_progress")"
 merge_tasks() {
   local tasks=("$@")
   merge_failed=()
+  local merged_ok=()
   log "Merging ${#tasks[@]} branch(es) -> $BASE_BRANCH"
 
   cd "$REPO_ROOT"
@@ -640,13 +656,22 @@ merge_tasks() {
     del_n=$(echo "$shortstat" | grep -oP '\d+ deletion' | grep -oP '\d+' || echo "0")
     log_ok "Merged $task_id: $t_title ($files_n files, +$ins_n/-$del_n, $merge_status)"
 
-    # Mark done — local-only state, prd.json is intentionally NOT tracked in git.
+    # Mark done — orchestrator owns the passes field; agents must not touch it.
     mark_done "$task_id"
+    merged_ok+=("$task_id")
 
     # Cleanup branch
     git branch -D "$branch" 2>/dev/null || true
     git push origin --delete "$branch" 2>/dev/null || true
   done
+
+  # Persist prd.json passes-field updates and the run logs from this batch.
+  # Without this, completion state and agent stdout exist only in the local
+  # working tree and are silently lost when the next merge_tasks runs `git
+  # pull --rebase` or when the workstation is wiped.
+  if [ ${#merged_ok[@]} -gt 0 ]; then
+    commit_progress "chore(ralph): mark ${merged_ok[*]} done + update logs"
+  fi
 
   git push origin "$BASE_BRANCH" || true
   log_ok "Pushed to $BASE_BRANCH"
@@ -754,7 +779,9 @@ reconcile_merged_prs() {
   done
 
   if [ "$reconciled" -gt 0 ]; then
-    log_ok "Reconciled $reconciled merged PR(s) (local prd.json only — not committed)"
+    commit_progress "chore(ralph): reconcile $reconciled merged PR(s) into prd.json"
+    git push origin "$BASE_BRANCH" || true
+    log_ok "Reconciled $reconciled merged PR(s) and pushed to $BASE_BRANCH"
   fi
 }
 
