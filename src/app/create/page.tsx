@@ -48,9 +48,10 @@ const LEVEL_OPTIONS: { value: Level; label: string; description: string }[] = [
 ];
 
 const DURATION_OPTIONS: { value: DurationTarget; label: string }[] = [
-  { value: '30min', label: '30 min' },
-  { value: '1h', label: 'An hour' },
-  { value: 'weekend', label: 'A weekend deep dive' },
+  { value: 'short', label: 'Short (3–5 lessons)' },
+  { value: 'standard', label: 'Standard (8–12)' },
+  { value: 'extensive', label: 'Extensive (20–30)' },
+  { value: 'comprehensive', label: 'Comprehensive (40+)' },
 ];
 
 function wordCount(s: string): number {
