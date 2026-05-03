@@ -1,0 +1,19 @@
+import type { ParametricExplorerData } from './schema';
+
+export const SAMPLE_PARAMETRIC_EXPLORER: ParametricExplorerData = {
+  setupCode: 'import numpy as np\nimport matplotlib.pyplot as plt\n',
+  renderCode:
+    "x = np.linspace(0, 2 * np.pi, 200)\ny = np.sin(freq * x)\nplt.figure()\nplt.plot(x, y)\nplt.title(f'sin({freq:.1f} x)')\n",
+  params: [
+    {
+      name: 'freq',
+      label: 'Frequency',
+      type: 'slider',
+      min: 0.5,
+      max: 5,
+      step: 0.1,
+      default: 1,
+    },
+  ],
+  outputType: 'plot',
+};

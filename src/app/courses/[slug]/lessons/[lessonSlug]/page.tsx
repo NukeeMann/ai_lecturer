@@ -55,6 +55,7 @@ import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
+import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
 import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
 import { QuizEditor } from '@/widgets/Quiz/QuizEditor';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
@@ -841,6 +842,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
           initial={section.data}
           initialSources={section.sources}
           courseSlug={courseSlug}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'parametricExplorer' && (
+        <ParametricExplorerEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
           onCancel={onClose}
           onSave={(next, sources) => onSave(section.id, next, sources)}
         />
@@ -2228,6 +2238,15 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit plot image',
       () => onOpenPanel(section.id),
       'plot-image-edit-btn',
+    );
+  } else if (section.type === 'parametricExplorer') {
+    const Body = widgetRegistry.parametricExplorer.component;
+    body = <Body data={section.data} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit parametric explorer',
+      () => onOpenPanel(section.id),
+      'parametric-explorer-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

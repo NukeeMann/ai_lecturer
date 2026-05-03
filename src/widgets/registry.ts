@@ -7,6 +7,7 @@ import {
   Image as ImageIcon,
   Layers,
   type LucideProps,
+  Sliders,
   Target,
   Terminal,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import { CodeWidget } from './Code/CodeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
 import { HistogramWidget } from './Histogram/HistogramWidget';
+import { ParametricExplorerWidget } from './ParametricExplorer/ParametricExplorerWidget';
 import { PlotImageWidget } from './PlotImage/PlotImageWidget';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxWidget } from './Sandbox/SandboxWidget';
@@ -28,6 +30,7 @@ export type WidgetType =
   | 'sandbox'
   | 'histogram'
   | 'plotImage'
+  | 'parametricExplorer'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -79,6 +82,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Plot Image',
     icon: ImageIcon,
     accentVar: '--widget-plot-image',
+  },
+  parametricExplorer: {
+    component: ParametricExplorerWidget as ComponentType<{ data?: unknown }>,
+    label: 'Parametric Explorer',
+    icon: Sliders,
+    accentVar: '--widget-parametric-explorer',
   },
   custom: {
     component: CustomPlaceholder,

@@ -32,3 +32,30 @@ Previous log archived to: archive/progress-2026-05-03-2056.txt
 - **Browser tests touching Code/Sandbox widgets must clear `~/.ai-lecturer/progress.json` per-section state first.** Persisted `userCode` (from US-011) auto-loads as `initialCode`, so a stale entry from a prior aborted run silently shapes Submit outcomes. Wipe via `node -e` JSON edit or use a throwaway course slug.
 - **CodeMirror typing in playwright auto-indents on `\n`.** `keyboard.type('def f():\\n    return 42\\n')` produces compound indents. Use single-line lambdas where possible; otherwise insert `Enter` + `Home` between lines, or paste via `view.dispatch({changes:{...}})`.
 - **Pyodide batched stdout strips `\n` (US-032).** `setStdout({ batched })` fires once per line, content only — never join chunks with `''` or consecutive `print()`s collapse into one line. Use the `formatStdoutChunks` helper at `src/lib/pyodide/stdout.ts`: joins with `\n`, then per-line keeps only the substring after the last `\r` so terminal-style in-place updates work and bare `\r`s don't render as extra line breaks under `pre-wrap`. The CodeRunner output panel already uses `whiteSpace: 'pre-wrap'`, so once newlines actually exist in the text, multi-line output renders correctly.
+- **Worker plot capture (US-045 `runWithPlotParam`).** Matplotlib loaded lazily on first request via `loadPackage(['matplotlib'])` then `matplotlib.use('AGG')` (no display server in worker). Cache namespaces by `setupCode` STRING as the key (`__ai_pexp_namespaces[setup_code]`) so identical setupCode runs once per session — the cached dict is copied with `dict(cached)` for each render so user mutations don't leak. Capture the most-recent figure with `plt.figure(plt.get_fignums()[-1]).savefig(buf, format='png', bbox_inches='tight', dpi=110)` then `plt.close('all')` before the next render. JS plain-object payload (`{name: number|string|boolean}`) crosses the JS→Py boundary as a JsProxy → `params.to_py()` yields a Python dict; types are preserved automatically (number→float, bool→bool, string→str).
+- **Next dev (Turbopack) can hang under back-to-back playwright runs.** Symptom: first navigation succeeds, second test run's `page.goto` times out and `curl` to ANY route hangs indefinitely. Recovery: `pkill -f "next dev"` and restart on a different port. Suspect dangling chromium HMR socket from the previous run.
+- **react-hooks/set-state-in-effect rule.** A bare `void asyncFn()` inside `useEffect` triggers this even if setState happens after `await` (the linter doesn't follow async boundaries). Gate the call behind a one-shot `useRef(false)` flag (`if (initialRenderRef.current) return; initialRenderRef.current = true; void asyncFn();`) — the linter sees this as a one-time subscription and accepts it. Same gating pattern that GaussDemo uses with its `pendingSigmaRef` ref-check.
+
+## 2026-05-03 22:25 - US-045
+- Implemented ParametricExplorer widget — a generalised version of the Demo widget that injects sliders/select/toggle params as Python globals into a render code block, supports plot/value/both output, and debounces re-renders (default 150ms, configurable via `debounceMs`).
+- Files added:
+  - `src/widgets/ParametricExplorer/{schema.ts, sample.ts, ParametricExplorerWidget.tsx, ParametricExplorerEditor.tsx}`
+  - `src/widgets/schemas/parametric-explorer.json` (regenerated)
+  - `courses/pexp-test/{course.json, lessons/plot-mode.json, lessons/value-mode.json}` — smoke-test course
+- Files changed:
+  - `src/lib/pyodide/worker.ts` — new `runWithPlotParam` message + `__ai_pexp_run` Python helper; lazy matplotlib install with `AGG` backend; per-setupCode namespace cache (`__ai_pexp_namespaces[setup_code]`); captures most-recent figure as PNG and reads optional `result` global as JSON
+  - `src/lib/pyodide/client.ts` — `runWithPlotParam` method + `RunWithPlotParamRequest`/`RunWithPlotParamResult` types added to `usePyodide()`
+  - `src/widgets/registry.ts` — `parametricExplorer` entry (Sliders icon, `--widget-parametric-explorer` accent), WidgetType union extended
+  - `src/widgets/schemas/build.ts` — added `parametric-explorer` to widget map
+  - `src/lib/schemas/lesson.ts` — added `ParametricExplorerSectionSchema` variant to discriminated union
+  - `src/styles/tokens.css` — new `--widget-parametric-explorer` CSS var in light + dark blocks
+  - `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` — wired `ParametricExplorerEditor` into `WidgetEditPanel` and the `parametricExplorer` body branch in `SectionRenderer`
+  - `src/lib/schemas/schemas.test.ts` — added schema tests (minimal-valid, select+toggle, debounceMs, unknown-outputType reject) and param-injection serialization tests (slider→number, toggle→bool, select→string, mixed)
+  - `src/widgets/schemas/lesson.json` — regenerated
+- Quality checks: `npm run typecheck` clean, `npm test` 7 files / 116 tests pass, `npm run lint` only pre-existing errors in `claude/design/source/*.jsx` and `scripts/ralph/skills/playwright-skill/*.js` (no new errors in `src/`).
+- Browser test (playwright headless on http://localhost:3008): plot-mode lesson dragged slider 1 → 4.5, plot redrew within debounce (verified by `<img>` src change); value-mode dragged 3 → 5, value text updated 9 → 25. Screenshots at `/tmp/us-045-{plot-initial,plot-after-drag,value-after-drag}.png`.
+- **Learnings for future iterations:**
+  - Pyodide takes a noticeable second (~2-5s) to lazy-install matplotlib on first `runWithPlotParam` — first plot blocks until install + setupCode + renderCode + figure savefig finish. Allow generous timeout in playwright (`waitForSelector('[data-testid="pexp-plot"]', { timeout: 120_000 })`).
+  - The `react-hooks/set-state-in-effect` rule catches `void asyncFn()` even when setState is post-await. Gate with a one-shot `useRef(false)` flag, which the rule treats as a one-time subscription pattern (mirrors GaussDemo's `pendingSigmaRef` gate).
+  - When testing back-to-back lesson pages with Turbopack, the dev server can hang after one playwright run completes — `curl` to any route will then time out. Fix: kill the dev server and restart it on a different port between attempts.
+---

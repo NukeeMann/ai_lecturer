@@ -52,6 +52,20 @@ export interface ResetNamespaceResult {
   lessonSlug: string | null;
 }
 
+export type ParamValue = number | string | boolean;
+
+export interface RunWithPlotParamRequest {
+  setupCode: string;
+  renderCode: string;
+  params: Record<string, ParamValue>;
+  outputType: 'plot' | 'value' | 'both';
+}
+
+export interface RunWithPlotParamResult extends RunResult {
+  png?: Uint8Array;
+  value?: string;
+}
+
 export interface PyodideTestSpec {
   name: string;
   body: string;
@@ -63,7 +77,8 @@ interface PendingHandler {
       | RunResult
       | RunWithTestsResult
       | GaussFilterResult
-      | ResetNamespaceResult,
+      | ResetNamespaceResult
+      | RunWithPlotParamResult,
   ) => void;
   reject: (err: unknown) => void;
 }
@@ -207,7 +222,8 @@ type WorkerPayload =
       height: number;
       sigma: number;
     }
-  | { type: 'resetNamespace'; lessonSlug: string };
+  | { type: 'resetNamespace'; lessonSlug: string }
+  | ({ type: 'runWithPlotParam' } & RunWithPlotParamRequest);
 
 interface CallOptions {
   /** When set, auto-stops the worker (and rejects this promise) after N ms. */
@@ -276,6 +292,9 @@ export interface UsePyodideReturn {
     height: number,
     sigma: number,
   ) => Promise<GaussFilterResult>;
+  runWithPlotParam: (
+    request: RunWithPlotParamRequest,
+  ) => Promise<RunWithPlotParamResult>;
   resetNamespace: (lessonSlug: string) => Promise<ResetNamespaceResult>;
   /** Terminate the current execution + restart the worker (US-039). */
   stop: (reason?: PyodideStopReason) => void;
@@ -341,11 +360,29 @@ export function usePyodide(): UsePyodideReturn {
     [],
   );
 
+  const runWithPlotParam = useCallback(
+    (request: RunWithPlotParamRequest) =>
+      callWorker<RunWithPlotParamResult>(
+        { type: 'runWithPlotParam', ...request },
+        undefined,
+        { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
+      ),
+    [],
+  );
+
   const stop = useCallback((reason: PyodideStopReason = 'user') => {
     stopPyodide(reason);
   }, []);
 
-  return { status, run, runWithTests, gaussFilter, resetNamespace, stop };
+  return {
+    status,
+    run,
+    runWithTests,
+    gaussFilter,
+    runWithPlotParam,
+    resetNamespace,
+    stop,
+  };
 }
 
 /**
