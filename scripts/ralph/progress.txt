@@ -35,6 +35,39 @@ Previous log archived to: archive/progress-2026-05-03-2056.txt
 - **Worker plot capture (US-045 `runWithPlotParam`).** Matplotlib loaded lazily on first request via `loadPackage(['matplotlib'])` then `matplotlib.use('AGG')` (no display server in worker). Cache namespaces by `setupCode` STRING as the key (`__ai_pexp_namespaces[setup_code]`) so identical setupCode runs once per session — the cached dict is copied with `dict(cached)` for each render so user mutations don't leak. Capture the most-recent figure with `plt.figure(plt.get_fignums()[-1]).savefig(buf, format='png', bbox_inches='tight', dpi=110)` then `plt.close('all')` before the next render. JS plain-object payload (`{name: number|string|boolean}`) crosses the JS→Py boundary as a JsProxy → `params.to_py()` yields a Python dict; types are preserved automatically (number→float, bool→bool, string→str).
 - **Next dev (Turbopack) can hang under back-to-back playwright runs.** Symptom: first navigation succeeds, second test run's `page.goto` times out and `curl` to ANY route hangs indefinitely. Recovery: `pkill -f "next dev"` and restart on a different port. Suspect dangling chromium HMR socket from the previous run.
 - **react-hooks/set-state-in-effect rule.** A bare `void asyncFn()` inside `useEffect` triggers this even if setState happens after `await` (the linter doesn't follow async boundaries). Gate the call behind a one-shot `useRef(false)` flag (`if (initialRenderRef.current) return; initialRenderRef.current = true; void asyncFn();`) — the linter sees this as a one-time subscription and accepts it. Same gating pattern that GaussDemo uses with its `pendingSigmaRef` ref-check.
+- **Mark a non-Code section "done".** PATCH `/api/progress` with `{ courseSlug, lessonSlug, sectionState: { [sectionId]: { done: true } } }`. `applyProgressPatch` shallow-merges into `sectionState[sectionId]`, so sibling fields on other sections are untouched. Section IDs are per-widget-instance, so this is the canonical pattern when there's no `userCode` to persist (Quiz, CodeCloze without user-code, future DragMatch, etc.).
+- **Inline syntax-highlight for cloze-style widgets.** Don't pull in CodeMirror with `Decoration.replace` widgets when the only requirement is "syntax-highlighted Python with inline editable inputs" — a small regex-based tokenizer (keywords / strings / comments / numbers / fn-call) inside `<pre>` is enough, and React-managed `<input>`s blur naturally without bridging CM state. CodeCloze's `tokenizePython` is the reference implementation. Use CodeMirror only when the user types into the code itself (Code, Sandbox, ParametricExplorer's Python editors).
+- **Status badge selector for browser tests.** `[data-section-id="<id>"] [data-status="done"]` (NOT `data-widget-status`). `StatusBadge` in `src/widgets/Widget.tsx` exposes the value via `data-status`.
+- **`type ComponentType` import for `widgetRegistry[type].component`.** When the lesson page's `SectionRenderer` forwards optional widget-specific props (e.g. `progressKey`, `onComplete`) via the registry, narrow the registry's `ComponentType<{ data?: unknown }>` with a local cast: `widgetRegistry.codeCloze.component as ComponentType<{ data?: unknown; progressKey?: typeof progressKey; onComplete?: () => void }>`. Add `type ComponentType` to the existing `from 'react'` import block in `page.tsx`.
+
+## 2026-05-03 23:50 - US-046
+- Implemented CodeCloze widget — fill-in-the-blank Python exercise with `{{slotId}}` placeholders, per-slot blur validation (exact / regex / oneOf), inline syntax-highlighted code, progressive hints driven by global failed-attempt count, and optional final pyodide-tested code assembly.
+- Files added:
+  - `src/widgets/CodeCloze/{schema.ts, sample.ts, CodeClozeWidget.tsx, CodeClozeEditor.tsx}`
+  - `src/widgets/schemas/code-cloze.json` (regenerated)
+  - `courses/cloze-test/{course.json, lessons/box-blur.json}` — smoke-test course
+- Files changed:
+  - `src/widgets/registry.ts` — `codeCloze` entry (PenLine icon, `--widget-code-cloze` accent), `WidgetType` union extended
+  - `src/widgets/schemas/build.ts` — added `code-cloze` to widget map
+  - `src/lib/schemas/lesson.ts` — `CodeClozeSectionSchema` variant added to discriminated union
+  - `src/styles/tokens.css` — `--widget-code-cloze` CSS var in both `:root` (light) and dark blocks
+  - `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` — wired `CodeClozeEditor` into `WidgetEditPanel`, added `codeCloze` body branch in `SectionRenderer`, imported `ComponentType` (used to type the registry-fetched component when forwarding `progressKey`/`onComplete`)
+  - `src/lib/schemas/schemas.test.ts` — added discriminated-union case for `codeCloze` + dedicated `CodeClozeData` and `validateSlotValue` test blocks
+  - `src/widgets/schemas/lesson.json` — regenerated
+- Quality checks: `npm run typecheck` clean (only pre-existing `pyodide` module errors in `src/lib/pyodide/{runner,stdout}.test.ts` — npm dev-dep isn't installed in this env, same on main). `npm test` passes 117 / skips 7 / fails only the same 2 pyodide test files. `npm run lint` introduces no new errors or warnings in `src/`.
+- Browser test (playwright headless on http://localhost:3010):
+  - Filled `aggregator` with wrong "avg" → slot turned red, inline `slot.hint` ("Use the built-in that totals an iterable.") appeared, and progressive hint #0 (revealAfterAttempts: 1) showed up.
+  - Fixed to "sum" → green; filled `divisor` with "len(values)" → green.
+  - Submit clicked once Pyodide reached `ready`; finalTests (2) passed in pyodide; submit button morphed to "Solved".
+  - Server-side `GET /api/progress` confirmed `sectionState.c1.done === true`.
+  - On reload, the section's `data-status="done"` badge rendered. Screenshots at `/tmp/us-046-{1-initial,2-wrong,3-aggregator-fixed,4-passed}.png`.
+- **Learnings for future iterations:**
+  - Adding a new widget that runs Python via `runWithTests` does NOT need any worker-side wiring — the existing `runWithTests` already exec's user code in `__ai_lesson_globals` (per US-031) and runs each test body in `dict(__ai_lesson_globals)`, so test isolation is automatic. Just call `usePyodide().runWithTests(assembleCode(), tests)`.
+  - For inline syntax-highlighted code WITH editable inputs interleaved, a regex-based Python tokenizer (keywords / strings / comments / numbers / fn-call detection) inside a `<pre>` is much simpler than a CodeMirror `Decoration.replace` widget — the input elements are React-managed and `onBlur` fires naturally without bridging into CodeMirror state. Trade-off: highlighting is less accurate than Lezer, but for the cloze use-case (small templates, ~50-200 chars) it is indistinguishable.
+  - Inline `<input>` width auto-sizing: `width: calc(${ch}ch + 16px)` with `ch = max(value.length, 4)` keeps the input proportional to its content while honouring the 60px min from the AC. Avoid measuring DOM with refs — `ch` units already account for monospace glyph width.
+  - The status badge selector for browser tests is `[data-section-id="<id>"] [data-status="done"]`, NOT `data-widget-status`. The `WidgetStatus` is rendered by `StatusBadge` as `data-status="done|progress"`.
+  - When persisting completion for non-Code widgets (no `userCode` to keep), PATCH `{ courseSlug, lessonSlug, sectionState: { [sectionId]: { done: true } } }` — the server's `applyProgressPatch` shallow-merges, so unrelated sibling fields (e.g. `userCode` from a Code widget on a different section) are unaffected since `sectionId` is per-instance.
+---
 
 ## 2026-05-03 22:25 - US-045
 - Implemented ParametricExplorer widget — a generalised version of the Demo widget that injects sliders/select/toggle params as Python globals into a render code block, supports plot/value/both output, and debounces re-renders (default 150ms, configurable via `debounceMs`).

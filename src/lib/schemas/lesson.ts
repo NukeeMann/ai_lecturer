@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { TheoryDataSchema } from '@/widgets/Theory/schema';
 import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
+import { CodeClozeDataSchema } from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
@@ -45,6 +46,12 @@ export const CodeSectionSchema = z.object({
   data: CodeDataSchema,
 });
 
+export const CodeClozeSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('codeCloze'),
+  data: CodeClozeDataSchema,
+});
+
 export const DemoSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('demo'),
@@ -85,6 +92,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   TheorySectionSchema,
   QuizSectionSchema,
   CodeSectionSchema,
+  CodeClozeSectionSchema,
   DemoSectionSchema,
   SandboxSectionSchema,
   HistogramSectionSchema,

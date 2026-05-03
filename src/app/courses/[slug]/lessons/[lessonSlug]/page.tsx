@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentType,
   type CSSProperties,
   type ReactNode,
 } from 'react';
@@ -54,6 +55,7 @@ import type { LessonStatus, Progress, SectionState } from '@/lib/schemas/progres
 import { CodeEditor } from '@/widgets/Code/CodeEditor';
 import { CodeWidget } from '@/widgets/Code/CodeWidget';
 import { DemoEditor } from '@/widgets/Demo/DemoEditor';
+import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
 import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
@@ -802,6 +804,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'code' && (
         <CodeEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'codeCloze' && (
+        <CodeClozeEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -2197,6 +2208,25 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit code exercise',
       () => onOpenPanel(section.id),
       'code-edit-btn',
+    );
+  } else if (section.type === 'codeCloze') {
+    const Body = widgetRegistry.codeCloze.component as ComponentType<{
+      data?: unknown;
+      progressKey?: typeof progressKey;
+      onComplete?: () => void;
+    }>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit code cloze',
+      () => onOpenPanel(section.id),
+      'code-cloze-edit-btn',
     );
   } else if (section.type === 'sandbox') {
     body = (

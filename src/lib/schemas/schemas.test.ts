@@ -7,6 +7,10 @@ import { CourseSpecSchema } from '@/lib/schemas/courseSpec';
 import { TheoryDataSchema } from '@/widgets/Theory/schema';
 import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
+import {
+  CodeClozeDataSchema,
+  validateSlotValue,
+} from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
@@ -129,6 +133,17 @@ describe('LessonSchema + SectionSchema', () => {
         title: 't',
         type: 'custom',
         data: { whatever: 1 },
+      },
+      {
+        id: 's-cc',
+        title: 't',
+        type: 'codeCloze',
+        data: {
+          template: 'def f(): return {{x}}',
+          slots: [
+            { id: 'x', validation: { kind: 'exact', value: '42' } },
+          ],
+        },
       },
       {
         id: 's7',
@@ -347,6 +362,98 @@ describe('Per-widget data schemas', () => {
       debounceMs: 250,
     });
     expect(parsed.debounceMs).toBe(250);
+  });
+
+  it('CodeClozeData: parses a minimal valid object', () => {
+    const ok = {
+      template: 'return {{x}}',
+      slots: [{ id: 'x', validation: { kind: 'exact', value: '1' } }],
+    };
+    expect(() => CodeClozeDataSchema.parse(ok)).not.toThrow();
+  });
+
+  it('CodeClozeData: parses with finalTests, hints, and per-slot hint', () => {
+    const parsed = CodeClozeDataSchema.parse({
+      taskMarkdown: 'Fill the blanks.',
+      template: 'a = {{a}}; b = {{b}}',
+      slots: [
+        {
+          id: 'a',
+          hint: 'pick 1',
+          validation: { kind: 'oneOf', values: ['1', 'one'] },
+        },
+        {
+          id: 'b',
+          validation: { kind: 'regex', pattern: '\\d+' },
+        },
+      ],
+      finalTests: [{ name: 't', body: 'assert True' }],
+      hints: [{ revealAfterAttempts: 2, markdown: 'try harder' }],
+    });
+    expect(parsed.finalTests?.[0].hidden).toBe(true);
+    expect(parsed.slots[0].validation).toEqual({
+      kind: 'oneOf',
+      values: ['1', 'one'],
+    });
+  });
+
+  it('CodeClozeData: rejects unknown validation kind', () => {
+    expect(() =>
+      CodeClozeDataSchema.parse({
+        template: '{{x}}',
+        slots: [
+          {
+            id: 'x',
+            validation: { kind: 'startsWith', value: 'a' },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it('CodeClozeData: rejects oneOf with empty values array', () => {
+    expect(() =>
+      CodeClozeDataSchema.parse({
+        template: '{{x}}',
+        slots: [{ id: 'x', validation: { kind: 'oneOf', values: [] } }],
+      }),
+    ).toThrow();
+  });
+});
+
+describe('CodeCloze validateSlotValue', () => {
+  it('exact: requires byte-for-byte equality', () => {
+    expect(
+      validateSlotValue({ kind: 'exact', value: 'sum' }, 'sum'),
+    ).toBe(true);
+    expect(
+      validateSlotValue({ kind: 'exact', value: 'sum' }, 'Sum'),
+    ).toBe(false);
+    expect(
+      validateSlotValue({ kind: 'exact', value: 'sum' }, ' sum'),
+    ).toBe(false);
+  });
+
+  it('oneOf: accepts any listed value', () => {
+    const v = {
+      kind: 'oneOf' as const,
+      values: ['len(values)', '3'],
+    };
+    expect(validateSlotValue(v, 'len(values)')).toBe(true);
+    expect(validateSlotValue(v, '3')).toBe(true);
+    expect(validateSlotValue(v, '4')).toBe(false);
+  });
+
+  it('regex: anchors implicitly (full match)', () => {
+    const v = { kind: 'regex' as const, pattern: '\\d+' };
+    expect(validateSlotValue(v, '123')).toBe(true);
+    expect(validateSlotValue(v, '12a')).toBe(false);
+    expect(validateSlotValue(v, '')).toBe(false);
+  });
+
+  it('regex: invalid pattern returns false instead of throwing', () => {
+    const v = { kind: 'regex' as const, pattern: '(' };
+    expect(validateSlotValue(v, 'x')).toBe(false);
   });
 });
 

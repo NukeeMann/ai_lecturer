@@ -7,6 +7,7 @@ import { zodToJsonSchema } from 'zod-to-json-schema';
 import { TheoryDataSchema } from '@/widgets/Theory/schema';
 import { QuizDataSchema } from '@/widgets/Quiz/schema';
 import { CodeDataSchema } from '@/widgets/Code/schema';
+import { CodeClozeDataSchema } from '@/widgets/CodeCloze/schema';
 import { DemoDataSchema } from '@/widgets/Demo/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { HistogramDataSchema } from '@/widgets/Histogram/schema';
@@ -19,6 +20,7 @@ const widgets: Record<string, ZodSchema> = {
   theory: TheoryDataSchema,
   quiz: QuizDataSchema,
   code: CodeDataSchema,
+  'code-cloze': CodeClozeDataSchema,
   demo: DemoDataSchema,
   sandbox: SandboxDataSchema,
   histogram: HistogramDataSchema,

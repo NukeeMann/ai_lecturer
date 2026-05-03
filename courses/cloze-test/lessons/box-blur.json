@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "slug": "box-blur",
+  "courseSlug": "cloze-test",
+  "moduleId": "m1",
+  "title": "Box blur cloze",
+  "eyebrow": "CLOZE",
+  "description": "Fill in the blanks to compute the mean of three numbers.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "c1",
+      "title": "Average of a triple",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Fill in the two blanks so `box_blur` returns the average of a 3-element list.",
+        "template": "def box_blur(values):\n    total = {{aggregator}}(values)\n    return total / {{divisor}}\n",
+        "slots": [
+          {
+            "id": "aggregator",
+            "hint": "Use the built-in that totals an iterable.",
+            "validation": { "kind": "exact", "value": "sum" }
+          },
+          {
+            "id": "divisor",
+            "hint": "Divide by the count of values.",
+            "validation": { "kind": "oneOf", "values": ["len(values)", "3"] }
+          }
+        ],
+        "finalTests": [
+          {
+            "name": "returns the mean for a simple triple",
+            "hidden": true,
+            "body": "assert box_blur([1, 2, 3]) == 2"
+          },
+          {
+            "name": "handles negative numbers",
+            "hidden": true,
+            "body": "assert box_blur([-3, 0, 3]) == 0"
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 1,
+            "markdown": "Each blank takes a single Python expression."
+          },
+          {
+            "revealAfterAttempts": 3,
+            "markdown": "First blank is `sum`; second is the count of `values`."
+          }
+        ]
+      }
+    }
+  ]
+}

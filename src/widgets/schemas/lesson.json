@@ -256,6 +256,169 @@
                   },
                   "type": {
                     "type": "string",
+                    "const": "codeCloze"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "taskMarkdown": {
+                        "type": "string"
+                      },
+                      "template": {
+                        "type": "string"
+                      },
+                      "slots": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "hint": {
+                              "type": "string"
+                            },
+                            "validation": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "exact"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "regex"
+                                    },
+                                    "pattern": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "pattern"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "oneOf"
+                                    },
+                                    "values": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "minItems": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "values"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "validation"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "finalTests": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "body": {
+                              "type": "string"
+                            },
+                            "hidden": {
+                              "type": "boolean",
+                              "default": true
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "body"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "hints": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "revealAfterAttempts": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "markdown": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "revealAfterAttempts",
+                            "markdown"
+                          ],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": [
+                      "template",
+                      "slots"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "sources": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/sources"
+                  },
+                  "type": {
+                    "type": "string",
                     "const": "demo"
                   },
                   "data": {

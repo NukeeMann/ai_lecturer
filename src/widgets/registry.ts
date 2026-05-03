@@ -7,12 +7,14 @@ import {
   Image as ImageIcon,
   Layers,
   type LucideProps,
+  PenLine,
   Sliders,
   Target,
   Terminal,
 } from 'lucide-react';
 
 import { CodeWidget } from './Code/CodeWidget';
+import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
 import { GaussDemo } from './Demo/GaussDemo';
 import { HistogramWidget } from './Histogram/HistogramWidget';
@@ -26,6 +28,7 @@ export type WidgetType =
   | 'theory'
   | 'quiz'
   | 'code'
+  | 'codeCloze'
   | 'demo'
   | 'sandbox'
   | 'histogram'
@@ -58,6 +61,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Code Exercise',
     icon: Code,
     accentVar: '--widget-code',
+  },
+  codeCloze: {
+    component: CodeClozeWidget as ComponentType<{ data?: unknown }>,
+    label: 'Code Cloze',
+    icon: PenLine,
+    accentVar: '--widget-code-cloze',
   },
   demo: {
     component: GaussDemo as ComponentType<{ data?: unknown }>,
