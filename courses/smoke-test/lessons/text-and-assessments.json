@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "slug": "text-and-assessments",
+  "courseSlug": "smoke-test",
+  "moduleId": "m1",
+  "title": "Text & assessments — Theory, Quiz, CodeCloze, DragMatch",
+  "eyebrow": "Lekcja 1 · Smoke test",
+  "description": "Sections for the text-and-assessment widget family: Theory markdown, Quiz (single + multi-select), CodeCloze inline blanks, and DragMatch term/definition matching.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-theory",
+      "title": "Theory — Markdown narration with KaTeX & callouts",
+      "type": "theory",
+      "data": {
+        "markdown": "## Theory widget\n\n**Purpose.** Renders Markdown narration for a lesson section: prose, headings, lists, fenced code, KaTeX math, and callouts. The default container in any explanatory section.\n\n**Typical use.** A short conceptual intro before a code or quiz exercise.\n\n### Inline math\n\nThe Gaussian density is\n\n\\[\nG(x; \\sigma) = \\frac{1}{\\sigma \\sqrt{2\\pi}}\\, e^{-x^{2} / (2\\sigma^{2})}\n\\]\n\nso `$\\sigma$` should render as a proper σ glyph.\n\n### Callouts\n\n:::callout{type=\"info\" title=\"Info callout\"}\nUsed for neutral context that supports the main narrative.\n:::\n\n:::callout{type=\"tip\" title=\"Tip\"}\nIcons + tinted background should distinguish each callout type from the surrounding prose.\n:::\n\n:::callout{type=\"warning\" title=\"Warning\"}\nWarnings get a stronger accent — they should be visually obvious.\n:::\n\n### List + inline code\n\n- Numbered lists, bullets, and nested items render as expected.\n- Inline `code` is rendered with the monospace font and a tinted background.\n- A fenced block follows:\n\n```python\ndef hello(name: str) -> str:\n    return f\"hello, {name}\"\n```\n\nIf any of the above renders as raw Markdown source instead of formatted output, the Theory widget has regressed."
+      }
+    },
+    {
+      "id": "s2-quiz-single",
+      "title": "Quiz — single-select",
+      "type": "quiz",
+      "data": {
+        "question": "Quiz widget (single-select). Which statement best describes its purpose?",
+        "options": [
+          "Render a multiple-choice question with one correct answer; show inline feedback + explanation on submit.",
+          "Run user-authored Python code against hidden tests.",
+          "Embed a video with a clickable transcript.",
+          "Plot a histogram of binned values."
+        ],
+        "correct": [0],
+        "explanation": "The single-select Quiz renders one correct option among distractors, accepts a click, and reveals a per-question explanation. It is the smallest interactive assessment in the lesson.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s3-quiz-multi",
+      "title": "Quiz — multi-select",
+      "type": "quiz",
+      "data": {
+        "question": "Quiz widget (multi-select). Pick every statement that is true about the Quiz widget.",
+        "options": [
+          "It supports both single-correct and multi-correct configurations.",
+          "It shows an explanation panel after the user submits.",
+          "It marks the section as done in `progress.json` on a fully-correct submission.",
+          "It executes Python code in a Pyodide worker."
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "The first three options reflect the actual contract: single/multi mode, post-submit explanation, and `done` persistence on correct submission. Quiz never executes Python — that is the Code/Sandbox/ParametricExplorer family.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "s4-cloze",
+      "title": "CodeCloze — fill-in-the-blank Python",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "**CodeCloze widget.** Renders syntax-highlighted code with inline editable inputs at every `{{slotId}}` placeholder. Use it for low-friction practice where the user only changes a handful of tokens.\n\nFill the blanks so `mean` returns the arithmetic average of `values`.",
+        "language": "python",
+        "template": "def mean(values):\n    total = {{aggregator}}(values)\n    count = {{counter}}(values)\n    return total / count\n",
+        "slots": [
+          {
+            "id": "aggregator",
+            "hint": "Built-in that totals an iterable of numbers.",
+            "validation": { "kind": "exact", "value": "sum" }
+          },
+          {
+            "id": "counter",
+            "hint": "Built-in that returns the length of a sequence.",
+            "validation": { "kind": "exact", "value": "len" }
+          }
+        ],
+        "finalTests": [
+          {
+            "name": "mean of three numbers",
+            "hidden": true,
+            "body": "assert mean([1, 2, 3]) == 2"
+          },
+          {
+            "name": "mean of negatives",
+            "hidden": true,
+            "body": "assert mean([-3, 0, 3]) == 0"
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 2,
+            "markdown": "Use `sum` and `len`."
+          }
+        ]
+      }
+    },
+    {
+      "id": "s5-dragmatch",
+      "title": "DragMatch — term ↔ definition matching",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "DragMatch widget. Drag each widget name into the slot that matches its purpose.",
+        "items": [
+          { "id": "i-theory", "label": "Theory" },
+          { "id": "i-quiz", "label": "Quiz" },
+          { "id": "i-code", "label": "Code" }
+        ],
+        "zones": [
+          { "id": "z-narration", "label": "Markdown narration with KaTeX + callouts", "accepts": ["i-theory"] },
+          { "id": "z-mcq", "label": "Multiple-choice question with explanation", "accepts": ["i-quiz"] },
+          { "id": "z-pyexec", "label": "User-authored Python graded against hidden tests", "accepts": ["i-code"] }
+        ],
+        "multipleItemsPerZone": false,
+        "explanation": "Theory narrates, Quiz assesses comprehension via MCQ, Code grades a programming task. The bank/zone layout is the canonical DragMatch shape — one item per zone, one zone per item."
+      }
+    }
+  ]
+}

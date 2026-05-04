@@ -35,6 +35,8 @@ The webapp does **not** run the agent chain. For each course you will:
 
 If you only have time to test the **app**, not generation, you can skip steps 2–4 and use the existing seed course `gauss-basics` (US-029) plus `pexp-test`, `cloze-test`, `dragmatch-test`, `datatable-test`, `video-test` already under `/courses/`. Mark such items as "tested against seed" in your report.
 
+> **Canonical smoke-test target (US-064): `smoke-test`.** A static fixture under `/courses/smoke-test/` with one section per widget type across 4 lessons (Text & assessments → Python → Visualization → Data & media). Use it as the fastest "did rendering still work after my change?" pass — open the dashboard, navigate into each of the 4 lessons in order, and verify every section renders without console errors. The §3.4 widget walkthroughs each map to a section in this course; if a generated course has not been built yet, default to the smoke-test course for §3.4.
+
 ### 2.1 Course A — Short / narrow / mostly theory (US-024, US-042)
 
 | Field | Value |

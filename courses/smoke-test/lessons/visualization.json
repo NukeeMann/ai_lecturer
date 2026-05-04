@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "slug": "visualization",
+  "courseSlug": "smoke-test",
+  "moduleId": "m1",
+  "title": "Visualization — Demo, Histogram, PlotImage",
+  "eyebrow": "Lekcja 3 · Smoke test",
+  "description": "Visualization widget family: the Gaussian-blur Demo, a Histogram of binned counts, and a static PlotImage figure with a Show source disclosure.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-demo",
+      "title": "Demo — interactive Gaussian blur on cameraman.jpg",
+      "type": "demo",
+      "data": {
+        "demoType": "gauss",
+        "imageSrc": "/demo-images/cameraman.jpg",
+        "params": {
+          "sigmaMin": 0.5,
+          "sigmaMax": 8,
+          "sigmaDefault": 2
+        }
+      }
+    },
+    {
+      "id": "s2-histogram",
+      "title": "Histogram — bar chart of binned counts",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 32, 64, 96, 128, 160, 192, 224, 256],
+        "counts": [180, 360, 520, 740, 690, 410, 220, 110]
+      }
+    },
+    {
+      "id": "s3-plot-image",
+      "title": "PlotImage — pre-rendered figure + Show source disclosure",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/smoke-test/assets/plots/gauss1d.png",
+        "alt": "1D Gaussian density profile centred at zero with sigma=1",
+        "caption": "PlotImage widget. Renders a static <figure> + <img> + optional caption + optional Show source disclosure with syntax-highlighted source code.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nx = np.linspace(-4, 4, 200)\nsigma = 1.0\ny = np.exp(-(x ** 2) / (2 * sigma ** 2)) / (sigma * np.sqrt(2 * np.pi))\n\nfig, ax = plt.subplots(figsize=(6, 4))\nax.plot(x, y, color=\"#1f77b4\", linewidth=2, label=\"G(x; sigma=1)\")\nax.set_title(\"1D Gauss, sigma=1\")\nax.set_xlabel(\"x\")\nax.set_ylabel(\"G(x)\")\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\")\nplt.tight_layout()\nplt.savefig(\"gauss1d.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    }
+  ]
+}
