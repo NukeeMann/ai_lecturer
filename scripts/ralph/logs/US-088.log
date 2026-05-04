@@ -1,0 +1,26 @@
+[2026-05-04T20:51:45+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:54:25+0200] Good — first is `plot-mode`, second/last is `value-mode`. Now let me look at the lesson page route to understand how Next 16 routes work.
+[2026-05-04T20:54:36+0200] Now create the entry-redirect helper.
+[2026-05-04T20:55:12+0200] Now refactor the API route to share the readCourse helper.
+[2026-05-04T20:56:50+0200] All 363 tests pass. Let me also lint.
+[2026-05-04T20:57:21+0200] My files pass lint cleanly. The pre-existing 163 errors aren't from this change. Now browser-verify.
+[2026-05-04T21:01:43+0200] All four scenarios pass. The console.error is just from the bad-slug 404 fetch — expected.
+[2026-05-04T21:02:03+0200] Now append progress notes.
+[2026-05-04T21:02:53+0200] Now commit.
+[2026-05-04T21:03:28+0200] `passes: true` is in HEAD. US-088 done.
+[2026-05-04T21:03:37+0200] US-088 implemented and committed (`23f7ab7`).
+
+Summary:
+- New server component `src/app/courses/[slug]/page.tsx` loads the course + progress and `redirect()`s to the right lesson; `notFound()` for unknown / unsafe slugs.
+- Extracted `src/lib/server/courses.ts#readCourse` as a shared on-disk loader (also wired into the existing `GET /api/courses/[slug]`).
+- Pure helper `src/lib/lessons/entryRedirect.ts#pickEntryLessonSlug` with 8 unit tests covering empty / no-progress / mixed / all-finished / cross-module branches.
+- Browser-verified via `/tmp/playwright-test-US-088.js`: (a) no progress → `plot-mode`, (b) first finished → `value-mode`, (c) all finished → `value-mode` (last), (d) bad slug → 404.
+- Typecheck clean; full vitest suite 363/363; lint clean for new files. `passes: true` for US-088 is in HEAD.
+[2026-05-04T21:03:37+0200] [result success turns=74 cost=$4.695681750000001] US-088 implemented and committed (`23f7ab7`).
+
+Summary:
+- New server component `src/app/courses/[slug]/page.tsx` loads the course + progress and `redirect()`s to the right lesson; `notFound()` for unknown / unsafe slugs.
+- Extracted `src/lib/server/courses.ts#readCourse` as a shared on-disk loader (also wired into the existing `GET /api/courses/[slug]`).
+- Pure helper `src/lib/lessons/entryRedirect.ts#pickEntryLessonSlug` with 8 unit tests covering empty / no-progress / mixed / all-finished / cross-module branches.
+- Browser-verified via `/tmp/playwright-test-US-088.js`: (a) no progress → `plot-mode`, (b) first finished → `value-mode`, (c) all finished → `value-mode` (last), (d) bad slug → 404.
+- Typecheck clean; full vitest suite 363/363; lint clean for new files. `passes: true` for US-088 is in HEAD.
