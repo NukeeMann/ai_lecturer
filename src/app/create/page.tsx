@@ -1,9 +1,9 @@
 'use client';
 
-import { Fragment, useEffect, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, Check, Copy, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Copy, Sparkles } from 'lucide-react';
 import Stage3Cascade, {
   type Draft,
   type Level,
@@ -11,6 +11,12 @@ import Stage3Cascade, {
   type StructureDraft,
 } from './Stage3Cascade';
 import Stage3Clarify from './Stage3Clarify';
+import {
+  computeStageInputHash,
+  isStageStale,
+  snapshotUpstreamHashes,
+  staleStages,
+} from '@/lib/wizard/dependencies';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -159,10 +165,19 @@ export default function CreatePage() {
     }
   };
 
+  const staleStageIds = useMemo(() => {
+    const stale = staleStages(draft, draft.caches);
+    const ids = new Set<number>();
+    if (stale.has('clarification')) ids.add(3);
+    if (stale.has('structure')) ids.add(4);
+    if (stale.has('approval')) ids.add(5);
+    return ids;
+  }, [draft]);
+
   return (
     <div style={pageStyle}>
       <header style={headerStyle}>
-        <Stepper current={stage} onJump={handleStepperJump} />
+        <Stepper current={stage} onJump={handleStepperJump} staleStageIds={staleStageIds} />
       </header>
       <main style={mainStyle}>
         {stage === 1 && (
@@ -200,6 +215,7 @@ export default function CreatePage() {
         {stage === 5 && (
           <Stage4Approval
             draft={draft}
+            setDraft={setDraft}
             onBack={() => setStage(4)}
             onGenerate={handleGenerate}
             submitting={submitting}
@@ -258,7 +274,15 @@ function clampRatio(n: number): number {
 
 // ─── Stepper ─────────────────────────────────────────────────────────────────
 
-function Stepper({ current, onJump }: { current: number; onJump: (id: number) => void }) {
+function Stepper({
+  current,
+  onJump,
+  staleStageIds,
+}: {
+  current: number;
+  onJump: (id: number) => void;
+  staleStageIds?: Set<number>;
+}) {
   return (
     <div data-testid="wizard-stepper" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       {STAGES.map((s, i) => {
@@ -266,15 +290,18 @@ function Stepper({ current, onJump }: { current: number; onJump: (id: number) =>
         const active = s.id === current;
         const future = s.id > current;
         const canJump = done;
+        const stale = staleStageIds?.has(s.id) ?? false;
         return (
           <Fragment key={s.id}>
             <button
               type="button"
               data-testid={`stepper-step-${s.id}`}
               data-step-state={done ? 'done' : active ? 'active' : 'future'}
+              data-stale={stale ? 'true' : undefined}
               onClick={canJump ? () => onJump(s.id) : undefined}
               aria-current={active ? 'step' : undefined}
               disabled={future}
+              title={stale ? 'Will regenerate when reopened — upstream changed' : undefined}
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
@@ -314,6 +341,19 @@ function Stepper({ current, onJump }: { current: number; onJump: (id: number) =>
                 {done ? <Check size={12} strokeWidth={3} /> : s.id}
               </span>
               <span>{s.label}</span>
+              {stale && (
+                <span
+                  data-testid={`stepper-step-${s.id}-stale`}
+                  aria-label="stale"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    color: 'var(--warning, #d97706)',
+                  }}
+                >
+                  <AlertTriangle size={11} strokeWidth={2.5} />
+                </span>
+              )}
             </button>
             {i < STAGES.length - 1 && (
               <span
@@ -580,17 +620,46 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
 
 function Stage4Approval({
   draft,
+  setDraft,
   onBack,
   onGenerate,
   submitting,
   submitError,
 }: {
   draft: Draft;
+  setDraft: Dispatch<SetStateAction<Draft>>;
   onBack: () => void;
   onGenerate: () => void;
   submitting: boolean;
   submitError: string | null;
 }) {
+  // Approval has no Claude call — "regeneration" is just refreshing the
+  // recorded upstream-hash snapshot so the stale indicator clears once the
+  // user has actually viewed the new summary. (No confirm dialog: user can't
+  // edit Approval, so there's nothing to lose.)
+  const refreshedRef = useRef(false);
+  useEffect(() => {
+    if (refreshedRef.current) return;
+    refreshedRef.current = true;
+    const cache = draft.caches?.approval;
+    const stale = isStageStale('approval', draft, cache);
+    if (!cache || stale) {
+      setDraft((d) => {
+        const generatedHash = computeStageInputHash('structure', d);
+        return {
+          ...d,
+          caches: {
+            ...(d.caches ?? {}),
+            approval: {
+              upstreamHashes: snapshotUpstreamHashes('approval', d),
+              generatedHash,
+            },
+          },
+        };
+      });
+    }
+  }, [draft, setDraft]);
+
   const s = draft.structure;
   const lessonCount = s ? s.modules.reduce((sum, m) => sum + m.lessons.length, 0) : 0;
   const totalMinutes = s

@@ -12,6 +12,12 @@ import {
 } from 'react';
 import { ArrowLeft, ArrowRight, RefreshCw, SkipForward, Sparkles } from 'lucide-react';
 import type { Draft } from './Stage3Cascade';
+import {
+  computeStageInputHash,
+  hasUserEdits,
+  isStageStale,
+  snapshotUpstreamHashes,
+} from '@/lib/wizard/dependencies';
 
 export interface ClarificationQuestion {
   id: string;
@@ -45,6 +51,7 @@ export default function Stage3Clarify({
       ? { kind: 'ready', questions: draft.clarificationQuestions }
       : { kind: 'idle' },
   );
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
   const requestSeq = useRef(0);
   const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
 
@@ -89,16 +96,26 @@ export default function Stage3Clarify({
         });
         return;
       }
-      setDraft((d) => ({
-        ...d,
-        clarificationQuestions: questions,
-        // Preserve any answers the user has already typed during back-nav,
-        // but seed with empty strings for any newly returned ids.
-        clarification: {
-          ...Object.fromEntries(questions.map((q) => [q.id, ''])),
-          ...(d.clarification ?? {}),
-        },
-      }));
+      setDraft((d) => {
+        // Regeneration: the question set is fresh, so wipe stale answers
+        // tied to no-longer-existent question ids.
+        const next = {
+          ...d,
+          clarificationQuestions: questions,
+          clarification: Object.fromEntries(questions.map((q) => [q.id, ''])),
+        };
+        const generatedHash = computeStageInputHash('clarification', next);
+        return {
+          ...next,
+          caches: {
+            ...(d.caches ?? {}),
+            clarification: {
+              upstreamHashes: snapshotUpstreamHashes('clarification', next),
+              generatedHash,
+            },
+          },
+        };
+      });
       setState({ kind: 'ready', questions });
     } catch (err) {
       if (seq !== requestSeq.current) return;
@@ -106,15 +123,52 @@ export default function Stage3Clarify({
     }
   }, [draft.topic, draft.level, draft.durationTarget, draft.theoryPracticeRatio, f, setDraft]);
 
-  // First-time entry: kick off a load if we don't already have questions.
+  // First-time entry / stale-reopen: kick off a load (or surface a confirm
+  // dialog if the user has typed answers we'd otherwise discard). The
+  // ref-gate makes this a one-shot subscription pattern; eslint's
+  // set-state-in-effect rule doesn't follow async/ref boundaries.
   const initialLoadRef = useRef(false);
   useEffect(() => {
     if (initialLoadRef.current) return;
     initialLoadRef.current = true;
     if (state.kind === 'idle') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadQuestions();
+      return;
     }
-  }, [state.kind, loadQuestions]);
+    const cache = draft.caches?.clarification;
+    if (isStageStale('clarification', draft, cache)) {
+      if (hasUserEdits('clarification', draft, cache)) {
+        setConfirmRegenerate(true);
+      } else {
+        void loadQuestions();
+      }
+    }
+  }, [state.kind, loadQuestions, draft]);
+
+  const handleConfirmRegenerate = useCallback(() => {
+    setConfirmRegenerate(false);
+    void loadQuestions();
+  }, [loadQuestions]);
+
+  const handleKeepCurrent = useCallback(() => {
+    setConfirmRegenerate(false);
+    // Refresh the cache's upstreamHashes so we don't keep re-prompting on
+    // every reopen, but keep the user's questions and answers intact.
+    setDraft((d) => {
+      const generatedHash = computeStageInputHash('clarification', d);
+      return {
+        ...d,
+        caches: {
+          ...(d.caches ?? {}),
+          clarification: {
+            upstreamHashes: snapshotUpstreamHashes('clarification', d),
+            generatedHash,
+          },
+        },
+      };
+    });
+  }, [setDraft]);
 
   const handleAnswerChange = useCallback(
     (id: string, value: string) => {
@@ -154,6 +208,12 @@ export default function Stage3Clarify({
 
   return (
     <div style={stageWrapStyle} data-testid="stage-clarify">
+      {confirmRegenerate && (
+        <ClarifyRegenerateDialog
+          onConfirm={handleConfirmRegenerate}
+          onCancel={handleKeepCurrent}
+        />
+      )}
       <div
         style={{
           flex: 1,
@@ -469,4 +529,92 @@ function primaryBtnStyle(disabled: boolean): CSSProperties {
     opacity: disabled ? 0.7 : 1,
     transition: 'background var(--t-fast), opacity var(--t-fast)',
   };
+}
+
+// ─── Confirm-regenerate dialog ───────────────────────────────────────────────
+
+function ClarifyRegenerateDialog({
+  onConfirm,
+  onCancel,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-testid="wizard-regenerate-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wizard-clarify-regenerate-title"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg, 12px)',
+          padding: 'var(--space-5)',
+          maxWidth: 440,
+          margin: '0 var(--space-4)',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.18)',
+        }}
+      >
+        <div
+          id="wizard-clarify-regenerate-title"
+          style={{
+            fontSize: 'var(--fs-md)',
+            fontWeight: 600,
+            color: 'var(--text)',
+            marginBottom: 8,
+          }}
+        >
+          Upstream changed — regenerate Clarification?
+        </div>
+        <p
+          data-testid="wizard-regenerate-body"
+          style={{
+            margin: 0,
+            color: 'var(--text-secondary)',
+            fontSize: 'var(--fs-sm)',
+            lineHeight: 1.5,
+          }}
+        >
+          Your edits will be lost.
+        </p>
+        <div
+          style={{
+            marginTop: 'var(--space-4)',
+            display: 'flex',
+            gap: 'var(--space-3)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            data-testid="wizard-regenerate-cancel"
+            onClick={onCancel}
+            style={ghostBtnStyle}
+          >
+            Keep my edits
+          </button>
+          <button
+            type="button"
+            data-testid="wizard-regenerate-confirm"
+            onClick={onConfirm}
+            style={primaryBtnStyle(false)}
+          >
+            Regenerate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
