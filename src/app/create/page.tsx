@@ -1,9 +1,8 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, Copy, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react';
 import Stage3Cascade, {
   type Draft,
   type Level,
@@ -165,6 +164,11 @@ export default function CreatePage() {
     }
   };
 
+  const handleCancelGeneration = useCallback(() => {
+    setSubmittedSlug(null);
+    setStage(5);
+  }, []);
+
   const staleStageIds = useMemo(() => {
     const stale = staleStages(draft, draft.caches);
     const ids = new Set<number>();
@@ -222,7 +226,12 @@ export default function CreatePage() {
             submitError={submitError}
           />
         )}
-        {stage === 6 && submittedSlug && <Stage5Export slug={submittedSlug} />}
+        {stage === 6 && submittedSlug && (
+          <Stage5Generate
+            slug={submittedSlug}
+            onCancelled={handleCancelGeneration}
+          />
+        )}
       </main>
     </div>
   );
@@ -932,25 +941,213 @@ function Stage4Approval({
   );
 }
 
-// ─── Stage 5 — Export ────────────────────────────────────────────────────────
+// ─── Stage 5 — Generate (live progress) ──────────────────────────────────────
 
-function Stage5Export({ slug }: { slug: string }) {
-  const specPath = `/courses/${slug}/course-spec.json`;
-  const claudeCmd = `claude`;
-  const skillCmd = `/init_course ${slug}`;
-  const ralphCmd = `./scripts/ralph/ralph.sh`;
+interface GenerationLogLine {
+  key: number;
+  text: string;
+}
+
+interface ProgressState {
+  current: number;
+  total: number;
+}
+
+function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
+  const router = useRouter();
+  const [phase, setPhase] = useState<'starting' | 'running' | 'done' | 'error'>('starting');
+  const [genId, setGenId] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<GenerationLogLine[]>([]);
+  const [stages, setStages] = useState<{ name: string; status: 'started' | 'done' | 'error' }[]>([]);
+  const [progress, setProgress] = useState<ProgressState | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showFullLog, setShowFullLog] = useState(false);
+
+  const lineKeyRef = useRef(0);
+  const logScrollRef = useRef<HTMLPreElement | null>(null);
+  const phaseRef = useRef(phase);
+  const genIdRef = useRef<string | null>(null);
+  const cancelInFlightRef = useRef(false);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+  useEffect(() => {
+    genIdRef.current = genId;
+  }, [genId]);
+
+  // Auto-scroll the log to the bottom on new lines (best-effort).
+  useEffect(() => {
+    const el = logScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [logLines]);
+
+  // Kick off the run and subscribe to its SSE stream.
+  useEffect(() => {
+    let cancelled = false;
+    let eventSource: EventSource | null = null;
+
+    const start = async () => {
+      try {
+        const res = await fetch('/api/courses/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug }),
+        });
+        if (cancelled) return;
+        if (res.status === 503) {
+          let message = 'Install Claude Code CLI or sign in to Claude Max';
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body && typeof body.error === 'string') message = body.error;
+          } catch {
+            /* non-JSON body */
+          }
+          setErrorMessage(message);
+          setPhase('error');
+          return;
+        }
+        if (!res.ok) {
+          let message = `Server returned ${res.status}`;
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body && typeof body.error === 'string') message = body.error;
+          } catch {
+            /* non-JSON body */
+          }
+          setErrorMessage(message);
+          setPhase('error');
+          return;
+        }
+        const body = (await res.json()) as { id: string };
+        setGenId(body.id);
+        genIdRef.current = body.id;
+        setPhase('running');
+
+        eventSource = new EventSource(`/api/courses/generate/stream/${body.id}`);
+
+        eventSource.addEventListener('log', (ev: MessageEvent) => {
+          try {
+            const data = JSON.parse(ev.data) as { line: string };
+            setLogLines((prev) => {
+              const next = [...prev, { key: ++lineKeyRef.current, text: data.line }];
+              // Keep buffer bounded so very long runs don't OOM the browser.
+              return next.length > 5000 ? next.slice(next.length - 5000) : next;
+            });
+          } catch {
+            /* malformed event */
+          }
+        });
+        eventSource.addEventListener('stage', (ev: MessageEvent) => {
+          try {
+            const data = JSON.parse(ev.data) as { name: string; status: 'started' | 'done' | 'error' };
+            setStages((prev) => [...prev, { name: data.name, status: data.status }]);
+          } catch {
+            /* malformed */
+          }
+        });
+        eventSource.addEventListener('progress', (ev: MessageEvent) => {
+          try {
+            const data = JSON.parse(ev.data) as { current: number; total: number };
+            setProgress({ current: data.current, total: data.total });
+          } catch {
+            /* malformed */
+          }
+        });
+        eventSource.addEventListener('done', (ev: MessageEvent) => {
+          try {
+            const data = JSON.parse(ev.data) as { courseSlug: string };
+            setPhase('done');
+            eventSource?.close();
+            // Tiny delay so the user sees the success state before the page swap.
+            window.setTimeout(() => {
+              router.push(`/courses/${data.courseSlug}`);
+            }, 600);
+          } catch {
+            /* malformed */
+          }
+        });
+        eventSource.addEventListener('error', (ev: MessageEvent) => {
+          // SSE built-in onerror fires with no data; only treat as fatal if
+          // the payload says so (i.e. our structured `error` event).
+          if (typeof (ev as MessageEvent).data === 'string' && ev.data.length > 0) {
+            try {
+              const data = JSON.parse(ev.data) as { message: string };
+              setErrorMessage(data.message);
+              setPhase('error');
+              eventSource?.close();
+            } catch {
+              /* network blip — let the browser auto-reconnect */
+            }
+          }
+        });
+      } catch (err) {
+        if (cancelled) return;
+        setErrorMessage(err instanceof Error ? err.message : String(err));
+        setPhase('error');
+      }
+    };
+
+    void start();
+
+    return () => {
+      cancelled = true;
+      if (eventSource) {
+        try {
+          eventSource.close();
+        } catch {
+          /* already closed */
+        }
+      }
+      // If the user navigates away while still running, fire-and-forget a
+      // cancel so the subprocess doesn't keep consuming the slot.
+      const id = genIdRef.current;
+      if (id && phaseRef.current === 'running' && !cancelInFlightRef.current) {
+        cancelInFlightRef.current = true;
+        try {
+          if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
+            navigator.sendBeacon(`/api/courses/generate?id=${encodeURIComponent(id)}`);
+          }
+          void fetch(`/api/courses/generate?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        } catch {
+          /* best-effort */
+        }
+      }
+    };
+  }, [slug, router]);
+
+  const handleCancelClick = async () => {
+    if (cancelInFlightRef.current) return;
+    cancelInFlightRef.current = true;
+    const id = genIdRef.current;
+    if (id) {
+      try {
+        await fetch(`/api/courses/generate?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      } catch {
+        /* ignore */
+      }
+    }
+    onCancelled();
+  };
+
+  const progressPercent = progress && progress.total > 0
+    ? Math.min(100, Math.round((progress.current / progress.total) * 100))
+    : null;
+
+  const tailLog = useMemo(() => logLines.slice(-200), [logLines]);
 
   return (
     <div style={stageWrapStyle}>
       <div
-        data-testid="stage5-export"
+        data-testid="stage5-generate"
         style={{
           flex: 1,
           overflow: 'auto',
           padding: 'var(--space-7) var(--space-6)',
         }}
       >
-        <div style={{ width: '100%', maxWidth: 720, margin: '0 auto' }}>
+        <div style={{ width: '100%', maxWidth: 820, margin: '0 auto' }}>
           <div
             style={{
               fontSize: 10.5,
@@ -961,254 +1158,243 @@ function Stage5Export({ slug }: { slug: string }) {
               marginBottom: 8,
             }}
           >
-            Stage 6 of 6 · Saved
+            Stage 6 of 6 · Generating
           </div>
+
+          <h1
+            data-testid="stage5-headline"
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontSize: 'var(--fs-2xl)',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            {phase === 'done'
+              ? 'Course generated'
+              : phase === 'error'
+                ? 'Generation failed'
+                : 'Generating your course…'}
+          </h1>
+          <p
+            style={{
+              marginTop: 6,
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+              lineHeight: 1.55,
+            }}
+          >
+            {phase === 'done'
+              ? 'Redirecting to your course…'
+              : phase === 'error'
+                ? 'See details below — or go back to fix the issue and try again.'
+                : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
+          </p>
+
+          {progressPercent !== null && phase !== 'error' && (
+            <div
+              data-testid="stage5-progress"
+              data-progress-current={progress?.current}
+              data-progress-total={progress?.total}
+              style={{ marginTop: 'var(--space-5)' }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--text-secondary)',
+                  marginBottom: 6,
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                <span>Lessons</span>
+                <span>
+                  {progress?.current} / {progress?.total}
+                </span>
+              </div>
+              <div
+                style={{
+                  width: '100%',
+                  height: 8,
+                  background: 'var(--bg-active)',
+                  borderRadius: 'var(--radius-full)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    width: `${progressPercent}%`,
+                    height: '100%',
+                    background: 'var(--accent)',
+                    transition: 'width 0.3s ease',
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {stages.length > 0 && (
+            <div
+              data-testid="stage5-stages"
+              style={{
+                marginTop: 'var(--space-5)',
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
+              {stages.map((s, i) => (
+                <span
+                  key={i}
+                  data-stage-name={s.name}
+                  data-stage-status={s.status}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 'var(--fs-xs)',
+                    fontFamily: 'var(--font-mono)',
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-full)',
+                    background:
+                      s.status === 'done'
+                        ? 'var(--success, #10b981)'
+                        : s.status === 'error'
+                          ? 'var(--danger-subtle, rgba(220, 38, 38, 0.10))'
+                          : 'var(--accent-subtle)',
+                    color:
+                      s.status === 'done'
+                        ? 'white'
+                        : s.status === 'error'
+                          ? 'var(--danger, #b91c1c)'
+                          : 'var(--accent-text)',
+                    border:
+                      s.status === 'error'
+                        ? '1px solid var(--danger, #fca5a5)'
+                        : 'none',
+                  }}
+                >
+                  {s.name} · {s.status}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {phase === 'error' && errorMessage && (
+            <div
+              data-testid="stage5-error"
+              role="alert"
+              style={{
+                marginTop: 'var(--space-5)',
+                padding: 'var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-subtle, rgba(220, 38, 38, 0.08))',
+                color: 'var(--danger, #b91c1c)',
+                border: '1px solid var(--danger, #fca5a5)',
+                fontSize: 'var(--fs-sm)',
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>{errorMessage}</div>
+              <button
+                type="button"
+                data-testid="stage5-toggle-full-log"
+                onClick={() => setShowFullLog((v) => !v)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--danger, #b91c1c)',
+                  fontSize: 'var(--fs-xs)',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontFamily: 'inherit',
+                }}
+              >
+                {showFullLog ? 'Hide full log' : 'Show full log'}
+              </button>
+            </div>
+          )}
 
           <div
             style={{
+              marginTop: 'var(--space-5)',
               border: '1px solid var(--border)',
-              background: 'var(--bg-elevated)',
-              borderRadius: 'var(--radius-lg, 12px)',
-              padding: 'var(--space-6)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--code-bg, #0f172a)',
+              overflow: 'hidden',
             }}
           >
             <div
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 36,
-                height: 36,
-                borderRadius: '50%',
-                background: 'var(--success, #10b981)',
-                color: 'white',
-                marginBottom: 'var(--space-4)',
+                padding: '8px 12px',
+                fontSize: 'var(--fs-xs)',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-tertiary)',
+                background: 'var(--bg-elevated)',
+                borderBottom: '1px solid var(--border)',
               }}
             >
-              <Check size={18} strokeWidth={3} />
+              Generation log {logLines.length > 0 && `(${logLines.length} lines)`}
             </div>
-            <h1
+            <pre
+              ref={logScrollRef}
+              data-testid="stage5-log"
               style={{
                 margin: 0,
-                fontFamily: 'var(--font-display)',
-                fontSize: 'var(--fs-2xl)',
-                fontWeight: 600,
-                letterSpacing: '-0.02em',
+                padding: '10px 12px',
+                maxHeight: showFullLog ? '60vh' : '320px',
+                overflow: 'auto',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11.5,
+                color: 'var(--code-text, #e2e8f0)',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
               }}
             >
-              Course spec saved
-            </h1>
-            <p
-              data-testid="stage5-confirm"
-              style={{
-                marginTop: 6,
-                color: 'var(--text-secondary)',
-                fontSize: 'var(--fs-sm)',
-                lineHeight: 1.55,
-              }}
-            >
-              Course spec saved to{' '}
-              <code
-                data-testid="stage5-spec-path"
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 'var(--fs-xs)',
-                  background: 'var(--bg)',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  border: '1px solid var(--border)',
-                }}
+              {(showFullLog ? logLines : tailLog)
+                .map((line) => line.text)
+                .join('\n')}
+              {logLines.length === 0 && phase !== 'error' && (
+                <span style={{ color: 'var(--text-tertiary)' }}>Waiting for output…</span>
+              )}
+            </pre>
+          </div>
+
+          <div
+            style={{
+              marginTop: 'var(--space-5)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+            }}
+          >
+            {phase === 'running' && (
+              <button
+                type="button"
+                data-testid="stage5-cancel"
+                onClick={handleCancelClick}
+                style={ghostBtnStyle}
               >
-                {specPath}
-              </code>
-            </p>
-
-            <div
-              style={{
-                marginTop: 'var(--space-5)',
-                fontSize: 'var(--fs-sm)',
-                color: 'var(--text)',
-                fontWeight: 500,
-              }}
-            >
-              Run these commands to generate the lessons:
-            </div>
-            <ol
-              style={{
-                marginTop: 'var(--space-3)',
-                padding: 0,
-                listStyle: 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-              }}
-            >
-              <CommandRow step={1} command={claudeCmd} testId="stage5-cmd-claude" hint="Open Claude Code in this repo." />
-              <CommandRow step={2} command={skillCmd} testId="stage5-cmd-init" hint={`Invoke the init_course skill with slug ${slug}.`} />
-              <CommandRow step={3} command={ralphCmd} testId="stage5-cmd-ralph" hint="Run the agent loop until all lessons are generated." />
-            </ol>
-
-            <p
-              data-testid="stage5-note"
-              style={{
-                marginTop: 'var(--space-5)',
-                color: 'var(--text-tertiary)',
-                fontSize: 'var(--fs-sm)',
-                lineHeight: 1.5,
-              }}
-            >
-              The course will appear on your dashboard once generation completes.
-            </p>
-
-            <div style={{ marginTop: 'var(--space-5)' }}>
-              <Link
-                href="/"
-                data-testid="stage5-back-to-dashboard"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 'var(--fs-sm)',
-                  color: 'var(--accent-text)',
-                  textDecoration: 'none',
-                  fontWeight: 500,
-                }}
+                Cancel
+              </button>
+            )}
+            {phase === 'error' && (
+              <button
+                type="button"
+                data-testid="stage5-back"
+                onClick={onCancelled}
+                style={ghostBtnStyle}
               >
                 <ArrowLeft size={14} strokeWidth={2} />
-                Back to dashboard
-              </Link>
-            </div>
+                Back to approval
+              </button>
+            )}
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function CommandRow({
-  step,
-  command,
-  testId,
-  hint,
-}: {
-  step: number;
-  command: string;
-  testId: string;
-  hint: string;
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(command);
-      } else if (typeof document !== 'undefined') {
-        const ta = document.createElement('textarea');
-        ta.value = command;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        try {
-          document.execCommand('copy');
-        } finally {
-          document.body.removeChild(ta);
-        }
-      }
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* ignore — non-secure contexts may block clipboard */
-    }
-  };
-
-  return (
-    <li
-      data-testid={testId}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 4,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'stretch',
-          gap: 8,
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-md)',
-          padding: '8px 10px',
-        }}
-      >
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 22,
-            height: 22,
-            borderRadius: '50%',
-            background: 'var(--bg-elevated)',
-            color: 'var(--text-tertiary)',
-            fontSize: 'var(--fs-xs)',
-            fontFamily: 'var(--font-mono)',
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
-        >
-          {step}
-        </span>
-        <code
-          data-testid={`${testId}-text`}
-          style={{
-            flex: 1,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--fs-sm)',
-            color: 'var(--text)',
-            background: 'transparent',
-            whiteSpace: 'pre',
-            overflow: 'auto',
-            alignSelf: 'center',
-          }}
-        >
-          {command}
-        </code>
-        <button
-          type="button"
-          data-testid={`${testId}-copy`}
-          onClick={handleCopy}
-          aria-label={`Copy command: ${command}`}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 10px',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-elevated)',
-            color: copied ? 'var(--success, #10b981)' : 'var(--text-secondary)',
-            fontSize: 'var(--fs-xs)',
-            fontFamily: 'inherit',
-            borderRadius: 'var(--radius-sm)',
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          {copied ? <Check size={12} strokeWidth={3} /> : <Copy size={12} strokeWidth={2} />}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-      <span
-        style={{
-          fontSize: 'var(--fs-xs)',
-          color: 'var(--text-tertiary)',
-          marginLeft: 30,
-        }}
-      >
-        {hint}
-      </span>
-    </li>
   );
 }
 
