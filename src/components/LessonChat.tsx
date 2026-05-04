@@ -14,8 +14,9 @@ import { Square, X } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'error';
   text: string;
+  pending?: boolean;
 }
 
 interface LessonChatProps {
@@ -30,8 +31,6 @@ const MIN_LINES = 1;
 const MAX_LINES = 6;
 const TEXTAREA_VERTICAL_PADDING = 16;
 const DRAFT_DEBOUNCE_MS = 200;
-const PLACEHOLDER_ASSISTANT_TEXT =
-  'Backend not connected — try again after US-053 ships';
 
 export function draftStorageKey(courseSlug: string, lessonSlug: string): string {
   return `lessonChatDraft:${courseSlug}:${lessonSlug}`;
@@ -45,6 +44,7 @@ export function LessonChat({
 }: LessonChatProps) {
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -113,25 +113,84 @@ export function LessonChat({
   }, [messages.length]);
 
   const trimmedDraft = draft.trim();
-  const canSend = trimmedDraft.length > 0;
+  const canSend = trimmedDraft.length > 0 && !sending;
 
   const handleSend = useCallback(() => {
     const text = draft.trim();
-    if (text.length === 0) return;
-    const userId = `m-${Date.now()}-u`;
-    const assistantId = `m-${Date.now()}-a`;
+    if (text.length === 0 || sending) return;
+    const stamp = Date.now();
+    const userId = `m-${stamp}-u`;
+    const pendingId = `m-${stamp}-p`;
     setMessages((prev) => [
       ...prev,
       { id: userId, role: 'user', text },
-      { id: assistantId, role: 'assistant', text: PLACEHOLDER_ASSISTANT_TEXT },
+      { id: pendingId, role: 'assistant', text: '', pending: true },
     ]);
     setDraft('');
+    setSending(true);
     try {
       window.localStorage.removeItem(draftKey);
     } catch {
       // ignore — draft already cleared from in-memory state
     }
-  }, [draft, draftKey]);
+
+    const history = messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .filter((m) => !m.pending)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }));
+
+    void (async () => {
+      try {
+        const res = await fetch('/api/lesson-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            courseSlug,
+            lessonSlug,
+            message: text,
+            history,
+          }),
+        });
+        const json = (await res
+          .json()
+          .catch(() => ({}))) as { assistant?: string; error?: string };
+        if (!res.ok) {
+          const errText =
+            json.error ?? `AI Tutor error (status ${res.status})`;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingId
+                ? { id: pendingId, role: 'error', text: errText }
+                : m,
+            ),
+          );
+        } else {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingId
+                ? {
+                    id: pendingId,
+                    role: 'assistant',
+                    text: json.assistant ?? '',
+                  }
+                : m,
+            ),
+          );
+        }
+      } catch (err) {
+        const errText = `AI Tutor error: ${(err as Error).message}`;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === pendingId
+              ? { id: pendingId, role: 'error', text: errText }
+              : m,
+          ),
+        );
+      } finally {
+        setSending(false);
+      }
+    })();
+  }, [courseSlug, draft, draftKey, lessonSlug, messages, sending]);
 
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -185,21 +244,25 @@ export function LessonChat({
           </p>
         ) : (
           <ul style={messageListStyle}>
-            {messages.map((m) => (
-              <li
-                key={m.id}
-                data-role={m.role}
-                style={
-                  m.role === 'user' ? userBubbleRowStyle : assistantBubbleRowStyle
-                }
-              >
-                <div
-                  style={m.role === 'user' ? userBubbleStyle : assistantBubbleStyle}
+            {messages.map((m) => {
+              const rowStyle =
+                m.role === 'user' ? userBubbleRowStyle : assistantBubbleRowStyle;
+              let bubbleStyle: CSSProperties = assistantBubbleStyle;
+              if (m.role === 'user') bubbleStyle = userBubbleStyle;
+              else if (m.role === 'error') bubbleStyle = errorBubbleStyle;
+              return (
+                <li
+                  key={m.id}
+                  data-role={m.role}
+                  data-pending={m.pending ? 'true' : undefined}
+                  style={rowStyle}
                 >
-                  {m.text}
-                </div>
-              </li>
-            ))}
+                  <div style={bubbleStyle}>
+                    {m.pending ? <TypingDots /> : m.text}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -360,6 +423,62 @@ const assistantBubbleStyle: CSSProperties = {
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
+
+const errorBubbleStyle: CSSProperties = {
+  maxWidth: '94%',
+  padding: '8px 12px',
+  background: 'var(--danger-subtle, #fee2e2)',
+  color: 'var(--danger-text, #991b1b)',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--danger-border, #fecaca)',
+  borderRadius: '10px 10px 10px 2px',
+  fontSize: 'var(--fs-sm)',
+  lineHeight: 1.5,
+  fontFamily: 'var(--font-prose)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+};
+
+function TypingDots() {
+  return (
+    <span
+      data-testid="lesson-chat-typing"
+      aria-label="AI tutor is typing"
+      style={typingDotsStyle}
+    >
+      <span style={{ ...typingDotStyle, animationDelay: '0ms' }} />
+      <span style={{ ...typingDotStyle, animationDelay: '150ms' }} />
+      <span style={{ ...typingDotStyle, animationDelay: '300ms' }} />
+      <style>{typingKeyframes}</style>
+    </span>
+  );
+}
+
+const typingDotsStyle: CSSProperties = {
+  display: 'inline-flex',
+  gap: 4,
+  alignItems: 'center',
+  height: 12,
+  paddingTop: 4,
+  paddingBottom: 4,
+};
+
+const typingDotStyle: CSSProperties = {
+  width: 6,
+  height: 6,
+  borderRadius: '50%',
+  background: 'var(--text-tertiary)',
+  display: 'inline-block',
+  animation: 'lesson-chat-typing-bounce 1s infinite ease-in-out',
+};
+
+const typingKeyframes = `
+@keyframes lesson-chat-typing-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+`;
 
 const footerStyle: CSSProperties = {
   borderTop: '1px solid var(--border)',
