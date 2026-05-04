@@ -1,0 +1,33 @@
+[2026-05-04T13:02:19+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T13:07:02+0200] Now I'll write the failing tests first, then implement.
+[2026-05-04T13:07:29+0200] Now run the tests to confirm they fail.
+[2026-05-04T13:07:33+0200] 4 tests failing as expected. Now I'll implement the schema and PATCH handling.
+[2026-05-04T13:07:52+0200] All 112 tests pass. Now I'll add the checkbox UI.
+[2026-05-04T13:08:20+0200] Now I'll add the toggle handler near the existing space-mark handler.
+[2026-05-04T13:08:31+0200] Now thread it through to `LessonStream`:
+[2026-05-04T13:08:46+0200] Now wire the new flag into the SectionRenderer rendering loop:
+[2026-05-04T13:08:56+0200] Now extend SectionRenderer to render the checkbox:
+[2026-05-04T13:09:07+0200] Now I need to actually render the checkbox and apply the dimmed treatment. Let me look at the final wrapping `<Widget>` JSX in SectionRenderer and inject the checkbox into headerActions, plus apply dimming.
+[2026-05-04T13:09:46+0200] Now let me run typecheck + tests to verify everything compiles and passes.
+[2026-05-04T13:10:00+0200] 288/288 tests pass, typecheck clean.
+[2026-05-04T13:10:05+0200] Now let me run the dev server and verify in browser.
+[2026-05-04T13:11:21+0200] All browser checks pass. Let me also verify the schema docs note. Let me check `test-plan.md` and `README.md`:
+[2026-05-04T13:11:45+0200] Now mark US-065 complete in prd.json, append progress notes, and commit.
+[2026-05-04T13:13:24+0200] US-065 committed (2e2869b) with `passes: true` for the story.
+
+**What landed:**
+- New `LessonProgress.manuallyCompletedSections: Record<sectionId, boolean>` schema field, kept distinct from auto-graded `sectionState[id].done` so the two completion sources stay disambiguated.
+- `applyProgressPatch` merges/deletes entries (falsy = delete, empty map = field removed) without touching `lastVisitedAt`.
+- Checkbox `[data-testid="section-complete-<id>"]` in every section header; toggling fires optimistic update + PATCH.
+- Visual: wrapper opacity 0.65 + header title strikethrough; body stays interactive/readable. `Completed` badge surfaces from either source.
+- 4 new red-first tests (schema + PATCH round-trip + disk + lastVisitedAt isolation), bringing vitest to 288/288. Typecheck clean.
+- Browser-verified on smoke-test course (5 sections, 0 console/page errors).
+[2026-05-04T13:13:24+0200] [result success turns=82 cost=$6.4981544999999965] US-065 committed (2e2869b) with `passes: true` for the story.
+
+**What landed:**
+- New `LessonProgress.manuallyCompletedSections: Record<sectionId, boolean>` schema field, kept distinct from auto-graded `sectionState[id].done` so the two completion sources stay disambiguated.
+- `applyProgressPatch` merges/deletes entries (falsy = delete, empty map = field removed) without touching `lastVisitedAt`.
+- Checkbox `[data-testid="section-complete-<id>"]` in every section header; toggling fires optimistic update + PATCH.
+- Visual: wrapper opacity 0.65 + header title strikethrough; body stays interactive/readable. `Completed` badge surfaces from either source.
+- 4 new red-first tests (schema + PATCH round-trip + disk + lastVisitedAt isolation), bringing vitest to 288/288. Typecheck clean.
+- Browser-verified on smoke-test course (5 sections, 0 console/page errors).
