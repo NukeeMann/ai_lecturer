@@ -20,7 +20,10 @@ export interface ChatMessage {
 }
 
 export interface ConnectorRequest {
-  message: string;
+  /** System prompt — instructions for the assistant. Optional. */
+  systemPrompt?: string;
+  /** User-facing message body (typically lesson context + question). */
+  userMessage: string;
   history?: ChatMessage[];
 }
 
@@ -31,11 +34,14 @@ export interface Connector {
   chat(req: ConnectorRequest): Promise<string>;
 }
 
-const SYSTEM_PREFIX =
+const DEFAULT_SYSTEM_PROMPT =
   'You are an AI tutor for an interactive course. Answer concisely.';
 
-export function assemblePrompt(message: string): string {
-  return `${SYSTEM_PREFIX}\n\n${message}`;
+export function assemblePrompt(
+  userMessage: string,
+  systemPrompt: string = DEFAULT_SYSTEM_PROMPT,
+): string {
+  return `${systemPrompt}\n\n${userMessage}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +71,7 @@ export function subprocessConnector(
   return {
     name: 'subprocess',
     chat(req) {
-      const prompt = assemblePrompt(req.message);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
       return runClaudeCli(spawnFn, command, prompt, timeoutMs, killGraceMs);
     },
   };
@@ -221,7 +227,7 @@ export async function agentSdkConnector(
   return {
     name: 'agent-sdk',
     async chat(req) {
-      const prompt = assemblePrompt(req.message);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
       let assistantText = '';
       let resultFallback = '';
       const stream = sdk.query({ prompt });
