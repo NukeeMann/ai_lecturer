@@ -1874,6 +1874,107 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-085",
+      "title": "Widgets reference doc for AI course creator (docs/widgets.md)",
+      "description": "As an AI course creator (init_course / generate_lesson skills), I want a single canonical markdown reference describing every available widget — its purpose, schema fields, a minimal example JSON snippet, and pointers to the authoritative TypeScript schema and sample — so I can author lesson JSON without reading widget source code.",
+      "acceptanceCriteria": [
+        "New file docs/widgets.md exists at repo root",
+        "Doc covers every widget under src/widgets/: Theory, Quiz, Code, CodeCloze, DataTable, Demo, DragMatch, Histogram, ParametricExplorer, PlotImage, Sandbox, Video, Custom",
+        "Each widget section contains: one-paragraph purpose, key schema fields (name + type + required/optional + short meaning), a minimal valid example JSON snippet, and explicit links to src/widgets/<Name>/schema.ts and src/widgets/<Name>/sample.ts for full detail",
+        "Doc opens with a short 'How to use this reference' intro stating it is consumed by init_course / generate_lesson when authoring lesson JSON, and that schema.ts is the source of truth if the doc and code disagree",
+        "scripts/ralph/skills/init_course/SKILL.md updated to instruct the agent to read docs/widgets.md before picking widgets",
+        "scripts/ralph/skills/generate_lesson/SKILL.md updated with the same pointer",
+        "All example snippets in the doc validate against their corresponding Zod schema (verify by running a small script or by visually cross-checking against schema.ts — note the verification method in the progress report)",
+        "Typecheck passes"
+      ],
+      "priority": 78,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 78). Pure docs story. Touches: docs/widgets.md (NEW), scripts/ralph/skills/init_course/SKILL.md, scripts/ralph/skills/generate_lesson/SKILL.md. Read each src/widgets/<Name>/schema.ts + sample.ts to extract the canonical fields — do NOT modify those files. No source-code conflicts with US-086 (ParametricExplorer fix) or US-087 (Video showcase) running in parallel.",
+      "tags": []
+    },
+    {
+      "id": "US-086",
+      "title": "Fix: ParametricExplorer — Value output mode does not render the computed number",
+      "description": "As a learner opening /courses/pexp-test/lessons/value-mode (lesson titled 'Value output'), I should see the live numeric output of the ParametricExplorer expression (e.g. the value of f(x, …) for the current slider settings); instead the number is missing from the rendered widget.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (render ParametricExplorer in value-output mode with a defined expression, assert the computed number is present in the DOM and updates when a slider/input changes)",
+        "ParametricExplorer in value-output mode renders the computed number with a stable test selector (e.g. data-testid='parametric-value-output')",
+        "Number updates reactively when any controlling input changes",
+        "Plot-output mode (other lesson plot-mode.json) is unaffected — existing render still works",
+        "Verify in browser using playwright-skill: load /courses/pexp-test/lessons/value-mode, confirm the value output number is visible, change a control, confirm the number updates",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 78,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 78). Reproduction: open the dev server and visit /courses/pexp-test/lessons/value-mode — the lesson title is 'Value output'. Touches: src/widgets/ParametricExplorer/ParametricExplorerWidget.tsx (and schema.ts/sample.ts only if strictly required to expose the value-output rendering). Do NOT touch src/widgets/Video/* (US-087 in parallel) or docs/* (US-085 in parallel).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-087",
+      "title": "Generate sample.mp4 and showcase Video widget end-to-end across video-test course",
+      "description": "As a learner browsing the video-test course, I want a real playable mp4 plus complete demonstrations of every Video widget capability (mp4 source, transcript, captions, poster, no-transcript fallback) so the widget can be reviewed and validated visually without external assets.",
+      "acceptanceCriteria": [
+        "A small synthetic mp4 (test pattern or solid-color frames, ~5–10 seconds, silent, <1 MB) is generated via ffmpeg and committed at courses/video-test/assets/sample.mp4",
+        "Asset is served correctly by the existing /api/courses/[slug]/assets route — visiting /api/courses/video-test/assets/sample.mp4 in a browser plays the file",
+        "Lesson courses/video-test/lessons/mp4-demo.json renders the Video widget with that file and the video plays when Play is clicked",
+        "Each of the four video-test lessons (fourier-walkthrough, mp4-demo, neural-net-intro, no-transcript) renders its Video widget without console errors and visibly demonstrates a distinct widget capability (transcript present, mp4 playback, captions/poster, no-transcript fallback respectively)",
+        "Any rendering bug surfaced while showcasing is fixed in src/widgets/Video/VideoWidget.tsx",
+        "ffmpeg generation command is documented (committed as a brief comment in the lesson JSON or a one-liner in courses/video-test/README.md or course.json description) so the asset is reproducible",
+        "Verify in browser using playwright-skill: load each of the four video-test lessons, screenshot each, assert no JS console errors and that mp4-demo actually plays a frame after clicking play",
+        "Typecheck passes"
+      ],
+      "priority": 78,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 78). Touches: courses/video-test/** (assets/sample.mp4 NEW, lesson JSON edits, optionally course.json or a README), and src/widgets/Video/VideoWidget.tsx ONLY if a real rendering bug appears. Do NOT touch src/widgets/ParametricExplorer/* (US-086 in parallel) or docs/widgets.md (US-085 in parallel). Use ffmpeg with a built-in source like lavfi testsrc or color to avoid pulling external media.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-088",
+      "title": "Course slug entry redirects to first or earliest non-completed lesson",
+      "description": "As a learner clicking on a course tile, I want /courses/<slug> to take me directly into the lesson I should be working on — the earliest lesson whose progress status is not 'completed' (falling back to the first lesson if no progress exists, or the last lesson if everything is completed) — instead of landing on a 404 or a course-overview page.",
+      "acceptanceCriteria": [
+        "New file src/app/courses/[slug]/page.tsx exists and handles the /courses/<slug> route",
+        "Page is a server component that loads the course (via the same loader used by the lesson page) and the user's progress, then issues a Next.js redirect() to /courses/<slug>/lessons/<lessonSlug>",
+        "Selection rule: pick the earliest lesson (in course.lessons order) whose progress status is not 'completed'; if no progress exists for the course, redirect to the first lesson; if every lesson is completed, redirect to the last lesson",
+        "If the slug does not match any course, return notFound() (Next 404)",
+        "Verify in browser using playwright-skill: (a) navigate to /courses/pexp-test with no progress → lands on the first lesson; (b) mark first lesson completed in progress.json, navigate to /courses/pexp-test → lands on the second lesson; (c) mark all lessons completed → lands on the last lesson",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 79,
+      "passes": false,
+      "notes": "PARALLEL WAVE 2 (pri 79). Touches: src/app/courses/[slug]/page.tsx (NEW). Reuse the existing course loader and progress reader from src/lib/server/* — do NOT duplicate them. Do NOT touch src/app/page.tsx (US-089 in parallel). Wave 1 stories (US-085/086/087) must merge first.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-089",
+      "title": "All-courses-complete home screen: replace Resume hero with course-creation prompt",
+      "description": "As a learner who has finished every lesson across every course, the home page should stop showing a stale 'Resume' hero and instead invite me to create a new course via a prominent text input that captures my idea and forwards it to the course creation page.",
+      "acceptanceCriteria": [
+        "On /, when every course's every lesson has progress status 'completed' (and there is at least one course), ContinueLearningHero is replaced with a different hero component that contains a heading (e.g. 'What do you want to learn next?'), a single text input, and a submit button (Enter also submits)",
+        "On submit, the page navigates to /create?idea=<URI-encoded input value>; submitting an empty input still navigates to /create (without the query param)",
+        "The /create page reads the idea query param and pre-fills the relevant initial form field if such a field exists; if /create has no obvious matching field, the param is harmlessly ignored — note this in progress.txt",
+        "When at least one lesson somewhere is not completed, behaviour is unchanged: ContinueLearningHero with Resume CTA still renders",
+        "When zero courses exist, the existing empty state still renders (do not regress that branch)",
+        "Verify in browser using playwright-skill: (a) seed progress.json so every lesson of every course is completed, load /, screenshot the new hero, type a topic, press Enter, confirm URL becomes /create?idea=...; (b) revert one lesson to in-progress, reload /, confirm the Resume hero returns",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 79,
+      "passes": false,
+      "notes": "PARALLEL WAVE 2 (pri 79). Touches: src/app/page.tsx (the all-complete branch + new hero subcomponent inline or in src/components/), and src/app/create/page.tsx ONLY for the idea-query-param read. Do NOT touch src/app/courses/[slug]/page.tsx (US-088 in parallel). Wave 1 stories must merge first. Reuse the existing pickResumeTarget helper to detect the 'all complete' state (it already returns null when nothing is resumable — distinguish 'all complete' from 'no courses' by checking courses.length > 0).",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
