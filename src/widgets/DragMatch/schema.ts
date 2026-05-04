@@ -80,3 +80,32 @@ export function validateDragMatch(
   const allCorrect = data.zones.every((z) => zoneCorrect[z.id]);
   return { allCorrect, zoneCorrect, misplacedItemIds };
 }
+
+export type DragMatchZoneDisplayState = 'correct' | 'incorrect' | 'idle';
+
+/**
+ * Display state for a single drop-zone, computed from the current placement.
+ *
+ * "correct" is reported LIVE — the moment a zone's contents satisfy its accepts
+ * rule, the box flips to the success state, regardless of how many submit
+ * attempts have happened. Mismatched/empty zones stay 'idle' until the learner
+ * has explicitly checked their answers (`submitted=true`), at which point they
+ * surface as 'incorrect'.
+ */
+export function computeZoneState(
+  data: DragMatchData,
+  placement: DragMatchPlacement,
+  zoneId: string,
+  submitted: boolean,
+): DragMatchZoneDisplayState {
+  const zone = data.zones.find((z) => z.id === zoneId);
+  if (!zone) return 'idle';
+  const placed = placement[zoneId] ?? [];
+  if (placed.length > 0) {
+    const matches = data.multipleItemsPerZone
+      ? arraysEqual(placed, zone.accepts)
+      : setsEqual(placed, zone.accepts);
+    if (matches) return 'correct';
+  }
+  return submitted ? 'incorrect' : 'idle';
+}
