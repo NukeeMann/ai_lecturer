@@ -44,6 +44,7 @@ import {
   SectionSourcesPopover,
   SourcesField,
 } from '@/components/Sources';
+import { SettingsMenu } from '@/components/SettingsMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   isMod,
@@ -1330,6 +1331,8 @@ function Toolbar({
       />
 
       <ThemeToggle />
+
+      <SettingsMenu />
 
       <ToolbarIconBtn
         testId="reset-session-btn"
