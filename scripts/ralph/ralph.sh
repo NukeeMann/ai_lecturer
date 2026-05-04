@@ -545,10 +545,12 @@ $recent_progress")"
 
   # Run claude in worktree (wrapped in timeout — kills hung agents).
   # Filter the stream-json transcript through jq before writing $logfile so we
-  # only keep assistant text (drops user/system/result/rate_limit_event lines)
-  # and prefix each entry with the message's own ISO-8601 timestamp. Non-JSON
-  # stderr noise (crashes, timeout messages) is passed through with a wallclock
-  # timestamp so signal-related errors aren't silently dropped.
+  # keep only the entries worth reading later — assistant text, result summary,
+  # and rate_limit_event status — each prefixed with an ISO-8601 timestamp.
+  # User/system/tool_result lines are dropped (they balloon the file with no
+  # human-readable signal). Non-JSON stderr noise (crashes, timeout messages)
+  # is passed through with a wallclock timestamp so signal-related errors
+  # aren't silently dropped.
   # pipefail (set at top of file) ensures claude's exit code (e.g. 124 on
   # timeout) propagates even when jq exits 0 at the end of the pipe.
   log_task "$task_id" "Running claude in worktree (hard ${TASK_TIMEOUT_SEC}s, soft ${soft_deadline_sec}s)..."
@@ -567,16 +569,31 @@ $recent_progress")"
     --verbose \
     -p "$enriched_prompt" 2>&1 \
   | stdbuf -oL jq -R -r --unbuffered '
+      def ts: now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ");
       . as $line
       | (try fromjson catch null) as $msg
       | if $msg == null then
-          "[" + (now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ")) + "] [stderr] " + $line
+          "[" + ts + "] [stderr] " + $line
         elif $msg.type == "assistant" then
-          ($msg.timestamp // (now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ"))) as $t
+          ($msg.timestamp // ts) as $t
           | (($msg.message.content // [])
               | map(if .type == "text" then .text else empty end)
               | join("\n")) as $txt
           | if ($txt | length) > 0 then "[" + $t + "] " + $txt else empty end
+        elif $msg.type == "result" then
+          ($msg.timestamp // ts) as $t
+          | "[" + $t + "] [result " + ($msg.subtype // "?")
+            + (if ($msg.is_error // false) then " ERROR" else "" end)
+            + " turns=" + (($msg.num_turns // 0) | tostring)
+            + " cost=$" + (($msg.total_cost_usd // 0) | tostring)
+            + "] " + ($msg.result // "(no result)")
+        elif $msg.type == "rate_limit_event" then
+          ($msg.timestamp // ts) as $t
+          | ($msg.rate_limit_info // {}) as $rl
+          | "[" + $t + "] [rate_limit " + ($rl.rateLimitType // "?")
+            + " status=" + ($rl.status // "?")
+            + (if ($rl.isUsingOverage // false) then " (overage)" else "" end)
+            + "]"
         else empty
         end
     ' > "$logfile" || exit_code=$?
