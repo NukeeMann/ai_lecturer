@@ -295,15 +295,15 @@ Full detail: [`src/widgets/Demo/schema.ts`](../src/widgets/Demo/schema.ts)
 
 Drag-and-drop matching exercise. The learner drags labelled blocks from a
 bank into labelled drop zones. Use for term/definition pairing, kernel/use
-matching, ordering tasks (set `multipleItemsPerZone: true` if a zone takes
-an ordered list).
+matching, or grouping tasks (set `multipleItemsPerZone: true` if a zone
+accepts more than one item).
 
 | Field                  | Type             | Required | Meaning                                                              |
 |------------------------|------------------|----------|----------------------------------------------------------------------|
 | `prompt`               | string           | yes      | Instruction shown above the bank/zones.                              |
 | `items`                | DragMatchItem[]  | yes      | Draggable blocks. Each `{ id, label }`. Minimum 1.                   |
 | `zones`                | DragMatchZone[]  | yes      | Drop targets. Each `{ id, label, accepts: [itemId, ...] }`. Minimum 1. |
-| `multipleItemsPerZone` | boolean          | no       | Defaults to `false`. When `true`, zones accept ordered lists; comparison is order-sensitive. |
+| `multipleItemsPerZone` | boolean          | no       | Defaults to `false`. When `true`, a zone accepts more than one item; comparison is set-based, so order within the zone does not matter. |
 | `requireAll`           | boolean          | no       | Defaults to `true`. When `false`, items not referenced by any zone's `accepts` are distractors that may stay in the bank. |
 | `explanation`          | string           | no       | Shown after submission.                                              |
 
