@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "slug": "python-lists-quiz",
+  "courseSlug": "quiz-test",
+  "moduleId": "m1",
+  "title": "Didactic example — check your Python list intuition",
+  "eyebrow": "Lekcja 3 · Quiz",
+  "description": "A short check-your-understanding sweep on Python list semantics — the kind of standalone quiz a tutor would drop in after a 10-minute reading. Mixes single + multi-select, with a Theory section in between to set the context.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-context-theory",
+      "title": "Context — what we mean by \"list\" in Python",
+      "type": "theory",
+      "data": {
+        "markdown": "## Setup\n\nBefore the quiz, recall the basics:\n\n- A Python `list` is a **mutable, ordered, indexable** sequence.\n- Slicing creates a **new list** (a shallow copy of the slice).\n- Lists are passed by reference — a function that mutates its argument changes the caller's list.\n- `list.append(x)` returns `None`; the mutation happens in place.\n\nThe questions below probe each of these in turn."
+      }
+    },
+    {
+      "id": "s2-q1-mutability",
+      "title": "Q1 — mutability",
+      "type": "quiz",
+      "data": {
+        "question": "What does the following snippet print?\n\n```python\nxs = [1, 2, 3]\nys = xs\nys.append(4)\nprint(xs)\n```",
+        "options": [
+          "[1, 2, 3]",
+          "[1, 2, 3, 4]",
+          "TypeError — cannot append to xs through ys",
+          "[4, 1, 2, 3]"
+        ],
+        "correct": [1],
+        "explanation": "`ys = xs` does not copy — both names point at the same list object, so mutating through `ys` is visible through `xs`. To copy, use `ys = xs.copy()` or `ys = xs[:]`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s3-q2-slicing",
+      "title": "Q2 — slicing semantics",
+      "type": "quiz",
+      "data": {
+        "question": "Which of these are TRUE about slicing a list with `xs[a:b]`? (Pick every option that is true.)",
+        "options": [
+          "Returns a NEW list — mutating the slice does not affect `xs`.",
+          "Includes index `a` and excludes index `b` (half-open interval).",
+          "Out-of-range bounds raise `IndexError`.",
+          "Negative indices count from the end of the list."
+        ],
+        "correct": [0, 1, 3],
+        "explanation": "Slices are half-open and produce a fresh shallow copy. Negative indices wrap from the end. Crucially, slicing **never** raises on out-of-range bounds — it just clamps and returns whatever is in range (possibly empty).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "s4-q3-append-return",
+      "title": "Q3 — append's return value",
+      "type": "quiz",
+      "data": {
+        "question": "What is the value of `xs` after this snippet?\n\n```python\nxs = [1, 2, 3]\nxs = xs.append(4)\n```",
+        "options": [
+          "[1, 2, 3, 4]",
+          "[1, 2, 3]",
+          "None",
+          "An empty list."
+        ],
+        "correct": [2],
+        "explanation": "`list.append` returns `None` — it mutates in place. So `xs = xs.append(4)` first mutates the original list to `[1, 2, 3, 4]`, then immediately rebinds the name `xs` to the return value `None`, throwing away the mutated reference. This is one of the most common Python beginner footguns.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s5-q4-multi-correct",
+      "title": "Q4 — which of these create a true copy?",
+      "type": "quiz",
+      "data": {
+        "question": "Given `xs = [1, 2, 3]`, which of these expressions create an INDEPENDENT copy that you can mutate without affecting `xs`? (Pick every option that is true.)",
+        "options": [
+          "`ys = xs`",
+          "`ys = xs[:]`",
+          "`ys = xs.copy()`",
+          "`ys = list(xs)`",
+          "`import copy; ys = copy.copy(xs)`"
+        ],
+        "correct": [1, 2, 3, 4],
+        "explanation": "All of `xs[:]`, `xs.copy()`, `list(xs)`, and `copy.copy(xs)` create a shallow copy (new outer list, same element references). `ys = xs` is just aliasing — both names point at the same list object, so it does NOT count as a copy.",
+        "multiSelect": true
+      }
+    }
+  ]
+}

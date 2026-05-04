@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "slug": "show-source-python",
+  "courseSlug": "plotimage-test",
+  "moduleId": "m1",
+  "title": "Show-source disclosure (Python) — reveal reference code",
+  "eyebrow": "Lekcja 2 · PlotImage",
+  "description": "Verifies the `sourceCode` + `sourceLanguage: python` disclosure: a Show source button that reveals a syntax-highlighted, read-only CodeMirror panel with a Copy button.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — Show-source disclosure",
+      "type": "theory",
+      "data": {
+        "markdown": "## Show source disclosure\n\nWhen a `sourceCode` field is present, PlotImage renders a **Show source** toggle below the figure. Clicking it reveals a read-only CodeMirror panel with the source highlighted using the same theme as the Code widget. The panel includes a Copy button so learners can paste the code into their own environment.\n\n`sourceLanguage` may be `python` or `r`; the lexer is chosen accordingly.\n\nThis lesson uses `sourceLanguage: python`."
+      }
+    },
+    {
+      "id": "s2-with-source",
+      "title": "Gaussian density — figure + Python source",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/plotimage-test/assets/plots/gauss1d.png",
+        "alt": "1D Gaussian density centred at zero with sigma=1",
+        "caption": "Figure 1. Click \"Show source\" below the figure to reveal the matplotlib code that produced it.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Sample the density on a 200-point grid centred on the mean.\nx = np.linspace(-4, 4, 200)\nmu, sigma = 0.0, 1.0\ny = np.exp(-(x - mu) ** 2 / (2 * sigma ** 2)) / (sigma * np.sqrt(2 * np.pi))\n\nfig, ax = plt.subplots(figsize=(6, 4))\nax.plot(x, y, color=\"#1f77b4\", linewidth=2, label=f\"G(x; mu={mu}, sigma={sigma})\")\nax.set_title(f\"1D Gauss, sigma={sigma}\")\nax.set_xlabel(\"x\")\nax.set_ylabel(\"density\")\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\")\nplt.tight_layout()\nplt.savefig(\"gauss1d.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    }
+  ]
+}

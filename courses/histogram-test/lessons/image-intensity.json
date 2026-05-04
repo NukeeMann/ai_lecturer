@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "slug": "image-intensity",
+  "courseSlug": "histogram-test",
+  "moduleId": "m1",
+  "title": "Didactic example — 8-bit image intensity histogram",
+  "eyebrow": "Lekcja 4 · Histogram",
+  "description": "A real didactic example: how to read the intensity histogram of an 8-bit grayscale image, walking through three contrasting cases — a low-key scene, a high-key scene, and a balanced photograph.",
+  "estimatedMinutes": 6,
+  "sections": [
+    {
+      "id": "s1-intro",
+      "title": "What an image histogram is",
+      "type": "theory",
+      "data": {
+        "markdown": "## Image histograms\n\nFor an 8-bit grayscale image, every pixel has an intensity value in $\\{0, 1, \\ldots, 255\\}$. An **intensity histogram** counts how many pixels fall into each bin of the intensity range. Photographers and image-processing engineers read it to spot:\n\n- **Underexposure** — most pixels piled up near 0.\n- **Overexposure** — most pixels piled up near 255.\n- **Low contrast** — pixels clustered in a narrow strip of the range.\n- **Clipping** — a sharp spike right at 0 or 255 (information lost to saturation).\n\nThe sections below show three histograms with bins of width 32 (so eight bars total)."
+      }
+    },
+    {
+      "id": "s2-low-key",
+      "title": "Low-key scene — most pixels are dark",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 32, 64, 96, 128, 160, 192, 224, 256],
+        "counts": [4200, 2800, 1600, 700, 380, 200, 80, 40]
+      }
+    },
+    {
+      "id": "s3-low-key-prose",
+      "title": "How to read this histogram",
+      "type": "theory",
+      "data": {
+        "markdown": "The mass is concentrated at the dark end of the intensity range — typical of a night scene, a backlit subject, or an underexposed photograph. The right tail is small but non-zero, so a few highlights survive. If the leftmost bar were dramatically taller (say, 30 000 instead of 4 200), the image would be clipped to black at the shadows and the lost detail couldn't be recovered."
+      }
+    },
+    {
+      "id": "s4-high-key",
+      "title": "High-key scene — most pixels are bright",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 32, 64, 96, 128, 160, 192, 224, 256],
+        "counts": [40, 80, 200, 380, 700, 1600, 2800, 4200]
+      }
+    },
+    {
+      "id": "s5-high-key-prose",
+      "title": "How to read this histogram",
+      "type": "theory",
+      "data": {
+        "markdown": "The mirror image of the previous case — mass concentrated at the bright end, typical of a snow scene, a white-walled studio, or an overexposed photograph. Same risk in reverse: a tall spike at the rightmost bar means highlights have clipped to white and the lost detail is unrecoverable from this image alone."
+      }
+    },
+    {
+      "id": "s6-balanced",
+      "title": "Balanced exposure — wide tonal range",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 32, 64, 96, 128, 160, 192, 224, 256],
+        "counts": [180, 360, 520, 740, 690, 410, 220, 110]
+      }
+    },
+    {
+      "id": "s7-balanced-prose",
+      "title": "Why this is the \"good\" histogram",
+      "type": "theory",
+      "data": {
+        "markdown": "The balanced case spreads pixels across the full range with a single broad peak in the midtones. None of the bins is empty (so the image uses its full dynamic range) and neither end is spiking (so nothing is clipped).\n\n:::callout{type=\"insight\" title=\"Histograms ≠ \\\"good photos\\\"\"}\nA flat histogram does not mean a great photograph — silhouettes, low-key portraits, and high-key fashion shots are all artistically valid even though their histograms would make a digital-camera meter complain. The histogram answers \"have I lost information at either end?\" — the answer to \"is this a good photo?\" is up to the photographer.\n:::"
+      }
+    }
+  ]
+}

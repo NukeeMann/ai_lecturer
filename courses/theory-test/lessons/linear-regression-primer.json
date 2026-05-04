@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "slug": "linear-regression-primer",
+  "courseSlug": "theory-test",
+  "moduleId": "m1",
+  "title": "Didactic example — a one-screen primer on linear regression",
+  "eyebrow": "Lekcja 3 · Theory",
+  "description": "A self-contained mini-chapter — exactly the kind of explanatory text the Theory widget is designed to carry. Combines prose, math, callouts, code, and lists into one coherent walkthrough of ordinary least squares.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-intro",
+      "title": "What is linear regression?",
+      "type": "theory",
+      "data": {
+        "markdown": "## What problem does it solve?\n\nLinear regression fits a straight line through a cloud of points so we can predict one number (the **target**) from one or more other numbers (the **features**). It is the simplest supervised model worth knowing, and it shows up everywhere — economics, biology, A/B testing, intro ML courses.\n\nYou give the model pairs $(x_i, y_i)$. It gives you back a slope $w$ and an intercept $b$ such that\n\n\\[\n\\hat{y}(x) = w \\cdot x + b\n\\]\n\nis a sensible guess for $y$ at any new $x$.\n\n:::callout{type=\"info\" title=\"Notation reminder\"}\n$\\hat{y}$ — read \"y-hat\" — is the model's *prediction* for $y$. Quantities with hats live in model-output space; bare letters live in data space.\n:::"
+      }
+    },
+    {
+      "id": "s2-loss",
+      "title": "What does \"best fit\" mean? — the squared-error loss",
+      "type": "theory",
+      "data": {
+        "markdown": "## Squared-error loss\n\n\"Best\" means: the line that makes the predictions $\\hat{y}_i$ as close as possible to the observed $y_i$ in the **mean squared error** sense.\n\n\\[\n\\mathcal{L}(w, b) = \\frac{1}{n} \\sum_{i=1}^{n} \\bigl(y_i - (w \\cdot x_i + b)\\bigr)^{2}\n\\]\n\n- Squared (not absolute) so big mistakes are penalised disproportionately, and so the math stays differentiable everywhere.\n- Divided by $n$ so the loss is comparable across datasets of different sizes.\n\n:::callout{type=\"insight\" title=\"Why squared, not absolute?\"}\nThe squared loss has a unique closed-form minimiser. The absolute loss (a.k.a. MAE) is more robust to outliers but lacks a clean analytic solution and needs an iterative solver.\n:::\n\n## Two ways to minimise it\n\n1. **Closed form.** Solve $\\nabla_{w, b} \\mathcal{L} = 0$ analytically — this is what `numpy.linalg.lstsq` does internally.\n2. **Gradient descent.** Walk downhill in $\\mathcal{L}(w, b)$ — slower but generalises to nonlinear models."
+      }
+    },
+    {
+      "id": "s3-code-and-pitfalls",
+      "title": "Reference implementation + common pitfalls",
+      "type": "theory",
+      "data": {
+        "markdown": "## A 5-line reference implementation\n\n```python\nimport numpy as np\n\ndef fit_line(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:\n    \"\"\"Return (slope, intercept) of the least-squares best-fit line.\"\"\"\n    A = np.vstack([x, np.ones_like(x)]).T\n    w, b = np.linalg.lstsq(A, y, rcond=None)[0]\n    return float(w), float(b)\n```\n\nThe `np.vstack(...).T` trick stacks the feature column with a column of ones so that the intercept is treated as just another weight — a small piece of accounting that keeps the math tidy.\n\n## Common pitfalls\n\n- **Forgetting the intercept.** Without the column of ones, the line is forced through the origin — fine if your data really has $y = 0$ when $x = 0$, otherwise an avoidable bias.\n- **Mixing up shapes.** `lstsq` wants `A` of shape `(n, k)` and `y` of shape `(n,)`. A stray `(n, 1)` shape silently changes the broadcast rules.\n- **Reading $R^{2}$ as \"how good is my model\".** $R^{2}$ measures variance explained, not predictive accuracy on unseen data. Always hold out a test set.\n\n:::callout{type=\"warning\" title=\"Outliers eat lunch\"}\nA single far-away point can swing the fit dramatically — squared-error means its contribution to the loss is `distance²`. If your dataset has long tails, look at MAE or a robust regression instead.\n:::\n\n:::callout{type=\"danger\" title=\"Extrapolation is a lie\"}\nA linear model fit on $x \\in [0, 10]$ tells you nothing reliable about $x = 100$. The model has no idea what's outside its training range — it will happily extrapolate, and you should not believe it.\n:::\n\n## What to read next\n\n- Polynomial regression — same idea, $A$ now contains $[x, x^{2}, \\ldots, x^{k}, 1]$.\n- Ridge regression — adds a penalty $\\lambda \\lVert w \\rVert^{2}$ to discourage huge weights.\n- Logistic regression — same linear core, but the output is squashed through a sigmoid for binary classification."
+      }
+    }
+  ]
+}

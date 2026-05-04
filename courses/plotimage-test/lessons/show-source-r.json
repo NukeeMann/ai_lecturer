@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "slug": "show-source-r",
+  "courseSlug": "plotimage-test",
+  "moduleId": "m1",
+  "title": "Show-source disclosure (R) — alternate language",
+  "eyebrow": "Lekcja 3 · PlotImage",
+  "description": "Verifies the `sourceLanguage: r` branch of the Show-source disclosure. Ensures the PlotImage widget can carry source code in languages other than Python.",
+  "estimatedMinutes": 4,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — language selection",
+      "type": "theory",
+      "data": {
+        "markdown": "The `sourceLanguage` field on a PlotImage section accepts `python` or `r`. The widget's read-only CodeMirror panel switches the highlighter accordingly. If `sourceLanguage` is omitted, the widget defaults to `python`.\n\nThis lesson exercises the `r` branch using the same gauss1d figure but with an R `ggplot2` snippet that would produce an equivalent plot."
+      }
+    },
+    {
+      "id": "s2-r-source",
+      "title": "Same figure, ggplot2 source",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/plotimage-test/assets/plots/gauss1d.png",
+        "alt": "1D Gaussian density centred at zero with sigma=1, rendered with ggplot2",
+        "caption": "Figure 1. The same density rendered with ggplot2 — click \"Show source\" to view the R reference code.",
+        "sourceCode": "library(ggplot2)\n\ndf <- data.frame(\n  x = seq(-4, 4, length.out = 200)\n)\nmu <- 0\nsigma <- 1\ndf$y <- dnorm(df$x, mean = mu, sd = sigma)\n\nggplot(df, aes(x = x, y = y)) +\n  geom_line(color = \"#1f77b4\", size = 1) +\n  ggtitle(sprintf(\"1D Gauss, sigma=%g\", sigma)) +\n  xlab(\"x\") +\n  ylab(\"density\") +\n  theme_minimal()\n\nggsave(\"gauss1d.png\", width = 6, height = 4, dpi = 110)\n",
+        "sourceLanguage": "r"
+      }
+    }
+  ]
+}

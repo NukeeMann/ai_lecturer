@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "slug": "pagination-edges",
+  "courseSlug": "datatable-test",
+  "moduleId": "m1",
+  "title": "Pagination edges — small page size, last-page short row",
+  "eyebrow": "Lekcja 2 · DataTable",
+  "description": "Stress-tests pagination: a tiny `pageSize` so several pages exist, plus a final page that is intentionally shorter than `pageSize` to verify the last-page indicator + Next-button-disabled state.",
+  "estimatedMinutes": 4,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — paging contract",
+      "type": "theory",
+      "data": {
+        "markdown": "When `pageSize: N`, the DataTable splits its rows into chunks of N. The widget renders a page-of-N indicator and Prev/Next controls; Prev is disabled on page 0, Next is disabled on the last page. Filters that shrink the result set should clamp the active page DURING render (no `useEffect`+`setState` to avoid the `react-hooks/set-state-in-effect` lint rule)."
+      }
+    },
+    {
+      "id": "s2-table-page-3",
+      "title": "13 rows split into pages of 3 — last page has only one row",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "id", "label": "ID", "type": "number", "sortable": true },
+          { "key": "name", "label": "Name", "type": "string", "sortable": true, "filterable": true },
+          { "key": "score", "label": "Score", "type": "number", "sortable": true, "filterable": true }
+        ],
+        "rows": [
+          { "id": 1, "name": "Alice", "score": 70 },
+          { "id": 2, "name": "Bob", "score": 65 },
+          { "id": 3, "name": "Carol", "score": 80 },
+          { "id": 4, "name": "Dave", "score": 55 },
+          { "id": 5, "name": "Eve", "score": 90 },
+          { "id": 6, "name": "Frank", "score": 75 },
+          { "id": 7, "name": "Grace", "score": 60 },
+          { "id": 8, "name": "Heidi", "score": 85 },
+          { "id": 9, "name": "Ivan", "score": 50 },
+          { "id": 10, "name": "Judy", "score": 95 },
+          { "id": 11, "name": "Karl", "score": 40 },
+          { "id": 12, "name": "Liz", "score": 100 },
+          { "id": 13, "name": "Mallory", "score": 25 }
+        ],
+        "pageSize": 3
+      }
+    }
+  ]
+}

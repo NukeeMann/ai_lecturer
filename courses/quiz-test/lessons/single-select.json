@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "slug": "single-select",
+  "courseSlug": "quiz-test",
+  "moduleId": "m1",
+  "title": "Single-select — one correct answer",
+  "eyebrow": "Lekcja 1 · Quiz",
+  "description": "Three single-select Quiz widgets back to back, each with a different number of options and an explanation that reveals on submit.",
+  "estimatedMinutes": 4,
+  "sections": [
+    {
+      "id": "s1-intro-theory",
+      "title": "What is a single-select quiz?",
+      "type": "theory",
+      "data": {
+        "markdown": "A **single-select** Quiz renders a question, a list of options, and a Submit button. Exactly one option is correct; the user picks one and submits. After submitting, the widget reveals a per-question explanation and locks the form. The section is marked done in `progress.json` only on a fully-correct submission."
+      }
+    },
+    {
+      "id": "s2-quiz-2-options",
+      "title": "Two options",
+      "type": "quiz",
+      "data": {
+        "question": "True or false: a single-select Quiz allows the user to pick more than one option per attempt.",
+        "options": [
+          "True — the user may select any subset of options.",
+          "False — single-select means exactly one selected option per attempt."
+        ],
+        "correct": [1],
+        "explanation": "Single-select means radio-button semantics: clicking a new option deselects the previous one. Use the `multiSelect: true` mode if you need to allow multiple selections.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s3-quiz-4-options",
+      "title": "Four options",
+      "type": "quiz",
+      "data": {
+        "question": "Which of these widget types renders Markdown narration with KaTeX math and `:::callout{type=...}` directives?",
+        "options": [
+          "Quiz",
+          "Code",
+          "Theory",
+          "DataTable"
+        ],
+        "correct": [2],
+        "explanation": "Theory is the Markdown-narration widget. Quiz is the assessment widget you are filling in right now, Code runs Python in a Pyodide worker, and DataTable renders sortable/filterable tabular data.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s4-quiz-5-options",
+      "title": "Five options — distractors",
+      "type": "quiz",
+      "data": {
+        "question": "After a correct submission, the Quiz widget…",
+        "options": [
+          "Auto-navigates to the next lesson without confirmation.",
+          "Reveals the per-question explanation and marks the section done in `progress.json`.",
+          "Re-runs the lesson's Pyodide setup code.",
+          "Posts the answer to a remote leaderboard.",
+          "Resets the form so the user can try a different answer."
+        ],
+        "correct": [1],
+        "explanation": "On a fully-correct submission the explanation panel appears AND the section's `done: true` flag is persisted via PATCH `/api/progress`. There is no auto-navigation, no remote scoring, and the form locks rather than resetting.",
+        "multiSelect": false
+      }
+    }
+  ]
+}

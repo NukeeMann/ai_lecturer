@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "slug": "sparse-and-initial-sort",
+  "courseSlug": "datatable-test",
+  "moduleId": "m1",
+  "title": "Sparse rows + `initialSort` — missing cells render gracefully",
+  "eyebrow": "Lekcja 3 · DataTable",
+  "description": "Verifies two edge cases: rows that omit some column keys (sparse data) and the `initialSort` field that pre-sorts the table on first render.",
+  "estimatedMinutes": 4,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — missing cells + initial sort",
+      "type": "theory",
+      "data": {
+        "markdown": "Real-world data is often sparse — not every row has every column. The DataTable should render a missing cell as a blank cell, not as `undefined` or as a console error. `compareCells` already sends nulls/undefined to the bottom of the sort regardless of direction.\n\n`initialSort: { key, dir }` lets a course author pre-sort the table — useful when the dataset has a natural primary key (date, score, distance from sun)."
+      }
+    },
+    {
+      "id": "s2-sparse-table",
+      "title": "Library catalogue — some books have no `pages`, some no `year`",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "title", "label": "Title", "type": "string", "sortable": true, "filterable": true },
+          { "key": "author", "label": "Author", "type": "string", "sortable": true, "filterable": true },
+          { "key": "year", "label": "Year", "type": "number", "sortable": true, "filterable": true },
+          { "key": "pages", "label": "Pages", "type": "number", "sortable": true, "filterable": true },
+          { "key": "available", "label": "Available", "type": "boolean", "sortable": true }
+        ],
+        "rows": [
+          { "title": "The Pragmatic Programmer", "author": "Hunt & Thomas", "year": 1999, "pages": 320, "available": true },
+          { "title": "Structure and Interpretation of Computer Programs", "author": "Abelson & Sussman", "year": 1985, "pages": 657, "available": false },
+          { "title": "Code Complete", "author": "Steve McConnell", "year": 2004, "pages": 960, "available": true },
+          { "title": "Clean Code", "author": "Robert Martin", "year": 2008, "available": false },
+          { "title": "Refactoring", "author": "Martin Fowler", "year": 1999, "pages": 431, "available": true },
+          { "title": "Working Effectively with Legacy Code", "author": "Michael Feathers", "pages": 456, "available": true },
+          { "title": "Domain-Driven Design", "author": "Eric Evans", "year": 2003, "available": false },
+          { "title": "The Mythical Man-Month", "author": "Fred Brooks", "year": 1975, "pages": 322, "available": true }
+        ],
+        "initialSort": { "key": "year", "dir": "asc" },
+        "pageSize": 10
+      }
+    }
+  ]
+}

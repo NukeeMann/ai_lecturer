@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "slug": "leftover-bank",
+  "courseSlug": "dragmatch-test",
+  "moduleId": "m1",
+  "title": "Leftover bank — distractor items that match no zone",
+  "eyebrow": "Lekcja 3 · DragMatch",
+  "description": "Verifies that DragMatch handles distractor items: items in the bank that no zone accepts. The widget should grade as correct as long as every zone's accepts set is satisfied — leftover bank items are fine.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-context-theory",
+      "title": "Context — distractor items",
+      "type": "theory",
+      "data": {
+        "markdown": "Sometimes you want to test discrimination: \"these belong, those don't\". DragMatch supports this by simply listing extra items in `items` that no zone's `accepts` references. The grader (in `validateDragMatch`) only checks per-zone correctness; items left in the bank are not penalised."
+      }
+    },
+    {
+      "id": "s2-real-vs-fake-stdlib",
+      "title": "Sort the real Python stdlib modules from the impostors",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Drag the names that are real Python standard-library modules into the \"Real stdlib\" zone. Leave the impostors in the bank.",
+        "items": [
+          { "id": "m-itertools", "label": "itertools" },
+          { "id": "m-collections", "label": "collections" },
+          { "id": "m-pathlib", "label": "pathlib" },
+          { "id": "m-functools", "label": "functools" },
+          { "id": "m-tablesort", "label": "tablesort" },
+          { "id": "m-asyncreq", "label": "asyncreq" },
+          { "id": "m-jsonfast", "label": "jsonfast" }
+        ],
+        "zones": [
+          {
+            "id": "z-real",
+            "label": "Real Python standard-library modules",
+            "accepts": ["m-itertools", "m-collections", "m-pathlib", "m-functools"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "explanation": "`itertools`, `collections`, `pathlib`, and `functools` ship with CPython. `tablesort`, `asyncreq`, and `jsonfast` are made-up names and should be left in the bank as distractors."
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "slug": "non-uniform-bins",
+  "courseSlug": "histogram-test",
+  "moduleId": "m1",
+  "title": "Non-uniform bins — log-scale grouping",
+  "eyebrow": "Lekcja 2 · Histogram",
+  "description": "Verifies the Histogram widget renders correctly when bin widths are NOT uniform — bar widths should reflect the actual edge spacing, not be forced to equal width.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — when bins should be unequal",
+      "type": "theory",
+      "data": {
+        "markdown": "Equal-width bins are convenient but not always informative. For data spanning several orders of magnitude — file sizes, salaries, page-view counts — **logarithmic** bins are usually more readable: the bars at the low end aren't squashed against the y-axis and the long tail isn't reduced to a single empty-looking bin.\n\nThe Histogram widget's contract supports any strictly-increasing edge sequence — equal or unequal."
+      }
+    },
+    {
+      "id": "s2-log-bins-page-views",
+      "title": "Page views per article — log-spaced bins",
+      "type": "histogram",
+      "data": {
+        "binEdges": [1, 10, 100, 1000, 10000, 100000, 1000000],
+        "counts": [320, 480, 290, 110, 40, 8]
+      }
+    },
+    {
+      "id": "s3-prose",
+      "title": "What the bars mean here",
+      "type": "theory",
+      "data": {
+        "markdown": "Each bar above covers a 10× wider range than the one before. The decreasing height shows that articles with 10–100 views are MORE common than articles with 100–1 000 views, which in turn are more common than 1k–10k, and so on — the classic long-tail shape.\n\n:::callout{type=\"insight\" title=\"Read the area, not the height\"}\nWith unequal bin widths, the bar **area** corresponds to count. The bar **height** alone can mislead: a wide low-density bin and a narrow high-density bin can describe the same number of observations.\n:::"
+      }
+    }
+  ]
+}
