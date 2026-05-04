@@ -58,6 +58,7 @@ import {
 } from '@/lib/hooks/useKeyboardShortcuts';
 import {
   areAllSectionsDone,
+  countDoneSections,
   pathForAdvanceTarget,
   resolveAdvanceTarget,
 } from '@/lib/lessons/advance';
@@ -379,15 +380,15 @@ export default function LessonShellPage({
 
   const sectionTotals = useMemo(() => {
     if (!lesson) return { total: 0, done: 0 };
-    const total = lesson.sections.length;
-    const sectionState =
-      progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
-    let done = 0;
-    for (const s of lesson.sections) {
-      if (sectionState[s.id]?.done) done += 1;
-    }
-    return { total, done };
-  }, [lesson, progress, slug, lessonSlug]);
+    return countDoneSections(lesson, {
+      persistedSectionState:
+        progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState,
+      manuallyCompleted:
+        progress?.courses?.[slug]?.lessons?.[lessonSlug]
+          ?.manuallyCompletedSections,
+      liveAutoDone: autoDone,
+    });
+  }, [lesson, progress, slug, lessonSlug, autoDone]);
 
   const tocCol = tocCollapsed ? TOC_COLLAPSED : TOC_EXPANDED;
   const chatCol = chatOpen ? CHAT_OPEN : 0;
@@ -1485,6 +1486,9 @@ function SectionProgress({
     >
       <span
         data-testid="section-progress-pill"
+        role="status"
+        aria-live="polite"
+        aria-label={`${done} of ${total} completed`}
         style={{
           fontFamily: 'var(--font-mono)',
           fontSize: 'var(--fs-sm)',
