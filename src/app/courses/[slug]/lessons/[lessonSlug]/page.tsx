@@ -58,6 +58,7 @@ import {
 } from '@/lib/hooks/useKeyboardShortcuts';
 import {
   areAllSectionsDone,
+  buildAutoAdvancePatch,
   countDoneSections,
   pathForAdvanceTarget,
   resolveAdvanceTarget,
@@ -436,6 +437,22 @@ export default function LessonShellPage({
     return resolveAdvanceTarget(course, lessonSlug);
   }, [course, lessonSlug]);
 
+  // Refs that mirror the latest lesson/progress/autoDone so the auto-advance
+  // timer callback (set up once per scheduling, fires up to 1500ms later) can
+  // read the most recent values when computing the US-081 persistence patch.
+  const lessonRef = useRef(lesson);
+  const progressRef = useRef(progress);
+  const autoDoneRef = useRef(autoDone);
+  useEffect(() => {
+    lessonRef.current = lesson;
+  }, [lesson]);
+  useEffect(() => {
+    progressRef.current = progress;
+  }, [progress]);
+  useEffect(() => {
+    autoDoneRef.current = autoDone;
+  }, [autoDone]);
+
   const scheduleAutoAdvance = useCallback(
     (opts: { force?: boolean } = {}) => {
       if (!advanceTarget) return;
@@ -445,10 +462,61 @@ export default function LessonShellPage({
       autoAdvanceTimerRef.current = window.setTimeout(() => {
         autoAdvanceTimerRef.current = null;
         setAutoAdvancePending(false);
+
+        // US-081: persist completion for the just-left lesson before
+        // navigating away. Auto-advance is the trigger; manual navigation
+        // (handleNextLesson / handlePrevLesson) bypasses this path and
+        // therefore does NOT mark the lesson Completed.
+        const currentLesson = lessonRef.current;
+        if (currentLesson) {
+          const lessonProgress =
+            progressRef.current?.courses?.[slug]?.lessons?.[lessonSlug];
+          const patch = buildAutoAdvancePatch(currentLesson.sections, {
+            persistedSectionState: lessonProgress?.sectionState,
+            manuallyCompleted: lessonProgress?.manuallyCompletedSections,
+            liveAutoDone: autoDoneRef.current,
+          });
+
+          setProgress((prev) => {
+            const base: Progress = prev ?? { courses: {} };
+            const courses = { ...base.courses };
+            const cp = courses[slug]
+              ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+              : { lessons: {} };
+            const existing = cp.lessons[lessonSlug] ?? {
+              status: 'not_started' as LessonStatus,
+            };
+            cp.lessons[lessonSlug] = {
+              ...existing,
+              status: 'finished',
+              sectionState: {
+                ...(existing.sectionState ?? {}),
+                ...patch.sectionState,
+              },
+            };
+            courses[slug] = cp;
+            return { ...base, courses };
+          });
+
+          void fetch('/api/progress', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              courseSlug: slug,
+              lessonSlug,
+              status: patch.status,
+              sectionState: patch.sectionState,
+            }),
+          }).catch(() => {
+            // Optimistic local update already applied; persistence retry
+            // would need an inline error UI we don't have yet.
+          });
+        }
+
         router.push(pathForAdvanceTarget(advanceTarget));
       }, 1500);
     },
-    [advanceTarget, lessonSlug, router],
+    [advanceTarget, lessonSlug, router, slug],
   );
 
   const cancelAutoAdvance = useCallback(() => {
@@ -772,10 +840,7 @@ export default function LessonShellPage({
   // Cache an auto-fetched video transcript into the lesson JSON so subsequent
   // renders use the cached value instead of re-fetching. Manual transcripts are
   // never overridden because the widget skips auto-fetch when one exists.
-  const lessonRef = useRef(lesson);
-  useEffect(() => {
-    lessonRef.current = lesson;
-  }, [lesson]);
+  // (lessonRef is shared with the auto-advance scheduler above.)
   const handleCacheVideoTranscript = useCallback(
     async (sectionId: string, segments: VideoTranscriptSegment[]) => {
       if (segments.length === 0) return;
