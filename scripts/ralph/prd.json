@@ -1301,6 +1301,346 @@
       "passes": true,
       "notes": "Documentation-only — no code changes. Output: test-plan.md at repo root.",
       "tags": []
+    },
+    {
+      "id": "US-057",
+      "title": "Fix: Quiz multi-select colors unselected correct answers green after wrong submission",
+      "description": "As a learner, when I submit a wrong multiple-choice answer, the Quiz widget highlights all correct answers green — including the ones I never selected — which reveals the answer key. Instead, only the options I actually selected should be colored: green if my pick was correct, red if it was wrong. Unselected options stay neutral so I'm not handed answers I didn't earn.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix",
+        "Selected + correct option renders green after check",
+        "Selected + incorrect option renders red after check",
+        "Unselected options remain neutral (no color) regardless of correctness",
+        "Single-choice quiz behavior is unchanged",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 57,
+      "passes": false,
+      "notes": "Reproduction: open any multi-select Quiz, submit a wrong subset of answers, observe that unselected correct options still light up green.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-058",
+      "title": "Fix: CodeCloze ✓/✗ feedback renders below input instead of inline + comment",
+      "description": "As a learner, after I submit a CodeCloze answer the ✓/✗ icon and error message appear in a panel below the input box. Instead, the icon should sit inline to the right of the input, and the error message should render as a language-appropriate comment (// for JS, # for Python) at the end of the line of code containing that input.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix",
+        "✓ (correct) and ✗ (incorrect) icons render inline immediately to the right of the input field",
+        "Error message renders as an end-of-line comment using the lesson language's comment syntax",
+        "When the line already has a comment, the feedback comment is appended after it without breaking syntax highlighting",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 58,
+      "passes": false,
+      "notes": "Reproduction: open any CodeCloze widget, submit a wrong answer, observe icon and error message rendering below the input rather than inline.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-059",
+      "title": "Fix: Keyboard shortcuts always show macOS modifiers (⌘/⌥/⌃) on Windows + Linux",
+      "description": "As a Windows or Linux user, the shortcuts modal and inline hints display ⌘/⌥/⌃ even though my platform uses Ctrl/Alt/Shift, and the keybinding handlers only listen for Cmd. Detect the platform and both render the correct modifier glyphs and bind to the correct key on Windows/Linux.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix",
+        "On Windows + Linux: shortcut hints + modal display 'Ctrl', 'Alt', 'Shift' (no ⌘/⌥/⌃ glyphs)",
+        "On macOS: shortcut hints + modal continue to display ⌘/⌥/⌃",
+        "Keybinding handlers respond to Ctrl on Windows/Linux and Cmd on macOS for the same logical action",
+        "Verify in browser using playwright-skill (use a non-mac userAgent for Windows/Linux verification)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 59,
+      "passes": false,
+      "notes": "Reproduction: open the app on Windows, press '?' to open shortcuts modal, observe ⌘/⌥/⌃ glyphs and that Ctrl-prefixed shortcuts do not fire.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-060",
+      "title": "Fix: PlotImage assets render without axes, ticks, or numeric labels",
+      "description": "As a learner, PlotImage outputs in existing courses are unreadable for value-reading exercises because matplotlib plots are saved without visible X/Y axes, tick marks, or numeric labels. Update the generate_lesson skill prompts to require complete axes (labels, ticks, units) on every plot, AND regenerate the existing PlotImage assets in /courses/ so current lessons get the fix too.",
+      "acceptanceCriteria": [
+        "generate_lesson skill prompt enforces matplotlib plots with visible X/Y axes, tick marks, numeric tick labels, axis labels, and units where applicable",
+        "All existing PlotImage assets in /courses/ are regenerated to include the same axis/tick/label requirements",
+        "A documented checklist or schema note records the expected plot style so future lessons stay consistent",
+        "Verify in browser using playwright-skill — open at least one regenerated lesson and confirm axes are visible",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 60,
+      "passes": false,
+      "notes": "Reproduction: open any lesson using PlotImage in the seed course, observe rendered PNG has no axes/ticks/labels. Scope covers BOTH the generation prompt fix AND regenerating existing assets (per user direction).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-061",
+      "title": "Fix: Code blocks swallow execution errors — no stderr/exception visible to user",
+      "description": "As a learner, when code in any executing widget (Code, CodeExercise, Sandbox, Demo, PythonPlot) raises an exception in Pyodide, I see no output at all instead of the error. Capture stdout, stderr, and exception output separately and render them in a collapsible Output panel below the code block, with stdout and stderr visually distinguished and exceptions showing the message plus an optional stack trace.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix",
+        "stdout and stderr streams are captured separately from the Pyodide worker",
+        "Uncaught exceptions render with the exception type + message and an expandable stack trace",
+        "Output panel is collapsible (independent of test panel) and shows stdout vs stderr with clear color/style distinction",
+        "Empty output produces an empty (or hidden) panel — no false 'error' state",
+        "Behavior is consistent across Code, CodeExercise, Sandbox, Demo, and PythonPlot widgets",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 61,
+      "passes": false,
+      "notes": "Reproduction: in any code widget, run `raise ValueError('boom')` — observe empty output panel instead of the exception.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-062",
+      "title": "Fix: AI Tutor refuses direct answers when user explicitly asks for them",
+      "description": "As a learner, when I explicitly ask the LessonChat tutor for the answer to a quiz or code task, it currently replies with a Socratic dodge (\"I won't help directly, but I can guide you…\") even though I asked outright. Update the system prompt so the tutor obeys explicit user intent: give the answer when asked for it, and keep the guiding/Socratic mode only as the default when the user has not explicitly requested a solution.",
+      "acceptanceCriteria": [
+        "Remove all 'do not reveal answers' / 'never give direct solutions' instructions from the LessonChat system prompt",
+        "When the user explicitly asks for the answer/solution, the tutor provides it directly",
+        "When the user asks an open-ended question (no explicit solution request), the tutor still defaults to guiding/Socratic style",
+        "A regression test (or scripted prompt fixture) verifies both branches against the updated prompt",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 62,
+      "passes": false,
+      "notes": "Reproduction: open LessonChat, ask 'just give me the answer to this quiz', observe deflection. Pure system-prompt change — no UI work, no playwright tag.",
+      "tags": []
+    },
+    {
+      "id": "US-063",
+      "title": "Confetti animation on 100% success in Code + Quiz widgets",
+      "description": "As a learner, I want a brief Messenger-style confetti burst when I fully pass a code task (all tests green) or fully solve a quiz, so success feels rewarding without disrupting my flow.",
+      "acceptanceCriteria": [
+        "Confetti fires only at 100% success (all tests passing for Code/CodeExercise; fully correct for Quiz)",
+        "Animation duration is short (~1.5–2s) and never blocks pointer/keyboard interaction with the page",
+        "Animation does NOT replay when re-entering an already-completed widget/lesson",
+        "Works for both single and multi-select Quiz, and for all code-execution widgets that have tests",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 63,
+      "passes": false,
+      "notes": "Style reference: Facebook Messenger reaction confetti — colorful icons flying across the screen.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-064",
+      "title": "Demo smoke-test course — one section per widget for manual QA after rendering changes",
+      "description": "As a developer, I want a single seed course in /courses/ that exercises every supported widget in its own section/lesson, so I can manually smoke-test rendering after changes without spinning up the agent chain.",
+      "acceptanceCriteria": [
+        "Course lives as a static fixture in /courses/ — committed JSON, NOT generated by the agent chain",
+        "Every widget supported by the app appears in at least one section, each with a short description of the widget's purpose and a typical example",
+        "Course is referenced from test-plan.md as the canonical smoke-test target",
+        "Course renders end-to-end without errors in the dashboard and lesson views",
+        "Verify in browser using playwright-skill — open course, walk through each lesson",
+        "Typecheck passes"
+      ],
+      "priority": 64,
+      "passes": false,
+      "notes": "Widgets to cover (current set): Theory, Quiz, Code, CodeExercise, Demo, Sandbox, PlotImage, PythonPlot, ParametricExplorer, CodeCloze, DragMatch, DataTable, Video, Image, Histogram. Update list as new widgets land.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-065",
+      "title": "Section-level completion checkboxes persisted in progress.json",
+      "description": "As a learner, I want a checkbox at every section header that lets me manually mark that section as completed, with state persisted across reloads, so I can track partial progress within a lesson instead of only at the lesson level.",
+      "acceptanceCriteria": [
+        "A failing test for the new persistence shape exists before implementation",
+        "Each section header in the lesson view renders a checkbox",
+        "Toggling the checkbox writes to ~/.ai-lecturer/progress.json (extend the schema with a per-section completion map keyed by lesson + section id)",
+        "Checked sections are visually distinct (e.g. grayed/strikethrough) but content remains readable",
+        "Existing per-lesson progress behavior is unaffected",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 65,
+      "passes": false,
+      "notes": "Schema change: extend progress.json to include section-level completion. Document the new field shape in README/test-plan.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-066",
+      "title": "Code widget — collapsible TESTS container (default collapsed, peek-style)",
+      "description": "As a learner, individual tests in the Code widget can already collapse, but the entire TESTS container has no master toggle. Make the whole TESTS section collapsible as one unit, defaulting to collapsed (peek-style) — consistent with the prior 'hidden-with-peek' decision.",
+      "acceptanceCriteria": [
+        "TESTS container has a single collapse/expand control independent of inner per-test toggles",
+        "Default state is collapsed with a peek (test count + pass/fail summary visible)",
+        "Inner per-test collapse states are preserved across container collapse/expand",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 66,
+      "passes": false,
+      "notes": "Aligns with user's prior decision (memory: 'Code widget tests hidden by default — final decision is hidden-with-peek').",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-067",
+      "title": "Auto-advance to next lesson — verify existing behavior, add cancel toast + last-lesson redirect",
+      "description": "As a learner, when I complete every task in the current lesson the app should auto-advance to the next lesson after a short delay, with a toast that lets me cancel, and if I just finished the last lesson the app should send me to the My Courses page. The agent must first verify whether the existing US-018 auto-advance still works and fix any gaps before adding the new toast/cancel/last-lesson behavior.",
+      "acceptanceCriteria": [
+        "Agent verifies current US-018 auto-advance behavior end-to-end and documents what works vs what is missing",
+        "A failing test for the gaps exists before the fix",
+        "Auto-advance triggers when every task in the current lesson is completed",
+        "A short delay (~1–2s) precedes the navigation so success feedback (incl. confetti from US-063) is visible",
+        "A toast 'Going to next lesson… [Cancel]' is shown during the delay; clicking Cancel aborts the navigation",
+        "If the completed lesson is the last in the course, navigation goes to /my-courses instead",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 67,
+      "passes": false,
+      "notes": "Verify-and-fix scope: do not assume US-018 auto-advance is intact. Reproduce, identify gaps, fix, then layer toast + cancel + last-lesson redirect.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-068",
+      "title": "LessonChat — temporary expand button (fullscreen overlay) preserving conversation",
+      "description": "As a learner, I want a button in LessonChat that temporarily expands the chat panel (e.g. fullscreen overlay or a much larger side panel) so I can read long tutor responses comfortably, and when I close the expansion the chat returns to its prior size with conversation history intact.",
+      "acceptanceCriteria": [
+        "Expand button visible in the LessonChat header",
+        "Clicking it transitions the chat to a larger surface (fullscreen overlay or significantly wider panel)",
+        "Closing the expansion restores the prior side-panel size",
+        "Conversation history, draft input text, and streaming state are preserved across expand/collapse",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 68,
+      "passes": false,
+      "notes": "",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-069",
+      "title": "ParametricExplorer — dedicated full-functionality reference course",
+      "description": "As a developer or learner, I want a standalone reference course that exercises ParametricExplorer with multiple parameters, varied control types (slider, dropdown, checkbox, number input), bound visualizations, and a meaningful didactic use case, so the widget's full capabilities are visible in one place.",
+      "acceptanceCriteria": [
+        "Course lives as a static fixture in /courses/ (separate from the FEAT-2 smoke-test course) — NOT agent-generated",
+        "Multiple parameters demonstrated, covering at least slider, dropdown, checkbox, and numeric input control types",
+        "Parameters bound to at least one non-trivial visualization (e.g. live plot or interactive figure)",
+        "Course frames the example around a real didactic use case (not just a control-type catalogue)",
+        "Verify in browser using playwright-skill — interact with each control and confirm visualization updates",
+        "Typecheck passes"
+      ],
+      "priority": 69,
+      "passes": false,
+      "notes": "Standalone story per user direction (FEAT-7 option b).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-070",
+      "title": "Per-widget reference courses — code-execution widgets",
+      "description": "As a developer or learner, I want one dedicated reference course per code-execution widget (Code, CodeExercise, Sandbox, Demo, CodeCloze, PythonPlot) that demonstrates the widget's full functionality across multiple lessons, so each widget has its own discoverable showcase.",
+      "acceptanceCriteria": [
+        "One static-fixture course per widget in scope, committed under /courses/ — NOT agent-generated",
+        "Scope: Code, CodeExercise, Sandbox, Demo, CodeCloze, PythonPlot (six courses)",
+        "Each course contains multiple lessons that cover the widget's controls, edge cases, and a realistic didactic example",
+        "All courses appear in the dashboard and render end-to-end",
+        "Verify in browser using playwright-skill — open each course and walk one full lesson",
+        "Typecheck passes"
+      ],
+      "priority": 70,
+      "passes": false,
+      "notes": "Split from the broader 'every widget gets a course' ask to fit one ralph iteration. Pair with US-071 for the rest.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-071",
+      "title": "Per-widget reference courses — assessment + media widgets",
+      "description": "As a developer or learner, I want one dedicated reference course per assessment / media widget (Theory, Quiz, DragMatch, DataTable, PlotImage, Video, Image, Histogram) that demonstrates the widget's full functionality, so the non-code half of the widget set also has discoverable showcases.",
+      "acceptanceCriteria": [
+        "One static-fixture course per widget in scope, committed under /courses/ — NOT agent-generated",
+        "Scope: Theory, Quiz, DragMatch, DataTable, PlotImage, Video, Image, Histogram (eight courses)",
+        "Each course contains multiple lessons covering the widget's variants/edge cases plus a realistic didactic example",
+        "All courses appear in the dashboard and render end-to-end",
+        "Verify in browser using playwright-skill — open each course and walk one full lesson",
+        "Typecheck passes"
+      ],
+      "priority": 71,
+      "passes": false,
+      "notes": "Companion to US-070. Together they cover every current widget; FEAT-2's smoke-test course (US-064) remains a separate single-sweep fixture.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-072",
+      "title": "Embed Video — auto-fetch transcript (captions → description fallback, cached, manual override)",
+      "description": "As a course author, I want the Video widget's transcript field to be populated automatically from video metadata so I don't have to paste it by hand. Try captions first, fall back to the video description if no captions exist, and leave the field blank if neither is available. Manually-provided transcripts must always win over auto-fetched ones, and a successfully fetched transcript should be cached into the lesson JSON so subsequent renders don't re-fetch.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the missing fetch flow exists before the fix",
+        "Source priority: caption track first; if absent, fall back to video description text",
+        "If neither captions nor description provide a transcript, transcript field is left blank (no error state)",
+        "If the lesson JSON contains a manual transcript, it overrides any auto-fetch (manual wins)",
+        "On first successful auto-fetch, transcript is written into the lesson JSON (cached) so future renders use the cached value",
+        "Verify in browser using playwright-skill — open a lesson with an Embed Video and confirm transcript appears",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 72,
+      "passes": false,
+      "notes": "Per user answers: caption→description ordering, manual override possible, cache into lesson JSON on first fetch.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-073",
+      "title": "Sources — aggregate every external link from the lesson with fetched page titles",
+      "description": "As a learner, I want the Sources panel (US-040) to automatically include every external link used anywhere in the lesson — prose markdown links, Embed Video URLs, links in code examples or comments where realistic — each labeled with the page or video title fetched at lesson-build time, deduplicated, and sorted, so I have one canonical references list per lesson.",
+      "acceptanceCriteria": [
+        "A failing test for the aggregation logic exists before implementation",
+        "Aggregation pulls links from: prose markdown, Embed Video widget URLs, and code blocks/comments where extractable",
+        "For each unique URL, fetch the page <title> at lesson-build time and persist it into the lesson JSON (no fetching at render time)",
+        "Aggregated list is deduplicated and sorted for stable rendering",
+        "Each entry renders with its fetched label (falls back to URL if title fetch fails)",
+        "Existing manual Sources entries are merged with auto-aggregated ones without duplication",
+        "Verify in browser using playwright-skill — open a lesson with multiple link types and confirm Sources panel shows the merged, labeled list",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 73,
+      "passes": false,
+      "notes": "Per user direction: fetch <title> at lesson-build time and write into lesson JSON (option a).",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
