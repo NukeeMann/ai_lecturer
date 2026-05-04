@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { promises as fs } from 'node:fs';
 import { CourseSchema } from '@/lib/schemas/course';
 import { atomicWriteJson } from '@/lib/server/atomic';
+import { readCourse } from '@/lib/server/courses';
 import { InvalidSlugError, courseFile } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
@@ -10,31 +10,16 @@ type RouteCtx = { params: Promise<{ slug: string }> };
 
 export async function GET(_req: Request, { params }: RouteCtx) {
   const { slug } = await params;
-  let file: string;
   try {
-    file = courseFile(slug);
+    const course = await readCourse(slug);
+    if (!course) {
+      return NextResponse.json({ error: 'Course not found' }, { status: 404 });
+    }
+    return NextResponse.json(course);
   } catch (err) {
     if (err instanceof InvalidSlugError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    throw err;
-  }
-
-  let raw: string;
-  try {
-    raw = await fs.readFile(file, 'utf8');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return NextResponse.json({ error: 'Course not found' }, { status: 404 });
-    }
-    throw err;
-  }
-
-  try {
-    const json: unknown = JSON.parse(raw);
-    const parsed = CourseSchema.parse(json);
-    return NextResponse.json(parsed);
-  } catch (err) {
     return NextResponse.json(
       { error: 'Stored course.json is invalid', detail: String(err) },
       { status: 500 },
