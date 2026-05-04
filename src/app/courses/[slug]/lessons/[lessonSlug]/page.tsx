@@ -35,6 +35,7 @@ import {
   formBodyStyle,
 } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
+import { LessonChat } from '@/components/LessonChat';
 import { SidePanel } from '@/components/SidePanel';
 import {
   LessonSourcesPanel,
@@ -71,6 +72,7 @@ import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
 const TOC_COLLAPSED_KEY = 'toc-collapsed';
+const CHAT_OPEN_KEY = 'lessonChat-open';
 
 interface RouteParams {
   slug: string;
@@ -116,8 +118,9 @@ export default function LessonShellPage({
   const [panelSectionId, setPanelSectionId] = useState<string | null>(null);
   // Lesson-level sources side panel (US-040). Independent of section panel.
   const [lessonSourcesPanelOpen, setLessonSourcesPanelOpen] = useState(false);
-  // Chat is closed by default in MVP.
-  const [chatOpen] = useState(false);
+  // LessonChat side-panel state, persisted to localStorage['lessonChat-open'].
+  // Hydrated from storage in the same effect that hydrates TOC collapse below.
+  const [chatOpen, setChatOpen] = useState(false);
   // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
   // toggled off, the previous TOC-collapsed state is restored.
   const focusModeRef = useRef<{ active: boolean; previousToc: boolean }>({
@@ -134,6 +137,11 @@ export default function LessonShellPage({
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setTocCollapsed(true);
       }
+      const chatStored = window.localStorage.getItem(CHAT_OPEN_KEY);
+      if (chatStored === 'true') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setChatOpen(true);
+      }
     } catch {
       // localStorage unavailable (SSR / privacy mode) — fall back to default.
     }
@@ -149,6 +157,27 @@ export default function LessonShellPage({
       }
       return next;
     });
+  }, []);
+
+  const toggleChat = useCallback(() => {
+    setChatOpen((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(CHAT_OPEN_KEY, next ? 'true' : 'false');
+      } catch {
+        // Persistence unavailable — toggle still works for the session.
+      }
+      return next;
+    });
+  }, []);
+
+  const closeChat = useCallback(() => {
+    setChatOpen(false);
+    try {
+      window.localStorage.setItem(CHAT_OPEN_KEY, 'false');
+    } catch {
+      // Persistence unavailable — close still works for the session.
+    }
   }, []);
 
   const toggleModule = useCallback((moduleId: string) => {
@@ -625,10 +654,7 @@ export default function LessonShellPage({
       },
       {
         match: (e) => isMod(e) && !e.shiftKey && !e.altKey && e.key === '.',
-        handler: () => {
-          // Tutor toggle is a no-op visible state in MVP — the chat panel
-          // stays closed (see CHAT_OPEN constant).
-        },
+        handler: () => toggleChat(),
       },
       {
         match: (e) =>
@@ -656,6 +682,7 @@ export default function LessonShellPage({
     [
       scrollToSection,
       toggleToc,
+      toggleChat,
       handleSpaceMarkSection,
       handleNextLesson,
       handlePrevLesson,
@@ -679,6 +706,8 @@ export default function LessonShellPage({
         slug={slug}
         sectionTotals={sectionTotals}
         onResetSession={handleResetSession}
+        chatOpen={chatOpen}
+        onToggleChat={toggleChat}
       />
 
       <TocColumn
@@ -724,7 +753,12 @@ export default function LessonShellPage({
         ) : null}
       </main>
 
-      <ChatColumn open={chatOpen} />
+      <LessonChat
+        open={chatOpen}
+        courseSlug={slug}
+        lessonSlug={lessonSlug}
+        onClose={closeChat}
+      />
 
       <BottomBar
         prevLesson={prevLesson}
@@ -985,6 +1019,8 @@ interface ToolbarProps {
   slug: string;
   sectionTotals: { total: number; done: number };
   onResetSession: () => void;
+  chatOpen: boolean;
+  onToggleChat: () => void;
 }
 
 function Toolbar({
@@ -994,6 +1030,8 @@ function Toolbar({
   slug,
   sectionTotals,
   onResetSession,
+  chatOpen,
+  onToggleChat,
 }: ToolbarProps) {
   return (
     <header
@@ -1063,8 +1101,9 @@ function Toolbar({
 
       <ToolbarIconBtn
         testId="tutor-btn"
-        ariaLabel="AI tutor (coming soon)"
-        disabled
+        ariaLabel={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
+        onClick={onToggleChat}
+        active={chatOpen}
       >
         <span
           style={{
@@ -1202,19 +1241,39 @@ function ToolbarIconBtn({
   testId,
   ariaLabel,
   disabled,
+  active,
   onClick,
 }: {
   children: React.ReactNode;
   testId: string;
   ariaLabel: string;
   disabled?: boolean;
+  active?: boolean;
   onClick?: () => void;
 }) {
+  let color: string;
+  let background: string;
+  let borderColor: string;
+  if (disabled) {
+    color = 'var(--text-quaternary)';
+    background = 'transparent';
+    borderColor = 'transparent';
+  } else if (active) {
+    color = 'var(--accent-text)';
+    background = 'var(--accent-subtle)';
+    borderColor = 'var(--accent-subtle)';
+  } else {
+    color = 'var(--text-secondary)';
+    background = 'transparent';
+    borderColor = 'transparent';
+  }
   return (
     <button
       type="button"
       data-testid={testId}
       aria-label={ariaLabel}
+      aria-pressed={active ? true : undefined}
+      data-active={active ? 'true' : undefined}
       disabled={disabled}
       onClick={onClick}
       style={{
@@ -1224,9 +1283,11 @@ function ToolbarIconBtn({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 'var(--radius-md)',
-        border: '1px solid transparent',
-        background: 'transparent',
-        color: disabled ? 'var(--text-quaternary)' : 'var(--text-secondary)',
+        borderWidth: 1,
+        borderStyle: 'solid',
+        borderColor,
+        background,
+        color,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.6 : 1,
       }}
@@ -1642,38 +1703,6 @@ function TocCollapsedDots({
         );
       })}
     </div>
-  );
-}
-
-function ChatColumn({ open }: { open: boolean }) {
-  return (
-    <aside
-      data-testid="lesson-chat"
-      data-open={open ? 'true' : 'false'}
-      style={{
-        gridColumn: '3 / 4',
-        gridRow: '2 / 3',
-        borderLeft: open ? '1px solid var(--border)' : 'none',
-        background: 'var(--bg-elevated)',
-        overflow: 'hidden',
-        display: open ? 'flex' : 'none',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 'var(--space-5)',
-      }}
-    >
-      {open && (
-        <p
-          style={{
-            color: 'var(--text-tertiary)',
-            fontSize: 'var(--fs-sm)',
-            textAlign: 'center',
-          }}
-        >
-          AI tutor — coming soon
-        </p>
-      )}
-    </aside>
   );
 }
 
