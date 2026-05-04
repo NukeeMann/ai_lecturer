@@ -44,7 +44,11 @@ import {
   SectionSourcesPopover,
   SourcesField,
 } from '@/components/Sources';
-import { SettingsMenu } from '@/components/SettingsMenu';
+import {
+  SettingsMenu,
+  applyAccent,
+  readAccentOverride,
+} from '@/components/SettingsMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import {
   isMod,
@@ -313,6 +317,20 @@ export default function LessonShellPage({
   useEffect(() => {
     void resetNamespace(lessonSlug).catch(() => {});
   }, [resetNamespace, lessonSlug]);
+
+  // Apply the per-course accent (US-076). Resolution order is user override
+  // (localStorage `aiLecturer.accent.<slug>`) → course.json `accentColor`
+  // → 'default'. Re-runs when the course changes (navigating between
+  // courses) and on cleanup resets to 'default' so leaving the lesson
+  // route (back to dashboard, etc.) drops any non-default accent.
+  useEffect(() => {
+    if (!course) return;
+    const override = readAccentOverride(slug);
+    applyAccent(override ?? course.accentColor ?? 'default');
+    return () => {
+      applyAccent('default');
+    };
+  }, [slug, course]);
 
   const handleResetSession = useCallback(() => {
     void resetNamespace(lessonSlug)
@@ -1332,7 +1350,10 @@ function Toolbar({
 
       <ThemeToggle />
 
-      <SettingsMenu />
+      <SettingsMenu
+        courseSlug={slug}
+        courseDefaultAccent={course?.accentColor}
+      />
 
       <ToolbarIconBtn
         testId="reset-session-btn"

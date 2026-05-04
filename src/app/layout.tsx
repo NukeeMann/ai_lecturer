@@ -11,10 +11,13 @@ export const metadata: Metadata = {
 };
 
 // Runs synchronously in <head> before paint to prevent a flash of the wrong
-// theme/density. Reads localStorage['aiLecturer.theme'] (values: light|dark|
-// system; missing/system falls back to prefers-color-scheme) and
-// localStorage['aiLecturer.density'] (compact|comfortable|spacious).
-const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}}catch(e){}})();`;
+// theme/density/accent. Reads localStorage['aiLecturer.theme'] (values:
+// light|dark|system; missing/system falls back to prefers-color-scheme),
+// localStorage['aiLecturer.density'] (compact|comfortable|spacious), and —
+// when on a /courses/<slug>/... route — localStorage['aiLecturer.accent.
+// <slug>'] for any user accent override (course defaults declared in
+// course.json apply later via the lesson page once the JSON loads).
+const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}var m=location.pathname.match(/^\\/courses\\/([^\\/]+)/);if(m){var a=localStorage.getItem('aiLecturer.accent.'+m[1]);if(a==='default'||a==='black'||a==='indigo'||a==='terracotta'||a==='emerald'){d.setAttribute('data-accent',a);}}}catch(e){}})();`;
 
 export default function RootLayout({
   children,
