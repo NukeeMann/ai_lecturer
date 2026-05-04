@@ -1,0 +1,32 @@
+[2026-05-04T12:35:09+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T12:36:41+0200] Let me look at the existing CSS structure and CodeRunner to understand more.
+[2026-05-04T12:37:05+0200] Now I have enough context. Let me build the Confetti component first.
+[2026-05-04T12:37:24+0200] Add the CSS keyframe to globals.css.
+[2026-05-04T12:37:33+0200] Now wire confetti to QuizWidget.
+[2026-05-04T12:37:55+0200] Now wire to CodeWidget.
+[2026-05-04T12:38:42+0200] Now wire `alreadyCompleted` through SectionRenderer.
+[2026-05-04T12:39:26+0200] Typecheck clean, 283/283 tests pass. Now browser verification.
+[2026-05-04T12:43:00+0200] Good — the quiz section is fresh. Now write a playwright test.
+[2026-05-04T12:45:14+0200] Need to persist quiz completion so re-entry honors it. Let me update QuizWidget with a progressKey patch.
+[2026-05-04T12:45:50+0200] Now pass progressKey from SectionRenderer to QuizWidget.
+[2026-05-04T12:46:43+0200] All 3 playwright tests passing. Now let me also test the Code widget. Let me write a focused code-widget test.
+[2026-05-04T12:48:04+0200] Persistence works. Let me re-run vitest and typecheck to confirm everything still passes.
+[2026-05-04T12:48:47+0200] Now append progress.txt.
+[2026-05-04T12:49:59+0200] US-063 done. `passes: true` in HEAD. Summary:
+
+- **New** `src/components/Confetti.tsx` — CSS-only burst overlay (28 particles, ~1.7s, polar fan, `pointer-events: none`, `z-index: 9999`, honors `prefers-reduced-motion`)
+- **New** keyframe `ai-confetti-burst` in `src/app/globals.css`
+- **QuizWidget** + **CodeWidget** accept `alreadyCompleted?: boolean`; fire confetti only on first correct submission with `!alreadyCompleted && !confettiFiredRef.current` guard
+- QuizWidget now persists `{ done: true }` on correct so re-entry suppression survives reloads (parity with CodeWidget's existing patch)
+- Lesson page sources `alreadyCompleted` from `sectionState[id]?.done` (same source as the 'done' badge)
+- Browser-verified end-to-end: single-select quiz, multi-select quiz, code widget — burst fires once, cleans up, does not replay after reload
+- Vitest 283/283; typecheck clean
+[2026-05-04T12:49:59+0200] [result success turns=105 cost=$6.793211999999997] US-063 done. `passes: true` in HEAD. Summary:
+
+- **New** `src/components/Confetti.tsx` — CSS-only burst overlay (28 particles, ~1.7s, polar fan, `pointer-events: none`, `z-index: 9999`, honors `prefers-reduced-motion`)
+- **New** keyframe `ai-confetti-burst` in `src/app/globals.css`
+- **QuizWidget** + **CodeWidget** accept `alreadyCompleted?: boolean`; fire confetti only on first correct submission with `!alreadyCompleted && !confettiFiredRef.current` guard
+- QuizWidget now persists `{ done: true }` on correct so re-entry suppression survives reloads (parity with CodeWidget's existing patch)
+- Lesson page sources `alreadyCompleted` from `sectionState[id]?.done` (same source as the 'done' badge)
+- Browser-verified end-to-end: single-select quiz, multi-select quiz, code widget — burst fires once, cleans up, does not replay after reload
+- Vitest 283/283; typecheck clean
