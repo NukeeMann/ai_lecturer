@@ -1,0 +1,48 @@
+[2026-05-04T22:28:33+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T22:30:20+0200] Now I have a good understanding. Let me check the API structure for clarify:
+[2026-05-04T22:31:49+0200] I have enough context. Let me start implementing. First, create the dependencies library:
+[2026-05-04T22:32:28+0200] Now create the test file:
+[2026-05-04T22:33:10+0200] Let me run the tests for the new lib first to validate the design before wiring it in:
+[2026-05-04T22:33:15+0200] All 32 tests pass. Now let me wire the caches into the Stage3Cascade (Structure) component:
+[2026-05-04T22:33:28+0200] Now wire the seed-on-entry to write the cache, and add stale detection on reopen:
+[2026-05-04T22:33:45+0200] Now I need to add the confirm-dialog UI. Let me look at the early-return (no-structure) and update accordingly:
+[2026-05-04T22:33:53+0200] Now add the `ConfirmRegenerateDialog` component near the bottom of the file. Let me view the end:
+[2026-05-04T22:34:14+0200] Now wire Stage3Clarify:
+[2026-05-04T22:34:27+0200] Now update the loadQuestions to write a cache, and amend the initial-load effect to detect stale:
+[2026-05-04T22:34:42+0200] Now update the initial-load effect to detect stale on reopen:
+[2026-05-04T22:34:49+0200] Now add the confirm dialog handlers and dialog UI:
+[2026-05-04T22:34:54+0200] Now add the dialog rendering:
+[2026-05-04T22:34:59+0200] Now append the dialog component at the end of the file:
+[2026-05-04T22:35:26+0200] Now update page.tsx — Stepper needs stale indicators, and Stage4Approval needs to record its cache (and refresh it on reopen):
+[2026-05-04T22:35:43+0200] Now update the Stepper signature to accept and render stale:
+[2026-05-04T22:36:02+0200] Now wire the Approval cache update on stage 5 entry:
+[2026-05-04T22:36:23+0200] Now let me run typecheck and tests:
+[2026-05-04T22:36:31+0200] Typecheck passes. Now lint and tests:
+[2026-05-04T22:36:51+0200] The pattern is to use `// eslint-disable-next-line react-hooks/set-state-in-effect`. Let me apply to my additions:
+[2026-05-04T22:38:55+0200] Now run all vitest tests:
+[2026-05-04T22:39:01+0200] All 429 tests pass. Now let me update DEFAULT_DRAFT to include caches field as undefined and confirm everything is wired:
+[2026-05-04T22:39:41+0200] Let me check how existing browser tests handle the clarify API:
+[2026-05-04T22:40:08+0200] Now let me write the playwright test:
+[2026-05-04T22:41:14+0200] All browser checks passed. Now let me run the full test suite once more and finalize:
+[2026-05-04T22:41:35+0200] Now update prd.json and progress.txt:
+[2026-05-04T22:41:54+0200] Now append to progress.txt:
+[2026-05-04T22:42:18+0200] Now append per-iteration progress entry:
+[2026-05-04T22:42:51+0200] Good. Now commit:
+[2026-05-04T22:43:21+0200] US-093 complete and committed (6f19c3c). Summary:
+
+- New `src/lib/wizard/dependencies.ts` with the dependency map + FNV-1a stage hashing + `isStageStale` / `hasUserEdits` / `snapshotUpstreamHashes` helpers
+- 32 vitest cases (all passing) cover hash determinism, transitive invalidation, ID-only-change stability, and user-edit detection
+- `Stage3Clarify` / `Stage3Cascade` / `page.tsx` track per-stage caches; reopening a stale stage either silently regenerates or shows the AC's "Upstream changed — regenerate <Stage>? Your edits will be lost" confirm dialog
+- Stepper renders `data-stale="true"` + an AlertTriangle icon on out-of-date steps
+- Browser-verified via playwright on a stubbed clarify endpoint: stale flags propagate, both confirm dialogs fire, regenerate paths wipe stale content, Approval reflects the new structure
+- `npm run typecheck` clean, `npx vitest run` 429/429 passing, `npm run lint` clean on the touched files
+- `prd.json` US-093 `passes: true` is in HEAD
+[2026-05-04T22:43:21+0200] [result success turns=91 cost=$9.088698749999995] US-093 complete and committed (6f19c3c). Summary:
+
+- New `src/lib/wizard/dependencies.ts` with the dependency map + FNV-1a stage hashing + `isStageStale` / `hasUserEdits` / `snapshotUpstreamHashes` helpers
+- 32 vitest cases (all passing) cover hash determinism, transitive invalidation, ID-only-change stability, and user-edit detection
+- `Stage3Clarify` / `Stage3Cascade` / `page.tsx` track per-stage caches; reopening a stale stage either silently regenerates or shows the AC's "Upstream changed — regenerate <Stage>? Your edits will be lost" confirm dialog
+- Stepper renders `data-stale="true"` + an AlertTriangle icon on out-of-date steps
+- Browser-verified via playwright on a stubbed clarify endpoint: stale flags propagate, both confirm dialogs fire, regenerate paths wipe stale content, Approval reflects the new structure
+- `npm run typecheck` clean, `npx vitest run` 429/429 passing, `npm run lint` clean on the touched files
+- `prd.json` US-093 `passes: true` is in HEAD
