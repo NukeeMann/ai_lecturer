@@ -964,6 +964,7 @@ export default function LessonShellPage({
         courseSlug={slug}
         lessonSlug={lessonSlug}
         onClose={closeChat}
+        onToggle={toggleChat}
       />
 
       <BottomBar
@@ -1406,7 +1407,7 @@ function TutorToolbarButton({
         }}
       >
         {modLabel(isMac)}
-        {isMac ? '.' : '+.'}
+        {isMac ? 'T' : '+T'}
       </span>
     </ToolbarIconBtn>
   );
