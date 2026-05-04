@@ -43,6 +43,10 @@ PROGRESS_FILE_REL="${PROGRESS_FILE#$REPO_ROOT/}"
 ARCHIVE_DIR="$SCRIPT_DIR/archive"
 ARCHIVE_DIR_REL="${ARCHIVE_DIR#$REPO_ROOT/}"
 LOCK_DIR="$REPO_ROOT/.ralph-locks"
+# Per-worker session IDs are written here so the orchestrator can reap
+# any leftover dev servers (or other long-running children) the agent
+# forgot to stop. See kill_session() / run_worker for the mechanism.
+SESSION_DIR="$LOCK_DIR/sessions"
 
 # Auto-detect stories field if not set in config
 if [ -z "$STORIES_FIELD" ] && [ -f "$PRD" ]; then
@@ -109,7 +113,7 @@ fi
 
 FAILED_REPORT="$LOG_DIR/failed_report.json"
 
-mkdir -p "$LOG_DIR" "$LOCK_DIR" "$WORKTREE_BASE"
+mkdir -p "$LOG_DIR" "$LOCK_DIR" "$SESSION_DIR" "$WORKTREE_BASE"
 
 # Initialize empty report
 echo '[]' > "$FAILED_REPORT"
@@ -208,6 +212,36 @@ kill_tree() {
   kill -"$sig" "$pid" 2>/dev/null || true
 }
 
+# Reap every process that shares a given session ID. kill_tree only
+# walks parent->child links, so it misses dev servers the agent
+# detached via `disown` / `nohup` (those get reparented to PID 1 but
+# stay in the same session unless they call setsid() themselves).
+# run_worker wraps each agent invocation in `setsid` precisely so we
+# can sweep that session here after the agent exits.
+kill_session() {
+  local sid=$1
+  local label=${2:-}
+  [ -n "$sid" ] || return 0
+  local pids
+  pids=$(ps -e -o pid=,sid= 2>/dev/null \
+    | awk -v sid="$sid" -v self="$$" '$2==sid && $1!=self {print $1}')
+  [ -n "$pids" ] || return 0
+  local n
+  n=$(echo "$pids" | wc -w | tr -d ' ')
+  if [ -n "$label" ]; then
+    log_task "$label" "Reaping $n leftover process(es) from agent session $sid"
+  else
+    log_warn "Reaping $n leftover process(es) from agent session $sid"
+  fi
+  echo "$pids" | xargs -r kill -TERM 2>/dev/null || true
+  sleep 1
+  pids=$(ps -e -o pid=,sid= 2>/dev/null \
+    | awk -v sid="$sid" -v self="$$" '$2==sid && $1!=self {print $1}')
+  if [ -n "$pids" ]; then
+    echo "$pids" | xargs -r kill -KILL 2>/dev/null || true
+  fi
+}
+
 cleanup_on_interrupt() {
   trap '' INT TERM  # don't re-enter while we tear down
   echo ""
@@ -221,6 +255,17 @@ cleanup_on_interrupt() {
       kill_tree "$pid" KILL
     fi
   done
+  # Sweep agent sessions in case any worker spawned dev servers that
+  # detached from its parent->child tree (kill_tree above can't see them).
+  if [ -d "$SESSION_DIR" ]; then
+    for sid_file in "$SESSION_DIR"/*.sid; do
+      [ -f "$sid_file" ] || continue
+      local sid
+      sid=$(cat "$sid_file" 2>/dev/null || echo "")
+      [ -n "$sid" ] && kill_session "$sid"
+      rm -f "$sid_file"
+    done
+  fi
   rm -rf "$LOCK_DIR" 2>/dev/null || true
   exit 130
 }
@@ -987,18 +1032,32 @@ $recent_progress")"
   log_task "$task_id" "Running claude in worktree (hard ${TASK_TIMEOUT_SEC}s, soft ${soft_deadline_sec}s)..."
 
   local exit_code=0
+  # Wrap the agent in `setsid` so we can reap any long-running children
+  # (dev servers, playwright, etc.) it forgot to stop before exiting.
+  # The inner bash records its own PID — which equals the new session's
+  # leader and SID — into $sid_file; we sweep that session after the
+  # pipeline finishes regardless of outcome. The agent's CLAUDE.md asks
+  # it to clean up its own PIDs, but we cannot rely on that, so the
+  # orchestrator enforces teardown unconditionally.
+  local sid_file="$SESSION_DIR/${task_id}.sid"
+  rm -f "$sid_file"
   RALPH_TASK_ID="$task_id" \
   RALPH_TIMEOUT_SEC="$TASK_TIMEOUT_SEC" \
   RALPH_SOFT_DEADLINE_SEC="$soft_deadline_sec" \
   RALPH_DEADLINE_EPOCH="$deadline_epoch" \
-  timeout --foreground "$TASK_TIMEOUT_SEC" \
-    stdbuf -oL claude \
-    --model "$MODEL" \
-    --dangerously-skip-permissions \
-    --print \
-    --output-format stream-json \
-    --verbose \
-    -p "$enriched_prompt" 2>&1 \
+  RALPH_SID_FILE="$sid_file" \
+  RALPH_MODEL="$MODEL" \
+  RALPH_PROMPT="$enriched_prompt" \
+  setsid bash -c '
+    echo "$$" > "$RALPH_SID_FILE"
+    exec timeout "$RALPH_TIMEOUT_SEC" stdbuf -oL claude \
+      --model "$RALPH_MODEL" \
+      --dangerously-skip-permissions \
+      --print \
+      --output-format stream-json \
+      --verbose \
+      -p "$RALPH_PROMPT" 2>&1
+  ' \
   | stdbuf -oL jq -R -r --unbuffered --arg tzoff "$(date '+%z')" '
       # All timestamps render in Warsaw local time (TZ=Europe/Warsaw is
       # exported by ralph.sh). SDK-supplied $msg.timestamp values arrive as
@@ -1037,6 +1096,16 @@ $recent_progress")"
         else empty
         end
     ' > "$logfile" || exit_code=$?
+
+  # Sweep the agent's session even on success — leaked dev servers
+  # hold ports and block the next worker. Runs before any exit_code
+  # branching so timeout/error paths also benefit.
+  local agent_sid=""
+  [ -f "$sid_file" ] && agent_sid=$(cat "$sid_file" 2>/dev/null || echo "")
+  rm -f "$sid_file"
+  if [ -n "$agent_sid" ]; then
+    kill_session "$agent_sid" "$task_id"
+  fi
 
   if [ $exit_code -eq 124 ]; then
     log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — running diagnostician..."
