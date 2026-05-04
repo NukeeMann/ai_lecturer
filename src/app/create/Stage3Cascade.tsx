@@ -13,6 +13,13 @@ import {
   type SetStateAction,
 } from 'react';
 import {
+  computeStageInputHash,
+  hasUserEdits,
+  isStageStale,
+  snapshotUpstreamHashes,
+  type WizardCaches,
+} from '@/lib/wizard/dependencies';
+import {
   DndContext,
   KeyboardSensor,
   PointerSensor,
@@ -70,6 +77,11 @@ export interface Draft {
   /** Free-form learner answers, keyed by question id. */
   clarification?: Record<string, string>;
   structure: StructureDraft | null;
+  /**
+   * Per-stage cache records used to detect when an upstream input has changed
+   * and the downstream cached output needs to be regenerated (US-093).
+   */
+  caches?: WizardCaches;
 }
 
 // ─── Seed defaults ───────────────────────────────────────────────────────────
@@ -190,16 +202,77 @@ interface Stage3Props {
 }
 
 export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage3Props) {
-  // Seed on first entry
+  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  // One-shot guard for the on-mount stale check / initial seed (we only want
+  // to evaluate "did upstream change while I was away?" once per mount).
+  const stalenessHandledRef = useRef(false);
+
+  // Re-seed the structure with current topic/level/duration AND record a
+  // fresh cache snapshot. Used both for first-entry seed and stale-reopen
+  // regeneration.
+  const seedAndCache = useCallback(() => {
+    setDraft((d) => {
+      const next = seedStructure(d.topic, d.level, d.durationTarget);
+      const draftWithStructure = { ...d, structure: next };
+      const generatedHash = computeStageInputHash('structure', draftWithStructure);
+      return {
+        ...draftWithStructure,
+        caches: {
+          ...(d.caches ?? {}),
+          structure: {
+            upstreamHashes: snapshotUpstreamHashes('structure', draftWithStructure),
+            generatedHash,
+          },
+        },
+      };
+    });
+  }, [setDraft]);
+
+  // Seed on first entry / stale reopen. The ref-gate makes this a one-shot
+  // subscription pattern; eslint's set-state-in-effect rule still flags it.
   useEffect(() => {
+    if (stalenessHandledRef.current) return;
+    stalenessHandledRef.current = true;
     if (!draft.structure) {
-      setDraft((d) =>
-        d.structure
-          ? d
-          : { ...d, structure: seedStructure(d.topic, d.level, d.durationTarget) },
-      );
+      seedAndCache();
+      return;
     }
-  }, [draft.structure, setDraft]);
+    const cache = draft.caches?.structure;
+    if (isStageStale('structure', draft, cache)) {
+      if (hasUserEdits('structure', draft, cache)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setConfirmRegenerate(true);
+      } else {
+        seedAndCache();
+      }
+    }
+  }, [draft, seedAndCache]);
+
+  const handleConfirmRegenerate = useCallback(() => {
+    setConfirmRegenerate(false);
+    seedAndCache();
+  }, [seedAndCache]);
+
+  const handleKeepCurrent = useCallback(() => {
+    setConfirmRegenerate(false);
+    // User chose to keep their edits; refresh the cache's upstreamHashes so
+    // the dialog doesn't keep re-firing on every reopen, but DO NOT touch
+    // their structure content.
+    setDraft((d) => {
+      if (!d.structure) return d;
+      const generatedHash = computeStageInputHash('structure', d);
+      return {
+        ...d,
+        caches: {
+          ...(d.caches ?? {}),
+          structure: {
+            upstreamHashes: snapshotUpstreamHashes('structure', d),
+            generatedHash,
+          },
+        },
+      };
+    });
+  }, [setDraft]);
 
   const structure = draft.structure;
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -352,6 +425,13 @@ export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage
 
   return (
     <div style={stageWrapStyle} data-testid="stage3-cascade">
+      {confirmRegenerate && (
+        <ConfirmRegenerateDialog
+          stageLabel="Structure"
+          onConfirm={handleConfirmRegenerate}
+          onCancel={handleKeepCurrent}
+        />
+      )}
       <div
         style={{
           flex: 1,
@@ -1171,6 +1251,96 @@ function AddButton({
       <Plus size={12} />
       {label}
     </button>
+  );
+}
+
+// ─── Confirm-regenerate dialog ───────────────────────────────────────────────
+
+function ConfirmRegenerateDialog({
+  stageLabel,
+  onConfirm,
+  onCancel,
+}: {
+  stageLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      data-testid="wizard-regenerate-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wizard-regenerate-title"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.4)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 50,
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg, 12px)',
+          padding: 'var(--space-5)',
+          maxWidth: 440,
+          margin: '0 var(--space-4)',
+          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.18)',
+        }}
+      >
+        <div
+          id="wizard-regenerate-title"
+          style={{
+            fontSize: 'var(--fs-md)',
+            fontWeight: 600,
+            color: 'var(--text)',
+            marginBottom: 8,
+          }}
+        >
+          Upstream changed — regenerate {stageLabel}?
+        </div>
+        <p
+          data-testid="wizard-regenerate-body"
+          style={{
+            margin: 0,
+            color: 'var(--text-secondary)',
+            fontSize: 'var(--fs-sm)',
+            lineHeight: 1.5,
+          }}
+        >
+          Your edits will be lost.
+        </p>
+        <div
+          style={{
+            marginTop: 'var(--space-4)',
+            display: 'flex',
+            gap: 'var(--space-3)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            data-testid="wizard-regenerate-cancel"
+            onClick={onCancel}
+            style={ghostBtnStyle}
+          >
+            Keep my edits
+          </button>
+          <button
+            type="button"
+            data-testid="wizard-regenerate-confirm"
+            onClick={onConfirm}
+            style={primaryBtnStyle}
+          >
+            Regenerate
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
