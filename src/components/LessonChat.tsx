@@ -17,7 +17,10 @@ interface ChatMessage {
   role: 'user' | 'assistant' | 'error';
   text: string;
   pending?: boolean;
+  stopped?: boolean;
 }
+
+const STOPPED_SUFFIX = '— stopped by user';
 
 interface LessonChatProps {
   open: boolean;
@@ -49,6 +52,9 @@ export function LessonChat({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const currentRequestIdRef = useRef<string | null>(null);
+  const userStoppedRef = useRef<boolean>(false);
   const draftKey = useMemo(
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
@@ -223,6 +229,21 @@ export function LessonChat({
   const trimmedDraft = draft.trim();
   const canSend = trimmedDraft.length > 0 && !sending;
 
+  const finalizeStopped = useCallback((pendingId: string, partialText: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === pendingId
+          ? {
+              id: pendingId,
+              role: 'assistant',
+              text: partialText,
+              stopped: true,
+            }
+          : m,
+      ),
+    );
+  }, []);
+
   const handleSend = useCallback(() => {
     const text = draft.trim();
     if (text.length === 0 || sending) return;
@@ -236,6 +257,7 @@ export function LessonChat({
     ]);
     setDraft('');
     setSending(true);
+    userStoppedRef.current = false;
     try {
       window.localStorage.removeItem(draftKey);
     } catch {
@@ -247,11 +269,29 @@ export function LessonChat({
       .filter((m) => !m.pending)
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }));
 
+    const ac = new AbortController();
+    streamAbortRef.current = ac;
+    currentRequestIdRef.current = null;
+
+    const setBubbleError = (errText: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId
+            ? { id: pendingId, role: 'error', text: errText }
+            : m,
+        ),
+      );
+    };
+
     void (async () => {
+      let res: Response;
       try {
-        const res = await fetch('/api/lesson-chat', {
+        res = await fetch('/api/lesson-chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+          },
           body: JSON.stringify({
             courseSlug,
             lessonSlug,
@@ -259,47 +299,153 @@ export function LessonChat({
             message: text,
             history,
           }),
+          signal: ac.signal,
         });
+      } catch (err) {
+        if (ac.signal.aborted) {
+          finalizeStopped(pendingId, '');
+        } else {
+          setBubbleError(`AI Tutor error: ${(err as Error).message}`);
+        }
+        setSending(false);
+        streamAbortRef.current = null;
+        return;
+      }
+
+      if (!res.ok) {
         const json = (await res
           .json()
-          .catch(() => ({}))) as { assistant?: string; error?: string };
-        if (!res.ok) {
-          const errText =
-            json.error ?? `AI Tutor error (status ${res.status})`;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === pendingId
-                ? { id: pendingId, role: 'error', text: errText }
-                : m,
-            ),
-          );
-        } else {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === pendingId
-                ? {
-                    id: pendingId,
-                    role: 'assistant',
-                    text: json.assistant ?? '',
-                  }
-                : m,
-            ),
-          );
+          .catch(() => ({}))) as { error?: string };
+        const errText = json.error ?? `AI Tutor error (status ${res.status})`;
+        setBubbleError(errText);
+        setSending(false);
+        streamAbortRef.current = null;
+        return;
+      }
+
+      const body = res.body;
+      if (!body) {
+        setBubbleError('AI Tutor error: empty response');
+        setSending(false);
+        streamAbortRef.current = null;
+        return;
+      }
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let accumulated = '';
+      let receivedDone = false;
+      let receivedError: string | null = null;
+
+      const handleEvent = (event: string, data: string) => {
+        let parsed: unknown = {};
+        try {
+          parsed = data.length > 0 ? JSON.parse(data) : {};
+        } catch {
+          parsed = {};
         }
+        const obj = parsed as { requestId?: string; text?: string; message?: string };
+        if (event === 'meta' && typeof obj.requestId === 'string') {
+          currentRequestIdRef.current = obj.requestId;
+        } else if (event === 'token' && typeof obj.text === 'string') {
+          accumulated += obj.text;
+          const snapshot = accumulated;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingId
+                ? { id: pendingId, role: 'assistant', text: snapshot, pending: true }
+                : m,
+            ),
+          );
+        } else if (event === 'done') {
+          receivedDone = true;
+        } else if (event === 'error') {
+          receivedError =
+            typeof obj.message === 'string'
+              ? `AI Tutor error: ${obj.message}`
+              : 'AI Tutor error';
+        } else if (event === 'aborted') {
+          // Server confirmed cancel — handled by userStoppedRef path.
+        }
+      };
+
+      const flushBufferedEvents = () => {
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (block.length === 0) continue;
+          let event = 'message';
+          let data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) {
+              data += (data.length > 0 ? '\n' : '') + line.slice(5).trim();
+            }
+          }
+          handleEvent(event, data);
+        }
+      };
+
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          flushBufferedEvents();
+        }
+        // Stream ended — process any final partial frame.
+        buf += decoder.decode();
+        flushBufferedEvents();
       } catch (err) {
-        const errText = `AI Tutor error: ${(err as Error).message}`;
+        if (ac.signal.aborted || userStoppedRef.current) {
+          finalizeStopped(pendingId, accumulated);
+          setSending(false);
+          streamAbortRef.current = null;
+          return;
+        }
+        setBubbleError(`AI Tutor error: ${(err as Error).message}`);
+        setSending(false);
+        streamAbortRef.current = null;
+        return;
+      }
+
+      if (userStoppedRef.current) {
+        finalizeStopped(pendingId, accumulated);
+      } else if (receivedError !== null) {
+        setBubbleError(receivedError);
+      } else if (receivedDone || accumulated.length > 0) {
+        const finalText = accumulated;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingId
-              ? { id: pendingId, role: 'error', text: errText }
+              ? { id: pendingId, role: 'assistant', text: finalText }
               : m,
           ),
         );
-      } finally {
-        setSending(false);
+      } else {
+        setBubbleError('AI Tutor error: no response');
       }
+      setSending(false);
+      streamAbortRef.current = null;
     })();
-  }, [activeSectionId, courseSlug, draft, draftKey, lessonSlug, messages, sending]);
+  }, [activeSectionId, courseSlug, draft, draftKey, finalizeStopped, lessonSlug, messages, sending]);
+
+  const handleStop = useCallback(() => {
+    if (!sending) return;
+    userStoppedRef.current = true;
+    const ac = streamAbortRef.current;
+    const requestId = currentRequestIdRef.current;
+    if (ac) ac.abort();
+    if (requestId) {
+      void fetch(`/api/lesson-chat/${encodeURIComponent(requestId)}`, {
+        method: 'DELETE',
+      }).catch(() => {
+        // server-side cancel is best-effort; client already aborted the read.
+      });
+    }
+  }, [sending]);
 
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -330,6 +476,7 @@ export function LessonChat({
       data-active-section-id={activeSectionId ?? ''}
       style={asideStyle}
     >
+      <style>{lessonChatGlobalKeyframes}</style>
       <header style={headerStyle}>
         <h2 style={titleStyle}>AI Tutor</h2>
         <button
@@ -360,15 +507,28 @@ export function LessonChat({
               let bubbleStyle: CSSProperties = assistantBubbleStyle;
               if (m.role === 'user') bubbleStyle = userBubbleStyle;
               else if (m.role === 'error') bubbleStyle = errorBubbleStyle;
+              const showTypingDots = m.pending && m.text.length === 0;
               return (
                 <li
                   key={m.id}
                   data-role={m.role}
                   data-pending={m.pending ? 'true' : undefined}
+                  data-stopped={m.stopped ? 'true' : undefined}
                   style={rowStyle}
                 >
                   <div style={bubbleStyle}>
-                    {m.pending ? <TypingDots /> : m.text}
+                    {showTypingDots ? <TypingDots /> : m.text}
+                    {m.stopped ? (
+                      <>
+                        {'\n'}
+                        <span
+                          data-testid="lesson-chat-stopped-suffix"
+                          style={stoppedSuffixStyle}
+                        >
+                          {STOPPED_SUFFIX}
+                        </span>
+                      </>
+                    ) : null}
                   </div>
                 </li>
               );
@@ -396,8 +556,9 @@ export function LessonChat({
               type="button"
               data-testid="lesson-chat-stop"
               aria-label="Stop response"
-              disabled
-              style={stopBtnStyle}
+              disabled={!sending}
+              onClick={handleStop}
+              style={sending ? stopBtnActiveStyle : stopBtnStyle}
             >
               <Square size={12} strokeWidth={2} />
             </button>
@@ -550,6 +711,14 @@ const errorBubbleStyle: CSSProperties = {
   wordBreak: 'break-word',
 };
 
+const stoppedSuffixStyle: CSSProperties = {
+  display: 'block',
+  fontStyle: 'italic',
+  color: 'var(--text-tertiary)',
+  fontSize: 'var(--fs-sm)',
+  marginTop: 4,
+};
+
 function TypingDots() {
   return (
     <span
@@ -560,7 +729,6 @@ function TypingDots() {
       <span style={{ ...typingDotStyle, animationDelay: '0ms' }} />
       <span style={{ ...typingDotStyle, animationDelay: '150ms' }} />
       <span style={{ ...typingDotStyle, animationDelay: '300ms' }} />
-      <style>{typingKeyframes}</style>
     </span>
   );
 }
@@ -583,7 +751,7 @@ const typingDotStyle: CSSProperties = {
   animation: 'lesson-chat-typing-bounce 1s infinite ease-in-out',
 };
 
-const typingKeyframes = `
+const lessonChatGlobalKeyframes = `
 @keyframes lesson-chat-typing-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
@@ -650,6 +818,15 @@ const stopBtnStyle: CSSProperties = {
   color: 'var(--text-quaternary)',
   cursor: 'not-allowed',
   opacity: 0.6,
+};
+
+const stopBtnActiveStyle: CSSProperties = {
+  ...stopBtnStyle,
+  borderColor: 'var(--border-strong)',
+  background: 'var(--bg)',
+  color: 'var(--text)',
+  cursor: 'pointer',
+  opacity: 1,
 };
 
 const sendBtnBase: CSSProperties = {
