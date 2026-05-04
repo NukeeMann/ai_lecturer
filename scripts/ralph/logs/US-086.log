@@ -1,0 +1,22 @@
+[2026-05-04T20:33:43+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:37:37+0200] Found the bug: `courses/pexp-test/lessons/value-mode.json` declares `outputType: "plot"` but the lesson is titled "Value output" with renderCode `result = x * x`. The widget never enters value-output mode, so no number renders. Plan: fix the JSON, add a stable `parametric-value-output` test selector, extract a small `formatValueOutput` helper for unit testing, and write a JSON regression test that fails before the JSON fix.
+[2026-05-04T20:37:56+0200] Now let me verify the failing-before-fix proof by running the test on the current (pre-fix) state.
+[2026-05-04T20:38:02+0200] Test fails before fix as required. Now apply the fix.
+[2026-05-04T20:38:06+0200] Now wire the helper + add the stable `parametric-value-output` test selector to the widget.
+[2026-05-04T20:38:25+0200] Run typecheck and tests to confirm the fix is clean before browser verification.
+[2026-05-04T20:38:49+0200] Tests pass, typecheck clean. Now run the full test suite to confirm nothing else regressed.
+[2026-05-04T20:39:00+0200] All 355 tests pass. Now browser-verify with playwright.
+[2026-05-04T20:44:35+0200] All browser checks passed:
+- value-mode initial value `9` (x=3, x*x) renders
+- Slider moved to 5 → value updates to `25`
+- Plot panel correctly hidden in `outputType="value"`
+- plot-mode lesson still renders the plot image
+[2026-05-04T20:45:19+0200] Clean — no lint issues in my edited files. The pre-existing lint errors are unrelated.
+
+Now flip `passes` for US-086, append progress, and commit.
+[2026-05-04T20:46:29+0200] Commit landed in HEAD with `US-086 passes = True`.
+
+US-086 fixed and committed (`7a1aa0e`). Root cause was that `courses/pexp-test/lessons/value-mode.json` declared `outputType: "plot"` despite the lesson being titled "Value output", so the widget rendered the plot branch (no figure → "Rendering…" placeholder) instead of the value branch. Changed `outputType` to `"value"`, added stable `data-testid="parametric-value-output"` on the value div, extracted the formatting logic into a pure `formatValueOutput` helper, and added 10 vitest cases including a JSON regression test that fails before the fix. Playwright verified x=3 → 9 renders, slider to 5 → 25 updates reactively, plot-mode lesson unaffected. Typecheck clean, all 355 tests pass.
+[2026-05-04T20:46:29+0200] [result success turns=69 cost=$4.06401775] Commit landed in HEAD with `US-086 passes = True`.
+
+US-086 fixed and committed (`7a1aa0e`). Root cause was that `courses/pexp-test/lessons/value-mode.json` declared `outputType: "plot"` despite the lesson being titled "Value output", so the widget rendered the plot branch (no figure → "Rendering…" placeholder) instead of the value branch. Changed `outputType` to `"value"`, added stable `data-testid="parametric-value-output"` on the value div, extracted the formatting logic into a pure `formatValueOutput` helper, and added 10 vitest cases including a JSON regression test that fails before the fix. Playwright verified x=3 → 9 renders, slider to 5 → 25 updates reactively, plot-mode lesson unaffected. Typecheck clean, all 355 tests pass.

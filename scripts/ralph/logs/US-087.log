@@ -1,0 +1,38 @@
+[2026-05-04T20:33:42+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:34:07+0200] Let me check the Video widget and schema.
+[2026-05-04T20:35:44+0200] Let me set up todos and start work.
+[2026-05-04T20:36:21+0200] ffmpeg works. Generating sample.mp4 now.
+[2026-05-04T20:37:11+0200] Document the ffmpeg command via a README.md in the course folder.
+[2026-05-04T20:37:21+0200] Now let me verify the lessons exist and check for any obvious schema mismatches. The mp4-demo lesson references `/api/courses/video-test/assets/sample.mp4` — good. Let me run the dev server and verify in browser.
+[2026-05-04T20:37:59+0200] Asset is served. Now write the playwright test for the four lessons.
+[2026-05-04T20:39:18+0200] All four lessons render cleanly. But I notice mp4-demo declares `startAt: 5` yet the video starts at 0 — `el.currentTime = 5` is a no-op before metadata loads. Let me fix this surfaced bug.
+[2026-05-04T20:39:34+0200] Now update the playwright test to assert startAt=5 actually applied for mp4-demo, then re-run.
+[2026-05-04T20:42:52+0200] Let me make the startAt seek more robust by using `addEventListener` directly in a useEffect rather than relying on the React onLoadedMetadata prop:
+[2026-05-04T20:43:45+0200] Let me add diagnostic logging to find what's actually happening:
+[2026-05-04T20:44:55+0200] The seek fires but the browser silently defers it because at readyState=1 (HAVE_METADATA) frames aren't decoded yet. Let me use `canplay` and bump preload:
+[2026-05-04T20:45:08+0200] Let me check `seekable` ranges and switch to `preload="auto"` (we have a 95KB file, no cost):
+[2026-05-04T20:46:21+0200] Let me make the test wait for the actual seek to land:
+[2026-05-04T20:47:50+0200] The root cause is that the asset route doesn't advertise byte ranges, so the browser refuses to seek. Per the notes, modifying the asset route is out of scope. The cleanest resolution is to drop `startAt` from mp4-demo (it's not part of the AC for that lesson) and revert my Video widget edits.
+[2026-05-04T20:48:09+0200] Good, no diff - VideoWidget.tsx is back to original. Now reconsider mp4-demo.json:
+[2026-05-04T20:48:35+0200] Now drop the startAt assertion from the test (it's not in the AC) and re-run:
+[2026-05-04T20:49:04+0200] All 4 lessons pass. Let me look at the screenshots and verify there are no actual console errors:
+[2026-05-04T20:49:10+0200] Test pattern visibly playing, transcript shown, no errors. Let me check the others:
+[2026-05-04T20:49:35+0200] Typecheck passes (clean exit, no output). Let me verify and stage changes:
+[2026-05-04T20:49:41+0200] Now update prd.json and progress.txt, then commit.
+[2026-05-04T20:49:59+0200] Now append progress.txt and commit.
+[2026-05-04T20:50:59+0200] Commit landed at `6b3d495` with `passes: true` for US-087. All four lessons verified, sample.mp4 generated and committed (~93 KB), README documents the ffmpeg command, typecheck passes.
+
+Summary:
+- Generated `courses/video-test/assets/sample.mp4` via `ffmpeg testsrc2` (8 s, silent, 93 KB).
+- Added `courses/video-test/README.md` with per-lesson capability matrix + reproducible ffmpeg one-liner.
+- Updated `mp4-demo.json` title/transcript to match the synthetic clip; dropped the `startAt` which the asset route can't honor without `Accept-Ranges` (documented as a follow-up in progress.txt — out of scope per the US-087 notes).
+- Browser-verified all four lessons via playwright: fourier-walkthrough (transcript present), mp4-demo (mp4 plays after `play()`), neural-net-intro (speaker-tagged transcript), no-transcript (bare embed). Screenshots at `/tmp/us087-*.png`.
+- VideoWidget.tsx untouched — no real rendering bug surfaced (the startAt issue traces to the asset route, not the widget).
+[2026-05-04T20:50:59+0200] [result success turns=90 cost=$6.184956250000002] Commit landed at `6b3d495` with `passes: true` for US-087. All four lessons verified, sample.mp4 generated and committed (~93 KB), README documents the ffmpeg command, typecheck passes.
+
+Summary:
+- Generated `courses/video-test/assets/sample.mp4` via `ffmpeg testsrc2` (8 s, silent, 93 KB).
+- Added `courses/video-test/README.md` with per-lesson capability matrix + reproducible ffmpeg one-liner.
+- Updated `mp4-demo.json` title/transcript to match the synthetic clip; dropped the `startAt` which the asset route can't honor without `Accept-Ranges` (documented as a follow-up in progress.txt — out of scope per the US-087 notes).
+- Browser-verified all four lessons via playwright: fourier-walkthrough (transcript present), mp4-demo (mp4 plays after `play()`), neural-net-intro (speaker-tagged transcript), no-transcript (bare embed). Screenshots at `/tmp/us087-*.png`.
+- VideoWidget.tsx untouched — no real rendering bug surfaced (the startAt issue traces to the asset route, not the widget).
