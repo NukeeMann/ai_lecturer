@@ -28,6 +28,12 @@ import {
   type CodeClozeData,
   type CodeClozeSlot,
 } from './schema';
+import {
+  commentPrefix,
+  formatFeedbackComment,
+  groupSegmentsIntoLines,
+  lineHasExistingComment,
+} from './feedbackComment';
 
 export interface CodeClozeProgressKey {
   courseSlug: string;
@@ -284,18 +290,14 @@ function slotBackground(state: SlotState): string {
 }
 
 const slotIconStyle: CSSProperties = {
+  display: 'inline-block',
   marginLeft: 4,
   verticalAlign: 'middle',
 };
 
-const slotHintStyle: CSSProperties = {
-  display: 'block',
-  marginTop: 4,
-  fontFamily: 'var(--font-sans)',
-  fontSize: 'var(--fs-xs)',
-  color: 'var(--danger)',
-  fontStyle: 'normal',
-  lineHeight: 1.4,
+const feedbackCommentStyle: CSSProperties = {
+  color: 'var(--code-comment)',
+  fontStyle: 'italic',
 };
 
 const footerStyle: CSSProperties = {
@@ -376,7 +378,6 @@ interface SlotInputProps {
   slot: CodeClozeSlot;
   value: string;
   state: SlotState;
-  showHint: boolean;
   disabled: boolean;
   onChange: (slotId: string, value: string) => void;
   onBlur: (slotId: string) => void;
@@ -386,7 +387,6 @@ function SlotInput({
   slot,
   value,
   state,
-  showHint,
   disabled,
   onChange,
   onBlur,
@@ -401,7 +401,13 @@ function SlotInput({
   };
 
   return (
-    <span style={{ display: 'inline-block', verticalAlign: 'baseline' }}>
+    <span
+      style={{
+        display: 'inline-block',
+        verticalAlign: 'baseline',
+        whiteSpace: 'nowrap',
+      }}
+    >
       <input
         type="text"
         spellCheck={false}
@@ -423,6 +429,8 @@ function SlotInput({
           size={12}
           aria-hidden
           strokeWidth={2.5}
+          data-testid={`cloze-slot-icon-${slot.id}`}
+          data-icon="correct"
           style={{ ...slotIconStyle, color: 'var(--success)' }}
         />
       )}
@@ -431,13 +439,10 @@ function SlotInput({
           size={12}
           aria-hidden
           strokeWidth={2.5}
+          data-testid={`cloze-slot-icon-${slot.id}`}
+          data-icon="incorrect"
           style={{ ...slotIconStyle, color: 'var(--danger)' }}
         />
-      )}
-      {state === 'incorrect' && showHint && slot.hint && (
-        <span data-testid={`cloze-slot-hint-${slot.id}`} style={slotHintStyle}>
-          {slot.hint}
-        </span>
       )}
     </span>
   );
@@ -450,6 +455,8 @@ export function CodeClozeWidget({
 }: CodeClozeWidgetProps) {
   const data = useMemo(() => CodeClozeDataSchema.parse(rawData), [rawData]);
   const segments = useMemo(() => parseTemplate(data.template), [data.template]);
+  const lines = useMemo(() => groupSegmentsIntoLines(segments), [segments]);
+  const langPrefix = useMemo(() => commentPrefix(data.language), [data.language]);
 
   const slotById = useMemo(() => {
     const m = new Map<string, CodeClozeSlot>();
@@ -612,37 +619,68 @@ export function CodeClozeWidget({
       )}
 
       <pre data-cloze-template style={codeBlockStyle}>
-        {segments.map((seg, idx) => {
-          if (seg.kind === 'text') {
-            return (
-              <span key={`t-${idx}`} data-cloze-text>
-                {renderHighlighted(seg.content, `t-${idx}`)}
-              </span>
-            );
+        {lines.map((lineSegs, lineIdx) => {
+          const errorHints: string[] = [];
+          for (const seg of lineSegs) {
+            if (seg.kind !== 'slot') continue;
+            const slot = slotById.get(seg.slotId);
+            if (!slot) continue;
+            if ((slotStates[seg.slotId] ?? 'idle') !== 'incorrect') continue;
+            if (!slot.hint) continue;
+            errorHints.push(slot.hint);
           }
-          const slot = slotById.get(seg.slotId);
-          if (!slot) {
-            return (
-              <span
-                key={`s-${idx}`}
-                data-cloze-missing-slot
-                style={{ color: 'var(--danger)', fontStyle: 'italic' }}
-              >
-                {`{{${seg.slotId}}}`}
-              </span>
-            );
-          }
+          const hasComment = lineHasExistingComment(lineSegs, langPrefix);
+          const feedback = formatFeedbackComment(
+            errorHints,
+            langPrefix,
+            hasComment,
+          );
+          const isLastLine = lineIdx === lines.length - 1;
           return (
-            <SlotInput
-              key={`s-${idx}-${slot.id}`}
-              slot={slot}
-              value={values[slot.id] ?? ''}
-              state={slotStates[slot.id] ?? 'idle'}
-              showHint={(slotStates[slot.id] ?? 'idle') === 'incorrect'}
-              disabled={submission === 'pass'}
-              onChange={handleChange}
-              onBlur={handleBlur}
-            />
+            <span key={`line-${lineIdx}`} data-cloze-line data-line-index={lineIdx}>
+              {lineSegs.map((seg, idx) => {
+                if (seg.kind === 'text') {
+                  return (
+                    <span key={`l-${lineIdx}-t-${idx}`} data-cloze-text>
+                      {renderHighlighted(seg.content, `l-${lineIdx}-t-${idx}`)}
+                    </span>
+                  );
+                }
+                const slot = slotById.get(seg.slotId);
+                if (!slot) {
+                  return (
+                    <span
+                      key={`l-${lineIdx}-s-${idx}`}
+                      data-cloze-missing-slot
+                      style={{ color: 'var(--danger)', fontStyle: 'italic' }}
+                    >
+                      {`{{${seg.slotId}}}`}
+                    </span>
+                  );
+                }
+                return (
+                  <SlotInput
+                    key={`l-${lineIdx}-s-${idx}-${slot.id}`}
+                    slot={slot}
+                    value={values[slot.id] ?? ''}
+                    state={slotStates[slot.id] ?? 'idle'}
+                    disabled={submission === 'pass'}
+                    onChange={handleChange}
+                    onBlur={handleBlur}
+                  />
+                );
+              })}
+              {feedback && (
+                <span
+                  data-testid={`cloze-line-feedback-${lineIdx}`}
+                  data-cloze-feedback
+                  style={feedbackCommentStyle}
+                >
+                  {feedback}
+                </span>
+              )}
+              {!isLastLine && '\n'}
+            </span>
           );
         })}
       </pre>
