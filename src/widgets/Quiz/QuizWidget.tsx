@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo, useState, type CSSProperties } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, X } from 'lucide-react';
+
+import { Confetti } from '@/components/Confetti';
 
 import type { QuizData } from './schema';
 import {
@@ -11,9 +13,26 @@ import {
   type OptionState,
 } from './optionState';
 
+export interface QuizProgressKey {
+  courseSlug: string;
+  lessonSlug: string;
+  sectionId: string;
+}
+
 export interface QuizWidgetProps {
   data: QuizData;
   onCorrect?: () => void;
+  /**
+   * When true, the widget was already completed before this mount (e.g. user is
+   * re-entering the lesson). Suppresses the success confetti burst on the next
+   * correct submission so animations only celebrate first-time wins.
+   */
+  alreadyCompleted?: boolean;
+  /**
+   * When provided, the widget persists `{ done: true }` on first correct
+   * submission so the lesson page can detect completion across reloads.
+   */
+  progressKey?: QuizProgressKey;
 }
 
 const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
@@ -103,11 +122,19 @@ function setsEqual(a: number[], b: number[]): boolean {
   return a.every((x) => setB.has(x));
 }
 
-export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
+export function QuizWidget({
+  data,
+  onCorrect,
+  alreadyCompleted,
+  progressKey,
+}: QuizWidgetProps) {
   const [selected, setSelected] = useState<number[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [everSubmitted, setEverSubmitted] = useState(false);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const confettiOriginRef = useRef<HTMLDivElement | null>(null);
+  const confettiFiredRef = useRef(false);
 
   const correctSet = useMemo(() => new Set(data.correct), [data.correct]);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -129,6 +156,13 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
     setEverSubmitted(true);
     if (setsEqual(selected, data.correct)) {
       onCorrect?.();
+      if (progressKey) {
+        void patchQuizDone(progressKey);
+      }
+      if (!alreadyCompleted && !confettiFiredRef.current) {
+        confettiFiredRef.current = true;
+        setConfettiTrigger((n) => n + 1);
+      }
     }
   }
 
@@ -209,7 +243,8 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
       };
 
   return (
-    <div data-quiz-body style={bodyStyle}>
+    <div data-quiz-body style={bodyStyle} ref={confettiOriginRef}>
+      <Confetti trigger={confettiTrigger} originRef={confettiOriginRef} />
       <div data-quiz-question style={questionStyle}>
         {data.question}
       </div>
@@ -298,4 +333,20 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
       )}
     </div>
   );
+}
+
+async function patchQuizDone(key: QuizProgressKey): Promise<void> {
+  try {
+    await fetch('/api/progress', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        courseSlug: key.courseSlug,
+        lessonSlug: key.lessonSlug,
+        sectionState: { [key.sectionId]: { done: true } },
+      }),
+    });
+  } catch {
+    // Persistence is non-fatal — UI still reflects success in-session.
+  }
 }

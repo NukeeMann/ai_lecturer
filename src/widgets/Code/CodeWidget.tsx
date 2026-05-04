@@ -16,6 +16,7 @@ import { syntaxHighlighting } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 
 import { Callout } from '@/components/Callout';
+import { Confetti } from '@/components/Confetti';
 import {
   PyodideStopError,
   usePyodide,
@@ -36,6 +37,12 @@ export interface CodeWidgetProps {
   initialCode?: string;
   progressKey?: CodeRunnerProgressKey;
   onComplete?: () => void;
+  /**
+   * When true, this widget was already passed before this mount (re-entering a
+   * completed lesson). Suppresses the success confetti on subsequent passes so
+   * animations only fire on the first-time win.
+   */
+  alreadyCompleted?: boolean;
 }
 
 type SubmissionState = 'idle' | 'submitting' | 'submitted-pass' | 'submitted-fail';
@@ -499,6 +506,7 @@ export function CodeWidget({
   initialCode,
   progressKey,
   onComplete,
+  alreadyCompleted,
 }: CodeWidgetProps) {
   const { status, runWithTests } = usePyodide();
 
@@ -514,6 +522,9 @@ export function CodeWidget({
   const [tracebackOpen, setTracebackOpen] = useState(false);
   const [submission, setSubmission] = useState<SubmissionState>('idle');
   const [solutionOpen, setSolutionOpen] = useState(false);
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const confettiOriginRef = useRef<HTMLDivElement | null>(null);
+  const confettiFiredRef = useRef(false);
   const solutionPanelId = useId();
 
   const onCompleteRef = useRef(onComplete);
@@ -573,6 +584,10 @@ export function CodeWidget({
           void patchSectionDone(progressKey, code);
         }
         onCompleteRef.current?.();
+        if (!alreadyCompleted && !confettiFiredRef.current) {
+          confettiFiredRef.current = true;
+          setConfettiTrigger((n) => n + 1);
+        }
       } else {
         setSubmission('submitted-fail');
       }
@@ -606,7 +621,7 @@ export function CodeWidget({
       );
       setSubmission('submitted-fail');
     }
-  }, [code, data.tests, runWithTests, status, submission, progressKey]);
+  }, [code, data.tests, runWithTests, status, submission, progressKey, alreadyCompleted]);
 
   const handleReset = useCallback(() => {
     setResults(null);
@@ -800,17 +815,20 @@ export function CodeWidget({
   );
 
   return (
-    <CodeRunner
-      starterCode={data.starterCode}
-      initialCode={initialCode}
-      progressKey={progressKey}
-      onCodeChange={setCode}
-      onReset={handleReset}
-      extraPanel={extraPanel}
-      primaryAction={tests.length > 0 ? primaryAction : undefined}
-      outputPlaceholder={placeholder}
-      actionRunning={submission === 'submitting'}
-    />
+    <div ref={confettiOriginRef} data-codewidget-root>
+      <Confetti trigger={confettiTrigger} originRef={confettiOriginRef} />
+      <CodeRunner
+        starterCode={data.starterCode}
+        initialCode={initialCode}
+        progressKey={progressKey}
+        onCodeChange={setCode}
+        onReset={handleReset}
+        extraPanel={extraPanel}
+        primaryAction={tests.length > 0 ? primaryAction : undefined}
+        outputPlaceholder={placeholder}
+        actionRunning={submission === 'submitting'}
+      />
+    </div>
   );
 }
 
