@@ -13,9 +13,19 @@ You are an autonomous coding agent working on a software project.
 7. Update CLAUDE.md files if you discover reusable patterns (see below)
 8. Append your progress to `scripts/ralph/progress.txt`
 9. **Mark the story as done in prd.json**: open `prd.json`, find your story by `id`, set its `passes` field to `true`. Touch ONLY your own story — do not modify any other story's fields.
-10. Stage everything (your code changes, `prd.json`, `progress.txt`, and any updated CLAUDE.md files) and commit with message: `feat: [Story ID] - [Story Title]`. The orchestrator handles `git push`.
+10. **Commit BEFORE any cleanup.** Stage everything (your code changes, `prd.json`, `progress.txt`, and any updated CLAUDE.md files) and commit with message: `feat: [Story ID] - [Story Title]`. The orchestrator handles `git push`. Do NOT stop the dev server, kill playwright, or run any other process teardown until this commit has landed in HEAD.
+11. Only after the commit is in HEAD: if you must stop a dev server you started, kill it by the exact PID you captured at start time (`kill <pid>`). Then exit.
 
 **Success signal: the orchestrator decides your task succeeded ONLY by reading `prd.json` from your latest commit and confirming `passes == true` for your story.** If you commit feature work but forget to flip `passes`, the orchestrator treats the run as a failure and discards the worktree. Conversely, if you flip `passes` but forget to commit it, nothing is pushed and the run still fails. Both must land in the same commit (or at least both must be in HEAD before the agent exits).
+
+### Process teardown — DO NOT kill yourself
+
+You run inside a `node` process (the claude-code CLI). If you run a broad signal targeting `node`, you will kill *yourself* mid-run, before your commit lands, and the orchestrator will treat the task as failed.
+
+- NEVER use `pkill -f node`, `pkill -f next`, `killall node`, `kill 0`, or `kill -- -<pgid>`. They reach this process.
+- When you start a dev server or any long-running child, capture its PID immediately (`pnpm dev & echo $!`) and only ever `kill <pid>` against that specific PID.
+- Better: commit first, then exit without killing anything. The orchestrator tears down the worktree and stragglers; you do not need to clean up child processes for correctness.
+- After emitting your final success summary, exit immediately. Do not run extra "let me double-check" turns — they only risk new failures and burn the timeout budget.
 
 ## Progress Report Format
 
@@ -121,6 +131,21 @@ The playwright-skill is located at `scripts/ralph/skills/playwright-skill/` in t
 - No dev server can be started (note in progress report)
 
 Include test results and screenshot paths in your progress report.
+
+### Stopping the dev server safely
+
+If you started a dev server for browser testing, **finish your commit first** (step 10 above), then — only if you really need to stop it before exiting — kill it by its specific PID. Never use `pkill`, `killall`, or process-group kills: those will terminate the claude-code CLI you are running inside, mid-step, and the orchestrator will discard the worktree.
+
+```bash
+# Start: capture the PID
+pnpm dev > /tmp/devserver-<story-id>.log 2>&1 &
+DEV_PID=$!
+
+# Stop (after commit): targeted, by PID only
+kill "$DEV_PID" 2>/dev/null || true
+```
+
+If in doubt, just exit after committing — the orchestrator removes the worktree and any leftover children.
 
 ## Important
 
