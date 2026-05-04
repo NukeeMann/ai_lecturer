@@ -77,4 +77,25 @@ Previous log archived to: archive/progress-2026-05-04-2004.txt
   - Markdown ordered lists auto-renumber via `1. 2. 3.` syntax — but the body of an item that says "See Step 4 for the full rules" refers to a `## Step 4: Source Research` *section heading*, not the list-item ordinal. When inserting a new list item, you do NOT need to rewrite those cross-references; the section headings stay put. Avoid renumbering bullets unless the section headings themselves change.
   - For an anchor in `scripts/ralph/skills/<skill>/SKILL.md` pointing at the repo-root `docs/widgets.md`, the relative path is `../../../../docs/widgets.md` (4 levels up: `<skill>/` → `skills/` → `ralph/` → `scripts/` → repo root).
   - One-shot Zod validation against a doc's example JSON: easiest is `npx tsx scripts/<file>.ts` from the project root with `@/...` imports — `tsx` honours `tsconfig.json`'s `paths` aliases out of the box. Plain `node` ESM with relative `.ts` paths chokes on the export discovery (saw "does not provide an export named X" for valid named exports).
+
+## 2026-05-04 - US-086 - ParametricExplorer value-output mode renders nothing
+- Root cause: `courses/pexp-test/lessons/value-mode.json` declared `outputType: "plot"` (not `"value"`). The widget therefore took the plot branch and showed the "Rendering…" placeholder forever — `renderCode` was `result = x * x` with no `plt.plot(...)` call, so no figure was produced and no number was shown either.
+- Fix: changed `outputType` from `"plot"` to `"value"` in `courses/pexp-test/lessons/value-mode.json`. Plot-mode lesson (`plot-mode.json`) keeps `outputType: "both"` and was browser-verified unaffected.
+- Test selector: per AC, the value div now uses `data-testid="parametric-value-output"` (replacing the old `pexp-value`, which had no external references). The slider param value display still uses `data-testid="pexp-value-${param.name}"` — separate selector, untouched.
+- Refactor: extracted the value-formatting `useMemo` body into a pure helper `formatValueOutput(raw)` at `src/widgets/ParametricExplorer/formatValue.ts`. Same semantics, but now unit-testable.
+- Failing-before-fix proof: `src/widgets/ParametricExplorer/formatValue.test.ts` includes a `pexp-test/value-mode lesson` describe-block that asserts `outputType === 'value'`. Before the JSON edit it failed with `expected 'plot' to be 'value'`; after the edit, all 10 cases pass.
+- Browser verify: `/tmp/playwright-test-US-086.js` against the dev server on :3001 (port 3000 was held by a stale server). Goes to value-mode → asserts `[data-testid="parametric-value-output"]` shows `9` (default x=3, x*x=9), then drives the slider to 5 via the React-aware native-setter pattern and asserts the readout updates to `25`. Confirms `pexp-plot` / `pexp-plot-placeholder` are NOT in the DOM in value-only mode. Then re-navigates to plot-mode and asserts `[data-testid="pexp-plot"]` is present (regression guard for AC #4). All checks passed.
+- Files changed:
+  - src/widgets/ParametricExplorer/formatValue.ts (NEW, +24)
+  - src/widgets/ParametricExplorer/formatValue.test.ts (NEW, +66)
+  - src/widgets/ParametricExplorer/ParametricExplorerWidget.tsx (-13/+8: imports helper, replaces useMemo body, swaps testid + adds `data-pexp-value` mirror attr)
+  - courses/pexp-test/lessons/value-mode.json (outputType plot → value)
+  - scripts/ralph/prd.json (passes flip)
+  - scripts/ralph/progress.txt
+- Typecheck passes; full vitest suite 355/355 passes.
+- **Learnings for future iterations:**
+  - When the dev server reports `Port 3000 is in use … using available port 3001 instead`, a stale Next dev server from a prior iteration is still bound to 3000. `curl :3000/...` will return 200 against the stale tree, masking your changes — always check `tail /tmp/devserver-<story>.log` for the port assignment before pointing playwright at a hardcoded URL. Don't `pkill -f node` (would self-terminate); just use the new port the orchestrator hands you.
+  - "Render" tests that need DOM are unreachable from this repo's vitest setup (env: `node`, no jsdom/RTL). For UI-bug stories whose failing-before-fix proof wants a DOM assertion, the practical pattern is: (a) extract the rendering helper into a pure function and unit-test that, AND (b) lock the lesson/fixture configuration in a JSON regression test that fails before the fix. Together they give the same protection as a render test plus a config-drift catcher.
+  - The `pexp-value` testid was a private widget convention — only referenced inside the widget file. Renames across single-file selectors are safe with one grep. (Different story for `pexp-plot` / `pexp-slider-${name}`, which playwright tests in `/tmp/playwright-test-US-*.js` rely on.)
+  - In `formatValueOutput`, the JSON `null` branch returns the em-dash `'—'` rather than `null`, so an explicit Python `result = None` still renders as a visible placeholder in the value panel. Worth preserving as widget-level UX.
 ---
