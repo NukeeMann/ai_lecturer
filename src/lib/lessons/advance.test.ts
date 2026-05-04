@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   areAllSectionsDone,
+  buildAutoAdvancePatch,
   countDoneSections,
   isSectionDone,
   pathForAdvanceTarget,
@@ -142,6 +143,66 @@ describe('resolveAdvanceTarget (US-067)', () => {
   it('returns my-courses when the lesson slug is unknown', () => {
     expect(resolveAdvanceTarget(courseTwoModules, 'missing')).toEqual({
       kind: 'my-courses',
+    });
+  });
+});
+
+describe('buildAutoAdvancePatch (US-081)', () => {
+  it('marks status finished and persists every live-auto-done section as done', () => {
+    expect(
+      buildAutoAdvancePatch(
+        [{ id: 's1' }, { id: 's2' }],
+        { liveAutoDone: { s1: true, s2: true } },
+      ),
+    ).toEqual({
+      status: 'finished',
+      sectionState: { s1: { done: true }, s2: { done: true } },
+    });
+  });
+
+  it('skips sections whose persisted done flag is already true', () => {
+    expect(
+      buildAutoAdvancePatch(
+        [{ id: 's1' }, { id: 's2' }],
+        {
+          persistedSectionState: { s1: { done: true } },
+          liveAutoDone: { s2: true },
+        },
+      ),
+    ).toEqual({
+      status: 'finished',
+      sectionState: { s2: { done: true } },
+    });
+  });
+
+  it('persists manuallyCompleted sections that have no persisted done yet', () => {
+    expect(
+      buildAutoAdvancePatch([{ id: 's1' }], {
+        manuallyCompleted: { s1: true },
+      }),
+    ).toEqual({
+      status: 'finished',
+      sectionState: { s1: { done: true } },
+    });
+  });
+
+  it('returns status:finished with empty sectionState when nothing needs patching', () => {
+    expect(
+      buildAutoAdvancePatch([{ id: 's1' }], {
+        persistedSectionState: { s1: { done: true } },
+      }),
+    ).toEqual({ status: 'finished', sectionState: {} });
+  });
+
+  it('does not include sections that are not done by any source', () => {
+    expect(
+      buildAutoAdvancePatch(
+        [{ id: 's1' }, { id: 's2' }],
+        { liveAutoDone: { s1: true } },
+      ),
+    ).toEqual({
+      status: 'finished',
+      sectionState: { s1: { done: true } },
     });
   });
 });

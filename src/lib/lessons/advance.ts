@@ -38,6 +38,35 @@ export function countDoneSections(
   return { total, done };
 }
 
+export type AutoAdvancePersistencePatch = {
+  status: 'finished';
+  sectionState: Record<string, { done: true }>;
+};
+
+/**
+ * Computes the per-lesson progress patch to send when the auto-advance handler
+ * fires (US-081). Marks the lesson `finished` and ensures every section that
+ * is currently considered done — by any in-memory source — is persisted with
+ * `done: true`, so re-entering the lesson keeps the completed state. Sections
+ * already persisted as done are skipped to avoid redundant writes.
+ */
+export function buildAutoAdvancePatch(
+  sections: ReadonlyArray<{ id: string }>,
+  flags: SectionDoneFlags,
+): AutoAdvancePersistencePatch {
+  const sectionState: Record<string, { done: true }> = {};
+  for (const s of sections) {
+    if (flags.persistedSectionState?.[s.id]?.done === true) continue;
+    if (
+      flags.liveAutoDone?.[s.id] === true ||
+      flags.manuallyCompleted?.[s.id] === true
+    ) {
+      sectionState[s.id] = { done: true };
+    }
+  }
+  return { status: 'finished', sectionState };
+}
+
 export type AdvanceTarget =
   | { kind: 'next-lesson'; courseSlug: string; lessonSlug: string }
   | { kind: 'my-courses' };
