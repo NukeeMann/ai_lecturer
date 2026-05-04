@@ -607,6 +607,232 @@ VALIDATE_CMD: ${VALIDATE_CMD:-(unset)}"
 }
 
 # ============================================================================
+# Conflict Resolver: narrow Sonnet finisher invoked when merge_tasks hits a
+# real source conflict (a file outside the auto-resolvable allowlist). Runs
+# in REPO_ROOT against the in-progress merge state, attempts to combine both
+# sides, and completes the merge with a NEW commit. If it cannot resolve
+# cleanly it exits without committing — merge_tasks then aborts the merge and
+# falls back to the existing retry path.
+#
+# Returns 0 only when the merge was completed (MERGE_HEAD gone, new commit
+# referencing $task_id reachable from HEAD). Otherwise 1 — caller aborts.
+# ============================================================================
+
+run_conflict_resolver() {
+  local task_id="$1"
+  local branch="$2"
+  local conflicted_files="$3"
+  # When "true", $PRD_REL was among the conflicted files and was NOT
+  # pre-resolved — the resolver must handle it directly using the rules in
+  # the prompt (preserve other tasks' progress, set passes:true for $task_id).
+  local prd_conflicted="${4:-false}"
+  local resolver_log="$LOG_DIR/${task_id}.conflict_resolver.log"
+
+  cd "$REPO_ROOT"
+
+  if [ ! -f "$REPO_ROOT/.git/MERGE_HEAD" ]; then
+    log_task "$task_id" "conflict resolver skipped (no merge in progress)"
+    return 1
+  fi
+
+  local story_json story_title story_criteria
+  story_json=$(jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\")" "$PRD" 2>/dev/null)
+  story_title=$(echo "$story_json" | jq -r '.title // empty')
+  story_criteria=$(echo "$story_json" | jq -r '
+    if .acceptanceCriteria then
+      if (.acceptanceCriteria | type) == "array" then
+        .acceptanceCriteria | map("- " + .) | join("\n")
+      else .acceptanceCriteria end
+    elif .acceptance_criteria then
+      if (.acceptance_criteria | type) == "array" then
+        .acceptance_criteria | map("- " + .) | join("\n")
+      else .acceptance_criteria end
+    else empty end')
+
+  local validate_hint="${VALIDATE_CMD:-npm run typecheck}"
+
+  # Two prompt fragments swap in/out depending on whether $PRD_REL was
+  # pre-resolved or handed to the resolver. Keeping them as variables avoids
+  # a duplicated prompt template.
+  local pre_resolved_summary prd_rule prd_block
+  if [ "$prd_conflicted" = "true" ]; then
+    pre_resolved_summary="The orchestrator already pre-resolved auto-mergeable lockfiles
+and .gitignore. ${PRD_REL} is in YOUR list — the orchestrator did not pre-resolve it
+because the conflict is on this task's own progress entry."
+    prd_rule="  - DO NOT touch any file that was not in conflict.
+  - You MAY edit $PRD_REL because it IS in conflict (see PRD.JSON RULES below)."
+    prd_block="
+═══════ PRD.JSON RULES (only because $PRD_REL is in conflict) ═══════
+
+$PRD_REL is the orchestrator's source of truth for which stories are done.
+Conflicts here typically mean another ralph branch already marked a different
+story passes:true on $BASE_BRANCH while this branch was in flight.
+
+Resolve $PRD_REL like this:
+  1. Start from the OUR side (\`git show :2:$PRD_REL\` — the $BASE_BRANCH copy)
+     so other tasks' passes:true and any operator edits on base are preserved.
+  2. Set \`passes\` to \`true\` for THIS task ($task_id) — and ONLY this task.
+     Use jq to be safe, e.g.:
+        jq '(.${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes) = true' \\
+           <(git show :2:$PRD_REL) > $PRD_REL
+  3. Do NOT change any other story's \`passes\` value, priority, title, criteria,
+     or any other field. Touch ONLY $task_id's \`passes\`.
+  4. \`git add $PRD_REL\` like any other resolved file."
+  else
+    pre_resolved_summary="The orchestrator already pre-resolved auto-mergeable files (lockfiles,
+prd.json, .gitignore). The remaining conflicts are real source conflicts."
+    prd_rule="  - DO NOT touch any file that was not in conflict.
+  - DO NOT modify $PRD_REL — it was pre-resolved by the orchestrator."
+    prd_block=""
+  fi
+
+  local prompt
+  prompt="You are a merge-conflict resolver agent for Ralph task $task_id ($story_title).
+A merge of branch '$branch' into '$BASE_BRANCH' is IN PROGRESS but has conflicts.
+You are running in the repo root: $REPO_ROOT (on $BASE_BRANCH with MERGE_HEAD set).
+$pre_resolved_summary
+
+YOUR JOB: resolve the remaining conflict markers, stage the resolved files,
+run validation, and complete the merge with a NEW 'git commit'. If you cannot
+resolve cleanly (semantic incompatibility, conflicting intents you cannot
+reconcile), EXIT WITHOUT COMMITTING — the orchestrator will abort the merge
+and retry the task on a fresh base. Do NOT guess.
+
+DO NOT NARRATE. No plans, no 'let me…', no summaries. Tool calls only.
+
+═══════ READ FIRST (no writes yet) ═══════
+
+  - git status                                  (overview, see unmerged files)
+  - git diff --name-only --diff-filter=U        (the files you must resolve)
+  - For each conflicted file:
+      • Read the file (look for <<<<<<<, =======, >>>>>>> markers)
+      • git show :2:<file>   → OUR side ($BASE_BRANCH content)
+      • git show :3:<file>   → THEIR side ($branch content)
+  - git log --oneline $branch ^$BASE_BRANCH -10  (commits being merged in)
+  - git log --oneline $BASE_BRANCH -5            (recent base commits)
+  - $PRD_REL                                     (acceptance criteria for this task)
+
+═══════ DECISION ═══════
+
+Resolve ONLY when you can confidently combine both intents. Examples of
+clean resolution:
+  - Both sides edited adjacent / non-overlapping lines → combine.
+  - Both sides added imports → include both, dedupe.
+  - One side renamed a symbol, the other edited it → apply edit to renamed.
+  - Same logical change duplicated → keep one, drop the other.
+  - One side adds a function, the other edits a different function → keep both.
+
+If conflicts are semantically incompatible — e.g., both sides redefined the
+same function with different signatures, or both sides changed the same
+config in contradictory ways and the right answer isn't obvious from the
+acceptance criteria — EXIT WITH NO COMMIT. The orchestrator falls back to
+retry on a fresh base. Do not invent a 'compromise' that satisfies neither.
+
+═══════ STEPS ═══════
+
+  a. For each unmerged file:
+       • Edit the file to remove ALL conflict markers (<<<<<<<, =======, >>>>>>>)
+       • Combine both sides per the rules above
+  b. git add <each-resolved-file>   (only the files you resolved — not -A)
+  c. Run validation:
+       $validate_hint
+     If validation fails: EXIT WITHOUT COMMITTING. A failing validate means
+     the resolution is broken; let the next Ralph iteration re-implement.
+  d. Complete the merge with a NEW commit (no --amend, no --no-verify):
+       git commit -m \"merge: $task_id resolved by conflict-resolver\"
+  e. DO NOT push. The orchestrator handles the push.
+
+═══════ VERIFY (final tool calls) ═══════
+
+  1. test ! -f $REPO_ROOT/.git/MERGE_HEAD     → must succeed (merge complete)
+  2. git log -1 --format='%s'                  → must contain '$task_id'
+
+If verification fails: ONE fix attempt, then exit. Do not loop.
+
+═══════ HARD RULES ═══════
+
+  - DO NOT 'git merge --abort'. The orchestrator decides aborts.
+  - DO NOT push, checkout other branches, reset, rebase, or amend.
+  - DO NOT introduce new functionality. Resolution only.
+$prd_rule
+  - Hard cap: 5 min wall clock, 30 tool calls. On exceeded: exit cleanly.$prd_block
+
+═══════ CONTEXT ═══════
+
+Task:        $task_id — $story_title
+Branch:      $branch (merging into $BASE_BRANCH)
+Conflicted files (need your resolution):
+$conflicted_files
+
+Acceptance criteria (for tie-breaking when both sides differ):
+$story_criteria
+
+VALIDATE_CMD: ${VALIDATE_CMD:-(unset, fall back to npm run typecheck)}"
+
+  log_task "$task_id" "Running conflict resolver (sonnet, 5min cap)..."
+
+  local exit_code=0
+  # Filter mirrors run_worker's stream-json filter so the resolver log is
+  # human-readable in the same format. See run_worker for the rationale.
+  timeout --foreground 300 \
+    stdbuf -oL claude \
+      --model sonnet \
+      --dangerously-skip-permissions \
+      --print \
+      --output-format stream-json \
+      --verbose \
+      -p "$prompt" 2>&1 \
+    | stdbuf -oL jq -R -r --unbuffered --arg tzoff "$(date '+%z')" '
+        def fmt: localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff;
+        def ts: now | fmt;
+        def strip_ms: sub("\\.[0-9]+Z$"; "Z");
+        def to_local(s): try (s | strip_ms | fromdateiso8601 | localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff) catch ts;
+        . as $line
+        | (try fromjson catch null) as $msg
+        | if $msg == null then
+            "[" + ts + "] [stderr] " + $line
+          elif $msg.type == "assistant" then
+            (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
+            | (($msg.message.content // [])
+                | map(if .type == "text" then .text else empty end)
+                | join("\n")) as $txt
+            | if ($txt | length) > 0 then "[" + $t + "] " + $txt else empty end
+          elif $msg.type == "result" then
+            (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
+            | "[" + $t + "] [result " + ($msg.subtype // "?")
+              + (if ($msg.is_error // false) then " ERROR" else "" end)
+              + " turns=" + (($msg.num_turns // 0) | tostring)
+              + " cost=$" + (($msg.total_cost_usd // 0) | tostring)
+              + "] " + ($msg.result // "(no result)")
+          else empty
+          end
+      ' > "$resolver_log" || exit_code=$?
+
+  if [ $exit_code -eq 124 ]; then
+    log_task "$task_id" "conflict resolver TIMEOUT after 5min (see $resolver_log)"
+  elif [ $exit_code -ne 0 ]; then
+    log_task "$task_id" "conflict resolver exited with code $exit_code (see $resolver_log)"
+  fi
+
+  # Success criteria: merge state cleared AND new commit references the task.
+  # Both must hold — a stray commit on the branch without the merge being
+  # completed would still leave MERGE_HEAD set.
+  if [ -f "$REPO_ROOT/.git/MERGE_HEAD" ]; then
+    log_task "$task_id" "conflict resolver did not complete the merge"
+    return 1
+  fi
+
+  local last_msg
+  last_msg=$(git -C "$REPO_ROOT" log -1 --format='%s' 2>/dev/null || true)
+  if ! echo "$last_msg" | grep -qF "$task_id"; then
+    log_task "$task_id" "conflict resolver commit does not reference $task_id"
+    return 1
+  fi
+
+  return 0
+}
+
+# ============================================================================
 # Worker: runs one task in a worktree
 # ============================================================================
 
@@ -998,33 +1224,63 @@ merge_tasks() {
         esac
       done <<< "$conflicted_files"
 
-      if [ ${#needs_human[@]} -gt 0 ]; then
-        # Real source conflict — abort merge, mark as failed for retry
-        log_task "$task_id" "${RED}Source conflict in ${#needs_human[@]} file(s):${RST} ${needs_human[*]}"
-        git merge --abort 2>/dev/null || true
-        log_task "$task_id" "Merge aborted — task will retry on fresh base"
-        git branch -D "$branch" 2>/dev/null || true
-        git push origin --delete "$branch" 2>/dev/null || true
-        merge_failed+=("$task_id")
-        continue
-      fi
+      local prd_conflicted=false
+      for af in "${auto_resolvable[@]}"; do
+        if [ "$af" = "$PRD_REL" ]; then
+          prd_conflicted=true
+          break
+        fi
+      done
 
-      # Only auto-resolvable files — safe to resolve.
-      # prd.json: take base ("ours") so other tasks' completed-state and any
-      # operator edits on base are preserved, then re-apply mark_done so the
-      # current task's passes:true (which the agent set on its branch) isn't
-      # discarded by the --ours pick.
-      git checkout --ours "$PRD_REL" 2>/dev/null || true
-      mark_done "$task_id"
-
-      # Lock files / generated files: accept theirs
+      # Pre-resolve deterministic auto-mergeable files (lockfiles, .gitignore).
+      # prd.json is handled below: pre-resolved on the auto-only path so the
+      # batch finishes without invoking an agent, but handed to the resolver
+      # when source conflicts need agent attention so resolver can preserve
+      # any progress recorded on base since this branch was created.
       for af in "${auto_resolvable[@]}"; do
         [ "$af" = "$PRD_REL" ] && continue
         git checkout --theirs "$af" 2>/dev/null || true
+        git add "$af" 2>/dev/null || true
       done
 
-      git add -A
-      git commit --no-edit -m "merge: $task_id with auto-resolved conflicts" >/dev/null 2>&1 || true
+      if [ ${#needs_human[@]} -gt 0 ]; then
+        # Build the file list the resolver must handle. Include $PRD_REL when
+        # it had a real conflict — resolver applies the prd.json rules.
+        local resolver_files=("${needs_human[@]}")
+        if [ "$prd_conflicted" = true ]; then
+          resolver_files+=("$PRD_REL")
+        fi
+
+        log_task "$task_id" "${YELLOW}Source conflict in ${#resolver_files[@]} file(s):${RST} ${resolver_files[*]} — running conflict resolver..."
+
+        local needs_human_list
+        needs_human_list=$(printf '  - %s\n' "${resolver_files[@]}")
+
+        if run_conflict_resolver "$task_id" "$branch" "$needs_human_list" "$prd_conflicted"; then
+          log_task "$task_id" "${GREEN}Conflict resolver completed merge${RST}"
+        else
+          log_task "$task_id" "${RED}Conflict resolver could not resolve${RST} — aborting merge"
+          git merge --abort 2>/dev/null || true
+          log_task "$task_id" "Merge aborted — task will retry on fresh base"
+          git branch -D "$branch" 2>/dev/null || true
+          git push origin --delete "$branch" 2>/dev/null || true
+          merge_failed+=("$task_id")
+          continue
+        fi
+      else
+        # Auto-only path: pre-resolve prd.json deterministically (take base,
+        # re-apply mark_done so this task's passes:true survives the --ours
+        # pick), then finalize the merge ourselves. -A is safe because every
+        # conflicted file was already resolved and `git add`-ed above; nothing
+        # unresolved remains in the worktree.
+        if [ "$prd_conflicted" = true ]; then
+          git checkout --ours "$PRD_REL" 2>/dev/null || true
+          mark_done "$task_id"
+          git add "$PRD_REL" 2>/dev/null || true
+        fi
+        git add -A
+        git commit --no-edit -m "merge: $task_id with auto-resolved conflicts" >/dev/null 2>&1 || true
+      fi
     fi
 
     # One-line merge summary
