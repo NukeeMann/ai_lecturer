@@ -30,7 +30,12 @@ export class PyodideStopError extends Error {
 export interface RunResult {
   stdout: string;
   stderr: string;
+  /** Full multi-line Python traceback when execution raised. */
   traceback?: string;
+  /** Python exception class name (e.g. "ValueError"). Set whenever traceback is set. */
+  errorType?: string;
+  /** Single-line message after the `<Type>:` headline in the traceback. */
+  errorMessage?: string;
 }
 
 export interface TestResult {

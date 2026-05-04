@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { usePyodide } from '@/lib/pyodide/client';
 
@@ -100,12 +101,47 @@ const paramValueStyle: CSSProperties = {
 };
 
 const errorStyle: CSSProperties = {
-  background: 'var(--danger-bg)',
-  color: 'var(--danger-text)',
+  background: 'var(--danger-subtle)',
+  color: 'var(--danger)',
   padding: 'var(--space-3) var(--space-5)',
+  borderTop: '1px solid var(--border)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+};
+
+const errorHeadlineStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 600,
+  color: 'var(--danger)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+};
+
+const errorToggleStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+};
+
+const errorTracebackStyle: CSSProperties = {
+  margin: 0,
+  marginTop: 4,
   fontFamily: 'var(--font-mono)',
   fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
   whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  opacity: 0.85,
 };
 
 const SLIDER_CSS = `
@@ -186,6 +222,9 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
   const [pngUrl, setPngUrl] = useState<string | null>(null);
   const [valueOut, setValueOut] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [tracebackOpen, setTracebackOpen] = useState(false);
 
   const latestReqRef = useRef(0);
   const debounceRef = useRef<number | null>(null);
@@ -219,9 +258,14 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
         if (reqId !== latestReqRef.current) return;
         if (result.traceback) {
           setErrorMsg(result.traceback);
+          setErrorType(result.errorType ?? null);
+          setErrorMessage(result.errorMessage ?? null);
+          setTracebackOpen(false);
           return;
         }
         setErrorMsg(null);
+        setErrorType(null);
+        setErrorMessage(null);
         if (result.png && result.png instanceof Uint8Array) {
           const blob = new Blob([result.png as BlobPart], { type: 'image/png' });
           const url = URL.createObjectURL(blob);
@@ -240,7 +284,11 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
         }
       } catch (err) {
         if (reqId !== latestReqRef.current) return;
-        setErrorMsg(err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        setErrorMsg(msg);
+        setErrorType(err instanceof Error ? err.name : null);
+        setErrorMessage(msg);
+        setTracebackOpen(false);
       }
     },
     [outputType, renderCode, runWithPlotParam, setupCode, status],
@@ -321,7 +369,32 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
       </div>
       {errorMsg && (
         <div data-testid="pexp-error" style={errorStyle}>
-          {errorMsg}
+          <p
+            data-testid="pexp-error-headline"
+            data-error-type={errorType ?? ''}
+            style={errorHeadlineStyle}
+          >
+            {(errorType ?? 'Error') + (errorMessage ? `: ${errorMessage}` : '')}
+          </p>
+          <button
+            type="button"
+            data-testid="pexp-traceback-toggle"
+            aria-expanded={tracebackOpen}
+            onClick={() => setTracebackOpen((v) => !v)}
+            style={errorToggleStyle}
+          >
+            {tracebackOpen ? (
+              <ChevronDown size={12} aria-hidden />
+            ) : (
+              <ChevronRight size={12} aria-hidden />
+            )}
+            {tracebackOpen ? 'Hide traceback' : 'Show traceback'}
+          </button>
+          {tracebackOpen && (
+            <pre data-testid="pexp-traceback" style={errorTracebackStyle}>
+              {errorMsg}
+            </pre>
+          )}
         </div>
       )}
       <div style={controlsStyle}>

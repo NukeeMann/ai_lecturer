@@ -4,6 +4,7 @@
 // Pyodide is fetched from the jsdelivr CDN; numpy + scipy are preinstalled
 // (numpy is needed by scipy and by the Gauss demo widget).
 
+import { extractPythonError } from './errorFormat';
 import { RUNNER_PY } from './runnerPython';
 import { formatStdoutChunks } from './stdout';
 
@@ -200,6 +201,16 @@ function formatTraceback(err: unknown): string {
   return String(err);
 }
 
+interface ErrorFields {
+  traceback: string;
+  errorType?: string;
+  errorMessage?: string;
+}
+
+function errorFields(err: unknown): ErrorFields {
+  return extractPythonError(err);
+}
+
 // Eager bootstrap: start loading immediately so the main thread sees
 // status='ready' as soon as Pyodide + numpy + scipy finish installing.
 loadPyodideOnce().then(
@@ -237,7 +248,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
       } catch (err) {
         ctx.postMessage({
           id,
-          traceback: formatTraceback(err),
+          ...errorFields(err),
         });
       }
       return;
@@ -259,7 +270,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
           id,
           stdout: formatStdoutChunks(stdoutBuf),
           stderr: formatStdoutChunks(stderrBuf),
-          traceback: formatTraceback(err),
+          ...errorFields(err),
         });
       }
       return;
@@ -300,7 +311,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
           id,
           stdout: formatStdoutChunks(stdoutBuf),
           stderr: formatStdoutChunks(stderrBuf),
-          traceback: formatTraceback(err),
+          ...errorFields(err),
         });
       }
       return;
@@ -325,7 +336,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
           id,
           stdout: formatStdoutChunks(stdoutBuf),
           stderr: formatStdoutChunks(stderrBuf),
-          traceback: formatTraceback(err),
+          ...errorFields(err),
         });
       }
       return;
@@ -336,7 +347,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     py.globals.set('__ai_user_code__', code ?? '');
     py.globals.set('__ai_tests__', tests ?? []);
     let testResults: unknown = [];
-    let traceback: string | undefined;
+    let extras: ErrorFields | { traceback?: undefined } = {};
     try {
       const proxy = (await py.runPythonAsync(
         '__ai_run_tests(__ai_user_code__, __ai_tests__.to_py())',
@@ -346,13 +357,13 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
         : proxy;
       proxy?.destroy?.();
     } catch (err) {
-      traceback = formatTraceback(err);
+      extras = errorFields(err);
     }
     ctx.postMessage({
       id,
       stdout: formatStdoutChunks(stdoutBuf),
       stderr: formatStdoutChunks(stderrBuf),
-      traceback,
+      ...extras,
       testResults,
     });
   } catch (err) {
@@ -360,7 +371,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
       id,
       stdout: formatStdoutChunks(stdoutBuf),
       stderr: formatStdoutChunks(stderrBuf),
-      traceback: formatTraceback(err),
+      ...errorFields(err),
     });
   }
 });

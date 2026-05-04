@@ -30,7 +30,7 @@ import {
 } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 import { tags as t } from '@lezer/highlight';
-import { Play, RotateCcw, Square } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, RotateCcw, Square } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
 import {
@@ -298,15 +298,128 @@ function ErrorCallout() {
   );
 }
 
+const outputHeaderStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 'var(--space-3)',
+  marginBottom: 'var(--space-3)',
+};
+
+const outputHeaderLabelStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+};
+
+const stdoutStreamStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--text)',
+  whiteSpace: 'pre-wrap',
+};
+
+const stderrStreamStyle: CSSProperties = {
+  margin: 0,
+  padding: 'var(--space-2) var(--space-3)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--warning, #b45309)',
+  background: 'var(--warning-subtle, rgba(180, 115, 30, 0.08))',
+  borderLeft: '3px solid var(--warning, #b45309)',
+  borderRadius: 'var(--radius-sm)',
+  whiteSpace: 'pre-wrap',
+};
+
+const stderrLabelStyle: CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--warning, #b45309)',
+  marginBottom: 4,
+  display: 'block',
+};
+
+const exceptionBlockStyle: CSSProperties = {
+  borderRadius: 'var(--radius-sm)',
+  borderLeft: '3px solid var(--danger)',
+  background: 'var(--danger-subtle)',
+  padding: 'var(--space-2) var(--space-3)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+};
+
+const exceptionHeadlineStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 600,
+  color: 'var(--danger)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+};
+
+const exceptionToggleStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  marginTop: 2,
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+};
+
+const tracebackPreStyle: CSSProperties = {
+  margin: 0,
+  marginTop: 4,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  opacity: 0.85,
+};
+
+function hasAnyOutput(output: RunResult | null): boolean {
+  if (!output) return false;
+  return Boolean(output.stdout || output.stderr || output.traceback);
+}
+
+interface OutputBodyProps {
+  output: RunResult | null;
+  running: boolean;
+  placeholder: string;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  tracebackOpen: boolean;
+  onToggleTraceback: () => void;
+}
+
 function OutputBody({
   output,
   running,
   placeholder,
-}: {
-  output: RunResult | null;
-  running: boolean;
-  placeholder: string;
-}) {
+  collapsed,
+  onToggleCollapsed,
+  tracebackOpen,
+  onToggleTraceback,
+}: OutputBodyProps) {
   if (running) {
     return (
       <span
@@ -336,47 +449,99 @@ function OutputBody({
       </span>
     );
   }
+
+  // Empty result after a run — render nothing so the panel does not look like
+  // an error state (US-061 AC: "no false 'error' state").
+  if (!hasAnyOutput(output)) {
+    return null;
+  }
+
+  const errorTypeLabel = output.errorType ?? (output.traceback ? 'Error' : null);
+  const headline = errorTypeLabel
+    ? output.errorMessage
+      ? `${errorTypeLabel}: ${output.errorMessage}`
+      : errorTypeLabel
+    : null;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-      {output.stdout && (
-        <pre
-          data-coderunner-stdout
+    <div data-coderunner-output-body>
+      <div style={outputHeaderStyle}>
+        <button
+          type="button"
+          data-coderunner-output-toggle
+          data-testid="coderunner-output-toggle"
+          aria-expanded={!collapsed}
+          aria-controls="coderunner-output-content"
+          onClick={onToggleCollapsed}
+          style={outputHeaderLabelStyle}
+        >
+          {collapsed ? (
+            <ChevronRight size={12} aria-hidden />
+          ) : (
+            <ChevronDown size={12} aria-hidden />
+          )}
+          Output
+        </button>
+      </div>
+      {!collapsed && (
+        <div
+          id="coderunner-output-content"
           style={{
-            margin: 0,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--fs-sm)',
-            color: 'var(--text)',
-            whiteSpace: 'pre-wrap',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-3)',
           }}
         >
-          {output.stdout}
-        </pre>
-      )}
-      {output.traceback && (
-        <pre
-          data-coderunner-traceback
-          style={{
-            margin: 0,
-            fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--fs-sm)',
-            color: 'var(--danger)',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {output.traceback}
-        </pre>
-      )}
-      {!output.stdout && !output.traceback && (
-        <span
-          style={{
-            color: 'var(--text-tertiary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: 'var(--fs-sm)',
-            fontStyle: 'italic',
-          }}
-        >
-          (no output)
-        </span>
+          {output.stdout && (
+            <pre data-coderunner-stdout style={stdoutStreamStyle}>
+              {output.stdout}
+            </pre>
+          )}
+          {output.stderr && (
+            <div data-coderunner-stderr style={stderrStreamStyle}>
+              <span style={stderrLabelStyle}>stderr</span>
+              <pre style={{ margin: 0, fontFamily: 'inherit' }}>{output.stderr}</pre>
+            </div>
+          )}
+          {output.traceback && (
+            <div data-coderunner-exception style={exceptionBlockStyle}>
+              {headline && (
+                <p
+                  data-coderunner-error-headline
+                  data-testid="coderunner-error-headline"
+                  data-error-type={output.errorType ?? ''}
+                  style={exceptionHeadlineStyle}
+                >
+                  {headline}
+                </p>
+              )}
+              <button
+                type="button"
+                data-coderunner-traceback-toggle
+                data-testid="coderunner-traceback-toggle"
+                aria-expanded={tracebackOpen}
+                onClick={onToggleTraceback}
+                style={exceptionToggleStyle}
+              >
+                {tracebackOpen ? (
+                  <ChevronDown size={12} aria-hidden />
+                ) : (
+                  <ChevronRight size={12} aria-hidden />
+                )}
+                {tracebackOpen ? 'Hide traceback' : 'Show traceback'}
+              </button>
+              {tracebackOpen && (
+                <pre
+                  data-coderunner-traceback
+                  data-testid="coderunner-traceback"
+                  style={tracebackPreStyle}
+                >
+                  {output.traceback}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -419,6 +584,8 @@ export function CodeRunner({
   const [restartReason, setRestartReason] = useState<PyodideStopReason | null>(
     null,
   );
+  const [outputCollapsed, setOutputCollapsed] = useState(false);
+  const [tracebackOpen, setTracebackOpen] = useState(false);
 
   const onCodeChangeRef = useRef(onCodeChange);
   useEffect(() => {
@@ -448,6 +615,8 @@ export function CodeRunner({
     setRunning(true);
     setOutput(null);
     setRestartReason(null);
+    setOutputCollapsed(false);
+    setTracebackOpen(false);
     try {
       const result = await runRef.current(codeRef.current);
       setOutput(result);
@@ -455,10 +624,13 @@ export function CodeRunner({
       if (err instanceof PyodideStopError) {
         setRestartReason(err.reason);
       } else {
+        const msg = err instanceof Error ? err.message : String(err);
         setOutput({
           stdout: '',
           stderr: '',
-          traceback: err instanceof Error ? err.message : String(err),
+          traceback: msg,
+          errorType: err instanceof Error ? err.name : undefined,
+          errorMessage: msg,
         });
       }
     } finally {
@@ -515,6 +687,7 @@ export function CodeRunner({
     setCode(starterCode);
     setOutput(null);
     setRestartReason(null);
+    setTracebackOpen(false);
     pristineRef.current = starterCode;
     skipNextSaveRef.current = true;
     if (progressKey) {
@@ -628,6 +801,10 @@ export function CodeRunner({
             output={output}
             running={running}
             placeholder={outputPlaceholder}
+            collapsed={outputCollapsed}
+            onToggleCollapsed={() => setOutputCollapsed((v) => !v)}
+            tracebackOpen={tracebackOpen}
+            onToggleTraceback={() => setTracebackOpen((v) => !v)}
           />
         )}
       </div>

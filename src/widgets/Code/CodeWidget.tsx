@@ -119,6 +119,95 @@ const tracebackStyle: CSSProperties = {
   whiteSpace: 'pre-wrap',
 };
 
+const outputToggleButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  marginBottom: 6,
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+};
+
+const outputContentStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-3)',
+};
+
+const stderrBlockStyle: CSSProperties = {
+  margin: 0,
+  padding: 'var(--space-2) var(--space-3)',
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--warning, #b45309)',
+  background: 'var(--warning-subtle, rgba(180, 115, 30, 0.08))',
+  borderLeft: '3px solid var(--warning, #b45309)',
+  borderRadius: 'var(--radius-sm)',
+  whiteSpace: 'pre-wrap',
+};
+
+const stderrLabelStyle: CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--warning, #b45309)',
+  marginBottom: 4,
+  display: 'block',
+};
+
+const exceptionBlockStyle: CSSProperties = {
+  borderRadius: 'var(--radius-sm)',
+  borderLeft: '3px solid var(--danger)',
+  background: 'var(--danger-subtle)',
+  padding: 'var(--space-2) var(--space-3)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+};
+
+const exceptionHeadlineStyle: CSSProperties = {
+  margin: 0,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 600,
+  color: 'var(--danger)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+};
+
+const exceptionToggleStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  marginTop: 2,
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+  cursor: 'pointer',
+  alignSelf: 'flex-start',
+};
+
+const tracebackPreStyle: CSSProperties = {
+  margin: 0,
+  marginTop: 4,
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  opacity: 0.85,
+};
+
 const headerRowStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -417,7 +506,12 @@ export function CodeWidget({
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [results, setResults] = useState<TestResult[] | null>(null);
   const [stdout, setStdout] = useState<string>('');
+  const [stderr, setStderr] = useState<string>('');
   const [traceback, setTraceback] = useState<string | undefined>(undefined);
+  const [errorType, setErrorType] = useState<string | undefined>(undefined);
+  const [errorMessage, setErrorMessage] = useState<string | undefined>(undefined);
+  const [outputCollapsed, setOutputCollapsed] = useState(false);
+  const [tracebackOpen, setTracebackOpen] = useState(false);
   const [submission, setSubmission] = useState<SubmissionState>('idle');
   const [solutionOpen, setSolutionOpen] = useState(false);
   const solutionPanelId = useId();
@@ -458,13 +552,18 @@ export function CodeWidget({
     if (status !== 'ready') return;
     if (submission === 'submitting' || submission === 'submitted-pass') return;
     setSubmission('submitting');
+    setOutputCollapsed(false);
+    setTracebackOpen(false);
     try {
       const result: RunWithTestsResult = await runWithTests(
         code,
         data.tests.map((t) => ({ name: t.name, body: t.body })),
       );
       setStdout(result.stdout ?? '');
+      setStderr(result.stderr ?? '');
       setTraceback(result.traceback);
+      setErrorType(result.errorType);
+      setErrorMessage(result.errorMessage);
       const tr = result.testResults ?? [];
       setResults(tr);
       const passed = tr.length > 0 && tr.every((r) => r.passed);
@@ -483,18 +582,25 @@ export function CodeWidget({
         // local submission state so the user can press Submit again on the
         // fresh worker.
         setStdout('');
+        setStderr('');
         setTraceback(undefined);
+        setErrorType(undefined);
+        setErrorMessage(undefined);
         setResults(null);
         setSubmission('idle');
         return;
       }
+      const msg = err instanceof Error ? err.message : String(err);
       setStdout('');
-      setTraceback(err instanceof Error ? err.message : String(err));
+      setStderr('');
+      setTraceback(msg);
+      setErrorType(err instanceof Error ? err.name : undefined);
+      setErrorMessage(msg);
       setResults(
         data.tests.map((t) => ({
           name: t.name,
           passed: false,
-          traceback: err instanceof Error ? err.message : String(err),
+          traceback: msg,
           assertionDetail: null,
         })),
       );
@@ -505,9 +611,13 @@ export function CodeWidget({
   const handleReset = useCallback(() => {
     setResults(null);
     setStdout('');
+    setStderr('');
     setTraceback(undefined);
+    setErrorType(undefined);
+    setErrorMessage(undefined);
     setExpanded({});
     setSubmission('idle');
+    setTracebackOpen(false);
   }, []);
 
   const submitDisabled =
@@ -565,22 +675,68 @@ export function CodeWidget({
         )}
       </div>
 
-      {(stdout || traceback) && (
+      {(stdout || stderr || traceback) && (
         <div data-codewidget-output>
-          <div style={{ ...sectionLabelStyle, marginBottom: 6 }}>Output</div>
-          {stdout && <pre style={stdoutStyle}>{stdout}</pre>}
-          {traceback && <pre style={tracebackStyle}>{traceback}</pre>}
-          {!stdout && !traceback && (
-            <span
-              style={{
-                color: 'var(--text-tertiary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 'var(--fs-sm)',
-                fontStyle: 'italic',
-              }}
-            >
-              (no output)
-            </span>
+          <button
+            type="button"
+            data-codewidget-output-toggle
+            data-testid="codewidget-output-toggle"
+            aria-expanded={!outputCollapsed}
+            onClick={() => setOutputCollapsed((v) => !v)}
+            style={outputToggleButtonStyle}
+          >
+            {outputCollapsed ? (
+              <ChevronRight size={12} aria-hidden />
+            ) : (
+              <ChevronDown size={12} aria-hidden />
+            )}
+            Output
+          </button>
+          {!outputCollapsed && (
+            <div style={outputContentStyle}>
+              {stdout && (
+                <pre data-codewidget-stdout style={stdoutStyle}>
+                  {stdout}
+                </pre>
+              )}
+              {stderr && (
+                <div data-codewidget-stderr style={stderrBlockStyle}>
+                  <span style={stderrLabelStyle}>stderr</span>
+                  <pre style={{ margin: 0, fontFamily: 'inherit' }}>{stderr}</pre>
+                </div>
+              )}
+              {traceback && (
+                <div data-codewidget-exception style={exceptionBlockStyle}>
+                  <p
+                    data-testid="codewidget-error-headline"
+                    data-error-type={errorType ?? ''}
+                    style={exceptionHeadlineStyle}
+                  >
+                    {(errorType ?? 'Error') +
+                      (errorMessage ? `: ${errorMessage}` : '')}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="codewidget-traceback-toggle"
+                    aria-expanded={tracebackOpen}
+                    onClick={() => setTracebackOpen((v) => !v)}
+                    style={exceptionToggleStyle}
+                  >
+                    {tracebackOpen ? (
+                      <ChevronDown size={12} aria-hidden />
+                    ) : (
+                      <ChevronRight size={12} aria-hidden />
+                    )}
+                    {tracebackOpen ? 'Hide traceback' : 'Show traceback'}
+                  </button>
+                  {tracebackOpen && (
+                    <pre data-testid="codewidget-traceback" style={tracebackPreStyle}>
+                      {traceback}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
