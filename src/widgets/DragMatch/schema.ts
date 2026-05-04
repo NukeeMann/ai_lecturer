@@ -16,6 +16,14 @@ export const DragMatchDataSchema = z.object({
   items: z.array(DragMatchItemSchema).min(1),
   zones: z.array(DragMatchZoneSchema).min(1),
   multipleItemsPerZone: z.boolean().default(false),
+  /**
+   * When true (default), every block in `items` must be placed before the
+   * Submit button enables. When false, only the items referenced by some
+   * zone's `accepts` are required — extra items can stay in the bank as
+   * distractors and Submit becomes clickable as soon as the required items
+   * are placed in zones.
+   */
+  requireAll: z.boolean().default(true),
   explanation: z.string().optional(),
 });
 
@@ -79,6 +87,30 @@ export function validateDragMatch(
 
   const allCorrect = data.zones.every((z) => zoneCorrect[z.id]);
   return { allCorrect, zoneCorrect, misplacedItemIds };
+}
+
+/**
+ * Returns true when the current placement satisfies the "ready to submit"
+ * gate.
+ *
+ * - Full-selection mode (`requireAll: true`, default): every item in
+ *   `data.items` must be out of the bank (i.e. placed in some zone).
+ * - Partial-selection mode (`requireAll: false`): only items that some zone
+ *   accepts are required; extra items can remain in the bank as distractors
+ *   and Submit becomes enabled as soon as every required item is placed.
+ */
+export function isReadyToSubmit(
+  data: DragMatchData,
+  placement: DragMatchPlacement,
+): boolean {
+  const placedInZones = new Set<string>();
+  for (const z of data.zones) {
+    for (const id of placement[z.id] ?? []) placedInZones.add(id);
+  }
+  const requiredIds = data.requireAll
+    ? data.items.map((i) => i.id)
+    : Array.from(new Set(data.zones.flatMap((z) => z.accepts)));
+  return requiredIds.every((id) => placedInZones.has(id));
 }
 
 export type DragMatchZoneDisplayState = 'correct' | 'incorrect' | 'idle';

@@ -28,6 +28,7 @@ import { Callout } from '@/components/Callout';
 import {
   DragMatchDataSchema,
   computeZoneState,
+  isReadyToSubmit,
   validateDragMatch,
   type DragMatchData,
   type DragMatchItem,
@@ -419,9 +420,12 @@ export function DragMatchWidget({
   }, [data]);
 
   const bankItems = placement[DRAG_MATCH_BANK_ID] ?? [];
-  const allPlaced = bankItems.length === 0;
+  const readyToSubmit = useMemo(
+    () => isReadyToSubmit(data, placement),
+    [data, placement],
+  );
 
-  const submitDisabled = submitted ? false : !allPlaced;
+  const submitDisabled = submitted ? false : !readyToSubmit;
   const submitButtonStyle: CSSProperties = useMemo(() => {
     if (submitted && allCorrect) {
       return {
