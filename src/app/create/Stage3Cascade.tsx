@@ -55,11 +55,20 @@ export interface StructureDraft {
   modules: ModuleDraft[];
 }
 
+export interface ClarificationQuestion {
+  id: string;
+  text: string;
+}
+
 export interface Draft {
   topic: string;
   level: Level | null;
   durationTarget: DurationTarget | null;
   theoryPracticeRatio: number;
+  /** Questions returned by /api/wizard/clarify (cached so back-nav can re-render). */
+  clarificationQuestions?: ClarificationQuestion[];
+  /** Free-form learner answers, keyed by question id. */
+  clarification?: Record<string, string>;
   structure: StructureDraft | null;
 }
 
