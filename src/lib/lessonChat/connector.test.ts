@@ -81,7 +81,7 @@ describe('subprocessConnector', () => {
     const connector = subprocessConnector({
       spawnFn: spawnReturning({ stdout: fakeJson, exitCode: 0 }),
     });
-    const text = await connector.chat({ message: 'hi' });
+    const text = await connector.chat({ userMessage: 'hi' });
     expect(text).toBe('Hello from the tutor.');
   });
 
@@ -93,7 +93,7 @@ describe('subprocessConnector', () => {
       return makeFakeProcess({ stdout: fakeJson });
     }) as unknown as SpawnFn;
     const connector = subprocessConnector({ spawnFn: spawnSpy, command: 'claude' });
-    await connector.chat({ message: 'why?' });
+    await connector.chat({ userMessage: 'why?' });
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe('claude');
     expect(calls[0].args[0]).toBe('-p');
@@ -109,7 +109,7 @@ describe('subprocessConnector', () => {
         exitCode: 2,
       }),
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /claude exited 2.*authentication failed/,
     );
   });
@@ -118,7 +118,7 @@ describe('subprocessConnector', () => {
     const connector = subprocessConnector({
       spawnFn: spawnReturning({ stdout: 'not json', exitCode: 0 }),
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /failed to parse claude JSON/,
     );
   });
@@ -130,7 +130,7 @@ describe('subprocessConnector', () => {
         exitCode: 0,
       }),
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /missing string 'result'/,
     );
   });
@@ -142,7 +142,7 @@ describe('subprocessConnector', () => {
         exitCode: 0,
       }),
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /is_error=true/,
     );
   });
@@ -165,7 +165,7 @@ describe('subprocessConnector', () => {
       timeoutMs: 20,
       killGraceMs: 50,
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(/timed out/);
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(/timed out/);
     expect(killed).toBe('SIGTERM');
     expect(child.kill).toHaveBeenCalled();
   });
@@ -175,7 +175,7 @@ describe('subprocessConnector', () => {
       throw new Error('ENOENT');
     }) as unknown as SpawnFn;
     const connector = subprocessConnector({ spawnFn });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /spawn failed.*ENOENT/,
     );
   });
@@ -199,7 +199,7 @@ describe('agentSdkConnector', () => {
       sdk: { query: () => fakeStream() },
     });
     expect(connector.name).toBe('agent-sdk');
-    const text = await connector.chat({ message: 'hi' });
+    const text = await connector.chat({ userMessage: 'hi' });
     expect(text).toBe('Hello, world.');
   });
 
@@ -210,7 +210,7 @@ describe('agentSdkConnector', () => {
     const connector = await agentSdkConnector({
       sdk: { query: () => fakeStream() },
     });
-    expect(await connector.chat({ message: 'hi' })).toBe('Just the result.');
+    expect(await connector.chat({ userMessage: 'hi' })).toBe('Just the result.');
   });
 
   it('throws when the stream produces no text', async () => {
@@ -220,7 +220,7 @@ describe('agentSdkConnector', () => {
     const connector = await agentSdkConnector({
       sdk: { query: () => fakeStream() },
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(
       /no assistant text/,
     );
   });
@@ -232,7 +232,7 @@ describe('agentSdkConnector', () => {
     const connector = await agentSdkConnector({
       sdk: { query: () => fakeStream() },
     });
-    await expect(connector.chat({ message: 'hi' })).rejects.toThrow(/is_error/);
+    await expect(connector.chat({ userMessage: 'hi' })).rejects.toThrow(/is_error/);
   });
 
   it('throws if loadSdk rejects (mimics package missing)', async () => {

@@ -45,6 +45,7 @@ export function LessonChat({
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -52,6 +53,113 @@ export function LessonChat({
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
   );
+
+  // Track the section currently nearest the top of the viewport via
+  // IntersectionObserver — used to scope the AI tutor's prompt context
+  // to the active section. Re-runs when the panel opens or the lesson
+  // changes; queries `[data-section-id]` elements rendered by the lesson
+  // page. Falls back gracefully (no observer) when nothing matches.
+  useEffect(() => {
+    if (!open) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    // Map the section id → its DOM order index, so when several sections
+    // straddle the "active" band at the top of the viewport, we pick the
+    // last one (the one the learner has scrolled into).
+    const orderById = new Map<string, number>();
+    const visible = new Set<string>();
+    const observed = new WeakSet<Element>();
+
+    const recompute = () => {
+      let bestId: string | null = null;
+      let bestOrder = -1;
+      for (const id of visible) {
+        const order = orderById.get(id) ?? -1;
+        if (order > bestOrder) {
+          bestOrder = order;
+          bestId = id;
+        }
+      }
+      if (bestId !== null) {
+        setActiveSectionId(bestId);
+      }
+    };
+
+    const intersection = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = (entry.target as HTMLElement).getAttribute(
+            'data-section-id',
+          );
+          if (id === null) continue;
+          if (entry.isIntersecting) {
+            visible.add(id);
+          } else {
+            visible.delete(id);
+          }
+        }
+        recompute();
+      },
+      // rootMargin biases intersection to a strip near the top of the
+      // viewport so the active section is whatever is currently being
+      // read, not whatever is biggest.
+      { rootMargin: '0px 0px -75% 0px', threshold: 0 },
+    );
+
+    const observeAllSections = () => {
+      const targets = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-section-id]'),
+      );
+      for (const el of targets) {
+        const id = el.getAttribute('data-section-id');
+        if (id !== null && !orderById.has(id)) {
+          orderById.set(id, orderById.size);
+        }
+        if (!observed.has(el)) {
+          intersection.observe(el);
+          observed.add(el);
+        }
+      }
+      // Seed activeSectionId from the current scroll position so the very
+      // first message has a sensible sectionId before IO fires.
+      const main =
+        document.querySelector<HTMLElement>('[data-testid="lesson-content"]') ??
+        null;
+      if (main && targets.length > 0) {
+        const mainTop = main.scrollTop;
+        let seedId: string | null = null;
+        for (const el of targets) {
+          const id = el.getAttribute('data-section-id');
+          if (id === null) continue;
+          const offset =
+            el.getBoundingClientRect().top -
+            main.getBoundingClientRect().top +
+            main.scrollTop;
+          if (offset <= mainTop + 8) {
+            seedId = id;
+          }
+        }
+        if (seedId !== null) {
+          setActiveSectionId(seedId);
+        }
+      }
+    };
+
+    observeAllSections();
+
+    // Sections may not yet be in the DOM when the panel opens (e.g. the
+    // lesson is still loading via fetch). Watch for added section elements
+    // and observe them too.
+    const mutation = new MutationObserver(() => {
+      observeAllSections();
+    });
+    mutation.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      intersection.disconnect();
+      mutation.disconnect();
+    };
+  }, [open, lessonSlug, courseSlug]);
 
   // Restore draft on mount or when slug changes. New mount per panel toggle is
   // fine — `open=false` returns null below so the effect only fires when the
@@ -147,6 +255,7 @@ export function LessonChat({
           body: JSON.stringify({
             courseSlug,
             lessonSlug,
+            sectionId: activeSectionId ?? undefined,
             message: text,
             history,
           }),
@@ -190,7 +299,7 @@ export function LessonChat({
         setSending(false);
       }
     })();
-  }, [courseSlug, draft, draftKey, lessonSlug, messages, sending]);
+  }, [activeSectionId, courseSlug, draft, draftKey, lessonSlug, messages, sending]);
 
   const handleKeyDown = useCallback(
     (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -218,6 +327,7 @@ export function LessonChat({
     <aside
       data-testid="lesson-chat"
       data-open="true"
+      data-active-section-id={activeSectionId ?? ''}
       style={asideStyle}
     >
       <header style={headerStyle}>
