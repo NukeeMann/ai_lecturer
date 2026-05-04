@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "slug": "overview",
+  "courseSlug": "widget-dev-guide",
+  "moduleId": "m1",
+  "title": "Overview — the widget contract",
+  "eyebrow": "Module 1 · Lesson 1",
+  "description": "Why widgets are self-contained, what the file layout looks like, and a short tour of the five mandatory wiring points before we walk through them in depth.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-theory-intro",
+      "title": "Why a strict five-step contract?",
+      "type": "theory",
+      "data": {
+        "markdown": "## Self-contained widgets, one wiring contract\n\nIn `src/widgets/`, every widget is **self-contained**: it owns its data schema, its read-mode component, its editor form, and a single registry entry. No other module needs to know it exists — except for one carefully placed list of variants in `src/lib/schemas/lesson.ts` that lets the widget round-trip through saved lesson JSON.\n\nThat isolation is only possible because every new widget honors a fixed wiring contract. Skip a step and you get one of three failure modes:\n\n- The widget renders but its **chrome has no accent colour** (forgot the CSS var).\n- The build script **errors during `npm run build:schemas`** (forgot to register the data schema).\n- The widget renders fine in memory but **lesson JSON containing it is rejected by the API on save / load** (forgot the `SectionSchema` variant).\n\n:::callout{type=\"info\" title=\"Read this alongside the README\"}\nThis course mirrors the contract documented in `src/widgets/README.md` — the README is the source of truth, this course is the readable, executable companion. Whenever a path or function name in the lessons looks unfamiliar, open the README and the cited file side by side.\n:::\n\nThe Histogram widget at `src/widgets/Histogram/` follows every step of the contract and is the recommended copy-paste starting point. We will use it as the canonical worked example throughout the course."
+      }
+    },
+    {
+      "id": "s2-theory-file-layout",
+      "title": "File layout for a new widget",
+      "type": "theory",
+      "data": {
+        "markdown": "## What ships in `src/widgets/<Name>/`\n\nEvery widget lives under `src/widgets/<Name>/` with at least four files:\n\n```\nsrc/widgets/\n  registry.ts             — central type→component registry (you EXTEND this)\n  Widget.tsx              — shared chrome (header, status badge, accent rail)\n  schemas/\n    build.ts              — npm run build:schemas writes <type>.json here (you EXTEND this)\n  <Name>/\n    schema.ts             — Zod schema + inferred TS type\n    <Name>Widget.tsx      — read/render component, props: { data: <Type>Data }\n    <Name>Editor.tsx      — side-panel form, props: { initial, onCancel, onSave }\n    sample.ts             — typed sample data (used by fixtures, init skills)\n```\n\nThree files **outside** the new widget folder also need a small edit:\n\n- `src/widgets/registry.ts` — add one entry in `widgetRegistry` plus one literal in the `WidgetType` union.\n- `src/widgets/schemas/build.ts` — add one import + one entry in the `widgets` map.\n- `src/lib/schemas/lesson.ts` — add one new `<Name>SectionSchema` plus one entry in the `SectionSchema` discriminated union.\n\nAnd one stylesheet:\n\n- `src/styles/tokens.css` — add a `--widget-<name>` CSS variable in **both** the light and dark theme blocks.\n\nThat is the whole contract. The next lesson walks through each touch point in order, with the Histogram widget as the worked example."
+      }
+    },
+    {
+      "id": "s3-theory-five-steps",
+      "title": "The five mandatory wiring points",
+      "type": "theory",
+      "data": {
+        "markdown": "## The contract at a glance\n\nThe order matters: each step depends on the one before it, and skipping any of them produces a runtime error or breaks the schema build.\n\n1. **CSS var `--widget-<name>`** in `src/styles/tokens.css` (light + dark blocks).\n2. **Zod data schema** at `src/widgets/<Name>/schema.ts`, plus a registration in `src/widgets/schemas/build.ts` so `npm run build:schemas` emits `<name>.json`.\n3. **`widgetRegistry` entry** in `src/widgets/registry.ts` (`component` / `label` / `icon` / `accentVar`) and a new literal in the `WidgetType` union.\n4. **Per-widget editor form** at `src/widgets/<Name>/<Name>Editor.tsx`, plus branches in `WidgetEditPanel` and `SectionRenderer` inside `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`.\n5. **`SectionSchema` variant** in `src/lib/schemas/lesson.ts` — without this, lesson JSON containing the widget is rejected by `PUT /api/courses/<slug>/lessons/<lessonSlug>` even though the read-mode component renders.\n\n:::callout{type=\"warning\" title=\"Step 5 is easy to forget\"}\nSteps 1–4 are enough to get the widget rendering on screen during local development. The bug only surfaces on the next round-trip through the API — typically at \"Save\" time after editing or after a fresh server restart that re-validates lesson files. **Always add the `SectionSchema` variant** unless you have a very specific reason not to.\n:::"
+      }
+    },
+    {
+      "id": "s4-histogram-canonical",
+      "title": "The canonical Histogram example, rendered live",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 32, 64, 96, 128, 160, 192, 224, 256],
+        "counts": [180, 360, 520, 740, 690, 410, 220, 110]
+      }
+    },
+    {
+      "id": "s5-theory-canonical-recap",
+      "title": "What you just saw",
+      "type": "theory",
+      "data": {
+        "markdown": "The bar chart above is rendered by `HistogramWidget` (`src/widgets/Histogram/HistogramWidget.tsx`) reading the section's `data` against `HistogramDataSchema` (`src/widgets/Histogram/schema.ts`). Two arrays — `binEdges` and `counts` — are all the JSON the widget needs. The accent colour on the rail and the slider thumb both come from the `--widget-histogram` CSS variable defined in `src/styles/tokens.css`.\n\nIn the next lesson we follow the exact path that produced this rendering, step by step, with the actual snippets from the Histogram source files."
+      }
+    },
+    {
+      "id": "s6-quiz-comprehension",
+      "title": "Quick check: which steps are mandatory?",
+      "type": "quiz",
+      "data": {
+        "question": "Which of the following are mandatory wiring points when adding a new widget type? (Select all that apply.)",
+        "options": [
+          "Adding a `--widget-<name>` CSS variable in src/styles/tokens.css (both light and dark blocks)",
+          "Registering the Zod schema in src/widgets/schemas/build.ts so `npm run build:schemas` emits a JSON Schema",
+          "Adding a `<Name>SectionSchema` to the discriminated union in src/lib/schemas/lesson.ts",
+          "Writing a custom Storybook story for the widget under stories/",
+          "Adding an entry to `widgetRegistry` in src/widgets/registry.ts and extending the `WidgetType` union"
+        ],
+        "correct": [0, 1, 2, 4],
+        "explanation": "Four of the five steps are present here: the CSS var (step 1), the Zod schema + build.ts entry (step 2), the registry entry (step 3), and the SectionSchema variant (step 5). Step 4 — the per-widget editor and lesson-page wiring — is implied by the editor form requirement covered later in the course. There is no Storybook in this codebase; the `sample.ts` fixture replaces it for fixtures and init skills.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://github.com/colinhacks/zod",
+      "title": "Zod — TypeScript-first schema validation",
+      "kind": "article"
+    }
+  ]
+}

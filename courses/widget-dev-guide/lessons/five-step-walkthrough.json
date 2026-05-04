@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "slug": "five-step-walkthrough",
+  "courseSlug": "widget-dev-guide",
+  "moduleId": "m1",
+  "title": "Five-step walkthrough — Histogram as the worked example",
+  "eyebrow": "Module 1 · Lesson 2",
+  "description": "Step by step, the exact wiring that turns a new folder under src/widgets/ into a fully usable widget — with the real Histogram snippets at every step.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "s0-theory-prelude",
+      "title": "How to read this lesson",
+      "type": "theory",
+      "data": {
+        "markdown": "## What you will see\n\nEach of the five sections below corresponds to one mandatory wiring point. The code in each section is **the real, current Histogram widget source** — copy these snippets, change `Histogram` → `<YourName>` and `histogram` → `<your-name>`, and you are 90% of the way to a new widget.\n\nThe contract is documented in `src/widgets/README.md`; this lesson dogfoods it by producing a Histogram render at the end (section 7) using only the artefacts the five steps create.\n\n:::callout{type=\"info\" title=\"Naming convention\"}\n- Folder name: `PascalCase` (`Histogram`, `ParametricExplorer`).\n- `WidgetType` literal and section `type` field: `camelCase` (`histogram`, `parametricExplorer`).\n- CSS variable name: `--widget-<kebab-case>` (`--widget-histogram`, `--widget-parametric-explorer`).\n- JSON Schema filename emitted by `build:schemas`: `<kebab-case>.json` (`histogram.json`, `parametric-explorer.json`).\n:::"
+      }
+    },
+    {
+      "id": "s1-theory-step1-css-var",
+      "title": "Step 1 — Add the `--widget-<name>` CSS variable",
+      "type": "theory",
+      "data": {
+        "markdown": "## Step 1 of 5 — `src/styles/tokens.css`\n\nThe shared widget chrome (`src/widgets/Widget.tsx`) paints a 1-px accent rail on the left, an icon background tint, and the in-progress badge from a single CSS variable named `--widget-<name>`. Add it to **both** the light and dark theme blocks of `src/styles/tokens.css`:\n\n```css\n:root,\n:root[data-theme=\"light\"] {\n  /* ... existing widget accents ... */\n  --widget-histogram: #4e7a85;   /* muted teal */\n}\n\n:root[data-theme=\"dark\"] {\n  /* ... existing widget accents ... */\n  --widget-histogram: #82b3bd;   /* lighter for dark backgrounds */\n}\n```\n\nExisting accents (light theme) — pick a tasteful, low-saturation colour distinct from these:\n\n| widget    | accent     |\n| --------- | ---------- |\n| theory    | `#56524a`  |\n| demo      | `#2563eb`  |\n| quiz      | `#6b3eaa`  |\n| code      | `#0d7a5f`  |\n| sandbox   | `#b45309`  |\n| histogram | `#4e7a85`  |\n\nThe accent is intentionally muted: lessons should foreground content, not chrome.\n\n:::callout{type=\"warning\" title=\"Forgetting one theme block\"}\nIf you only add the CSS var to `[data-theme=\"light\"]`, the widget will render correctly in light mode and lose its accent rail in dark mode (or vice versa). Both blocks always.\n:::"
+      }
+    },
+    {
+      "id": "s2-theory-step2-zod-schema",
+      "title": "Step 2 — Define the Zod schema and register it",
+      "type": "theory",
+      "data": {
+        "markdown": "## Step 2 of 5 — `src/widgets/<Name>/schema.ts` + `src/widgets/schemas/build.ts`\n\nThe Zod schema is the single source of truth: it drives runtime validation in `/api/courses/.../lessons` route handlers, the editor form's parse step, and the JSON Schema files emitted by `npm run build:schemas`. Keep it minimal and concrete; use `.refine()` for cross-field invariants.\n\n```ts\n// src/widgets/Histogram/schema.ts\nimport { z } from 'zod';\n\nexport const HistogramDataSchema = z\n  .object({\n    binEdges: z.array(z.number()).min(2),\n    counts: z.array(z.number().nonnegative()).min(1),\n  })\n  .refine((d) => d.binEdges.length === d.counts.length + 1, {\n    message: 'binEdges.length must equal counts.length + 1',\n    path: ['binEdges'],\n  });\n\nexport type HistogramData = z.infer<typeof HistogramDataSchema>;\n```\n\nTwo conventions matter here: **export both the schema and the inferred type** (so the editor and the widget can share types without circular imports), and **declare cross-field invariants with `.refine()`** rather than spreading them across components.\n\nThen register the schema in `src/widgets/schemas/build.ts` so `npm run build:schemas` emits `<kebab-case>.json` alongside the other widget JSON Schemas:\n\n```ts\n// src/widgets/schemas/build.ts (excerpt)\nimport { HistogramDataSchema } from '@/widgets/Histogram/schema';\n\nconst widgets: Record<string, ZodSchema> = {\n  // ... existing entries\n  histogram: HistogramDataSchema,\n};\n```\n\nThe key in the `widgets` map becomes the filename: `histogram` → `src/widgets/schemas/histogram.json`. **Do not hand-edit those JSON files** — they are regenerated."
+      }
+    },
+    {
+      "id": "s3-theory-step3-registry",
+      "title": "Step 3 — Add a `widgetRegistry` entry",
+      "type": "theory",
+      "data": {
+        "markdown": "## Step 3 of 5 — `src/widgets/registry.ts`\n\n`registry.ts` is the central type-to-component map. `Widget.tsx` reads it to render the chrome (icon, label, accent rail), and `SectionRenderer` falls through to it for unknown section types.\n\n```ts\n// src/widgets/registry.ts (excerpt)\nimport { BarChart3 } from 'lucide-react';\nimport { HistogramWidget } from './Histogram/HistogramWidget';\n\nexport type WidgetType =\n  | 'theory' | 'quiz' | 'code' | 'codeCloze' | 'demo' | 'sandbox'\n  | 'histogram'   // ← add to the union\n  | 'plotImage' | 'parametricExplorer' | 'dragMatch' | 'dataTable' | 'video'\n  | 'custom';\n\nexport const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {\n  // ... existing entries\n  histogram: {\n    component: HistogramWidget as ComponentType<{ data?: unknown }>,\n    label: 'Histogram',\n    icon: BarChart3,                    // any lucide-react icon\n    accentVar: '--widget-histogram',    // matches Step 1\n  },\n};\n```\n\nEach entry has exactly four fields:\n\n- **`component`** — the read-mode component. The registry erases the per-widget data type to `unknown`; cast inside the component or wrap in a typed adapter.\n- **`label`** — the short header eyebrow (e.g. `\"HISTOGRAM · §3\"`). Keep it ≤ 16 characters.\n- **`icon`** — any [`lucide-react`](https://lucide.dev/icons/) icon. Default size 14, no need to pass.\n- **`accentVar`** — the CSS variable name **with leading `--`**. Must match Step 1 exactly.\n\n:::callout{type=\"warning\" title=\"Missing the WidgetType literal\"}\nForgetting to add `'histogram'` to the `WidgetType` union is a TypeScript error in the same file: the `Record<WidgetType, ...>` declaration becomes incomplete and the build fails. Always extend the union and the map together.\n:::"
+      }
+    },
+    {
+      "id": "s4-theory-step4-editor",
+      "title": "Step 4 — Add the per-widget editor form",
+      "type": "theory",
+      "data": {
+        "markdown": "## Step 4 of 5 — `src/widgets/<Name>/<Name>Editor.tsx`\n\nThe editor opens in a 320-px side panel when the user clicks the pencil button on a section header. Each editor is a small controlled form that:\n\n1. Hydrates from `initial: <Type>Data`.\n2. Tracks dirty state versus `initial`.\n3. Runs `<Type>DataSchema.safeParse` before saving and surfaces issues inline.\n4. Calls `onSave(next, sources?)` with the parsed data; the parent persists via `PUT /api/courses/<slug>/lessons/<lessonSlug>`.\n5. Calls `onCancel()` to close without saving.\n\nUse the helpers in `@/components/EditorForm` so every editor looks the same:\n\n```tsx\n// src/widgets/Histogram/HistogramEditor.tsx (excerpt)\nimport {\n  EditorFormFooter, EditorFormSaveError,\n  fieldStyle, formBodyStyle, inputStyle, labelStyle,\n  errorTextStyle,\n} from '@/components/EditorForm';\nimport { SourcesField } from '@/components/Sources';\nimport { HistogramDataSchema, type HistogramData } from './schema';\n\nexport function HistogramEditor({ initial, onCancel, onSave }: {\n  initial: HistogramData;\n  onCancel: () => void;\n  onSave: (next: HistogramData) => Promise<void>;\n}) {\n  // ... state, parse, dirty checks\n  return (\n    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>\n      <div style={formBodyStyle}>\n        <label style={fieldStyle}>\n          <span style={labelStyle}>Bin edges (comma-separated)</span>\n          <input style={inputStyle} /* ... */ />\n        </label>\n        {/* ...more fields, then SourcesField... */}\n      </div>\n      <EditorFormSaveError message={saveError} />\n      <EditorFormFooter\n        saving={saving}\n        saveDisabled={!dirty}\n        onCancel={onCancel}\n        onSave={() => void handleSave()}\n      />\n    </div>\n  );\n}\n```\n\n### Wire the editor into the lesson page\n\nThe editor only mounts after a tiny edit in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`:\n\n- Import the editor at the top of the file.\n- Add a branch inside `WidgetEditPanel` that renders the editor when `section?.type === '<name>'` and forwards `onCancel` / `onSave`.\n- Add a branch inside `SectionRenderer` that wires the read-mode body and exposes a pencil button so the user can open the panel from the widget header.\n\nWithout these two branches, the user can see the widget but cannot edit it from the UI — even though the schema accepts the section."
+      }
+    },
+    {
+      "id": "s5-theory-step5-section-schema",
+      "title": "Step 5 — Add a `SectionSchema` variant",
+      "type": "theory",
+      "data": {
+        "markdown": "## Step 5 of 5 — `src/lib/schemas/lesson.ts`\n\nSteps 1–4 register the widget for rendering and editing. They do **not** teach the API how to validate a lesson JSON file containing the new widget. Without Step 5, lesson files with the new section type round-trip happily in memory but get rejected by `PUT /api/courses/<slug>/lessons/<lessonSlug>` and by the load-time validator on cold-start.\n\nAdd a new section variant to the discriminated union in `src/lib/schemas/lesson.ts`:\n\n```ts\n// src/lib/schemas/lesson.ts (excerpt)\nimport { HistogramDataSchema } from '@/widgets/Histogram/schema';\n\nexport const HistogramSectionSchema = z.object({\n  ...sectionBase,\n  type: z.literal('histogram'),\n  data: HistogramDataSchema,\n});\n\nexport const SectionSchema = z.discriminatedUnion('type', [\n  // ... existing variants\n  HistogramSectionSchema,\n]);\n```\n\nThree details that catch people out:\n\n- **`...sectionBase`** is a shared shape with `id`, `title`, and optional `sources`. Always spread it first.\n- **`type: z.literal('<name>')`** must match the `WidgetType` literal you added in Step 3 character-for-character.\n- The variant must be added to the `discriminatedUnion` array, not just declared. Zod uses the array to generate a discriminator-aware parser; a declaration not present in the array is dead code.\n\n:::callout{type=\"insight\" title=\"Why discriminated union?\"}\nA discriminated union gives you a per-variant `data` schema typed by the `type` field. That means `HistogramData` validates `data` only when `type === 'histogram'` — no need for a top-level `if/else` on type. The cost is one extra entry in the array per widget; the win is exhaustive type-narrowing in the renderer.\n:::"
+      }
+    },
+    {
+      "id": "s6-histogram-final-render",
+      "title": "Result — Histogram rendered from a section that exercises all 5 steps",
+      "type": "histogram",
+      "data": {
+        "binEdges": [-4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5],
+        "counts": [3, 13, 60, 175, 240, 175, 60, 13, 3]
+      }
+    },
+    {
+      "id": "s7-theory-final-recap",
+      "title": "What just happened",
+      "type": "theory",
+      "data": {
+        "markdown": "The histogram you see above is rendered from this exact section in the lesson JSON:\n\n```json\n{\n  \"id\": \"s6-histogram-final-render\",\n  \"title\": \"Result — ...\",\n  \"type\": \"histogram\",\n  \"data\": {\n    \"binEdges\": [-4.5, -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5, 4.5],\n    \"counts\": [3, 13, 60, 175, 240, 175, 60, 13, 3]\n  }\n}\n```\n\nFor that JSON to load and render, every one of the five steps had to be in place:\n\n1. The accent rail and slider thumb on the chart pull `--widget-histogram` from `tokens.css`.\n2. The `data` object was validated by `HistogramDataSchema` (Zod) on lesson load.\n3. The renderer found `histogram` in `widgetRegistry` and dispatched to `HistogramWidget`.\n4. (Not exercised by read-only lesson view — only relevant when editing.)\n5. The `SectionSchema` discriminated union accepted `type: 'histogram'` with `data: HistogramData`, otherwise the lesson file would have been rejected before the page rendered."
+      }
+    },
+    {
+      "id": "s8-quiz-step5",
+      "title": "Quick check: what does Step 5 protect against?",
+      "type": "quiz",
+      "data": {
+        "question": "You add a new widget and complete steps 1–4 (CSS var, Zod schema + build.ts entry, registry entry, editor) but skip step 5 (SectionSchema variant). What is the most likely failure mode?",
+        "options": [
+          "The widget never appears on the page — `SectionRenderer` cannot find a component for the new section type.",
+          "The widget renders during a hot-reload session, but lesson JSON containing it is rejected by `PUT /api/courses/.../lessons/...` and on the next cold-start when the validator re-checks files on disk.",
+          "TypeScript fails to compile because `widgetRegistry` is incomplete.",
+          "`npm run build:schemas` errors because the schema is missing from `src/widgets/schemas/build.ts`."
+        ],
+        "correct": [1],
+        "explanation": "Step 5 is the API/validation layer. Without it, the widget renders in-memory because `widgetRegistry` is sufficient for the read path, but every persistence boundary that runs `LessonSchema.parse(...)` rejects the section. The other options describe failures of *different* steps: option A is what happens when you skip step 3 (registry); option C is what happens when you forget the `WidgetType` literal in step 3; option D is what happens when you skip the `build.ts` part of step 2.",
+        "multiSelect": false
+      }
+    }
+  ]
+}
