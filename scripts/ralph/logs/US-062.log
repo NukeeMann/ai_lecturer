@@ -1,0 +1,27 @@
+[2026-05-04T12:30:48+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T12:32:03+0200] Now I'll update the SYSTEM_PROMPT. Current prompt is minimal but lacks explicit guidance about answering directly when asked — the underlying model defaults to a Socratic dodge. I'll add explicit dual-mode instructions.
+[2026-05-04T12:32:17+0200] Let me refine — the AC says remove "do not reveal" / "never give direct solutions" instructions, so I need to rephrase the default branch without prohibitive language.
+[2026-05-04T12:32:26+0200] Let me reformat the prompt with a template literal so it's actually readable:
+[2026-05-04T12:32:36+0200] Now add the regression tests. The AC mentions "scripted prompt fixture verifies both branches against the updated prompt" — I'll add fixture-style assertions on the prompt content (forbidden phrases absent, both branches present) plus optionally an integration-style test that runs both branches through a fake connector to prove the API surface is wiring the new prompt through.
+[2026-05-04T12:32:56+0200] Now let me check existing route.test.ts assertion still passes (it matched `/AI tutor for an interactive online course/` which is preserved), and verify the prompt file:
+[2026-05-04T12:33:02+0200] Now full test suite + typecheck.
+[2026-05-04T12:33:16+0200] 283/283 vitest, typecheck clean. Now lint to be safe:
+[2026-05-04T12:33:51+0200] Lint errors are pre-existing and unrelated to my changes (design source JSX, playwright skill scripts). Now update prd.json + progress.txt and commit.
+[2026-05-04T12:34:46+0200] US-062 done — committed `04f9a5e` on `ralph/us-062`. Push handled by orchestrator.
+
+**What changed:**
+- `src/lib/lessonChat/context.ts` — `SYSTEM_PROMPT` rewritten as a two-branch contract. DEFAULT (open-ended): Socratic/guiding. OVERRIDE (explicit ask: "just give me the answer", "tell me the solution", "show me the correct code", "what's the right option", "stop hinting, answer it"): direct answer + brief why. Override always wins. No prohibitive phrasing left.
+- `src/lib/lessonChat/context.test.ts` — added 4 fixture tests: forbidden phrases absent, override triggers present verbatim, default-branch keywords present, override-wins clause appears AFTER `OVERRIDE` marker.
+- `scripts/ralph/prd.json` — `US-062.passes = true`.
+- `scripts/ralph/progress.txt` — US-062 entry with learnings (notably: the original prompt didn't contain "do not reveal" — the deflection comes from Claude's defaults, so a positive override clause was needed, not just deletion).
+
+**Quality:** vitest 283/283, typecheck clean. No `ui` tag → no browser test required.
+[2026-05-04T12:34:46+0200] [result success turns=35 cost=$2.0926740000000006] US-062 done — committed `04f9a5e` on `ralph/us-062`. Push handled by orchestrator.
+
+**What changed:**
+- `src/lib/lessonChat/context.ts` — `SYSTEM_PROMPT` rewritten as a two-branch contract. DEFAULT (open-ended): Socratic/guiding. OVERRIDE (explicit ask: "just give me the answer", "tell me the solution", "show me the correct code", "what's the right option", "stop hinting, answer it"): direct answer + brief why. Override always wins. No prohibitive phrasing left.
+- `src/lib/lessonChat/context.test.ts` — added 4 fixture tests: forbidden phrases absent, override triggers present verbatim, default-branch keywords present, override-wins clause appears AFTER `OVERRIDE` marker.
+- `scripts/ralph/prd.json` — `US-062.passes = true`.
+- `scripts/ralph/progress.txt` — US-062 entry with learnings (notably: the original prompt didn't contain "do not reveal" — the deflection comes from Claude's defaults, so a positive override clause was needed, not just deletion).
+
+**Quality:** vitest 283/283, typecheck clean. No `ui` tag → no browser test required.
