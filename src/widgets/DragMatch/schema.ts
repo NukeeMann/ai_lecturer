@@ -39,14 +39,6 @@ export interface DragMatchValidationResult {
   misplacedItemIds: Set<string>;
 }
 
-function arraysEqual(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return false;
-  }
-  return true;
-}
-
 function setsEqual(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const sb = new Set(b);
@@ -67,9 +59,7 @@ export function validateDragMatch(
 
   for (const zone of data.zones) {
     const placed = placement[zone.id] ?? [];
-    zoneCorrect[zone.id] = data.multipleItemsPerZone
-      ? arraysEqual(placed, zone.accepts)
-      : setsEqual(placed, zone.accepts);
+    zoneCorrect[zone.id] = setsEqual(placed, zone.accepts);
   }
 
   const misplacedItemIds = new Set<string>();
@@ -133,11 +123,6 @@ export function computeZoneState(
   const zone = data.zones.find((z) => z.id === zoneId);
   if (!zone) return 'idle';
   const placed = placement[zoneId] ?? [];
-  if (placed.length > 0) {
-    const matches = data.multipleItemsPerZone
-      ? arraysEqual(placed, zone.accepts)
-      : setsEqual(placed, zone.accepts);
-    if (matches) return 'correct';
-  }
+  if (placed.length > 0 && setsEqual(placed, zone.accepts)) return 'correct';
   return submitted ? 'incorrect' : 'idle';
 }

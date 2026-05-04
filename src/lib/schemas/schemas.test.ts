@@ -732,7 +732,7 @@ describe('DragMatch validateDragMatch', () => {
     requireAll: true,
   };
 
-  it('multi-zone (ordered): exact accepts order is correct', () => {
+  it('multi-zone: exact accepts order is correct', () => {
     const result = validateDragMatch(multiZoneData, {
       fruit: ['apple', 'banana'],
       veg: ['carrot'],
@@ -741,18 +741,21 @@ describe('DragMatch validateDragMatch', () => {
     expect(result.allCorrect).toBe(true);
   });
 
-  it('multi-zone (ordered): wrong order in zone is incorrect', () => {
+  // US-090: order within a zone is not meaningful — set equality wins even when
+  // multipleItemsPerZone=true.
+  it('multi-zone (multipleItemsPerZone=true): items in any order within a zone is correct', () => {
     const result = validateDragMatch(multiZoneData, {
       fruit: ['banana', 'apple'],
       veg: ['carrot'],
       __bank__: [],
     });
-    expect(result.allCorrect).toBe(false);
-    expect(result.zoneCorrect['fruit']).toBe(false);
+    expect(result.allCorrect).toBe(true);
+    expect(result.zoneCorrect['fruit']).toBe(true);
     expect(result.zoneCorrect['veg']).toBe(true);
+    expect(result.misplacedItemIds.size).toBe(0);
   });
 
-  it('multi-zone (ordered): missing one item in zone is incorrect', () => {
+  it('multi-zone: missing one item in zone is incorrect', () => {
     const result = validateDragMatch(multiZoneData, {
       fruit: ['apple'],
       veg: ['carrot'],
