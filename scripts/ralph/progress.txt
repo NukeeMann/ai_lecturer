@@ -78,3 +78,28 @@ Previous log archived to: archive/progress-2026-05-04-2004.txt
   - For an anchor in `scripts/ralph/skills/<skill>/SKILL.md` pointing at the repo-root `docs/widgets.md`, the relative path is `../../../../docs/widgets.md` (4 levels up: `<skill>/` → `skills/` → `ralph/` → `scripts/` → repo root).
   - One-shot Zod validation against a doc's example JSON: easiest is `npx tsx scripts/<file>.ts` from the project root with `@/...` imports — `tsx` honours `tsconfig.json`'s `paths` aliases out of the box. Plain `node` ESM with relative `.ts` paths chokes on the export discovery (saw "does not provide an export named X" for valid named exports).
 ---
+
+## 2026-05-04 - US-087 - Generate sample.mp4 and showcase Video widget
+- Generated `courses/video-test/assets/sample.mp4` — 8 s, silent, 320x240, ~93 KB, ffmpeg `testsrc2` (built-in lavfi colour pattern, no external media). Generation command documented at `courses/video-test/README.md` along with a per-lesson capability matrix.
+- Updated `courses/video-test/lessons/mp4-demo.json` to (a) point title at the synthetic clip and (b) reflow transcript timestamps to the clip's actual 8-second runtime. Removed the previous `startAt: 5` because the assets API does not advertise byte ranges (`Accept-Ranges`) and the seek silently no-ops in chromium — left a note in the learnings rather than fixing the asset route, which the US-087 notes mark out-of-scope.
+- All four lessons confirmed via playwright-skill `/tmp/playwright-test-US-087.js`:
+  - fourier-walkthrough → YouTube + transcript present (✓)
+  - mp4-demo → mp4 playback, video advances after `play()` from 0 → ~0.10 s in 100 ms (✓)
+  - neural-net-intro → YouTube + speaker-tagged "captions"-style transcript (✓)
+  - no-transcript → bare YouTube embed, no toggle rendered (auto-fetch may or may not yield segments) (✓)
+- Screenshots: `/tmp/us087-{fourier-walkthrough,mp4-demo,mp4-demo-playing,neural-net-intro,no-transcript}.png`. mp4-demo-playing screenshot shows the testsrc2 colour bars + readable timecode overlay + transcript expanded.
+- No real rendering bug surfaced in `src/widgets/Video/VideoWidget.tsx` — left untouched.
+- Files changed:
+  - courses/video-test/assets/sample.mp4 (NEW)
+  - courses/video-test/README.md (NEW — capability matrix + ffmpeg one-liner)
+  - courses/video-test/lessons/mp4-demo.json
+  - scripts/ralph/prd.json (passes flip)
+- Typecheck passes.
+- **Learnings for future iterations:**
+  - **`<video>` seeking requires `Accept-Ranges: bytes` from the server.** Without it (or proper Range request handling) chromium treats `el.seekable.end(0)` as 0 and silently rejects `el.currentTime = N` for any N > 0. The current `src/app/api/courses/[slug]/assets/[...path]/route.ts` returns the whole file as `200 OK` with `Content-Length` only — fine for top-to-bottom playback, broken for `startAt`, broken for transcript click-to-seek. A future story should add Range support (parse `Range: bytes=start-end`, return 206 with `Content-Range`, advertise `Accept-Ranges: bytes` on 200s too). I left it alone because US-087's notes explicitly bound the touch list to courses/** + VideoWidget.tsx.
+  - **ffmpeg-static fetched ad-hoc when the host lacks ffmpeg.** No `apt-get` access on this WSL2 sandbox and `ffmpeg` wasn't preinstalled. `npm pack ffmpeg-static` then `npm install --no-save env-paths progress https-proxy-agent && node install.js` inside the unpacked tarball downloads a static `ffmpeg` binary (johnvansickle build, GPL) into the package dir. ~80 MB, statically linked, x86_64. Don't commit it — use it once and discard.
+  - **`testsrc2` is the right ffmpeg source for synthetic MP4 fixtures.** Built-in lavfi pattern with colour bars + a moving timecode display; visually unambiguous so a screenshot can prove the file actually played. `-c:v libx264 -pix_fmt yuv420p -preset veryslow -crf 30 -movflags +faststart -an` lands at ~93 KB for 8 s @ 15 fps 320x240. `+faststart` moves moov to the front so streaming starts before full download; `-an` strips the audio track to keep the bitrate down.
+  - **The Video widget's startAt mp4 path is broken for any asset served from `/api/courses/[slug]/assets/`.** Setting `el.currentTime` at `loadedmetadata` time only works if the seekable range covers the target — without Accept-Ranges support that range stays empty even after preload="auto" and 6 s of polling. Don't waste time tweaking the widget; fix the asset route instead.
+  - **The dev server can be reused across worktrees as long as it's pointed at the correct cwd.** Port 3000 was already held by a `next-server` process whose `/proc/<pid>/cwd` resolved to `.worktrees/US-087` — Turbopack's HMR picked up edits without a restart. Use `readlink /proc/<pid>/cwd` to confirm before reusing.
+  - **mp4-demo capability mapping.** AC's "captions/poster" capability for neural-net-intro is interpreted as "speaker-tagged transcript" (the transcript's `speaker` field functions as caption attribution). The Video widget schema does not currently support `<track>` captions or `poster` images, and US-087's notes constrain VideoWidget.tsx edits to "real rendering bugs" only. If a future story adds `poster` / WebVTT captions, neural-net-intro is the natural showcase target.
+---
