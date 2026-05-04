@@ -1,0 +1,45 @@
+[2026-05-04T12:13:24+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T12:18:27+0200] Now I'll create the error formatter and write a failing test.
+[2026-05-04T12:19:25+0200] Now plumb the new error fields through worker.ts and client.ts.
+[2026-05-04T12:19:50+0200] Apply the same pattern to other catch blocks in worker.ts.
+[2026-05-04T12:20:06+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T12:20:39+0200] Now rewrite the CodeRunner output panel.
+[2026-05-04T12:21:33+0200] Now wire collapse state into the CodeRunner component itself.
+[2026-05-04T12:21:50+0200] Now wire the new props into the OutputBody usage:
+[2026-05-04T12:22:32+0200] Now update the rendering of the output panel inside extraPanel.
+[2026-05-04T12:22:44+0200] Now add the new styles to CodeWidget.
+[2026-05-04T12:23:14+0200] Now update ParametricExplorer to use structured error display.
+[2026-05-04T12:23:57+0200] Now run typecheck and tests.
+[2026-05-04T12:28:49+0200] Browser verification looks good — exception headline + collapsible traceback, stdout/stderr distinction, empty-state hidden. Now write the progress log and commit.
+[2026-05-04T12:30:15+0200] US-061 done. Committed as `1222fef`.
+
+**What changed**
+- New `extractPythonError()` in `src/lib/pyodide/errorFormat.ts` splits a `PythonError` into `{ traceback, errorType, errorMessage }` using `err.type` (Python class name) + the formatted `err.message`.
+- Worker now spreads `...errorFields(err)` on every catch path, so the main thread receives `errorType` + `errorMessage` alongside `traceback`/`stdout`/`stderr`.
+- `RunResult` extended with `errorType?` / `errorMessage?`.
+- CodeRunner Output panel rewritten: chevron-toggleable "OUTPUT" header, stdout in body colour, stderr in warning colour with a labelled `STDERR` block, exceptions in a danger block showing `<Type>: <message>` headline + "Show traceback" expansion. Empty results render nothing.
+- CodeWidget's tests-panel output mirrors the same structure with its own collapse independent of the tests list.
+- ParametricExplorer error region now shows the same headline + collapsible traceback.
+
+**Verification** (browser, sandbox `s3-sandbox-numpy` on `gauss-basics/wprowadzenie-do-filtrowania`)
+- `raise ValueError('boom')` → headline `ValueError: boom`, expandable traceback (`/tmp/us-061-test1-traceback.png`).
+- `print('hello'); print('warning', file=sys.stderr)` → stdout dark, stderr orange on tan (`/tmp/us-061-test2-stdout-stderr.png`).
+- Output toggle hides/restores the body.
+- `x = 1` (no output) → no body, no false-error styling (`/tmp/us-061-test4-empty.png`).
+- Vitest 279/279, typecheck clean, lint clean.
+[2026-05-04T12:30:15+0200] [result success turns=115 cost=$10.716793249999997] US-061 done. Committed as `1222fef`.
+
+**What changed**
+- New `extractPythonError()` in `src/lib/pyodide/errorFormat.ts` splits a `PythonError` into `{ traceback, errorType, errorMessage }` using `err.type` (Python class name) + the formatted `err.message`.
+- Worker now spreads `...errorFields(err)` on every catch path, so the main thread receives `errorType` + `errorMessage` alongside `traceback`/`stdout`/`stderr`.
+- `RunResult` extended with `errorType?` / `errorMessage?`.
+- CodeRunner Output panel rewritten: chevron-toggleable "OUTPUT" header, stdout in body colour, stderr in warning colour with a labelled `STDERR` block, exceptions in a danger block showing `<Type>: <message>` headline + "Show traceback" expansion. Empty results render nothing.
+- CodeWidget's tests-panel output mirrors the same structure with its own collapse independent of the tests list.
+- ParametricExplorer error region now shows the same headline + collapsible traceback.
+
+**Verification** (browser, sandbox `s3-sandbox-numpy` on `gauss-basics/wprowadzenie-do-filtrowania`)
+- `raise ValueError('boom')` → headline `ValueError: boom`, expandable traceback (`/tmp/us-061-test1-traceback.png`).
+- `print('hello'); print('warning', file=sys.stderr)` → stdout dark, stderr orange on tan (`/tmp/us-061-test2-stdout-stderr.png`).
+- Output toggle hides/restores the body.
+- `x = 1` (no output) → no body, no false-error styling (`/tmp/us-061-test4-empty.png`).
+- Vitest 279/279, typecheck clean, lint clean.
