@@ -1,0 +1,46 @@
+[2026-05-04T14:16:23+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T14:16:38+0200] Let me find the existing US-018 auto-advance code.
+[2026-05-04T14:19:35+0200] I have enough context. Let me check the existing flatLessons + dashboard route for the helper design.
+[2026-05-04T14:19:39+0200] Now let me create the helper module and test.
+[2026-05-04T14:19:47+0200] Now let me create the helper module + failing test.
+[2026-05-04T14:20:17+0200] Now let me run the test to confirm it's failing on something — actually it should pass since I implemented the helper alongside. Let me quickly verify and move to the lesson page integration.
+[2026-05-04T14:21:02+0200] Now I'll modify the lesson page. Start with the import and parent state:
+[2026-05-04T14:21:12+0200] Now lift `autoDone` to the parent and add the auto-advance state machinery:
+[2026-05-04T14:21:20+0200] Now replace the `handleMarkComplete` 600ms inline advance with the new flow, and add the trigger effect:
+[2026-05-04T14:21:36+0200] Now add the all-sections-done effect and lifecycle resets:
+[2026-05-04T14:22:01+0200] I need to handle the re-entry case — entering an already-completed lesson should not auto-advance. Let me fix the trigger to set a baseline first:
+[2026-05-04T14:22:23+0200] Now wire the props from parent → LessonStream and remove the local `autoDone`:
+[2026-05-04T14:22:40+0200] Now update LessonStreamProps + LessonStream to use parent's autoDone:
+[2026-05-04T14:22:55+0200] Now add the toast UI. First, render it next to SessionToast:
+[2026-05-04T14:22:59+0200] Now add the `AutoAdvanceToast` component near `SessionToast`:
+[2026-05-04T14:23:15+0200] Let me remove the now-unused `advancing` state to avoid lint warnings:
+[2026-05-04T14:23:31+0200] Now let me verify no other references still use `flatLessons` `prevLesson/nextLesson` pattern that might conflict, and run typecheck.
+[2026-05-04T14:24:18+0200] Now insert the trigger effect after `cancelAutoAdvance`:
+[2026-05-04T14:24:49+0200] Now let's browser-verify. Start a dev server.
+[2026-05-04T14:25:06+0200] Dev server is ready. Let me check what test course is best for verifying — the smoke-test course has lessons each with multiple sections (multi-source completion). I need a lesson where I can complete all sections quickly.
+[2026-05-04T14:25:12+0200] Let me write the playwright test:
+[2026-05-04T14:26:03+0200] Let me rewrite the test in the inline format the runner expects:
+[2026-05-04T14:28:45+0200] Test 1 passed. Let me restart the dev server (Turbopack hang issue) and split tests:
+[2026-05-04T14:30:22+0200] T3 issue — let me extend the wait and re-test:
+[2026-05-04T14:30:45+0200] All four behaviors verified. Let me update progress.txt and commit.
+[2026-05-04T14:30:59+0200] Now append progress.txt:
+[2026-05-04T14:32:18+0200] Now sanity-check no other tests broke and commit:
+[2026-05-04T14:32:30+0200] Both clean. Let me check git status and commit:
+[2026-05-04T14:33:04+0200] US-067 done and committed. 
+
+Summary:
+- **Verified US-018** still works (Mark Complete → 600ms → next lesson). Documented gaps: no all-sections-done trigger, no toast, no Cancel, last-lesson dead-ended.
+- **Added** `src/lib/lessons/advance.ts` (helper) + `advance.test.ts` (13 unit tests pinning the last-lesson + multi-source completion contract).
+- **Wired** the lesson page to schedule a 1500ms auto-advance with a fixed-bottom-center toast `[data-testid="auto-advance-toast"]` (text "Going to next lesson…" / "Going to My Courses…" for the last-lesson variant) + Cancel button. Re-entering an already-finished lesson does NOT auto-fire (baseline capture). Cancellation is sticky per-lesson within the session. Mark Complete uses `force: true` to bypass cancellation.
+- **`/my-courses`** resolved to `/` (the dashboard — AvatarMenu's "My courses" already points there).
+- **Browser-verified** all four scenarios; **vitest 301/301** (+13), **typecheck clean**.
+- `prd.json` flipped `US-067.passes` → `true`; commit `ca2f913` includes code + prd + progress log.
+[2026-05-04T14:33:05+0200] [result success turns=106 cost=$7.924900999999999] US-067 done and committed. 
+
+Summary:
+- **Verified US-018** still works (Mark Complete → 600ms → next lesson). Documented gaps: no all-sections-done trigger, no toast, no Cancel, last-lesson dead-ended.
+- **Added** `src/lib/lessons/advance.ts` (helper) + `advance.test.ts` (13 unit tests pinning the last-lesson + multi-source completion contract).
+- **Wired** the lesson page to schedule a 1500ms auto-advance with a fixed-bottom-center toast `[data-testid="auto-advance-toast"]` (text "Going to next lesson…" / "Going to My Courses…" for the last-lesson variant) + Cancel button. Re-entering an already-finished lesson does NOT auto-fire (baseline capture). Cancellation is sticky per-lesson within the session. Mark Complete uses `force: true` to bypass cancellation.
+- **`/my-courses`** resolved to `/` (the dashboard — AvatarMenu's "My courses" already points there).
+- **Browser-verified** all four scenarios; **vitest 301/301** (+13), **typecheck clean**.
+- `prd.json` flipped `US-067.passes` → `true`; commit `ca2f913` includes code + prd + progress log.
