@@ -1,26 +1,33 @@
-[2026-05-04T17:46:57+0200] [rate_limit five_hour status=allowed]
-[2026-05-04T17:48:38+0200] Now I understand. Let me create the helper module + test, then patch the widget.
-[2026-05-04T17:49:01+0200] Verify the tests fail before the fix lands (they should fail because the helper isn't yet wired in widget). Actually the helper is standalone — let me run them now to make sure they pass on their own:
-[2026-05-04T17:49:10+0200] Now the integration into the widget itself:
-[2026-05-04T17:50:41+0200] Typecheck clean. Let me also run the whole test suite to make sure nothing else broke:
-[2026-05-04T17:50:52+0200] Now browser verification. First find a lesson with a DragMatch widget.
-[2026-05-04T17:53:58+0200] All assertions pass. Browser verification complete. Now update prd.json and commit.
-[2026-05-04T17:54:15+0200] Now append progress notes:
-[2026-05-04T17:55:29+0200] Commit landed (`2904d69`) on `ralph/us-082` with `passes: true` for US-082 in prd.json.
+[2026-05-04T18:33:12+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T18:38:55+0200] I understand the bug now. The drop-box correctness is gated by `submitted`, but on a re-drag `setSubmitted(false)` runs, so even after the user re-drags the correct block in, the box stays neutral until they hit Submit again. The AC says success styling should be live ("computed from current placement, not from a one-shot 'first-correct' flag") and that completion should be reported live for US-080.
 
-**Summary of changes:**
-- `src/widgets/DragMatch/zoneState.ts` (new): pure helper `getZoneFeedbackState({ zoneCorrect, hasItems, submitted })` — green whenever a zone holds correct items, red only when submitted+wrong, otherwise idle.
-- `src/widgets/DragMatch/zoneState.test.ts` (new): 5 unit tests including the second-try-correction repro.
-- `src/widgets/DragMatch/DragMatchWidget.tsx`: validation now runs every render (not gated on `submitted`); zone color uses the helper; completion callback moved to a `useEffect` watching `allCorrect` so the wrapper checkbox (US-080) can react to drag-only completion.
-- `scripts/ralph/prd.json`: US-082 → `passes: true`. `scripts/ralph/progress.txt`: appended entry with learnings.
+Plan:
+1. Add `computeZoneState` to schema.ts (live "correct" feedback; "incorrect"/idle preserves current behavior).
+2. Add tests for it.
+3. Use it in the widget; add a `useEffect` that fires `onComplete` when live all-correct flips to true.
+[2026-05-04T18:39:05+0200] Now add tests for `computeZoneState`:
+[2026-05-04T18:39:30+0200] Now update the widget to use `computeZoneState` and fire `onComplete` live:
+[2026-05-04T18:39:46+0200] Now wire `computeZoneState` into the zone rendering and remove the duplicate onComplete from `handleSubmit`:
+[2026-05-04T18:40:11+0200] Now expose the correctness state on the DOM so the playwright test can assert it (currently styles are inline CSS vars, hard to inspect):
+[2026-05-04T18:40:29+0200] Good — `placed` is still used. Now let me run the typecheck and tests:
+[2026-05-04T18:40:45+0200] Typecheck clean, 318/318 tests pass (6 new). Now browser-test with playwright. First find a lesson with a DragMatch widget:
+[2026-05-04T18:41:00+0200] Now start a dev server on a custom port and detect:
+[2026-05-04T18:42:47+0200] All 13 browser assertions pass. The corrected drop-box reports `data-correctness="correct"` with the success-token background `rgb(227, 243, 236)` and border `rgb(184, 220, 203)` — green, not neutral.
 
-**Quality:** typecheck clean, 18 test files / 317 tests pass. Browser verification on dedicated dev server (`localhost:3082`): wrong→correct re-drop flips border to `rgb(184,220,203)` and bg to `rgb(227,243,236)` (success tokens); empty zones stay neutral; all three zones share success border on completion.
-[2026-05-04T17:55:29+0200] [result success turns=63 cost=$3.4176242499999994] Commit landed (`2904d69`) on `ralph/us-082` with `passes: true` for US-082 in prd.json.
+Let me update progress.txt and prd.json, then commit:
+[2026-05-04T18:44:25+0200] US-082 done and committed (HEAD `dcf9561`, `passes: true` confirmed in committed prd.json).
 
-**Summary of changes:**
-- `src/widgets/DragMatch/zoneState.ts` (new): pure helper `getZoneFeedbackState({ zoneCorrect, hasItems, submitted })` — green whenever a zone holds correct items, red only when submitted+wrong, otherwise idle.
-- `src/widgets/DragMatch/zoneState.test.ts` (new): 5 unit tests including the second-try-correction repro.
-- `src/widgets/DragMatch/DragMatchWidget.tsx`: validation now runs every render (not gated on `submitted`); zone color uses the helper; completion callback moved to a `useEffect` watching `allCorrect` so the wrapper checkbox (US-080) can react to drag-only completion.
-- `scripts/ralph/prd.json`: US-082 → `passes: true`. `scripts/ralph/progress.txt`: appended entry with learnings.
+What changed:
+- `src/widgets/DragMatch/schema.ts:84` — added `computeZoneState(data, placement, zoneId, submitted)` that reports `'correct'` LIVE when a zone holds the expected items, falls back to `'incorrect'`/`'idle'` otherwise.
+- `src/widgets/DragMatch/DragMatchWidget.tsx` — uses `computeZoneState`, exposes `data-correctness` on each zone, and fires `onComplete` from a `useEffect` on a live `allCorrect` (one-shot via `completedOnceRef`).
+- `src/lib/schemas/schemas.test.ts` — 6 new tests covering the AC scenarios.
 
-**Quality:** typecheck clean, 18 test files / 317 tests pass. Browser verification on dedicated dev server (`localhost:3082`): wrong→correct re-drop flips border to `rgb(184,220,203)` and bg to `rgb(227,243,236)` (success tokens); empty zones stay neutral; all three zones share success border on completion.
+Quality: typecheck clean, vitest 318/318, playwright 13/13 (drop wrong → idle, drop correct over wrong → `data-correctness="correct"` with `rgb(227,243,236)` background and `rgb(184,220,203)` border).
+[2026-05-04T18:44:25+0200] [result success turns=65 cost=$4.677017500000001] US-082 done and committed (HEAD `dcf9561`, `passes: true` confirmed in committed prd.json).
+
+What changed:
+- `src/widgets/DragMatch/schema.ts:84` — added `computeZoneState(data, placement, zoneId, submitted)` that reports `'correct'` LIVE when a zone holds the expected items, falls back to `'incorrect'`/`'idle'` otherwise.
+- `src/widgets/DragMatch/DragMatchWidget.tsx` — uses `computeZoneState`, exposes `data-correctness` on each zone, and fires `onComplete` from a `useEffect` on a live `allCorrect` (one-shot via `completedOnceRef`).
+- `src/lib/schemas/schemas.test.ts` — 6 new tests covering the AC scenarios.
+
+Quality: typecheck clean, vitest 318/318, playwright 13/13 (drop wrong → idle, drop correct over wrong → `data-correctness="correct"` with `rgb(227,243,236)` background and `rgb(184,220,203)` border).
