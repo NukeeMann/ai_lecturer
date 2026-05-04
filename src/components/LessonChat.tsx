@@ -10,7 +10,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
-import { Square, X } from 'lucide-react';
+import { Maximize2, Minimize2, Square, X } from 'lucide-react';
 
 import { modLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
@@ -53,6 +53,10 @@ export function LessonChat({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  // Temporary fullscreen-overlay expansion. Toggled by the header button;
+  // does NOT unmount this component, so messages, draft, and an in-flight
+  // streaming request all survive the round-trip back to the side panel.
+  const [expanded, setExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -209,6 +213,9 @@ export function LessonChat({
   }, [draft, draftKey]);
 
   // Autoresize the textarea: measure scrollHeight, clamp to MAX_LINES.
+  // Re-runs when `expanded` flips because the textarea's available width
+  // changes between the side panel and the fullscreen overlay, which can
+  // alter wrapping and therefore scrollHeight.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -221,7 +228,7 @@ export function LessonChat({
     );
     el.style.height = `${next}px`;
     el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [draft]);
+  }, [draft, expanded]);
 
   // Auto-scroll to bottom when new messages land.
   useEffect(() => {
@@ -473,25 +480,55 @@ export function LessonChat({
     );
   }
 
+  const composedAsideStyle = expanded
+    ? { ...asideStyle, ...asideExpandedStyle }
+    : asideStyle;
+  const composedListStyle = expanded
+    ? { ...messageListStyle, ...messageListExpandedStyle }
+    : messageListStyle;
+  const composedTextareaStyle = expanded
+    ? { ...textareaStyle, ...textareaExpandedStyle }
+    : textareaStyle;
+  const composedComposerControlsStyle = expanded
+    ? { ...composerControlsStyle, ...composerControlsExpandedStyle }
+    : composerControlsStyle;
+
   return (
     <aside
       data-testid="lesson-chat"
       data-open="true"
+      data-expanded={expanded ? 'true' : 'false'}
       data-active-section-id={activeSectionId ?? ''}
-      style={asideStyle}
+      style={composedAsideStyle}
     >
       <style>{lessonChatGlobalKeyframes}</style>
       <header style={headerStyle}>
         <h2 style={titleStyle}>AI Tutor</h2>
-        <button
-          type="button"
-          data-testid="lesson-chat-close"
-          aria-label="Close AI tutor panel"
-          onClick={onClose}
-          style={closeBtnStyle}
-        >
-          <X size={16} strokeWidth={2} />
-        </button>
+        <div style={headerActionsStyle}>
+          <button
+            type="button"
+            data-testid="lesson-chat-expand-toggle"
+            aria-label={expanded ? 'Collapse AI tutor panel' : 'Expand AI tutor panel'}
+            aria-pressed={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            style={iconBtnStyle}
+          >
+            {expanded ? (
+              <Minimize2 size={16} strokeWidth={2} />
+            ) : (
+              <Maximize2 size={16} strokeWidth={2} />
+            )}
+          </button>
+          <button
+            type="button"
+            data-testid="lesson-chat-close"
+            aria-label="Close AI tutor panel"
+            onClick={onClose}
+            style={iconBtnStyle}
+          >
+            <X size={16} strokeWidth={2} />
+          </button>
+        </div>
       </header>
 
       <div
@@ -504,7 +541,7 @@ export function LessonChat({
             Ask anything about this lesson — I have its content as context.
           </p>
         ) : (
-          <ul style={messageListStyle}>
+          <ul style={composedListStyle}>
             {messages.map((m) => {
               const rowStyle =
                 m.role === 'user' ? userBubbleRowStyle : assistantBubbleRowStyle;
@@ -551,9 +588,9 @@ export function LessonChat({
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleKeyDown}
           rows={1}
-          style={textareaStyle}
+          style={composedTextareaStyle}
         />
-        <div style={composerControlsStyle}>
+        <div style={composedComposerControlsStyle}>
           <span data-testid="lesson-chat-send-hint" style={hintStyle}>
             {modLabel(isMac)}+Enter to send
           </span>
@@ -594,7 +631,9 @@ const asideHiddenStyle: CSSProperties = {
 const asideStyle: CSSProperties = {
   gridColumn: '3 / 4',
   gridRow: '2 / 3',
-  borderLeft: '1px solid var(--border)',
+  borderLeftWidth: 1,
+  borderLeftStyle: 'solid',
+  borderLeftColor: 'var(--border)',
   background: 'var(--bg-elevated)',
   display: 'flex',
   flexDirection: 'column',
@@ -621,7 +660,13 @@ const titleStyle: CSSProperties = {
   lineHeight: 1.2,
 };
 
-const closeBtnStyle: CSSProperties = {
+const headerActionsStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+};
+
+const iconBtnStyle: CSSProperties = {
   width: 28,
   height: 28,
   display: 'inline-flex',
@@ -634,6 +679,45 @@ const closeBtnStyle: CSSProperties = {
   borderRadius: 'var(--radius-sm)',
   color: 'var(--text-tertiary)',
   cursor: 'pointer',
+};
+
+// When expanded, the aside leaves the lesson grid and becomes a fullscreen
+// overlay anchored to the viewport. The grid still allocates the side-panel
+// column underneath (chatOpen is unchanged on the parent), so collapsing
+// snaps back into place without the parent having to juggle layout state.
+const asideExpandedStyle: CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 100,
+  gridColumn: 'auto',
+  gridRow: 'auto',
+  borderLeftWidth: 0,
+  boxShadow: '0 0 0 1px var(--border), 0 12px 40px rgba(0,0,0,0.18)',
+};
+
+// In the overlay we constrain message rows + composer to a comfortable
+// reading width centred in the viewport, so long tutor responses don't
+// stretch edge-to-edge on wide displays.
+const EXPANDED_CONTENT_MAX_WIDTH = 920;
+
+const messageListExpandedStyle: CSSProperties = {
+  maxWidth: EXPANDED_CONTENT_MAX_WIDTH,
+  marginLeft: 'auto',
+  marginRight: 'auto',
+  width: '100%',
+};
+
+const textareaExpandedStyle: CSSProperties = {
+  maxWidth: EXPANDED_CONTENT_MAX_WIDTH,
+  marginLeft: 'auto',
+  marginRight: 'auto',
+};
+
+const composerControlsExpandedStyle: CSSProperties = {
+  maxWidth: EXPANDED_CONTENT_MAX_WIDTH,
+  marginLeft: 'auto',
+  marginRight: 'auto',
+  width: '100%',
 };
 
 const messagesStyle: CSSProperties = {
@@ -658,7 +742,10 @@ const emptyStyle: CSSProperties = {
 
 const messageListStyle: CSSProperties = {
   listStyle: 'none',
-  margin: 0,
+  marginTop: 0,
+  marginRight: 0,
+  marginBottom: 0,
+  marginLeft: 0,
   padding: 0,
   display: 'flex',
   flexDirection: 'column',
