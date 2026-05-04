@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { Maximize2, Minimize2, Square, X } from 'lucide-react';
 
+import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
 import { modLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 
@@ -30,6 +31,8 @@ interface LessonChatProps {
   courseSlug: string;
   lessonSlug: string;
   onClose: () => void;
+  /** Toggle the panel open/closed. Bound to Mod+T so it must work in either state. */
+  onToggle: () => void;
 }
 
 const LINE_HEIGHT_PX = 20;
@@ -47,8 +50,13 @@ export function LessonChat({
   courseSlug,
   lessonSlug,
   onClose,
+  onToggle,
 }: LessonChatProps) {
   const isMac = useIsMacPlatform();
+  // Mod+T toggles the panel. Mounted from this component (per US-078 AC) so
+  // the binding lives next to the state owner; the hook installs/removes a
+  // window-level keydown listener and no-ops while the user is typing.
+  useKeyboardShortcut({ key: 't', mod: true }, onToggle);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
