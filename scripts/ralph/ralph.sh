@@ -428,6 +428,185 @@ capture_failure_context() {
 }
 
 # ============================================================================
+# Diagnostician: narrow Sonnet finisher invoked when run_worker's success
+# check fails. If the prior agent did the work but skipped passes:true /
+# commit, the diagnostician flips passes and commits IN THE SAME ITERATION,
+# converting a near-miss into a passing run. If the work is genuinely
+# incomplete the diagnostician exits without changes — the orchestrator's
+# existing failure note stands, and the next Ralph iteration re-implements
+# as today. Re-implementation is explicitly NOT in scope for the diagnostician.
+#
+# Always returns 0 — diagnostician failure must never block the regular
+# retry path. The caller re-checks passes from HEAD afterwards to decide
+# whether the diagnostician recovered the task.
+# ============================================================================
+
+run_diagnostician() {
+  local task_id="$1"
+  local worktree_dir="$2"
+  local logfile="$3"
+  local last_failure_file="$4"
+  local branch="$5"
+  local diagnostician_log="$LOG_DIR/${task_id}.diagnostician.log"
+
+  if [ ! -d "$worktree_dir" ]; then
+    log_task "$task_id" "diagnostician skipped (worktree gone)"
+    return 0
+  fi
+
+  local story_json story_title story_criteria
+  story_json=$(jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\")" "$PRD" 2>/dev/null)
+  story_title=$(echo "$story_json" | jq -r '.title // empty')
+  story_criteria=$(echo "$story_json" | jq -r '
+    if .acceptanceCriteria then
+      if (.acceptanceCriteria | type) == "array" then
+        .acceptanceCriteria | map("- " + .) | join("\n")
+      else .acceptanceCriteria end
+    elif .acceptance_criteria then
+      if (.acceptance_criteria | type) == "array" then
+        .acceptance_criteria | map("- " + .) | join("\n")
+      else .acceptance_criteria end
+    else empty end')
+
+  local prompt
+  prompt="You are a finisher agent for the failed Ralph task $task_id. The implementation
+agent already ran. The orchestrator's success check failed (committed prd.json
+does NOT have passes==true for $task_id, or there is no commit at all).
+
+YOUR JOB: if the prior agent's work is COMPLETE but only missing finishing
+actions (passes flip / commit / a skipped final check), apply them. If the
+work is incomplete or broken, EXIT WITHOUT CHANGES — the next Ralph iteration
+re-implements. Re-implementation is NOT your job.
+
+DO NOT NARRATE. No plans, no 'let me…', no summaries. Tool calls only.
+
+═══════ READ FIRST (no writes yet) ═══════
+
+  - $logfile                  (filtered agent transcript)
+  - $last_failure_file        (orchestrator's note + unstaged diff)
+  - $PRD_REL                  (current prd.json in the worktree)
+  - git status / git diff     (worktree state)
+  - git log $BASE_BRANCH..HEAD --oneline  (any commits the agent made)
+
+═══════ DECISION ═══════
+
+Apply finishing actions ONLY if ALL hold:
+  1. The diff (committed and/or unstaged) is substantive, matches the story
+     scope, and shows no TODOs / placeholders / partial files / scope creep
+     into unrelated areas.
+  2. Required validation either ALREADY succeeded in the transcript, OR is
+     cheap for you to run yourself (see TESTS below).
+  3. The ONLY things missing are: passes flip, commit, and/or a skipped
+     final check.
+
+If any of the above does NOT hold — agent gave up mid-implementation,
+acceptance criteria visibly unmet, tests failed and weren't fixed, files
+missing — EXIT IMMEDIATELY with no changes. Do not write a diagnosis. The
+orchestrator already captured a failure note; the next iteration inherits it.
+
+═══════ TESTS (only if not completed in $logfile) ═══════
+
+If the transcript does NOT show a successful run of the project's checks,
+run them yourself BEFORE committing:
+  - $VALIDATE_CMD if non-empty
+  - Otherwise: npm run typecheck   (and npm test if the repo has unit tests)
+
+If any check fails: EXIT WITH NO CHANGES. The implementation was not
+actually complete — let the next Ralph iteration handle it.
+
+DO NOT run playwright / browser tests. If a 'ui'-tagged task's transcript
+lacks a successful playwright run, treat it as incomplete and exit.
+
+═══════ FINISHING STEPS ═══════
+
+  a. If prd.json's passes==false for $task_id, edit $PRD_REL to set passes=true.
+     Touch ONLY $task_id's entry — leave every other story alone.
+  b. git add changed/untracked files belonging to this task. SKIP stray temp
+     artifacts (e.g. .temp-execution-*.js, .DS_Store, editor swap files).
+  c. Commit (NEW commit only — never amend; the orchestrator's push is
+     non-forced and amend would rewrite history the agent may have pushed):
+       • No commit yet on branch:
+             git commit -m \"feat: $task_id - $story_title\"
+       • Commit exists but lacks prd.json:
+             git commit -m \"chore: $task_id - mark passes:true\"
+  d. DO NOT PUSH. The orchestrator handles the push after re-checking your
+     work. Your last action before VERIFY is the commit.
+  e. VERIFY — these MUST be your final two tool calls:
+       1. git log -1 --format='%s'      → output must contain \"$task_id\"
+       2. git show HEAD:$PRD_REL | jq -r '.${STORIES_FIELD}[]|select(.id==\"$task_id\")|.passes'
+                                        → output must be exactly: true
+     If verification fails: ONE fix attempt, then re-verify. If still failing,
+     exit. Do not loop.
+
+═══════ HARD RULES ═══════
+
+  - DO NOT edit any source file. $PRD_REL is the ONLY file you may edit.
+  - DO NOT re-implement anything. Incomplete work → exit.
+  - DO NOT write any diagnosis / report / log file.
+  - DO NOT push, checkout other branches, reset, rebase, or amend.
+  - Hard cap: 5 min wall clock, 30 tool calls. On exceeded: exit without
+    further changes.
+
+═══════ CONTEXT ═══════
+
+Task:    $task_id — $story_title
+Branch:  $branch
+Worktree: $worktree_dir
+Acceptance criteria:
+$story_criteria
+
+VALIDATE_CMD: ${VALIDATE_CMD:-(unset)}"
+
+  log_task "$task_id" "Running diagnostician (sonnet, 5min cap)..."
+
+  cd "$worktree_dir"
+  local exit_code=0
+  # Filter mirrors run_worker's stream-json filter so the diagnostician log
+  # is human-readable in the same format. See run_worker for the rationale.
+  timeout --foreground 300 \
+    stdbuf -oL claude \
+      --model sonnet \
+      --dangerously-skip-permissions \
+      --print \
+      --output-format stream-json \
+      --verbose \
+      -p "$prompt" 2>&1 \
+    | stdbuf -oL jq -R -r --unbuffered --arg tzoff "$(date '+%z')" '
+        def fmt: localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff;
+        def ts: now | fmt;
+        def strip_ms: sub("\\.[0-9]+Z$"; "Z");
+        def to_local(s): try (s | strip_ms | fromdateiso8601 | localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff) catch ts;
+        . as $line
+        | (try fromjson catch null) as $msg
+        | if $msg == null then
+            "[" + ts + "] [stderr] " + $line
+          elif $msg.type == "assistant" then
+            (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
+            | (($msg.message.content // [])
+                | map(if .type == "text" then .text else empty end)
+                | join("\n")) as $txt
+            | if ($txt | length) > 0 then "[" + $t + "] " + $txt else empty end
+          elif $msg.type == "result" then
+            (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
+            | "[" + $t + "] [result " + ($msg.subtype // "?")
+              + (if ($msg.is_error // false) then " ERROR" else "" end)
+              + " turns=" + (($msg.num_turns // 0) | tostring)
+              + " cost=$" + (($msg.total_cost_usd // 0) | tostring)
+              + "] " + ($msg.result // "(no result)")
+          else empty
+          end
+      ' > "$diagnostician_log" || exit_code=$?
+
+  if [ $exit_code -eq 124 ]; then
+    log_task "$task_id" "diagnostician TIMEOUT after 5min (non-fatal, see $diagnostician_log)"
+  elif [ $exit_code -ne 0 ]; then
+    log_task "$task_id" "diagnostician exited with code $exit_code (non-fatal, see $diagnostician_log)"
+  fi
+
+  return 0
+}
+
+# ============================================================================
 # Worker: runs one task in a worktree
 # ============================================================================
 
@@ -634,15 +813,33 @@ $recent_progress")"
     ' > "$logfile" || exit_code=$?
 
   if [ $exit_code -eq 124 ]; then
-    log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — task will be retried"
+    log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — running diagnostician..."
     capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" \
       "TIMEOUT after ${TASK_TIMEOUT_SEC}s. Agent was killed mid-run — likely scope too large, infinite loop, or stuck on a single problem. Narrow your approach and commit incrementally."
-    git_lock
-    cd "$REPO_ROOT"
-    git worktree remove "$worktree_dir" --force 2>/dev/null || true
-    git branch -D "$branch" 2>/dev/null || true
-    git_unlock
-    return 1
+
+    run_diagnostician "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" "$branch"
+
+    # Diagnostician may have salvaged a near-miss timeout (work done, just no
+    # commit yet). Re-check passes from HEAD; if true, fall through to the
+    # normal validate+push flow. If still false, clean up as before.
+    cd "$worktree_dir"
+    local _to_passes=""
+    _to_passes=$(git -C "$worktree_dir" show "HEAD:$PRD_REL" 2>/dev/null \
+      | jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes" 2>/dev/null \
+      || echo "")
+
+    if [ "$_to_passes" = "true" ]; then
+      log_task "$task_id" "${GREEN}Diagnostician finished the task post-timeout${RST} — proceeding"
+      rm -f "$last_failure_file"
+      # Fall through; the passes check below sees passes=true and skips.
+    else
+      git_lock
+      cd "$REPO_ROOT"
+      git worktree remove "$worktree_dir" --force 2>/dev/null || true
+      git branch -D "$branch" 2>/dev/null || true
+      git_unlock
+      return 1
+    fi
   fi
 
   if [ $exit_code -ne 0 ]; then
@@ -666,19 +863,39 @@ $recent_progress")"
   if [ "$passes_value" != "true" ]; then
     local reason
     if [ "$commits_ahead" -eq 0 ]; then
-      log_task "$task_id" "${RED}Agent did not commit${RST} — task will be retried"
+      log_task "$task_id" "${RED}Agent did not commit${RST} — running diagnostician..."
       reason="Agent finished but produced 0 commits. You MUST set passes:true for $task_id in $PRD_REL AND run 'git commit' before exiting — uncommitted work is captured below for the next retry to rebuild."
     else
-      log_task "$task_id" "${RED}Agent did not set passes:true in prd.json${RST} — task will be retried"
+      log_task "$task_id" "${RED}Agent did not set passes:true in prd.json${RST} — running diagnostician..."
       reason="Agent committed work but did NOT set passes:true for $task_id in $PRD_REL. Edit $PRD_REL, set this story's passes field to true, and commit (amend or new commit) before exiting. The orchestrator treats passes:true in the committed prd.json as the sole success signal."
     fi
     capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" "$reason"
-    git_lock
-    cd "$REPO_ROOT"
-    git worktree remove "$worktree_dir" --force 2>/dev/null || true
-    git branch -D "$branch" 2>/dev/null || true
-    git_unlock
-    return 1
+
+    run_diagnostician "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" "$branch"
+
+    # Re-check passes from HEAD after diagnostician. If it flipped to true,
+    # fall through to validate+push; otherwise clean up and return 1 as before.
+    cd "$worktree_dir"
+    commits_ahead=$(git rev-list "$BASE_BRANCH".."$branch" --count 2>/dev/null || echo "0")
+    passes_value=""
+    if [ "$commits_ahead" -gt 0 ]; then
+      passes_value=$(git -C "$worktree_dir" show "HEAD:$PRD_REL" 2>/dev/null \
+        | jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes" 2>/dev/null \
+        || echo "")
+    fi
+
+    if [ "$passes_value" = "true" ]; then
+      log_task "$task_id" "${GREEN}Diagnostician finished the task${RST} — proceeding to validate + push"
+      rm -f "$last_failure_file"
+      # Fall through to validation gate + push below.
+    else
+      git_lock
+      cd "$REPO_ROOT"
+      git worktree remove "$worktree_dir" --force 2>/dev/null || true
+      git branch -D "$branch" 2>/dev/null || true
+      git_unlock
+      return 1
+    fi
   fi
 
   # Validation gate: run VALIDATE_CMD before allowing merge
