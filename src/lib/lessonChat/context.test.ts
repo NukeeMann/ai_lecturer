@@ -29,6 +29,66 @@ describe('buildPromptContext', () => {
     expect(result.systemPrompt).toContain('≤200 words');
   });
 
+  describe('SYSTEM_PROMPT obeys explicit learner intent (US-062)', () => {
+    it('does NOT contain blanket "do not reveal" / "never give direct solutions" instructions', () => {
+      const lower = SYSTEM_PROMPT.toLowerCase();
+      const forbidden = [
+        'do not reveal',
+        "don't reveal",
+        'never reveal',
+        'never give the answer',
+        'never give direct',
+        'never provide the answer',
+        'do not give the answer',
+        "don't give the answer",
+        'do not share the answer',
+        "don't share the answer",
+      ];
+      for (const phrase of forbidden) {
+        expect(lower).not.toContain(phrase);
+      }
+    });
+
+    it('instructs the tutor to give the direct answer when the learner explicitly asks for it', () => {
+      // Fixture: representative explicit-ask user messages.
+      const explicitAsks = [
+        'just give me the answer',
+        'tell me the solution',
+        'show me the correct code',
+        "what's the right option",
+        'stop hinting, answer it',
+      ];
+      for (const ask of explicitAsks) {
+        expect(SYSTEM_PROMPT).toContain(ask);
+      }
+      const lower = SYSTEM_PROMPT.toLowerCase();
+      expect(lower).toContain('give the direct answer immediately');
+      expect(lower).toContain("learner's explicit request always wins");
+    });
+
+    it('keeps Socratic/guiding style as the default branch when the learner has not explicitly asked', () => {
+      const lower = SYSTEM_PROMPT.toLowerCase();
+      expect(lower).toContain('default');
+      expect(lower).toContain('socratic');
+      expect(lower).toContain('hint');
+      // Default branch must mention guiding without forbidding the reveal,
+      // so that the OVERRIDE branch can win.
+      expect(lower).toContain('guiding');
+    });
+
+    it('declares the override branch dominates the default branch', () => {
+      // Both branches must be present, and the override must explicitly take
+      // priority — otherwise the model could read the rules in either order
+      // and silently default to deflection.
+      expect(SYSTEM_PROMPT).toContain('DEFAULT');
+      expect(SYSTEM_PROMPT).toContain('OVERRIDE');
+      const overrideIndex = SYSTEM_PROMPT.indexOf('OVERRIDE');
+      const winsIndex = SYSTEM_PROMPT.indexOf("explicit request always wins");
+      expect(overrideIndex).toBeGreaterThan(-1);
+      expect(winsIndex).toBeGreaterThan(overrideIndex);
+    });
+  });
+
   it('includes lesson metadata in the contextBlock', () => {
     const lesson = baseLesson({
       title: 'Filtr Gaussa',
