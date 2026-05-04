@@ -201,6 +201,82 @@ describe('PATCH /api/progress', () => {
     expect(body.courses.c1.lessons.l1.status).toBe('finished');
   });
 
+  it('persists manuallyCompletedSections toggle on/off without losing sectionState (US-065)', async () => {
+    // Pre-existing per-section state with userCode (e.g. from a Code widget).
+    await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: { 's-code': { userCode: 'print(42)' } },
+      }),
+    );
+
+    // Toggle s-code ON via the new manual-completion checkbox.
+    const onRes = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        manuallyCompletedSections: { 's-code': true, 's-theory': true },
+      }),
+    );
+    expect(onRes.status).toBe(200);
+    const onBody = await onRes.json();
+    expect(onBody.courses.c1.lessons.l1.manuallyCompletedSections).toEqual({
+      's-code': true,
+      's-theory': true,
+    });
+    // Existing per-section state is untouched by the new field.
+    expect(onBody.courses.c1.lessons.l1.sectionState['s-code'].userCode).toBe('print(42)');
+
+    // Toggle s-code OFF (false removes the entry from the map).
+    const offRes = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        manuallyCompletedSections: { 's-code': false },
+      }),
+    );
+    const offBody = await offRes.json();
+    expect(offBody.courses.c1.lessons.l1.manuallyCompletedSections).toEqual({
+      's-theory': true,
+    });
+    // userCode for the toggled-off section is still preserved.
+    expect(offBody.courses.c1.lessons.l1.sectionState['s-code'].userCode).toBe('print(42)');
+  });
+
+  it('persists manuallyCompletedSections to disk (US-065)', async () => {
+    await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        manuallyCompletedSections: { s1: true },
+      }),
+    );
+    const onDisk = JSON.parse(await fs.readFile(progressPath, 'utf8'));
+    expect(onDisk.courses.c1.lessons.l1.manuallyCompletedSections).toEqual({ s1: true });
+  });
+
+  it('does not change lastVisitedAt when only manuallyCompletedSections is patched (US-065)', async () => {
+    await patchProgress(
+      makeRequest({ courseSlug: 'c1', lessonSlug: 'l1', markVisited: true }),
+    );
+    const after1 = JSON.parse(await fs.readFile(progressPath, 'utf8'));
+    const visitedAt = after1.courses.c1.lastVisitedAt;
+    expect(visitedAt).toBeDefined();
+
+    await new Promise((r) => setTimeout(r, 5));
+
+    const res = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        manuallyCompletedSections: { s1: true },
+      }),
+    );
+    const body = await res.json();
+    expect(body.courses.c1.lastVisitedAt).toBe(visitedAt);
+  });
+
   it('atomic write does not leave a .tmp file on success', async () => {
     await patchProgress(
       makeRequest({ courseSlug: 'c1', lessonSlug: 'l1', status: 'started' }),

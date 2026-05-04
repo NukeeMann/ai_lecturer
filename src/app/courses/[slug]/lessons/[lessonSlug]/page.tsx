@@ -506,6 +506,49 @@ export default function LessonShellPage({
     });
   }, [getSectionState, progress, slug, lessonSlug]);
 
+  const handleToggleSectionManualComplete = useCallback(
+    (sectionId: string, nextValue: boolean) => {
+      // Optimistic local update so the checkbox + dimmed style flip immediately.
+      setProgress((prev) => {
+        const base: Progress = prev ?? { courses: {} };
+        const courses = { ...base.courses };
+        const cp = courses[slug]
+          ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+          : { lessons: {} };
+        const existingLesson = cp.lessons[lessonSlug] ?? {
+          status: 'not_started' as LessonStatus,
+        };
+        const merged: Record<string, boolean> = {
+          ...(existingLesson.manuallyCompletedSections ?? {}),
+        };
+        if (nextValue) merged[sectionId] = true;
+        else delete merged[sectionId];
+        const nextLessonProgress = { ...existingLesson };
+        if (Object.keys(merged).length > 0) {
+          nextLessonProgress.manuallyCompletedSections = merged;
+        } else {
+          delete nextLessonProgress.manuallyCompletedSections;
+        }
+        cp.lessons[lessonSlug] = nextLessonProgress;
+        courses[slug] = cp;
+        return { ...base, courses };
+      });
+
+      void fetch('/api/progress', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseSlug: slug,
+          lessonSlug,
+          manuallyCompletedSections: { [sectionId]: nextValue },
+        }),
+      }).catch(() => {
+        // Optimistic update already applied; no inline error UI yet.
+      });
+    },
+    [slug, lessonSlug],
+  );
+
   const handleNextLesson = useCallback(() => {
     if (lessonStatus !== 'finished') return;
     if (!nextLesson) return;
@@ -751,6 +794,7 @@ export default function LessonShellPage({
             panelSectionId={panelSectionId}
             onOpenPanel={handleOpenPanel}
             onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
+            onToggleSectionManualComplete={handleToggleSectionManualComplete}
           />
         ) : null}
       </main>
@@ -1981,6 +2025,7 @@ interface LessonStreamProps {
   panelSectionId: string | null;
   onOpenPanel: (sectionId: string) => void;
   onOpenLessonSources: () => void;
+  onToggleSectionManualComplete: (sectionId: string, nextValue: boolean) => void;
 }
 
 function LessonStream({
@@ -1995,9 +2040,13 @@ function LessonStream({
   panelSectionId,
   onOpenPanel,
   onOpenLessonSources,
+  onToggleSectionManualComplete,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
+  const manuallyCompleted =
+    progress?.courses?.[slug]?.lessons?.[lessonSlug]
+      ?.manuallyCompletedSections ?? {};
 
   // Sections completed in-session (quiz answered correctly, code submitted
   // passing). Persisted completions come from sectionState[id].done.
@@ -2040,7 +2089,9 @@ function LessonStream({
       {lesson.sections.map((section, idx) => {
         const persistedDone = sectionState[section.id]?.done === true;
         const live = autoDone[section.id] === true;
-        const status: WidgetStatus = persistedDone || live ? 'done' : 'todo';
+        const manuallyDone = manuallyCompleted[section.id] === true;
+        const status: WidgetStatus =
+          persistedDone || live || manuallyDone ? 'done' : 'todo';
         return (
           <SectionRenderer
             key={section.id}
@@ -2048,10 +2099,14 @@ function LessonStream({
             sectionNumber={idx + 1}
             status={status}
             alreadyCompleted={persistedDone}
+            manuallyCompleted={manuallyDone}
             initialUserCode={sectionState[section.id]?.userCode}
             courseSlug={slug}
             lessonSlug={lessonSlug}
             onComplete={() => markSectionDone(section.id)}
+            onToggleManualComplete={(next) =>
+              onToggleSectionManualComplete(section.id, next)
+            }
             editing={editingSections[section.id] === true}
             onToggleEdit={onToggleEdit}
             onSaveTheory={onSaveTheory}
@@ -2180,10 +2235,13 @@ interface SectionRendererProps {
   status: WidgetStatus;
   /** True if the section was already done before this mount (suppresses confetti). */
   alreadyCompleted: boolean;
+  /** True if the learner manually marked this section complete via the header checkbox (US-065). */
+  manuallyCompleted: boolean;
   initialUserCode?: string;
   courseSlug: string;
   lessonSlug: string;
   onComplete: () => void;
+  onToggleManualComplete: (nextValue: boolean) => void;
   editing: boolean;
   onToggleEdit: (sectionId: string) => void;
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
@@ -2196,10 +2254,12 @@ function SectionRenderer({
   sectionNumber,
   status,
   alreadyCompleted,
+  manuallyCompleted,
   initialUserCode,
   courseSlug,
   lessonSlug,
   onComplete,
+  onToggleManualComplete,
   editing,
   onToggleEdit,
   onSaveTheory,
@@ -2430,13 +2490,53 @@ function SectionRenderer({
     body = <Body data={section.data} />;
   }
 
-  const headerActions: ReactNode | undefined =
-    sourcesNode || pencilNode ? (
-      <>
-        {sourcesNode}
-        {pencilNode}
-      </>
-    ) : undefined;
+  const completionCheckbox: ReactNode = (
+    <label
+      data-section-complete-checkbox
+      data-checked={manuallyCompleted ? 'true' : 'false'}
+      title={
+        manuallyCompleted
+          ? 'Unmark section as completed'
+          : 'Mark section as completed'
+      }
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 22,
+        height: 22,
+        cursor: 'pointer',
+        flexShrink: 0,
+      }}
+    >
+      <input
+        type="checkbox"
+        data-testid={`section-complete-${section.id}`}
+        aria-label={
+          manuallyCompleted
+            ? `Mark section "${section.title}" as not completed`
+            : `Mark section "${section.title}" as completed`
+        }
+        checked={manuallyCompleted}
+        onChange={(e) => onToggleManualComplete(e.currentTarget.checked)}
+        style={{
+          width: 16,
+          height: 16,
+          margin: 0,
+          cursor: 'pointer',
+          accentColor: 'var(--success)',
+        }}
+      />
+    </label>
+  );
+
+  const headerActions: ReactNode = (
+    <>
+      {sourcesNode}
+      {pencilNode}
+      {completionCheckbox}
+    </>
+  );
 
   return (
     <div
@@ -2444,6 +2544,12 @@ function SectionRenderer({
       data-section-id={section.id}
       data-section-type={section.type}
       data-section-editing={editing || panelOpen ? 'true' : 'false'}
+      data-section-manually-completed={manuallyCompleted ? 'true' : 'false'}
+      style={
+        manuallyCompleted
+          ? { opacity: 0.65, transition: 'opacity 0.15s ease-out' }
+          : { transition: 'opacity 0.15s ease-out' }
+      }
     >
       <Widget
         type={section.type as WidgetType}

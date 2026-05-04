@@ -17,6 +17,7 @@ export const LessonProgressSchema = z.object({
   startedAt: z.string().optional(),
   finishedAt: z.string().optional(),
   sectionState: z.record(SectionStateSchema).optional(),
+  manuallyCompletedSections: z.record(z.boolean()).optional(),
 });
 
 export type LessonProgress = z.infer<typeof LessonProgressSchema>;

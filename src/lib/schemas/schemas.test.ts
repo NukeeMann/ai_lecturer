@@ -1034,6 +1034,45 @@ describe('ProgressSchema', () => {
       }),
     ).toThrow();
   });
+
+  it('parses lesson progress with a per-section manuallyCompletedSections map (US-065)', () => {
+    const ok = {
+      courses: {
+        algebra: {
+          lessons: {
+            'lesson-1': {
+              status: 'started',
+              manuallyCompletedSections: { s1: true, s2: true },
+            },
+          },
+        },
+      },
+    };
+    const parsed = ProgressSchema.parse(ok);
+    expect(
+      parsed.courses.algebra.lessons['lesson-1'].manuallyCompletedSections?.s1,
+    ).toBe(true);
+    expect(
+      parsed.courses.algebra.lessons['lesson-1'].manuallyCompletedSections?.s2,
+    ).toBe(true);
+  });
+
+  it('rejects manuallyCompletedSections with non-boolean values (US-065)', () => {
+    expect(() =>
+      ProgressSchema.parse({
+        courses: {
+          algebra: {
+            lessons: {
+              'lesson-1': {
+                status: 'started',
+                manuallyCompletedSections: { s1: 'yes' },
+              },
+            },
+          },
+        },
+      }),
+    ).toThrow();
+  });
 });
 
 describe('CourseSpecSchema', () => {

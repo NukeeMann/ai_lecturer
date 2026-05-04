@@ -163,6 +163,7 @@ Use `gauss-basics/wprowadzenie-do-filtrowania` (or any populated lesson).
 - [ ] Press **`⌘.`** → tutor panel slides in (320 px); pressing again slides it out. Confirm the toolbar `tutor-btn` shows `data-active="true"` while open (US-052).
 - [ ] **Reset session.** Toolbar contains `[data-testid="reset-session-btn"]`; click it → toast `[data-testid="session-toast"]` appears within 500 ms. Pyodide lesson namespace is wiped (any subsequent Code section sees no leftover variables) — verified by typing `print(x)` in a Sandbox after Reset; output should be `NameError`.
 - [ ] On lesson mount, `PATCH /api/progress` sets status to `'started'` only when previously `not_started`. Open a finished lesson → status stays `'finished'` (does NOT downgrade).
+- [ ] **Section completion checkbox (US-065).** Each section header renders a checkbox (`[data-testid="section-complete-<id>"]`). Click it → wrapper gets `data-section-manually-completed="true"`, opacity drops to ~0.65, header title gets `text-decoration: line-through`, and the `Completed` badge appears. Toggling fires `PATCH /api/progress` with `manuallyCompletedSections: { [sectionId]: true }`; toggling off sends `false` and removes the entry from the persisted map. State survives reload. Existing per-lesson `status` is unaffected.
 
 ### 3.4 Widgets
 
