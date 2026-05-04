@@ -1,0 +1,26 @@
+[2026-05-04T17:46:56+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T17:50:02+0200] Now wire ThemeToggle to the same storage key and broadcast change events.
+[2026-05-04T17:50:15+0200] Update the boot script to use the new key, support 'system', and apply persisted density.
+[2026-05-04T17:50:24+0200] Now wire SettingsMenu into the lesson page header next to ThemeToggle.
+[2026-05-04T17:50:46+0200] Typecheck passes. Run tests.
+[2026-05-04T17:50:51+0200] Tests green. Now browser-verify with playwright-skill.
+[2026-05-04T17:51:46+0200] New keys and SettingsMenu are present. Write the playwright test.
+[2026-05-04T17:53:19+0200] The init script wipes localStorage on every navigation including reload. Fix: clear once via evaluate, then never re-register.
+[2026-05-04T17:53:32+0200] 24/24 assertions pass. Update prd.json, append progress, then commit.
+[2026-05-04T17:54:28+0200] Now check the logs directory convention and write US-075.log.
+[2026-05-04T17:55:10+0200] US-075 done and committed (`8942a7f`).
+
+**Summary**
+- New `src/components/SettingsMenu.tsx` — gear icon → dropdown with Theme (Light/Dark/System) and Density (Compact/Comfortable/Spacious) radio groups; persists to `aiLecturer.theme` / `aiLecturer.density`; Ctrl+, (Cmd+, on macOS) toggles via the existing `useKeyboardShortcuts` hook with preventDefault; closes on Escape and outside click; live-follows `prefers-color-scheme` while "System" is selected.
+- `ThemeToggle` migrated to the new storage key and both controls stay in sync via a custom `aiLecturer:settings-change` window event (plus the cross-tab `storage` event).
+- `src/app/layout.tsx` boot script reads the new keys and applies persisted density to `<html>` before paint.
+- `SettingsMenu` mounted next to `ThemeToggle` in the lesson toolbar.
+- Quality: `npm run typecheck` clean, `npm test` 312/312 pass, playwright walkthrough 24/24 assertions pass on `:3075` (screenshots `/tmp/us075-pre-reload.png`, `/tmp/us075-after-reload-open.png`). prd.json `passes=true` for US-075 in HEAD.
+[2026-05-04T17:55:11+0200] [result success turns=62 cost=$3.932582749999999] US-075 done and committed (`8942a7f`).
+
+**Summary**
+- New `src/components/SettingsMenu.tsx` — gear icon → dropdown with Theme (Light/Dark/System) and Density (Compact/Comfortable/Spacious) radio groups; persists to `aiLecturer.theme` / `aiLecturer.density`; Ctrl+, (Cmd+, on macOS) toggles via the existing `useKeyboardShortcuts` hook with preventDefault; closes on Escape and outside click; live-follows `prefers-color-scheme` while "System" is selected.
+- `ThemeToggle` migrated to the new storage key and both controls stay in sync via a custom `aiLecturer:settings-change` window event (plus the cross-tab `storage` event).
+- `src/app/layout.tsx` boot script reads the new keys and applies persisted density to `<html>` before paint.
+- `SettingsMenu` mounted next to `ThemeToggle` in the lesson toolbar.
+- Quality: `npm run typecheck` clean, `npm test` 312/312 pass, playwright walkthrough 24/24 assertions pass on `:3075` (screenshots `/tmp/us075-pre-reload.png`, `/tmp/us075-after-reload-open.png`). prd.json `passes=true` for US-075 in HEAD.

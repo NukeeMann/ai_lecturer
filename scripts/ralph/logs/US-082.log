@@ -1,0 +1,26 @@
+[2026-05-04T17:46:57+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T17:48:38+0200] Now I understand. Let me create the helper module + test, then patch the widget.
+[2026-05-04T17:49:01+0200] Verify the tests fail before the fix lands (they should fail because the helper isn't yet wired in widget). Actually the helper is standalone — let me run them now to make sure they pass on their own:
+[2026-05-04T17:49:10+0200] Now the integration into the widget itself:
+[2026-05-04T17:50:41+0200] Typecheck clean. Let me also run the whole test suite to make sure nothing else broke:
+[2026-05-04T17:50:52+0200] Now browser verification. First find a lesson with a DragMatch widget.
+[2026-05-04T17:53:58+0200] All assertions pass. Browser verification complete. Now update prd.json and commit.
+[2026-05-04T17:54:15+0200] Now append progress notes:
+[2026-05-04T17:55:29+0200] Commit landed (`2904d69`) on `ralph/us-082` with `passes: true` for US-082 in prd.json.
+
+**Summary of changes:**
+- `src/widgets/DragMatch/zoneState.ts` (new): pure helper `getZoneFeedbackState({ zoneCorrect, hasItems, submitted })` — green whenever a zone holds correct items, red only when submitted+wrong, otherwise idle.
+- `src/widgets/DragMatch/zoneState.test.ts` (new): 5 unit tests including the second-try-correction repro.
+- `src/widgets/DragMatch/DragMatchWidget.tsx`: validation now runs every render (not gated on `submitted`); zone color uses the helper; completion callback moved to a `useEffect` watching `allCorrect` so the wrapper checkbox (US-080) can react to drag-only completion.
+- `scripts/ralph/prd.json`: US-082 → `passes: true`. `scripts/ralph/progress.txt`: appended entry with learnings.
+
+**Quality:** typecheck clean, 18 test files / 317 tests pass. Browser verification on dedicated dev server (`localhost:3082`): wrong→correct re-drop flips border to `rgb(184,220,203)` and bg to `rgb(227,243,236)` (success tokens); empty zones stay neutral; all three zones share success border on completion.
+[2026-05-04T17:55:29+0200] [result success turns=63 cost=$3.4176242499999994] Commit landed (`2904d69`) on `ralph/us-082` with `passes: true` for US-082 in prd.json.
+
+**Summary of changes:**
+- `src/widgets/DragMatch/zoneState.ts` (new): pure helper `getZoneFeedbackState({ zoneCorrect, hasItems, submitted })` — green whenever a zone holds correct items, red only when submitted+wrong, otherwise idle.
+- `src/widgets/DragMatch/zoneState.test.ts` (new): 5 unit tests including the second-try-correction repro.
+- `src/widgets/DragMatch/DragMatchWidget.tsx`: validation now runs every render (not gated on `submitted`); zone color uses the helper; completion callback moved to a `useEffect` watching `allCorrect` so the wrapper checkbox (US-080) can react to drag-only completion.
+- `scripts/ralph/prd.json`: US-082 → `passes: true`. `scripts/ralph/progress.txt`: appended entry with learnings.
+
+**Quality:** typecheck clean, 18 test files / 317 tests pass. Browser verification on dedicated dev server (`localhost:3082`): wrong→correct re-drop flips border to `rgb(184,220,203)` and bg to `rgb(227,243,236)` (success tokens); empty zones stay neutral; all three zones share success border on completion.

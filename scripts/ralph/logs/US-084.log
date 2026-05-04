@@ -1,0 +1,37 @@
+[2026-05-04T17:46:57+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T17:47:23+0200] Let me look at the Pyodide client and Code widgets for reference patterns.
+[2026-05-04T17:48:58+0200] Now let me check the existing PlotImage tests and look at how SectionRenderer passes data to widgets.
+[2026-05-04T17:49:16+0200] Now I have enough context. Let me write the new PlotImageWidget.
+[2026-05-04T17:50:23+0200] Now let's run typecheck and tests:
+[2026-05-04T17:50:31+0200] Typecheck clean. Now run the tests.
+[2026-05-04T17:50:37+0200] All tests pass. Now let me browser-test using the playwright-skill.
+[2026-05-04T17:53:42+0200] All three test paths pass:
+1. Original PNG → blob URL after Run (image changed inline)
+2. Reset restores original image
+3. Error path surfaces `ValueError: boom` headline without crashing the widget
+[2026-05-04T17:53:45+0200] Let me visually confirm the screenshots show the AC.
+[2026-05-04T17:53:55+0200] Excellent. Original Gauss image restored after Reset, then `ValueError: boom` headline shows under the editor with a "Show traceback" toggle, and the widget did not crash.
+
+Now let me update the prd.json and progress.txt, and commit.
+[2026-05-04T17:55:29+0200] US-084 complete. Commit `50ac69b` lands the implementation, prd.json `passes: true`, and progress.txt entry — orchestrator will see passes=true on read.
+
+Summary of what shipped:
+- `PlotImageWidget` now branches: Python sources mount an editable `EditorView` with line numbers, history, indent-on-input, bracket matching, and the shared `codeRunnerHighlightStyle`/`codeRunnerEditorTheme` so it matches Code/Sandbox visually.
+- `Mod-Enter` keymap (placed before `defaultKeymap`) triggers Run; the button has the same shortcut.
+- Run uses the existing `runWithPlotParam` worker entry with empty `setupCode` — no new worker plumbing.
+- The displayed `<img>` swaps between the original `src` and a blob URL of the matplotlib figure, with `data-plotimage-rendered` exposing the active state for tests; blob URLs are revoked on swap and unmount.
+- Reset rewinds the editor doc to the original code and restores the original image.
+- Python errors surface in a `[data-testid="plotimage-error"]` block under the editor with a "Show traceback" toggle; widget stays mounted.
+- R sources keep the read-only Copy fallback (Pyodide can't run R).
+- Typecheck clean, 312/312 vitest pass, playwright walkthrough passes all three paths (run-replaces-image, reset-restores-original, error-surfaced-without-crash) with screenshots at `/tmp/us084-{ready,after-run,after-reset,error}.png`.
+[2026-05-04T17:55:29+0200] [result success turns=60 cost=$4.160057000000001] US-084 complete. Commit `50ac69b` lands the implementation, prd.json `passes: true`, and progress.txt entry — orchestrator will see passes=true on read.
+
+Summary of what shipped:
+- `PlotImageWidget` now branches: Python sources mount an editable `EditorView` with line numbers, history, indent-on-input, bracket matching, and the shared `codeRunnerHighlightStyle`/`codeRunnerEditorTheme` so it matches Code/Sandbox visually.
+- `Mod-Enter` keymap (placed before `defaultKeymap`) triggers Run; the button has the same shortcut.
+- Run uses the existing `runWithPlotParam` worker entry with empty `setupCode` — no new worker plumbing.
+- The displayed `<img>` swaps between the original `src` and a blob URL of the matplotlib figure, with `data-plotimage-rendered` exposing the active state for tests; blob URLs are revoked on swap and unmount.
+- Reset rewinds the editor doc to the original code and restores the original image.
+- Python errors surface in a `[data-testid="plotimage-error"]` block under the editor with a "Show traceback" toggle; widget stays mounted.
+- R sources keep the read-only Copy fallback (Pyodide can't run R).
+- Typecheck clean, 312/312 vitest pass, playwright walkthrough passes all three paths (run-replaces-image, reset-restores-original, error-surfaced-without-crash) with screenshots at `/tmp/us084-{ready,after-run,after-reset,error}.png`.
