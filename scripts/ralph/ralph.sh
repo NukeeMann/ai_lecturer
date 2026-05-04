@@ -769,12 +769,12 @@ $story_criteria
 
 VALIDATE_CMD: ${VALIDATE_CMD:-(unset, fall back to npm run typecheck)}"
 
-  log_task "$task_id" "Running conflict resolver (sonnet, 5min cap)..."
+  log_task "$task_id" "Running conflict resolver (sonnet, 10min cap)..."
 
   local exit_code=0
   # Filter mirrors run_worker's stream-json filter so the resolver log is
   # human-readable in the same format. See run_worker for the rationale.
-  timeout --foreground 300 \
+  timeout --foreground 600 \
     stdbuf -oL claude \
       --model sonnet \
       --dangerously-skip-permissions \
@@ -809,7 +809,7 @@ VALIDATE_CMD: ${VALIDATE_CMD:-(unset, fall back to npm run typecheck)}"
       ' > "$resolver_log" || exit_code=$?
 
   if [ $exit_code -eq 124 ]; then
-    log_task "$task_id" "conflict resolver TIMEOUT after 5min (see $resolver_log)"
+    log_task "$task_id" "conflict resolver TIMEOUT after 10min (see $resolver_log)"
   elif [ $exit_code -ne 0 ]; then
     log_task "$task_id" "conflict resolver exited with code $exit_code (see $resolver_log)"
   fi
