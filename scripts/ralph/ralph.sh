@@ -25,6 +25,11 @@ if [ -f "$CONFIG_FILE" ]; then
   source "$CONFIG_FILE"
 fi
 
+# Force timestamps in logs and progress markers to render in Warsaw local
+# time. Override by exporting TZ before invoking ralph.sh, or by setting
+# `export TZ=...` inside ralph.config.
+export TZ="${TZ:-Europe/Warsaw}"
+
 PRD="$PRD_DIR/prd.json"
 # Repo-relative path to prd.json, used for `git add` / `git checkout` /
 # pathspec matches against `git diff --name-only` output. With the default
@@ -589,27 +594,36 @@ $recent_progress")"
     --output-format stream-json \
     --verbose \
     -p "$enriched_prompt" 2>&1 \
-  | stdbuf -oL jq -R -r --unbuffered '
-      def ts: now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ");
+  | stdbuf -oL jq -R -r --unbuffered --arg tzoff "$(date '+%z')" '
+      # All timestamps render in Warsaw local time (TZ=Europe/Warsaw is
+      # exported by ralph.sh). SDK-supplied $msg.timestamp values arrive as
+      # UTC ISO strings ("…Z", possibly with a millisecond fraction) — strip
+      # the fraction, parse, convert to local, and append the offset captured
+      # at script start (--arg tzoff). Doing this in jq alone is unreliable:
+      # strftime("%z") and mktime both mis-handle the offset on common builds.
+      def fmt: localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff;
+      def ts: now | fmt;
+      def strip_ms: sub("\\.[0-9]+Z$"; "Z");
+      def to_local(s): try (s | strip_ms | fromdateiso8601 | localtime | strftime("%Y-%m-%dT%H:%M:%S") + $tzoff) catch ts;
       . as $line
       | (try fromjson catch null) as $msg
       | if $msg == null then
           "[" + ts + "] [stderr] " + $line
         elif $msg.type == "assistant" then
-          ($msg.timestamp // ts) as $t
+          (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
           | (($msg.message.content // [])
               | map(if .type == "text" then .text else empty end)
               | join("\n")) as $txt
           | if ($txt | length) > 0 then "[" + $t + "] " + $txt else empty end
         elif $msg.type == "result" then
-          ($msg.timestamp // ts) as $t
+          (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
           | "[" + $t + "] [result " + ($msg.subtype // "?")
             + (if ($msg.is_error // false) then " ERROR" else "" end)
             + " turns=" + (($msg.num_turns // 0) | tostring)
             + " cost=$" + (($msg.total_cost_usd // 0) | tostring)
             + "] " + ($msg.result // "(no result)")
         elif $msg.type == "rate_limit_event" then
-          ($msg.timestamp // ts) as $t
+          (if $msg.timestamp then to_local($msg.timestamp) else ts end) as $t
           | ($msg.rate_limit_info // {}) as $rl
           | "[" + $t + "] [rate_limit " + ($rl.rateLimitType // "?")
             + " status=" + ($rl.status // "?")
