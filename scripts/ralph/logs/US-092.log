@@ -1,0 +1,42 @@
+[2026-05-04T22:15:07+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T22:17:13+0200] Now I have a clear picture. Let me check the tests directory layout and lessonChat connector unit tests to ensure I follow the same patterns.
+[2026-05-04T22:18:29+0200] Now I'll modify Stage3Cascade.tsx to add API loading, error states, regenerate, and build-manually fallback. First I'll add a converter helper and the state machine.
+[2026-05-04T22:18:39+0200] Now replace `seedStructure` and add converters and an empty cascade builder:
+[2026-05-04T22:18:58+0200] Now replace the auto-seed effect with API-driven loading state machine:
+[2026-05-04T22:19:19+0200] Now I need to handle the rendering for the loading/error states (before the cascade), and add the Regenerate button to the bottom bar. Let me look at current bottom bar + main layout:
+[2026-05-04T22:19:48+0200] Now let me add the Regenerate button to the cascade's bottom bar and add the error/button styles.
+[2026-05-04T22:19:58+0200] Now I need to add the `errorBubbleStyle` and `errorButtonStyle` constants. Let me check what's at the bottom of the file:
+[2026-05-04T22:20:10+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T22:20:21+0200] Now let me write tests for the structure module + route, mirroring the clarify test style.
+[2026-05-04T22:21:34+0200] All tests pass. Let me also run lint to be sure:
+[2026-05-04T22:22:22+0200] The lint error mirrors the exact same pattern already accepted in Stage3Clarify (US-091). Both `npm run typecheck` and `npm run test` pass. Now let me set up browser testing.
+[2026-05-04T22:24:18+0200] Dev server is ready on :3000. Now let me write the playwright test that walks through the wizard with a mocked /api/wizard/structure response, so we don't need a real Claude connector during testing.
+[2026-05-04T22:26:03+0200] All browser checks pass. Let me also add a quick failure-path test to verify the error UI + Build manually fallback works:
+[2026-05-04T22:26:26+0200] Both browser flows pass. Now let me update progress.txt, flip the prd, and commit.
+[2026-05-04T22:26:46+0200] Now update progress.txt with the implementation notes and learnings.
+[2026-05-04T22:28:14+0200] US-092 is committed and `passes: true` is in HEAD. Summary of what landed:
+
+**Backend**
+- `src/lib/wizard/structure.ts` — `CourseStructureSchema` (modules → lessons with title/description/estimatedMinutes), `STRUCTURE_SYSTEM_PROMPT`, `buildStructureUserMessage`, forgiving `parseStructureResponse` that drops invalid lessons/modules and rounds non-integer minutes.
+- `src/app/api/wizard/structure/route.ts` — mirrors the clarify route exactly: `selectConnector()` → 503 if unavailable, retry once on parse failure, 502 on second failure.
+
+**UI** (`src/app/create/Stage3Cascade.tsx`)
+- State machine `idle | loading | ready | manual | error` with full-stage loading/error panels.
+- Retry + Build manually buttons on error; Regenerate button on the cascade with a `window.confirm` warning.
+- `courseStructureToDraft()` bridges the API shape (`description`) to the cascade shape (`summary` + ids); `emptyStructure()` seeds the manual fallback.
+- Caches generated structure on the draft so back-nav from Stage 5 does not re-fetch.
+
+**Tests** — 17 new vitest cases (schema, prompt, parser, route paths). Suite 420/420 ✅. Typecheck clean. Two playwright runs verified happy-path (load → edit → forward → back-cached → regenerate) and failure-path (503 → Retry → Build manually).
+[2026-05-04T22:28:14+0200] [result success turns=75 cost=$7.27133] US-092 is committed and `passes: true` is in HEAD. Summary of what landed:
+
+**Backend**
+- `src/lib/wizard/structure.ts` — `CourseStructureSchema` (modules → lessons with title/description/estimatedMinutes), `STRUCTURE_SYSTEM_PROMPT`, `buildStructureUserMessage`, forgiving `parseStructureResponse` that drops invalid lessons/modules and rounds non-integer minutes.
+- `src/app/api/wizard/structure/route.ts` — mirrors the clarify route exactly: `selectConnector()` → 503 if unavailable, retry once on parse failure, 502 on second failure.
+
+**UI** (`src/app/create/Stage3Cascade.tsx`)
+- State machine `idle | loading | ready | manual | error` with full-stage loading/error panels.
+- Retry + Build manually buttons on error; Regenerate button on the cascade with a `window.confirm` warning.
+- `courseStructureToDraft()` bridges the API shape (`description`) to the cascade shape (`summary` + ids); `emptyStructure()` seeds the manual fallback.
+- Caches generated structure on the draft so back-nav from Stage 5 does not re-fetch.
+
+**Tests** — 17 new vitest cases (schema, prompt, parser, route paths). Suite 420/420 ✅. Typecheck clean. Two playwright runs verified happy-path (load → edit → forward → back-cached → regenerate) and failure-path (503 → Retry → Build manually).
