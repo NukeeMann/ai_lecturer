@@ -1,0 +1,20 @@
+[2026-05-04T18:52:21+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T18:54:16+0200] Now I understand the layout. Let me make the schema change first.
+[2026-05-04T18:55:14+0200] Now let me add unit tests for the new logic.
+[2026-05-04T19:07:18+0200] All assertions pass. Let me verify the screenshots look right.
+[2026-05-04T19:08:56+0200] Commit landed with `passes: true` for US-083. Summary:
+
+**US-083 — DragMatch partial-selection Submit gate**
+- Schema: added `requireAll: boolean` (default `true`) to `DragMatchDataSchema`; exported pure `isReadyToSubmit(data, placement)`.
+- Widget: replaced the bank-empty gate with `useMemo(isReadyToSubmit)`. Distractor items left in the bank stay un-misplaced (validateDragMatch already null-expects them).
+- Editor: added a "Require every item to be placed before Submit" checkbox.
+- Demo: `courses/dragmatch-test/lessons/leftover-bank.json` flipped to `requireAll: false` (4 real stdlib + 3 impostors).
+- Tests: 8 new unit tests in `schemas.test.ts` (326/326 pass, was 318); typecheck clean; `/tmp/playwright-test-US-083.js` 19/19 against PORT=3083 — Submit disabled with all 7 in bank, still disabled at 3-of-4, ENABLED at 4-of-4 with 3 distractors still in bank, click → "Solved", distractors retain `data-misplaced="false"`.
+[2026-05-04T19:08:56+0200] [result success turns=82 cost=$6.602907000000001] Commit landed with `passes: true` for US-083. Summary:
+
+**US-083 — DragMatch partial-selection Submit gate**
+- Schema: added `requireAll: boolean` (default `true`) to `DragMatchDataSchema`; exported pure `isReadyToSubmit(data, placement)`.
+- Widget: replaced the bank-empty gate with `useMemo(isReadyToSubmit)`. Distractor items left in the bank stay un-misplaced (validateDragMatch already null-expects them).
+- Editor: added a "Require every item to be placed before Submit" checkbox.
+- Demo: `courses/dragmatch-test/lessons/leftover-bank.json` flipped to `requireAll: false` (4 real stdlib + 3 impostors).
+- Tests: 8 new unit tests in `schemas.test.ts` (326/326 pass, was 318); typecheck clean; `/tmp/playwright-test-US-083.js` 19/19 against PORT=3083 — Submit disabled with all 7 in bank, still disabled at 3-of-4, ENABLED at 4-of-4 with 3 distractors still in bank, click → "Solved", distractors retain `data-misplaced="false"`.

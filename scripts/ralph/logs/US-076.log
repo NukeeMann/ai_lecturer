@@ -1,0 +1,26 @@
+[2026-05-04T18:52:21+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T18:55:23+0200] Now wire up the lesson page:
+[2026-05-04T18:55:35+0200] Now find where Toolbar is invoked to thread course slug + default accent:
+[2026-05-04T18:55:52+0200] Now update Toolbar's SettingsMenu invocation:
+[2026-05-04T18:55:57+0200] Now update the dashboard page to reset accent on mount:
+[2026-05-04T18:56:17+0200] Now update the boot script to apply per-course accent override pre-paint:
+[2026-05-04T18:58:20+0200] Now run the dev server and test in a browser:
+[2026-05-04T19:03:26+0200] Let me rewrite the test as a self-executing IIFE:
+[2026-05-04T19:07:38+0200] All 20/20 assertions pass. Let me append the progress entry and commit:
+[2026-05-04T19:08:27+0200] Now flip prd.json:
+[2026-05-04T19:09:02+0200] Commit `8afb032` landed with `passes=true` for US-076.
+
+Summary of US-076:
+- **SettingsMenu** (`src/components/SettingsMenu.tsx`): added `Accent` type, `ACCENT_OPTIONS`, exported `accentStorageKey()` / `readAccentOverride()` / `applyAccent()` helpers, plus optional `courseSlug` + `courseDefaultAccent` props that gate a new "Accent" radiogroup.
+- **Lesson page**: `useEffect([slug, course])` resolves accent = override → course default → `'default'`, applies it, and resets to `'default'` on unmount; SettingsMenu now receives `courseSlug` + `courseDefaultAccent`.
+- **Dashboard page**: mount effect resets `data-accent='default'` as a safety net.
+- **Boot script** (`src/app/layout.tsx`): parses `/courses/<slug>/...` from `location.pathname` and applies the persisted override pre-paint.
+- **Verification**: `npm run typecheck` clean, `npm test` 318/318, playwright run on `:3076` → 20/20 assertions including the AC-mandated A→B→A round-trip and a hard-reload pre-paint check. Screenshots at `/tmp/us076-{1..4}-*.png`.
+[2026-05-04T19:09:02+0200] [result success turns=72 cost=$4.9249895] Commit `8afb032` landed with `passes=true` for US-076.
+
+Summary of US-076:
+- **SettingsMenu** (`src/components/SettingsMenu.tsx`): added `Accent` type, `ACCENT_OPTIONS`, exported `accentStorageKey()` / `readAccentOverride()` / `applyAccent()` helpers, plus optional `courseSlug` + `courseDefaultAccent` props that gate a new "Accent" radiogroup.
+- **Lesson page**: `useEffect([slug, course])` resolves accent = override → course default → `'default'`, applies it, and resets to `'default'` on unmount; SettingsMenu now receives `courseSlug` + `courseDefaultAccent`.
+- **Dashboard page**: mount effect resets `data-accent='default'` as a safety net.
+- **Boot script** (`src/app/layout.tsx`): parses `/courses/<slug>/...` from `location.pathname` and applies the persisted override pre-paint.
+- **Verification**: `npm run typecheck` clean, `npm test` 318/318, playwright run on `:3076` → 20/20 assertions including the AC-mandated A→B→A round-trip and a hard-reload pre-paint check. Screenshots at `/tmp/us076-{1..4}-*.png`.
