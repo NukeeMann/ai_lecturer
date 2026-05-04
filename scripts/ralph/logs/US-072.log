@@ -1,0 +1,30 @@
+[2026-05-04T16:20:17+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T16:20:31+0200] Now let me explore the existing Embed Video widget structure.
+[2026-05-04T16:20:49+0200] Now let me look at the PRD for US-072 and previous video stories.
+[2026-05-04T16:21:24+0200] Now let me check how the lesson page renders Video and the API for progress / lesson saving.
+[2026-05-04T16:22:00+0200] Let me look at how the SectionRenderer signals onSave for video changes (for caching):
+[2026-05-04T16:23:01+0200] Let me check how lesson page wires up onComplete to widgets and the widgetRegistry:
+[2026-05-04T16:24:54+0200] Now I have enough context. Let me write the failing test first.
+[2026-05-04T16:25:28+0200] Run the test to confirm it fails (no implementation yet):
+[2026-05-04T16:25:32+0200] Failing as expected. Now implement the transcript fetcher.
+[2026-05-04T16:26:04+0200] All 11 tests pass. Now build the API route, then wire the widget.
+[2026-05-04T16:26:19+0200] Now wire up the widget. The widget needs to:
+1. Detect missing transcript on YouTube videos and fetch.
+2. Render fetched transcript locally + call onTranscriptFetched callback to persist.
+3. Manual transcript (already in `data.transcript`) wins — never overrides.
+[2026-05-04T16:26:31+0200] Now update the transcript variable to merge data.transcript with autoTranscript and add the fetch effect:
+[2026-05-04T16:26:48+0200] Now update the lesson page to wire up onTranscriptFetched. Let me find the section render path:
+[2026-05-04T16:27:04+0200] Now add the cache callback in the page and thread it through. First, add `handleCacheVideoTranscript`:
+[2026-05-04T16:27:15+0200] Now thread it through. Add the import and update the SectionRenderer to pass it.
+[2026-05-04T16:27:19+0200] Now pass it through LessonStream → SectionRenderer:
+[2026-05-04T16:27:41+0200] Now update the SectionRenderer interface and use VideoWidget directly with the callback:
+[2026-05-04T16:27:49+0200] Now replace the video render branch in SectionRenderer to use VideoWidget directly with the callback:
+[2026-05-04T16:27:55+0200] Now run typecheck + tests:
+[2026-05-04T16:29:16+0200] Start the dev server in background:
+[2026-05-04T16:29:34+0200] API works — description fallback returns the full description. Now write a playwright test for the no-transcript lesson.
+[2026-05-04T16:29:48+0200] Let me write the playwright test:
+[2026-05-04T16:33:20+0200] Found the bug — React StrictMode double-invoke cancels the fetch result. Fix:
+[2026-05-04T16:33:36+0200] Transcript renders now. Run the full test:
+[2026-05-04T16:34:04+0200] Fix the cache callback — setLesson updaters don't run synchronously:
+[2026-05-04T16:34:25+0200] All browser verifications pass. Run typecheck + unit tests once more:
+[2026-05-04T16:34:40+0200] Typecheck clean, all 312 tests pass. Stop dev server and clean up:
