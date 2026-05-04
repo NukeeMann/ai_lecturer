@@ -25,6 +25,7 @@ export const CodeClozeProgressiveHintSchema = z.object({
 
 export const CodeClozeDataSchema = z.object({
   taskMarkdown: z.string().optional(),
+  language: z.enum(['python', 'javascript', 'typescript']).optional(),
   template: z.string(),
   slots: z.array(CodeClozeSlotSchema),
   finalTests: z.array(CodeClozeFinalTestSchema).optional(),
