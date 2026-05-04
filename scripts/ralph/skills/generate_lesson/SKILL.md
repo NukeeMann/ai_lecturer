@@ -92,6 +92,7 @@ Open the per-widget JSON Schemas under `src/widgets/schemas/`:
 - `code.json` — `{ taskMarkdown, starterCode, tests: [{ name, body, hidden? }], solution? }`
 - `demo.json` — `{ demoType: "gauss", imageSrc, params: { sigmaMin, sigmaMax, sigmaDefault } }` — **gauss only for now**; do not invent new `demoType` values
 - `sandbox.json` — `{ starterCode, encouragement }`
+- `plotImage.json` — `{ src, alt, caption?, sourceCode?, sourceLanguage? }` — pre-rendered matplotlib PNG served from `/api/courses/<slug>/assets/plots/...`. The `sourceCode` MUST match the saved PNG byte-for-byte (re-running it must reproduce the same plot).
 
 These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/schema.ts` via `npm run build:schemas`. The Zod schemas are the runtime source of truth (`src/lib/schemas/lesson.ts → SectionSchema` is a `discriminatedUnion('type', [...])` over the six section types). When in doubt, open the Zod file alongside the JSON Schema.
 
@@ -302,6 +303,23 @@ The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
   - `"Tweak the kernel size and watch the edges sharpen — no tests, no pressure."`
   - `"Try different noise levels and see when the median starts to fail."`
   - Avoid "!!!", emoji, or anything that reads as patronising.
+
+#### PlotImage (`type: "plotImage"`)
+- A pre-rendered static plot (matplotlib output) saved under `courses/<slug>/assets/plots/<lesson-slug>-<n>.png` and referenced as `/api/courses/<slug>/assets/plots/<lesson-slug>-<n>.png`.
+- `data.alt` is **required** and must describe the figure for screen readers (same rule as Image widget alt text — be specific about content, not topic).
+- `data.caption` is the printed `<figcaption>` ("Figure 1. …", "Rys. 1. …"). Optional but strongly recommended.
+- `data.sourceCode` is shown in a collapsible *Show source* panel (read-only CodeMirror). Make it self-contained, runnable, and **byte-for-byte the script that produced the saved PNG** — re-running it must reproduce the same plot. `sourceLanguage` defaults to `'python'`.
+- **Axes are MANDATORY for every plot.** Plots without visible axes are unreadable for value-reading exercises. Every saved PNG MUST include:
+  - Visible **X and Y spines** (matplotlib draws them by default — do NOT call `plt.axis('off')`, `ax.set_axis_off()`, or any `spine.set_visible(False)`).
+  - **Tick marks** on both X and Y axes (`plt.xticks(...)` / `plt.yticks(...)` or default ticks — never empty `plt.xticks([])` / `plt.yticks([])`).
+  - **Numeric tick labels** so the learner can read values off the plot (default matplotlib labels are fine; do not blank them out).
+  - **Axis labels** via `plt.xlabel("...")` and `plt.ylabel("...")` — name the quantity the axis represents.
+  - **Units** in the axis label where applicable (e.g. `"Time [s]"`, `"Intensity [0–255]"`, `"Frequency [Hz]"`). For dimensionless / index axes (pixel index, sample index), name the quantity (`"x"`, `"sample"`, `"pixel index"`) without a unit suffix.
+  - A `plt.title("...")` describing what the figure shows.
+  - A light `plt.grid(True, alpha=0.3)` is encouraged (helps the eye read values) but optional.
+  - For multi-series plots, use `label=` on each `plt.plot(...)` and call `plt.legend()`.
+- Save with `plt.savefig(<path>, dpi=110, bbox_inches='tight')` so labels are not cropped. `bbox_inches='tight'` is critical — without it, axis labels fall outside the canvas.
+- Image-only diagrams (no quantitative axes — e.g. a kernel layout figure, a flowchart, an iconographic illustration) belong in the **Image widget**, NOT PlotImage. PlotImage is for *plots with readable values*.
 
 #### Custom (`type: "custom"`)
 - Use only when no other widget fits. `data` is a free-form record. The renderer is `CustomPlaceholder`, so this section currently displays as a stub — useful for marking "future widget here" but not for shipping content. Prefer one of the five real widgets.
@@ -539,6 +557,7 @@ Why this lesson works as a worked example:
 - [ ] **Every image — inline OR widget — has meaningful, non-placeholder alt text** (never `![](...)`, `![image](...)`, `![figure](...)`).
 - [ ] All image URLs come from stable hosts (Wikimedia Commons, public-domain repositories, official docs, arxiv) — never `medium.com`, `towardsdatascience.com`, `dev.to`, personal blogs, Imgur, or social-media CDNs.
 - [ ] Every Image widget section with a Wikimedia / licensed source carries `data.attribution` in the `Wikimedia Commons, <author>, <license>` format (or the equivalent for the source) and links `attribution.url` to the source description page.
+- [ ] **Every `plotImage` section's saved PNG has visible X/Y axes, tick marks, numeric tick labels, axis labels (with units where applicable), and a title** (US-060) — never `plt.axis('off')`, `plt.xticks([])`, or hidden spines. PlotImage `sourceCode` reproduces that exact figure.
 - [ ] `LessonSchema.safeParse` returns `success: true`.
 - [ ] `npm run typecheck` passes (it should — this is a JSON-only change).
 
