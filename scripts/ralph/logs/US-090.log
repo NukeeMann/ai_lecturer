@@ -1,0 +1,25 @@
+[2026-05-04T21:30:26+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T21:32:20+0200] I'll start by adding a failing test that reproduces the bug.
+[2026-05-04T21:32:29+0200] Now let me verify the new test fails before I apply the fix.
+[2026-05-04T21:32:34+0200] Failing test confirmed. Now I'll apply the fix.
+[2026-05-04T21:32:55+0200] Now update the docs and the theory copy that mentioned order-sensitive matching.
+[2026-05-04T21:33:30+0200] All 371 tests pass and typecheck is clean. Now browser verify with playwright-skill.
+[2026-05-04T21:35:59+0200] The dev server on port 3000 is running from the main project, not my worktree. I need to start a dev server in this worktree.
+[2026-05-04T21:36:57+0200] All zones live-correct (green) with reverse-order placement, and Submit shows "Solved". Browser verification passed.
+[2026-05-04T21:37:01+0200] All three zones are green with reverse-order placement and the button reads "Solved". Now I'll flip prd.json, append progress.txt, and commit.
+[2026-05-04T21:38:08+0200] Now I'll commit the work before stopping the dev server.
+[2026-05-04T21:38:17+0200] Commit landed in HEAD with `passes=true` for US-090. Now I'll stop the dev server I started.
+[2026-05-04T21:38:33+0200] US-090 done.
+
+- Bug at `src/widgets/DragMatch/schema.ts:70-72,138`: both `validateDragMatch` and `computeZoneState` used order-sensitive `arraysEqual` when `multipleItemsPerZone=true`. Replaced with `setsEqual` unconditionally; deleted the now-dead `arraysEqual` helper. Single-item-per-zone behavior is untouched (was already `setsEqual`).
+- `src/lib/schemas/schemas.test.ts`: replaced the order-sensitive expectation with the new "items in any order within a zone is correct" assertion (verified failing before the fix, passing after). All 371 tests pass; `tsc --noEmit` clean.
+- Browser-verified via `/tmp/playwright-test-US-090.js` against a fresh worktree dev server on port 3010 (port 3000 was held by the main project's server, NOT the worktree). Dropped items in REVERSE order into all three zones — all three reported `data-correctness="correct"` live, Submit showed "Solved". Screenshots at `/tmp/us090-pre-submit.png` and `/tmp/us090-post-submit.png`.
+- Updated `docs/widgets.md` and the theory section in `courses/dragmatch-test/lessons/multi-per-zone.json` to drop the obsolete "order matters / order-sensitive" copy.
+- `scripts/ralph/prd.json` flipped `passes: true` for US-090; progress.txt appended; committed in `9d22e0a` on `ralph/us-090`.
+[2026-05-04T21:38:33+0200] [result success turns=56 cost=$4.186128499999999] US-090 done.
+
+- Bug at `src/widgets/DragMatch/schema.ts:70-72,138`: both `validateDragMatch` and `computeZoneState` used order-sensitive `arraysEqual` when `multipleItemsPerZone=true`. Replaced with `setsEqual` unconditionally; deleted the now-dead `arraysEqual` helper. Single-item-per-zone behavior is untouched (was already `setsEqual`).
+- `src/lib/schemas/schemas.test.ts`: replaced the order-sensitive expectation with the new "items in any order within a zone is correct" assertion (verified failing before the fix, passing after). All 371 tests pass; `tsc --noEmit` clean.
+- Browser-verified via `/tmp/playwright-test-US-090.js` against a fresh worktree dev server on port 3010 (port 3000 was held by the main project's server, NOT the worktree). Dropped items in REVERSE order into all three zones — all three reported `data-correctness="correct"` live, Submit showed "Solved". Screenshots at `/tmp/us090-pre-submit.png` and `/tmp/us090-post-submit.png`.
+- Updated `docs/widgets.md` and the theory section in `courses/dragmatch-test/lessons/multi-per-zone.json` to drop the obsolete "order matters / order-sensitive" copy.
+- `scripts/ralph/prd.json` flipped `passes: true` for US-090; progress.txt appended; committed in `9d22e0a` on `ralph/us-090`.
