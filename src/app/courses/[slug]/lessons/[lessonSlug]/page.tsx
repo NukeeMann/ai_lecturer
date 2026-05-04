@@ -2047,6 +2047,7 @@ function LessonStream({
             section={section}
             sectionNumber={idx + 1}
             status={status}
+            alreadyCompleted={persistedDone}
             initialUserCode={sectionState[section.id]?.userCode}
             courseSlug={slug}
             lessonSlug={lessonSlug}
@@ -2177,6 +2178,8 @@ interface SectionRendererProps {
   section: Section;
   sectionNumber: number;
   status: WidgetStatus;
+  /** True if the section was already done before this mount (suppresses confetti). */
+  alreadyCompleted: boolean;
   initialUserCode?: string;
   courseSlug: string;
   lessonSlug: string;
@@ -2192,6 +2195,7 @@ function SectionRenderer({
   section,
   sectionNumber,
   status,
+  alreadyCompleted,
   initialUserCode,
   courseSlug,
   lessonSlug,
@@ -2266,7 +2270,14 @@ function SectionRenderer({
   }
 
   if (section.type === 'quiz') {
-    body = <QuizWidget data={section.data} onCorrect={onComplete} />;
+    body = (
+      <QuizWidget
+        data={section.data}
+        onCorrect={onComplete}
+        alreadyCompleted={alreadyCompleted}
+        progressKey={progressKey}
+      />
+    );
     pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit quiz',
@@ -2280,6 +2291,7 @@ function SectionRenderer({
         initialCode={initialUserCode}
         progressKey={progressKey}
         onComplete={onComplete}
+        alreadyCompleted={alreadyCompleted}
       />
     );
     pencilNode = pencilButton(
