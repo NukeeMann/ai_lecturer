@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "slug": "python-widgets",
+  "courseSlug": "smoke-test",
+  "moduleId": "m1",
+  "title": "Python widgets — Code, Sandbox, ParametricExplorer",
+  "eyebrow": "Lekcja 2 · Smoke test",
+  "description": "Python-execution widget family running on the Pyodide worker: a graded Code exercise, an open Sandbox, and a ParametricExplorer with live sliders.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-code",
+      "title": "Code — graded Python with hidden tests + peek solution",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "**Code widget.** A CodeMirror editor + Pyodide worker + hidden test runner. The user iterates with ▶ Run, then clicks Submit to grade against the test list. Tests are hidden by default; a Peek solution disclosure reveals the reference implementation without auto-injecting it.\n\n**Task.** Implement `add` so it returns the sum of two numbers.",
+        "starterCode": "def add(a, b):\n    # TODO: zaimplementuj — zwróć sumę a i b\n    return 0\n",
+        "tests": [
+          {
+            "name": "adds two positive integers",
+            "hidden": true,
+            "body": "assert add(2, 3) == 5"
+          },
+          {
+            "name": "handles negatives",
+            "hidden": true,
+            "body": "assert add(-4, 1) == -3"
+          },
+          {
+            "name": "handles floats",
+            "hidden": true,
+            "body": "assert abs(add(0.1, 0.2) - 0.3) < 1e-9"
+          }
+        ],
+        "solution": "def add(a, b):\n    return a + b\n"
+      }
+    },
+    {
+      "id": "s2-sandbox",
+      "title": "Sandbox — open-ended Python (no tests, no Submit)",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Sandbox widget. Free-form Python — runs in the lesson's shared Pyodide namespace.\n# No tests, no Submit. Persisted user code re-loads on revisit (PATCH /api/progress).\n\nimport math\n\nfor i in range(5):\n    print(f\"sqrt({i}) = {math.sqrt(i):.3f}\")\n",
+        "encouragement": "Eksperymentuj swobodnie — niczego nie zepsujesz. Zmienne zdefiniowane tutaj są widoczne w kolejnych Code/Sandbox sekcjach tej lekcji."
+      }
+    },
+    {
+      "id": "s3-pexp",
+      "title": "ParametricExplorer — live slider drives a plot",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n",
+        "renderCode": "x = np.linspace(0, 2 * np.pi, 200)\ny = np.sin(freq * x + phase)\nplt.figure()\nplt.plot(x, y)\nplt.title(f'sin({freq:.1f} x + {phase:.1f})')\n",
+        "params": [
+          {
+            "name": "freq",
+            "label": "Frequency",
+            "type": "slider",
+            "min": 0.5,
+            "max": 5,
+            "step": 0.1,
+            "default": 1
+          },
+          {
+            "name": "phase",
+            "label": "Phase",
+            "type": "slider",
+            "min": 0,
+            "max": 6.28,
+            "step": 0.01,
+            "default": 0
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 150
+      }
+    }
+  ]
+}
