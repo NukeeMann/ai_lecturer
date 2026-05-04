@@ -1,0 +1,37 @@
+[2026-05-04T16:35:36+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T16:35:53+0200] Let me explore the relevant codebase structure.
+[2026-05-04T16:36:43+0200] Let me look at how the auto-fetch transcript was wired in for US-072 (probably similar pattern) and the lesson read/write API path.
+[2026-05-04T16:37:06+0200] Now let me look at where LessonSourcesPanel is rendered.
+[2026-05-04T16:38:10+0200] Good. Let me look at how lesson PUT works and other places sources are touched.
+[2026-05-04T16:38:21+0200] Good, I have a clear picture. Let me now look at how persistLesson and the schema build work.
+[2026-05-04T16:39:28+0200] Now I have full context. Let me start writing the failing test for the aggregation logic.
+[2026-05-04T16:40:09+0200] Now let me confirm the test fails, then implement.
+[2026-05-04T16:40:13+0200] Failing test confirmed. Now let me implement the aggregator.
+[2026-05-04T16:40:40+0200] All 15 tests pass. Now let me implement the title fetcher.
+[2026-05-04T16:41:24+0200] All 25 tests pass. Now add the page-title API endpoint and the schema field.
+[2026-05-04T16:41:39+0200] Now update the LessonSchema to add `autoSources`.
+[2026-05-04T16:41:48+0200] Now I need to update the test file to use AutoSource type from aggregate, and also update aggregate.ts to import from schemas (avoid circular). Let me re-export `AutoSource` from aggregate.ts.
+[2026-05-04T16:41:54+0200] Now wire the lesson page to backfill missing titles and merge for the panel.
+[2026-05-04T16:42:21+0200] Now add the backfill effect and merge in the lesson page. Let me find a good spot:
+[2026-05-04T16:42:38+0200] Now thread `mergedLessonSources` into LessonStream and use it for the panel/header.
+[2026-05-04T16:43:05+0200] Now run typecheck and tests.
+[2026-05-04T16:43:14+0200] Typecheck passes. Now regenerate JSON schemas and run lint/tests.
+[2026-05-04T16:44:08+0200] The lint error is pre-existing — my changes added zero new lint problems. Now let me run all tests.
+[2026-05-04T16:44:12+0200] All 337 tests pass. Let me verify with the build to be sure.
+[2026-05-04T16:44:35+0200] Now I need to verify in the browser. Let me create a test course/lesson with multiple link types and confirm the panel shows the merged labeled list.
+[2026-05-04T16:44:42+0200] Let me create a dedicated US-073 fixture lesson as part of an existing test course, so I can verify with playwright. I'll create a fresh course with mixed sources.
+[2026-05-04T16:45:10+0200] Now let me start the dev server and run a playwright test.
+[2026-05-04T16:45:41+0200] API works. Let me write the playwright test.
+[2026-05-04T16:46:34+0200] The playwright test passes end-to-end:
+- 4 auto-aggregated URLs (Wikipedia, NumPy, scikit-image, YouTube) fetched + cached
+- 1 manual entry preserved with its original title
+- Total 5 cards rendered, sorted alphabetically
+- YouTube correctly inferred as `kind=video`, others as `article`
+- All cards open in new tab
+- `autoSources` persisted into lesson JSON
+
+Let me improve the entity decoder to handle a few more common named entities (the scikit-image title has `&mdash;` raw):
+[2026-05-04T16:46:49+0200] Now let me clean the cached titles in the fixture so they're refreshed (proves the aggregation in fresh state when committed). Or actually, leave them — they prove the cached state. But the scikit-image one still has `&mdash;` because the cache was populated before my entity-decoder fix. Let me delete the autoSources from the fixture so it can repopulate on first view.
+[2026-05-04T16:47:08+0200] Let me simplify the fixture by removing the cached autoSources/transcript so it stays lean (the cache will populate on first lesson view, demonstrating the flow):
+[2026-05-04T16:47:15+0200] Now let me run the full test suite, typecheck, and finalize.
+[2026-05-04T16:47:25+0200] All checks pass. Let me kill the dev server and stage everything.
