@@ -20,6 +20,13 @@ import {
 
 export interface VideoWidgetProps {
   data: VideoData;
+  /**
+   * Called once per mount when an auto-fetched transcript is successfully retrieved
+   * for a YouTube video that arrived with no transcript baked in. The caller
+   * persists the segments back into the lesson JSON so subsequent renders short-circuit
+   * the fetch (cache). Manually-provided transcripts NEVER trigger this callback.
+   */
+  onTranscriptFetched?: (segments: VideoTranscriptSegment[]) => void;
 }
 
 const wrapStyle: CSSProperties = {
@@ -169,12 +176,18 @@ function findActiveSegmentIndex(transcript: VideoTranscriptSegment[], time: numb
   return -1;
 }
 
-export function VideoWidget({ data: rawData }: VideoWidgetProps) {
+export function VideoWidget({ data: rawData, onTranscriptFetched }: VideoWidgetProps) {
   const data = useMemo(() => VideoDataSchema.parse(rawData), [rawData]);
   const reactId = useId();
   const transcriptId = `video-transcript-${reactId}`;
   const [transcriptOpen, setTranscriptOpen] = useState(true);
   const [currentTime, setCurrentTime] = useState(data.startAt ?? 0);
+  const [autoTranscript, setAutoTranscript] = useState<VideoTranscriptSegment[] | null>(null);
+  const autoFetchAttemptedRef = useRef(false);
+  const onTranscriptFetchedRef = useRef(onTranscriptFetched);
+  useEffect(() => {
+    onTranscriptFetchedRef.current = onTranscriptFetched;
+  }, [onTranscriptFetched]);
 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -295,10 +308,45 @@ export function VideoWidget({ data: rawData }: VideoWidgetProps) {
     [data.kind, postYouTubeCommand],
   );
 
-  const transcript = data.transcript ?? [];
+  const manualTranscript = data.transcript;
+  const hasManualTranscript = !!manualTranscript && manualTranscript.length > 0;
+  const transcript = hasManualTranscript
+    ? manualTranscript!
+    : autoTranscript ?? [];
   const activeIndex = transcript.length
     ? findActiveSegmentIndex(transcript, currentTime)
     : -1;
+
+  useEffect(() => {
+    // Manual transcript wins; never auto-fetch when one is already on disk.
+    if (hasManualTranscript) return;
+    if (data.kind !== 'youtube' || !youtubeId) return;
+    if (autoFetchAttemptedRef.current) return;
+    autoFetchAttemptedRef.current = true;
+    // No cancel-on-unmount flag: in React StrictMode the cleanup pass would
+    // cancel the in-flight fetch from the first setup, and the ref guard
+    // would then short-circuit the second setup — leaving the transcript
+    // stuck. Tolerate orphan setStates instead (React 18+ no longer warns).
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/video-transcript?videoId=${encodeURIComponent(youtubeId)}`,
+          { method: 'GET' },
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          segments?: VideoTranscriptSegment[];
+          source?: string;
+        };
+        const segs = Array.isArray(body.segments) ? body.segments : [];
+        if (segs.length === 0) return;
+        setAutoTranscript(segs);
+        onTranscriptFetchedRef.current?.(segs);
+      } catch {
+        // Silent — transcript stays blank. No error UI per AC.
+      }
+    })();
+  }, [data.kind, youtubeId, hasManualTranscript]);
 
   return (
     <div data-video-widget data-video-kind={data.kind} style={wrapStyle}>
