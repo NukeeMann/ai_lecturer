@@ -11,8 +11,10 @@ export const metadata: Metadata = {
 };
 
 // Runs synchronously in <head> before paint to prevent a flash of the wrong
-// theme. Reads localStorage['theme']; falls back to prefers-color-scheme.
-const themeBootstrap = `(function(){try{var s=localStorage.getItem('theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`;
+// theme/density. Reads localStorage['aiLecturer.theme'] (values: light|dark|
+// system; missing/system falls back to prefers-color-scheme) and
+// localStorage['aiLecturer.density'] (compact|comfortable|spacious).
+const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}}catch(e){}})();`;
 
 export default function RootLayout({
   children,

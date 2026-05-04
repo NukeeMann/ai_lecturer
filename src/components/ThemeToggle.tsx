@@ -3,6 +3,11 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Moon, Sun } from 'lucide-react';
 
+import {
+  SETTINGS_CHANGE_EVENT,
+  THEME_STORAGE_KEY,
+} from '@/components/SettingsMenu';
+
 type Theme = 'light' | 'dark';
 
 function readTheme(): Theme {
@@ -21,17 +26,30 @@ export function ThemeToggle() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     setTheme(readTheme());
+
+    // Re-read whenever SettingsMenu (same tab) or another tab (storage event)
+    // changes the persisted theme so this icon button stays in sync.
+    function refresh() {
+      setTheme(readTheme());
+    }
+    window.addEventListener(SETTINGS_CHANGE_EVENT, refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener(SETTINGS_CHANGE_EVENT, refresh);
+      window.removeEventListener('storage', refresh);
+    };
   }, []);
 
   const toggle = () => {
     const next: Theme = theme === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', next);
     try {
-      window.localStorage.setItem('theme', next);
+      window.localStorage.setItem(THEME_STORAGE_KEY, next);
     } catch {
       // localStorage unavailable; in-memory toggle still works for the session.
     }
     setTheme(next);
+    window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   };
 
   const isDark = theme === 'dark';
