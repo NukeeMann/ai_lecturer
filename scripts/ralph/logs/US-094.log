@@ -1,0 +1,48 @@
+[2026-05-04T22:43:48+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T22:44:43+0200] Let me examine API tests structure further to understand how to write the new tests.
+[2026-05-04T22:46:14+0200] Now I have enough context. Let me build the spawn wrapper first.
+[2026-05-04T22:46:22+0200] Good. Now I have the SSE pattern. Let me build the spawn wrapper module:
+[2026-05-04T22:47:07+0200] Now the routes:
+[2026-05-04T22:47:33+0200] Now the UI. Replace `Stage5Export` with live-progress panel and wire it after the spec POST.
+[2026-05-04T22:47:58+0200] Now replace the `Stage5Export` component with the live-progress `Stage5Generate`:
+[2026-05-04T22:49:31+0200] Typecheck clean. Now let me write the vitest tests.
+[2026-05-04T22:51:21+0200] Bug in `nextChild` helper — the spawn wrapper attaches an `exit` listener immediately. Let me fix the test helper:
+[2026-05-04T22:51:50+0200] The log stream is being ended while pending stream data events are still in flight. Let me make the writes safe:
+[2026-05-04T22:53:03+0200] Two issues: (1) test 1 attached subscribe AFTER the started event was emitted; (2) test 2 needs to wait for log file flush. Let me fix both:
+[2026-05-04T22:55:20+0200] The race is: after `exit` fires, the next stage starts and finalize runs before pending `data` events flush. Switch to waiting on `close` (real Node fires `close` after stdio drains) and defer the test's `close` to allow data to flush:
+[2026-05-04T22:55:39+0200] All 17 tests pass. Let me clean up debug output and run the full test suite + typecheck:
+[2026-05-04T22:55:53+0200] All 446 tests pass and typecheck is clean. Let me also run lint:
+[2026-05-04T22:56:22+0200] Now the browser verification with playwright-skill. Since claude+ralph would actually run for real, I need a way to mock the spawn pipeline for the browser test. Let me add a test-only env override:
+[2026-05-04T22:57:07+0200] Now let me add a mock generation mode for browser testing. I'll wire `GENERATION_MOCK=1` env var that swaps the spawn commands with a self-contained shell pipeline that writes a real course + lesson:
+[2026-05-04T22:57:30+0200] Now start the dev server with the mock env var and run the playwright test:
+[2026-05-04T22:58:17+0200] Dev server is up. Now write the playwright test:
+[2026-05-04T22:59:51+0200] The wizard ran end-to-end and SSE streamed correctly. The mock heredoc broke under `bash -c '... && ...'`. Let me switch the mock to use `node -e` for reliability:
+[2026-05-04T23:00:40+0200] The dev server already auto-reloads (Next.js dev mode). Now run the playwright test again:
+[2026-05-04T23:01:04+0200] The page rendered an error. Let me check:
+[2026-05-04T23:01:18+0200] The course renders correctly — just lands on the auto-redirected first-lesson page (`Intro`). My playwright assertion was wrong. Let me fix it and re-run:
+[2026-05-04T23:01:54+0200] Browser test passes end-to-end:
+- Wizard walked through stages 1–5
+- POST /api/courses/generate kicked off
+- SSE log streamed (`[mock init_course] researching topic...`)
+- Auto-redirected to `/courses/<slug>` then to `/lessons/intro`
+- Lesson content from the mock-generated course rendered
+
+Let me kill the dev server, commit, and we're done:
+[2026-05-04T23:01:59+0200] Now update prd.json, append progress, and commit:
+[2026-05-04T23:03:29+0200] Stop the dev server (started in background) by its captured PID:
+[2026-05-04T23:03:38+0200] US-094 is committed (`09da595`) with `passes: true` for US-094 and only US-094 in `prd.json`.
+
+**Summary**
+- New `src/lib/server/generation.ts` owns the (single) running generation child, spawns `claude /init_course <slug>` then `./scripts/ralph/ralph.sh`, and emits structured `log`/`stage`/`progress`/`done`/`error` events with stdout+stderr tee'd to `/courses/<slug>/.generation.log`.
+- New routes: POST `/api/courses/generate` (202/400/404/409/503), DELETE `?id=…` (SIGTERM → SIGKILL after 5s), GET `/api/courses/generate/stream/:id` (SSE).
+- `src/app/create/page.tsx` Stage 5 swapped from "copy these commands" to a live `Stage5Generate` panel with log + progress bar + Cancel; on `done` redirects to `/courses/<slug>`.
+- 17 new vitest cases (446 total pass), typecheck clean, lint clean.
+- Browser-verified end-to-end under `GENERATION_MOCK=1` — wizard → Generate → SSE log streamed → redirect → mock-generated lesson rendered.
+[2026-05-04T23:03:38+0200] [result success turns=110 cost=$9.8548145] US-094 is committed (`09da595`) with `passes: true` for US-094 and only US-094 in `prd.json`.
+
+**Summary**
+- New `src/lib/server/generation.ts` owns the (single) running generation child, spawns `claude /init_course <slug>` then `./scripts/ralph/ralph.sh`, and emits structured `log`/`stage`/`progress`/`done`/`error` events with stdout+stderr tee'd to `/courses/<slug>/.generation.log`.
+- New routes: POST `/api/courses/generate` (202/400/404/409/503), DELETE `?id=…` (SIGTERM → SIGKILL after 5s), GET `/api/courses/generate/stream/:id` (SSE).
+- `src/app/create/page.tsx` Stage 5 swapped from "copy these commands" to a live `Stage5Generate` panel with log + progress bar + Cancel; on `done` redirects to `/courses/<slug>`.
+- 17 new vitest cases (446 total pass), typecheck clean, lint clean.
+- Browser-verified end-to-end under `GENERATION_MOCK=1` — wizard → Generate → SSE log streamed → redirect → mock-generated lesson rendered.
