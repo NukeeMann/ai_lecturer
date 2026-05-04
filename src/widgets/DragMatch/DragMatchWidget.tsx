@@ -27,6 +27,7 @@ import { Callout } from '@/components/Callout';
 
 import {
   DragMatchDataSchema,
+  computeZoneState,
   validateDragMatch,
   type DragMatchData,
   type DragMatchItem,
@@ -179,6 +180,7 @@ interface DroppableContainerProps {
   hoverStyle?: CSSProperties;
   feedbackStyle?: CSSProperties;
   ariaLabel?: string;
+  correctness?: 'correct' | 'incorrect' | 'idle';
 }
 
 function DroppableContainer({
@@ -189,6 +191,7 @@ function DroppableContainer({
   hoverStyle,
   feedbackStyle,
   ariaLabel,
+  correctness,
 }: DroppableContainerProps) {
   const { setNodeRef, isOver, active } = useDroppable({ id });
   const showHover = isOver && active !== null;
@@ -205,6 +208,7 @@ function DroppableContainer({
       data-testid={testId}
       data-drop-id={id}
       data-drop-over={showHover ? 'true' : 'false'}
+      data-correctness={correctness ?? 'idle'}
       aria-label={ariaLabel}
       style={style}
     >
@@ -332,7 +336,22 @@ export function DragMatchWidget({
     [submitted, data, placement],
   );
 
+  // Live "Complete" signal — independent of submit, so US-080's wrapper
+  // checkbox can react the moment all blocks are in their right zones.
+  const liveAllCorrect = useMemo(
+    () => validateDragMatch(data, placement).allCorrect,
+    [data, placement],
+  );
+
   const allCorrect = validation?.allCorrect ?? false;
+
+  useEffect(() => {
+    if (liveAllCorrect && !completedOnceRef.current) {
+      completedOnceRef.current = true;
+      if (progressKey) void patchSectionDone(progressKey);
+      onCompleteRef.current?.();
+    }
+  }, [liveAllCorrect, progressKey]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveId(String(event.active.id));
@@ -392,13 +411,7 @@ export function DragMatchWidget({
 
   const handleSubmit = useCallback(() => {
     setSubmitted(true);
-    const result = validateDragMatch(data, placement);
-    if (result.allCorrect && !completedOnceRef.current) {
-      completedOnceRef.current = true;
-      if (progressKey) void patchSectionDone(progressKey);
-      onCompleteRef.current?.();
-    }
-  }, [data, placement, progressKey]);
+  }, []);
 
   const handleReset = useCallback(() => {
     setPlacement(buildInitialPlacement(data));
@@ -500,11 +513,12 @@ export function DragMatchWidget({
           <div style={zonesGridStyle}>
             {data.zones.map((zone) => {
               const placed = placement[zone.id] ?? [];
-              const correctness = submitted
-                ? validation?.zoneCorrect[zone.id]
-                  ? 'correct'
-                  : 'incorrect'
-                : 'idle';
+              const correctness = computeZoneState(
+                data,
+                placement,
+                zone.id,
+                submitted,
+              );
               return (
                 <DroppableContainer
                   key={zone.id}
@@ -514,6 +528,7 @@ export function DragMatchWidget({
                   baseStyle={zoneBaseStyle}
                   hoverStyle={hoverStyle}
                   feedbackStyle={zoneFeedbackStyle(correctness)}
+                  correctness={correctness}
                 >
                   <div style={zoneLabelStyle}>{zone.label}</div>
                   <div style={zoneItemsStyle}>

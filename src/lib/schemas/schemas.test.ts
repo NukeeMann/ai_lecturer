@@ -20,8 +20,10 @@ import {
 } from '@/widgets/DataTable/schema';
 import {
   DragMatchDataSchema,
+  computeZoneState,
   validateDragMatch,
   type DragMatchData,
+  type DragMatchPlacement,
 } from '@/widgets/DragMatch/schema';
 import { SandboxDataSchema } from '@/widgets/Sandbox/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
@@ -766,6 +768,66 @@ describe('DragMatch validateDragMatch', () => {
       __bank__: [],
     });
     expect(result.allCorrect).toBe(true);
+  });
+});
+
+describe('DragMatch computeZoneState (US-082)', () => {
+  const data: DragMatchData = {
+    prompt: 'Match terms.',
+    items: [
+      { id: 'A', label: 'A' },
+      { id: 'B', label: 'B' },
+    ],
+    zones: [
+      { id: 'X', label: 'X', accepts: ['A'] },
+      { id: 'Y', label: 'Y', accepts: ['B'] },
+    ],
+    multipleItemsPerZone: false,
+  };
+
+  it('reports correct LIVE when a zone holds the right item, even before submit', () => {
+    // Drop the right item — no submit click yet.
+    const placement: DragMatchPlacement = { X: ['A'], Y: [], __bank__: ['B'] };
+    expect(computeZoneState(data, placement, 'X', false)).toBe('correct');
+  });
+
+  it('after correcting a wrong placement, the zone reports correct without re-submitting', () => {
+    // Step 1: learner drops both items in the wrong zones and submits.
+    let placement: DragMatchPlacement = { X: ['B'], Y: ['A'], __bank__: [] };
+    expect(computeZoneState(data, placement, 'X', true)).toBe('incorrect');
+    expect(computeZoneState(data, placement, 'Y', true)).toBe('incorrect');
+    // Step 2: learner re-drags items into the right zones. Drag-end resets
+    // `submitted` to false in the widget, but the box must still go green.
+    placement = { X: ['A'], Y: ['B'], __bank__: [] };
+    expect(computeZoneState(data, placement, 'X', false)).toBe('correct');
+    expect(computeZoneState(data, placement, 'Y', false)).toBe('correct');
+  });
+
+  it('mismatched zone is idle when never submitted, incorrect after submit', () => {
+    const placement: DragMatchPlacement = { X: ['B'], Y: ['A'], __bank__: [] };
+    expect(computeZoneState(data, placement, 'X', false)).toBe('idle');
+    expect(computeZoneState(data, placement, 'X', true)).toBe('incorrect');
+  });
+
+  it('empty zone is idle before submit and incorrect after submit (preserves prior styling)', () => {
+    const placement: DragMatchPlacement = { X: [], Y: [], __bank__: ['A', 'B'] };
+    expect(computeZoneState(data, placement, 'X', false)).toBe('idle');
+    expect(computeZoneState(data, placement, 'X', true)).toBe('incorrect');
+  });
+
+  it('multi-item zone matches set equality for live success when multipleItemsPerZone=false', () => {
+    const multiData: DragMatchData = {
+      ...data,
+      zones: [{ id: 'Z', label: 'Z', accepts: ['A', 'B'] }],
+      multipleItemsPerZone: false,
+    };
+    const placement: DragMatchPlacement = { Z: ['B', 'A'], __bank__: [] };
+    expect(computeZoneState(multiData, placement, 'Z', false)).toBe('correct');
+  });
+
+  it('unknown zone id is idle (defensive guard)', () => {
+    const placement: DragMatchPlacement = { X: ['A'], Y: ['B'], __bank__: [] };
+    expect(computeZoneState(data, placement, 'nope', false)).toBe('idle');
   });
 });
 
