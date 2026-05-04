@@ -48,13 +48,22 @@ export const DraftStructureSchema = z.object({
   modules: z.array(DraftModuleSchema),
 });
 
+/**
+ * Free-form clarification answers gathered in the wizard's Clarification stage
+ * (US-091). Keys are the question ids returned by `POST /api/wizard/clarify`;
+ * values are the learner's answers (may be empty if the question was skipped).
+ */
+export const ClarificationAnswersSchema = z.record(z.string());
+
 export const CourseSpecSchema = z.object({
   topic: z.string(),
   level: LevelSchema,
   durationTarget: DurationTargetSchema,
   theoryPracticeRatio: z.number().min(0).max(1),
+  clarification: ClarificationAnswersSchema.optional(),
   draftStructure: DraftStructureSchema,
   createdAt: z.string(),
 });
 
 export type CourseSpec = z.infer<typeof CourseSpecSchema>;
+export type ClarificationAnswers = z.infer<typeof ClarificationAnswersSchema>;

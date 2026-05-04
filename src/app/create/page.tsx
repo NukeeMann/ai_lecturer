@@ -10,21 +10,25 @@ import Stage3Cascade, {
   type DurationTarget,
   type StructureDraft,
 } from './Stage3Cascade';
+import Stage3Clarify from './Stage3Clarify';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
   level: null,
   durationTarget: null,
   theoryPracticeRatio: 50,
+  clarificationQuestions: undefined,
+  clarification: undefined,
   structure: null,
 };
 
 const STAGES = [
   { id: 1, label: 'Topic' },
   { id: 2, label: 'Refine' },
-  { id: 3, label: 'Structure' },
-  { id: 4, label: 'Approve' },
-  { id: 5, label: 'Generate' },
+  { id: 3, label: 'Clarify' },
+  { id: 4, label: 'Structure' },
+  { id: 5, label: 'Approve' },
+  { id: 6, label: 'Generate' },
 ] as const;
 
 const PLACEHOLDER_TOPICS = [
@@ -120,7 +124,7 @@ export default function CreatePage() {
             );
           }
           setSubmittedSlug(body.slug);
-          setStage(5);
+          setStage(6);
           return;
         }
         if (res.status === 409) {
@@ -178,7 +182,7 @@ export default function CreatePage() {
           />
         )}
         {stage === 3 && (
-          <Stage3Cascade
+          <Stage3Clarify
             draft={draft}
             setDraft={setDraft}
             onNext={() => setStage(4)}
@@ -186,15 +190,23 @@ export default function CreatePage() {
           />
         )}
         {stage === 4 && (
+          <Stage3Cascade
+            draft={draft}
+            setDraft={setDraft}
+            onNext={() => setStage(5)}
+            onBack={() => setStage(3)}
+          />
+        )}
+        {stage === 5 && (
           <Stage4Approval
             draft={draft}
-            onBack={() => setStage(3)}
+            onBack={() => setStage(4)}
             onGenerate={handleGenerate}
             submitting={submitting}
             submitError={submitError}
           />
         )}
-        {stage === 5 && submittedSlug && <Stage5Export slug={submittedSlug} />}
+        {stage === 6 && submittedSlug && <Stage5Export slug={submittedSlug} />}
       </main>
     </div>
   );
@@ -202,7 +214,7 @@ export default function CreatePage() {
 
 // Strip client-side ids and serialize draft into a CourseSpec payload.
 function buildCourseSpec(draft: Draft, structure: StructureDraft) {
-  return {
+  const spec: Record<string, unknown> = {
     topic: draft.topic.trim(),
     level: draft.level,
     durationTarget: draft.durationTarget,
@@ -221,6 +233,20 @@ function buildCourseSpec(draft: Draft, structure: StructureDraft) {
     },
     createdAt: new Date().toISOString(),
   };
+
+  if (draft.clarificationQuestions && draft.clarificationQuestions.length > 0) {
+    const answers = draft.clarification ?? {};
+    const trimmed: Record<string, string> = {};
+    for (const q of draft.clarificationQuestions) {
+      const a = (answers[q.id] ?? '').trim();
+      if (a.length > 0) trimmed[`${q.id}: ${q.text}`] = a;
+    }
+    if (Object.keys(trimmed).length > 0) {
+      spec.clarification = trimmed;
+    }
+  }
+
+  return spec;
 }
 
 function clampRatio(n: number): number {
@@ -596,7 +622,7 @@ function Stage4Approval({
               marginBottom: 8,
             }}
           >
-            Stage 4 of 5 · Final review
+            Stage 5 of 6 · Final review
           </div>
           {s ? (
             <>
@@ -866,7 +892,7 @@ function Stage5Export({ slug }: { slug: string }) {
               marginBottom: 8,
             }}
           >
-            Stage 5 of 5 · Saved
+            Stage 6 of 6 · Saved
           </div>
 
           <div
