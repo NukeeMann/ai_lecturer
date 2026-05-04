@@ -33,6 +33,10 @@ PRD_REL="${PRD#$REPO_ROOT/}"
 WORKTREE_BASE="$REPO_ROOT/.worktrees"
 LOG_DIR="$SCRIPT_DIR/logs"
 LOG_DIR_REL="${LOG_DIR#$REPO_ROOT/}"
+PROGRESS_FILE="$SCRIPT_DIR/progress.txt"
+PROGRESS_FILE_REL="${PROGRESS_FILE#$REPO_ROOT/}"
+ARCHIVE_DIR="$SCRIPT_DIR/archive"
+ARCHIVE_DIR_REL="${ARCHIVE_DIR#$REPO_ROOT/}"
 LOCK_DIR="$REPO_ROOT/.ralph-locks"
 
 # Auto-detect stories field if not set in config
@@ -319,18 +323,36 @@ mark_done() {
   jq "(.${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes) = true" "$PRD" > "$tmp" && mv "$tmp" "$PRD"
 }
 
-# Stage prd.json + ralph logs and create a commit on BASE_BRANCH so completion
-# state and run logs persist across runs. Idempotent — exits cleanly when
-# nothing is staged. Caller is responsible for `git push` afterwards.
+# Stage prd.json + ralph logs/progress/archive and create a commit on BASE_BRANCH
+# so completion state, failure transcripts, and rotated progress logs persist
+# across runs. Idempotent — exits cleanly when nothing is staged. Caller is
+# responsible for `git push` afterwards.
+#
+# Failed-task artifacts (US-XXX.log, US-XXX.last_failure.txt, updated
+# failed_report.json) are intentionally captured here so a fresh ralph run on
+# a clean checkout — or a retry agent on a different branch — can still see
+# why the previous attempt failed.
 commit_progress() {
   local message="$1"
   cd "$REPO_ROOT"
-  git add "$PRD_REL" "$LOG_DIR_REL" 2>/dev/null || true
+  git add "$PRD_REL" "$LOG_DIR_REL" "$PROGRESS_FILE_REL" "$ARCHIVE_DIR_REL" 2>/dev/null || true
   if git diff --cached --quiet 2>/dev/null; then
     return 0
   fi
   git commit -m "$message" >/dev/null || return 1
   log_ok "Committed ralph progress: $message"
+}
+
+# Wrapper that commits any outstanding ralph artifacts and pushes BASE_BRANCH.
+# Called at end-of-batch and at every script exit so log files never sit
+# uncommitted after a ralph run completes. Idempotent: a no-op when there's
+# nothing to commit (exit code from commit_progress is checked via &&).
+flush_artifacts() {
+  local message="$1"
+  cd "$REPO_ROOT" || return 0
+  if commit_progress "$message"; then
+    git push origin "$BASE_BRANCH" >/dev/null 2>&1 || true
+  fi
 }
 
 branch_name() {
@@ -521,7 +543,14 @@ $([ -n "$recent_progress" ] && echo "
 RECENT PROGRESS (from prior iterations):
 $recent_progress")"
 
-  # Run claude in worktree (wrapped in timeout — kills hung agents)
+  # Run claude in worktree (wrapped in timeout — kills hung agents).
+  # Filter the stream-json transcript through jq before writing $logfile so we
+  # only keep assistant text (drops user/system/result/rate_limit_event lines)
+  # and prefix each entry with the message's own ISO-8601 timestamp. Non-JSON
+  # stderr noise (crashes, timeout messages) is passed through with a wallclock
+  # timestamp so signal-related errors aren't silently dropped.
+  # pipefail (set at top of file) ensures claude's exit code (e.g. 124 on
+  # timeout) propagates even when jq exits 0 at the end of the pipe.
   log_task "$task_id" "Running claude in worktree (hard ${TASK_TIMEOUT_SEC}s, soft ${soft_deadline_sec}s)..."
 
   local exit_code=0
@@ -536,8 +565,21 @@ $recent_progress")"
     --print \
     --output-format stream-json \
     --verbose \
-    -p "$enriched_prompt" \
-    > "$logfile" 2>&1 || exit_code=$?
+    -p "$enriched_prompt" 2>&1 \
+  | stdbuf -oL jq -R -r --unbuffered '
+      . as $line
+      | (try fromjson catch null) as $msg
+      | if $msg == null then
+          "[" + (now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ")) + "] [stderr] " + $line
+        elif $msg.type == "assistant" then
+          ($msg.timestamp // (now | gmtime | strftime("%Y-%m-%dT%H:%M:%SZ"))) as $t
+          | (($msg.message.content // [])
+              | map(if .type == "text" then .text else empty end)
+              | join("\n")) as $txt
+          | if ($txt | length) > 0 then "[" + $t + "] " + $txt else empty end
+        else empty
+        end
+    ' > "$logfile" || exit_code=$?
 
   if [ $exit_code -eq 124 ]; then
     log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — task will be retried"
@@ -889,6 +931,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     if [ "$gave_up_count" -gt 0 ]; then
       log_warn "$gave_up_count task(s) had failures (later completed on retry) — see $FAILED_REPORT"
     fi
+    flush_artifacts "chore(ralph): final artifacts after run completed"
     rm -rf "$LOCK_DIR"
     exit 0
   fi
@@ -911,6 +954,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     else
       log_warn "No pending tasks found (all exhausted retries?)"
     fi
+    flush_artifacts "chore(ralph): final artifacts (no runnable tasks)"
     exit 0
   fi
 
@@ -978,6 +1022,7 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     if [ "$MODE" = "pr" ]; then
       open_prs "${merge_list[@]}"
       log_ok "PR mode: one batch complete. Review and merge the PRs, then re-run ralph."
+      flush_artifacts "chore(ralph): PR-mode batch $batch_num artifacts"
       rm -rf "$LOCK_DIR"
       exit 0
     fi
@@ -995,6 +1040,12 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
       fi
     done
   fi
+
+  # Flush any straggling artifacts from this batch — failure transcripts,
+  # rotated progress logs, updated failed_report.json — so the next retry
+  # (in this run or a future one on a clean checkout) has the failure context.
+  # Idempotent: a no-op when merge_tasks already committed everything.
+  flush_artifacts "chore(ralph): batch $batch_num artifacts (${#failed[@]} failed, ${#merge_list[@]} merged)"
 done
 
 log_fail "Reached max iterations ($MAX_ITERATIONS). $(count_pending) tasks remaining. Elapsed: $(elapsed_since $SCRIPT_START)"
@@ -1008,5 +1059,6 @@ if [ "$gave_up_count" -gt 0 ]; then
   done
 fi
 
+flush_artifacts "chore(ralph): final artifacts after max-iteration stop"
 rm -rf "$LOCK_DIR"
 exit 1
