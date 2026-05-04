@@ -1,0 +1,31 @@
+[2026-05-04T14:02:53+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T14:04:37+0200] Now let me check existing tests for the CodeWidget:
+[2026-05-04T14:04:58+0200] Now let me implement the master collapse. I'll edit the CodeWidget:
+[2026-05-04T14:05:24+0200] Now let me restructure the JSX of the extraPanel:
+[2026-05-04T14:05:36+0200] Now I need to close the new wrapping div. Let me find the end of the panel:
+[2026-05-04T14:05:47+0200] Let me double-check the structure by reading the final extraPanel:
+[2026-05-04T14:05:53+0200] The structure is functionally correct but the inner block needs re-indenting for readability. Let me fix indentation:
+[2026-05-04T14:06:16+0200] Now let me run the typecheck:
+[2026-05-04T14:06:24+0200] Typecheck passes. Now let me run vitest:
+[2026-05-04T14:06:30+0200] All 288 tests pass. Now let me browser-verify with playwright. First, let me check for running dev servers:
+[2026-05-04T14:08:48+0200] Now let me write the playwright test:
+[2026-05-04T14:10:55+0200] All checks passed. Let me also verify the post-submit case to confirm the peek shows pass/fail summary:
+[2026-05-04T14:11:36+0200] Now append progress.txt:
+[2026-05-04T14:12:50+0200] Done. US-066 is implemented and committed on `ralph/us-066` (commit `74ff21c`).
+
+Summary:
+- **Master collapse** added to the Code widget's TESTS container in `src/widgets/Code/CodeWidget.tsx`. Defaults to collapsed; the peek shows `Tests · 3 tests` (untested) or `Tests · X/Y passed` (after submit) with `data-state="pass|fail|untested"`.
+- **Per-test states preserved** — the existing `expanded: Record<number, boolean>` lives on `CodeWidget` and is untouched by container toggle. Verified `[true, false, true]` round-trip via playwright.
+- **Inner toggle-all is independent and only rendered when expanded**; uses `event.stopPropagation()`.
+- **Browser-verified** at `http://localhost:3066/courses/smoke-test/lessons/python-widgets` (collapsed default, expand/collapse round-trip preserves states, submit-while-collapsed updates peek to `0/3 passed` + `data-state="fail"`, expand surfaces failed rows). 0 console errors, 0 page errors.
+- **Quality**: typecheck clean, 288/288 vitest tests pass (unchanged from US-065 baseline).
+- `scripts/ralph/prd.json` US-066 `passes` flipped to `true`; progress log entry appended.
+[2026-05-04T14:12:51+0200] [result success turns=55 cost=$4.086183249999999] Done. US-066 is implemented and committed on `ralph/us-066` (commit `74ff21c`).
+
+Summary:
+- **Master collapse** added to the Code widget's TESTS container in `src/widgets/Code/CodeWidget.tsx`. Defaults to collapsed; the peek shows `Tests · 3 tests` (untested) or `Tests · X/Y passed` (after submit) with `data-state="pass|fail|untested"`.
+- **Per-test states preserved** — the existing `expanded: Record<number, boolean>` lives on `CodeWidget` and is untouched by container toggle. Verified `[true, false, true]` round-trip via playwright.
+- **Inner toggle-all is independent and only rendered when expanded**; uses `event.stopPropagation()`.
+- **Browser-verified** at `http://localhost:3066/courses/smoke-test/lessons/python-widgets` (collapsed default, expand/collapse round-trip preserves states, submit-while-collapsed updates peek to `0/3 passed` + `data-state="fail"`, expand surfaces failed rows). 0 console errors, 0 page errors.
+- **Quality**: typecheck clean, 288/288 vitest tests pass (unchanged from US-065 baseline).
+- `scripts/ralph/prd.json` US-066 `passes` flipped to `true`; progress log entry appended.
