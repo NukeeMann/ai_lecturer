@@ -1,11 +1,14 @@
 'use client';
 
+import { modLabel } from '@/lib/platform/platform';
+import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { CodeRunner } from '@/widgets/Code/CodeRunner';
 import { Widget } from '@/widgets/Widget';
 
 const STARTER = "print('hello, world')\n";
 
 export default function TestCodeRunnerPage() {
+  const isMac = useIsMacPlatform();
   return (
     <main
       style={{
@@ -29,7 +32,7 @@ export default function TestCodeRunnerPage() {
         <Widget
           type="code"
           sectionNumber={1}
-          title="Try it: print('hi'), then ⌘+Enter"
+          title={`Try it: print('hi'), then ${modLabel(isMac)}+Enter`}
           status="todo"
         >
           <CodeRunner starterCode={STARTER} />

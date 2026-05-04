@@ -4,8 +4,11 @@ import type { CSSProperties, ReactNode } from 'react';
 import { useEffect } from 'react';
 import { X } from 'lucide-react';
 
+import { keyLabel, type KeyToken } from '@/lib/platform/platform';
+import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
+
 interface ShortcutSpec {
-  keys: string[];
+  keys: KeyToken[];
   label: string;
 }
 
@@ -19,19 +22,19 @@ const GROUPS: ShortcutGroup[] = [
     title: 'Global',
     items: [
       { keys: ['?'], label: 'Show keyboard shortcuts' },
-      { keys: ['Esc'], label: 'Close modal' },
+      { keys: ['esc'], label: 'Close modal' },
     ],
   },
   {
     title: 'Lesson',
     items: [
       { keys: ['j'], label: 'Next section' },
-      { keys: ['↓'], label: 'Next section' },
+      { keys: ['down'], label: 'Next section' },
       { keys: ['k'], label: 'Previous section' },
-      { keys: ['↑'], label: 'Previous section' },
-      { keys: ['⌘', 'B'], label: 'Toggle table of contents' },
-      { keys: ['⌘', '.'], label: 'Toggle AI tutor' },
-      { keys: ['Space'], label: 'Mark current section complete' },
+      { keys: ['up'], label: 'Previous section' },
+      { keys: ['mod', 'B'], label: 'Toggle table of contents' },
+      { keys: ['mod', '.'], label: 'Toggle AI tutor' },
+      { keys: ['space'], label: 'Mark current section complete' },
       { keys: ['n'], label: 'Next lesson (when current is complete)' },
       { keys: ['p'], label: 'Previous lesson' },
       { keys: ['f'], label: 'Focus mode (collapse panels)' },
@@ -40,16 +43,16 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: 'Code editor',
     items: [
-      { keys: ['⌘', '↵'], label: 'Run code' },
-      { keys: ['Tab'], label: 'Indent' },
-      { keys: ['⇧', 'Tab'], label: 'Outdent' },
+      { keys: ['mod', 'enter'], label: 'Run code' },
+      { keys: ['tab'], label: 'Indent' },
+      { keys: ['shift', 'tab'], label: 'Outdent' },
     ],
   },
   {
     title: 'Chat composer',
     items: [
-      { keys: ['↵'], label: 'Send message' },
-      { keys: ['⇧', '↵'], label: 'New line' },
+      { keys: ['enter'], label: 'Send message' },
+      { keys: ['shift', 'enter'], label: 'New line' },
     ],
   },
 ];
@@ -167,6 +170,8 @@ interface ShortcutsModalProps {
 }
 
 export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
+  const isMac = useIsMacPlatform();
+
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -190,6 +195,7 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
     >
       <div
         data-testid="shortcuts-modal"
+        data-platform={isMac ? 'mac' : 'non-mac'}
         role="dialog"
         aria-modal="true"
         aria-labelledby="shortcuts-modal-title"
@@ -212,7 +218,12 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
         </header>
         <div style={bodyStyle}>
           {GROUPS.map((group) => (
-            <Group key={group.title} title={group.title} items={group.items} />
+            <Group
+              key={group.title}
+              title={group.title}
+              items={group.items}
+              isMac={isMac}
+            />
           ))}
         </div>
       </div>
@@ -220,26 +231,47 @@ export function ShortcutsModal({ open, onClose }: ShortcutsModalProps) {
   );
 }
 
-function Group({ title, items }: { title: string; items: ShortcutSpec[] }) {
+function Group({
+  title,
+  items,
+  isMac,
+}: {
+  title: string;
+  items: ShortcutSpec[];
+  isMac: boolean;
+}) {
   return (
     <section data-testid="shortcuts-group" data-group={title}>
       <h3 style={groupTitleStyle}>{title}</h3>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
         {items.map((item, i) => (
-          <Row key={`${item.label}-${i}`} keys={item.keys} label={item.label} />
+          <Row
+            key={`${item.label}-${i}`}
+            keys={item.keys}
+            label={item.label}
+            isMac={isMac}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function Row({ keys, label }: { keys: string[]; label: string }) {
+function Row({
+  keys,
+  label,
+  isMac,
+}: {
+  keys: KeyToken[];
+  label: string;
+  isMac: boolean;
+}) {
   return (
     <div data-testid="shortcuts-row" style={rowStyle}>
       <span>{label}</span>
       <span style={keysWrapStyle}>
         {keys.map((k, i) => (
-          <Kbd key={i}>{k}</Kbd>
+          <Kbd key={i}>{keyLabel(k, isMac)}</Kbd>
         ))}
       </span>
     </div>
