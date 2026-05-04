@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "slug": "verification-and-gotchas",
+  "courseSlug": "widget-dev-guide",
+  "moduleId": "m1",
+  "title": "Verification, gotchas, and the dogfood checklist",
+  "eyebrow": "Module 1 · Lesson 3",
+  "description": "How to verify a new widget end-to-end before commit, the failure modes the contract is designed to surface, and the full pre-commit checklist that mirrors src/widgets/README.md.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-theory-typecheck",
+      "title": "Verify with `npm run typecheck`",
+      "type": "theory",
+      "data": {
+        "markdown": "## TypeScript catches three of the five steps\n\nBefore you open a browser, `npm run typecheck` will already catch:\n\n- **Step 2 — schema not exported**: `src/widgets/schemas/build.ts` will fail to import `<Name>DataSchema`.\n- **Step 3 — incomplete `WidgetType` union**: `widgetRegistry: Record<WidgetType, ...>` will complain about an extra/missing key, *or* the `WidgetType` literal will not include the new value the registry uses.\n- **Step 5 — `SectionSchema` mismatch**: the inferred `Section` type used by `SectionRenderer` and the lesson page will not include the new variant, breaking exhaustive switches.\n\nThe two steps TypeScript cannot catch are:\n\n- **Step 1 — CSS var**: a missing `--widget-<name>` is a runtime visual bug, not a compile error. The widget renders with a blank or default accent rail.\n- **Step 4 — editor wiring**: forgetting the branch in `WidgetEditPanel` or `SectionRenderer` produces a silent UX bug — the pencil opens an empty panel or the read body falls through to `CustomPlaceholder`.\n\n:::callout{type=\"info\" title=\"Run typecheck before browser tests\"}\nThe browser will let you click through plenty of UI even if TypeScript is unhappy. Always run `npm run typecheck` first; only when it passes is it worth firing up the dev server.\n:::"
+      }
+    },
+    {
+      "id": "s2-theory-build-schemas",
+      "title": "Verify with `npm run build:schemas`",
+      "type": "theory",
+      "data": {
+        "markdown": "## Re-emit the JSON Schemas\n\n`npm run build:schemas` runs `src/widgets/schemas/build.ts`, which converts every Zod schema in the `widgets` map into a JSON Schema file in the same folder. After adding a new widget you should:\n\n1. Run `npm run build:schemas`.\n2. Confirm a new `src/widgets/schemas/<kebab-case>.json` file appears (or that the existing one is updated).\n3. Commit that JSON file alongside your TypeScript changes — the JSON schemas are the contract surfaced to external tools (and to the agent chain at generation time).\n\n```\n$ npm run build:schemas\n# wrote .../src/widgets/schemas/theory.json\n# wrote .../src/widgets/schemas/quiz.json\n# wrote .../src/widgets/schemas/code.json\n# ...\n# wrote .../src/widgets/schemas/histogram.json    ← new\n# wrote .../src/widgets/schemas/course.json\n# wrote .../src/widgets/schemas/lesson.json\n```\n\nThe `lesson.json` file at the bottom of the output is **also** regenerated. That JSON Schema includes the new `SectionSchema` variant from Step 5 — if it does not, you forgot Step 5 even if everything else is wired up.\n\n:::callout{type=\"warning\" title=\"Do not hand-edit `<name>.json`\"}\nThe widget JSON Schemas under `src/widgets/schemas/` are derived artefacts. Edit the Zod schema and re-run `build:schemas`; never patch the JSON directly.\n:::"
+      }
+    },
+    {
+      "id": "s3-theory-gotchas",
+      "title": "Common gotchas",
+      "type": "theory",
+      "data": {
+        "markdown": "## The most common ways the contract gets broken\n\n### Naming drift between Steps 1, 3, and 5\n\nThe folder `Histogram/`, the registry literal `histogram`, the CSS var `--widget-histogram`, the JSON Schema filename `histogram.json`, and the SectionSchema discriminator `z.literal('histogram')` all need to agree. They do *not* need to be identical strings — folder is PascalCase, the rest is camelCase or kebab-case — but they must all map onto the same widget. The Naming convention callout in the previous lesson summarises which case to use where.\n\n### Casting the registry component without a typed adapter\n\n```ts\nhistogram: {\n  component: HistogramWidget as ComponentType<{ data?: unknown }>,\n  // ...\n}\n```\n\nThe `as ComponentType<{ data?: unknown }>` cast is **deliberate**: the registry has to stay generic, so per-widget data types are erased. Inside the component, you receive `data: unknown` and must either narrow with the schema (`HistogramDataSchema.parse(data)`) or trust that `SectionSchema` validation upstream did so. Most widgets trust the upstream parse and accept the typed shape directly.\n\n### Forgetting **both** light and dark theme blocks\n\n`tokens.css` has two top-level blocks: `:root, :root[data-theme=\"light\"] { ... }` and `:root[data-theme=\"dark\"] { ... }`. Adding the variable to only one block produces an invisible or wrong-coloured accent rail under the opposite theme. Always paste the variable into both — pick a slightly lighter shade for the dark block (compare existing entries to keep contrast consistent).\n\n### Treating Step 5 as optional\n\nStep 5 looks like a duplicate of Step 2 — both deal with Zod — and is the most-skipped step. The two are not interchangeable: Step 2 validates a section's `data` *given* you already know its `type`; Step 5 makes the validator accept `type` as a legal discriminator in the first place. **Skip Step 5 and your widget will work perfectly until the next page reload.**"
+      }
+    },
+    {
+      "id": "s4-theory-checklist",
+      "title": "Pre-commit checklist",
+      "type": "theory",
+      "data": {
+        "markdown": "## Before you commit\n\nAll of the following must be true. This list mirrors the one at the bottom of `src/widgets/README.md`:\n\n- [ ] `--widget-<name>` defined in **both** light and dark theme blocks of `src/styles/tokens.css`.\n- [ ] `src/widgets/<Name>/schema.ts` exports `<Name>DataSchema` + `<Name>Data`.\n- [ ] `src/widgets/<Name>/<Name>Widget.tsx` exports `<Name>Widget` taking `{ data }`.\n- [ ] `src/widgets/<Name>/<Name>Editor.tsx` exports `<Name>Editor` matching the `{ initial, onCancel, onSave }` contract.\n- [ ] `src/widgets/<Name>/sample.ts` exports a fixture (used by fixtures and init skills).\n- [ ] `widgetRegistry` in `src/widgets/registry.ts` has a `<name>` entry with `component` / `label` / `icon` / `accentVar`.\n- [ ] `WidgetType` union in `src/widgets/registry.ts` includes the new literal.\n- [ ] `src/widgets/schemas/build.ts` imports `<Name>DataSchema` and registers it in the `widgets` map.\n- [ ] `npm run build:schemas` regenerates `src/widgets/schemas/<kebab-case>.json` (and an updated `lesson.json`).\n- [ ] `SectionSchema` in `src/lib/schemas/lesson.ts` includes a new `<Name>SectionSchema` variant.\n- [ ] `WidgetEditPanel` and `SectionRenderer` branches in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` render the new editor + pencil button.\n- [ ] `npm run typecheck` is clean.\n\nCheck off each box, then commit. A widget added with all twelve boxes ticked is indistinguishable, from the system's perspective, from one of the built-in MVP widgets."
+      }
+    },
+    {
+      "id": "s5-quiz-final",
+      "title": "Final check — what is Step 5 doing, again?",
+      "type": "quiz",
+      "data": {
+        "question": "Match the failure to the missed step.",
+        "options": [
+          "Lesson loads in the browser, the widget renders correctly, and the chart has a colourful accent rail. But after a server restart, the lesson JSON file fails validation on cold-start. — Missed Step 5 (`SectionSchema` variant in `src/lib/schemas/lesson.ts`).",
+          "TypeScript build fails with: `Property 'histogram' is missing in type '{ ... }' but required in type 'Record<WidgetType, WidgetRegistryEntry>'`. — Missed Step 3 (`widgetRegistry` entry in `src/widgets/registry.ts`).",
+          "Widget renders, but the 1-px accent rail and slider thumb are the same default grey across both themes. — Missed Step 1 (CSS var in `src/styles/tokens.css`).",
+          "All four of the above descriptions correctly diagnose the missed step."
+        ],
+        "correct": [3],
+        "explanation": "All three diagnostic patterns match the contract exactly. (a) Step 5 is the persistence/validation boundary, so the failure surfaces at API or cold-start time, not at first render. (b) Step 3's `Record<WidgetType, WidgetRegistryEntry>` makes any missing widget literal a TypeScript error in the same file. (c) Step 1's CSS var feeds the chrome accent rail and any per-widget colour reference (here the slider thumb) — without it, those elements fall back to defaults. Memorising these three mappings makes debugging a missed step almost mechanical: read the symptom, infer the step, fix.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "s6-theory-conclusion",
+      "title": "You are done — go write a widget",
+      "type": "theory",
+      "data": {
+        "markdown": "## Wrap-up\n\nYou now have:\n\n- A mental model of why widgets are self-contained and what the contract protects.\n- The five mandatory wiring points, in order, with the actual Histogram source as a reference template.\n- A verification flow: `typecheck` → `build:schemas` → manual browser walkthrough.\n- A pre-commit checklist that mirrors `src/widgets/README.md` and the conventions used by every existing widget.\n\nThe Histogram widget at `src/widgets/Histogram/` follows every step above. Copy its files, rename `Histogram` → `<YourName>` and `histogram` → `<your-name>`, and adjust the schema, editor fields, and rendered chart for your widget's data. The contract does the rest.\n\n:::callout{type=\"insight\" title=\"One last reminder\"}\nIf you remember nothing else: **always add the `SectionSchema` variant in Step 5**, even if your widget seems to work without it. Skipping it is the single most common reason a widget passes local QA and then breaks in production after the first server restart.\n:::"
+      }
+    }
+  ]
+}
