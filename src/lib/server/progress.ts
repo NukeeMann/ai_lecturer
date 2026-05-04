@@ -42,6 +42,7 @@ export const ProgressPatchSchema = z.object({
   status: z.enum(['started', 'finished']).optional(),
   markVisited: z.boolean().optional(),
   sectionState: z.record(SectionStateSchema).optional(),
+  manuallyCompletedSections: z.record(z.boolean()).optional(),
 });
 
 export type ProgressPatch = z.infer<typeof ProgressPatchSchema>;
@@ -85,6 +86,23 @@ export function applyProgressPatch(
       ...(lesson.sectionState ?? {}),
       ...patch.sectionState,
     };
+  }
+
+  if (patch.manuallyCompletedSections) {
+    const merged: Record<string, boolean> = {
+      ...(lesson.manuallyCompletedSections ?? {}),
+    };
+    for (const [sectionId, value] of Object.entries(
+      patch.manuallyCompletedSections,
+    )) {
+      if (value) merged[sectionId] = true;
+      else delete merged[sectionId];
+    }
+    if (Object.keys(merged).length > 0) {
+      lesson.manuallyCompletedSections = merged;
+    } else {
+      delete lesson.manuallyCompletedSections;
+    }
   }
 
   if (patch.markVisited === true) {
