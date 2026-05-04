@@ -395,6 +395,23 @@ capture_failure_context() {
         echo ""
         echo "Files touched (lost on retry):"
         echo "$status"
+        # Capture the actual diff so the retry agent can rebuild work that
+        # the previous attempt produced but never committed. Bounded to keep
+        # the failure note small enough to embed in the next prompt.
+        local unstaged_diff
+        unstaged_diff=$(git -C "$worktree_dir" diff --no-color 2>/dev/null | head -400 || true)
+        if [ -n "$unstaged_diff" ]; then
+          echo ""
+          echo "Unstaged diff (first 400 lines, for rebuild):"
+          echo "$unstaged_diff"
+        fi
+        local untracked
+        untracked=$(git -C "$worktree_dir" ls-files --others --exclude-standard 2>/dev/null | head -10 || true)
+        if [ -n "$untracked" ]; then
+          echo ""
+          echo "Untracked files (first 10):"
+          echo "$untracked"
+        fi
       fi
     fi
     if [ -s "$logfile" ]; then
@@ -531,14 +548,18 @@ TIME BUDGET (HARD CONSTRAINT):
   1. STOP. No new file edits. No new tool calls except printing your final report.
   2. Print a clearly-marked block to stdout starting with the literal line 'TIMEOUT REPORT:' followed by:
      - what you attempted, what's working, what's blocking, exact file/line where you stopped.
-  3. Do NOT commit partial work. Exit cleanly with no commits — the orchestrator detects 0 commits, captures your TIMEOUT REPORT from stdout, and feeds it to the next retry.
+  3. Do NOT commit partial work and do NOT set passes:true. Exit cleanly — the orchestrator sees passes is still false, captures your TIMEOUT REPORT plus any unstaged diff, and feeds it to the next retry.
 - The 10-minute buffer is reserved for steps 1-3. Do not eat into it with 'just one more thing'.
 
 RULES:
 - Work ONLY on task $task_id. Do NOT touch other stories.
 - You are already on the correct branch - do NOT switch branches.
-- The project PRD is at prd.json (or scripts/ralph/prd.json - check ralph.config).
-- After implementing, run quality checks, then commit your changes.
+- The project PRD is at $PRD_REL.
+- After implementing, run quality checks. Then BEFORE committing:
+  1. Edit $PRD_REL and set \`.${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes\` to \`true\` (and ONLY for $task_id — leave other stories alone).
+  2. \`git add\` your code changes AND $PRD_REL.
+  3. Commit with message: \`feat: $task_id - <short title>\`. Push is handled by the orchestrator.
+- SUCCESS SIGNAL: the orchestrator decides this task succeeded ONLY by reading $PRD_REL from your latest commit and confirming \`passes == true\` for $task_id. If passes is still false in your commit, your work will be rejected and the worktree discarded — even if every other check passed.
 $([ -n "$recent_progress" ] && echo "
 RECENT PROGRESS (from prior iterations):
 $recent_progress")"
@@ -614,15 +635,30 @@ $recent_progress")"
     log_task "$task_id" "claude exited with code $exit_code (check $logfile)"
   fi
 
-  # Check if there are any commits on this branch beyond base
+  # Success criterion: the agent must have set passes:true for this story in
+  # prd.json AND committed it. We read prd.json from HEAD (committed state),
+  # not the worktree, so an unstaged edit doesn't fool us — only what's in
+  # the commit graph gets pushed and merged.
   cd "$worktree_dir"
   local commits_ahead
   commits_ahead=$(git rev-list "$BASE_BRANCH".."$branch" --count 2>/dev/null || echo "0")
+  local passes_value=""
+  if [ "$commits_ahead" -gt 0 ]; then
+    passes_value=$(git -C "$worktree_dir" show "HEAD:$PRD_REL" 2>/dev/null \
+      | jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes" 2>/dev/null \
+      || echo "")
+  fi
 
-  if [ "$commits_ahead" -eq 0 ]; then
-    log_task "$task_id" "${RED}Agent did not commit${RST} — task will be retried"
-    capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" \
-      "Agent finished but produced 0 commits. You MUST run 'git commit' before exiting — uncommitted work is discarded."
+  if [ "$passes_value" != "true" ]; then
+    local reason
+    if [ "$commits_ahead" -eq 0 ]; then
+      log_task "$task_id" "${RED}Agent did not commit${RST} — task will be retried"
+      reason="Agent finished but produced 0 commits. You MUST set passes:true for $task_id in $PRD_REL AND run 'git commit' before exiting — uncommitted work is captured below for the next retry to rebuild."
+    else
+      log_task "$task_id" "${RED}Agent did not set passes:true in prd.json${RST} — task will be retried"
+      reason="Agent committed work but did NOT set passes:true for $task_id in $PRD_REL. Edit $PRD_REL, set this story's passes field to true, and commit (amend or new commit) before exiting. The orchestrator treats passes:true in the committed prd.json as the sole success signal."
+    fi
+    capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" "$reason"
     git_lock
     cd "$REPO_ROOT"
     git worktree remove "$worktree_dir" --force 2>/dev/null || true
@@ -743,10 +779,12 @@ merge_tasks() {
       fi
 
       # Only auto-resolvable files — safe to resolve.
-      # prd.json: agents must not edit it. A conflict here means the
-      # orchestrator updated mark_done on base between when this branch
-      # was cut and when it's merging — keep ours unconditionally.
+      # prd.json: take base ("ours") so other tasks' completed-state and any
+      # operator edits on base are preserved, then re-apply mark_done so the
+      # current task's passes:true (which the agent set on its branch) isn't
+      # discarded by the --ours pick.
       git checkout --ours "$PRD_REL" 2>/dev/null || true
+      mark_done "$task_id"
 
       # Lock files / generated files: accept theirs
       for af in "${auto_resolvable[@]}"; do
@@ -766,8 +804,13 @@ merge_tasks() {
     del_n=$(echo "$shortstat" | grep -oP '\d+ deletion' | grep -oP '\d+' || echo "0")
     log_ok "Merged $task_id: $t_title ($files_n files, +$ins_n/-$del_n, $merge_status)"
 
-    # Mark done — orchestrator owns the passes field; agents must not touch it.
-    mark_done "$task_id"
+    # passes:true is set by the agent and arrives via the merge; the conflict
+    # branch above re-applies mark_done if --ours discarded it. Defensive
+    # mark_done here in case neither path ran (e.g. fast-forward of a stale
+    # branch where the commit somehow lacked the prd.json update).
+    if [ "$(jq -r ".${STORIES_FIELD}[] | select(.id == \"$task_id\") | .passes" "$PRD" 2>/dev/null)" != "true" ]; then
+      mark_done "$task_id"
+    fi
     merged_ok+=("$task_id")
 
     # Cleanup branch

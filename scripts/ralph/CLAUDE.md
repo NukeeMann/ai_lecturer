@@ -11,9 +11,11 @@ You are an autonomous coding agent working on a software project.
 5. Implement that single user story
 6. Run quality checks (e.g., typecheck, lint, test - use whatever your project requires)
 7. Update CLAUDE.md files if you discover reusable patterns (see below)
-8. If checks pass, commit ALL changes with message: `feat: [Story ID] - [Story Title]`
-9. Do NOT update prd.json passes field - the orchestrator handles that
-10. Append your progress to `scripts/ralph/progress.txt`
+8. Append your progress to `scripts/ralph/progress.txt`
+9. **Mark the story as done in prd.json**: open `prd.json`, find your story by `id`, set its `passes` field to `true`. Touch ONLY your own story — do not modify any other story's fields.
+10. Stage everything (your code changes, `prd.json`, `progress.txt`, and any updated CLAUDE.md files) and commit with message: `feat: [Story ID] - [Story Title]`. The orchestrator handles `git push`.
+
+**Success signal: the orchestrator decides your task succeeded ONLY by reading `prd.json` from your latest commit and confirming `passes == true` for your story.** If you commit feature work but forget to flip `passes`, the orchestrator treats the run as a failure and discards the worktree. Conversely, if you flip `passes` but forget to commit it, nothing is pushed and the run still fails. Both must land in the same commit (or at least both must be in HEAD before the agent exits).
 
 ## Progress Report Format
 
