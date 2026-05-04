@@ -12,6 +12,7 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { usePyodide } from '@/lib/pyodide/client';
 
+import { formatValueOutput } from './formatValue';
 import type { ParametricExplorerData, ParametricExplorerParam } from './schema';
 
 export interface ParametricExplorerWidgetProps {
@@ -326,20 +327,7 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
   const showPlot = outputType === 'plot' || outputType === 'both';
   const showValue = outputType === 'value' || outputType === 'both';
 
-  const valueText = useMemo(() => {
-    if (!valueOut) return null;
-    try {
-      const parsed = JSON.parse(valueOut) as unknown;
-      if (parsed === null || parsed === undefined) return '—';
-      if (typeof parsed === 'number' || typeof parsed === 'boolean') {
-        return String(parsed);
-      }
-      if (typeof parsed === 'string') return parsed;
-      return JSON.stringify(parsed);
-    } catch {
-      return valueOut;
-    }
-  }, [valueOut]);
+  const valueText = useMemo(() => formatValueOutput(valueOut), [valueOut]);
 
   return (
     <div data-pexp style={wrapStyle}>
@@ -361,7 +349,11 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
               </div>
             ))}
           {showValue && (
-            <div style={valueStyle} data-testid="pexp-value">
+            <div
+              style={valueStyle}
+              data-testid="parametric-value-output"
+              data-pexp-value={valueText ?? ''}
+            >
               {valueText ?? '—'}
             </div>
           )}
