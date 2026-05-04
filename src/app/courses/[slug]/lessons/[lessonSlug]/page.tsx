@@ -75,6 +75,8 @@ import { SandboxEditor } from '@/widgets/Sandbox/SandboxEditor';
 import { SandboxWidget } from '@/widgets/Sandbox/SandboxWidget';
 import { TheoryEditor } from '@/widgets/Theory/TheoryEditor';
 import { VideoEditor } from '@/widgets/Video/VideoEditor';
+import { VideoWidget } from '@/widgets/Video/VideoWidget';
+import type { VideoTranscriptSegment } from '@/widgets/Video/schema';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
@@ -747,6 +749,40 @@ export default function LessonShellPage({
     [lesson, persistLesson],
   );
 
+  // Cache an auto-fetched video transcript into the lesson JSON so subsequent
+  // renders use the cached value instead of re-fetching. Manual transcripts are
+  // never overridden because the widget skips auto-fetch when one exists.
+  const lessonRef = useRef(lesson);
+  useEffect(() => {
+    lessonRef.current = lesson;
+  }, [lesson]);
+  const handleCacheVideoTranscript = useCallback(
+    async (sectionId: string, segments: VideoTranscriptSegment[]) => {
+      if (segments.length === 0) return;
+      const cur = lessonRef.current;
+      if (!cur) return;
+      const target = cur.sections.find((s) => s.id === sectionId);
+      if (!target || target.type !== 'video') return;
+      if (target.data.transcript && target.data.transcript.length > 0) return;
+      const next: Lesson = {
+        ...cur,
+        sections: cur.sections.map((s) =>
+          s.id === sectionId && s.type === 'video'
+            ? { ...s, data: { ...s.data, transcript: segments } }
+            : s,
+        ),
+      };
+      try {
+        const saved = await persistLesson(next);
+        setLesson(saved);
+      } catch {
+        // Best-effort cache; if PUT fails the in-memory lesson stays as-is and
+        // the widget will retry on next mount.
+      }
+    },
+    [persistLesson],
+  );
+
   const handleSaveLessonSources = useCallback(
     async (nextSources: Source[] | undefined) => {
       if (!lesson) {
@@ -898,6 +934,7 @@ export default function LessonShellPage({
             onToggleSectionManualComplete={handleToggleSectionManualComplete}
             autoDone={autoDone}
             onSectionAutoComplete={markSectionAutoDone}
+            onCacheVideoTranscript={handleCacheVideoTranscript}
           />
         ) : null}
       </main>
@@ -2193,6 +2230,7 @@ interface LessonStreamProps {
   onToggleSectionManualComplete: (sectionId: string, nextValue: boolean) => void;
   autoDone: Record<string, boolean>;
   onSectionAutoComplete: (sectionId: string) => void;
+  onCacheVideoTranscript: (sectionId: string, segments: VideoTranscriptSegment[]) => Promise<void>;
 }
 
 function LessonStream({
@@ -2210,6 +2248,7 @@ function LessonStream({
   onToggleSectionManualComplete,
   autoDone,
   onSectionAutoComplete,
+  onCacheVideoTranscript,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
@@ -2276,6 +2315,7 @@ function LessonStream({
             onSaveTheory={onSaveTheory}
             panelOpen={panelSectionId === section.id}
             onOpenPanel={onOpenPanel}
+            onCacheVideoTranscript={onCacheVideoTranscript}
           />
         );
       })}
@@ -2411,6 +2451,7 @@ interface SectionRendererProps {
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
   panelOpen: boolean;
   onOpenPanel: (sectionId: string) => void;
+  onCacheVideoTranscript: (sectionId: string, segments: VideoTranscriptSegment[]) => Promise<void>;
 }
 
 function SectionRenderer({
@@ -2429,6 +2470,7 @@ function SectionRenderer({
   onSaveTheory,
   panelOpen,
   onOpenPanel,
+  onCacheVideoTranscript,
 }: SectionRendererProps) {
   // Runtime check guards against unknown widget types (e.g. malformed lesson
   // JSON or future schema additions); the static union covers the 6 known ones.
@@ -2622,8 +2664,14 @@ function SectionRenderer({
       'data-table-edit-btn',
     );
   } else if (section.type === 'video') {
-    const Body = widgetRegistry.video.component;
-    body = <Body data={section.data} />;
+    body = (
+      <VideoWidget
+        data={section.data}
+        onTranscriptFetched={(segments) =>
+          void onCacheVideoTranscript(section.id, segments)
+        }
+      />
+    );
     pencilNode = pencilButton(
       panelOpen,
       panelOpen ? 'Close edit' : 'Edit video',
