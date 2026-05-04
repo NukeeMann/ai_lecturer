@@ -14,7 +14,7 @@ PRD_DIR="$SCRIPT_DIR"
 STORIES_FIELD=""
 INSTALL_CMD="npm install --ignore-scripts --no-audit --no-fund"
 VALIDATE_CMD=""
-TASK_TIMEOUT_SEC=2400
+TASK_TIMEOUT_SEC=3600
 # Reserve the last N seconds of TASK_TIMEOUT_SEC as a soft-deadline buffer.
 # When the agent crosses (TASK_TIMEOUT_SEC - SOFT_DEADLINE_BUFFER_SEC) it must
 # stop, print a TIMEOUT REPORT to stdout, and exit cleanly so the next retry
