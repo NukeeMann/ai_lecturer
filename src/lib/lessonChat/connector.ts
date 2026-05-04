@@ -29,9 +29,22 @@ export interface ConnectorRequest {
 
 export type ConnectorName = 'agent-sdk' | 'subprocess';
 
+export type ChatStreamEvent =
+  | { type: 'token'; text: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
 export interface Connector {
   readonly name: ConnectorName;
   chat(req: ConnectorRequest): Promise<string>;
+  /**
+   * Streaming variant of `chat`. Yields per-token chunks until the underlying
+   * connector finishes or the abort signal fires. Always finishes with a
+   * single `done` event (or `error` on failure). Aborting via `signal` is
+   * the canonical way to cancel — the implementation kills the subprocess
+   * or breaks out of the SDK iterator.
+   */
+  chatStream(req: ConnectorRequest, signal: AbortSignal): AsyncIterable<ChatStreamEvent>;
 }
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -73,6 +86,10 @@ export function subprocessConnector(
     chat(req) {
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
       return runClaudeCli(spawnFn, command, prompt, timeoutMs, killGraceMs);
+    },
+    chatStream(req, signal) {
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      return streamClaudeCli(spawnFn, command, prompt, signal, killGraceMs);
     },
   };
 }
@@ -185,6 +202,145 @@ function runClaudeCli(
   });
 }
 
+/**
+ * Streaming variant: spawns `claude -p "<prompt>"` (NO --output-format) so
+ * the assistant text streams to stdout in real time. Reads stdout line by
+ * line and emits each line as a `token` event, then a final `done`.
+ *
+ * Cancellation: when the abort signal fires we kill the child with
+ * SIGTERM, then SIGKILL after `killGraceMs`. The async generator returns
+ * cleanly without yielding a `done` event so the caller knows the stream
+ * was aborted (the route adapter swallows that distinction — it always
+ * sends a final `done` to the client after closing the stream).
+ */
+async function* streamClaudeCli(
+  spawnFn: SpawnFn,
+  command: string,
+  prompt: string,
+  signal: AbortSignal,
+  killGraceMs: number,
+): AsyncGenerator<ChatStreamEvent> {
+  let child: ChildProcess;
+  try {
+    child = spawnFn(command, ['-p', prompt]);
+  } catch (err) {
+    yield { type: 'error', message: `claude spawn failed: ${(err as Error).message}` };
+    return;
+  }
+
+  const queue: ChatStreamEvent[] = [];
+  let resolveWaiter: (() => void) | null = null;
+  let finished = false;
+  let aborted = false;
+  let stdoutBuffer = '';
+  let stderrBuffer = '';
+  let killTimer: NodeJS.Timeout | null = null;
+
+  const wake = () => {
+    if (resolveWaiter) {
+      const r = resolveWaiter;
+      resolveWaiter = null;
+      r();
+    }
+  };
+
+  const flushLines = (chunk: string, forceTail: boolean) => {
+    stdoutBuffer += chunk;
+    const lines = stdoutBuffer.split('\n');
+    // Keep the trailing partial fragment (no newline yet) in the buffer
+    // unless the stream is closing, in which case flush it.
+    stdoutBuffer = forceTail ? '' : (lines.pop() ?? '');
+    for (const line of lines) {
+      if (line.length > 0) {
+        queue.push({ type: 'token', text: line + '\n' });
+      } else {
+        queue.push({ type: 'token', text: '\n' });
+      }
+    }
+    if (forceTail && lines.length === 0 && chunk.length > 0 && !chunk.endsWith('\n')) {
+      // chunk had no newlines AND we're forcing tail flush
+      queue.push({ type: 'token', text: chunk });
+    }
+    wake();
+  };
+
+  child.stdout?.on('data', (chunk: Buffer | string) => {
+    flushLines(chunk.toString(), false);
+  });
+  child.stderr?.on('data', (chunk: Buffer | string) => {
+    stderrBuffer += chunk.toString();
+  });
+  child.on('error', (err: Error) => {
+    queue.push({ type: 'error', message: `claude spawn failed: ${err.message}` });
+    finished = true;
+    wake();
+  });
+  child.on('close', (code: number | null) => {
+    // Flush any trailing partial line.
+    if (stdoutBuffer.length > 0) {
+      queue.push({ type: 'token', text: stdoutBuffer });
+      stdoutBuffer = '';
+    }
+    if (aborted) {
+      // Caller-driven cancel: don't emit `done`, just end.
+      finished = true;
+      wake();
+      return;
+    }
+    if (code !== 0) {
+      const msg = stderrBuffer.trim() || `exit code ${code}`;
+      queue.push({ type: 'error', message: `claude exited ${code}: ${msg}` });
+    } else {
+      queue.push({ type: 'done' });
+    }
+    finished = true;
+    wake();
+  });
+
+  const onAbort = () => {
+    if (aborted || finished) return;
+    aborted = true;
+    try {
+      child.kill('SIGTERM');
+    } catch {
+      // already dead
+    }
+    killTimer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+    }, killGraceMs);
+    wake();
+  };
+
+  if (signal.aborted) {
+    onAbort();
+  } else {
+    signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  try {
+    while (true) {
+      while (queue.length > 0) {
+        const ev = queue.shift()!;
+        yield ev;
+      }
+      if (finished) return;
+      await new Promise<void>((resolve) => {
+        resolveWaiter = resolve;
+      });
+    }
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+    if (killTimer !== null) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Agent SDK connector
 // ---------------------------------------------------------------------------
@@ -259,6 +415,57 @@ export async function agentSdkConnector(
         throw new Error('Agent SDK stream produced no assistant text');
       }
       return text;
+    },
+    async *chatStream(req, signal) {
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      const stream = sdk.query({ prompt });
+      const iter = stream[Symbol.asyncIterator]();
+      let yieldedAny = false;
+      let resultFallback = '';
+      try {
+        while (true) {
+          if (signal.aborted) return;
+          const next = await iter.next();
+          if (next.done) break;
+          const raw = next.value;
+          if (!raw || typeof raw !== 'object') continue;
+          const msg = raw as {
+            type?: string;
+            message?: { content?: Array<{ type?: string; text?: string }> };
+            result?: string;
+            is_error?: boolean;
+          };
+          if (msg.type === 'assistant') {
+            for (const block of msg.message?.content ?? []) {
+              if (block?.type === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+                yield { type: 'token', text: block.text };
+                yieldedAny = true;
+              }
+            }
+          } else if (msg.type === 'result') {
+            if (msg.is_error) {
+              yield { type: 'error', message: 'Agent SDK returned is_error=true' };
+              return;
+            }
+            if (typeof msg.result === 'string') {
+              resultFallback = msg.result;
+            }
+          }
+        }
+      } catch (err) {
+        if (signal.aborted) return;
+        yield { type: 'error', message: (err as Error).message };
+        return;
+      }
+      if (!yieldedAny && resultFallback.length > 0) {
+        yield { type: 'token', text: resultFallback };
+        yieldedAny = true;
+      }
+      if (!yieldedAny) {
+        yield { type: 'error', message: 'Agent SDK stream produced no assistant text' };
+        return;
+      }
+      yield { type: 'done' };
     },
   };
 }

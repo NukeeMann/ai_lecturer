@@ -4,7 +4,30 @@ import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import * as connectorModule from './connector';
+import type { ChatStreamEvent, Connector, ConnectorRequest } from './connector';
 import { POST } from '@/app/api/lesson-chat/route';
+import { DELETE } from '@/app/api/lesson-chat/[requestId]/route';
+import {
+  _inflightSizeForTesting,
+  _resetInflightForTesting,
+} from './inflight';
+
+function fakeConnector(
+  chatImpl: (req: ConnectorRequest) => Promise<string>,
+  streamImpl?: (req: ConnectorRequest, signal: AbortSignal) => AsyncIterable<ChatStreamEvent>,
+): Connector {
+  return {
+    name: 'subprocess',
+    chat: chatImpl,
+    chatStream:
+      streamImpl ??
+      (async function* () {
+        const text = await chatImpl({} as ConnectorRequest);
+        yield { type: 'token', text };
+        yield { type: 'done' };
+      }),
+  };
+}
 
 let tmpRoot: string;
 let originalRoot: string | undefined;
@@ -50,8 +73,45 @@ afterAll(() => {
 
 afterEach(() => {
   connectorModule._resetConnectorCacheForTesting();
+  _resetInflightForTesting();
   vi.restoreAllMocks();
 });
+
+function makeStreamRequest(body: unknown): Request {
+  return new Request('http://x/api/lesson-chat', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+  });
+}
+
+async function readSseEvents(res: Response): Promise<Array<{ event: string; data: string }>> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+  }
+  buf += decoder.decode();
+  const events: Array<{ event: string; data: string }> = [];
+  for (const block of buf.split('\n\n')) {
+    if (!block.trim()) continue;
+    let event = 'message';
+    let data = '';
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:'))
+        data += (data.length > 0 ? '\n' : '') + line.slice(5).trim();
+    }
+    events.push({ event, data });
+  }
+  return events;
+}
 
 function makeRequest(body: unknown): Request {
   return new Request('http://x/api/lesson-chat', {
@@ -80,10 +140,9 @@ describe('POST /api/lesson-chat', () => {
   });
 
   it('200 returns assistant text from the connector', async () => {
-    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue({
-      name: 'subprocess',
-      chat: async () => 'Hello from tutor.',
-    });
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async () => 'Hello from tutor.'),
+    );
     const res = await POST(
       makeRequest({
         courseSlug: 'c',
@@ -98,13 +157,12 @@ describe('POST /api/lesson-chat', () => {
 
   it('passes systemPrompt + contextBlock-derived userMessage to connector', async () => {
     let captured: { systemPrompt?: string; userMessage?: string } = {};
-    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue({
-      name: 'subprocess',
-      chat: async (req) => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
         captured = { systemPrompt: req.systemPrompt, userMessage: req.userMessage };
         return 'ok';
-      },
-    });
+      }),
+    );
     await POST(
       makeRequest({
         courseSlug: 'c',
@@ -120,10 +178,9 @@ describe('POST /api/lesson-chat', () => {
   });
 
   it('404 when lesson file does not exist', async () => {
-    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue({
-      name: 'subprocess',
-      chat: async () => 'unused',
-    });
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async () => 'unused'),
+    );
     const res = await POST(
       makeRequest({
         courseSlug: 'c',
@@ -150,13 +207,136 @@ describe('POST /api/lesson-chat', () => {
     );
   });
 
+  it('returns SSE stream when Accept: text/event-stream and emits meta+token+done', async () => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(
+        async () => 'should-not-be-called',
+        async function* () {
+          yield { type: 'token', text: 'Hello ' };
+          yield { type: 'token', text: 'world' };
+          yield { type: 'done' };
+        },
+      ),
+    );
+    const res = await POST(
+      makeStreamRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        message: 'hi',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/text\/event-stream/);
+    const events = await readSseEvents(res);
+    expect(events[0].event).toBe('meta');
+    const meta = JSON.parse(events[0].data) as { requestId: string };
+    expect(typeof meta.requestId).toBe('string');
+    expect(meta.requestId.length).toBeGreaterThan(0);
+    const tokens = events
+      .filter((e) => e.event === 'token')
+      .map((e) => (JSON.parse(e.data) as { text: string }).text);
+    expect(tokens.join('')).toBe('Hello world');
+    expect(events.at(-1)?.event).toBe('done');
+    expect(_inflightSizeForTesting()).toBe(0);
+  });
+
+  it('SSE stream registers the requestId so DELETE can abort it', async () => {
+    let aborted = false;
+    let receivedSignal: AbortSignal | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(
+        async () => 'unused',
+        async function* (_req, signal) {
+          receivedSignal = signal;
+          yield { type: 'token', text: 'partial' };
+          // Wait until aborted (simulate long-running streaming)
+          await new Promise<void>((resolve) => {
+            signal.addEventListener('abort', () => {
+              aborted = true;
+              resolve();
+            });
+          });
+          // After abort: no more events emitted
+        },
+      ),
+    );
+
+    const res = await POST(
+      makeStreamRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        message: 'hi',
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let requestId = '';
+    while (!requestId) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const idx = buf.indexOf('\n\n');
+      if (idx >= 0) {
+        const block = buf.slice(0, idx);
+        for (const line of block.split('\n')) {
+          if (line.startsWith('data:')) {
+            try {
+              const parsed = JSON.parse(line.slice(5).trim()) as { requestId?: string };
+              if (parsed.requestId) requestId = parsed.requestId;
+            } catch {
+              // not json
+            }
+          }
+        }
+      }
+    }
+    expect(requestId).toBeTruthy();
+    expect(_inflightSizeForTesting()).toBe(1);
+
+    const delRes = await DELETE(new Request(`http://x/api/lesson-chat/${requestId}`, {
+      method: 'DELETE',
+    }), { params: Promise.resolve({ requestId }) });
+    expect(delRes.status).toBe(204);
+    expect(aborted).toBe(true);
+    expect(receivedSignal?.aborted).toBe(true);
+
+    // Drain rest of the stream
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+    expect(_inflightSizeForTesting()).toBe(0);
+  });
+
+  it('DELETE returns 404 for unknown requestId', async () => {
+    const delRes = await DELETE(
+      new Request('http://x/api/lesson-chat/nope', { method: 'DELETE' }),
+      { params: Promise.resolve({ requestId: 'nope' }) },
+    );
+    expect(delRes.status).toBe(404);
+  });
+
+  it('SSE stream emits 503 fallback (JSON) when no connector is available even with stream Accept', async () => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(null);
+    const res = await POST(
+      makeStreamRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        message: 'hi',
+      }),
+    );
+    expect(res.status).toBe(503);
+  });
+
   it('502 when the connector throws', async () => {
-    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue({
-      name: 'subprocess',
-      chat: async () => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async () => {
         throw new Error('boom');
-      },
-    });
+      }),
+    );
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const res = await POST(
       makeRequest({
