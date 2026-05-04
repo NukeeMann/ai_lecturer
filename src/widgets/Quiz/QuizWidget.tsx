@@ -4,6 +4,12 @@ import { useMemo, useState, type CSSProperties } from 'react';
 import { Check, X } from 'lucide-react';
 
 import type { QuizData } from './schema';
+import {
+  getOptionState,
+  shouldShowCheck,
+  shouldShowX,
+  type OptionState,
+} from './optionState';
 
 export interface QuizWidgetProps {
   data: QuizData;
@@ -132,26 +138,20 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
     setHovered(null);
   }
 
-  const optionStyle = (i: number): CSSProperties => {
-    const isSelected = selectedSet.has(i);
-    const isCorrect = correctSet.has(i);
-    const isHovered = hovered === i;
-
+  const optionStyle = (state: OptionState, isHovered: boolean): CSSProperties => {
     let border = '1px solid var(--border-strong)';
     let background = 'var(--bg-elevated)';
 
-    if (submitted) {
-      if (isCorrect) {
-        border = '1px solid var(--success-border)';
-        background = 'var(--success-subtle)';
-      } else if (isSelected) {
-        border = '1px solid var(--danger-border)';
-        background = 'var(--danger-subtle)';
-      }
-    } else if (isSelected) {
+    if (state === 'correct') {
+      border = '1px solid var(--success-border)';
+      background = 'var(--success-subtle)';
+    } else if (state === 'incorrect') {
+      border = '1px solid var(--danger-border)';
+      background = 'var(--danger-subtle)';
+    } else if (state === 'selected') {
       border = '1px solid var(--accent)';
       background = 'var(--accent-subtle)';
-    } else if (isHovered) {
+    } else if (state === 'idle' && isHovered) {
       border = '1px solid var(--accent-border)';
       background = 'var(--accent-subtle)';
     }
@@ -171,33 +171,24 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
     };
   };
 
-  const optionTextStyle = (i: number): CSSProperties => {
-    const isSelected = selectedSet.has(i);
-    const isCorrect = correctSet.has(i);
+  const optionTextStyle = (state: OptionState): CSSProperties => {
     let color = 'var(--text)';
     let weight = 400;
-    if (submitted) {
-      if (isCorrect) {
-        color = 'var(--text)';
-        weight = 500;
-      } else if (isSelected) {
-        color = 'var(--text)';
-      } else {
-        color = 'var(--text-tertiary)';
-      }
-    } else if (isSelected) {
+    if (state === 'correct') {
       weight = 500;
+    } else if (state === 'incorrect') {
+      // keep default color; selected wrong option stays readable
+    } else if (state === 'selected') {
+      weight = 500;
+    } else if (state === 'dimmed') {
+      color = 'var(--text-tertiary)';
     }
     return { ...optionTextBase, color, fontWeight: weight };
   };
 
-  const optionLetterStyle = (i: number): CSSProperties => {
-    const isSelected = selectedSet.has(i);
-    const isCorrect = correctSet.has(i);
-    let color = 'var(--text-tertiary)';
-    if (submitted && !isCorrect && !isSelected) {
-      color = 'var(--text-quaternary)';
-    }
+  const optionLetterStyle = (state: OptionState): CSSProperties => {
+    const color =
+      state === 'dimmed' ? 'var(--text-quaternary)' : 'var(--text-tertiary)';
     return { ...letterStyle, color };
   };
 
@@ -231,8 +222,15 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
         {data.options.map((option, i) => {
           const isSelected = selectedSet.has(i);
           const isCorrect = correctSet.has(i);
-          const showCheck = submitted && isCorrect;
-          const showX = submitted && !isCorrect && isSelected;
+          const stateInput = {
+            submitted,
+            isSelected,
+            isCorrect,
+            multiSelect: data.multiSelect,
+          };
+          const state = getOptionState(stateInput);
+          const showCheck = shouldShowCheck(stateInput);
+          const showX = shouldShowX(stateInput);
 
           return (
             <button
@@ -242,24 +240,14 @@ export function QuizWidget({ data, onCorrect }: QuizWidgetProps) {
               aria-checked={isSelected}
               aria-disabled={submitted}
               data-quiz-option={i}
-              data-state={
-                submitted
-                  ? isCorrect
-                    ? 'correct'
-                    : isSelected
-                      ? 'incorrect'
-                      : 'dimmed'
-                  : isSelected
-                    ? 'selected'
-                    : 'idle'
-              }
+              data-state={state}
               onClick={() => toggleOption(i)}
               onMouseEnter={() => setHovered(i)}
               onMouseLeave={() => setHovered((cur) => (cur === i ? null : cur))}
-              style={optionStyle(i)}
+              style={optionStyle(state, hovered === i)}
             >
-              <span style={optionLetterStyle(i)}>{LETTERS[i] ?? `${i + 1}`}</span>
-              <span style={optionTextStyle(i)}>{option}</span>
+              <span style={optionLetterStyle(state)}>{LETTERS[i] ?? `${i + 1}`}</span>
+              <span style={optionTextStyle(state)}>{option}</span>
               {showCheck && (
                 <Check
                   size={16}
