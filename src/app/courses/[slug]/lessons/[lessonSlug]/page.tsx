@@ -36,6 +36,8 @@ import {
 } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { LessonChat } from '@/components/LessonChat';
+import { modLabel } from '@/lib/platform/platform';
+import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { SidePanel } from '@/components/SidePanel';
 import {
   LessonSourcesPanel,
@@ -1099,25 +1101,43 @@ function Toolbar({
         <HelpCircle size={16} strokeWidth={2} />
       </ToolbarIconBtn>
 
-      <ToolbarIconBtn
-        testId="tutor-btn"
-        ariaLabel={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
-        onClick={onToggleChat}
-        active={chatOpen}
-      >
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: 11,
-            letterSpacing: '0.02em',
-          }}
-        >
-          ⌘.
-        </span>
-      </ToolbarIconBtn>
+      <TutorToolbarButton
+        chatOpen={chatOpen}
+        onToggleChat={onToggleChat}
+      />
 
       <AvatarMenu />
     </header>
+  );
+}
+
+function TutorToolbarButton({
+  chatOpen,
+  onToggleChat,
+}: {
+  chatOpen: boolean;
+  onToggleChat: () => void;
+}) {
+  const isMac = useIsMacPlatform();
+  return (
+    <ToolbarIconBtn
+      testId="tutor-btn"
+      ariaLabel={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
+      onClick={onToggleChat}
+      active={chatOpen}
+    >
+      <span
+        data-testid="tutor-btn-shortcut"
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: 11,
+          letterSpacing: '0.02em',
+        }}
+      >
+        {modLabel(isMac)}
+        {isMac ? '.' : '+.'}
+      </span>
+    </ToolbarIconBtn>
   );
 }
 

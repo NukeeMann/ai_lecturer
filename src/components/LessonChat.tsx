@@ -12,6 +12,9 @@ import {
 } from 'react';
 import { Square, X } from 'lucide-react';
 
+import { modLabel } from '@/lib/platform/platform';
+import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
+
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'error';
@@ -45,6 +48,7 @@ export function LessonChat({
   lessonSlug,
   onClose,
 }: LessonChatProps) {
+  const isMac = useIsMacPlatform();
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
@@ -550,7 +554,9 @@ export function LessonChat({
           style={textareaStyle}
         />
         <div style={composerControlsStyle}>
-          <span style={hintStyle}>⌘+Enter to send</span>
+          <span data-testid="lesson-chat-send-hint" style={hintStyle}>
+            {modLabel(isMac)}+Enter to send
+          </span>
           <div style={btnGroupStyle}>
             <button
               type="button"
