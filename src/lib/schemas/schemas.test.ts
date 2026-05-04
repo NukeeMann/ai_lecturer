@@ -21,6 +21,7 @@ import {
 import {
   DragMatchDataSchema,
   computeZoneState,
+  isReadyToSubmit,
   validateDragMatch,
   type DragMatchData,
   type DragMatchPlacement,
@@ -673,6 +674,7 @@ describe('DragMatch validateDragMatch', () => {
       { id: 'z-loop', label: 'Repeats', accepts: ['i-loop'] },
     ],
     multipleItemsPerZone: false,
+    requireAll: true,
   };
 
   it('single-zone: all items in correct zones is allCorrect', () => {
@@ -727,6 +729,7 @@ describe('DragMatch validateDragMatch', () => {
       { id: 'veg', label: 'Vegetable', accepts: ['carrot'] },
     ],
     multipleItemsPerZone: true,
+    requireAll: true,
   };
 
   it('multi-zone (ordered): exact accepts order is correct', () => {
@@ -771,6 +774,122 @@ describe('DragMatch validateDragMatch', () => {
   });
 });
 
+describe('DragMatch isReadyToSubmit (US-083)', () => {
+  // Mirrors `leftover-bank.json`: 4 required items + 3 distractors, single zone.
+  const partialData: DragMatchData = {
+    prompt: 'Sort the real Python stdlib modules from the impostors.',
+    items: [
+      { id: 'm-itertools', label: 'itertools' },
+      { id: 'm-collections', label: 'collections' },
+      { id: 'm-pathlib', label: 'pathlib' },
+      { id: 'm-functools', label: 'functools' },
+      { id: 'm-tablesort', label: 'tablesort' },
+      { id: 'm-asyncreq', label: 'asyncreq' },
+      { id: 'm-jsonfast', label: 'jsonfast' },
+    ],
+    zones: [
+      {
+        id: 'z-real',
+        label: 'Real Python standard-library modules',
+        accepts: ['m-itertools', 'm-collections', 'm-pathlib', 'm-functools'],
+      },
+    ],
+    multipleItemsPerZone: true,
+    requireAll: false,
+  };
+
+  it('partial-selection: Submit-enabled once the required N items are placed (decoys still in bank)', () => {
+    const placement: DragMatchPlacement = {
+      'z-real': ['m-itertools', 'm-collections', 'm-pathlib', 'm-functools'],
+      __bank__: ['m-tablesort', 'm-asyncreq', 'm-jsonfast'],
+    };
+    expect(isReadyToSubmit(partialData, placement)).toBe(true);
+  });
+
+  it('partial-selection: Submit-disabled while a required item is still in the bank', () => {
+    const placement: DragMatchPlacement = {
+      'z-real': ['m-itertools', 'm-collections', 'm-pathlib'],
+      __bank__: ['m-functools', 'm-tablesort', 'm-asyncreq', 'm-jsonfast'],
+    };
+    expect(isReadyToSubmit(partialData, placement)).toBe(false);
+  });
+
+  it('partial-selection: dropping a decoy in the zone does not affect Submit-readiness', () => {
+    const placement: DragMatchPlacement = {
+      'z-real': [
+        'm-itertools',
+        'm-collections',
+        'm-pathlib',
+        'm-functools',
+        'm-tablesort',
+      ],
+      __bank__: ['m-asyncreq', 'm-jsonfast'],
+    };
+    expect(isReadyToSubmit(partialData, placement)).toBe(true);
+  });
+
+  it('full-selection (default): Submit-disabled until every item is placed', () => {
+    const fullData: DragMatchData = { ...partialData, requireAll: true };
+    const placement: DragMatchPlacement = {
+      'z-real': ['m-itertools', 'm-collections', 'm-pathlib', 'm-functools'],
+      __bank__: ['m-tablesort', 'm-asyncreq', 'm-jsonfast'],
+    };
+    expect(isReadyToSubmit(fullData, placement)).toBe(false);
+  });
+
+  it('full-selection (default): Submit-enabled once every item is in some zone', () => {
+    const fullData: DragMatchData = {
+      ...partialData,
+      requireAll: true,
+      zones: [
+        { id: 'z-real', label: 'Real', accepts: ['m-itertools'] },
+        { id: 'z-fake', label: 'Fake', accepts: ['m-tablesort'] },
+      ],
+      items: [
+        { id: 'm-itertools', label: 'itertools' },
+        { id: 'm-tablesort', label: 'tablesort' },
+      ],
+    };
+    const placement: DragMatchPlacement = {
+      'z-real': ['m-itertools'],
+      'z-fake': ['m-tablesort'],
+      __bank__: [],
+    };
+    expect(isReadyToSubmit(fullData, placement)).toBe(true);
+  });
+
+  it('partial-selection grading: distractor items left in the bank are NOT marked misplaced', () => {
+    const placement: DragMatchPlacement = {
+      'z-real': ['m-itertools', 'm-collections', 'm-pathlib', 'm-functools'],
+      __bank__: ['m-tablesort', 'm-asyncreq', 'm-jsonfast'],
+    };
+    const result = validateDragMatch(partialData, placement);
+    expect(result.allCorrect).toBe(true);
+    expect(result.misplacedItemIds.has('m-tablesort')).toBe(false);
+    expect(result.misplacedItemIds.has('m-asyncreq')).toBe(false);
+    expect(result.misplacedItemIds.has('m-jsonfast')).toBe(false);
+  });
+
+  it('schema: requireAll defaults to true when omitted', () => {
+    const parsed = DragMatchDataSchema.parse({
+      prompt: 'p',
+      items: [{ id: 'a', label: 'A' }],
+      zones: [{ id: 'z', label: 'Z', accepts: ['a'] }],
+    });
+    expect(parsed.requireAll).toBe(true);
+  });
+
+  it('schema: requireAll: false round-trips', () => {
+    const parsed = DragMatchDataSchema.parse({
+      prompt: 'p',
+      items: [{ id: 'a', label: 'A' }],
+      zones: [{ id: 'z', label: 'Z', accepts: ['a'] }],
+      requireAll: false,
+    });
+    expect(parsed.requireAll).toBe(false);
+  });
+});
+
 describe('DragMatch computeZoneState (US-082)', () => {
   const data: DragMatchData = {
     prompt: 'Match terms.',
@@ -783,6 +902,7 @@ describe('DragMatch computeZoneState (US-082)', () => {
       { id: 'Y', label: 'Y', accepts: ['B'] },
     ],
     multipleItemsPerZone: false,
+    requireAll: true,
   };
 
   it('reports correct LIVE when a zone holds the right item, even before submit', () => {

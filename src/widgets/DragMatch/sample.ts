@@ -25,6 +25,7 @@ export const SAMPLE_DRAG_MATCH: DragMatchData = {
     },
   ],
   multipleItemsPerZone: false,
+  requireAll: true,
   explanation:
     'A variable stores data; a function bundles reusable behaviour; a loop repeats a block of code.',
 };

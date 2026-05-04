@@ -155,6 +155,9 @@ export function DragMatchEditor({
   const [multipleItemsPerZone, setMultipleItemsPerZone] = useState<boolean>(
     initial.multipleItemsPerZone ?? false,
   );
+  const [requireAll, setRequireAll] = useState<boolean>(
+    initial.requireAll ?? true,
+  );
   const [explanation, setExplanation] = useState<string>(initial.explanation ?? '');
   const [sources, setSources] = useState<Source[] | undefined>(initialSources);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -167,10 +170,11 @@ export function DragMatchEditor({
       items: items.map((i) => ({ id: i.id, label: i.label })),
       zones: zones.map((z) => ({ id: z.id, label: z.label, accepts: z.accepts })),
       multipleItemsPerZone,
+      requireAll,
     };
     if (explanation.trim()) obj.explanation = explanation;
     return obj;
-  }, [prompt, items, zones, multipleItemsPerZone, explanation]);
+  }, [prompt, items, zones, multipleItemsPerZone, requireAll, explanation]);
 
   const dirty = useMemo(() => {
     if (JSON.stringify(current) !== JSON.stringify(initial)) return true;
@@ -424,6 +428,19 @@ export function DragMatchEditor({
             onChange={(e) => setMultipleItemsPerZone(e.target.checked)}
           />
           <span>Allow multiple items per zone (ordering matters)</span>
+        </label>
+
+        <label style={{ ...fieldStyle, ...toggleRowStyle }}>
+          <input
+            type="checkbox"
+            data-testid="dragmatch-edit-require-all"
+            checked={requireAll}
+            onChange={(e) => setRequireAll(e.target.checked)}
+          />
+          <span>
+            Require every item to be placed before Submit (uncheck to allow
+            distractor items in the bank)
+          </span>
         </label>
 
         <label style={fieldStyle}>
