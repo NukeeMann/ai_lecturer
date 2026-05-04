@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   BookOpen,
@@ -18,6 +19,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
+import { allCoursesComplete } from '@/lib/dashboard';
 
 // ------- accent palette (per course.accentColor) ------------------------------
 // Keyed values come from src/styles/tokens.css. We intentionally hardcode hexes
@@ -364,6 +366,142 @@ function ContinueLearningHero({ resume }: { resume: ResumeTarget }) {
   );
 }
 
+function CreateNewCourseHero() {
+  const router = useRouter();
+  const [idea, setIdea] = useState('');
+
+  const submit = () => {
+    const trimmed = idea.trim();
+    if (trimmed.length === 0) {
+      router.push('/create');
+    } else {
+      router.push(`/create?idea=${encodeURIComponent(trimmed)}`);
+    }
+  };
+
+  return (
+    <section
+      data-testid="all-complete-hero"
+      style={{
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-xl)',
+        padding: 'var(--space-7) var(--space-6)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        gap: 'var(--space-4)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          right: -80,
+          top: -80,
+          width: 280,
+          height: 280,
+          background:
+            'radial-gradient(circle, var(--accent-subtle) 0%, transparent 70%)',
+          pointerEvents: 'none',
+        }}
+      />
+      <div
+        aria-hidden
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: '50%',
+          background: 'var(--accent-subtle)',
+          color: 'var(--accent-text)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+        }}
+      >
+        <Sparkles size={24} strokeWidth={2} />
+      </div>
+      <div style={{ position: 'relative' }}>
+        <h2
+          data-testid="all-complete-heading"
+          style={{
+            margin: 0,
+            fontSize: 'var(--fs-2xl)',
+            fontWeight: 600,
+            letterSpacing: '-0.02em',
+            fontFamily: 'var(--font-display)',
+          }}
+        >
+          What do you want to learn next?
+        </h2>
+        <p
+          style={{
+            margin: '8px 0 0',
+            color: 'var(--text-tertiary)',
+            fontSize: 'var(--fs-sm)',
+            maxWidth: 520,
+          }}
+        >
+          You finished every lesson. Tell us a topic and we&apos;ll spin up a
+          fresh course.
+        </p>
+      </div>
+      <form
+        data-testid="all-complete-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        style={{
+          position: 'relative',
+          width: '100%',
+          maxWidth: 560,
+          display: 'flex',
+          gap: 8,
+        }}
+      >
+        <input
+          type="text"
+          data-testid="all-complete-input"
+          value={idea}
+          onChange={(e) => setIdea(e.target.value)}
+          placeholder="e.g. How transformers work"
+          aria-label="Course idea"
+          style={{
+            flex: 1,
+            height: 44,
+            padding: '0 14px',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg)',
+            color: 'var(--text)',
+            fontSize: 'var(--fs-md)',
+            fontFamily: 'inherit',
+            outline: 'none',
+          }}
+        />
+        <button
+          type="submit"
+          data-testid="all-complete-submit"
+          style={{
+            ...primaryButtonStyle,
+            height: 44,
+            padding: '0 22px',
+            fontSize: 'var(--fs-md)',
+          }}
+        >
+          <Sparkles size={16} strokeWidth={2} />
+          Create course
+        </button>
+      </form>
+    </section>
+  );
+}
+
 function StatusBadge({ stats }: { stats: CourseStats }) {
   const { total, finished, started } = stats;
   let label: string;
@@ -664,6 +802,11 @@ export default function DashboardPage() {
     [courses, progress],
   );
 
+  const allComplete = useMemo(
+    () => (courses ? allCoursesComplete(courses, progress) : false),
+    [courses, progress],
+  );
+
   const enriched = useMemo(() => {
     if (!courses) return [];
     return courses.map((c) => ({
@@ -723,7 +866,11 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {resume && <ContinueLearningHero resume={resume} />}
+        {allComplete ? (
+          <CreateNewCourseHero />
+        ) : (
+          resume && <ContinueLearningHero resume={resume} />
+        )}
 
         <div style={topRowStyle}>
           <div>

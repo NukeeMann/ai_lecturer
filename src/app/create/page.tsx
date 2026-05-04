@@ -77,7 +77,7 @@ export default function CreatePage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    const t = params.get('topic');
+    const t = params.get('idea') ?? params.get('topic');
     if (t && t.trim()) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft((d) => ({ ...d, topic: t }));
