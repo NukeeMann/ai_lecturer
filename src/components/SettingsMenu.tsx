@@ -19,9 +19,11 @@ import {
 type ThemePref = 'light' | 'dark' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
 type Accent = 'default' | 'black' | 'indigo' | 'terracotta' | 'emerald';
+type FontFamily = 'geist' | 'ibm-plex' | 'source-serif';
 
 export const THEME_STORAGE_KEY = 'aiLecturer.theme';
 export const DENSITY_STORAGE_KEY = 'aiLecturer.density';
+export const FONT_STORAGE_KEY = 'aiLecturer.font';
 // Per-course accent override key. Suffixed with the course slug, e.g.
 // 'aiLecturer.accent.widget-dev-guide'. Stored value is one of the Accent
 // literals; absence means "use the course default declared in course.json".
@@ -84,6 +86,17 @@ function readDensity(): Density {
   return 'comfortable';
 }
 
+function readFont(): FontFamily {
+  if (typeof window === 'undefined') return 'geist';
+  try {
+    const v = window.localStorage.getItem(FONT_STORAGE_KEY);
+    if (v === 'geist' || v === 'ibm-plex' || v === 'source-serif') return v;
+  } catch {
+    // localStorage may be unavailable; fall through to default.
+  }
+  return 'geist';
+}
+
 function systemTheme(): 'light' | 'dark' {
   if (typeof window === 'undefined') return 'light';
   try {
@@ -104,6 +117,10 @@ function applyDensity(d: Density): void {
   document.documentElement.setAttribute('data-density', d);
 }
 
+function applyFont(f: FontFamily): void {
+  document.documentElement.setAttribute('data-font', f);
+}
+
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
@@ -114,6 +131,12 @@ const DENSITY_OPTIONS: { value: Density; label: string }[] = [
   { value: 'compact', label: 'Compact' },
   { value: 'comfortable', label: 'Comfortable' },
   { value: 'spacious', label: 'Spacious' },
+];
+
+const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
+  { value: 'geist', label: 'Geist' },
+  { value: 'ibm-plex', label: 'IBM Plex Sans' },
+  { value: 'source-serif', label: 'Source Serif' },
 ];
 
 const ACCENT_OPTIONS: { value: Accent; label: string }[] = [
@@ -214,6 +237,7 @@ export function SettingsMenu({
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>('system');
   const [density, setDensity] = useState<Density>('comfortable');
+  const [font, setFont] = useState<FontFamily>('geist');
   const [accent, setAccent] = useState<Accent>(
     courseDefaultAccent ?? 'default',
   );
@@ -227,6 +251,8 @@ export function SettingsMenu({
     setTheme(readThemePref());
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDensity(readDensity());
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFont(readFont());
   }, []);
 
   // Resolve the visible accent selection from override + course default. Runs
@@ -245,6 +271,7 @@ export function SettingsMenu({
     function refresh() {
       setTheme(readThemePref());
       setDensity(readDensity());
+      setFont(readFont());
       if (courseSlug) {
         const override = readAccentOverride(courseSlug);
         setAccent(override ?? courseDefaultAccent ?? 'default');
@@ -327,6 +354,17 @@ export function SettingsMenu({
     window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   }, []);
 
+  const onFontSelect = useCallback((next: FontFamily) => {
+    try {
+      window.localStorage.setItem(FONT_STORAGE_KEY, next);
+    } catch {
+      // localStorage unavailable; in-memory selection still works.
+    }
+    applyFont(next);
+    setFont(next);
+    window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+  }, []);
+
   const onAccentSelect = useCallback(
     (next: Accent) => {
       if (!courseSlug) return;
@@ -379,6 +417,13 @@ export function SettingsMenu({
             value={density}
             onSelect={onDensitySelect}
             testIdPrefix="settings-density"
+          />
+          <SettingsGroup
+            label="Font"
+            options={FONT_OPTIONS}
+            value={font}
+            onSelect={onFontSelect}
+            testIdPrefix="settings-font"
           />
           {courseSlug ? (
             <SettingsGroup
