@@ -1,0 +1,37 @@
+[2026-05-04T22:02:47+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T22:04:21+0200] Now let's create the API route for clarify:
+[2026-05-04T22:05:06+0200] Now the API route:
+[2026-05-04T22:05:17+0200] Now write tests for the clarify helpers and route:
+[2026-05-04T22:06:03+0200] Now I'll add the Clarification stage component. Create a separate file:
+[2026-05-04T22:06:51+0200] Now extend the `Draft` type and update `page.tsx` to wire up the new stage and 6-step stepper:
+[2026-05-04T22:06:58+0200] Now update page.tsx — STAGES, stage indices, and add the new Clarify stage:
+[2026-05-04T22:07:06+0200] Now the stage rendering block and `handleGenerate` setStage(5)→setStage(6):
+[2026-05-04T22:07:18+0200] Now update the Stage4 / Stage5 captions:
+[2026-05-04T22:07:26+0200] Now I need to ensure clarification answers get serialized into `course-spec.json` (`buildCourseSpec`):
+[2026-05-04T22:07:37+0200] Now, run typecheck and tests:
+[2026-05-04T22:07:50+0200] All 397 tests pass. Now let's set up browser verification:
+[2026-05-04T22:12:15+0200] All phases pass. Now let's verify the screenshots:
+[2026-05-04T22:12:18+0200] Run typecheck + tests once more to be sure nothing regressed since I edited the test file:
+[2026-05-04T22:12:35+0200] Append progress notes and flip the prd.json passes flag:
+[2026-05-04T22:14:00+0200] I need to fix prd.json — my Python dump escaped non-ASCII chars, churning every Polish-text story. Let me reset and re-flip cleanly:
+[2026-05-04T22:14:13+0200] Now amend the commit (no push has happened, this is local only):
+[2026-05-04T22:14:46+0200] Both commits are in HEAD; US-091 `passes` is true. Done — work complete.
+
+**Summary**
+- Added a Clarification stage between Refine and Structure: 6-step wizard now reads Topic → Refine → Clarify → Structure → Approve → Generate.
+- New `POST /api/wizard/clarify` route uses the US-053 connector (`selectConnector()`) — Agent SDK first, `claude -p` subprocess fallback, 503 with the same actionable body when neither is available, retries once on parse failure then surfaces 502.
+- `parseClarifyResponse()` is forgiving (raw JSON / fenced / brace-scan), auto-fills missing ids, dedupes collisions, caps at 10 entries.
+- Stage UI renders questions as labelled textareas, persists answers on the wizard `Draft`, supports Skip-all, and shows a danger-coloured error bubble with Retry on connector failure.
+- CourseSpec gained an optional `clarification` field; `buildCourseSpec` only serializes non-empty answers.
+- Quality: typecheck clean; vitest 397/397 (26 new in `clarify.test.ts`); browser-verified via playwright (Topic → Refine → Clarify → fill answers → forward → back → assert persistence; plus error/Retry and Skip-all paths). Screenshots at `/tmp/us091-clarify-{loaded,back,error}.png`.
+- Two commits in HEAD: `35d258e` (feature) and `d0271a6` (UTF-8 fix for an accidental `\uXXXX` round-trip in prd.json). US-091 `passes: true` confirmed in HEAD.
+[2026-05-04T22:14:47+0200] [result success turns=79 cost=$7.949139999999999] Both commits are in HEAD; US-091 `passes` is true. Done — work complete.
+
+**Summary**
+- Added a Clarification stage between Refine and Structure: 6-step wizard now reads Topic → Refine → Clarify → Structure → Approve → Generate.
+- New `POST /api/wizard/clarify` route uses the US-053 connector (`selectConnector()`) — Agent SDK first, `claude -p` subprocess fallback, 503 with the same actionable body when neither is available, retries once on parse failure then surfaces 502.
+- `parseClarifyResponse()` is forgiving (raw JSON / fenced / brace-scan), auto-fills missing ids, dedupes collisions, caps at 10 entries.
+- Stage UI renders questions as labelled textareas, persists answers on the wizard `Draft`, supports Skip-all, and shows a danger-coloured error bubble with Retry on connector failure.
+- CourseSpec gained an optional `clarification` field; `buildCourseSpec` only serializes non-empty answers.
+- Quality: typecheck clean; vitest 397/397 (26 new in `clarify.test.ts`); browser-verified via playwright (Topic → Refine → Clarify → fill answers → forward → back → assert persistence; plus error/Retry and Skip-all paths). Screenshots at `/tmp/us091-clarify-{loaded,back,error}.png`.
+- Two commits in HEAD: `35d258e` (feature) and `d0271a6` (UTF-8 fix for an accidental `\uXXXX` round-trip in prd.json). US-091 `passes: true` confirmed in HEAD.
