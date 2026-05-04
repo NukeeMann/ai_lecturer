@@ -15,6 +15,7 @@ import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 
@@ -649,6 +650,14 @@ export default function DashboardPage() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [loadData]);
+
+  // Reset the global accent when the dashboard mounts (US-076). The lesson
+  // route normally restores 'default' on unmount, but this guards the case
+  // where the user lands here directly and an `aiLecturer.accent.<slug>`
+  // override was applied by the boot script for a previous course.
+  useEffect(() => {
+    applyAccent('default');
+  }, []);
 
   const resume = useMemo(
     () => (courses && progress ? pickResumeTarget(courses, progress) : null),

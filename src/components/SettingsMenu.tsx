@@ -18,13 +18,49 @@ import {
 
 type ThemePref = 'light' | 'dark' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
+type Accent = 'default' | 'black' | 'indigo' | 'terracotta' | 'emerald';
 
 export const THEME_STORAGE_KEY = 'aiLecturer.theme';
 export const DENSITY_STORAGE_KEY = 'aiLecturer.density';
-// Dispatched by SettingsMenu (and ThemeToggle) whenever theme/density changes
-// so co-resident controls can re-read the persisted value within the same tab.
-// (The native `storage` event only fires across tabs.)
+// Per-course accent override key. Suffixed with the course slug, e.g.
+// 'aiLecturer.accent.widget-dev-guide'. Stored value is one of the Accent
+// literals; absence means "use the course default declared in course.json".
+export const ACCENT_STORAGE_KEY_PREFIX = 'aiLecturer.accent.';
+// Dispatched by SettingsMenu (and ThemeToggle) whenever theme/density/accent
+// changes so co-resident controls can re-read the persisted value within the
+// same tab. (The native `storage` event only fires across tabs.)
 export const SETTINGS_CHANGE_EVENT = 'aiLecturer:settings-change';
+
+const ACCENT_VALUES: Accent[] = [
+  'default',
+  'black',
+  'indigo',
+  'terracotta',
+  'emerald',
+];
+
+export function accentStorageKey(courseSlug: string): string {
+  return `${ACCENT_STORAGE_KEY_PREFIX}${courseSlug}`;
+}
+
+function isAccent(v: unknown): v is Accent {
+  return typeof v === 'string' && (ACCENT_VALUES as string[]).includes(v);
+}
+
+export function readAccentOverride(courseSlug: string): Accent | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const v = window.localStorage.getItem(accentStorageKey(courseSlug));
+    return isAccent(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+export function applyAccent(value: Accent): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-accent', value);
+}
 
 function readThemePref(): ThemePref {
   if (typeof window === 'undefined') return 'system';
@@ -78,6 +114,14 @@ const DENSITY_OPTIONS: { value: Density; label: string }[] = [
   { value: 'compact', label: 'Compact' },
   { value: 'comfortable', label: 'Comfortable' },
   { value: 'spacious', label: 'Spacious' },
+];
+
+const ACCENT_OPTIONS: { value: Accent; label: string }[] = [
+  { value: 'default', label: 'Default' },
+  { value: 'black', label: 'Black' },
+  { value: 'indigo', label: 'Indigo' },
+  { value: 'terracotta', label: 'Terracotta' },
+  { value: 'emerald', label: 'Emerald' },
 ];
 
 const triggerBtnStyle: CSSProperties = {
@@ -152,10 +196,27 @@ const optionSelectedStyle: CSSProperties = {
   fontWeight: 500,
 };
 
-export function SettingsMenu() {
+export interface SettingsMenuProps {
+  // Course context for the per-course Accent picker. When `courseSlug` is
+  // provided, the Accent group is rendered. The selected value is the
+  // override stored at accentStorageKey(courseSlug) if present, otherwise
+  // `courseDefaultAccent` (declared in course.json), otherwise 'default'.
+  // Selecting an option both writes the override and applies it live to
+  // <html data-accent>.
+  courseSlug?: string;
+  courseDefaultAccent?: Accent;
+}
+
+export function SettingsMenu({
+  courseSlug,
+  courseDefaultAccent,
+}: SettingsMenuProps = {}) {
   const [open, setOpen] = useState(false);
   const [theme, setTheme] = useState<ThemePref>('system');
   const [density, setDensity] = useState<Density>('comfortable');
+  const [accent, setAccent] = useState<Accent>(
+    courseDefaultAccent ?? 'default',
+  );
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Initial sync from localStorage. The boot script in layout.tsx applies the
@@ -168,12 +229,26 @@ export function SettingsMenu() {
     setDensity(readDensity());
   }, []);
 
+  // Resolve the visible accent selection from override + course default. Runs
+  // when the course context changes (entering a different course), or when
+  // the course default changes after async fetch.
+  useEffect(() => {
+    if (!courseSlug) return;
+    const override = readAccentOverride(courseSlug);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAccent(override ?? courseDefaultAccent ?? 'default');
+  }, [courseSlug, courseDefaultAccent]);
+
   // Stay in sync when ThemeToggle (same tab, custom event) or another tab
   // (storage event) changes the persisted values.
   useEffect(() => {
     function refresh() {
       setTheme(readThemePref());
       setDensity(readDensity());
+      if (courseSlug) {
+        const override = readAccentOverride(courseSlug);
+        setAccent(override ?? courseDefaultAccent ?? 'default');
+      }
     }
     window.addEventListener(SETTINGS_CHANGE_EVENT, refresh);
     window.addEventListener('storage', refresh);
@@ -181,7 +256,7 @@ export function SettingsMenu() {
       window.removeEventListener(SETTINGS_CHANGE_EVENT, refresh);
       window.removeEventListener('storage', refresh);
     };
-  }, []);
+  }, [courseSlug, courseDefaultAccent]);
 
   // When 'system' is selected, follow live OS-level preference changes.
   useEffect(() => {
@@ -252,6 +327,21 @@ export function SettingsMenu() {
     window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   }, []);
 
+  const onAccentSelect = useCallback(
+    (next: Accent) => {
+      if (!courseSlug) return;
+      try {
+        window.localStorage.setItem(accentStorageKey(courseSlug), next);
+      } catch {
+        // localStorage unavailable; in-memory selection still works.
+      }
+      applyAccent(next);
+      setAccent(next);
+      window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+    },
+    [courseSlug],
+  );
+
   return (
     <div
       ref={containerRef}
@@ -290,6 +380,15 @@ export function SettingsMenu() {
             onSelect={onDensitySelect}
             testIdPrefix="settings-density"
           />
+          {courseSlug ? (
+            <SettingsGroup
+              label="Accent"
+              options={ACCENT_OPTIONS}
+              value={accent}
+              onSelect={onAccentSelect}
+              testIdPrefix="settings-accent"
+            />
+          ) : null}
         </div>
       ) : null}
     </div>
