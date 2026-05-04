@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "slug": "complexity-classes",
+  "courseSlug": "dragmatch-test",
+  "moduleId": "m1",
+  "title": "Didactic example — sort algorithms ↔ time complexity",
+  "eyebrow": "Lekcja 4 · DragMatch",
+  "description": "A realistic comprehension exercise — match standard sort algorithms to their average-case time complexity. Demonstrates DragMatch as the primary assessment widget for taxonomy-style learning content.",
+  "estimatedMinutes": 6,
+  "sections": [
+    {
+      "id": "s1-context",
+      "title": "Context — average-case complexity",
+      "type": "theory",
+      "data": {
+        "markdown": "## Average-case time complexity\n\nWe use $O(\\cdot)$ to describe how an algorithm's running time scales with input size $n$, ignoring constants and lower-order terms. \"Average case\" assumes a random permutation of inputs — distinct from worst case (adversarial input) and best case (already-sorted input, etc.).\n\nMatch each sort algorithm below to its average-case bound."
+      }
+    },
+    {
+      "id": "s2-sorts",
+      "title": "Match each sort to its average-case complexity",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Drag each sort algorithm into the row that gives its AVERAGE-case time complexity.",
+        "items": [
+          { "id": "s-bubble", "label": "Bubble sort" },
+          { "id": "s-insertion", "label": "Insertion sort" },
+          { "id": "s-quicksort", "label": "Quicksort" },
+          { "id": "s-mergesort", "label": "Merge sort" },
+          { "id": "s-heapsort", "label": "Heap sort" },
+          { "id": "s-counting", "label": "Counting sort" }
+        ],
+        "zones": [
+          {
+            "id": "z-quadratic",
+            "label": "O(n²) average",
+            "accepts": ["s-bubble", "s-insertion"]
+          },
+          {
+            "id": "z-nlogn",
+            "label": "O(n log n) average",
+            "accepts": ["s-quicksort", "s-mergesort", "s-heapsort"]
+          },
+          {
+            "id": "z-linear",
+            "label": "O(n + k) average — non-comparison",
+            "accepts": ["s-counting"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "explanation": "Bubble and insertion sort both run in O(n²) average — every element compares with most others. Quicksort, merge sort, and heap sort all hit O(n log n) — divide-and-conquer or partial-order data structures. Counting sort sidesteps comparison entirely and runs in O(n + k) where k is the value range — fast for small integer keys but linear in k, not n."
+      }
+    }
+  ]
+}

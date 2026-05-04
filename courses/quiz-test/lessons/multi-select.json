@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "slug": "multi-select",
+  "courseSlug": "quiz-test",
+  "moduleId": "m1",
+  "title": "Multi-select — multiple correct answers",
+  "eyebrow": "Lekcja 2 · Quiz",
+  "description": "Three multi-select Quiz widgets covering the partial-credit shape: \"all correct\" required for `done`, but per-option ✓/✗ feedback shows the user which picks were wrong.",
+  "estimatedMinutes": 5,
+  "sections": [
+    {
+      "id": "s1-intro-theory",
+      "title": "Multi-select vs. single-select",
+      "type": "theory",
+      "data": {
+        "markdown": "When `multiSelect: true`, the widget renders checkbox semantics: any subset of options can be selected. The `correct` array lists every option index that should be checked. Submission is graded as **all correct or nothing** — picking three of four correct options is still a wrong submission. Per-option ✓/✗ feedback (US-057) helps the user see which picks were off."
+      }
+    },
+    {
+      "id": "s2-quiz-two-correct",
+      "title": "Two correct out of four",
+      "type": "quiz",
+      "data": {
+        "question": "Which of the following are widget types in the Quiz/Theory/Code family registered in `widgetRegistry`? (Pick every option that is true.)",
+        "options": [
+          "Theory",
+          "Histogram",
+          "Quiz",
+          "PlotImage"
+        ],
+        "correct": [0, 2],
+        "explanation": "Theory and Quiz are explanatory/assessment widgets. Histogram and PlotImage are visualization widgets — distinct family. All four are valid widget types overall, but the question scoped to the Quiz/Theory/Code family.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "s3-quiz-three-correct",
+      "title": "Three correct out of five",
+      "type": "quiz",
+      "data": {
+        "question": "Pick every statement that is true about the Quiz widget's grading model.",
+        "options": [
+          "A multi-select submission is correct only when the picked set exactly matches `correct`.",
+          "The explanation panel renders only after the user submits.",
+          "A correct submission marks the section as `done: true` in `progress.json`.",
+          "The widget runs Python tests against the user's answer.",
+          "The user can change their answer freely after submitting."
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "Grading is exact-match on the selected indices. The explanation reveals on submit, and a fully-correct submission persists the section as done. The Quiz widget never runs Python — that is the Code/Sandbox/ParametricExplorer family — and the form locks on submit rather than allowing free re-answering.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "s4-quiz-all-correct",
+      "title": "All five correct (every option is right)",
+      "type": "quiz",
+      "data": {
+        "question": "Which of these are valid Markdown features inside a Theory widget? (Pick every option that is true.)",
+        "options": [
+          "Headings (`#`, `##`, `###`)",
+          "Inline code with backticks",
+          "Fenced code blocks with language hints",
+          "Inline KaTeX math via `$…$`",
+          "Callout directives via `:::callout{type=\"…\"}`"
+        ],
+        "correct": [0, 1, 2, 3, 4],
+        "explanation": "All five are supported. The Theory widget pipeline is `react-markdown` + `remark-math` + `rehype-katex` + `remark-directive` + `remarkCallout`, so anything documented in those plugins works.",
+        "multiSelect": true
+      }
+    }
+  ]
+}

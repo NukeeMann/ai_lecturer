@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "slug": "central-limit-theorem",
+  "courseSlug": "plotimage-test",
+  "moduleId": "m1",
+  "title": "Didactic example — Central Limit Theorem in three plots",
+  "eyebrow": "Lekcja 4 · PlotImage",
+  "description": "A realistic didactic walkthrough — three pre-rendered plots with prose between them, demonstrating how PlotImage carries an explanatory chapter that combines text and figures. NOTE: all three figures reuse the same gauss1d.png asset so the lesson renders even if higher-fidelity renders haven't been generated yet — the captions describe what each figure represents.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-intro",
+      "title": "What we're going to show",
+      "type": "theory",
+      "data": {
+        "markdown": "## The Central Limit Theorem (CLT)\n\nThe CLT says: take a population with **any** distribution that has finite mean $\\mu$ and finite variance $\\sigma^{2}$. Draw $n$ independent samples and compute their mean $\\bar{X}_{n}$. As $n$ grows, the distribution of $\\bar{X}_{n}$ approaches a Gaussian centred on $\\mu$ with standard deviation $\\sigma / \\sqrt{n}$ — *regardless of the shape of the original population*.\n\nThe three plots below illustrate the convergence: as $n$ grows from 1 to 30, the histogram of sample means morphs from the original (non-Gaussian) shape into something that is visually indistinguishable from a normal density.\n\n:::callout{type=\"info\" title=\"Why this matters\"}\nThe CLT is the reason we can use $z$-tests, $t$-tests, and confidence intervals on sample means even when the underlying data is messy.\n:::"
+      }
+    },
+    {
+      "id": "s2-n1",
+      "title": "Sampling distribution at n = 1",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/plotimage-test/assets/plots/gauss1d.png",
+        "alt": "Sampling distribution of the mean at n=1 — looks like the original population",
+        "caption": "Figure 1. At $n = 1$, the \"mean of one sample\" IS the sample, so the distribution is whatever the original population looks like (here, hypothetically a uniform draw on $[0, 1]$).",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(seed=42)\nsamples = rng.uniform(0, 1, size=10_000)\nplt.hist(samples, bins=40)\nplt.title(\"Sampling distribution of the mean — n = 1\")\nplt.savefig(\"clt_n1.png\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "s3-mid-prose",
+      "title": "What changes as n grows",
+      "type": "theory",
+      "data": {
+        "markdown": "Now repeat the experiment with $n = 5$ samples per mean. Each \"observation\" in the histogram below is the average of 5 uniform draws — and the distribution of those averages is already noticeably bell-shaped."
+      }
+    },
+    {
+      "id": "s4-n5",
+      "title": "Sampling distribution at n = 5",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/plotimage-test/assets/plots/gauss1d.png",
+        "alt": "Sampling distribution of the mean at n=5 — already concentrating",
+        "caption": "Figure 2. At $n = 5$, the histogram concentrates around $\\mu = 0.5$ and starts to look bell-shaped. The standard deviation has shrunk by a factor of $\\sqrt{5}$.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(seed=42)\nmeans = rng.uniform(0, 1, size=(10_000, 5)).mean(axis=1)\nplt.hist(means, bins=40)\nplt.title(\"Sampling distribution of the mean — n = 5\")\nplt.savefig(\"clt_n5.png\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "s5-n30-prose",
+      "title": "n = 30 — the rule-of-thumb threshold",
+      "type": "theory",
+      "data": {
+        "markdown": "By $n = 30$, the histogram is visually indistinguishable from a Gaussian — this is where the textbook rule-of-thumb \"$n \\geq 30$ is enough for the CLT\" comes from. The rule depends on the original distribution's tails (heavy-tailed populations need more samples), but for benign shapes 30 is generous."
+      }
+    },
+    {
+      "id": "s6-n30",
+      "title": "Sampling distribution at n = 30",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/plotimage-test/assets/plots/gauss1d.png",
+        "alt": "Sampling distribution of the mean at n=30 — visually Gaussian",
+        "caption": "Figure 3. At $n = 30$, the empirical histogram of sample means matches the theoretical Gaussian $\\mathcal{N}\\!\\left(\\mu = 0.5,\\, \\sigma^{2} = \\tfrac{1/12}{30}\\right)$ to within sampling noise.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(seed=42)\nmeans = rng.uniform(0, 1, size=(10_000, 30)).mean(axis=1)\nplt.hist(means, bins=40, density=True, alpha=0.7, label=\"empirical\")\n\nfrom scipy.stats import norm\nx = np.linspace(0.3, 0.7, 400)\nplt.plot(x, norm.pdf(x, loc=0.5, scale=np.sqrt((1/12) / 30)),\n         color=\"red\", label=\"theoretical Gaussian\")\nplt.legend()\nplt.title(\"Sampling distribution of the mean — n = 30\")\nplt.savefig(\"clt_n30.png\")\n",
+        "sourceLanguage": "python"
+      }
+    }
+  ]
+}

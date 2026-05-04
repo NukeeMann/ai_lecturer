@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "slug": "classic-test-images",
+  "courseSlug": "image-test",
+  "moduleId": "m1",
+  "title": "Didactic example — classic image-processing test images",
+  "eyebrow": "Lekcja 4 · Image",
+  "description": "A real didactic chapter: why the image-processing community standardised on a small set of test images, what each one contributes, and the modern pushback against some of the older choices.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-intro",
+      "title": "Why test images at all?",
+      "type": "theory",
+      "data": {
+        "markdown": "## Why test images?\n\nWhen you publish a new image-processing algorithm — a denoiser, a compressor, an edge detector — readers want to compare your output against well-known baselines. If everyone uses different inputs, comparisons are impossible.\n\nThe image-processing community converged on a small set of **standard test images** so papers from different groups could plot side-by-side curves on the same horizontal axis. The classic test set has three useful properties:\n\n- **Mixed content.** Smooth gradients, sharp edges, repeating textures, flat regions — exercises every part of an algorithm.\n- **Wide availability.** Anyone can re-run an experiment without licensing friction.\n- **Long history.** Every textbook published since 1980 has used them, so reviewers have intuition for what \"good\" output looks like.\n\nThe sections below walk through three canonical examples."
+      }
+    },
+    {
+      "id": "s2-cameraman",
+      "title": "Cameraman — the edge-detection workhorse",
+      "type": "plotImage",
+      "data": {
+        "src": "/demo-images/cameraman.jpg",
+        "alt": "Cameraman.jpg — black-and-white photograph of a man with a tripod-mounted film camera",
+        "caption": "Cameraman.jpg (MIT Lincoln Laboratory, 256×256, 8-bit grayscale). The sharp silhouette against the blurred sky makes it the workhorse for edge-detection benchmarks. The textured grass and out-of-focus background also stress denoisers and bilateral filters."
+      }
+    },
+    {
+      "id": "s3-cameraman-prose",
+      "title": "What Cameraman exercises",
+      "type": "theory",
+      "data": {
+        "markdown": "Cameraman exercises:\n\n- **Strong edges** — the silhouette boundary is high-contrast, so any edge detector should pick it up cleanly.\n- **Soft gradients** — the sky is a smooth ramp, useful for testing whether a filter introduces banding or posterisation.\n- **Texture** — the foreground grass and the camera body have rich detail at multiple scales.\n\nIt is the closest thing to a one-image stress test the field has."
+      }
+    },
+    {
+      "id": "s4-lena",
+      "title": "Lena — historical context, modern caveats",
+      "type": "plotImage",
+      "data": {
+        "src": "/demo-images/lena.jpg",
+        "alt": "Lena test image — a portrait widely used in image-processing research since 1972",
+        "caption": "Lena.jpg (1972). A portrait that became the most-cited test image in image processing. Its mixture of smooth skin, fine hair, and feathered hat makes it useful for compression benchmarks. Originally cropped from a Playboy magazine photograph; the IEEE has since formally recommended against new uses on ethical grounds."
+      }
+    },
+    {
+      "id": "s5-lena-prose",
+      "title": "Why Lena is still in textbooks",
+      "type": "theory",
+      "data": {
+        "markdown": "Lena is the most-cited test image in image processing — Jeff Seideman estimated more than 30 000 papers reference it. The mixed content (smooth skin, sharp eyes, fine feathers, soft fur) makes it a useful single-image benchmark for compression: a JPEG quantiser that does well on Lena tends to do well in general.\n\n:::callout{type=\"warning\" title=\"Pushback\"}\nIn 2018 Nature Nanotechnology became the first major journal to ban Lena. The IEEE has also formally recommended against new uses. Modern papers prefer the Kodak suite, the Berkeley Segmentation Dataset, or the Tecnick set — all of which are licensed for academic use without the source-material baggage.\n:::\n\nThis course shows it because the older literature — and most introductory textbooks written before 2020 — still rely on it, and learners should be able to recognise it."
+      }
+    },
+    {
+      "id": "s6-noise",
+      "title": "White noise — the high-frequency control",
+      "type": "plotImage",
+      "data": {
+        "src": "/demo-images/noise-test.png",
+        "alt": "Synthetic white-noise image — uniform pixel intensities, no spatial structure",
+        "caption": "noise-test.png — uniform white noise. Looks like TV static. Used as a control: if your denoiser \"removes\" the noise from this image, it is over-smoothing."
+      }
+    },
+    {
+      "id": "s7-noise-prose",
+      "title": "Why white noise is the negative control",
+      "type": "theory",
+      "data": {
+        "markdown": "A pure white-noise image has no spatial structure — every pixel is independent of its neighbours. A *correct* denoiser should leave it essentially unchanged (it has nothing to denoise). An *over-aggressive* denoiser will smooth it out into a blur, which would also destroy fine texture in real images.\n\nWhite noise is therefore a **negative control**: applying your algorithm to it tells you whether you are erasing genuine information.\n\n:::callout{type=\"insight\" title=\"Read-out\"}\nIf you publish a denoiser that drops MSE on Cameraman by 20% but also drops MSE on white noise by 20%, you have not built a denoiser — you have built a low-pass filter. The Cameraman improvement is just the loss of the high-frequency texture that humans actually want to keep.\n:::"
+      }
+    }
+  ]
+}
