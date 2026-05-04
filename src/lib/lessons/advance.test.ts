@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   areAllSectionsDone,
+  countDoneSections,
   isSectionDone,
   pathForAdvanceTarget,
   resolveAdvanceTarget,
@@ -59,6 +60,54 @@ describe('areAllSectionsDone (US-067)', () => {
         liveAutoDone: { s3: true },
       }),
     ).toBe(true);
+  });
+});
+
+describe('countDoneSections (US-079)', () => {
+  it('reports 0 of 2 when nothing is marked', () => {
+    expect(countDoneSections(lessonWith(['s1', 's2']), {})).toEqual({
+      total: 2,
+      done: 0,
+    });
+  });
+
+  it('updates from 0/2 to 1/2 when a section becomes liveAutoDone (the bug)', () => {
+    // Reproduces US-079: a widget firing onComplete() only flips
+    // liveAutoDone, but the pill counter must reflect that immediately.
+    expect(
+      countDoneSections(lessonWith(['s1', 's2']), {
+        liveAutoDone: { s1: true },
+      }),
+    ).toEqual({ total: 2, done: 1 });
+  });
+
+  it('counts manuallyCompleted sections', () => {
+    expect(
+      countDoneSections(lessonWith(['s1', 's2']), {
+        manuallyCompleted: { s2: true },
+      }),
+    ).toEqual({ total: 2, done: 1 });
+  });
+
+  it('counts mixed completion sources without double-counting', () => {
+    expect(
+      countDoneSections(lessonWith(['s1', 's2', 's3']), {
+        persistedSectionState: { s1: { done: true } },
+        manuallyCompleted: { s1: true, s2: true },
+        liveAutoDone: { s3: true },
+      }),
+    ).toEqual({ total: 3, done: 3 });
+  });
+
+  it('denominator reflects the current lesson section count', () => {
+    expect(countDoneSections(lessonWith(['a', 'b', 'c', 'd']), {})).toEqual({
+      total: 4,
+      done: 0,
+    });
+    expect(countDoneSections(lessonWith([]), {})).toEqual({
+      total: 0,
+      done: 0,
+    });
   });
 });
 

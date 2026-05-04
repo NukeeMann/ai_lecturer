@@ -26,6 +26,18 @@ export function areAllSectionsDone(
   return lesson.sections.every((s) => isSectionDone(s.id, flags));
 }
 
+export function countDoneSections(
+  lesson: Pick<Lesson, 'sections'>,
+  flags: SectionDoneFlags,
+): { total: number; done: number } {
+  const total = lesson.sections.length;
+  let done = 0;
+  for (const s of lesson.sections) {
+    if (isSectionDone(s.id, flags)) done += 1;
+  }
+  return { total, done };
+}
+
 export type AdvanceTarget =
   | { kind: 'next-lesson'; courseSlug: string; lessonSlug: string }
   | { kind: 'my-courses' };
