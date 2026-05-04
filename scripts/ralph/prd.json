@@ -1662,6 +1662,218 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-075",
+      "title": "Settings dropdown menu — shell + Theme + Density + Ctrl+, shortcut",
+      "description": "As a learner, I want a Settings gear icon in the lesson header that expands into a dropdown so I can adjust Theme and Density (more options come later) without leaving the lesson.",
+      "acceptanceCriteria": [
+        "New component src/components/SettingsMenu.tsx renders a gear icon (lucide Settings) that toggles a dropdown panel",
+        "Settings dropdown placed in the lesson header next to the existing ThemeToggle (ThemeToggle remains and continues to work — both coexist per user request)",
+        "Theme control inside Settings: Light / Dark / System options that set document.documentElement.dataset.theme and persist to localStorage under key 'aiLecturer.theme' (same key/contract as ThemeToggle so they stay in sync)",
+        "Density control inside Settings: Compact / Comfortable / Spacious options that set document.documentElement.dataset.density (data-density vars already exist from US-002) and persist to localStorage under 'aiLecturer.density'",
+        "Keyboard shortcut Ctrl+, (Cmd+, on macOS) opens/closes the Settings dropdown; shortcut is registered globally and uses preventDefault to override browser default",
+        "Dropdown closes on Escape and on outside click",
+        "Initial selected option in each control reflects the persisted value on mount; controls are keyboard-accessible (aria-selected, focus ring)",
+        "Verify in browser using playwright-skill: open a lesson, click gear, switch density to Compact, confirm document.documentElement has data-density='compact', reload page, confirm value persisted",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 75,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 75). Touches: src/components/SettingsMenu.tsx (new), lesson page header (src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx near ThemeToggle line ~1332). Do NOT touch DragMatch or PlotImage (US-082, US-084 ship in parallel). data-density vars already wired in tokens.css from US-002.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-076",
+      "title": "Settings — Accent color picker (per-course persistence)",
+      "description": "As a course author, I want to set the accent color per course so each course has a recognizable visual identity, configured from the Settings dropdown while viewing the course.",
+      "acceptanceCriteria": [
+        "Accent picker added to Settings dropdown with options: default, black, indigo, terracotta, emerald (matching the data-accent values already in tokens.css from US-002)",
+        "Selecting an accent sets document.documentElement.dataset.accent and persists per-course (key includes course slug, e.g. 'aiLecturer.accent.<courseSlug>')",
+        "Course-level default accent can be declared in the course config file (e.g. courses/<slug>/course.json or equivalent) and is applied on first visit before user override",
+        "User override (chosen via Settings) takes precedence over the course default for that user",
+        "When navigating away from the course (back to course list or to a different course), accent reverts to the destination course's value (or 'default' if none)",
+        "Verify in browser using playwright-skill: open course A, set accent to indigo, confirm data-accent='indigo'; navigate to course B (without override), confirm accent matches course B's config; return to course A, confirm indigo restored",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 76,
+      "passes": false,
+      "notes": "PARALLEL WAVE 2 (pri 76). Depends on US-075 SettingsMenu shell (already merged from wave 1). Touches: SettingsMenu.tsx, course schema/config files. Do NOT touch lesson page (US-079 is parallel) or DragMatch (US-083 is parallel).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-077",
+      "title": "Settings — Font family picker (Geist / IBM Plex / Source Serif)",
+      "description": "As a learner, I want to choose the lesson font family from Settings so I can pick whichever typeface is easiest to read.",
+      "acceptanceCriteria": [
+        "Font family picker added to Settings dropdown with three options: Geist (current default), IBM Plex Sans, Source Serif",
+        "Each font loaded via next/font in src/app/layout.tsx and exposed as a CSS variable (e.g. --font-geist, --font-ibm-plex, --font-source-serif)",
+        "Selecting a font sets document.documentElement.dataset.font and a CSS rule maps data-font='<value>' to the corresponding --font-* variable on --font-prose / --font-sans (defined in tokens.css)",
+        "Selection persists to localStorage under 'aiLecturer.font' and applies on initial render before hydration to avoid font flash",
+        "Default remains Geist when no preference is stored",
+        "Verify in browser using playwright-skill: open a lesson, switch font to IBM Plex, confirm computed font-family of body text contains 'IBM Plex'; reload, confirm font persisted",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 77,
+      "passes": false,
+      "notes": "PARALLEL WAVE 3 (pri 77). Depends on US-075 SettingsMenu shell. Touches: SettingsMenu.tsx, src/app/layout.tsx (next/font imports), src/styles/tokens.css. US-078 in parallel must NOT touch layout.tsx; US-080 in parallel must NOT touch SettingsMenu or layout.tsx.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-078",
+      "title": "AI Tutor keyboard shortcut Ctrl+T to open the tutor panel",
+      "description": "As a learner, I want to press Ctrl+T (Cmd+T on macOS) to open the AI Tutor panel from anywhere in the lesson so I can ask a question without reaching for the mouse.",
+      "acceptanceCriteria": [
+        "Pressing Ctrl+T (Cmd+T on macOS) toggles the AI Tutor panel open/closed",
+        "Shortcut is registered with preventDefault and stopPropagation to override the browser's default 'new tab' behaviour; document the limitation in story notes if any browser cannot be overridden",
+        "Shortcut handler implemented as a small reusable hook (e.g. src/lib/hooks/useKeyboardShortcut.ts) and mounted from the AI Tutor component itself — NOT from src/app/layout.tsx",
+        "Shortcut is disabled while the user is typing inside an input/textarea/contenteditable so it doesn't hijack typing",
+        "Visible hint of the shortcut shown next to the AI Tutor open button (e.g. 'Ctrl+T') so the binding is discoverable",
+        "Verify in browser using playwright-skill: open a lesson, press Ctrl+T, confirm AI Tutor panel opens; press Ctrl+T again, confirm it closes; focus a text input, press Ctrl+T, confirm panel does not toggle",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 77,
+      "passes": false,
+      "notes": "PARALLEL WAVE 3 (pri 77). MUST NOT touch src/app/layout.tsx (US-077 in parallel modifies it for next/font). MUST NOT touch SettingsMenu.tsx (US-077 in parallel extends it). The shortcut binding is hard-coded for now; configurable rebinding in Settings is deferred to a future story.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-079",
+      "title": "Fix: section-progress-pill counter does not update when fragment marked Complete",
+      "description": "As a learner, when I mark a fragment Complete inside a section, the progress pill in the lesson header should update from e.g. 0/2 to 1/2 immediately, but it currently stays stuck at 0/2 until a full reload.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (e.g. RTL test that renders a section with two fragments, marks one complete, asserts pill text updates to '1/2')",
+        "After fix: marking any fragment Complete updates the pill counter for the containing section synchronously without reload",
+        "Counter denominator (the '/2') reflects the total fragment count of the current section",
+        "Counter resets correctly when navigating to a different section",
+        "Pill remains keyboard- and screen-reader accessible (aria-label includes 'X of Y completed')",
+        "Verify in browser using playwright-skill: open a lesson with multi-fragment section, confirm pill shows 0/N, mark a fragment complete, confirm pill updates to 1/N without reload",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 76,
+      "passes": false,
+      "notes": "PARALLEL WAVE 2 (pri 76). Touches lesson page src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx near data-testid='section-progress-pill' (line ~1463). Wait for US-075 (wave 1) to merge first since it also touches the lesson page header. US-076 (parallel) only touches SettingsMenu/course schema. US-083 (parallel) only touches DragMatch.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-080",
+      "title": "Widget-level checkbox auto-checks when widget is marked Complete",
+      "description": "As a learner, when a widget reaches the Complete state (e.g. quiz answered, code executed correctly, drag-match solved), the checkbox shown above the widget should become checked automatically without requiring a manual click.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (e.g. simulate a widget reaching Complete state and assert the wrapper checkbox is checked)",
+        "Shared widget wrapper in src/widgets/Widget.tsx subscribes to the widget's completion state and reflects it in the checkbox 'checked' prop",
+        "Manual user clicks on the checkbox still work as before (toggle independent of widget state)",
+        "If the widget transitions from Complete to not-Complete (e.g. user changes answer), the auto-check state respects whichever is more recent: explicit user toggle wins over auto-check",
+        "Behaviour is consistent across all widget types that report a Complete state",
+        "Verify in browser using playwright-skill: open a lesson with a Quiz widget, answer it correctly, confirm wrapper checkbox becomes checked without manual click",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 77,
+      "passes": false,
+      "notes": "PARALLEL WAVE 3 (pri 77). Touches the shared wrapper src/widgets/Widget.tsx ONLY — do NOT touch SettingsMenu.tsx (US-077 in parallel), layout.tsx (US-077), src/widgets/DragMatch/* or src/widgets/PlotImage/* (handled by earlier-wave stories US-082, US-083, US-084). If individual widgets need to emit a 'complete' signal, add the signal via a callback/context exposed by Widget.tsx rather than editing each widget folder.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-081",
+      "title": "Mark section as Completed when auto-advanced after all widgets done",
+      "description": "As a learner, when I finish all widgets in a section and the lesson auto-advances me to the next section, the just-finished section should be marked Completed so my progress reflects the work I just did.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the gap exists before the fix (simulate completing all widgets in a section, trigger auto-advance, assert prior section is marked completed)",
+        "When the auto-advance handler fires (all widgets in current section reached Complete state), the just-left section's completed flag is set to true before navigation",
+        "Section-progress-pill (US-079) and any TOC indicators reflect the new completed state on the next render",
+        "Manual navigation between sections (clicking 'next' without completing all widgets) does NOT mark the section as Completed — the trigger is auto-advance only",
+        "Re-entering a Completed section preserves its Completed status and per-fragment progress",
+        "Verify in browser using playwright-skill: open a lesson, complete every widget in section 1, confirm auto-advance to section 2 occurs and section 1 is shown as Completed in the TOC/pill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 78,
+      "passes": false,
+      "notes": "PARALLEL WAVE 4 (pri 78, runs alone). Touches lesson page src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx (auto-advance + section-state code). Must wait for US-079 (wave 2) to land first because both touch the same lesson page. Do not introduce regressions in the pill counter behaviour fixed by US-079.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-082",
+      "title": "Fix: DragMatch — full box turns green on second-try correct match (currently only block frame)",
+      "description": "As a learner using DragMatch, when I correct a wrong placement and end up with all blocks in their correct slots, the entire drop-box (not just the dragged block's frame) should turn green to confirm success — currently this only works on the very first attempt; on a corrected attempt only the block's outline goes green while the box stays neutral.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (drop wrong block first, replace with correct block, assert drop-box has the correct/green styling — not just the inner block element)",
+        "After fix: the drop-box's success styling (green border/background per design tokens) is applied whenever the contained block is correct, regardless of attempt count",
+        "Drop-box success state is computed from current placement, not from a one-shot 'first-correct' flag",
+        "When all drop-boxes are simultaneously correct, the widget reports the Complete state correctly (so US-080's checkbox can react to it)",
+        "Mismatched/empty boxes retain their neutral/error styling as before",
+        "Verify in browser using playwright-skill: open a DragMatch widget, drop a wrong block in slot 1, then drag the correct block over it, assert the slot's box element has the green/correct class and visual styling",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 75,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 75). Touches src/widgets/DragMatch/DragMatchWidget.tsx (and possibly schema.ts). Do NOT touch PlotImage (US-084 in parallel), SettingsMenu/lesson page (US-075 in parallel). US-083 (DragMatch submit fix) is in wave 2 — your fix here must not regress its premise.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-083",
+      "title": "Fix: DragMatch — Submit button is enabled when task allows partial selection",
+      "description": "As a learner doing a DragMatch task that only requires placing a subset of available blocks, the Submit button should be clickable once the required blocks are placed; currently it stays disabled because the widget waits for ALL blocks to be placed even when the task definition allows partial selection.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (DragMatch with partial-selection mode: place only the required N out of M blocks, assert Submit becomes enabled)",
+        "DragMatch schema supports/respects a flag (e.g. requireAll: false or requiredBlocks: number) indicating partial selection is acceptable",
+        "Submit enable/disable logic uses that flag: full-selection mode keeps current behaviour (all blocks required), partial-selection mode enables Submit when the required count of blocks are correctly placed",
+        "After Submit in partial-selection mode, unused blocks remain in the source area without being marked wrong",
+        "Verify in browser using playwright-skill: load a sample DragMatch with partial-selection mode, place the required blocks, confirm Submit is clickable and clicking it produces the success state",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 76,
+      "passes": false,
+      "notes": "PARALLEL WAVE 2 (pri 76). Touches src/widgets/DragMatch/DragMatchWidget.tsx (and schema.ts if a new flag is needed). Wait for US-082 (wave 1) to land. Do NOT touch SettingsMenu (US-076 in parallel) or lesson page (US-079 in parallel).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-084",
+      "title": "PlotImage — expanded source code is editable and executable, re-renders inline",
+      "description": "As a learner inspecting a PlotImage widget, when I expand the source code panel I want to edit the code and re-run it so I can experiment with the plot, with the resulting image replacing the current one inline.",
+      "acceptanceCriteria": [
+        "Expanded source code panel renders inside an editable CodeMirror instance (Python language extension) instead of a read-only viewer",
+        "A 'Run' button (with keyboard shortcut, e.g. Ctrl+Enter while focused) executes the edited code via the same Pyodide runtime used by the Code/Sandbox widgets",
+        "The code's image output (matplotlib or equivalent) replaces the currently shown image inline; original image is restored when the user clicks a 'Reset' affordance",
+        "Execution errors (Python tracebacks, runtime errors) are surfaced under the editor without crashing the widget",
+        "Edits are local to the widget instance (not persisted across reloads in this story); a future story can add persistence",
+        "Loading state shown while Pyodide initialises / executes",
+        "Verify in browser using playwright-skill: open a lesson with a PlotImage widget, expand source, modify a parameter (e.g. change a constant), click Run, confirm a new image appears inline different from the original",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 75,
+      "passes": false,
+      "notes": "PARALLEL WAVE 1 (pri 75). Touches src/widgets/PlotImage/PlotImageWidget.tsx and possibly a shared Pyodide runtime helper (reuse existing helper from Code/Sandbox widgets — do not duplicate). Do NOT touch DragMatch (US-082 in parallel) or SettingsMenu/lesson page (US-075 in parallel).",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
