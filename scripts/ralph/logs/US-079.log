@@ -1,7 +1,22 @@
-[2026-05-04T18:52:24+0200] [rate_limit five_hour status=allowed]
-[2026-05-04T18:54:24+0200] Now I'll add the helper, write tests (which will fail against current page code reusing them via `sectionState[s.id]?.done` only — but more importantly capture the contract going forward), then fix the page.
-[2026-05-04T18:54:46+0200] Now let me apply the fix to the lesson page. First update the import, then refactor `sectionTotals`, then add `aria-label` to the pill.
-[2026-05-04T18:54:56+0200] Now add the `aria-label`:
-[2026-05-04T19:07:27+0200] All 11 assertions pass. Let me update progress.txt, mark passes=true, and commit.
-[2026-05-04T19:09:02+0200] US-079 done. Pill now updates synchronously when any of the three section-done sources flips (persisted `sectionState[id].done`, persisted `manuallyCompletedSections`, in-session `autoDone`), and exposes `role="status" aria-live="polite" aria-label="X of Y completed"`. Typecheck clean, 326/326 tests pass (+8 new), playwright walked the lesson at 0/4 → 1/4 live → 0/4 reset on lesson change. Commit `2b5173a` is in HEAD with `passes=true`.
-[2026-05-04T19:09:02+0200] [result success turns=91 cost=$5.3237645] US-079 done. Pill now updates synchronously when any of the three section-done sources flips (persisted `sectionState[id].done`, persisted `manuallyCompletedSections`, in-session `autoDone`), and exposes `role="status" aria-live="polite" aria-label="X of Y completed"`. Typecheck clean, 326/326 tests pass (+8 new), playwright walked the lesson at 0/4 → 1/4 live → 0/4 reset on lesson change. Commit `2b5173a` is in HEAD with `passes=true`.
+[2026-05-04T19:40:31+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T19:43:22+0200] Now add tests for the helper that reproduce the bug — first as a failing test (the AC requires this).
+[2026-05-04T19:43:38+0200] Run tests to confirm the new tests pass against the helper (the helper is correct on its own — the bug is the lesson page not feeding it the live flags).
+[2026-05-04T19:43:54+0200] Now add the aria-label.
+[2026-05-04T19:44:16+0200] Typecheck clean, 331/331 tests pass (was 326 +5 new). Now browser-verify with playwright.
+[2026-05-04T19:50:06+0200] All assertions pass. Let me update the todo list and commit.
+[2026-05-04T19:50:13+0200] Now flip `passes: true` for US-079 and append progress.
+[2026-05-04T19:50:26+0200] Now append progress notes.
+[2026-05-04T19:51:27+0200] Done. US-079 fixed and committed (`39b43e0`).
+
+**Summary**
+- Bug: lesson toolbar's section-progress-pill counted only `sectionState[id].done`, ignoring the page-level `autoDone` (set by widget `onComplete`) and `manuallyCompletedSections` — so completing a Quiz/Code/DragMatch/etc. didn't update the pill until reload.
+- Fix: extracted `countDoneSections(lesson, flags)` in `src/lib/lessons/advance.ts` alongside the existing `isSectionDone` / `areAllSectionsDone`, then routed the lesson page's `sectionTotals` useMemo through it with all three completion sources. Added `aria-label="X of Y completed"`, `role="status"`, `aria-live="polite"` on the pill.
+- Tests: 5 new unit tests including the bug reproduction (`liveAutoDone={s1:true} → 1/2`). Typecheck clean, 331/331 vitest pass.
+- Browser-verified on `quiz-test/single-select`: pill went 0/4 → 1/4 (+aria) live after answering one Quiz, then 0/4 on navigating to `multi-select` (`/tmp/us079-after-correct.png`, `/tmp/us079-second-lesson.png`).
+[2026-05-04T19:51:27+0200] [result success turns=85 cost=$4.9557302499999984] Done. US-079 fixed and committed (`39b43e0`).
+
+**Summary**
+- Bug: lesson toolbar's section-progress-pill counted only `sectionState[id].done`, ignoring the page-level `autoDone` (set by widget `onComplete`) and `manuallyCompletedSections` — so completing a Quiz/Code/DragMatch/etc. didn't update the pill until reload.
+- Fix: extracted `countDoneSections(lesson, flags)` in `src/lib/lessons/advance.ts` alongside the existing `isSectionDone` / `areAllSectionsDone`, then routed the lesson page's `sectionTotals` useMemo through it with all three completion sources. Added `aria-label="X of Y completed"`, `role="status"`, `aria-live="polite"` on the pill.
+- Tests: 5 new unit tests including the bug reproduction (`liveAutoDone={s1:true} → 1/2`). Typecheck clean, 331/331 vitest pass.
+- Browser-verified on `quiz-test/single-select`: pill went 0/4 → 1/4 (+aria) live after answering one Quiz, then 0/4 on navigating to `multi-select` (`/tmp/us079-after-correct.png`, `/tmp/us079-second-lesson.png`).
