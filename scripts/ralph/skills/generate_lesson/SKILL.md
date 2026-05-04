@@ -16,6 +16,8 @@ This skill is the back half of the course-generation pipeline. The front half is
 
 ## The Job
 
+> **Before you start: read [`docs/widgets.md`](../../../../docs/widgets.md)** — the canonical widget reference. Use it to pick which widgets to compose into the lesson and to crib minimal example shapes for each `data` payload. The Zod schemas in `src/widgets/<Name>/schema.ts` (mirrored as JSON Schemas under `src/widgets/schemas/`) remain the source of truth; open them when the doc is ambiguous or you need a field the summary omits.
+
 1. Read the **current ralph story** from `scripts/ralph/prd.json` (the story whose `id` matches `RALPH_TASK_ID`, or the highest-priority `passes: false` story otherwise — same rule as `scripts/ralph/CLAUDE.md`).
 2. Read **course context**: `/courses/<slug>/research.md`, `/courses/<slug>/sources.md` (if present), and `/courses/<slug>/course.json`.
 3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`).

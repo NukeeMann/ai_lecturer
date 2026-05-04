@@ -16,6 +16,8 @@ The output prd.json is what `ralph.sh` will iterate over. Each per-lesson story 
 
 ## The Job
 
+> **Before you start: read [`docs/widgets.md`](../../../../docs/widgets.md)** — the canonical widget reference. Use it to know which widget types exist and what each is for *before* you decide which widgets to recommend in `research.md`'s `Notes for lesson generation` section. Schema source of truth still lives at `src/widgets/<Name>/schema.ts`; the doc is a quick one-page summary.
+
 1. Receive a course **slug** as the argument (e.g. `gauss-basics`, `edge-detection-basics`).
 2. Read `/courses/<slug>/course-spec.json` and validate it against `CourseSpecSchema` (`src/lib/schemas/courseSpec.ts`).
 3. Archive the existing `scripts/ralph/prd.json` if it belongs to a different branch.
