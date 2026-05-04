@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
 } from 'react';
 import { Check, ChevronDown, ChevronRight, Circle, Eye, EyeOff, X } from 'lucide-react';
 import { EditorState } from '@codemirror/state';
@@ -220,6 +221,25 @@ const headerRowStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 'var(--space-3)',
+};
+
+const containerToggleButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  margin: 0,
+  cursor: 'pointer',
+  color: 'var(--text-tertiary)',
+  textAlign: 'left',
+};
+
+const containerBodyStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-4)',
 };
 
 const toggleAllButtonStyle: CSSProperties = {
@@ -522,10 +542,12 @@ export function CodeWidget({
   const [tracebackOpen, setTracebackOpen] = useState(false);
   const [submission, setSubmission] = useState<SubmissionState>('idle');
   const [solutionOpen, setSolutionOpen] = useState(false);
+  const [containerCollapsed, setContainerCollapsed] = useState(true);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
   const confettiOriginRef = useRef<HTMLDivElement | null>(null);
   const confettiFiredRef = useRef(false);
   const solutionPanelId = useId();
+  const containerBodyId = useId();
 
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
@@ -671,17 +693,49 @@ export function CodeWidget({
       ? 'Press ✓ Submit to run tests.'
       : 'Press ▶ Run to execute.';
 
+  const containerSummary = results
+    ? `${passedCount}/${total} passed`
+    : `${total} test${total === 1 ? '' : 's'}`;
+  const containerState: 'pass' | 'fail' | 'untested' = results
+    ? passedCount === total
+      ? 'pass'
+      : 'fail'
+    : 'untested';
+
+  const handleToggleAll = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    toggleAll();
+  };
+
   const extraPanel = (
-    <div data-codewidget-tests style={panelWrapStyle}>
+    <div
+      data-codewidget-tests
+      data-container-collapsed={containerCollapsed ? 'true' : 'false'}
+      style={panelWrapStyle}
+    >
       <div style={headerRowStyle}>
-        <span style={sectionLabelStyle}>
-          Tests · {results ? `${passedCount}/${total} passed` : `${total} test${total === 1 ? '' : 's'}`}
-        </span>
-        {tests.length > 0 && (
+        <button
+          type="button"
+          data-codewidget-container-toggle
+          data-testid="codewidget-tests-container-toggle"
+          data-state={containerState}
+          aria-expanded={!containerCollapsed}
+          aria-controls={containerBodyId}
+          onClick={() => setContainerCollapsed((v) => !v)}
+          style={containerToggleButtonStyle}
+        >
+          {containerCollapsed ? (
+            <ChevronRight size={12} aria-hidden style={{ flexShrink: 0 }} />
+          ) : (
+            <ChevronDown size={12} aria-hidden style={{ flexShrink: 0 }} />
+          )}
+          <span style={sectionLabelStyle}>Tests · {containerSummary}</span>
+        </button>
+        {!containerCollapsed && tests.length > 0 && (
           <button
             type="button"
             data-codewidget-toggle-all
-            onClick={toggleAll}
+            onClick={handleToggleAll}
             style={toggleAllButtonStyle}
             aria-label={allExpanded ? 'Hide all tests' : 'Show all tests'}
           >
@@ -690,126 +744,130 @@ export function CodeWidget({
         )}
       </div>
 
-      {(stdout || stderr || traceback) && (
-        <div data-codewidget-output>
-          <button
-            type="button"
-            data-codewidget-output-toggle
-            data-testid="codewidget-output-toggle"
-            aria-expanded={!outputCollapsed}
-            onClick={() => setOutputCollapsed((v) => !v)}
-            style={outputToggleButtonStyle}
-          >
-            {outputCollapsed ? (
-              <ChevronRight size={12} aria-hidden />
-            ) : (
-              <ChevronDown size={12} aria-hidden />
-            )}
-            Output
-          </button>
-          {!outputCollapsed && (
-            <div style={outputContentStyle}>
-              {stdout && (
-                <pre data-codewidget-stdout style={stdoutStyle}>
-                  {stdout}
-                </pre>
-              )}
-              {stderr && (
-                <div data-codewidget-stderr style={stderrBlockStyle}>
-                  <span style={stderrLabelStyle}>stderr</span>
-                  <pre style={{ margin: 0, fontFamily: 'inherit' }}>{stderr}</pre>
-                </div>
-              )}
-              {traceback && (
-                <div data-codewidget-exception style={exceptionBlockStyle}>
-                  <p
-                    data-testid="codewidget-error-headline"
-                    data-error-type={errorType ?? ''}
-                    style={exceptionHeadlineStyle}
-                  >
-                    {(errorType ?? 'Error') +
-                      (errorMessage ? `: ${errorMessage}` : '')}
-                  </p>
-                  <button
-                    type="button"
-                    data-testid="codewidget-traceback-toggle"
-                    aria-expanded={tracebackOpen}
-                    onClick={() => setTracebackOpen((v) => !v)}
-                    style={exceptionToggleStyle}
-                  >
-                    {tracebackOpen ? (
-                      <ChevronDown size={12} aria-hidden />
-                    ) : (
-                      <ChevronRight size={12} aria-hidden />
-                    )}
-                    {tracebackOpen ? 'Hide traceback' : 'Show traceback'}
-                  </button>
-                  {tracebackOpen && (
-                    <pre data-testid="codewidget-traceback" style={tracebackPreStyle}>
-                      {traceback}
+      {!containerCollapsed && (
+        <div id={containerBodyId} data-codewidget-tests-body style={containerBodyStyle}>
+          {(stdout || stderr || traceback) && (
+            <div data-codewidget-output>
+              <button
+                type="button"
+                data-codewidget-output-toggle
+                data-testid="codewidget-output-toggle"
+                aria-expanded={!outputCollapsed}
+                onClick={() => setOutputCollapsed((v) => !v)}
+                style={outputToggleButtonStyle}
+              >
+                {outputCollapsed ? (
+                  <ChevronRight size={12} aria-hidden />
+                ) : (
+                  <ChevronDown size={12} aria-hidden />
+                )}
+                Output
+              </button>
+              {!outputCollapsed && (
+                <div style={outputContentStyle}>
+                  {stdout && (
+                    <pre data-codewidget-stdout style={stdoutStyle}>
+                      {stdout}
                     </pre>
+                  )}
+                  {stderr && (
+                    <div data-codewidget-stderr style={stderrBlockStyle}>
+                      <span style={stderrLabelStyle}>stderr</span>
+                      <pre style={{ margin: 0, fontFamily: 'inherit' }}>{stderr}</pre>
+                    </div>
+                  )}
+                  {traceback && (
+                    <div data-codewidget-exception style={exceptionBlockStyle}>
+                      <p
+                        data-testid="codewidget-error-headline"
+                        data-error-type={errorType ?? ''}
+                        style={exceptionHeadlineStyle}
+                      >
+                        {(errorType ?? 'Error') +
+                          (errorMessage ? `: ${errorMessage}` : '')}
+                      </p>
+                      <button
+                        type="button"
+                        data-testid="codewidget-traceback-toggle"
+                        aria-expanded={tracebackOpen}
+                        onClick={() => setTracebackOpen((v) => !v)}
+                        style={exceptionToggleStyle}
+                      >
+                        {tracebackOpen ? (
+                          <ChevronDown size={12} aria-hidden />
+                        ) : (
+                          <ChevronRight size={12} aria-hidden />
+                        )}
+                        {tracebackOpen ? 'Hide traceback' : 'Show traceback'}
+                      </button>
+                      {tracebackOpen && (
+                        <pre data-testid="codewidget-traceback" style={tracebackPreStyle}>
+                          {traceback}
+                        </pre>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
             </div>
           )}
-        </div>
-      )}
 
-      <div style={testListStyle}>
-        {tests.map((test, i) => (
-          <TestRow
-            key={`${i}-${test.name}`}
-            index={i}
-            test={test}
-            result={results?.[i]}
-            expanded={Boolean(expanded[i])}
-            onToggle={() => toggleOne(i)}
-            submitted={submission !== 'idle' && submission !== 'submitting'}
-          />
-        ))}
-      </div>
-
-      {showWarning && (
-        <div data-codewidget-warning>
-          <Callout tone="warning">
-            {passedCount} of {total} test{total === 1 ? '' : 's'} passed — keep going.
-          </Callout>
-        </div>
-      )}
-
-      {data.solution && (
-        <>
-          <div style={peekRowStyle}>
-            <button
-              type="button"
-              data-testid="codewidget-peek-solution"
-              data-codewidget-peek
-              aria-expanded={solutionOpen}
-              aria-controls={solutionPanelId}
-              onClick={() => setSolutionOpen((v) => !v)}
-              style={peekButtonStyle}
-            >
-              {solutionOpen ? (
-                <EyeOff size={14} aria-hidden />
-              ) : (
-                <Eye size={14} aria-hidden />
-              )}
-              {solutionOpen ? 'Hide solution' : 'Peek solution'}
-            </button>
+          <div style={testListStyle}>
+            {tests.map((test, i) => (
+              <TestRow
+                key={`${i}-${test.name}`}
+                index={i}
+                test={test}
+                result={results?.[i]}
+                expanded={Boolean(expanded[i])}
+                onToggle={() => toggleOne(i)}
+                submitted={submission !== 'idle' && submission !== 'submitting'}
+              />
+            ))}
           </div>
-          {solutionOpen && (
-            <div
-              id={solutionPanelId}
-              data-testid="codewidget-solution-panel"
-              data-codewidget-solution
-              style={solutionPanelStyle}
-            >
-              <div style={solutionLabelStyle}>Reference solution</div>
-              <ReadOnlySolutionEditor source={data.solution} />
+
+          {showWarning && (
+            <div data-codewidget-warning>
+              <Callout tone="warning">
+                {passedCount} of {total} test{total === 1 ? '' : 's'} passed — keep going.
+              </Callout>
             </div>
           )}
-        </>
+
+          {data.solution && (
+            <>
+              <div style={peekRowStyle}>
+                <button
+                  type="button"
+                  data-testid="codewidget-peek-solution"
+                  data-codewidget-peek
+                  aria-expanded={solutionOpen}
+                  aria-controls={solutionPanelId}
+                  onClick={() => setSolutionOpen((v) => !v)}
+                  style={peekButtonStyle}
+                >
+                  {solutionOpen ? (
+                    <EyeOff size={14} aria-hidden />
+                  ) : (
+                    <Eye size={14} aria-hidden />
+                  )}
+                  {solutionOpen ? 'Hide solution' : 'Peek solution'}
+                </button>
+              </div>
+              {solutionOpen && (
+                <div
+                  id={solutionPanelId}
+                  data-testid="codewidget-solution-panel"
+                  data-codewidget-solution
+                  style={solutionPanelStyle}
+                >
+                  <div style={solutionLabelStyle}>Reference solution</div>
+                  <ReadOnlySolutionEditor source={data.solution} />
+                </div>
+              )}
+            </>
+          )}
+        </div>
       )}
     </div>
   );
