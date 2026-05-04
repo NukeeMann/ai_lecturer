@@ -20,10 +20,11 @@ This skill is the back half of the course-generation pipeline. The front half is
 2. Read **course context**: `/courses/<slug>/research.md`, `/courses/<slug>/sources.md` (if present), and `/courses/<slug>/course.json`.
 3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`).
 4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Prefer stable URLs (DOI, arxiv, official docs, Wikipedia for foundational concepts, official YouTube channels). See Step 4 for the full rules.
-5. Compose a lesson with **4–8 sections** mixing widget types (rules below).
-6. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
-7. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never commit invalid JSON.
-8. Stop. The skill ends after the lesson file is written and validates.
+5. **Visual illustrations pass** — pick the inline images and Image-widget hero figures that will accompany the lesson. Lessons should be visually rich, not walls of text. See Step 5 for the rules.
+6. Compose a lesson with **4–8 sections** mixing widget types (rules below).
+7. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
+8. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never commit invalid JSON.
+9. Stop. The skill ends after the lesson file is written and validates.
 
 ---
 
@@ -150,7 +151,80 @@ If you discover useful sources beyond what `init_course` recorded in `/courses/<
 
 ---
 
-## Step 5: Compose the Lesson
+## Step 5: Visual Illustrations
+
+Lessons should be visually rich, not walls of text. A learner who scrolls past three screen-heights of unbroken prose has already disengaged. Use **inline markdown images** inside `theory` sections for supporting visuals, and the dedicated **`image` widget** (US-050) as a standalone section for hero illustrations, diagrams, or figures that warrant their own caption + attribution treatment.
+
+Plan visuals during this step — *before* you write the section JSON — so you can weave the image references naturally into the markdown rather than bolting them on at the end.
+
+### Inline markdown images vs. the Image widget
+
+- **Inline markdown image** (`![alt](url)` inside a `theory.markdown` block) — for *supporting* visuals that flow with the prose: a small reference figure, a tiny diagram, an example output sample, a screenshot. Every theory section whose `markdown` is **≥ 300 characters** SHOULD include **at least one** inline image where it makes pedagogical sense (a sketch of the concept, a side-by-side comparison, a sample output). Don't force an image into a 50-word theory paragraph just to satisfy the rule — judgement first; if no image genuinely helps, skip it.
+- **Image widget section** (`type: "image"`, US-050) — for *hero illustrations*, headline diagrams, multi-panel figures, annotated reference plots, or anything that warrants its own caption + attribution treatment. Use one when the figure IS the point of the section, not a sidebar to it. Image widget sections render as a `<figure>` with optional `<figcaption>` and an attribution line.
+
+A typical lesson uses **1–3 inline images** across its theory sections plus **0–2 Image widget sections** for headline figures.
+
+### Where to find images
+
+PREFER stable, redistributable sources:
+
+- **Wikimedia Commons** (`commons.wikimedia.org` / `upload.wikimedia.org/wikipedia/commons/...`) — the default. Large, well-licensed (CC BY / CC BY-SA / public domain), stable URLs. Always link to the file's Commons description page in `attribution.url`.
+- **Public-domain repositories** — NASA image gallery, USGS, NOAA, Library of Congress, NIH/NLM, government science agencies. Public domain by default.
+- **Official documentation diagrams** — `scikit-image`, `OpenCV`, `matplotlib`, `numpy`, `scipy`, `pytorch`, `scikit-learn` docs and gallery pages. Every PNG/SVG the docs serve is fair game for educational reuse; credit the project.
+- **arxiv figure references** — figures embedded in arxiv papers (`arxiv.org/abs/...` HTML view → figure URLs, or screenshots of paper figures with citation).
+
+AVOID hotlinking from rot-prone or unlicensed hosts:
+
+- `medium.com`, `towardsdatascience.com`, `dev.to`, personal substack/wordpress/blogspot blogs — go 404 frequently and licensing is unclear.
+- Imgur, Discord CDN, Twitter/X media URLs, random Google-image-search results — not durable, not authoritative.
+- Any URL that looks like a tracking redirect or shortlink.
+
+If you can't find a stable image for a concept, **omit it**; do not fall back to a blog host.
+
+### Alt text — REQUIRED for every image
+
+EVERY image — inline OR widget — MUST have **meaningful alt text** describing what is shown. A good alt text answers *"what would a screen-reader user need to know to understand this figure?"*. Be specific about content, not just topic.
+
+- ✅ Good: `![Side-by-side comparison: original cameraman image (left) vs. the same image after Gaussian blur with σ=2 (right) — fine texture lost, edges softened](...)`.
+- ✅ Good: `![Step edge in a 1-D signal: median filter output (orange) preserves the discontinuity exactly; mean filter output (blue) smears across two samples](...)`.
+- ❌ BAD: `![image](...)`, `![figure](...)`, `![](...)` — empty or placeholder.
+- ❌ BAD: `![noise](...)`, `![diagram](...)` — uninformative single-word labels.
+
+The Image widget schema enforces a non-empty `alt`; inline markdown has no schema enforcement, so discipline is on you.
+
+### Attribution
+
+For Image widget sections, populate `data.attribution` whenever the source license requires it:
+
+- **Wikimedia Commons** — required. Use the format `"Wikimedia Commons, <author>, <license>"` (e.g. `"Wikimedia Commons, User:Cmglee, CC BY-SA 4.0"`). Set `attribution.url` to the file's Commons description page (`https://commons.wikimedia.org/wiki/File:<filename>`).
+- **Official docs** (scikit-image, matplotlib, OpenCV, etc.) — recommended. Use the format `"<Project> documentation"` and link `attribution.url` to the page that hosts the figure.
+- **NASA / USGS / NOAA / public domain** — credit by convention even when not legally required (`"NASA / <mission>"`, `"USGS"`, `"Public domain"`).
+- **arxiv** — credit the paper (`"<First Author> et al., arxiv:<id>"`) and link `attribution.url` to the paper's abstract page.
+
+For inline markdown images, credit briefly in the surrounding prose if license requires it (`*(Image: Wikimedia Commons, User:Foo, CC BY-SA 4.0)*`) — markdown has no dedicated attribution slot.
+
+### Image widget shape (recap of US-050)
+
+```ts
+{
+  type: "image",
+  id: "<unique>",
+  title: "<short caption-style title>",
+  data: {
+    src: "<URL — http(s) external; cached locally on lesson save>",
+    alt: "<meaningful description of the figure>",        // REQUIRED, non-empty
+    caption?: "<one-sentence figure caption>",
+    attribution?: { text: "<credit string>", url?: "<source page>" },
+    maxWidth?: "<px or %, default '100%'>"
+  }
+}
+```
+
+The Image widget caches external URLs into `courses/<slug>/assets/images/` on save (US-050), so a `commons.wikimedia.org` URL becomes a local relative path on first lesson save — lessons stay viewable offline and source-of-truth attribution is preserved.
+
+---
+
+## Step 6: Compose the Lesson
 
 ### Top-level shape
 
@@ -240,7 +314,7 @@ The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
 
 ---
 
-## Step 6: Write and Validate
+## Step 7: Write and Validate
 
 Write `/courses/<courseSlug>/lessons/<lessonSlug>.json` directly via the Write tool (or `node:fs/promises#writeFile`). The webapp uses an atomic-write helper (`src/lib/server/atomic.ts → atomicWriteJson`) — for a one-shot author flow, a plain write is fine.
 
@@ -275,7 +349,7 @@ Only commit when the validator prints `OK`.
 
 ---
 
-## Step 7: Stop
+## Step 8: Stop
 
 You're done. The orchestrator flips `passes: true` for the story when the validation step succeeds. Do not edit `prd.json` yourself. Do not author further lessons in the same iteration.
 
@@ -316,7 +390,7 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
       "title": "Why a median?",
       "type": "theory",
       "data": {
-        "markdown": "Salt-and-pepper noise plants a few extreme outliers in an otherwise clean signal. A **mean** filter spreads those outliers across their neighbours; a **median** filter throws them away.\n\nFor a window $W$ of size $k \\times k$ centred at pixel $(i, j)$, the median filter outputs:\n\n$$ \\hat I(i, j) = \\operatorname{median}\\bigl(\\{\\, I(p, q) : (p, q) \\in W \\,\\}\\bigr) $$\n\nBecause the median is robust to a small fraction of outliers (it ignores up to $\\lfloor (k^2 - 1)/2 \\rfloor$ of them), salt-and-pepper noise vanishes — and crucially, **edges are preserved**: at a step edge, the median snaps to one of the two flat regions instead of averaging across them."
+        "markdown": "Salt-and-pepper noise plants a few extreme outliers in an otherwise clean signal. A **mean** filter spreads those outliers across their neighbours; a **median** filter throws them away.\n\n![Grayscale photograph of a cameraman corrupted with roughly 10% salt-and-pepper noise — scattered pure-white and pure-black pixels speckle the image](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Noise_salt_and_pepper.png/480px-Noise_salt_and_pepper.png)\n\nFor a window $W$ of size $k \\times k$ centred at pixel $(i, j)$, the median filter outputs:\n\n$$ \\hat I(i, j) = \\operatorname{median}\\bigl(\\{\\, I(p, q) : (p, q) \\in W \\,\\}\\bigr) $$\n\nBecause the median is robust to a small fraction of outliers (it ignores up to $\\lfloor (k^2 - 1)/2 \\rfloor$ of them), salt-and-pepper noise vanishes — and crucially, **edges are preserved**: at a step edge, the median snaps to one of the two flat regions instead of averaging across them."
       },
       "sources": [
         {
@@ -325,6 +399,20 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
           "kind": "article"
         }
       ]
+    },
+    {
+      "id": "edge-preservation-figure",
+      "title": "Median vs. mean on a step edge",
+      "type": "image",
+      "data": {
+        "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Median_filter_step_edge.png/720px-Median_filter_step_edge.png",
+        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and step edge crisp) and a 3-sample mean filter (blue, spikes attenuated but step edge smeared across two samples).",
+        "caption": "A 3-sample sliding median erases the impulse spikes while leaving the step edge sharp; the mean filter attenuates the spikes but smears the edge.",
+        "attribution": {
+          "text": "Wikimedia Commons, User:Cmglee, CC BY-SA 4.0",
+          "url": "https://commons.wikimedia.org/wiki/File:Median_filter_step_edge.png"
+        }
+      }
     },
     {
       "id": "check-mean-vs-median",
@@ -411,8 +499,9 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
 
 Why this lesson works as a worked example:
 
-- **4 sections** (the floor of the 4–8 range) — appropriate for a 12-minute beginner lesson with a 0.4 theory/practice mix.
-- **1 theory** opens with intuition + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference; the lesson-level list still covers the rest.
+- **5 sections** — comfortably inside the 4–8 range, appropriate for a 12-minute beginner lesson with a 0.4 theory/practice mix.
+- **1 theory** opens with intuition + an inline Wikimedia Commons image of salt-and-pepper noise (>300 chars of markdown justifies the visual; the alt text describes exactly what the figure shows) + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference; the lesson-level list still covers the rest.
+- **1 image widget** (hero figure) reinforces the edge-preservation claim with a stand-alone diagram comparing median vs. mean filter outputs on a step edge. The `alt` field is detailed and specific; `caption` summarises the takeaway in one sentence; `attribution.text` follows the `Wikimedia Commons, <author>, <license>` format and `attribution.url` points at the Commons file page.
 - **1 quiz** uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors — all three are mistakes a learner who skimmed the theory could realistically make. The explanation justifies the right answer specifically (median ignores outliers; mean/Gaussian average them).
 - **1 code exercise** has 4 tests with descriptive names and small bodies. One test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
 - **1 sandbox** closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and see the median's failure mode.
@@ -446,6 +535,10 @@ Why this lesson works as a worked example:
 - [ ] No source URL points at `medium.com`, `towardsdatascience.com`, `dev.to`, or other rot-prone blog hosts.
 - [ ] At least one theory section that draws on a specific reference also carries a `section.sources` entry (omit on sections without a specific reference).
 - [ ] `section.sources` lives at the section root (next to `id` / `title` / `type` / `data`), **not** inside `data`.
+- [ ] **Every theory section with `markdown` ≥ 300 chars carries at least one inline `![alt](url)` image** where it pedagogically helps (US-051).
+- [ ] **Every image — inline OR widget — has meaningful, non-placeholder alt text** (never `![](...)`, `![image](...)`, `![figure](...)`).
+- [ ] All image URLs come from stable hosts (Wikimedia Commons, public-domain repositories, official docs, arxiv) — never `medium.com`, `towardsdatascience.com`, `dev.to`, personal blogs, Imgur, or social-media CDNs.
+- [ ] Every Image widget section with a Wikimedia / licensed source carries `data.attribution` in the `Wikimedia Commons, <author>, <license>` format (or the equivalent for the source) and links `attribution.url` to the source description page.
 - [ ] `LessonSchema.safeParse` returns `success: true`.
 - [ ] `npm run typecheck` passes (it should — this is a JSON-only change).
 
