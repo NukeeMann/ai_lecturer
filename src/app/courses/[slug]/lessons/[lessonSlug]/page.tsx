@@ -51,6 +51,11 @@ import {
   useKeyboardShortcuts,
   type KeyboardShortcut,
 } from '@/lib/hooks/useKeyboardShortcuts';
+import {
+  areAllSectionsDone,
+  pathForAdvanceTarget,
+  resolveAdvanceTarget,
+} from '@/lib/lessons/advance';
 import { usePyodide } from '@/lib/pyodide/client';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section, Source } from '@/lib/schemas/lesson';
@@ -101,8 +106,24 @@ export default function LessonShellPage({
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
   const [sessionToast, setSessionToast] = useState<string | null>(null);
+
+  // Sections completed in-session (Quiz correct, Code submit pass, etc.).
+  // Lifted from LessonStream so the page can compute lesson-level completion
+  // for the US-067 auto-advance trigger.
+  const [autoDone, setAutoDone] = useState<Record<string, boolean>>({});
+  const markSectionAutoDone = useCallback((sectionId: string) => {
+    setAutoDone((prev) => (prev[sectionId] ? prev : { ...prev, [sectionId]: true }));
+  }, []);
+
+  // Auto-advance toast (US-067).
+  const [autoAdvancePending, setAutoAdvancePending] = useState(false);
+  const autoAdvanceTimerRef = useRef<number | null>(null);
+  const cancelledLessonsRef = useRef<Set<string>>(new Set());
+  const lastAllDoneRef = useRef(false);
+  // Tracks whether we've captured the first lesson+progress baseline so that
+  // re-entering an already-completed lesson does NOT auto-advance immediately.
+  const baselineSetRef = useRef(false);
 
   // TOC collapse, persisted to localStorage['toc-collapsed'].
   const [tocCollapsed, setTocCollapsed] = useState(false);
@@ -306,6 +327,30 @@ export default function LessonShellPage({
     return () => window.clearTimeout(handle);
   }, [sessionToast]);
 
+  // Reset transient auto-advance state on lesson change. Cancellations are
+  // tracked per-lesson in cancelledLessonsRef and persist across remounts
+  // within the same SPA session, so they intentionally do NOT reset here.
+  useEffect(() => {
+    setAutoDone({});
+    setAutoAdvancePending(false);
+    lastAllDoneRef.current = false;
+    baselineSetRef.current = false;
+    if (autoAdvanceTimerRef.current !== null) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+  }, [lessonSlug]);
+
+  // Cleanup auto-advance timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (autoAdvanceTimerRef.current !== null) {
+        window.clearTimeout(autoAdvanceTimerRef.current);
+        autoAdvanceTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const moduleTitle = useMemo(() => {
     if (!course || !lesson) return '';
     return course.modules.find((m) => m.id === lesson.moduleId)?.title ?? '';
@@ -335,9 +380,7 @@ export default function LessonShellPage({
     overflow: 'hidden',
     background: 'var(--bg)',
     color: 'var(--text)',
-    opacity: advancing ? 0 : 1,
-    transition:
-      'grid-template-columns 180ms ease, opacity 600ms ease',
+    transition: 'grid-template-columns 180ms ease',
   };
 
   const flatLessons = useMemo(() => {
@@ -365,6 +408,67 @@ export default function LessonShellPage({
     },
     [router, slug],
   );
+
+  const advanceTarget = useMemo(() => {
+    if (!course) return null;
+    return resolveAdvanceTarget(course, lessonSlug);
+  }, [course, lessonSlug]);
+
+  const scheduleAutoAdvance = useCallback(
+    (opts: { force?: boolean } = {}) => {
+      if (!advanceTarget) return;
+      if (!opts.force && cancelledLessonsRef.current.has(lessonSlug)) return;
+      if (autoAdvanceTimerRef.current !== null) return;
+      setAutoAdvancePending(true);
+      autoAdvanceTimerRef.current = window.setTimeout(() => {
+        autoAdvanceTimerRef.current = null;
+        setAutoAdvancePending(false);
+        router.push(pathForAdvanceTarget(advanceTarget));
+      }, 1500);
+    },
+    [advanceTarget, lessonSlug, router],
+  );
+
+  const cancelAutoAdvance = useCallback(() => {
+    if (autoAdvanceTimerRef.current !== null) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+    setAutoAdvancePending(false);
+    cancelledLessonsRef.current.add(lessonSlug);
+  }, [lessonSlug]);
+
+  // Auto-advance trigger: when every section in the current lesson becomes
+  // done (across all completion sources), schedule a delayed navigation.
+  // We only fire on the false→true transition so re-entering an already
+  // completed lesson does not auto-advance immediately.
+  const allSectionsDone = useMemo(() => {
+    if (!lesson) return false;
+    return areAllSectionsDone(lesson, {
+      persistedSectionState:
+        progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState,
+      manuallyCompleted:
+        progress?.courses?.[slug]?.lessons?.[lessonSlug]
+          ?.manuallyCompletedSections,
+      liveAutoDone: autoDone,
+    });
+  }, [lesson, progress, slug, lessonSlug, autoDone]);
+
+  useEffect(() => {
+    if (!lesson || !progress) return;
+    if (!baselineSetRef.current) {
+      // Capture the on-load completion state as the baseline. If the learner
+      // is re-entering an already-finished lesson, this prevents an immediate
+      // auto-advance on first paint.
+      lastAllDoneRef.current = allSectionsDone;
+      baselineSetRef.current = true;
+      return;
+    }
+    if (allSectionsDone && !lastAllDoneRef.current) {
+      scheduleAutoAdvance();
+    }
+    lastAllDoneRef.current = allSectionsDone;
+  }, [lesson, progress, allSectionsDone, scheduleAutoAdvance]);
 
   const handleMarkComplete = useCallback(async () => {
     setProgress((prev) => {
@@ -394,13 +498,10 @@ export default function LessonShellPage({
       // would require an inline toast we don't have yet.
     }
 
-    if (nextLesson) {
-      setAdvancing(true);
-      window.setTimeout(() => {
-        router.push(`/courses/${slug}/lessons/${nextLesson.slug}`);
-      }, 600);
-    }
-  }, [slug, lessonSlug, nextLesson, router]);
+    // Mark Complete is an explicit user action, so it bypasses any prior
+    // auto-advance cancellation for this lesson.
+    scheduleAutoAdvance({ force: true });
+  }, [slug, lessonSlug, scheduleAutoAdvance]);
 
   // Computes a position offset for each section relative to the main content
   // scroll container's content origin. Plus identifies the "current" section
@@ -795,6 +896,8 @@ export default function LessonShellPage({
             onOpenPanel={handleOpenPanel}
             onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
             onToggleSectionManualComplete={handleToggleSectionManualComplete}
+            autoDone={autoDone}
+            onSectionAutoComplete={markSectionAutoDone}
           />
         ) : null}
       </main>
@@ -830,6 +933,12 @@ export default function LessonShellPage({
       />
 
       {sessionToast && <SessionToast message={sessionToast} />}
+      {autoAdvancePending && (
+        <AutoAdvanceToast
+          isLastLesson={advanceTarget?.kind === 'my-courses'}
+          onCancel={cancelAutoAdvance}
+        />
+      )}
     </div>
   );
 }
@@ -855,6 +964,62 @@ function SessionToast({ message }: { message: string }) {
       }}
     >
       {message}
+    </div>
+  );
+}
+
+function AutoAdvanceToast({
+  isLastLesson,
+  onCancel,
+}: {
+  isLastLesson: boolean;
+  onCancel: () => void;
+}) {
+  const message = isLastLesson
+    ? 'Going to My Courses…'
+    : 'Going to next lesson…';
+  return (
+    <div
+      data-testid="auto-advance-toast"
+      data-last-lesson={isLastLesson ? 'true' : 'false'}
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        bottom: BOTTOM_H + 16,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 60,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        color: 'var(--text)',
+        fontSize: 'var(--fs-sm)',
+        padding: '8px 12px 8px 14px',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.18))',
+      }}
+    >
+      <span>{message}</span>
+      <button
+        type="button"
+        data-testid="auto-advance-cancel"
+        onClick={onCancel}
+        style={{
+          background: 'transparent',
+          border: '1px solid var(--border-strong)',
+          color: 'var(--text)',
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 600,
+          padding: '4px 10px',
+          borderRadius: 'var(--radius-sm)',
+          cursor: 'pointer',
+        }}
+      >
+        Cancel
+      </button>
     </div>
   );
 }
@@ -2026,6 +2191,8 @@ interface LessonStreamProps {
   onOpenPanel: (sectionId: string) => void;
   onOpenLessonSources: () => void;
   onToggleSectionManualComplete: (sectionId: string, nextValue: boolean) => void;
+  autoDone: Record<string, boolean>;
+  onSectionAutoComplete: (sectionId: string) => void;
 }
 
 function LessonStream({
@@ -2041,6 +2208,8 @@ function LessonStream({
   onOpenPanel,
   onOpenLessonSources,
   onToggleSectionManualComplete,
+  autoDone,
+  onSectionAutoComplete,
 }: LessonStreamProps) {
   const sectionState =
     progress?.courses?.[slug]?.lessons?.[lessonSlug]?.sectionState ?? {};
@@ -2048,14 +2217,9 @@ function LessonStream({
     progress?.courses?.[slug]?.lessons?.[lessonSlug]
       ?.manuallyCompletedSections ?? {};
 
-  // Sections completed in-session (quiz answered correctly, code submitted
-  // passing). Persisted completions come from sectionState[id].done.
-  const [autoDone, setAutoDone] = useState<Record<string, boolean>>({});
-  const markSectionDone = useCallback((sectionId: string) => {
-    setAutoDone((prev) =>
-      prev[sectionId] ? prev : { ...prev, [sectionId]: true },
-    );
-  }, []);
+  // `autoDone` and `onSectionAutoComplete` are owned by the parent so the
+  // page can compute lesson-level completion for the US-067 auto-advance.
+  const markSectionDone = onSectionAutoComplete;
 
   const { moduleN, lessonM } = useMemo(() => {
     if (!course) return { moduleN: 0, lessonM: 0 };
