@@ -1,0 +1,31 @@
+[2026-05-04T20:15:05+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:15:13+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:16:05+0200] Let me look at how the section-progress-pill works and what fragments are.
+[2026-05-04T20:20:13+0200] Now I have a clear plan. Let me update the helper and write the tests.
+[2026-05-04T20:20:34+0200] Now let me run the test to confirm it fails (the function doesn't exist yet).
+[2026-05-04T20:20:40+0200] Failing tests confirmed. Now implement the helper and the page wiring.
+[2026-05-04T20:20:59+0200] Helper passes. Now wire it into the lesson page.
+[2026-05-04T20:21:28+0200] Now add refs and update scheduleAutoAdvance.
+[2026-05-04T20:21:44+0200] Now run typecheck and tests.
+[2026-05-04T20:22:30+0200] Typecheck clean. Now lint and full tests.
+[2026-05-04T20:24:14+0200] All 345 tests pass. Now browser verification with playwright.
+[2026-05-04T20:28:24+0200] All assertions passed. Lesson is now `status: 'finished'` with section flags persisted, and re-entry shows pill 4/4 + TOC finished.
+[2026-05-04T20:28:30+0200] Now update the PRD and append progress.
+[2026-05-04T20:29:25+0200] Now run a final sanity check: typecheck + tests both green.
+[2026-05-04T20:30:00+0200] Typecheck clean, 345 tests passing. Now commit.
+[2026-05-04T20:30:37+0200] US-081 done. Commit `5bea993` flips `passes: true` for US-081 in HEAD.
+
+**Summary**
+- Added `buildAutoAdvancePatch` pure helper in `src/lib/lessons/advance.ts` plus 5 vitest cases (which fail pre-fix with "is not a function"); 23/23 pass post-fix.
+- Wired the helper into `scheduleAutoAdvance`'s 1500ms timer in the lesson page so auto-advance now PATCHes `status: 'finished'` + persists any live-auto-done section as `sectionState[id].done=true` before `router.push`. Latest lesson/progress/autoDone read via refs to keep `scheduleAutoAdvance`'s deps minimal. Manual `handleNextLesson`/`handlePrevLesson` are unchanged and don't trigger persistence.
+- Removed a duplicate `lessonRef` declaration that previously sat next to `handleCacheVideoTranscript` (now shared).
+- Typecheck clean; full test suite 345/345 passing; lint count unchanged from main.
+- Playwright-verified end-to-end on `quiz-test/single-select`: theory pre-seeded as manual-complete, three quizzes answered, auto-advance toast appears, navigation to `multi-select`, then re-entry shows pill `4/4` and TOC `data-status="finished"`.
+[2026-05-04T20:30:37+0200] [result success turns=95 cost=$7.349082250000004] US-081 done. Commit `5bea993` flips `passes: true` for US-081 in HEAD.
+
+**Summary**
+- Added `buildAutoAdvancePatch` pure helper in `src/lib/lessons/advance.ts` plus 5 vitest cases (which fail pre-fix with "is not a function"); 23/23 pass post-fix.
+- Wired the helper into `scheduleAutoAdvance`'s 1500ms timer in the lesson page so auto-advance now PATCHes `status: 'finished'` + persists any live-auto-done section as `sectionState[id].done=true` before `router.push`. Latest lesson/progress/autoDone read via refs to keep `scheduleAutoAdvance`'s deps minimal. Manual `handleNextLesson`/`handlePrevLesson` are unchanged and don't trigger persistence.
+- Removed a duplicate `lessonRef` declaration that previously sat next to `handleCacheVideoTranscript` (now shared).
+- Typecheck clean; full test suite 345/345 passing; lint count unchanged from main.
+- Playwright-verified end-to-end on `quiz-test/single-select`: theory pre-seeded as manual-complete, three quizzes answered, auto-advance toast appears, navigation to `multi-select`, then re-entry shows pill `4/4` and TOC `data-status="finished"`.

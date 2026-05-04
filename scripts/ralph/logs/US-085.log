@@ -1,0 +1,26 @@
+[2026-05-04T20:15:05+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:15:13+0200] [rate_limit five_hour status=allowed]
+[2026-05-04T20:19:26+0200] Now let me verify each example validates against its Zod schema by writing and running a small validation script.
+[2026-05-04T20:20:50+0200] All 12 (non-Custom) snippets validate. Custom uses `z.record(z.unknown())` so any object is valid by definition. Let me clean up the temp validator and update the SKILL.md files.
+[2026-05-04T20:21:56+0200] Let me re-check the generate_lesson edit — I added a numbered step that shifts later step numbers. The cross-refs to "Step 4" / "Step 5" in the list still refer to the section headings (which I didn't renumber), so they're still correct. But to keep things cleaner, let me restructure as an unnumbered "before you start" pointer.
+[2026-05-04T20:22:27+0200] Let me also revert the init_course numbered list to its original numbering and use a blockquote callout for consistency.
+[2026-05-04T20:23:11+0200] Typecheck passes (clean output). Now let me append the progress log, mark US-085 as passed, and commit.
+[2026-05-04T20:23:38+0200] Now mark US-085 passes=true in the prd.json:
+[2026-05-04T20:24:18+0200] US-085 done.
+
+**Summary:**
+- Added `docs/widgets.md` documenting all 13 widgets (Theory, Quiz, Code, CodeCloze, DataTable, Demo, DragMatch, Histogram, ParametricExplorer, PlotImage, Sandbox, Video, Custom) — each with one-paragraph purpose, a key-fields table, a minimal valid JSON snippet, and links to `src/widgets/<Name>/schema.ts` + `src/widgets/<Name>/sample.ts`.
+- The doc opens with a "How to use this reference" intro stating it's consumed by `init_course` / `generate_lesson` and that `schema.ts` is the source of truth on disagreement.
+- Added a "Before you start: read [`docs/widgets.md`](...)" pointer at the top of "## The Job" in both `scripts/ralph/skills/init_course/SKILL.md` and `scripts/ralph/skills/generate_lesson/SKILL.md` — used a `>`-blockquote callout above the numbered list so existing list numbering and "See Step N" cross-refs are preserved.
+- **Verification:** wrote a one-shot `scripts/validate-widgets-doc.ts` that imports each `<Name>DataSchema` and runs `safeParse` on the literal JSON snippet from the doc — all 12 schema-backed snippets returned `success: true`. Custom is trivially valid by `z.record(z.unknown())`. Script deleted post-run.
+- `npm run typecheck` clean.
+- US-085 flipped to `passes: true` and committed as `8f9276e`.
+[2026-05-04T20:24:18+0200] [result success turns=73 cost=$5.170211500000001] US-085 done.
+
+**Summary:**
+- Added `docs/widgets.md` documenting all 13 widgets (Theory, Quiz, Code, CodeCloze, DataTable, Demo, DragMatch, Histogram, ParametricExplorer, PlotImage, Sandbox, Video, Custom) — each with one-paragraph purpose, a key-fields table, a minimal valid JSON snippet, and links to `src/widgets/<Name>/schema.ts` + `src/widgets/<Name>/sample.ts`.
+- The doc opens with a "How to use this reference" intro stating it's consumed by `init_course` / `generate_lesson` and that `schema.ts` is the source of truth on disagreement.
+- Added a "Before you start: read [`docs/widgets.md`](...)" pointer at the top of "## The Job" in both `scripts/ralph/skills/init_course/SKILL.md` and `scripts/ralph/skills/generate_lesson/SKILL.md` — used a `>`-blockquote callout above the numbered list so existing list numbering and "See Step N" cross-refs are preserved.
+- **Verification:** wrote a one-shot `scripts/validate-widgets-doc.ts` that imports each `<Name>DataSchema` and runs `safeParse` on the literal JSON snippet from the doc — all 12 schema-backed snippets returned `success: true`. Custom is trivially valid by `z.record(z.unknown())`. Script deleted post-run.
+- `npm run typecheck` clean.
+- US-085 flipped to `passes: true` and committed as `8f9276e`.
