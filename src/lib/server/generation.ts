@@ -23,6 +23,7 @@ import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 import { assertSafeSlug, courseDir, courseFile, genLogsDir, lessonFile } from './paths';
+import { listCourseSourceFilesSync } from './sources';
 
 export interface FailedLesson {
   slug: string;
@@ -199,6 +200,18 @@ setTimeout(() => {
   // Mirrors the pattern in scripts/ralph/ralph.sh:612 / :1053. The slug is
   // safe to splice (assertSafeSlug above limits it to [A-Za-z0-9-_]) and is
   // passed as an argv element, never via a shell.
+  // US-104: when the user uploaded source materials in Stage 0 (US-103), the
+  // files now live at /courses/<slug>/sources/. Enumerate them and inject
+  // their absolute paths into the prompt so claude knows to ground the
+  // curriculum in user-supplied content. When the directory is empty/absent
+  // (the "Start from scratch" path) the prompt is unchanged.
+  const sourcePaths = listCourseSourceFilesSync(slug);
+  const sourcesSection =
+    sourcePaths.length > 0
+      ? ` Source materials uploaded by the user (the curriculum MUST be grounded in these files — invoke the Read tool on EACH path BEFORE drafting course.json so every module/lesson/quiz item traces back to this content rather than generic textbook material):\n${sourcePaths
+          .map((p) => `- ${p}`)
+          .join('\n')}\n`
+      : '';
   const prompt =
     `Run the init_course skill defined in scripts/ralph/skills/init_course/SKILL.md. ` +
     `Argument: slug = "${slug}". ` +
@@ -206,7 +219,8 @@ setTimeout(() => {
     `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md), ` +
     `do the architect pass (write /courses/${slug}/course.json validated against CourseSchema). ` +
     `Do not generate lesson content here — the webapp's generation backend will invoke generate_lesson once per lesson after this step. ` +
-    `Do NOT touch scripts/ralph/.`;
+    `Do NOT touch scripts/ralph/.` +
+    sourcesSection;
   return {
     command: 'claude',
     args: [
@@ -276,13 +290,25 @@ console.log('[mock generate_lesson] done ${lessonSlug}');
   // body (after assertSafeSlug above limits each to [A-Za-z0-9-_], which
   // makes them safe to splice) and `claude -p` runs in --dangerously-skip-
   // permissions mode so the agent can write the lesson file unattended.
+  // US-104: same source-materials injection as defaultInitCourseCommand —
+  // per-lesson generation must also be able to pull facts/quotes/figures
+  // from the originals. When no sources were uploaded, the brief is
+  // unchanged.
+  const sourcePaths = listCourseSourceFilesSync(slug);
+  const sourcesSection =
+    sourcePaths.length > 0
+      ? ` Source materials uploaded by the user (pull facts, quotes, examples, and figures from these files — invoke the Read tool on the relevant path(s) BEFORE authoring this lesson so its content is grounded in the originals rather than invented):\n${sourcePaths
+          .map((p) => `- ${p}`)
+          .join('\n')}\n`
+      : '';
   const baseBrief =
     `Run the generate_lesson skill defined in scripts/ralph/skills/generate_lesson/SKILL.md. ` +
     `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
     `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
     `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
     `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
-    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson.`;
+    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson.` +
+    sourcesSection;
   // Mirrors the retry-context pattern from scripts/ralph/ralph.sh:992-996 —
   // when a previous attempt failed, prepend the failure reason so the agent
   // can fix the specific issue rather than repeat the same mistake.

@@ -11,7 +11,7 @@
 // (if any) is moved into the new course directory via `moveDraftSourcesToCourse`.
 
 import path from 'node:path';
-import { promises as fs } from 'node:fs';
+import { promises as fs, readdirSync } from 'node:fs';
 import { coursesRoot, courseDir, assertSafeSlug, InvalidSlugError } from './paths';
 
 /** Per-file size cap for uploaded source materials. 50 MiB — large enough
@@ -191,6 +191,28 @@ export interface StoredSourceFile {
   sanitizedName: string;
   size: number;
   type: string;
+}
+
+/** Synchronously enumerate the absolute paths of every regular file under
+ *  /courses/<slug>/sources/. Returns [] when the directory is missing or
+ *  empty. Sorted lexicographically for stable prompt output. Used at
+ *  generation-time by defaultInitCourseCommand / defaultLessonCommand
+ *  (US-104) — sync because the factory functions are sync and the listing
+ *  is small and local. */
+export function listCourseSourceFilesSync(slug: string): string[] {
+  assertSafeSlug(slug);
+  const dir = courseSourcesDir(slug);
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  return entries
+    .filter((e) => e.isFile())
+    .map((e) => path.resolve(dir, e.name))
+    .sort();
 }
 
 /** List existing source filenames in a directory. Returns [] if the dir

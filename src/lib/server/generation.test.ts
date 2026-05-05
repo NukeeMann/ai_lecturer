@@ -937,6 +937,75 @@ describe('startGeneration spawn wrapper', () => {
     expect(prompt).toContain('scripts/ralph/skills/generate_lesson/SKILL.md');
   });
 
+  // ── US-104: source-materials injection ─────────────────────────────────
+  it('default init prompt is unchanged when /courses/<slug>/sources/ is absent (US-104)', () => {
+    // Default test setup has the slug dir created but NO sources subdir.
+    const spec = defaultInitCourseCommand('demo');
+    const prompt = spec.args[1];
+    expect(prompt).not.toMatch(/Source materials/i);
+  });
+
+  it('default init prompt is unchanged when /courses/<slug>/sources/ is empty (US-104)', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo', 'sources'), { recursive: true });
+    const spec = defaultInitCourseCommand('demo');
+    const prompt = spec.args[1];
+    expect(prompt).not.toMatch(/Source materials/i);
+  });
+
+  it('default init prompt injects absolute paths for every uploaded source file (US-104)', async () => {
+    const sourcesDir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(sourcesDir, { recursive: true });
+    await fs.writeFile(path.join(sourcesDir, 'lecture-01.pdf'), 'x');
+    await fs.writeFile(path.join(sourcesDir, 'notes.txt'), 'x');
+
+    const spec = defaultInitCourseCommand('demo');
+    const prompt = spec.args[1];
+    expect(prompt).toContain('Source materials');
+    // Instructions must direct claude to use the Read tool BEFORE drafting.
+    expect(prompt).toContain('Read tool');
+    expect(prompt).toMatch(/BEFORE/i);
+    // Both files must appear with absolute paths.
+    const lec = path.join(sourcesDir, 'lecture-01.pdf');
+    const notes = path.join(sourcesDir, 'notes.txt');
+    expect(prompt).toContain(lec);
+    expect(prompt).toContain(notes);
+    expect(path.isAbsolute(lec)).toBe(true);
+    expect(path.isAbsolute(notes)).toBe(true);
+  });
+
+  it('default lesson prompt is unchanged when /courses/<slug>/sources/ is absent (US-104)', () => {
+    const spec = defaultLessonCommand('demo', 'intro');
+    const prompt = spec.args[1];
+    expect(prompt).not.toMatch(/Source materials/i);
+  });
+
+  it('default lesson prompt injects absolute source-file paths when sources are present (US-104)', async () => {
+    const sourcesDir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(sourcesDir, { recursive: true });
+    await fs.writeFile(path.join(sourcesDir, 'slides.pptx'), 'x');
+
+    const spec = defaultLessonCommand('demo', 'intro');
+    const prompt = spec.args[1];
+    expect(prompt).toContain('Source materials');
+    expect(prompt).toContain('Read tool');
+    expect(prompt).toContain(path.join(sourcesDir, 'slides.pptx'));
+  });
+
+  it('default lesson prompt carries source paths through retry-prefix prompts (US-104)', async () => {
+    const sourcesDir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(sourcesDir, { recursive: true });
+    await fs.writeFile(path.join(sourcesDir, 'paper.pdf'), 'x');
+
+    const spec = defaultLessonCommand('demo', 'intro', 'rate limited');
+    const prompt = spec.args[1];
+    expect(prompt).toMatch(/^PREVIOUS ATTEMPT FAILED:/);
+    expect(prompt).toContain('rate limited');
+    // Source materials section must still be present so retries don't regress
+    // to ungrounded content.
+    expect(prompt).toContain('Source materials');
+    expect(prompt).toContain(path.join(sourcesDir, 'paper.pdf'));
+  });
+
   it('retries a failed lesson and marks it done when the retry succeeds', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();

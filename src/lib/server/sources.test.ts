@@ -10,6 +10,7 @@ import {
   draftDir,
   draftSourcesDir,
   courseSourcesDir,
+  listCourseSourceFilesSync,
   makeDraftId,
   moveDraftSourcesToCourse,
   sanitizeFilename,
@@ -220,5 +221,48 @@ describe('moveDraftSourcesToCourse', () => {
 
     const moved = await moveDraftSourcesToCourse(id, 'algebra');
     expect(moved).toEqual(['good.pdf']);
+  });
+});
+
+describe('listCourseSourceFilesSync (US-104)', () => {
+  it('returns [] when /courses/<slug>/sources/ is absent', () => {
+    expect(listCourseSourceFilesSync('does-not-exist')).toEqual([]);
+  });
+
+  it('returns [] when the sources directory exists but is empty', async () => {
+    await fs.mkdir(courseSourcesDir('demo'), { recursive: true });
+    expect(listCourseSourceFilesSync('demo')).toEqual([]);
+  });
+
+  it('returns absolute, sorted paths for every regular file', async () => {
+    const dir = courseSourcesDir('demo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'zeta.pdf'), 'x');
+    await fs.writeFile(path.join(dir, 'alpha.txt'), 'x');
+    await fs.writeFile(path.join(dir, 'mid.docx'), 'x');
+
+    const out = listCourseSourceFilesSync('demo');
+    expect(out).toEqual([
+      path.join(dir, 'alpha.txt'),
+      path.join(dir, 'mid.docx'),
+      path.join(dir, 'zeta.pdf'),
+    ]);
+    for (const p of out) {
+      expect(path.isAbsolute(p)).toBe(true);
+    }
+  });
+
+  it('skips subdirectories — only regular files are listed', async () => {
+    const dir = courseSourcesDir('demo');
+    await fs.mkdir(path.join(dir, 'nested'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'real.pdf'), 'x');
+
+    const out = listCourseSourceFilesSync('demo');
+    expect(out).toEqual([path.join(dir, 'real.pdf')]);
+  });
+
+  it('rejects unsafe slugs', () => {
+    expect(() => listCourseSourceFilesSync('../etc')).toThrow(/Invalid slug/i);
+    expect(() => listCourseSourceFilesSync('a/b')).toThrow(/Invalid slug/i);
   });
 });
