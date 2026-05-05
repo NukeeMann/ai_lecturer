@@ -1,0 +1,18 @@
+[2026-05-05T10:16:22+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T10:16:44+0200] The story is already marked `passes: true` and committed. Let me verify the work is genuinely complete and quality checks pass.
+[2026-05-05T10:17:09+0200] US-095 is already complete in commit `87c24b2`:
+
+- `defaultInitCourseCommand` in `src/lib/server/generation.ts` already sends the natural-language prompt naming the `init_course` skill + SKILL.md path; slug goes through `assertSafeSlug` and argv (no shell).
+- Post-init guard verifies `courses/<slug>/course.json` exists after the init child closes; finalizes as `error` with the actionable message and does not invoke ralph.sh otherwise.
+- 3 new vitest cases (bug repro + new prompt shape + slug safety); 3 existing happy-path tests updated to stub `course.json` so the guard sees real output.
+- `prd.json` US-095 `passes: true` (committed in 87c24b2).
+
+Quality checks just rerun clean: `npm run typecheck` ok, `npx vitest run` 25 files / 472 tests passing. Nothing further to commit — the orchestrator's success signal (`passes == true` in HEAD for US-095) is already satisfied.
+[2026-05-05T10:17:09+0200] [result success turns=9 cost=$0.46026599999999995] US-095 is already complete in commit `87c24b2`:
+
+- `defaultInitCourseCommand` in `src/lib/server/generation.ts` already sends the natural-language prompt naming the `init_course` skill + SKILL.md path; slug goes through `assertSafeSlug` and argv (no shell).
+- Post-init guard verifies `courses/<slug>/course.json` exists after the init child closes; finalizes as `error` with the actionable message and does not invoke ralph.sh otherwise.
+- 3 new vitest cases (bug repro + new prompt shape + slug safety); 3 existing happy-path tests updated to stub `course.json` so the guard sees real output.
+- `prd.json` US-095 `passes: true` (committed in 87c24b2).
+
+Quality checks just rerun clean: `npm run typecheck` ok, `npx vitest run` 25 files / 472 tests passing. Nothing further to commit — the orchestrator's success signal (`passes == true` in HEAD for US-095) is already satisfied.
