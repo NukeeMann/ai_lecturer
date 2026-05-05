@@ -79,6 +79,13 @@ export class ClaudeUnavailableError extends Error {
 }
 
 let activeRun: GenerationRun | null = null;
+// Synchronous reservation flag bridging the await gap between the activeRun
+// guard check and the activeRun assignment in startGeneration. Without it,
+// two concurrent POSTs (e.g. React StrictMode double-mount of the Stage 5
+// effect) both pass the guard before either has had a chance to assign
+// activeRun and end up spawning parallel pipelines that overwrite each
+// other's lesson files. See US-101.
+let startingGeneration = false;
 const runsById = new Map<string, GenerationRun>();
 let depsOverride: SpawnDeps | null = null;
 
@@ -101,6 +108,7 @@ export function __resetForTesting(): void {
     activeRun.finished = true;
   }
   activeRun = null;
+  startingGeneration = false;
   runsById.clear();
   depsOverride = null;
 }
@@ -305,11 +313,32 @@ interface FailedReportEntry {
 }
 
 export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Promise<GenerationRun> {
-  const deps: SpawnDeps = { ...(depsOverride ?? {}), ...depsArg };
-
-  if (activeRun && !activeRun.finished) {
+  // Atomic check + reservation. MUST stay synchronous (no await between the
+  // guard and the `startingGeneration = true` assignment) — otherwise two
+  // concurrent callers both pass the guard before either reaches the
+  // assignment and both go on to spawn a pipeline. See US-101.
+  if ((activeRun && !activeRun.finished) || startingGeneration) {
     throw new GenerationConflictError();
   }
+  startingGeneration = true;
+
+  try {
+    return await startGenerationInner(slug, depsArg);
+  } finally {
+    // By this point activeRun has either been assigned (success path) or the
+    // setup threw before the assignment (rollback). Either way the
+    // reservation is no longer needed: subsequent callers see activeRun
+    // directly. On the rollback path activeRun stays null so the next call
+    // is free to start.
+    startingGeneration = false;
+  }
+}
+
+async function startGenerationInner(
+  slug: string,
+  depsArg: SpawnDeps,
+): Promise<GenerationRun> {
+  const deps: SpawnDeps = { ...(depsOverride ?? {}), ...depsArg };
 
   const isExecutable = deps.isExecutableInPath ?? defaultIsExecutableInPath;
   if (!isExecutable('claude')) {

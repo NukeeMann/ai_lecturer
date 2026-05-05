@@ -535,6 +535,40 @@ describe('startGeneration spawn wrapper', () => {
     ).rejects.toBeInstanceOf(GenerationConflictError);
   });
 
+  it('rejects two concurrent startGeneration calls for the same slug atomically (US-101)', async () => {
+    // Repro for US-101: before the fix, the activeRun guard check happened
+    // synchronously but the activeRun assignment came AFTER several
+    // `await fs.mkdir(...)` calls. Two POSTs fired in the same tick (e.g.
+    // React StrictMode double-mounting the Stage 5 effect) both passed the
+    // guard, both started a pipeline, and both spawned claude — overwriting
+    // each other's lesson files in /courses/<slug>/lessons/.
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+
+    const results = await Promise.allSettled([
+      startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+      }),
+      startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+      }),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter(
+      (r): r is PromiseRejectedResult => r.status === 'rejected',
+    );
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].reason).toBeInstanceOf(GenerationConflictError);
+
+    // Only ONE pipeline started — confirm exactly one claude was spawned.
+    await scripted.nextChild();
+    expect(scripted.children.length).toBe(1);
+  });
+
   it('finalizes as error when init exits 0 but course.json is missing (Unknown command bug)', async () => {
     // Reproduces US-095: `claude -p '/init_course <slug>'` printed
     // "Unknown command: /init_course" and exited 0 without ever invoking the
