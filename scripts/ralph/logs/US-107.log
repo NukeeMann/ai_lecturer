@@ -1,0 +1,62 @@
+[2026-05-05T22:38:36+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T22:38:54+0200] Now let me understand the current generation.ts module and the API route for generate.
+[2026-05-05T22:39:50+0200] Now let me check the existing tests for both generation.ts and the routes to understand patterns:
+[2026-05-05T22:40:10+0200] Now let me look at the api.test.ts for the active-run route tests:
+[2026-05-05T22:40:18+0200] Now let me look at the api.test.ts top to understand structure:
+[2026-05-05T22:41:31+0200] Let me check the route.ts test for POST 409 behavior:
+[2026-05-05T22:41:56+0200] Now I have a clear picture. Let me write the queue logic. First I'll create a new module for the queue persistence to keep generation.ts cleaner, and then modify generation.ts:
+[2026-05-05T22:42:04+0200] Now let me modify generation.ts to add queue logic:
+[2026-05-05T22:42:23+0200] Now add queue state and persistence helpers. Let me add them after the marker helpers:
+[2026-05-05T22:42:42+0200] Now update `__resetForTesting` and `getActiveRunSummary` to use queue:
+[2026-05-05T22:42:48+0200] Now update getActiveRunSummary to include queue. The queue summary is computed lazily from the on-disk queue:
+[2026-05-05T22:43:08+0200] Now add the `enqueueGeneration` and `maybeStartQueueHead` functions, and modify `startGeneration` to drain the queue when finalize runs. Let me add helpers above `startGeneration`:
+[2026-05-05T22:43:43+0200] Now update `finalize` to trigger queue drain. Find finalize and update:
+[2026-05-05T22:43:51+0200] Now update the POST /api/courses/generate route handler:
+[2026-05-05T22:44:17+0200] Now let me update the existing tests to expect `queue: []`:
+[2026-05-05T22:44:30+0200] Now update the existing route-handler test that expects 409 for different slug — should now expect 202 + queued:
+[2026-05-05T22:44:44+0200] Now update existing api.test.ts for active-run route to include queue. Let me find them:
+[2026-05-05T22:44:55+0200] Now update beforeEach in generation.test.ts to set queue file override for test isolation:
+[2026-05-05T22:45:03+0200] Now let me also do the same in api.test.ts:
+[2026-05-05T22:45:29+0200] Now add new tests for queue logic in generation.test.ts:
+[2026-05-05T22:45:35+0200] Now let me add queue tests at end of file:
+[2026-05-05T22:45:42+0200] Now add a new describe block for the queue:
+[2026-05-05T22:47:14+0200] Let me check my changes to generation.ts:
+[2026-05-05T22:47:36+0200] Let me fix a subtle issue: the queue summary should be computed BEFORE the drainer shifts the head. Let me move maybeStartQueueHead to fire AFTER the summary is computed:
+[2026-05-05T22:47:50+0200] Let me refactor to fire the drainer after computing the response:
+[2026-05-05T22:48:29+0200] Now let me update the /create page to handle queued state. Let me look at Stage5Generate's start function:
+[2026-05-05T22:48:41+0200] Now update ResumeBanner to show queue count:
+[2026-05-05T22:48:48+0200] Now I need to add queued state handling in Stage5Generate. Let me re-look at Stage5Generate and figure out how to thread queued state:
+[2026-05-05T22:49:04+0200] Now update the start function and add a queue-poll effect. Let me find the start function and modify:
+[2026-05-05T22:49:40+0200] Now I need to remove the original duplicated event listeners (since I extracted them to wireStreamHandlers), and update the cleanup. Let me view the next chunk:
+[2026-05-05T22:49:52+0200] Now update the cleanup to also clear the queue poll timer:
+[2026-05-05T22:49:57+0200] Now I need to render the queued state in the UI. Let me find the headline and update:
+[2026-05-05T22:50:33+0200] Typecheck passes. Now run vitest:
+[2026-05-05T22:50:45+0200] All passing. Let me run the full test suite:
+[2026-05-05T22:50:56+0200] All 580 tests pass (was 572, added 8 new). Now update todos and run browser test:
+[2026-05-05T22:51:04+0200] Now spin up dev server and run browser test:
+[2026-05-05T22:51:43+0200] Now write the playwright test:
+[2026-05-05T22:52:29+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T22:55:52+0200] Now the server is fresh. Run the test:
+[2026-05-05T22:56:24+0200] There's a bug — when slug A is requested twice rapidly while still starting, second goes to queue. Let me track the starting slug:
+[2026-05-05T22:56:38+0200] Now update startGeneration to set/unset startingSlug, and enqueueGeneration to honor it:
+[2026-05-05T22:56:54+0200] Now update enqueueGeneration to wait+retry idempotently when same slug is mid-startGeneration:
+[2026-05-05T22:57:08+0200] Now also rerun typecheck and re-run vitest:
+[2026-05-05T22:58:10+0200] All checks pass. Let me run the full test suite once more to make sure nothing regressed:
+[2026-05-05T22:58:34+0200] All green. Now mark prd.json passes=true, append to progress.txt, and commit:
+[2026-05-05T22:58:50+0200] Now append progress notes:
+[2026-05-05T23:00:41+0200] US-107 complete. Commit `3681737` shipped to `ralph/us-107`:
+
+- `enqueueGeneration(slug)` is the new public entry point — same-slug-active and same-slug-queued stay idempotent, different-slug joins a FIFO queue persisted at `~/.ai-lecturer/generation-queue.json`.
+- `finalize` drains the next head; cold-start `getActiveRunSummary` lazy-loads + drains so server restarts resume the queue.
+- POST `/api/courses/generate` returns `{queued:true, slug, position, total}` (202) when queued instead of 409.
+- GET `/api/courses/active-run` now returns `queue: [{slug, name, position}]` alongside the active run.
+- Stage 6 shows "W kolejce — <position>/<total>" via `[data-testid="stage5-queued-status"]` and polls active-run every 1.5s, auto-attaching SSE when its slot opens. ResumeBanner shows "<N> w kolejce".
+- Quality: typecheck clean; 580 tests pass (was 572, +8 new); playwright headless verified end-to-end (`US-107 ALL CHECKS PASSED`).
+[2026-05-05T23:00:41+0200] [result success turns=124 cost=$14.213064] US-107 complete. Commit `3681737` shipped to `ralph/us-107`:
+
+- `enqueueGeneration(slug)` is the new public entry point — same-slug-active and same-slug-queued stay idempotent, different-slug joins a FIFO queue persisted at `~/.ai-lecturer/generation-queue.json`.
+- `finalize` drains the next head; cold-start `getActiveRunSummary` lazy-loads + drains so server restarts resume the queue.
+- POST `/api/courses/generate` returns `{queued:true, slug, position, total}` (202) when queued instead of 409.
+- GET `/api/courses/active-run` now returns `queue: [{slug, name, position}]` alongside the active run.
+- Stage 6 shows "W kolejce — <position>/<total>" via `[data-testid="stage5-queued-status"]` and polls active-run every 1.5s, auto-attaching SSE when its slot opens. ResumeBanner shows "<N> w kolejce".
+- Quality: typecheck clean; 580 tests pass (was 572, +8 new); playwright headless verified end-to-end (`US-107 ALL CHECKS PASSED`).
