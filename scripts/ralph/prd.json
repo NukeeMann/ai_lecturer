@@ -2210,6 +2210,39 @@
       "passes": true,
       "notes": "Unblocks US-099 (PyTorch smoke test, timeout: 21600 for ~6h budget). Files: scripts/ralph/ralph.sh, scripts/ralph/ralph.config.",
       "tags": []
+    },
+    {
+      "id": "US-101",
+      "title": "Fix: race in startGeneration lets concurrent POSTs spawn parallel pipelines",
+      "description": "As a user kicking off course generation, when two POST /api/courses/generate requests fire concurrently (e.g. React StrictMode double-mounting the Stage 5 effect in dev), both bypass the activeRun guard and start parallel pipelines. They share the same /courses/<slug>/ directory and overwrite each other's lesson files in /courses/<slug>/lessons/.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix (two concurrent startGeneration(slug) calls for the same slug)",
+        "The second concurrent call rejects with GenerationConflictError; only one pipeline runs",
+        "The activeRun guard check and assignment are atomic — no await between them",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 101,
+      "passes": false,
+      "notes": "Repro: fire two POSTs to /api/courses/generate for the same slug in the same tick. Confirmed live during US-099 follow-up testing — a completed lesson JSON (architektura-opencv-i-ekosystem-pythona.json, 12.6 KB) was wiped by a parallel run's pre-attempt fs.unlink. Root cause: in src/lib/server/generation.ts startGeneration() checks activeRun synchronously but only assigns activeRun = run after several await fs.mkdir(...) calls — classic TOCTOU.",
+      "tags": []
+    },
+    {
+      "id": "US-102",
+      "title": "Stream claude -p output incrementally during course generation",
+      "description": "As a user watching Stage 5 of /create, I want to see live progress while claude is generating so I do not think the app is hung. Currently the SSE log panel sits empty for 20+ minutes per stage because claude -p (no --output-format flag) buffers all stdout until completion, then dumps a wall of text at stage end.",
+      "acceptanceCriteria": [
+        "defaultInitCourseCommand and defaultLessonCommand in src/lib/server/generation.ts pass --output-format stream-json (and --verbose if required) to claude -p",
+        "pumpStream parses the stream-json events and emits human-readable per-event log lines (assistant text deltas, tool invocations) instead of a single end-of-stage blob",
+        "SSE log panel in /create Stage 5 shows incremental output while claude is still running",
+        "GENERATION_MOCK=1 test fast-path still works",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 102,
+      "passes": false,
+      "notes": "User staring at \"Waiting for output…\" for tens of minutes is the symptom. Each stream-json event is one line of JSON on stdout — the existing pumpStream newline-splitter already handles that; the new code just needs to JSON-decode and pull out human-readable fields.",
+      "tags": []
     }
   ]
 }
