@@ -11,11 +11,13 @@ import {
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
   defaultInitCourseCommand,
+  defaultLessonCommand,
   GenerationConflictError,
   getActiveRun,
   getRunById,
   sseEncode,
   startGeneration,
+  type FailedLesson,
   type GenerationEvent,
   type SpawnDeps,
 } from '@/lib/server/generation';
@@ -109,11 +111,74 @@ function makeScriptedSpawn(): ScriptedSpawn {
 }
 
 async function waitForFinish(run: { finished: boolean }) {
-  for (let i = 0; i < 50 && !run.finished; i++) {
+  for (let i = 0; i < 200 && !run.finished; i++) {
     await new Promise((r) => setImmediate(r));
   }
   // One more tick so the WriteStream's underlying fs write has a chance to land.
   await new Promise((r) => setTimeout(r, 25));
+}
+
+/**
+ * Helper: write a stub course.json with N lessons in one module so the
+ * post-init guard sees real output and the per-lesson loop has work to do.
+ */
+async function writeStubCourse(slug: string, lessonSlugs: string[]) {
+  const dir = path.join(coursesRoot, slug);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, 'course.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      slug,
+      title: 'Stub',
+      description: 'Stub course for tests',
+      accentColor: 'indigo',
+      icon: 'sigma',
+      modules: [
+        {
+          id: 'm1',
+          title: 'Module 1',
+          summary: 'Stub module',
+          lessons: lessonSlugs.map((s) => ({
+            slug: s,
+            title: s,
+            estimatedMinutes: 5,
+          })),
+        },
+      ],
+      createdAt: '2026-05-04T00:00:00.000Z',
+      updatedAt: '2026-05-04T00:00:00.000Z',
+    }),
+    'utf8',
+  );
+}
+
+/** Helper: write a valid stub lesson file at the canonical path. */
+async function writeStubLesson(slug: string, lessonSlug: string) {
+  const dir = path.join(coursesRoot, slug, 'lessons');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, `${lessonSlug}.json`),
+    JSON.stringify({
+      schemaVersion: 1,
+      slug: lessonSlug,
+      courseSlug: slug,
+      moduleId: 'm1',
+      title: lessonSlug,
+      eyebrow: 'STUB',
+      description: 'Stub lesson',
+      estimatedMinutes: 5,
+      sections: [
+        {
+          id: 's1',
+          title: 'Read',
+          type: 'theory',
+          data: { markdown: 'Stub.' },
+        },
+      ],
+    }),
+    'utf8',
+  );
 }
 
 beforeEach(async () => {
@@ -136,10 +201,13 @@ describe('sseEncode', () => {
     const text = new TextDecoder().decode(out);
     expect(text).toBe('event: log\ndata: {"type":"log","line":"hello"}\n\n');
   });
-  it('encodes done with courseSlug', () => {
-    const text = new TextDecoder().decode(sseEncode({ type: 'done', courseSlug: 'foo' }));
+  it('encodes done with courseSlug and failedLessons', () => {
+    const text = new TextDecoder().decode(
+      sseEncode({ type: 'done', courseSlug: 'foo', failedLessons: [] }),
+    );
     expect(text).toContain('event: done\n');
     expect(text).toContain('"courseSlug":"foo"');
+    expect(text).toContain('"failedLessons":[]');
   });
   it('encodes progress with current/total', () => {
     const text = new TextDecoder().decode(
@@ -174,7 +242,7 @@ describe('startGeneration spawn wrapper', () => {
     ).rejects.toBeInstanceOf(ClaudeUnavailableError);
   });
 
-  it('runs claude then ralph and emits stage/log/done events', async () => {
+  it('runs init then iterates lessons sequentially and emits stage/log/progress/done', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
 
@@ -183,23 +251,25 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    // First child is claude — emulate it actually running the skill by
-    // dropping a stub course.json on disk before exit so the post-init guard
-    // sees real output.
-    const claude = await scripted.nextChild();
-    claude.emitStdout('claude says hi\n');
-    await fs.writeFile(
-      path.join(coursesRoot, 'demo', 'course.json'),
-      JSON.stringify({ slug: 'demo' }),
-      'utf8',
-    );
-    claude.finishWithExit(0);
+    // Child #1 is the init claude — emulate it by writing a 2-lesson
+    // course.json before exit so the post-init guard / per-lesson loop see
+    // real output.
+    const init = await scripted.nextChild();
+    init.emitStdout('init says hi\n');
+    await writeStubCourse('demo', ['intro', 'outro']);
+    init.finishWithExit(0);
 
-    // Second child is ralph
-    const ralph = await scripted.nextChild();
-    ralph.emitStdout('Lesson 1/2\n');
-    ralph.emitStdout('Lesson 2/2\n');
-    ralph.finishWithExit(0);
+    // Child #2 is the per-lesson claude for `intro` — write the file before exit.
+    const intro = await scripted.nextChild();
+    intro.emitStdout('working on intro\n');
+    await writeStubLesson('demo', 'intro');
+    intro.finishWithExit(0);
+
+    // Child #3 is the per-lesson claude for `outro`.
+    const outro = await scripted.nextChild();
+    outro.emitStdout('working on outro\n');
+    await writeStubLesson('demo', 'outro');
+    outro.finishWithExit(0);
 
     await waitForFinish(run);
     const events: GenerationEvent[] = run.events;
@@ -208,29 +278,69 @@ describe('startGeneration spawn wrapper', () => {
     expect(stageEvents).toEqual([
       { type: 'stage', name: 'init_course', status: 'started' },
       { type: 'stage', name: 'init_course', status: 'done' },
-      { type: 'stage', name: 'ralph', status: 'started' },
-      { type: 'stage', name: 'ralph', status: 'done' },
+      { type: 'stage', name: 'lesson:intro', status: 'started' },
+      { type: 'stage', name: 'lesson:intro', status: 'done' },
+      { type: 'stage', name: 'lesson:outro', status: 'started' },
+      { type: 'stage', name: 'lesson:outro', status: 'done' },
     ]);
 
     const logLines = events.filter((e) => e.type === 'log').map((e) => (e as { line: string }).line);
-    expect(logLines).toContain('claude says hi');
-    expect(logLines).toContain('Lesson 1/2');
-    expect(logLines).toContain('Lesson 2/2');
+    expect(logLines).toContain('init says hi');
+    expect(logLines).toContain('working on intro');
+    expect(logLines).toContain('working on outro');
 
     const progress = events.filter((e) => e.type === 'progress');
     expect(progress).toEqual([
+      { type: 'progress', current: 0, total: 2 },
       { type: 'progress', current: 1, total: 2 },
       { type: 'progress', current: 2, total: 2 },
     ]);
 
     const done = events.find((e) => e.type === 'done');
-    expect(done).toEqual({ type: 'done', courseSlug: 'demo' });
+    expect(done).toEqual({ type: 'done', courseSlug: 'demo', failedLessons: [] });
 
     expect(run.finished).toBe(true);
     expect(getActiveRun()).toBeNull();
   });
 
-  it('captures stdout AND stderr to /courses/<slug>/.generation.log', async () => {
+  it('per-lesson claude is invoked via the lessonCommand factory with both slugs', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const lessonCommand = vi.fn((slug: string, lessonSlug: string) => ({
+      command: 'fake-claude',
+      args: ['-p', `slug=${slug} lesson=${lessonSlug}`, '--dangerously-skip-permissions'],
+    }));
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonCommand,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['alpha', 'beta']);
+    init.finishWithExit(0);
+
+    const alpha = await scripted.nextChild();
+    expect(alpha.command).toBe('fake-claude');
+    expect(alpha.args.join(' ')).toContain('slug=demo');
+    expect(alpha.args.join(' ')).toContain('lesson=alpha');
+    expect(alpha.args).toContain('--dangerously-skip-permissions');
+    await writeStubLesson('demo', 'alpha');
+    alpha.finishWithExit(0);
+
+    const beta = await scripted.nextChild();
+    expect(beta.args.join(' ')).toContain('lesson=beta');
+    await writeStubLesson('demo', 'beta');
+    beta.finishWithExit(0);
+
+    await waitForFinish(run);
+    expect(lessonCommand).toHaveBeenCalledTimes(2);
+    expect(lessonCommand).toHaveBeenNthCalledWith(1, 'demo', 'alpha');
+    expect(lessonCommand).toHaveBeenNthCalledWith(2, 'demo', 'beta');
+  });
+
+  it('isolates a single lesson failure: pipeline continues, done lists failedLessons', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
@@ -238,39 +348,163 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    const claude = await scripted.nextChild();
-    claude.emitStdout('claude-stdout-line\n');
-    claude.emitStderr('claude-stderr-line\n');
-    await fs.writeFile(
-      path.join(coursesRoot, 'demo', 'course.json'),
-      JSON.stringify({ slug: 'demo' }),
-      'utf8',
-    );
-    claude.finishWithExit(0);
-    const ralph = await scripted.nextChild();
-    ralph.emitStdout('ralph-stdout-line\n');
-    ralph.emitStderr('ralph-stderr-line\n');
-    ralph.finishWithExit(0);
+    // Init succeeds with 2 lessons.
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['good', 'bad']);
+    init.finishWithExit(0);
+
+    // Lesson 1 (`good`) succeeds.
+    const good = await scripted.nextChild();
+    await writeStubLesson('demo', 'good');
+    good.finishWithExit(0);
+
+    // Lesson 2 (`bad`) fails: non-zero exit, no file written.
+    const bad = await scripted.nextChild();
+    bad.emitStderr('something exploded\n');
+    bad.finishWithExit(2);
 
     await waitForFinish(run);
-    // Sanity check: the events ARE being emitted in-memory.
+
+    // Pipeline still finished as `done`, NOT `error` — only one of two lessons failed.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.courseSlug).toBe('demo');
+    expect(done?.failedLessons).toEqual([{ slug: 'bad', reason: 'exited 2' }]);
+    expect(run.events.find((e) => e.type === 'error')).toBeUndefined();
+
+    // Both lessons emitted started; only `good` emitted a `done` stage; `bad` emitted error.
+    const stageEvents = run.events.filter((e) => e.type === 'stage');
+    expect(stageEvents).toEqual([
+      { type: 'stage', name: 'init_course', status: 'started' },
+      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'lesson:good', status: 'started' },
+      { type: 'stage', name: 'lesson:good', status: 'done' },
+      { type: 'stage', name: 'lesson:bad', status: 'started' },
+      { type: 'stage', name: 'lesson:bad', status: 'error' },
+    ]);
+
+    // Progress advances even after the failed lesson.
+    const progress = run.events.filter((e) => e.type === 'progress');
+    expect(progress).toEqual([
+      { type: 'progress', current: 0, total: 2 },
+      { type: 'progress', current: 1, total: 2 },
+      { type: 'progress', current: 2, total: 2 },
+    ]);
+  });
+
+  it('flags a lesson that exits 0 but writes invalid JSON as failed via post-spawn LessonSchema check', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['malformed']);
+    init.finishWithExit(0);
+
+    // Lesson exits 0 but writes JSON missing required fields.
+    const lesson = await scripted.nextChild();
+    await fs.mkdir(path.join(coursesRoot, 'demo', 'lessons'), { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'lessons', 'malformed.json'),
+      JSON.stringify({ slug: 'malformed' }), // missing courseSlug, sections, etc.
+      'utf8',
+    );
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // All-failed → finalize as error with failedLessons attached.
+    const error = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+      | undefined;
+    expect(error).toBeDefined();
+    expect(error?.failedLessons?.length).toBe(1);
+    expect(error?.failedLessons?.[0].slug).toBe('malformed');
+    expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
+  });
+
+  it('cancel mid-run aborts the in-flight lesson and stops the pipeline', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      sigkillGraceMs: 5000,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['first', 'second']);
+    init.finishWithExit(0);
+
+    // First lesson succeeds.
+    const first = await scripted.nextChild();
+    await writeStubLesson('demo', 'first');
+    first.finishWithExit(0);
+
+    // Second lesson is in-flight when the user cancels.
+    const second = await scripted.nextChild();
+    second.emitStdout('working...\n');
+
+    await run.cancel();
+    expect(second.killSignals).toContain('SIGTERM');
+    // Simulate the child responding to SIGTERM.
+    second.finishWithExit(143);
+
+    await waitForFinish(run);
+
+    // Pipeline finalized as error (cancelled) — NO third spawn happened.
+    expect(scripted.children.length).toBe(3);
+    const error = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+      | undefined;
+    expect(error).toBeDefined();
+    expect(error?.message).toMatch(/cancel/i);
+    expect(error?.failedLessons?.[0]?.slug).toBe('second');
+    expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
+  });
+
+  it('captures stdout AND stderr to /courses/<slug>/.generation.log across init + lesson stages', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+    init.emitStdout('init-stdout-line\n');
+    init.emitStderr('init-stderr-line\n');
+    await writeStubCourse('demo', ['only']);
+    init.finishWithExit(0);
+
+    const lesson = await scripted.nextChild();
+    lesson.emitStdout('lesson-stdout-line\n');
+    lesson.emitStderr('lesson-stderr-line\n');
+    await writeStubLesson('demo', 'only');
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
     const lines = run.events
       .filter((e) => e.type === 'log')
       .map((e) => (e as { line: string }).line);
     expect(lines).toEqual(
       expect.arrayContaining([
-        'claude-stdout-line',
-        'claude-stderr-line',
-        'ralph-stdout-line',
-        'ralph-stderr-line',
+        'init-stdout-line',
+        'init-stderr-line',
+        'lesson-stdout-line',
+        'lesson-stderr-line',
       ]),
     );
-    // And land in the disk log file.
     const log = await fs.readFile(path.join(coursesRoot, 'demo', '.generation.log'), 'utf8');
-    expect(log).toContain('claude-stdout-line');
-    expect(log).toContain('claude-stderr-line');
-    expect(log).toContain('ralph-stdout-line');
-    expect(log).toContain('ralph-stderr-line');
+    expect(log).toContain('init-stdout-line');
+    expect(log).toContain('init-stderr-line');
+    expect(log).toContain('lesson-stdout-line');
+    expect(log).toContain('lesson-stderr-line');
   });
 
   it('rejects a second concurrent run with GenerationConflictError', async () => {
@@ -294,9 +528,8 @@ describe('startGeneration spawn wrapper', () => {
   it('finalizes as error when init exits 0 but course.json is missing (Unknown command bug)', async () => {
     // Reproduces US-095: `claude -p '/init_course <slug>'` printed
     // "Unknown command: /init_course" and exited 0 without ever invoking the
-    // skill. ralph then ran against the existing AI-Lecturer prd.json (all
-    // stories already passes:true), exited 0 in seconds, and the SSE stream
-    // emitted `done` — so the wizard redirected to a 404 page.
+    // skill. With no course.json on disk, the per-lesson loop has no input
+    // and the pipeline must surface an error rather than silently emit done.
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
@@ -325,7 +558,7 @@ describe('startGeneration spawn wrapper', () => {
 
     expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
 
-    // Pipeline must NOT have proceeded to ralph.
+    // Pipeline must NOT have proceeded to a per-lesson spawn.
     expect(scripted.children.length).toBe(1);
 
     // course.json was never written (sanity).
@@ -354,6 +587,26 @@ describe('startGeneration spawn wrapper', () => {
   it('default init prompt rejects unsafe slugs (assertSafeSlug)', () => {
     expect(() => defaultInitCourseCommand('../etc')).toThrow(/Invalid slug/i);
     expect(() => defaultInitCourseCommand('a/b')).toThrow(/Invalid slug/i);
+  });
+
+  it('default lesson prompt names the generate_lesson SKILL.md and includes both slugs', () => {
+    const spec = defaultLessonCommand('opencv-basics', 'canny-edge');
+    expect(spec.command).toBe('claude');
+    expect(spec.args[0]).toBe('-p');
+    const prompt = spec.args[1];
+    expect(prompt).toContain('generate_lesson');
+    expect(prompt).toContain('scripts/ralph/skills/generate_lesson/SKILL.md');
+    expect(prompt).toContain('opencv-basics');
+    expect(prompt).toContain('canny-edge');
+    expect(prompt).toMatch(/\/courses\/opencv-basics\/lessons\/canny-edge\.json/);
+    // Same regression guard as the init prompt.
+    expect(prompt).not.toMatch(/^\s*\/generate_lesson\b/);
+    expect(spec.args).toContain('--dangerously-skip-permissions');
+  });
+
+  it('default lesson prompt rejects unsafe slugs', () => {
+    expect(() => defaultLessonCommand('../etc', 'foo')).toThrow(/Invalid slug/i);
+    expect(() => defaultLessonCommand('demo', 'a/b')).toThrow(/Invalid slug/i);
   });
 
   it('SIGTERMs the active child on cancel and SIGKILLs after the grace window', async () => {
@@ -510,17 +763,14 @@ describe('POST /api/courses/generate (route)', () => {
     );
     const { id } = (await ok.json()) as { id: string };
 
-    const claude = await scripted.nextChild();
-    claude.emitStdout('hello-world\n');
-    await fs.writeFile(
-      path.join(coursesRoot, 'demo', 'course.json'),
-      JSON.stringify({ slug: 'demo' }),
-      'utf8',
-    );
-    claude.finishWithExit(0);
-    const ralph = await scripted.nextChild();
-    ralph.emitStdout('Lesson 1/1\n');
-    ralph.finishWithExit(0);
+    const init = await scripted.nextChild();
+    init.emitStdout('hello-world\n');
+    await writeStubCourse('demo', ['intro']);
+    init.finishWithExit(0);
+    const lesson = await scripted.nextChild();
+    lesson.emitStdout('lesson-line\n');
+    await writeStubLesson('demo', 'intro');
+    lesson.finishWithExit(0);
 
     const run = getRunById(id);
     if (!run) throw new Error('run not found');
@@ -538,6 +788,7 @@ describe('POST /api/courses/generate (route)', () => {
     expect(text).toContain('event: progress');
     expect(text).toContain('event: done');
     expect(text).toContain('"courseSlug":"demo"');
+    expect(text).toContain('"failedLessons":[]');
   });
 
   it('GET stream returns 404 for unknown id', async () => {
