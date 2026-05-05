@@ -23,6 +23,7 @@ import {
 } from '@/app/api/courses/upload-sources/route';
 import { GET as getLogsIndex } from '@/app/api/courses/[slug]/logs/route';
 import { GET as getLogStage } from '@/app/api/courses/[slug]/logs/[stage]/route';
+import { GET as getActiveRunRoute } from '@/app/api/courses/active-run/route';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
 import {
@@ -845,5 +846,153 @@ describe('GET /api/courses/[slug]/logs/[stage] (US-105)', () => {
       params: Promise.resolve({ slug: '../evil', stage: 'init_course' }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/courses/active-run (US-106)', () => {
+  it('returns {active:false} when no run is in flight and no marker exists', async () => {
+    const res = await getActiveRunRoute();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+  });
+
+  it('returns {active:false} when only stale markers exist (PID dead)', async () => {
+    // Pick a PID we're confident is dead. PID 1 is init/systemd which is
+    // alive, so use Number.MAX_SAFE_INTEGER instead — process.kill on a PID
+    // that high reliably throws ESRCH on any modern Linux/macOS kernel.
+    const dir = path.join(coursesRoot, 'ghost-course');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: 9999999,
+        slug: 'ghost-course',
+        stage: 'init_course',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+    // Stale marker should have been unlinked.
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('returns {active:true} for a live PID-tagged marker and pulls the title from course-spec.json', async () => {
+    const dir = path.join(coursesRoot, 'demo-resume');
+    await fs.mkdir(dir, { recursive: true });
+    await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Resumed Course'));
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        // process.pid is always alive — guarantees the liveness probe passes.
+        childPid: process.pid,
+        slug: 'demo-resume',
+        stage: 'lesson:intro',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as
+      | { active: false }
+      | { active: true; slug: string; name: string; stage: string };
+    expect(body).toEqual({
+      active: true,
+      slug: 'demo-resume',
+      name: 'Resumed Course',
+      stage: 'lesson:intro',
+    });
+  });
+
+  it('prefers course.json title over course-spec.json once init has completed', async () => {
+    const dir = path.join(coursesRoot, 'finished-init');
+    await fs.mkdir(dir, { recursive: true });
+    await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Old Title'));
+    await fs.writeFile(
+      path.join(dir, 'course.json'),
+      JSON.stringify({ ...sampleCourse('finished-init'), title: 'Refined Title' }),
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: process.pid,
+        slug: 'finished-init',
+        stage: 'lesson:m1l1',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as
+      | { active: false }
+      | { active: true; slug: string; name: string };
+    expect(body.active).toBe(true);
+    if (body.active) expect(body.name).toBe('Refined Title');
+  });
+
+  it('skips dot-prefixed dirs like /.drafts/ during cold-start scan', async () => {
+    // The wizard's draft uploads live under /.drafts/ — the active-run scan
+    // must NOT mistake them for courses.
+    const dir = path.join(coursesRoot, '.drafts', 'abc123');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, '.drafts', '.generating.json'),
+      JSON.stringify({ childPid: process.pid, slug: '.drafts', stage: null }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+  });
+
+  it('falls back to log-derived stage when the marker has no stage', async () => {
+    const dir = path.join(coursesRoot, 'derive-stage');
+    await fs.mkdir(path.join(dir, 'logs'), { recursive: true });
+    await fs.writeFile(path.join(dir, 'logs', 'init_course.log'), 'init line\n');
+    await new Promise((r) => setTimeout(r, 12));
+    await fs.writeFile(path.join(dir, 'logs', 'intro.log'), 'lesson line\n');
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: process.pid,
+        slug: 'derive-stage',
+        stage: null,
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as
+      | { active: false }
+      | { active: true; stage: string };
+    expect(body.active).toBe(true);
+    if (body.active) expect(body.stage).toBe('lesson:intro');
+  });
+
+  it('falls back to slug when neither course.json nor course-spec.json exist', async () => {
+    const dir = path.join(coursesRoot, 'nameless-run');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: process.pid,
+        slug: 'nameless-run',
+        stage: 'init_course',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const res = await getActiveRunRoute();
+    const body = (await res.json()) as
+      | { active: false }
+      | { active: true; name: string };
+    expect(body.active).toBe(true);
+    if (body.active) expect(body.name).toBe('nameless-run');
   });
 });

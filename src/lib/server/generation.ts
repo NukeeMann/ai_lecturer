@@ -24,7 +24,15 @@ import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
-import { assertSafeSlug, courseDir, courseFile, genLogsDir, lessonFile } from './paths';
+import {
+  assertSafeSlug,
+  courseDir,
+  courseFile,
+  courseSpecFile,
+  coursesRoot,
+  genLogsDir,
+  lessonFile,
+} from './paths';
 import { listCourseSourceFilesSync } from './sources';
 
 export interface FailedLesson {
@@ -46,9 +54,24 @@ export interface GenerationRun {
   slug: string;
   events: GenerationEvent[];
   finished: boolean;
+  /**
+   * Name of the most recently started stage ('init_course', 'lesson:<slug>',
+   * etc.) — used by the resume banner (US-106) to label what's currently
+   * running. `null` until the first stage:started fires.
+   */
+  currentStage: string | null;
   subscribe: (listener: GenerationListener) => () => void;
   cancel: () => Promise<void>;
 }
+
+/**
+ * Summary returned by GET /api/courses/active-run (US-106). Lets the /create
+ * page detect a still-running generation after a tab/server reload and offer
+ * the user a one-click resume.
+ */
+export type ActiveRunSummary =
+  | { active: false }
+  | { active: true; slug: string; name: string; stage: string };
 
 export interface SpawnDeps {
   spawn?: typeof defaultSpawn;
@@ -94,6 +117,177 @@ let depsOverride: SpawnDeps | null = null;
 
 export function getActiveRun(): GenerationRun | null {
   return activeRun;
+}
+
+/**
+ * Filename for the per-course "this slug has a generation in flight" marker
+ * used to reconcile the active-run state across server restarts (US-106).
+ * Lives inside the course directory next to .generation.log so a `rm -rf` on
+ * the course also wipes the marker.
+ */
+const GENERATING_MARKER = '.generating.json';
+
+interface GeneratingMarker {
+  childPid: number | null;
+  slug: string;
+  stage: string | null;
+  startedAt: string;
+}
+
+async function writeGeneratingMarker(slug: string, marker: GeneratingMarker): Promise<void> {
+  try {
+    await fs.mkdir(courseDir(slug), { recursive: true });
+    await fs.writeFile(
+      path.join(courseDir(slug), GENERATING_MARKER),
+      JSON.stringify(marker),
+      'utf8',
+    );
+  } catch {
+    /* best-effort — banner reconciliation is a UX nicety, not load-bearing */
+  }
+}
+
+async function removeGeneratingMarker(slug: string): Promise<void> {
+  try {
+    await fs.unlink(path.join(courseDir(slug), GENERATING_MARKER));
+  } catch {
+    /* file may already be gone */
+  }
+}
+
+function isPidAlive(pid: number): boolean {
+  try {
+    // Signal 0 doesn't kill — only checks deliverability. Throws ESRCH if the
+    // process is gone, EPERM if alive but not ours (alive is what we want).
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Resolve a human-readable course name for the active-run banner. Prefer
+ * `course.json#title` (set after the init phase), fall back to the spec's
+ * `draftStructure.courseTitle`, and finally to the slug itself.
+ */
+async function resolveCourseName(slug: string): Promise<string> {
+  try {
+    const raw = await fs.readFile(courseFile(slug), 'utf8');
+    const json = JSON.parse(raw) as { title?: unknown };
+    if (typeof json.title === 'string' && json.title.length > 0) return json.title;
+  } catch {
+    /* fall through to spec */
+  }
+  try {
+    const raw = await fs.readFile(courseSpecFile(slug), 'utf8');
+    const json = JSON.parse(raw) as { draftStructure?: { courseTitle?: unknown } };
+    const t = json.draftStructure?.courseTitle;
+    if (typeof t === 'string' && t.length > 0) return t;
+  } catch {
+    /* fall through to slug */
+  }
+  return slug;
+}
+
+/**
+ * Walk the most-recently-modified per-stage log file for `slug` and return
+ * its basename (e.g. 'init_course' or 'intro'). Used to recover the current
+ * stage of a server-restart-survivor run when the in-memory run is gone.
+ */
+async function deriveStageFromLogs(slug: string): Promise<string | null> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(genLogsDir(slug));
+  } catch {
+    return null;
+  }
+  const candidates: { stage: string; mtimeMs: number }[] = [];
+  for (const name of entries) {
+    if (!name.endsWith('.log')) continue;
+    try {
+      const stat = await fs.stat(path.join(genLogsDir(slug), name));
+      if (!stat.isFile()) continue;
+      candidates.push({ stage: name.slice(0, -'.log'.length), mtimeMs: stat.mtimeMs });
+    } catch {
+      /* ignore unreadable entry */
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  const top = candidates[0].stage;
+  // The disk log file for a per-lesson stage is `<lessonSlug>.log`; the SSE
+  // event name is `lesson:<lessonSlug>`. Re-attach the prefix so banner stage
+  // labels are consistent regardless of whether the in-memory run is alive.
+  return top === 'init_course' ? 'init_course' : `lesson:${top}`;
+}
+
+/**
+ * Returns a summary of the currently-running generation for the /create
+ * page's resume banner (US-106). Prefers the in-memory active run; falls
+ * back to scanning per-course `.generating.json` markers so a run survives
+ * a server restart if the spawned child process is still alive. Stale
+ * markers (PID not alive) are unlinked on encounter.
+ */
+export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
+  if (activeRun && !activeRun.finished) {
+    const slug = activeRun.slug;
+    const stage = activeRun.currentStage ?? 'init_course';
+    const name = await resolveCourseName(slug);
+    return { active: true, slug, name, stage };
+  }
+
+  // Cold-start reconciliation. Scan for `.generating.json` markers — each
+  // identifies a course whose generation was in flight when this process (or
+  // the previous server) last saw it. If the child PID is still alive, the
+  // run is still going; otherwise the marker is stale.
+  const root = coursesRoot();
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { active: false };
+    return { active: false };
+  }
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue; // skip /.drafts/ etc.
+    const markerPath = path.join(root, entry.name, GENERATING_MARKER);
+    let raw: string;
+    try {
+      raw = await fs.readFile(markerPath, 'utf8');
+    } catch {
+      continue;
+    }
+    let marker: GeneratingMarker;
+    try {
+      marker = JSON.parse(raw) as GeneratingMarker;
+    } catch {
+      try {
+        await fs.unlink(markerPath);
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    if (typeof marker.childPid === 'number' && marker.childPid > 0 && !isPidAlive(marker.childPid)) {
+      try {
+        await fs.unlink(markerPath);
+      } catch {
+        /* ignore */
+      }
+      continue;
+    }
+    const slug = typeof marker.slug === 'string' && marker.slug.length > 0 ? marker.slug : entry.name;
+    const stage =
+      (typeof marker.stage === 'string' && marker.stage.length > 0 ? marker.stage : null) ??
+      (await deriveStageFromLogs(slug)) ??
+      'init_course';
+    const name = await resolveCourseName(slug);
+    return { active: true, slug, name, stage };
+  }
+  return { active: false };
 }
 
 export function getRunById(id: string): GenerationRun | undefined {
@@ -180,6 +374,12 @@ process.exit(0);
       createdAt: '2026-05-04T00:00:00.000Z',
       updatedAt: '2026-05-04T00:00:00.000Z',
     };
+    // The default 200ms is fast enough for the wizard's smoke tests but too
+    // fast to verify the US-106 resume banner — we want a window where the
+    // run is mid-flight while the test navigates away and back. Setting
+    // GENERATION_MOCK_INIT_DELAY_MS extends the init phase.
+    const initDelayMs = parseInt(process.env.GENERATION_MOCK_INIT_DELAY_MS ?? '', 10);
+    const initDelay = Number.isFinite(initDelayMs) && initDelayMs >= 0 ? initDelayMs : 200;
     const script = `
 const fs = require('fs');
 const path = require('path');
@@ -191,7 +391,7 @@ setTimeout(() => {
   console.log('[mock init_course] writing course.json');
   fs.writeFileSync(path.join(dir, 'course.json'), ${JSON.stringify(JSON.stringify(courseJson, null, 2))});
   console.log('[mock init_course] done');
-}, 200);
+}, ${initDelay});
 `;
     return { command: process.execPath, args: ['-e', script] };
   }
@@ -553,6 +753,7 @@ async function startGenerationInner(
     slug,
     events,
     finished: false,
+    currentStage: null,
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -585,6 +786,17 @@ async function startGenerationInner(
 
   function emit(event: GenerationEvent) {
     events.push(event);
+    if (event.type === 'stage' && event.status === 'started') {
+      run.currentStage = event.name;
+      // Refresh the on-disk marker so a server restart can recover the
+      // in-flight stage label even if the in-memory run is gone (US-106).
+      void writeGeneratingMarker(slug, {
+        childPid: currentChild?.pid ?? null,
+        slug,
+        stage: event.name,
+        startedAt: new Date().toISOString(),
+      });
+    }
     for (const listener of [...listeners]) {
       try {
         listener(event);
@@ -690,6 +902,14 @@ async function startGenerationInner(
         return;
       }
       currentChild = child;
+      // Refresh the .generating.json marker with the freshly-spawned child's
+      // PID so cold-start reconciliation (US-106) can probe it for liveness.
+      void writeGeneratingMarker(slug, {
+        childPid: child.pid ?? null,
+        slug,
+        stage: run.currentStage,
+        startedAt: new Date().toISOString(),
+      });
       pumpStream(child, {
         extraStream: opts.extraLogStream ?? null,
         onStderrLine: (line) => {
@@ -778,6 +998,9 @@ async function startGenerationInner(
     } catch {
       /* ignore */
     }
+    // Drop the .generating.json marker so a subsequent /api/courses/active-run
+    // call no longer sees this slug as in flight (US-106).
+    void removeGeneratingMarker(slug);
     if (activeRun === run) activeRun = null;
   }
 
@@ -889,6 +1112,17 @@ async function startGenerationInner(
 
   activeRun = run;
   runsById.set(id, run);
+
+  // Seed the .generating.json marker before the pipeline kicks off so a tab
+  // reload that lands between activeRun assignment and the first child spawn
+  // still sees the active run (US-106). The PID/stage will be refreshed on
+  // each spawnChild and stage:started.
+  void writeGeneratingMarker(slug, {
+    childPid: null,
+    slug,
+    stage: null,
+    startedAt: new Date().toISOString(),
+  });
 
   const pipeline = (async () => {
     // ── Stage 1: init_course ────────────────────────────────────────────────
