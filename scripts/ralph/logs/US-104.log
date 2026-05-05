@@ -1,0 +1,26 @@
+[2026-05-05T21:48:54+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T21:49:15+0200] Now I'll look at related files for context.
+[2026-05-05T21:50:45+0200] I have enough context. Plan: add `listCourseSourceFilesSync(slug)` to `sources.ts`, then have `defaultInitCourseCommand` + `defaultLessonCommand` enumerate sources and append a "Source materials" section to the real (non-mock) prompt.
+[2026-05-05T21:51:04+0200] Now update `generation.ts` to inject the sources into the prompts.
+[2026-05-05T21:51:08+0200] Now patch the init prompt:
+[2026-05-05T21:51:24+0200] Now patch the lesson prompt:
+[2026-05-05T21:51:40+0200] Now let me add tests. First I'll look at the existing sources test to follow the pattern.
+[2026-05-05T21:51:54+0200] Now let me add tests for `listCourseSourceFilesSync` in sources.test.ts and for the prompt injection in generation.test.ts.
+[2026-05-05T21:52:12+0200] Now add prompt-injection tests to generation.test.ts. Let me find a clean spot near the existing default-prompt tests.
+[2026-05-05T21:52:22+0200] Todo list is fine — currently on "Add unit tests". Adding tests now.
+[2026-05-05T21:53:04+0200] Typecheck clean. Now run vitest:
+[2026-05-05T21:53:09+0200] All targeted tests pass. Now run the full test suite to ensure no regressions.
+[2026-05-05T21:53:16+0200] Full suite green: 549 tests (was 538, +11 added). Now flip the prd.json passes flag, append progress notes, and commit.
+[2026-05-05T21:53:31+0200] Now append a progress entry:
+[2026-05-05T21:54:39+0200] US-104 done and committed (e0a0688). 
+
+- `listCourseSourceFilesSync(slug)` added to `src/lib/server/sources.ts`: sync, sorted, absolute, ENOENT-safe enumeration of `/courses/<slug>/sources/`.
+- Both `defaultInitCourseCommand` and `defaultLessonCommand` in `src/lib/server/generation.ts` now append a "Source materials" section listing absolute paths and instructing claude to invoke the Read tool BEFORE drafting; the section is omitted entirely when the directory is empty/absent (start-from-scratch path unchanged). Lesson source-list lives inside `baseBrief` so retries keep it through the `PREVIOUS ATTEMPT FAILED:` prepend.
+- 11 new tests (5 helper + 6 prompt-injection); typecheck clean; vitest 26 files / 549 tests pass (was 538).
+- `scripts/ralph/prd.json` US-104 `passes` flipped to `true`; progress.txt appended.
+[2026-05-05T21:54:39+0200] [result success turns=42 cost=$3.595836499999999] US-104 done and committed (e0a0688). 
+
+- `listCourseSourceFilesSync(slug)` added to `src/lib/server/sources.ts`: sync, sorted, absolute, ENOENT-safe enumeration of `/courses/<slug>/sources/`.
+- Both `defaultInitCourseCommand` and `defaultLessonCommand` in `src/lib/server/generation.ts` now append a "Source materials" section listing absolute paths and instructing claude to invoke the Read tool BEFORE drafting; the section is omitted entirely when the directory is empty/absent (start-from-scratch path unchanged). Lesson source-list lives inside `baseBrief` so retries keep it through the `PREVIOUS ATTEMPT FAILED:` prepend.
+- 11 new tests (5 helper + 6 prompt-injection); typecheck clean; vitest 26 files / 549 tests pass (was 538).
+- `scripts/ralph/prd.json` US-104 `passes` flipped to `true`; progress.txt appended.
