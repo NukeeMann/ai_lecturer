@@ -1,0 +1,19 @@
+[2026-05-05T21:23:32+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T21:25:00+0200] Now I understand the bug. Let me look at the route handler to make sure I understand fully.
+[2026-05-05T21:25:12+0200] Plan is clear. I'll add a failing test first that reproduces the race, confirm it fails, then apply the atomic-reservation fix.
+[2026-05-05T21:25:47+0200] Bug confirmed: both concurrent calls succeed (2 fulfilled, 0 rejected). Now applying the fix.
+[2026-05-05T21:26:05+0200] Now wrap the body of `startGeneration` with the atomic reservation. The key constraint: the check + reservation set must be synchronous (no `await` between them).
+[2026-05-05T21:26:21+0200] All 31 tests pass including the new race-repro. Run the full test suite + typecheck.
+[2026-05-05T21:26:36+0200] Typecheck clean, all 483 tests pass. Update prd.json + commit.
+[2026-05-05T21:27:43+0200] US-101 done.
+
+- **Repro test added first** (generation.test.ts): two `startGeneration('demo', ...)` via `Promise.allSettled`. Confirmed failing pre-fix (both fulfilled).
+- **Fix** (generation.ts): module-level `startingGeneration` flag set synchronously between the `activeRun` guard and any `await`, cleared in a `finally`. Body extracted to a sibling `startGenerationInner` to keep the diff small. `__resetForTesting` also resets the flag.
+- Typecheck clean; full vitest suite 25 files / 483 tests pass.
+- prd.json US-101 flipped to `passes: true`; committed as `124a222`.
+[2026-05-05T21:27:43+0200] [result success turns=30 cost=$2.4593795000000003] US-101 done.
+
+- **Repro test added first** (generation.test.ts): two `startGeneration('demo', ...)` via `Promise.allSettled`. Confirmed failing pre-fix (both fulfilled).
+- **Fix** (generation.ts): module-level `startingGeneration` flag set synchronously between the `activeRun` guard and any `await`, cleared in a `finally`. Body extracted to a sibling `startGenerationInner` to keep the diff small. `__resetForTesting` also resets the flag.
+- Typecheck clean; full vitest suite 25 files / 483 tests pass.
+- prd.json US-101 flipped to `passes: true`; committed as `124a222`.
