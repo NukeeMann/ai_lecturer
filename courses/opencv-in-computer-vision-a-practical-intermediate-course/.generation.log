@@ -1,0 +1,60 @@
+All four artefacts exist and validate cleanly. Summary:
+
+**Archived** — `scripts/ralph/archive/2026-05-05-ralph-ai-lecturer-mvp/{prd.json,progress.txt}` (the prior `ralph/ai-lecturer-mvp` branch's state); `scripts/ralph/progress.txt` reset with rotation header + a Codebase Patterns section for course-generation runs.
+
+**Research pass**
+- `courses/opencv-in-computer-vision-a-practical-intermediate-course/research.md` — all six template sections (Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation) tailored for `intermediate / extensive / 0.5`.
+- `courses/.../sources.md` — 28 per-lesson sections + course-wide; every lesson section carries ≥3 stable references (DOI / arxiv / Wikipedia / docs.opencv.org / scikit-image / official YouTube). 0 lessons under-cited.
+
+**Architect pass**
+- `courses/.../course.json` validates against `CourseSchema` (tsx). 6 modules, 28 lessons, no duplicate slugs, `schemaVersion: 1`. Architect kept the spec's 6/5/5/5/5/4/4 shape — already a clean fit for `extensive` (20–30 lessons).
+
+**`scripts/ralph/prd.json`**
+- `branchName: ralph/course-opencv-in-computer-vision-a-practical-intermediate-course`
+- 31 stories: US-001 (research, `passes: true`), US-002 (course structure, `passes: true`), US-003..US-030 (28 lessons in display order, `passes: false`), US-031 (review pass, `passes: false`).
+- Priorities 1..31 contiguous. 0 stories tagged `ui`. Every per-lesson story carries the five AC strings verbatim and a `Source hints:` line pointing at its matching `## <lesson title>` heading in `sources.md`. Lesson titles + slugs in stories match `course.json` exactly.
+
+No lesson content generated — that happens in `generate_lesson` per ralph iteration.
+[10:33:36] Ralph starting | parallel=2 model=opus mode=merge base=main max_iter=50 max_retry=2
+[10:33:36] [10:45:33] [US-003] Reaping 2 leftover process(es) from agent session 23293
+[10:45:35] [US-003] [0;31mPush failed[0m — task will be retried
+Deleted branch ralph/us-003 (was b4fe9ef).
+[10:45:35] [0;31mFAIL[0m 1 task(s) failed
+[10:45:35] [US-003] will retry (attempt 1/2)
+[10:45:35] [0;32mOK[0m   Committed ralph progress: chore(ralph): batch 1 artifacts (1 failed, 0 merged)
+[10:45:37] Batch 2 | 2/31 done | 29 pending | elapsed 12m55s
+[10:45:37] [US-003] queued: Generate lesson: Course Orientation and Environment Setup
+[10:45:37] [US-003] Starting -> branch: ralph/us-003
+[10:45:37] [US-003] Installing dependencies...
+[10:45:38] [US-003] Dependency install failed — agent will need to resolve
+[10:45:38] [US-003] Running claude in worktree (hard 3600s, soft 3000s)...
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: No such file or directory
+[10:45:38] [US-003] claude exited with code 1 (check /home/nukeemann/projects/ai_lecturer/scripts/ralph/logs/US-003.log)
+[10:45:38] [[10:45:38] [US-003] Installing dependencies...
+[10:45:49] [US-003] Running claude in worktree (hard 3600s, soft 3000s)...
+./scripts/ralph/ralph.sh: line 1148: cd: /home/nukeemann/projects/ai_lecturer/.worktrees/US-003: No such file or directory
+[10:50:39] [0;31mFAIL[0m 1 task(s) failed
+[10:50:39] [US-003] will retry (attempt 1/2)
+[10:50:39] [0;32mOK[0m   Committed ralph progress: chore(ralph): batch 2 artifacts (1 failed, 0 merged)
+[10:50:40] Batch 3 | 2/31 done | 29 pending | elapsed 17m04s
+[10:50:40] [US-003] queued: Generate lesson: Course Orientation and Environment Setup
+[10:50:40] [US-003] Starting -> branch: ralph/us-003
+[10:50:41] [US-003] Installing dependencies...
+[10:50:52] [US-003] Running claude in worktree (hard 3600s, soft 3000s)...
+[10:56:19] [US-003] [0;31mPush failed[0m — task will be retried
+Deleted branch ralph/us-003 (was 0d112bd).
+[10:56:20] [0;31mFAIL[0m 1 task(s) failed
+[10:56:20] [US-003] will retry (attempt 2/2)
+[10:56:20] [0;32mOK[0m   Committed ralph progress: chore(ralph): batch 3 artifacts (1 failed, 0 merged)
+[10:56:21] Batch 4 | 2/31 done | 29 pending | elapsed 22m45s
+[10:56:21] [US-003] queued: Generate lesson: Course Orientation and Environment Setup
+[10:56:21] [US-003] Starting -> branch: ralph/us-003
+[10:56:22] [US-003] Installing dependencies...
+[10:56:33] [US-003] Running claude in worktree (hard 3600s, soft 3000s)...
+[11:02:01] [US-003] [0;31mPush failed[0m — task will be retried
+Deleted branch ralph/us-003 (was fa2256b).
+[11:02:02] [0;31mFAIL[0m 1 task(s) failed
+[11:02:02] [US-003] [0;31mGAVE UP[0m after 2 retries
+[11:02:02] [0;32mOK[0m   Committed ralph progress: chore(ralph): batch 4 artifacts (1 failed, 0 merged)
+[11:02:04] Batch 5 | 2/31 done | 29 pending | elapsed 28m28s
+[11:02:04] [0;33mWARN[0m No pending tasks found (all exhausted retries?)

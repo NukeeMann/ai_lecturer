@@ -1,0 +1,11 @@
+# Ralph Progress Log
+Rotated: Tue May  5 10:21:55 CEST 2026
+Previous log archived to: archive/2026-05-05-ralph-ai-lecturer-mvp/progress.txt
+---
+
+## Codebase Patterns
+- Course generation is driven by the `init_course` and `generate_lesson` skills in `scripts/ralph/skills/`. Each per-lesson story is sized to one ralph iteration and produces one `/courses/<slug>/lessons/<lesson-slug>.json` validated against `LessonSchema`.
+- Per-lesson `notes` carry: Module / Summary / Scope / Level / Duration target / Theory-practice mix / Source hints. The `Source hints:` line is a deterministic pointer at the matching `## <lesson title>` heading inside `/courses/<slug>/sources.md` — keep the heading and the hint in sync if titles are renamed during the architect pass.
+- `course.json` MUST include `"schemaVersion": 1` (forward-compat baseline, US-037). Every lesson slug is derived via slugify() and must be unique within the course.
+- Widget reference lives in `docs/widgets.md`; per-widget Zod schemas in `src/widgets/<Name>/schema.ts` are the source of truth.
+- Course-generation stories are NEVER tagged `"ui"` — they produce JSON, not user-facing HTML, so playwright is skipped.

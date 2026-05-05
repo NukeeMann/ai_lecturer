@@ -1,0 +1,501 @@
+{
+  "project": "Course: OpenCV in Computer Vision: A Practical Intermediate Course",
+  "branchName": "ralph/course-opencv-in-computer-vision-a-practical-intermediate-course",
+  "description": "Generate the lessons for /courses/opencv-in-computer-vision-a-practical-intermediate-course/ from the course-spec, research notes, sources.md bibliography, and finalized course.json. Each story below produces one artefact (research.md + sources.md, course.json, or one lesson JSON). Driven by the generate_lesson skill.",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Compile research notes for course OpenCV in Computer Vision: A Practical Intermediate Course",
+      "description": "As an agent, I want a research note synthesising key concepts, prerequisites, misconceptions, and ordering for OpenCV in Computer Vision: A Practical Intermediate Course, plus a curated /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md bibliography (≥3 stable, credible references per planned lesson), so per-lesson agents have shared context and a ready-made source list.",
+      "acceptanceCriteria": [
+        "/courses/opencv-in-computer-vision-a-practical-intermediate-course/research.md exists and follows the init_course research template",
+        "Sections present: Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation",
+        "/courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md exists and lists ≥3 stable, credible references per planned lesson (DOI / arxiv / Wikipedia / official docs / official YouTube channels; no medium.com / towardsdatascience.com / personal blogs)",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "research.md and sources.md were authored by init_course; this story is marked passes=true so ralph skips re-running it. Flip to false to force regeneration.",
+      "tags": []
+    },
+    {
+      "id": "US-002",
+      "title": "Finalize course structure for OpenCV in Computer Vision: A Practical Intermediate Course",
+      "description": "As an agent, I want /courses/opencv-in-computer-vision-a-practical-intermediate-course/course.json finalized (modules + lessons confirmed) before per-lesson generation begins.",
+      "acceptanceCriteria": [
+        "/courses/opencv-in-computer-vision-a-practical-intermediate-course/course.json validates against CourseSchema",
+        "Each module has 2–6 lessons; total lesson count matches per-lesson stories below",
+        "Lesson slugs are unique within the course and derived via slugify()",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "course.json was authored by init_course; this story is marked passes=true. Flip to false to force a re-architect.",
+      "tags": []
+    },
+    {
+      "id": "US-003",
+      "title": "Generate lesson: Course Orientation and Environment Setup",
+      "description": "As an agent, I want a complete lesson JSON for Course Orientation and Environment Setup at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/course-orientation-and-environment-setup.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Module: Foundations of OpenCV and Digital Images\nSummary: Install OpenCV for Python, verify your toolchain, and tour the project layout you'll use throughout the course.\nScope: install opencv-python (and when to pick opencv-contrib-python); create and activate a venv; verify cv2.__version__; quick NumPy refresher check (ndarray, dtype, slicing); first cv2.imread / cv2.imshow / cv2.waitKey smoke test; project layout walkthrough so the learner knows where examples and assets live.\nLevel: intermediate\nDuration target: 15 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Course Orientation and Environment Setup; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-004",
+      "title": "Generate lesson: How Computers See: Pixels, Channels, and Color Spaces",
+      "description": "As an agent, I want a complete lesson JSON for How Computers See: Pixels, Channels, and Color Spaces at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/how-computers-see-pixels-channels-and-color-spaces.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Module: Foundations of OpenCV and Digital Images\nSummary: Understand image representation as NumPy arrays and explore RGB, BGR, grayscale, and HSV color spaces.\nScope: image as H×W (gray) or H×W×3 (color) uint8 ndarray; OpenCV's BGR channel order vs matplotlib's RGB and the BGR→RGB conversion gotcha; grayscale conversion with cv2.cvtColor(COLOR_BGR2GRAY); HSV cone and when chrominance/luma separation helps; dtype expectations (uint8 vs float32).\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## How Computers See: Pixels, Channels, and Color Spaces; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. the HSL/HSV Wikipedia entry on the HSV-conversion theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-005",
+      "title": "Generate lesson: Reading, Displaying, and Writing Images",
+      "description": "As an agent, I want a complete lesson JSON for Reading, Displaying, and Writing Images at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/reading-displaying-and-writing-images.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Module: Foundations of OpenCV and Digital Images\nSummary: Practice loading images from disk, showing them in windows, and saving results with cv2.imread, imshow, and imwrite.\nScope: cv2.imread flags (IMREAD_COLOR, IMREAD_GRAYSCALE, IMREAD_UNCHANGED) and how alpha channels behave; cv2.imshow + waitKey + destroyAllWindows lifecycle; cv2.imwrite with format-specific quality flags (JPEG_QUALITY, PNG_COMPRESSION); debugging when imread returns None (path/format issues).\nLevel: intermediate\nDuration target: 15 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Reading, Displaying, and Writing Images; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-006",
+      "title": "Generate lesson: Drawing and Annotating Images",
+      "description": "As an agent, I want a complete lesson JSON for Drawing and Annotating Images at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/drawing-and-annotating-images.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Module: Foundations of OpenCV and Digital Images\nSummary: Draw shapes, lines, and text on images to build overlays for debugging and visualization.\nScope: cv2.line / cv2.rectangle / cv2.circle / cv2.polylines argument conventions ((x,y) ordering); cv2.putText with FONT_HERSHEY_* fonts, scale, thickness, anti-aliasing (LINE_AA); BGR colour tuples; debug-overlay pattern (drawing detections / contours back onto an image copy).\nLevel: intermediate\nDuration target: 15 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Drawing and Annotating Images; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-007",
+      "title": "Generate lesson: Image Arithmetic and Bitwise Operations",
+      "description": "As an agent, I want a complete lesson JSON for Image Arithmetic and Bitwise Operations at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/image-arithmetic-and-bitwise-operations.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Module: Foundations of OpenCV and Digital Images\nSummary: Combine images using addition, blending, masks, and bitwise AND/OR/NOT for compositing tasks.\nScope: cv2.add (saturating) vs numpy + (modular) arithmetic; cv2.addWeighted (alpha + beta + gamma); cv2.subtract; cv2.bitwise_and / or / not / xor with mask arguments; mask-driven logo compositing example; per-pixel ROI assignment via slicing.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Image Arithmetic and Bitwise Operations; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. the alpha-compositing Wikipedia article on the addWeighted theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-008",
+      "title": "Generate lesson: Geometric Transformations: Resize, Rotate, Translate",
+      "description": "As an agent, I want a complete lesson JSON for Geometric Transformations: Resize, Rotate, Translate at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/geometric-transformations-resize-rotate-translate.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Module: Image Processing Fundamentals\nSummary: Apply affine transforms and warpAffine to scale, rotate, and shift images while preserving content.\nScope: cv2.resize with INTER_NEAREST / INTER_LINEAR / INTER_CUBIC / INTER_AREA — when each is appropriate; the 2×3 affine matrix; cv2.getRotationMatrix2D centred rotation; cv2.warpAffine with BORDER_* edge handling; building a translation matrix by hand.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Geometric Transformations: Resize, Rotate, Translate; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-009",
+      "title": "Generate lesson: Perspective Transforms and Image Warping",
+      "description": "As an agent, I want a complete lesson JSON for Perspective Transforms and Image Warping at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/perspective-transforms-and-image-warping.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Module: Image Processing Fundamentals\nSummary: Use four-point perspective warps to rectify documents and tilted scenes into top-down views.\nScope: 3×3 homography matrix and projective coordinates; cv2.getPerspectiveTransform from four point correspondences; cv2.warpPerspective; canonical TL/TR/BR/BL corner ordering helper; choice of output (dst) image size; document-rectification mini-app.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Perspective Transforms and Image Warping; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. cite Hartley & Zisserman Ch. 4 on the projective-mapping theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-010",
+      "title": "Generate lesson: Smoothing and Blurring Filters",
+      "description": "As an agent, I want a complete lesson JSON for Smoothing and Blurring Filters at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/smoothing-and-blurring-filters.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Module: Image Processing Fundamentals\nSummary: Compare averaging, Gaussian, median, and bilateral filters and learn when each one is appropriate.\nScope: cv2.blur (box) vs cv2.GaussianBlur vs cv2.medianBlur vs cv2.bilateralFilter; σ↔kernel-size relationship for Gaussian; choosing a filter by noise type (Gaussian noise → Gaussian, salt-and-pepper → median, edges to preserve → bilateral). Use the registered demo widget (demoType: \"gauss\") for the σ slider — at most one Demo per lesson.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Smoothing and Blurring Filters; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach the Tomasi & Manduchi 1998 paper to the bilateral-filter theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-011",
+      "title": "Generate lesson: Thresholding Techniques",
+      "description": "As an agent, I want a complete lesson JSON for Thresholding Techniques at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/thresholding-techniques.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Module: Image Processing Fundamentals\nSummary: Binarize images using global, Otsu, and adaptive thresholding to isolate regions of interest.\nScope: cv2.threshold types (THRESH_BINARY / TRUNC / TOZERO and their _INV variants); Otsu (THRESH_OTSU) between-class-variance criterion; cv2.adaptiveThreshold (ADAPTIVE_THRESH_MEAN_C and ADAPTIVE_THRESH_GAUSSIAN_C); reading the bimodal histogram intuition behind Otsu.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Thresholding Techniques; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach the Otsu 1979 paper to the Otsu theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-012",
+      "title": "Generate lesson: Morphological Operations",
+      "description": "As an agent, I want a complete lesson JSON for Morphological Operations at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/morphological-operations.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "Module: Image Processing Fundamentals\nSummary: Apply erosion, dilation, opening, and closing to clean up binary masks and shapes.\nScope: structuring element via cv2.getStructuringElement (RECT / ELLIPSE / CROSS); cv2.erode and cv2.dilate; cv2.morphologyEx with MORPH_OPEN (noise removal) and MORPH_CLOSE (hole filling); MORPH_GRADIENT and MORPH_TOPHAT use cases; the iterations parameter; mask cleanup pipeline.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Morphological Operations; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-013",
+      "title": "Generate lesson: Image Gradients with Sobel and Scharr",
+      "description": "As an agent, I want a complete lesson JSON for Image Gradients with Sobel and Scharr at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/image-gradients-with-sobel-and-scharr.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": "Module: Edges, Gradients, and Contours\nSummary: Compute first-order gradients to highlight intensity changes and prepare images for edge detection.\nScope: discrete partial derivatives Ix and Iy; Sobel kernels (3×3 and 5×5); Scharr's rotational optimality; cv2.Sobel and cv2.Scharr; the cv2.CV_64F dtype trap (negative gradients clipped to 0 on uint8); gradient magnitude sqrt(Ix^2+Iy^2) and orientation arctan2(Iy, Ix); cv2.Laplacian as a second-order alternative (preview).\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Image Gradients with Sobel and Scharr; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Scharr 2000 to the Scharr theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-014",
+      "title": "Generate lesson: Canny Edge Detection in Depth",
+      "description": "As an agent, I want a complete lesson JSON for Canny Edge Detection in Depth at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/canny-edge-detection-in-depth.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "Module: Edges, Gradients, and Contours\nSummary: Walk through the Canny pipeline and tune its thresholds for clean, connected edge maps.\nScope: the four Canny stages (Gaussian blur → gradient → non-maximum suppression → double threshold + hysteresis); choosing threshold1 and threshold2; apertureSize; the L2gradient flag (true L2 magnitude vs. |Ix|+|Iy|); threshold-sweep visualisation. The Canny 1986 paper is the primary source — attach it as section.sources on the theory section that walks through the four stages.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Canny Edge Detection in Depth; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-015",
+      "title": "Generate lesson: Finding and Drawing Contours",
+      "description": "As an agent, I want a complete lesson JSON for Finding and Drawing Contours at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/finding-and-drawing-contours.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": "Module: Edges, Gradients, and Contours\nSummary: Extract contours from binary images and visualize their hierarchy with findContours and drawContours.\nScope: cv2.findContours retrieval modes (RETR_EXTERNAL / RETR_LIST / RETR_CCOMP / RETR_TREE); approximation flags (CHAIN_APPROX_NONE vs CHAIN_APPROX_SIMPLE); cv2.drawContours with thickness/colour; reading the [next, prev, first_child, parent] hierarchy array; the Suzuki & Abe 1985 border-following algorithm as the underlying method.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Finding and Drawing Contours; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. cite Suzuki & Abe 1985 on the algorithm-internals theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-016",
+      "title": "Generate lesson: Contour Properties and Shape Analysis",
+      "description": "As an agent, I want a complete lesson JSON for Contour Properties and Shape Analysis at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/contour-properties-and-shape-analysis.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": "Module: Edges, Gradients, and Contours\nSummary: Measure area, perimeter, bounding boxes, convex hulls, and moments to classify shapes.\nScope: cv2.contourArea / cv2.arcLength; cv2.boundingRect / cv2.minAreaRect / cv2.minEnclosingCircle / cv2.fitEllipse; cv2.convexHull and cv2.convexityDefects; cv2.moments and Hu invariants via cv2.HuMoments; derived shape descriptors (aspect ratio, extent, solidity); using HuMoments to match similar shapes across rotations.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Contour Properties and Shape Analysis; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Hu 1962 to the moments theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-017",
+      "title": "Generate lesson: Histograms and Histogram Equalization",
+      "description": "As an agent, I want a complete lesson JSON for Histograms and Histogram Equalization at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/histograms-and-histogram-equalization.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": "Module: Edges, Gradients, and Contours\nSummary: Analyze pixel distributions and apply equalization and CLAHE to enhance contrast.\nScope: cv2.calcHist for grayscale and per-channel; numpy histogram comparison; cv2.equalizeHist (global) vs cv2.createCLAHE (contrast-limited adaptive); reading the CDF as the key intuition; medical-imaging contrast enhancement worked example. The Histogram widget fits the brightness-distribution figure here — the figure IS the point.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Histograms and Histogram Equalization; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Zuiderveld 1994 to the CLAHE theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-018",
+      "title": "Generate lesson: Corner Detection with Harris and Shi-Tomasi",
+      "description": "As an agent, I want a complete lesson JSON for Corner Detection with Harris and Shi-Tomasi at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/corner-detection-with-harris-and-shi-tomasi.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "Module: Features, Keypoints, and Matching\nSummary: Identify corner-like keypoints and understand why corners are stable features for tracking.\nScope: structure tensor M (autocorrelation matrix) and its eigenvalues; Harris response R = det(M) − k·trace(M)² with k≈0.04–0.06; Shi-Tomasi's min(λ1, λ2) score; cv2.cornerHarris vs cv2.goodFeaturesToTrack (qualityLevel, minDistance); cv2.cornerSubPix for sub-pixel refinement.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Corner Detection with Harris and Shi-Tomasi; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Harris & Stephens 1988 and Shi & Tomasi 1994 to the corresponding theory sections)",
+      "tags": []
+    },
+    {
+      "id": "US-019",
+      "title": "Generate lesson: Keypoint Descriptors: SIFT, ORB, and AKAZE",
+      "description": "As an agent, I want a complete lesson JSON for Keypoint Descriptors: SIFT, ORB, and AKAZE at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/keypoint-descriptors-sift-orb-and-akaze.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Module: Features, Keypoints, and Matching\nSummary: Compute and visualize local feature descriptors and compare their trade-offs.\nScope: SIFT (DoG scale-space + 128-dim float descriptor); ORB (oriented FAST + rotated BRIEF + 256-bit binary); AKAZE (nonlinear scale space, MLDB binary descriptor); cv2.SIFT_create / cv2.ORB_create / cv2.AKAZE_create; descriptor dimension/dtype comparison; trade-offs (speed, invariance, licensing). DataTable widget fits the descriptor cheat-sheet (dim / norm / time / invariances).\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Keypoint Descriptors: SIFT, ORB, and AKAZE; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Lowe 2004, Rublee 2011, Alcantarilla 2013 to the matching theory sections)",
+      "tags": []
+    },
+    {
+      "id": "US-020",
+      "title": "Generate lesson: Feature Matching with Brute-Force and FLANN",
+      "description": "As an agent, I want a complete lesson JSON for Feature Matching with Brute-Force and FLANN at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/feature-matching-with-brute-force-and-flann.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": "Module: Features, Keypoints, and Matching\nSummary: Match descriptors between images and filter matches using ratio tests for robustness.\nScope: cv2.BFMatcher norm choice (NORM_L2 for SIFT/AKAZE-MLDB-float, NORM_HAMMING for ORB); cv2.FlannBasedMatcher with KDTreeIndexParams (float) or LshIndexParams (binary); knnMatch (k=2) + Lowe's 0.7 ratio test; cross-check option; visualising matches with cv2.drawMatches.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Feature Matching with Brute-Force and FLANN; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. cite Lowe 2004 §7.1 for the ratio test and Muja & Lowe 2009 for FLANN)",
+      "tags": []
+    },
+    {
+      "id": "US-021",
+      "title": "Generate lesson: Homography Estimation and Image Stitching",
+      "description": "As an agent, I want a complete lesson JSON for Homography Estimation and Image Stitching at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/homography-estimation-and-image-stitching.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Module: Features, Keypoints, and Matching\nSummary: Use matched features and RANSAC to estimate homographies and stitch overlapping images into a panorama.\nScope: cv2.findHomography with method=cv2.RANSAC and ransacReprojThreshold; minimum 4 point correspondences; the planar / shared-camera-centre constraint; cv2.warpPerspective for image registration; cv2.Stitcher_create high-level panorama API; failure modes (parallax, low overlap).\nLevel: intermediate\nDuration target: 30 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Homography Estimation and Image Stitching; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Fischler & Bolles 1981 to the RANSAC theory section and Brown & Lowe 2007 to the stitching section)",
+      "tags": []
+    },
+    {
+      "id": "US-022",
+      "title": "Generate lesson: Template Matching for Object Localization",
+      "description": "As an agent, I want a complete lesson JSON for Template Matching for Object Localization at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/template-matching-for-object-localization.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": "Module: Features, Keypoints, and Matching\nSummary: Locate small patterns inside larger images with normalized cross-correlation template matching.\nScope: cv2.matchTemplate similarity metrics (TM_SQDIFF, TM_CCORR_NORMED, TM_CCOEFF_NORMED); cv2.minMaxLoc to extract the peak; multi-scale template matching by resizing the template; failure cases under rotation/illumination; when to escalate to feature matching (US-020).\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Template Matching for Object Localization; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-023",
+      "title": "Generate lesson: Working with Video Streams and Webcams",
+      "description": "As an agent, I want a complete lesson JSON for Working with Video Streams and Webcams at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/working-with-video-streams-and-webcams.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": "Module: Video, Motion, and Tracking\nSummary: Capture frames from video files and live cameras using VideoCapture and write annotated output.\nScope: cv2.VideoCapture from a file path vs an integer camera index; the per-frame `ret, frame = cap.read()` loop; CAP_PROP_* properties (FPS, FRAME_COUNT, FRAME_WIDTH/HEIGHT, POS_FRAMES); cv2.VideoWriter with cv2.VideoWriter_fourcc('m','p','4','v') etc.; releasing handles cleanly; debugging zero-byte output. The Video widget is appropriate here as the embedded reference clip.\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Working with Video Streams and Webcams; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference",
+      "tags": []
+    },
+    {
+      "id": "US-024",
+      "title": "Generate lesson: Background Subtraction for Motion Detection",
+      "description": "As an agent, I want a complete lesson JSON for Background Subtraction for Motion Detection at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/background-subtraction-for-motion-detection.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": "Module: Video, Motion, and Tracking\nSummary: Detect moving objects in static-camera footage using MOG2 and KNN background subtractors.\nScope: cv2.createBackgroundSubtractorMOG2 (Gaussian-mixture, shadow detection) vs cv2.createBackgroundSubtractorKNN; the learningRate parameter and history; the static-camera assumption (failure on moving cameras); combining the foreground mask with morphological opening/closing (US-012) to remove speckle.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Background Subtraction for Motion Detection; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Zivkovic 2004 to MOG2 and Zivkovic 2006 to KNN)",
+      "tags": []
+    },
+    {
+      "id": "US-025",
+      "title": "Generate lesson: Optical Flow: Lucas-Kanade and Farneback",
+      "description": "As an agent, I want a complete lesson JSON for Optical Flow: Lucas-Kanade and Farneback at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/optical-flow-lucas-kanade-and-farneback.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": "Module: Video, Motion, and Tracking\nSummary: Estimate sparse and dense pixel motion between frames to track objects and analyze movement.\nScope: brightness-constancy assumption + aperture problem; sparse Lucas-Kanade via cv2.calcOpticalFlowPyrLK on cv2.goodFeaturesToTrack keypoints; pyramidal levels (winSize, maxLevel); dense Farnebäck via cv2.calcOpticalFlowFarneback (pyr_scale, levels, winsize, poly_n, poly_sigma); HSV visualisation of dense flow (hue=direction, value=magnitude).\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Optical Flow: Lucas-Kanade and Farneback; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Lucas & Kanade 1981 to LK and Farnebäck 2003 to dense flow)",
+      "tags": []
+    },
+    {
+      "id": "US-026",
+      "title": "Generate lesson: Object Tracking with OpenCV Trackers",
+      "description": "As an agent, I want a complete lesson JSON for Object Tracking with OpenCV Trackers at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/object-tracking-with-opencv-trackers.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": "Module: Video, Motion, and Tracking\nSummary: Use built-in trackers like CSRT and KCF to follow a selected object across video frames.\nScope: cv2.TrackerCSRT_create vs cv2.TrackerKCF_create vs legacy cv2.legacy.TrackerMOSSE_create; init(frame, bbox); per-frame `ok, bbox = tracker.update(frame)`; when to reinitialise on track loss; trade-offs (CSRT slow+accurate, KCF fast+general, MOSSE very-fast+brittle). DataTable widget fits the tracker comparison.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Object Tracking with OpenCV Trackers; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. Lukežič 2017 for CSRT, Henriques 2015 for KCF, Bolme 2010 for MOSSE)",
+      "tags": []
+    },
+    {
+      "id": "US-027",
+      "title": "Generate lesson: Face Detection with Haar Cascades",
+      "description": "As an agent, I want a complete lesson JSON for Face Detection with Haar Cascades at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/face-detection-with-haar-cascades.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": "Module: Applied Computer Vision and Modern Integrations\nSummary: Run classical cascade classifiers to detect faces and eyes in images and video.\nScope: Viola-Jones architecture (Haar-like features, integral image, AdaBoost cascade); cv2.CascadeClassifier loading bundled haarcascade_frontalface_default.xml and haarcascade_eye.xml; detectMultiScale parameters (scaleFactor, minNeighbors, minSize); composing face + eye detection for nested cascades; comparing speed/accuracy with the dnn lesson (US-029).\nLevel: intermediate\nDuration target: 20 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Face Detection with Haar Cascades; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Viola & Jones 2001 to the cascade theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-028",
+      "title": "Generate lesson: Camera Calibration and Undistortion",
+      "description": "As an agent, I want a complete lesson JSON for Camera Calibration and Undistortion at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/camera-calibration-and-undistortion.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": "Module: Applied Computer Vision and Modern Integrations\nSummary: Calibrate a camera with a chessboard pattern and remove lens distortion from captured images.\nScope: pinhole camera model and intrinsics matrix K (fx, fy, cx, cy); radial (k1, k2, k3) + tangential (p1, p2) distortion coefficients; cv2.findChessboardCorners + cv2.cornerSubPix; cv2.calibrateCamera (object points / image points / per-view rvecs+tvecs); reprojection-error sanity check; cv2.undistort and cv2.getOptimalNewCameraMatrix for cropping. Briefly mention cv2.cuda / ONNX export for edge deployment (per q9, low depth).\nLevel: intermediate\nDuration target: 30 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Camera Calibration and Undistortion; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Zhang 2000 to the calibration theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-029",
+      "title": "Generate lesson: Bridging to Deep Learning with cv2.dnn",
+      "description": "As an agent, I want a complete lesson JSON for Bridging to Deep Learning with cv2.dnn at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/bridging-to-deep-learning-with-cv2dnn.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 29,
+      "passes": false,
+      "notes": "Module: Applied Computer Vision and Modern Integrations\nSummary: Load a pretrained model through the OpenCV DNN module and compare it briefly with classical approaches.\nScope: cv2.dnn.readNetFromONNX (also readNetFromCaffe / readNetFromTensorflow as alternatives); cv2.dnn.blobFromImage (mean subtraction, scale, swapRB); setInput + forward; setting backend/target (DNN_BACKEND_OPENCV, DNN_TARGET_CPU); running a small MobileNet classifier on one image; comparing the output side-by-side with the Haar-cascade detector from US-027 to discuss trade-offs. Keep deep-learning depth shallow per spec (q3 + q7) — no training, no fine-tuning.\nLevel: intermediate\nDuration target: 25 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Bridging to Deep Learning with cv2.dnn; copy ≥3 entries into lesson.sources, add section.sources on theory sections that quote a specific reference (e.g. attach Howard 2017 (MobileNets) to the model-architecture theory section)",
+      "tags": []
+    },
+    {
+      "id": "US-030",
+      "title": "Generate lesson: Capstone: Building a Mini Vision Pipeline",
+      "description": "As an agent, I want a complete lesson JSON for Capstone: Building a Mini Vision Pipeline at /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/capstone-building-a-mini-vision-pipeline.json, so the webapp can render it.",
+      "acceptanceCriteria": [
+        "Lesson JSON validates against LessonSchema",
+        "Uses ≥3 widget types where the topic permits",
+        "Uses generate_lesson skill",
+        "Lesson JSON populates `sources` with ≥3 entries drawn from /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md (or fresh research if a source is missing)",
+        "Typecheck passes"
+      ],
+      "priority": 30,
+      "passes": false,
+      "notes": "Module: Applied Computer Vision and Modern Integrations\nSummary: Combine preprocessing, feature extraction, and tracking into a small end-to-end project of your choice.\nScope: pick one of {document-scanner (US-009 + US-021), panorama-stitcher (US-019/US-021), motion-counter (US-024 + US-026), face-tracker (US-027 + US-026)}; modular function decomposition (load → preprocess → detect → track → annotate); reproducibility notes (pin OpenCV version, seed RNG); brief deployment-direction paragraph on ONNX export and edge inference (per q9, low depth). The Sandbox widget is the natural closer here. This is intentionally an open lesson with multiple valid choices — the structure should encourage experimentation rather than gate a single answer.\nLevel: intermediate\nDuration target: 30 min\nTheory/practice mix: 0.5\nSource hints: see /courses/opencv-in-computer-vision-a-practical-intermediate-course/sources.md → ## Capstone: Building a Mini Vision Pipeline; copy ≥3 entries into lesson.sources; cite course-wide references (Szeliski, OpenCV docs root) when describing the pipeline scaffold",
+      "tags": []
+    },
+    {
+      "id": "US-031",
+      "title": "Review pass: validate all lessons against schema and fix issues",
+      "description": "As an agent, I want to re-validate every /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/*.json against LessonSchema and the per-widget JSON Schemas in src/widgets/schemas/, fixing anything the per-lesson agents got wrong.",
+      "acceptanceCriteria": [
+        "All lesson JSON files under /courses/opencv-in-computer-vision-a-practical-intermediate-course/lessons/ parse against LessonSchema",
+        "All per-widget data fields parse against the matching schema in src/widgets/schemas/",
+        "Section IDs are unique within each lesson",
+        "Lesson slug in the file matches the slug listed in /courses/opencv-in-computer-vision-a-practical-intermediate-course/course.json",
+        "Typecheck passes"
+      ],
+      "priority": 31,
+      "passes": false,
+      "notes": "Catch-all cleanup story. Skip if every per-lesson story already produced clean JSON.",
+      "tags": []
+    }
+  ]
+}
