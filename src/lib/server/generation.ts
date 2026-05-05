@@ -2,8 +2,9 @@
 // subprocess and exposes its output as a stream of structured events.
 //
 // Pipeline: a natural-language brief that points `claude -p` at the
-// init_course skill, then `./scripts/ralph/ralph.sh`. Both child processes
-// run with stdout+stderr captured to the run's event log AND tee'd to
+// init_course skill, then ONE `claude -p` per lesson driven directly from
+// course.json — no ralph.sh, no worktrees, no branches, no git push. Both
+// stages run with stdout+stderr captured to the run's event log AND tee'd to
 // `/courses/<slug>/.generation.log`. Concurrency is gated to 1.
 
 import {
@@ -14,14 +15,21 @@ import {
 } from 'node:child_process';
 import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
-import { assertSafeSlug, courseDir, courseFile } from './paths';
+import { CourseSchema } from '@/lib/schemas/course';
+import { LessonSchema } from '@/lib/schemas/lesson';
+import { assertSafeSlug, courseDir, courseFile, lessonFile } from './paths';
+
+export interface FailedLesson {
+  slug: string;
+  reason: string;
+}
 
 export type GenerationEvent =
   | { type: 'log'; line: string }
   | { type: 'stage'; name: string; status: 'started' | 'done' | 'error' }
   | { type: 'progress'; current: number; total: number }
-  | { type: 'done'; courseSlug: string }
-  | { type: 'error'; message: string };
+  | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+  | { type: 'error'; message: string; failedLessons?: FailedLesson[] };
 
 export type GenerationListener = (event: GenerationEvent) => void;
 
@@ -38,7 +46,7 @@ export interface SpawnDeps {
   spawn?: typeof defaultSpawn;
   isExecutableInPath?: (cmd: string) => boolean;
   initCourseCommand?: (slug: string) => { command: string; args: string[] };
-  ralphCommand?: () => { command: string; args: string[] };
+  lessonCommand?: (slug: string, lessonSlug: string) => { command: string; args: string[] };
   cwd?: string;
   sigkillGraceMs?: number;
 }
@@ -119,10 +127,11 @@ process.exit(0);
     return { command: process.execPath, args: ['-e', script] };
   }
   if (process.env.GENERATION_MOCK === '1') {
-    // Test-only fast path that writes a valid stub course.json + lesson and
-    // emits a few log lines. Lets the playwright browser test exercise the
-    // full Stage-5-streaming → redirect-to-/courses/<slug> flow without
-    // depending on a real `claude` CLI being on PATH.
+    // Test-only fast path that writes a valid stub course.json (lessons live
+    // in their own per-lesson mock — see defaultLessonCommand). Lets the
+    // playwright browser test exercise the full Stage-5-streaming →
+    // redirect-to-/courses/<slug> flow without depending on a real `claude`
+    // CLI being on PATH.
     const courseJson = {
       schemaVersion: 1,
       slug,
@@ -141,24 +150,6 @@ process.exit(0);
       createdAt: '2026-05-04T00:00:00.000Z',
       updatedAt: '2026-05-04T00:00:00.000Z',
     };
-    const lessonJson = {
-      schemaVersion: 1,
-      slug: 'intro',
-      courseSlug: slug,
-      moduleId: 'm1',
-      title: 'Intro',
-      eyebrow: 'MOCK',
-      description: 'Stub lesson generated for the browser test.',
-      estimatedMinutes: 5,
-      sections: [
-        {
-          id: 's1',
-          title: 'Read',
-          type: 'theory',
-          data: { markdown: 'Hello from the mock generator.' },
-        },
-      ],
-    };
     const script = `
 const fs = require('fs');
 const path = require('path');
@@ -169,7 +160,6 @@ console.log('[mock init_course] researching topic...');
 setTimeout(() => {
   console.log('[mock init_course] writing course.json');
   fs.writeFileSync(path.join(dir, 'course.json'), ${JSON.stringify(JSON.stringify(courseJson, null, 2))});
-  fs.writeFileSync(path.join(dir, 'lessons', 'intro.json'), ${JSON.stringify(JSON.stringify(lessonJson, null, 2))});
   console.log('[mock init_course] done');
 }, 200);
 `;
@@ -187,29 +177,76 @@ setTimeout(() => {
     `Argument: slug = "${slug}". ` +
     `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course-spec.json: ` +
     `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md), ` +
-    `do the architect pass (write /courses/${slug}/course.json validated against CourseSchema), ` +
-    `then write a fresh scripts/ralph/prd.json with one story per lesson. ` +
-    `Do not generate lesson content here — that happens in the next ralph stage.`;
+    `do the architect pass (write /courses/${slug}/course.json validated against CourseSchema). ` +
+    `Do not generate lesson content here — the webapp's generation backend will invoke generate_lesson once per lesson after this step. ` +
+    `Do NOT touch scripts/ralph/.`;
   return {
     command: 'claude',
     args: ['-p', prompt, '--dangerously-skip-permissions'],
   };
 }
 
-function defaultRalphCommand(): { command: string; args: string[] } {
+export function defaultLessonCommand(
+  slug: string,
+  lessonSlug: string,
+): { command: string; args: string[] } {
+  // Defence-in-depth: same rule as the slug — re-validate before we splice
+  // either value into the prompt or a shell argv.
+  assertSafeSlug(slug);
+  assertSafeSlug(lessonSlug);
   if (process.env.GENERATION_MOCK === '1') {
+    // Mirror the init mock: write a valid stub lesson JSON the post-spawn
+    // LessonSchema validation will accept, plus a couple of log lines so the
+    // SSE log panel has something to show.
+    const lessonJson = {
+      schemaVersion: 1,
+      slug: lessonSlug,
+      courseSlug: slug,
+      moduleId: 'm1',
+      title: lessonSlug
+        .split('-')
+        .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+        .join(' '),
+      eyebrow: 'MOCK',
+      description: 'Stub lesson generated by GENERATION_MOCK=1.',
+      estimatedMinutes: 5,
+      sections: [
+        {
+          id: 's1',
+          title: 'Read',
+          type: 'theory',
+          data: { markdown: 'Hello from the mock lesson generator.' },
+        },
+      ],
+    };
     const script = `
-console.log('[mock ralph] starting');
-setTimeout(() => {
-  console.log('Lesson 1/1');
-  setTimeout(() => {
-    console.log('[mock ralph] all lessons generated');
-  }, 100);
-}, 200);
+const fs = require('fs');
+const path = require('path');
+const root = process.env.COURSES_ROOT_OVERRIDE || path.join(process.cwd(), 'courses');
+const dir = path.join(root, ${JSON.stringify(slug)}, 'lessons');
+fs.mkdirSync(dir, { recursive: true });
+console.log('[mock generate_lesson] writing ${lessonSlug}.json');
+fs.writeFileSync(path.join(dir, ${JSON.stringify(`${lessonSlug}.json`)}), ${JSON.stringify(JSON.stringify(lessonJson, null, 2))});
+console.log('[mock generate_lesson] done ${lessonSlug}');
 `;
     return { command: process.execPath, args: ['-e', script] };
   }
-  return { command: './scripts/ralph/ralph.sh', args: [] };
+  // Natural-language brief that names the generate_lesson skill and points
+  // the agent at its SKILL.md. The two slugs are passed through the prompt
+  // body (after assertSafeSlug above limits each to [A-Za-z0-9-_], which
+  // makes them safe to splice) and `claude -p` runs in --dangerously-skip-
+  // permissions mode so the agent can write the lesson file unattended.
+  const prompt =
+    `Run the generate_lesson skill defined in scripts/ralph/skills/generate_lesson/SKILL.md. ` +
+    `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
+    `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
+    `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
+    `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
+    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson.`;
+  return {
+    command: 'claude',
+    args: ['-p', prompt, '--dangerously-skip-permissions'],
+  };
 }
 
 function makeRunId(): string {
@@ -235,7 +272,7 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
 
   const spawnFn = deps.spawn ?? defaultSpawn;
   const initSpec = (deps.initCourseCommand ?? defaultInitCourseCommand)(slug);
-  const ralphSpec = (deps.ralphCommand ?? defaultRalphCommand)();
+  const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
 
@@ -303,19 +340,6 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     }
   }
 
-  function tryParseProgress(line: string) {
-    // Recognise "Lesson 3/12", "Generated lesson 3 of 12", "(2/5)", etc.
-    const slash = /(?:^|[^0-9])(\d+)\s*\/\s*(\d+)(?:[^0-9]|$)/;
-    const ofWord = /(\d+)\s+of\s+(\d+)/i;
-    const match = line.match(slash) ?? line.match(ofWord);
-    if (!match) return;
-    const current = parseInt(match[1], 10);
-    const total = parseInt(match[2], 10);
-    if (!Number.isFinite(current) || !Number.isFinite(total)) return;
-    if (total <= 0 || current < 0 || current > total) return;
-    emit({ type: 'progress', current, total });
-  }
-
   function pumpStream(child: ChildProcess) {
     let stdoutBuf = '';
     let stderrBuf = '';
@@ -330,7 +354,6 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
         }
       }
       emit({ type: 'log', line });
-      tryParseProgress(line);
     };
 
     const pump = (which: 'out' | 'err') => (chunk: Buffer | string) => {
@@ -409,7 +432,11 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     });
   }
 
-  function finalize(kind: 'done' | 'error', message?: string) {
+  function finalize(
+    kind: 'done' | 'error',
+    message?: string,
+    failedLessons: FailedLesson[] = [],
+  ) {
     if (run.finished) return;
     run.finished = true;
     if (killTimer) {
@@ -417,9 +444,14 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
       killTimer = null;
     }
     if (kind === 'done') {
-      emit({ type: 'done', courseSlug: slug });
+      emit({ type: 'done', courseSlug: slug, failedLessons });
     } else {
-      emit({ type: 'error', message: message ?? 'Generation failed' });
+      const ev: GenerationEvent = {
+        type: 'error',
+        message: message ?? 'Generation failed',
+      };
+      if (failedLessons.length > 0) ev.failedLessons = failedLessons;
+      emit(ev);
     }
     logStreamClosed = true;
     try {
@@ -434,6 +466,7 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
   runsById.set(id, run);
 
   const pipeline = (async () => {
+    // ── Stage 1: init_course ────────────────────────────────────────────────
     const initResult = await spawnStage('init_course', initSpec);
     if (cancelled) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
@@ -447,12 +480,12 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     }
     // Post-init guard: claude in -p mode silently no-ops on prompts it
     // doesn't understand (the original bug printed "Unknown command:" and
-    // exited 0). If course.json is missing, ralph would still find the old
-    // AI-Lecturer prd.json with everything passes:true, exit 0 in seconds,
-    // and the SSE stream would emit `done` despite nothing having been
-    // generated — so the wizard would redirect to a 404 page.
+    // exited 0). If course.json is missing, we cannot iterate lessons —
+    // bail out before the per-lesson loop tries to read a file that's
+    // not there.
+    let courseRaw: string;
     try {
-      await fs.access(courseFile(slug));
+      courseRaw = await fs.readFile(courseFile(slug), 'utf8');
     } catch {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
       finalize(
@@ -461,21 +494,88 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
       );
       return;
     }
+    let course;
+    try {
+      course = CourseSchema.parse(JSON.parse(courseRaw));
+    } catch (err) {
+      emit({ type: 'stage', name: 'init_course', status: 'error' });
+      const reason = err instanceof Error ? err.message : String(err);
+      finalize('error', `init_course produced invalid course.json: ${reason}`);
+      return;
+    }
     emit({ type: 'stage', name: 'init_course', status: 'done' });
 
-    const ralphResult = await spawnStage('ralph', ralphSpec);
-    if (cancelled) {
-      emit({ type: 'stage', name: 'ralph', status: 'error' });
-      finalize('error', 'Cancelled by user');
+    // ── Stage 2..N+1: one claude call per lesson, sequentially ─────────────
+    const lessons = course.modules.flatMap((m) =>
+      m.lessons.map((l) => ({ slug: l.slug, moduleId: m.id })),
+    );
+    const total = lessons.length;
+    const failedLessons: FailedLesson[] = [];
+
+    if (total === 0) {
+      // Nothing to generate — surface as success-with-empty so the wizard can
+      // still redirect; the course page will render an empty TOC.
+      emit({ type: 'progress', current: 0, total: 0 });
+      finalize('done', undefined, failedLessons);
       return;
     }
-    if (ralphResult.exit !== 0) {
-      emit({ type: 'stage', name: 'ralph', status: 'error' });
-      finalize('error', `ralph failed (exit ${ralphResult.exit})`);
+
+    emit({ type: 'progress', current: 0, total });
+
+    for (let i = 0; i < lessons.length; i++) {
+      if (cancelled) {
+        finalize('error', 'Cancelled by user', failedLessons);
+        return;
+      }
+      const lesson = lessons[i];
+      const stageName = `lesson:${lesson.slug}`;
+      const spec = lessonCommand(slug, lesson.slug);
+      const result = await spawnStage(stageName, spec);
+
+      if (cancelled) {
+        emit({ type: 'stage', name: stageName, status: 'error' });
+        failedLessons.push({ slug: lesson.slug, reason: 'Cancelled by user' });
+        finalize('error', 'Cancelled by user', failedLessons);
+        return;
+      }
+
+      if (result.exit !== 0) {
+        emit({ type: 'stage', name: stageName, status: 'error' });
+        failedLessons.push({
+          slug: lesson.slug,
+          reason: `exited ${result.exit}`,
+        });
+        emit({ type: 'progress', current: i + 1, total });
+        continue;
+      }
+
+      // Validate the produced lesson file against LessonSchema. A failed
+      // validation (or a missing file) marks this lesson as failed but does
+      // NOT abort the run — the next lesson still gets a chance.
+      try {
+        const raw = await fs.readFile(lessonFile(slug, lesson.slug), 'utf8');
+        LessonSchema.parse(JSON.parse(raw));
+        emit({ type: 'stage', name: stageName, status: 'done' });
+      } catch (err) {
+        emit({ type: 'stage', name: stageName, status: 'error' });
+        const reason = err instanceof Error ? err.message : String(err);
+        failedLessons.push({ slug: lesson.slug, reason });
+      }
+      emit({ type: 'progress', current: i + 1, total });
+    }
+
+    // If every lesson failed there's nothing for the wizard to redirect to —
+    // surface an error. Otherwise the run is `done` with a non-empty
+    // failedLessons summary so the UI can show what's missing.
+    if (failedLessons.length === total) {
+      finalize(
+        'error',
+        `All ${total} lesson(s) failed to generate — see .generation.log`,
+        failedLessons,
+      );
       return;
     }
-    emit({ type: 'stage', name: 'ralph', status: 'done' });
-    finalize('done');
+    finalize('done', undefined, failedLessons);
   })();
 
   pipeline.catch((err) => {
