@@ -24,6 +24,7 @@ import {
 import { GET as getLogsIndex } from '@/app/api/courses/[slug]/logs/route';
 import { GET as getLogStage } from '@/app/api/courses/[slug]/logs/[stage]/route';
 import { GET as getActiveRunRoute } from '@/app/api/courses/active-run/route';
+import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
 import {
@@ -85,10 +86,14 @@ const writeCourseFile = async (slug: string, payload: unknown) => {
 beforeEach(async () => {
   coursesRoot = await fs.mkdtemp(path.join(tmpdir(), 'ai-lecturer-test-'));
   process.env.COURSES_ROOT_OVERRIDE = coursesRoot;
+  process.env.GENERATION_QUEUE_FILE_OVERRIDE = path.join(coursesRoot, 'generation-queue.json');
+  __resetGenerationForTesting();
 });
 
 afterEach(async () => {
+  __resetGenerationForTesting();
   delete process.env.COURSES_ROOT_OVERRIDE;
+  delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -899,13 +904,14 @@ describe('GET /api/courses/active-run (US-106)', () => {
     );
     const res = await getActiveRunRoute();
     const body = (await res.json()) as
-      | { active: false }
-      | { active: true; slug: string; name: string; stage: string };
+      | { active: false; queue: unknown[] }
+      | { active: true; slug: string; name: string; stage: string; queue: unknown[] };
     expect(body).toEqual({
       active: true,
       slug: 'demo-resume',
       name: 'Resumed Course',
       stage: 'lesson:intro',
+      queue: [],
     });
   });
 

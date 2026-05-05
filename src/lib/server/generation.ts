@@ -21,6 +21,7 @@ import {
   type SpawnOptions,
 } from 'node:child_process';
 import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
@@ -65,13 +66,35 @@ export interface GenerationRun {
 }
 
 /**
+ * Per-slug queue entry surfaced to the UI by GET /api/courses/active-run
+ * (US-107). `position` is 1-based — entry at index 0 in the on-disk queue
+ * has position 1.
+ */
+export interface QueueSummaryEntry {
+  slug: string;
+  name: string;
+  position: number;
+}
+
+/**
  * Summary returned by GET /api/courses/active-run (US-106). Lets the /create
  * page detect a still-running generation after a tab/server reload and offer
- * the user a one-click resume.
+ * the user a one-click resume. As of US-107 the response also carries the
+ * pending queue so callers can show "X w kolejce" context.
  */
 export type ActiveRunSummary =
-  | { active: false }
-  | { active: true; slug: string; name: string; stage: string };
+  | { active: false; queue: QueueSummaryEntry[] }
+  | { active: true; slug: string; name: string; stage: string; queue: QueueSummaryEntry[] };
+
+/**
+ * Result of POST /api/courses/generate (US-107). Either we started the run
+ * straight away (and got an SSE id back) or we appended it to the FIFO
+ * queue — in which case the caller polls /api/courses/active-run to learn
+ * when the slug becomes active and the SSE id is finally available.
+ */
+export type EnqueueResult =
+  | { kind: 'started'; run: GenerationRun }
+  | { kind: 'queued'; slug: string; position: number; total: number };
 
 export interface SpawnDeps {
   spawn?: typeof defaultSpawn;
@@ -112,8 +135,96 @@ let activeRun: GenerationRun | null = null;
 // activeRun and end up spawning parallel pipelines that overwrite each
 // other's lesson files. See US-101.
 let startingGeneration = false;
+// US-107: when the very first POST for a slug is mid-`startGeneration`
+// (between the synchronous reservation and the `activeRun = run` assignment),
+// a concurrent POST from React's StrictMode dev double-mount lands while
+// activeRun is still null and would otherwise be enqueued as a *separate*
+// queue entry. Tracking the starting slug lets us collapse the second call
+// into idempotent same-slug behaviour just like once activeRun has been
+// assigned.
+let startingSlug: string | null = null;
 const runsById = new Map<string, GenerationRun>();
 let depsOverride: SpawnDeps | null = null;
+
+// US-107 — sequential FIFO queue for course generations. When a POST arrives
+// while activeRun is still running, the new slug is appended to `queue` and
+// persisted to disk so it survives server restarts; finalize() pops the head
+// and starts it as soon as the active run finishes.
+interface QueueEntry {
+  slug: string;
+  enqueuedAt: string;
+}
+
+let queue: QueueEntry[] = [];
+let queueLoaded = false;
+
+function queueFile(): string {
+  const override = process.env.GENERATION_QUEUE_FILE_OVERRIDE;
+  if (override && override.length > 0) return override;
+  return path.join(os.homedir(), '.ai-lecturer', 'generation-queue.json');
+}
+
+async function loadQueueFromDisk(): Promise<void> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(queueFile(), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      queue = [];
+      return;
+    }
+    queue = [];
+    return;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { entries?: unknown };
+    const entries = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    queue = entries.flatMap((e): QueueEntry[] => {
+      if (typeof e !== 'object' || e === null) return [];
+      const slug = (e as { slug?: unknown }).slug;
+      const enqueuedAt = (e as { enqueuedAt?: unknown }).enqueuedAt;
+      if (typeof slug !== 'string' || slug.length === 0) return [];
+      return [
+        { slug, enqueuedAt: typeof enqueuedAt === 'string' ? enqueuedAt : new Date().toISOString() },
+      ];
+    });
+  } catch {
+    queue = [];
+  }
+}
+
+async function persistQueue(): Promise<void> {
+  const file = queueFile();
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify({ entries: queue }, null, 2), 'utf8');
+  } catch {
+    /* best-effort — losing the queue file across a restart degrades to the
+     * pre-US-107 single-run behaviour, never breaks the active run. */
+  }
+}
+
+async function ensureQueueLoaded(): Promise<void> {
+  if (queueLoaded) return;
+  queueLoaded = true;
+  await loadQueueFromDisk();
+}
+
+/**
+ * Snapshot of the persisted queue surfaced to the UI. Walks the in-memory
+ * queue (loaded lazily on first call), resolves a human-readable name for
+ * each entry, and assigns 1-based positions.
+ */
+async function getQueueSummary(): Promise<QueueSummaryEntry[]> {
+  if (queue.length === 0) return [];
+  const out: QueueSummaryEntry[] = [];
+  for (let i = 0; i < queue.length; i++) {
+    const entry = queue[i];
+    const name = await resolveCourseName(entry.slug);
+    out.push({ slug: entry.slug, name, position: i + 1 });
+  }
+  return out;
+}
 
 export function getActiveRun(): GenerationRun | null {
   return activeRun;
@@ -230,11 +341,23 @@ async function deriveStageFromLogs(slug: string): Promise<string | null> {
  * markers (PID not alive) are unlinked on encounter.
  */
 export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
+  await ensureQueueLoaded();
+  const result = await computeActiveRunSummary();
+  // US-107: if the server restarted with a non-empty queue and nothing is
+  // active, kick off the head right now so the user's POST-and-walk-away
+  // expectation holds. Fire AFTER the snapshot is built so the caller sees
+  // the queue they just enqueued; the next poll will see it promoted.
+  maybeStartQueueHead();
+  return result;
+}
+
+async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
   if (activeRun && !activeRun.finished) {
     const slug = activeRun.slug;
     const stage = activeRun.currentStage ?? 'init_course';
     const name = await resolveCourseName(slug);
-    return { active: true, slug, name, stage };
+    const queueSummary = await getQueueSummary();
+    return { active: true, slug, name, stage, queue: queueSummary };
   }
 
   // Cold-start reconciliation. Scan for `.generating.json` markers — each
@@ -245,9 +368,8 @@ export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { active: false };
-    return { active: false };
+  } catch {
+    return { active: false, queue: await getQueueSummary() };
   }
 
   for (const entry of entries) {
@@ -285,9 +407,9 @@ export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
       (await deriveStageFromLogs(slug)) ??
       'init_course';
     const name = await resolveCourseName(slug);
-    return { active: true, slug, name, stage };
+    return { active: true, slug, name, stage, queue: await getQueueSummary() };
   }
-  return { active: false };
+  return { active: false, queue: await getQueueSummary() };
 }
 
 export function getRunById(id: string): GenerationRun | undefined {
@@ -306,8 +428,11 @@ export function __resetForTesting(): void {
   }
   activeRun = null;
   startingGeneration = false;
+  startingSlug = null;
   runsById.clear();
   depsOverride = null;
+  queue = [];
+  queueLoaded = false;
 }
 
 function defaultIsExecutableInPath(cmd: string): boolean {
@@ -676,6 +801,133 @@ interface FailedReportEntry {
   logPath: string;
 }
 
+/** Test-only escape hatch: returns the persisted slugs in FIFO order. */
+export async function __getQueueForTesting(): Promise<string[]> {
+  await ensureQueueLoaded();
+  return queue.map((e) => e.slug);
+}
+
+/**
+ * Whether `slug` already has an entry in the FIFO queue. Used to keep POST
+ * /api/courses/generate idempotent when the same course is re-submitted while
+ * still pending.
+ */
+function queuePosition(slug: string): number {
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i].slug === slug) return i + 1;
+  }
+  return -1;
+}
+
+/**
+ * Append `slug` to the persisted FIFO queue and return its new 1-based
+ * position. No-op (returns the existing position) when the slug is already
+ * queued.
+ */
+async function appendToQueue(slug: string): Promise<number> {
+  const existing = queuePosition(slug);
+  if (existing > 0) return existing;
+  queue.push({ slug, enqueuedAt: new Date().toISOString() });
+  await persistQueue();
+  return queue.length;
+}
+
+/**
+ * If activeRun is null and the queue has entries, pop the head and try to
+ * start it. Fire-and-forget — failures (e.g. claude offline, missing spec)
+ * are surfaced via the run's own error event when applicable, otherwise the
+ * head is dropped and the next entry is tried.
+ *
+ * Re-entrant safe: `startingGeneration`/`activeRun` guard inside
+ * `startGeneration` prevents duplicate spawns, and `inFlight` here prevents
+ * recursive `maybeStartQueueHead → finalize → maybeStartQueueHead` loops
+ * from re-entering before the previous head has fully assigned activeRun.
+ */
+let queueDrainerInFlight = false;
+function maybeStartQueueHead(): void {
+  if (queueDrainerInFlight) return;
+  if (activeRun && !activeRun.finished) return;
+  if (startingGeneration) return;
+  if (queue.length === 0) return;
+  queueDrainerInFlight = true;
+  void (async () => {
+    try {
+      while (queue.length > 0) {
+        if (activeRun && !activeRun.finished) return;
+        if (startingGeneration) return;
+        // Pop the head BEFORE starting so failures cleanly drop the broken
+        // entry and the next iteration sees the new head.
+        const head = queue.shift()!;
+        await persistQueue();
+        try {
+          // Use the global depsOverride so tests that drive the queue
+          // through the route handler see consistent spawn deps.
+          await startGeneration(head.slug);
+          return;
+        } catch {
+          // The head was already removed; try the next one.
+          continue;
+        }
+      }
+    } finally {
+      queueDrainerInFlight = false;
+    }
+  })();
+}
+
+/**
+ * Front door for POST /api/courses/generate (US-107). Returns either a fresh
+ * run (when nothing is active) or a queued response (when activeRun is busy
+ * with a different slug). Same-slug requests stay idempotent: if the slug is
+ * already running, the existing run is returned; if it's already queued, the
+ * existing queued position is returned.
+ */
+export async function enqueueGeneration(
+  slug: string,
+  depsArg: SpawnDeps = {},
+): Promise<EnqueueResult> {
+  await ensureQueueLoaded();
+
+  // Idempotent attach for same-slug-already-active. Mirror startGeneration's
+  // own check so callers don't have to special-case it.
+  if (activeRun && !activeRun.finished && activeRun.slug === slug) {
+    return { kind: 'started', run: activeRun };
+  }
+
+  // Same slug already pending → return its current position. Skip the
+  // append; FIFO is preserved.
+  const existingPos = queuePosition(slug);
+  if (existingPos > 0) {
+    return { kind: 'queued', slug, position: existingPos, total: queue.length };
+  }
+
+  // Same slug is mid-startGeneration but activeRun isn't assigned yet (the
+  // narrow window between the synchronous reservation and the awaited
+  // mkdir/etc inside startGenerationInner). React StrictMode dev double-mount
+  // routinely lands a second POST here. Wait briefly for the first call to
+  // finish setup, then attach idempotently.
+  if (startingGeneration && startingSlug === slug) {
+    for (let i = 0; i < 100 && startingGeneration && startingSlug === slug; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    if (activeRun && !activeRun.finished && activeRun.slug === slug) {
+      return { kind: 'started', run: activeRun };
+    }
+    // Fall through — first call finished and dropped its reservation; we
+    // can take the open slot.
+  }
+
+  // Different slug while one is in flight → enqueue.
+  if ((activeRun && !activeRun.finished) || startingGeneration) {
+    const position = await appendToQueue(slug);
+    return { kind: 'queued', slug, position, total: queue.length };
+  }
+
+  // Slot is open. Start straight away.
+  const run = await startGeneration(slug, depsArg);
+  return { kind: 'started', run };
+}
+
 export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Promise<GenerationRun> {
   // Atomic check + reservation. MUST stay synchronous (no await between the
   // guard and the `startingGeneration = true` assignment) — otherwise two
@@ -693,6 +945,7 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     throw new GenerationConflictError();
   }
   startingGeneration = true;
+  startingSlug = slug;
 
   try {
     return await startGenerationInner(slug, depsArg);
@@ -703,6 +956,7 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     // directly. On the rollback path activeRun stays null so the next call
     // is free to start.
     startingGeneration = false;
+    startingSlug = null;
   }
 }
 
@@ -1002,6 +1256,11 @@ async function startGenerationInner(
     // call no longer sees this slug as in flight (US-106).
     void removeGeneratingMarker(slug);
     if (activeRun === run) activeRun = null;
+    // US-107: pop the next queued slug (if any) and start it. Defers to a
+    // microtask so the current emit() chain finishes first; the drainer is
+    // re-entrant safe (sees activeRun cleared above and its own
+    // queueDrainerInFlight guard).
+    maybeStartQueueHead();
   }
 
   async function writeFailedReport(entries: FailedReportEntry[]) {
