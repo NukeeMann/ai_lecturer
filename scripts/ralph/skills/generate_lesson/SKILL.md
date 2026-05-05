@@ -1,16 +1,16 @@
 ---
 name: generate_lesson
-description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json from a 'Generate lesson: ...' story produced by the init_course skill. Reads the story notes (module / summary / scope / level / duration / theory-practice ratio), the shared course context (research.md + course.json), and the per-widget JSON Schemas under src/widgets/schemas/, then emits a lesson with 4–8 sections that mixes widget types and validates against LessonSchema. Auto-discovered by ralph agents picking up per-lesson stories — not user-invocable."
-user-invocable: false
+description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json. Accepts two explicit arguments — the course slug and the lesson slug — from the invoking prompt. Reads the lesson context from /courses/<slug>/course.json (find lesson by slug → recover module / estimatedMinutes / title), /courses/<slug>/research.md, and /courses/<slug>/sources.md, then composes a lesson with 4–8 sections that mixes widget types and validates against LessonSchema. Invoked once per lesson by the webapp's course-generation backend after init_course has written course.json. Triggers on: generate_lesson, Run generate_lesson, generate lesson <slug>/<lesson-slug>."
+user-invocable: true
 ---
 
 # Generate Lesson
 
-Produce one valid lesson JSON file for the per-lesson story you are currently working on. Each invocation handles exactly one story (one lesson). The skill is auto-discovered when ralph picks up a story whose title starts with `Generate lesson: ...`.
+Produce one valid lesson JSON file for a single lesson. Each invocation handles exactly one lesson identified by `(slug, lesson-slug)`.
 
-This skill is the back half of the course-generation pipeline. The front half is [`init_course`](../init_course/SKILL.md) — it reads a `course-spec.json` produced by the webapp wizard, writes `/courses/<slug>/research.md` + `/courses/<slug>/course.json`, and seeds `scripts/ralph/prd.json` with one `Generate lesson: ...` story per lesson. Read `init_course/SKILL.md` if you need context on how this story landed in `prd.json`.
+This skill is the back half of the course-generation pipeline. The front half is [`init_course`](../init_course/SKILL.md) — it reads a `course-spec.json` produced by the webapp wizard and writes `/courses/<slug>/research.md`, `/courses/<slug>/sources.md`, and `/courses/<slug>/course.json`. The webapp's generation backend then walks `course.json.modules.flatMap(m => m.lessons)` and invokes this skill once per lesson with the `(slug, lesson-slug)` pair.
 
-**Do NOT touch other lesson files. Do NOT update `course.json` or `research.md`. Do NOT mark `passes` true — the orchestrator handles that.**
+**Do NOT touch other lesson files. Do NOT update `course.json` or `research.md` or `sources.md` (you may *append* a `## <Lesson title>` block to `sources.md` if you discover new references — see Step 4 — but never delete or rewrite existing entries).**
 
 ---
 
@@ -18,70 +18,73 @@ This skill is the back half of the course-generation pipeline. The front half is
 
 > **Before you start: read [`docs/widgets.md`](../../../../docs/widgets.md)** — the canonical widget reference. Use it to pick which widgets to compose into the lesson and to crib minimal example shapes for each `data` payload. The Zod schemas in `src/widgets/<Name>/schema.ts` (mirrored as JSON Schemas under `src/widgets/schemas/`) remain the source of truth; open them when the doc is ambiguous or you need a field the summary omits.
 
-1. Read the **current ralph story** from `scripts/ralph/prd.json` (the story whose `id` matches `RALPH_TASK_ID`, or the highest-priority `passes: false` story otherwise — same rule as `scripts/ralph/CLAUDE.md`).
-2. Read **course context**: `/courses/<slug>/research.md`, `/courses/<slug>/sources.md` (if present), and `/courses/<slug>/course.json`.
-3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`).
-4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Prefer stable URLs (DOI, arxiv, official docs, Wikipedia for foundational concepts, official YouTube channels). See Step 4 for the full rules.
+1. Receive **two arguments** from the invoking prompt: the course `slug` and the `lesson-slug`. Validate both against the safe-slug rule (`[a-z0-9-]`, no `..`, no `/` — same rule as `assertSafeSlug` in `src/lib/server/paths.ts`).
+2. Read **course context**: `/courses/<slug>/course.json`, `/courses/<slug>/research.md`, and `/courses/<slug>/sources.md`. Find the lesson in `course.json` by `slug` to recover its `moduleId`, `title`, and `estimatedMinutes`.
+3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`, `plotImage.json`).
+4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Start from the matching `## <lesson title>` heading in `sources.md`; supplement with your own research only if those entries don't fully cover the lesson scope. See Step 4 for the full rules.
 5. **Visual illustrations pass** — pick the inline images and Image-widget hero figures that will accompany the lesson. Lessons should be visually rich, not walls of text. See Step 5 for the rules.
 6. Compose a lesson with **4–8 sections** mixing widget types (rules below).
 7. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
-8. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never commit invalid JSON.
+8. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never write invalid JSON.
 9. Stop. The skill ends after the lesson file is written and validates.
 
 ---
 
-## Step 1: Read the Story
+## Step 1: Receive Arguments and Locate the Lesson
 
-The story lives in `scripts/ralph/prd.json` and looks like this (produced by `init_course`):
+The invoking prompt passes two explicit arguments — the course `slug` and the `lesson-slug` of the lesson to author. Typical shapes:
 
-```json
-{
-  "id": "US-005",
-  "title": "Generate lesson: Median filter",
-  "description": "As an agent, I want a complete lesson JSON for Median filter at /courses/image-denoising/lessons/median-filter.json, so the webapp can render it.",
-  "acceptanceCriteria": [
-    "Lesson JSON validates against LessonSchema",
-    "Uses ≥3 widget types where the topic permits",
-    "Uses generate_lesson skill",
-    "Typecheck passes"
-  ],
-  "priority": 5,
-  "passes": false,
-  "notes": "Module: Non-linear filters\nSummary: How a sliding median erases impulse noise without smearing edges.\nScope: window definition; median vs. mean for salt-and-pepper noise; edge handling; complexity tradeoffs.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.4",
-  "tags": []
-}
+```
+Run generate_lesson, slug=edge-detection-basics, lesson-slug=the-canny-edge-detector
 ```
 
-Pull the following from the story:
+```
+Run the generate_lesson skill for slug "edge-detection-basics" lesson-slug "the-canny-edge-detector".
+```
 
-| Field             | Source                                                                 |
-|-------------------|------------------------------------------------------------------------|
-| Lesson title      | `title` minus the `Generate lesson: ` prefix                           |
-| Output path       | parsed from `description` (`/courses/<slug>/lessons/<lesson-slug>.json`) |
-| Course slug       | parsed from output path                                                |
-| Lesson slug       | parsed from output path                                                |
-| Module title      | `notes` → `Module: ...` line                                           |
-| Summary           | `notes` → `Summary: ...` line                                          |
-| Scope (subtopics) | `notes` → `Scope: ...` line — semicolon- or comma-separated list       |
-| Level             | `notes` → `Level: ...` (beginner / intermediate / advanced)            |
-| Duration          | `notes` → `Duration target: <N> min`                                   |
-| Theory ratio      | `notes` → `Theory/practice mix: 0..1` (0 = pure practice, 1 = pure theory) |
+Parse both slugs and validate them against the safe-slug rule (`[a-z0-9-]+`, no `..`, no `/`). Reject anything else and stop — do not author against an unsafe path.
 
-If `notes` is missing or unparseable, fall back to `description` and `course.json` to recover the same fields, then proceed.
+The output path is fixed:
+
+```
+/courses/<slug>/lessons/<lesson-slug>.json
+```
+
+To recover the rest of the lesson context, open `/courses/<slug>/course.json` and find the matching lesson:
+
+```ts
+const lesson = course.modules
+  .flatMap(m => m.lessons.map(l => ({ ...l, moduleId: m.id, moduleTitle: m.title })))
+  .find(l => l.slug === lessonSlug);
+```
+
+From `lesson` and its parent module pull:
+
+| Field             | Source in `course.json`                                  |
+|-------------------|----------------------------------------------------------|
+| Lesson title      | `lesson.title`                                           |
+| Lesson slug       | `lesson.slug` (must equal the argument)                  |
+| Course slug       | `course.slug` (must equal the argument)                  |
+| Module ID         | parent `module.id` (e.g. `m1`, `m2`)                     |
+| Module title      | parent `module.title` — used for `eyebrow`               |
+| Module summary    | parent `module.summary` — useful for framing the lesson  |
+| Estimated minutes | `lesson.estimatedMinutes`                                |
+
+If the lesson is not found in `course.json`, stop with an error — `init_course` failed to register it, and authoring against a non-existent lesson would corrupt the course folder.
+
+For deeper subject-matter context (scope, theory/practice mix, level), lean on `research.md` and `course.json.description` / `course.json.title`. The `course-spec.json` (if still around) carries `level`, `durationTarget`, and `theoryPracticeRatio`; reading it is optional but helps tune the section mix (Step 6).
 
 ---
 
 ## Step 2: Read Course Context
 
-Open the shared course files. They are the working memory across all per-lesson agents.
+Open the shared course files. They are the working memory the `init_course` skill prepared for every per-lesson agent.
 
 - `/courses/<slug>/research.md` — narrative reference: prerequisites, key concepts, common misconceptions, suggested ordering, and per-lesson hints under `## Notes for lesson generation`. Lean on its `Common misconceptions` for plausible quiz distractors. Lean on `Notes for lesson generation` for cues like *"Where math/KaTeX is appropriate"*, *"Where a code exercise is more illuminating than a quiz"*, *"Where a Demo widget would help"*, *"Where a Sandbox is a good fit"*.
-- `/courses/<slug>/sources.md` — *if present*, this is the curated reference list `init_course` collected during its research pass. The story's `notes` field will usually carry **Source hints** pointing at specific entries here; treat those as the seed for your own Step 4 source research. If the file is missing (older course or hand-written prd), fall back to your own research.
-- `/courses/<slug>/course.json` — authoritative structure. Use it to look up the parent module (so you can fill `moduleId`) and confirm the lesson's `estimatedMinutes`.
+- `/courses/<slug>/sources.md` — the curated reference list `init_course` collected during its research pass. Find the `## <lesson title>` heading whose title matches `lesson.title` and copy ≥ 3 entries into `lesson.sources` directly. Also consider `## Course-wide references` for cross-lesson textbooks. If the file is missing (older course or hand-written course folder), fall back to your own research per Step 4.
+- `/courses/<slug>/course.json` — authoritative structure. You already opened it in Step 1 to find the lesson; keep it open to cross-check `slug` / `moduleId` / `estimatedMinutes` while drafting.
 
-Find the matching lesson by `slug`. Note its parent `moduleId` (e.g. `m1`, `m2`) and `estimatedMinutes` — both are required fields in the lesson JSON.
-
-If `course.json` lists a different `slug` or different `estimatedMinutes` than the story, **trust `course.json`**. The story is a copy; the course file is the source of truth.
+If `course.json` lists a different `slug` or different `estimatedMinutes` than any external context (e.g. a stale prompt), **trust `course.json`**. The course file is the source of truth.
 
 ---
 
@@ -96,7 +99,7 @@ Open the per-widget JSON Schemas under `src/widgets/schemas/`:
 - `sandbox.json` — `{ starterCode, encouragement }`
 - `plotImage.json` — `{ src, alt, caption?, sourceCode?, sourceLanguage? }` — pre-rendered matplotlib PNG served from `/api/courses/<slug>/assets/plots/...`. The `sourceCode` MUST match the saved PNG byte-for-byte (re-running it must reproduce the same plot).
 
-These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/schema.ts` via `npm run build:schemas`. The Zod schemas are the runtime source of truth (`src/lib/schemas/lesson.ts → SectionSchema` is a `discriminatedUnion('type', [...])` over the six section types). When in doubt, open the Zod file alongside the JSON Schema.
+These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/schema.ts` via `npm run build:schemas`. The Zod schemas are the runtime source of truth (`src/lib/schemas/lesson.ts → SectionSchema` is a `discriminatedUnion('type', [...])` over the section types). When in doubt, open the Zod file alongside the JSON Schema.
 
 `additionalProperties: false` everywhere — every extra field you put on a widget `data` object is a validation error. Stick to what the schema declares.
 
@@ -114,6 +117,8 @@ Identify **at least 3 credible sources** for this lesson. Aim for a mix:
 - **Textbook chapters** — named chapter from a recognised textbook (e.g. *Gonzalez & Woods, "Digital Image Processing", Ch. 5*). Use the publisher / archive URL where available.
 - **Reputable articles** — Wikipedia for foundational concepts (it is stable and well-edited for established maths/CS topics), official documentation pages (`scikit-image`, `numpy`, `scipy`, `pytorch`), MDN / W3C, IETF RFCs.
 - **Recognised educational videos** — channels with editorial standards: 3Blue1Brown, StatQuest with Josh Starmer, Computerphile, Two Minute Papers, MIT OpenCourseWare, Khan Academy. Use the canonical YouTube URL.
+
+The starting point is the matching `## <lesson title>` block in `/courses/<slug>/sources.md` — `init_course` curated ≥ 3 entries per lesson there. Copy them over wholesale unless you have a specific reason to drop one. Add fresh entries only if a section truly needs a reference the bibliography is missing.
 
 ### URL stability rules
 
@@ -150,7 +155,7 @@ Every source object must conform to `SourceSchema` (`src/lib/schemas/lesson.ts`)
 
 ### Recording in `sources.md` (optional but encouraged)
 
-If you discover useful sources beyond what `init_course` recorded in `/courses/<slug>/sources.md`, append them to that file under a `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `init_course` or by other per-lesson agents.
+If you discover useful sources beyond what `init_course` recorded in `/courses/<slug>/sources.md`, append them to that file under the existing `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `init_course` or by other per-lesson agents.
 
 ---
 
@@ -258,15 +263,17 @@ The Image widget caches external URLs into `courses/<slug>/assets/images/` on sa
 - A `sandbox` section is a nice closer for hands-on lessons — encourages free exploration after the graded code exercise. Optional.
 - A `custom` section is an escape hatch for things no widget covers; use sparingly and only when the topic genuinely warrants it.
 
-The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
+When the invoking prompt or `course-spec.json` carries a `Theory/practice mix` (0..1), use it to tune the balance:
 
 - `≤ 0.3` → lean practice: 1 theory + (1–2 code) + 1 quiz + 1 sandbox.
 - `0.4–0.6` → balanced: 1–2 theory + 1 code (or 1 demo) + 1 quiz + optional sandbox.
 - `≥ 0.7` → lean theory: 2–3 theory + 1 quiz; code/sandbox only if the topic clearly invites it.
 
+If no ratio is given, default to the balanced mix.
+
 ### Section IDs
 
-`section.id` must be unique within the lesson. Use stable, content-bearing slugs (`"intro"`, `"definition"`, `"why-it-works"`, `"check-1"`, `"exercise"`, `"sandbox"`) — not opaque counters like `s1`/`s2`. The review pass story checks for uniqueness; collisions are a hard fail.
+`section.id` must be unique within the lesson. Use stable, content-bearing slugs (`"intro"`, `"definition"`, `"why-it-works"`, `"check-1"`, `"exercise"`, `"sandbox"`) — not opaque counters like `s1`/`s2`. Section-ID collisions are a schema-level hard fail.
 
 ### Per-widget content rules
 
@@ -296,7 +303,7 @@ The `notes` field's `Theory/practice mix` (0..1) tunes the balance:
 
 #### Demo (`type: "demo"`)
 - Only `demoType: "gauss"` is registered (see `src/widgets/registry.ts`). Don't invent new types.
-- `imageSrc` should be a path the webapp can serve. Existing demos use `/cameraman.png` or `/<course-slug>/<image>.png`. If the asset doesn't exist yet, leave a TODO in the lesson notes via the review story — but still pick a path that *would* live under `public/`.
+- `imageSrc` should be a path the webapp can serve. Existing demos use `/cameraman.png` or `/<course-slug>/<image>.png`. If the asset doesn't exist yet, leave a TODO in the lesson notes — but still pick a path that *would* live under `public/`.
 - `params.sigmaMin` < `params.sigmaDefault` < `params.sigmaMax`. Reasonable range: `0–6` for an introductory blur demo.
 
 #### Sandbox (`type: "sandbox"`)
@@ -363,34 +370,27 @@ If validation fails:
 2. Identify the failing path (e.g. `sections[2].data.tests[0].name`).
 3. Fix the JSON in place.
 4. Re-run the validator.
-5. **Never commit an invalid lesson file.**
+5. **Never write an invalid lesson file.**
 
-Only commit when the validator prints `OK`.
+Only finish when the validator prints `OK`.
 
 ---
 
 ## Step 8: Stop
 
-You're done. The orchestrator flips `passes: true` for the story when the validation step succeeds. Do not edit `prd.json` yourself. Do not author further lessons in the same iteration.
-
-If something looked off in `course.json` or `research.md` while authoring, leave a note in `scripts/ralph/progress.txt` under your story's progress entry (the `**Learnings**` block) — the review pass (last story in the prd) will pick it up.
+You're done. The lesson file is written and validates against `LessonSchema`. The webapp's generation backend reads the file's existence + validation result to decide whether this lesson succeeded; it then moves on to the next `(slug, lesson-slug)` pair. Do not author further lessons in the same invocation — one call, one lesson.
 
 ---
 
 ## Worked Example: Median filter
 
-Story (US-005, abbreviated):
+Invoking prompt (abbreviated):
 
-```json
-{
-  "id": "US-005",
-  "title": "Generate lesson: Median filter",
-  "description": "As an agent, I want a complete lesson JSON for Median filter at /courses/image-denoising/lessons/median-filter.json, so the webapp can render it.",
-  "notes": "Module: Non-linear filters\nSummary: How a sliding median erases impulse noise without smearing edges.\nScope: window definition; median vs. mean for salt-and-pepper noise; edge handling; complexity tradeoffs.\nLevel: beginner\nDuration target: 12 min\nTheory/practice mix: 0.4"
-}
+```
+Run generate_lesson, slug=image-denoising, lesson-slug=median-filter.
 ```
 
-Parent course: `image-denoising`. Module `m2` (`Non-linear filters`). Course-level `estimatedMinutes` = 12.
+Lookup in `/courses/image-denoising/course.json` finds the lesson under module `m2` (`Non-linear filters`) with `estimatedMinutes: 12`. `research.md` lists "salt-and-pepper noise", "edge preservation", and "complexity tradeoffs" as the relevant key concepts; `sources.md` has a `## Median filter` block with three pre-curated entries.
 
 Output — `/courses/image-denoising/lessons/median-filter.json`:
 
@@ -529,7 +529,7 @@ Why this lesson works as a worked example:
 
 ---
 
-## Validation Checklist Before Committing
+## Validation Checklist Before Finishing
 
 - [ ] File written at `/courses/<courseSlug>/lessons/<lessonSlug>.json`.
 - [ ] Top-level fields: `schemaVersion`, `slug`, `courseSlug`, `moduleId`, `title`, `eyebrow`, `description`, `estimatedMinutes`, `sections` — all present.
@@ -562,14 +562,14 @@ Why this lesson works as a worked example:
 - [ ] **Every `plotImage` section's saved PNG has visible X/Y axes, tick marks, numeric tick labels, axis labels (with units where applicable), and a title** (US-060) — never `plt.axis('off')`, `plt.xticks([])`, or hidden spines. PlotImage `sourceCode` reproduces that exact figure.
 - [ ] `LessonSchema.safeParse` returns `success: true`.
 - [ ] `npm run typecheck` passes (it should — this is a JSON-only change).
+- [ ] **No file written under `scripts/ralph/`** — this skill is fully decoupled from the ralph orchestrator.
 
 ---
 
 ## Cross-references
 
-- [`init_course/SKILL.md`](../init_course/SKILL.md) — wrote the story you're picking up; same skill defines the per-lesson AC strings and explains why `passes: true` on US-001 / US-002.
+- [`init_course/SKILL.md`](../init_course/SKILL.md) — wrote the `course.json` / `research.md` / `sources.md` you read in Step 1 and Step 2.
 - `src/lib/schemas/lesson.ts` — `LessonSchema`, `SectionSchema` (discriminated union), Zod source of truth.
 - `src/lib/schemas/course.ts` — `CourseSchema`, `ModuleSchema`, `LessonRefSchema` — describe the parent course you're authoring against.
 - `src/widgets/<Name>/schema.ts` — per-widget Zod schemas. JSON mirrors live in `src/widgets/schemas/*.json` (regenerated via `npm run build:schemas`).
 - `src/widgets/registry.ts` — the canonical list of `WidgetType` values and which component renders each. (Adding a new widget type is **out of scope** for this skill.)
-- `scripts/ralph/CLAUDE.md` — ralph's per-iteration contract: which story to pick, how to commit, how to log progress.
