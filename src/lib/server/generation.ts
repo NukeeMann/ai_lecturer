@@ -5,7 +5,12 @@
 // init_course skill, then ONE `claude -p` per lesson driven directly from
 // course.json — no ralph.sh, no worktrees, no branches, no git push. Both
 // stages run with stdout+stderr captured to the run's event log AND tee'd to
-// `/courses/<slug>/.generation.log`. Concurrency is gated to 1.
+// `/courses/<slug>/.generation.log`. Per-stage output is also tee'd to
+// structured per-stage logs under `/courses/<slug>/.gen-logs/`. Per-lesson
+// `claude` calls are retried up to N times (LESSON_MAX_RETRIES, default 2 →
+// 3 total attempts) with each attempt subject to LESSON_TIMEOUT_SEC
+// (default 1800s); on retry the prompt is prepended with a
+// `PREVIOUS ATTEMPT FAILED:\n<reason>` block. Concurrency is gated to 1.
 
 import {
   spawn as defaultSpawn,
@@ -17,7 +22,7 @@ import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
-import { assertSafeSlug, courseDir, courseFile, lessonFile } from './paths';
+import { assertSafeSlug, courseDir, courseFile, genLogsDir, lessonFile } from './paths';
 
 export interface FailedLesson {
   slug: string;
@@ -46,9 +51,17 @@ export interface SpawnDeps {
   spawn?: typeof defaultSpawn;
   isExecutableInPath?: (cmd: string) => boolean;
   initCourseCommand?: (slug: string) => { command: string; args: string[] };
-  lessonCommand?: (slug: string, lessonSlug: string) => { command: string; args: string[] };
+  lessonCommand?: (
+    slug: string,
+    lessonSlug: string,
+    previousAttemptReason?: string,
+  ) => { command: string; args: string[] };
   cwd?: string;
   sigkillGraceMs?: number;
+  /** Number of retries per lesson (additional attempts after the first). */
+  lessonMaxRetries?: number;
+  /** Per-attempt wall-clock timeout in milliseconds. */
+  lessonTimeoutMs?: number;
 }
 
 export class GenerationConflictError extends Error {
@@ -101,6 +114,12 @@ function defaultIsExecutableInPath(cmd: string): boolean {
   } catch {
     return false;
   }
+}
+
+function parseNonNegativeInt(value: string | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 export function defaultInitCourseCommand(slug: string): { command: string; args: string[] } {
@@ -189,6 +208,7 @@ setTimeout(() => {
 export function defaultLessonCommand(
   slug: string,
   lessonSlug: string,
+  previousAttemptReason?: string,
 ): { command: string; args: string[] } {
   // Defence-in-depth: same rule as the slug — re-validate before we splice
   // either value into the prompt or a shell argv.
@@ -236,13 +256,19 @@ console.log('[mock generate_lesson] done ${lessonSlug}');
   // body (after assertSafeSlug above limits each to [A-Za-z0-9-_], which
   // makes them safe to splice) and `claude -p` runs in --dangerously-skip-
   // permissions mode so the agent can write the lesson file unattended.
-  const prompt =
+  const baseBrief =
     `Run the generate_lesson skill defined in scripts/ralph/skills/generate_lesson/SKILL.md. ` +
     `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
     `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
     `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
     `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
     `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson.`;
+  // Mirrors the retry-context pattern from scripts/ralph/ralph.sh:992-996 —
+  // when a previous attempt failed, prepend the failure reason so the agent
+  // can fix the specific issue rather than repeat the same mistake.
+  const prompt = previousAttemptReason
+    ? `PREVIOUS ATTEMPT FAILED:\n${previousAttemptReason}\n\nFix these issues specifically.\n\n${baseBrief}`
+    : baseBrief;
   return {
     command: 'claude',
     args: ['-p', prompt, '--dangerously-skip-permissions'],
@@ -256,6 +282,26 @@ function makeRunId(): string {
 interface ChildSpec {
   command: string;
   args: string[];
+}
+
+interface SpawnChildOptions {
+  /** When set + > 0, send SIGTERM after this many ms; SIGKILL after sigkillGraceMs more. */
+  timeoutMs?: number;
+  /** Optional secondary stream to receive every captured line in addition to the master log. */
+  extraLogStream?: WriteStream | null;
+}
+
+interface SpawnChildResult {
+  exit: number;
+  timedOut: boolean;
+  stderrTail: string;
+}
+
+interface FailedReportEntry {
+  lessonSlug: string;
+  attempts: number;
+  lastError: string;
+  logPath: string;
 }
 
 export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Promise<GenerationRun> {
@@ -275,9 +321,16 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
   const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
+  const lessonMaxRetries =
+    deps.lessonMaxRetries ?? parseNonNegativeInt(process.env.LESSON_MAX_RETRIES, 2);
+  const lessonTimeoutMs =
+    deps.lessonTimeoutMs ??
+    parseNonNegativeInt(process.env.LESSON_TIMEOUT_SEC, 1800) * 1000;
 
   const dir = courseDir(slug);
   await fs.mkdir(dir, { recursive: true });
+  const genLogs = genLogsDir(slug);
+  await fs.mkdir(genLogs, { recursive: true });
   const logPath = path.join(dir, '.generation.log');
   const logStream: WriteStream = createWriteStream(logPath, { flags: 'w' });
   let logStreamClosed = false;
@@ -340,9 +393,13 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     }
   }
 
-  function pumpStream(child: ChildProcess) {
+  function pumpStream(
+    child: ChildProcess,
+    opts: { extraStream?: WriteStream | null; onStderrLine?: (line: string) => void } = {},
+  ) {
     let stdoutBuf = '';
     let stderrBuf = '';
+    const extraStream = opts.extraStream ?? null;
 
     const flushLine = (line: string) => {
       if (line.length === 0 && !stdoutBuf && !stderrBuf) return;
@@ -351,6 +408,13 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
           logStream.write(`${line}\n`);
         } catch {
           /* log file already closed — fall through */
+        }
+      }
+      if (extraStream) {
+        try {
+          extraStream.write(`${line}\n`);
+        } catch {
+          /* per-stage stream may already be closed — ignore */
         }
       }
       emit({ type: 'log', line });
@@ -372,6 +436,7 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
         while ((idx = stderrBuf.indexOf('\n')) !== -1) {
           const line = stderrBuf.slice(0, idx).replace(/\r$/, '');
           stderrBuf = stderrBuf.slice(idx + 1);
+          if (opts.onStderrLine) opts.onStderrLine(line);
           flushLine(line);
         }
       }
@@ -386,48 +451,92 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
         stdoutBuf = '';
       }
       if (stderrBuf.length > 0) {
-        flushLine(stderrBuf.replace(/\r$/, ''));
+        const line = stderrBuf.replace(/\r$/, '');
+        if (opts.onStderrLine) opts.onStderrLine(line);
+        flushLine(line);
         stderrBuf = '';
       }
     });
   }
 
-  function spawnStage(name: string, spec: ChildSpec): Promise<{ exit: number }> {
+  function spawnChild(spec: ChildSpec, opts: SpawnChildOptions = {}): Promise<SpawnChildResult> {
     return new Promise((resolve) => {
-      emit({ type: 'stage', name, status: 'started' });
-      const opts: SpawnOptions = {
+      const stderrTailLines: string[] = [];
+      const STDERR_TAIL_LIMIT = 30;
+      let timedOut = false;
+      let attemptTimer: NodeJS.Timeout | null = null;
+
+      const spawnOpts: SpawnOptions = {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: process.env,
       };
       let child: ChildProcess;
       try {
-        child = spawnFn(spec.command, spec.args, opts);
+        child = spawnFn(spec.command, spec.args, spawnOpts);
       } catch (err) {
         emit({ type: 'log', line: `spawn failed for ${spec.command}: ${(err as Error).message}` });
-        resolve({ exit: -1 });
+        resolve({ exit: -1, timedOut: false, stderrTail: '' });
         return;
       }
       currentChild = child;
-      pumpStream(child);
+      pumpStream(child, {
+        extraStream: opts.extraLogStream ?? null,
+        onStderrLine: (line) => {
+          stderrTailLines.push(line);
+          if (stderrTailLines.length > STDERR_TAIL_LIMIT) stderrTailLines.shift();
+        },
+      });
       let exitCode: number | null = null;
       child.once('error', (err) => {
-        emit({ type: 'log', line: `${name} error: ${err.message}` });
+        emit({ type: 'log', line: `error: ${err.message}` });
       });
       child.once('exit', (code) => {
         exitCode = code;
       });
+
+      if (opts.timeoutMs && opts.timeoutMs > 0) {
+        attemptTimer = setTimeout(() => {
+          if (child.exitCode !== null) return;
+          timedOut = true;
+          try {
+            child.kill('SIGTERM');
+          } catch {
+            /* ignore */
+          }
+          if (!killTimer) {
+            killTimer = setTimeout(() => {
+              try {
+                child.kill('SIGKILL');
+              } catch {
+                /* ignore */
+              }
+            }, sigkillGraceMs);
+            if (typeof killTimer.unref === 'function') killTimer.unref();
+          }
+        }, opts.timeoutMs);
+        if (typeof attemptTimer.unref === 'function') attemptTimer.unref();
+      }
+
       // Use 'close' (not 'exit'): in Node child_process, 'close' fires after
       // stdio streams have been fully drained, so all data events for this
       // child have already been delivered. Resolving on 'exit' would race
       // with pending stdout chunks that arrive on a later tick.
       child.once('close', (code) => {
+        if (attemptTimer) {
+          clearTimeout(attemptTimer);
+          attemptTimer = null;
+        }
         if (killTimer) {
           clearTimeout(killTimer);
           killTimer = null;
         }
         currentChild = null;
-        resolve({ exit: (exitCode ?? code) ?? -1 });
+        resolve({
+          exit: (exitCode ?? code) ?? -1,
+          timedOut,
+          stderrTail: stderrTailLines.join('\n'),
+        });
       });
     });
   }
@@ -462,12 +571,125 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     if (activeRun === run) activeRun = null;
   }
 
+  async function writeFailedReport(entries: FailedReportEntry[]) {
+    const reportPath = path.join(genLogs, 'failed_report.json');
+    if (entries.length === 0) {
+      // Drop any stale report from a previous run.
+      try {
+        await fs.unlink(reportPath);
+      } catch {
+        /* ignore — no stale file */
+      }
+      return;
+    }
+    try {
+      await fs.writeFile(reportPath, JSON.stringify(entries, null, 2), 'utf8');
+    } catch {
+      /* best-effort — surface via SSE failedLessons regardless */
+    }
+  }
+
+  async function runLesson(
+    lessonSlug: string,
+  ): Promise<{ success: boolean; attempts: number; lastError: string }> {
+    const stageName = `lesson:${lessonSlug}`;
+    emit({ type: 'stage', name: stageName, status: 'started' });
+
+    const lessonLogPath = path.join(genLogs, `${lessonSlug}.log`);
+    const maxAttempts = lessonMaxRetries + 1;
+    let lastError = '';
+    let success = false;
+    let attemptsRun = 0;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      if (cancelled) break;
+      attemptsRun = attempt;
+
+      // Wipe any stale lesson file before each attempt so the post-spawn
+      // schema check sees only THIS attempt's output. Without this, a previous
+      // attempt's invalid file would be picked up by the next attempt's
+      // validation if claude exits 0 without writing.
+      try {
+        await fs.unlink(lessonFile(slug, lessonSlug));
+      } catch {
+        /* file may not exist — ignore */
+      }
+
+      // Open per-lesson log: truncate on attempt 1, append on retries so
+      // every attempt's output lands in a single per-lesson .log file.
+      const flags = attempt === 1 ? 'w' : 'a';
+      const lessonLogStream = createWriteStream(lessonLogPath, { flags });
+      lessonLogStream.on('error', () => {
+        /* swallow late writes after end */
+      });
+      try {
+        lessonLogStream.write(`=== Attempt ${attempt} — ${new Date().toISOString()} ===\n`);
+      } catch {
+        /* ignore */
+      }
+
+      const previousReason = attempt > 1 ? lastError : undefined;
+      const spec = lessonCommand(slug, lessonSlug, previousReason);
+      const result = await spawnChild(spec, {
+        timeoutMs: lessonTimeoutMs,
+        extraLogStream: lessonLogStream,
+      });
+
+      lessonLogStream.end();
+
+      if (cancelled) break;
+
+      if (result.timedOut) {
+        const seconds = Math.round(lessonTimeoutMs / 1000);
+        lastError = `timeout after ${seconds}s`;
+        continue;
+      }
+      if (result.exit !== 0) {
+        const tail = result.stderrTail.trim();
+        lastError = tail
+          ? `exited with code ${result.exit}\n${tail}`
+          : `exited with code ${result.exit}`;
+        continue;
+      }
+      // Validate the produced lesson file against LessonSchema. A failed
+      // validation (or a missing file) marks this attempt as failed and
+      // triggers the next retry (if any remain).
+      try {
+        const raw = await fs.readFile(lessonFile(slug, lessonSlug), 'utf8');
+        LessonSchema.parse(JSON.parse(raw));
+        success = true;
+        break;
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        continue;
+      }
+    }
+
+    if (cancelled) {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return { success: false, attempts: attemptsRun, lastError: 'Cancelled by user' };
+    }
+    if (success) {
+      emit({ type: 'stage', name: stageName, status: 'done' });
+    } else {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+    }
+    return { success, attempts: attemptsRun, lastError };
+  }
+
   activeRun = run;
   runsById.set(id, run);
 
   const pipeline = (async () => {
     // ── Stage 1: init_course ────────────────────────────────────────────────
-    const initResult = await spawnStage('init_course', initSpec);
+    emit({ type: 'stage', name: 'init_course', status: 'started' });
+    const initLogPath = path.join(genLogs, 'init_course.log');
+    const initLogStream = createWriteStream(initLogPath, { flags: 'w' });
+    initLogStream.on('error', () => {
+      /* swallow late writes */
+    });
+    const initResult = await spawnChild(initSpec, { extraLogStream: initLogStream });
+    initLogStream.end();
     if (cancelled) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
       finalize('error', 'Cancelled by user');
@@ -505,17 +727,19 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     }
     emit({ type: 'stage', name: 'init_course', status: 'done' });
 
-    // ── Stage 2..N+1: one claude call per lesson, sequentially ─────────────
+    // ── Stage 2..N+1: one (retried) claude call per lesson, sequentially ───
     const lessons = course.modules.flatMap((m) =>
       m.lessons.map((l) => ({ slug: l.slug, moduleId: m.id })),
     );
     const total = lessons.length;
     const failedLessons: FailedLesson[] = [];
+    const failedReport: FailedReportEntry[] = [];
 
     if (total === 0) {
       // Nothing to generate — surface as success-with-empty so the wizard can
       // still redirect; the course page will render an empty TOC.
       emit({ type: 'progress', current: 0, total: 0 });
+      await writeFailedReport(failedReport);
       finalize('done', undefined, failedLessons);
       return;
     }
@@ -524,45 +748,39 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
 
     for (let i = 0; i < lessons.length; i++) {
       if (cancelled) {
+        await writeFailedReport(failedReport);
         finalize('error', 'Cancelled by user', failedLessons);
         return;
       }
       const lesson = lessons[i];
-      const stageName = `lesson:${lesson.slug}`;
-      const spec = lessonCommand(slug, lesson.slug);
-      const result = await spawnStage(stageName, spec);
+      const result = await runLesson(lesson.slug);
 
       if (cancelled) {
-        emit({ type: 'stage', name: stageName, status: 'error' });
-        failedLessons.push({ slug: lesson.slug, reason: 'Cancelled by user' });
+        failedLessons.push({ slug: lesson.slug, reason: result.lastError || 'Cancelled by user' });
+        failedReport.push({
+          lessonSlug: lesson.slug,
+          attempts: result.attempts,
+          lastError: result.lastError || 'Cancelled by user',
+          logPath: `.gen-logs/${lesson.slug}.log`,
+        });
+        await writeFailedReport(failedReport);
         finalize('error', 'Cancelled by user', failedLessons);
         return;
       }
 
-      if (result.exit !== 0) {
-        emit({ type: 'stage', name: stageName, status: 'error' });
-        failedLessons.push({
-          slug: lesson.slug,
-          reason: `exited ${result.exit}`,
+      if (!result.success) {
+        failedLessons.push({ slug: lesson.slug, reason: result.lastError });
+        failedReport.push({
+          lessonSlug: lesson.slug,
+          attempts: result.attempts,
+          lastError: result.lastError,
+          logPath: `.gen-logs/${lesson.slug}.log`,
         });
-        emit({ type: 'progress', current: i + 1, total });
-        continue;
-      }
-
-      // Validate the produced lesson file against LessonSchema. A failed
-      // validation (or a missing file) marks this lesson as failed but does
-      // NOT abort the run — the next lesson still gets a chance.
-      try {
-        const raw = await fs.readFile(lessonFile(slug, lesson.slug), 'utf8');
-        LessonSchema.parse(JSON.parse(raw));
-        emit({ type: 'stage', name: stageName, status: 'done' });
-      } catch (err) {
-        emit({ type: 'stage', name: stageName, status: 'error' });
-        const reason = err instanceof Error ? err.message : String(err);
-        failedLessons.push({ slug: lesson.slug, reason });
       }
       emit({ type: 'progress', current: i + 1, total });
     }
+
+    await writeFailedReport(failedReport);
 
     // If every lesson failed there's nothing for the wizard to redirect to —
     // surface an error. Otherwise the run is `done` with a non-empty
