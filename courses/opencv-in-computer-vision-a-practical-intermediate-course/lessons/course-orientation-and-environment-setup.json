@@ -1,0 +1,159 @@
+{
+  "schemaVersion": 1,
+  "slug": "course-orientation-and-environment-setup",
+  "courseSlug": "opencv-in-computer-vision-a-practical-intermediate-course",
+  "moduleId": "m1",
+  "title": "Course Orientation and Environment Setup",
+  "eyebrow": "FOUNDATIONS",
+  "description": "Tour the course, install OpenCV in an isolated virtual environment, verify your toolchain, and run your first cv2.imread / imshow / waitKey smoke test.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intro",
+      "title": "What this course is — and isn't",
+      "type": "theory",
+      "data": {
+        "markdown": "Welcome. Over the next six modules you'll build a working mental model of **classical computer vision** through OpenCV's Python bindings (`cv2`). The arc is deliberate: pixels → preprocessing → structure (edges and contours) → keypoints and matching → motion in video → applied pipelines and a deep-learning bridge.\n\n![OpenCV logo — three coloured circles arranged in a triangle next to the wordmark 'OpenCV', the canonical brand of the Open Source Computer Vision Library](https://upload.wikimedia.org/wikipedia/commons/3/32/OpenCV_Logo_with_text_svg_version.svg)\n\n*(Image: Wikimedia Commons, OpenCV project, public domain / fair-use logo.)*\n\nThis is **not** a deep-learning course. We touch `cv2.dnn` only once near the end, as a comparison point against the classical baseline you'll have built. We also stay in **Python only** — no C++, no GPU build steps, no ROS. Bring NumPy comfort and a working Python 3 install; bring the rest as we go."
+      }
+    },
+    {
+      "id": "install",
+      "title": "Set up an isolated OpenCV environment",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV's official Python wheel is published on PyPI as `opencv-python`. The same project also publishes `opencv-contrib-python`, which adds patented and experimental algorithms (SIFT, SURF, the `xfeatures2d` module). They **conflict** if both are installed; pick one. For this course the *contrib* build is the safer choice — Module 4 uses SIFT in the keypoint-descriptors lesson.\n\nThe canonical setup is a fresh virtual environment plus a single `pip install`:\n\n```bash\npython3 -m venv .venv\nsource .venv/bin/activate          # Windows: .venv\\Scripts\\activate\npip install --upgrade pip\npip install \"opencv-contrib-python>=4.10\" numpy\n```\n\nVerify the install in a Python REPL:\n\n```python\n>>> import cv2\n>>> cv2.__version__\n'4.10.0'\n>>> import numpy as np\n>>> np.zeros((3, 3), dtype=np.uint8).shape\n(3, 3)\n```\n\nIf `import cv2` raises `ImportError` after a clean install, check that you activated the venv (`which python` should point inside `.venv/`) and that you didn't install both `opencv-python` and `opencv-contrib-python` in the same env. When in doubt, `pip uninstall opencv-python opencv-contrib-python` and start over with just the contrib build."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/de6/tutorial_py_setup_in_ubuntu.html",
+          "title": "OpenCV-Python — Install OpenCV-Python in your environment",
+          "kind": "article"
+        },
+        {
+          "url": "https://pypi.org/project/opencv-python/",
+          "title": "opencv-python on PyPI",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.python.org/3/library/venv.html",
+          "title": "Python venv — Creation of virtual environments",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "fill-install",
+      "title": "Fill in the install commands",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Complete the standard OpenCV install recipe. The variant question matters: pick the build that ships SIFT and the rest of `xfeatures2d` so Module 4 works out of the box.",
+        "language": "python",
+        "template": "# create and activate a virtual environment\npython3 -m {{venvmodule}} .venv\nsource .venv/bin/activate\n\n# install OpenCV (contrib build) + NumPy\n{{installer}} install \"{{package}}>=4.10\" numpy\n\n# verify\nimport cv2\nprint(cv2.{{versionattr}})\n",
+        "slots": [
+          {
+            "id": "venvmodule",
+            "hint": "Standard-library module that creates virtual environments.",
+            "validation": { "kind": "exact", "value": "venv" }
+          },
+          {
+            "id": "installer",
+            "hint": "The Python package installer.",
+            "validation": { "kind": "exact", "value": "pip" }
+          },
+          {
+            "id": "package",
+            "hint": "The PyPI package that bundles SIFT and the rest of xfeatures2d.",
+            "validation": { "kind": "exact", "value": "opencv-contrib-python" }
+          },
+          {
+            "id": "versionattr",
+            "hint": "Module-level dunder that reports the installed OpenCV version.",
+            "validation": { "kind": "exact", "value": "__version__" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "check-variants",
+      "title": "Quick check: which package?",
+      "type": "quiz",
+      "data": {
+        "question": "You want to use SIFT (Module 4) and run a few experimental algorithms from `cv2.xfeatures2d`. You're starting from a fresh virtual environment. Which single `pip install` line is correct?",
+        "options": [
+          "pip install opencv-python",
+          "pip install opencv-contrib-python",
+          "pip install opencv-python opencv-contrib-python",
+          "pip install opencv-headless"
+        ],
+        "correct": [1],
+        "explanation": "`opencv-contrib-python` is a superset: it includes the same `cv2` core as `opencv-python` *plus* the contrib modules (`xfeatures2d`, `ximgproc`, `tracking`, etc.) where SIFT lives. Installing both `opencv-python` and `opencv-contrib-python` in the same environment causes them to fight over the `cv2` namespace — pick one. `opencv-headless` exists but drops GUI support (no `cv2.imshow`), which we'll use repeatedly in this course.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "numpy-refresh",
+      "title": "NumPy refresher: pixel range",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "OpenCV represents images as NumPy arrays, so a fluent NumPy reflex is the prerequisite that pays off in every later lesson. Write a function **`image_minmax(arr)`** that returns the `(min, max)` pixel values of a 2-D image as a tuple of plain Python `int`s.\n\n- Accept anything `np.asarray` can convert (a NumPy array or a nested list).\n- The return type must be `tuple[int, int]` — cast away NumPy's `np.uint8` / `np.int64` so the values compare equal to plain integers.\n\n```\nimage_minmax([[10, 20], [30, 40]]) == (10, 40)\n```",
+        "starterCode": "import numpy as np\n\ndef image_minmax(arr):\n    # arr: a 2-D image as np.ndarray (H x W) or a nested Python list of pixel values.\n    # TODO: convert to ndarray, then return (min, max) as plain Python ints.\n    return (0, 0)\n",
+        "tests": [
+          {
+            "name": "constant_image_min_equals_max",
+            "hidden": false,
+            "body": "import numpy as np\nassert image_minmax(np.zeros((3, 3), dtype=np.uint8)) == (0, 0)"
+          },
+          {
+            "name": "small_list_of_lists",
+            "body": "assert image_minmax([[10, 20], [30, 40]]) == (10, 40)"
+          },
+          {
+            "name": "uint8_image_returns_python_ints",
+            "body": "import numpy as np\npixels = np.array([[100, 200, 50], [25, 175, 125]], dtype=np.uint8)\nlo, hi = image_minmax(pixels)\nassert (lo, hi) == (25, 200)\nassert type(lo) is int and type(hi) is int"
+          },
+          {
+            "name": "negative_floats_supported",
+            "body": "import numpy as np\nassert image_minmax(np.array([[-1.5, 2.5], [0.0, 4.0]])) == (-1, 4)"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef image_minmax(arr):\n    a = np.asarray(arr)\n    return (int(a.min()), int(a.max()))\n"
+      }
+    },
+    {
+      "id": "first-smoke-test",
+      "title": "Your first imread / imshow / waitKey",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Run this on your local machine — `cv2.imshow` opens a real window.\n# Save any small JPEG/PNG next to this file as `sample.jpg`, then:\n\nimport cv2\n\n# Read the image. cv2.imread returns None (not an exception!) if the path is wrong.\nimg = cv2.imread('sample.jpg', cv2.IMREAD_COLOR)\nif img is None:\n    raise FileNotFoundError('sample.jpg not found next to this script')\n\nprint('shape:', img.shape, 'dtype:', img.dtype)  # expect (H, W, 3) uint8 — and BGR, not RGB\n\ncv2.imshow('first smoke test', img)\ncv2.waitKey(0)            # block until any key is pressed in the window\ncv2.destroyAllWindows()    # always pair imshow with destroyAllWindows\n",
+        "encouragement": "Try a grayscale read with cv2.IMREAD_GRAYSCALE next, and notice how img.shape drops from (H, W, 3) to (H, W)."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d2/de6/tutorial_py_setup_in_ubuntu.html",
+      "title": "OpenCV-Python — Install OpenCV-Python in your environment",
+      "kind": "article"
+    },
+    {
+      "url": "https://pypi.org/project/opencv-python/",
+      "title": "opencv-python on PyPI",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.python.org/3/library/venv.html",
+      "title": "Python venv — Creation of virtual environments",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/quickstart.html",
+      "title": "NumPy quickstart",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d6/d00/tutorial_py_root.html",
+      "title": "OpenCV: OpenCV-Python Tutorials (root)",
+      "kind": "article"
+    }
+  ]
+}
