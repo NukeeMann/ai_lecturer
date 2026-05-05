@@ -1,0 +1,27 @@
+[2026-05-05T12:45:54+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T12:50:54+0200] Now I'll examine the .gitignore to make sure .gen-logs/ won't be ignored, and check the route to confirm the SSE event consumers don't need updating:
+[2026-05-05T12:50:58+0200] Now let me write the updated `generation.ts`:
+[2026-05-05T12:53:07+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T12:54:19+0200] Now I'll update the test file:
+[2026-05-05T12:54:41+0200] Now let me add new tests for the retry behavior plus a quick update to the `defaultLessonCommand` test:
+[2026-05-05T12:55:31+0200] Typecheck passes. Now run the targeted test file:
+[2026-05-05T12:55:47+0200] All 30 tests pass. Now run the full test suite and lint:
+[2026-05-05T12:55:58+0200] All quality checks pass. Now mark the story done in prd.json and append progress:
+[2026-05-05T12:57:26+0200] US-098 implemented and committed (765163d). 
+
+**Summary**
+- Added per-lesson retry loop (env: `LESSON_MAX_RETRIES` default 2, `LESSON_TIMEOUT_SEC` default 1800) with `PREVIOUS ATTEMPT FAILED:\n<reason>` block prepended on retry; reason format covers timeout, non-zero exit + stderr tail, and Zod validation errors.
+- Per-attempt timeout reuses the existing SIGTERM → grace → SIGKILL machinery (single shared `killTimer` slot to avoid double-scheduling against cancel).
+- New `genLogsDir(slug)` helper + structured logs: `.gen-logs/init_course.log`, `.gen-logs/<lesson-slug>.log` (each attempt prefixed with `=== Attempt N — <ISO> ===`, append-on-retry), `.gen-logs/failed_report.json` (only when there are exhausted-retry lessons; stale file unlinked otherwise). Master `.generation.log` tee unchanged.
+- Stale lesson file unlinked before each attempt so attempt N+1 can't validate stale output from attempt N.
+- 4 new tests + 2 updated existing tests; full suite: 25 files / 482 tests pass; typecheck + lint clean.
+- `prd.json` US-098 set to `passes:true`.
+[2026-05-05T12:57:26+0200] [result success turns=39 cost=$4.2589055] US-098 implemented and committed (765163d). 
+
+**Summary**
+- Added per-lesson retry loop (env: `LESSON_MAX_RETRIES` default 2, `LESSON_TIMEOUT_SEC` default 1800) with `PREVIOUS ATTEMPT FAILED:\n<reason>` block prepended on retry; reason format covers timeout, non-zero exit + stderr tail, and Zod validation errors.
+- Per-attempt timeout reuses the existing SIGTERM → grace → SIGKILL machinery (single shared `killTimer` slot to avoid double-scheduling against cancel).
+- New `genLogsDir(slug)` helper + structured logs: `.gen-logs/init_course.log`, `.gen-logs/<lesson-slug>.log` (each attempt prefixed with `=== Attempt N — <ISO> ===`, append-on-retry), `.gen-logs/failed_report.json` (only when there are exhausted-retry lessons; stale file unlinked otherwise). Master `.generation.log` tee unchanged.
+- Stale lesson file unlinked before each attempt so attempt N+1 can't validate stale output from attempt N.
+- 4 new tests + 2 updated existing tests; full suite: 25 files / 482 tests pass; typecheck + lint clean.
+- `prd.json` US-098 set to `passes:true`.
