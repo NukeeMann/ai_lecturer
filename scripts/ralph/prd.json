@@ -2110,6 +2110,106 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-096",
+      "title": "Decouple init_course + generate_lesson skills from scripts/ralph/",
+      "description": "As a course-generation pipeline, I want both skills to be directly invocable with explicit arguments (no dependency on scripts/ralph/prd.json or progress.txt), so the webapp can drive them sequentially without going through the ralph orchestrator.",
+      "acceptanceCriteria": [
+        "init_course SKILL.md updated: writes ONLY under courses/<slug>/ (research.md, sources.md, course.json); the steps that touch scripts/ralph/prd.json, scripts/ralph/progress.txt, and scripts/ralph/archive/ are removed",
+        "generate_lesson SKILL.md updated: accepts (slug, lesson-slug) from the invoking prompt; reads lesson context from courses/<slug>/course.json (find lesson by slug) and courses/<slug>/research.md + sources.md — no longer reads scripts/ralph/prd.json or relies on RALPH_TASK_ID",
+        "The 'Do NOT mark passes true' / 'orchestrator handles that' language in generate_lesson is removed (no orchestrator now)",
+        "A dry-run via `claude -p \"Run init_course, slug=test-stub\"` against a fixture course-spec produces only courses/test-stub/{research.md,sources.md,course.json} and zero diff under scripts/ralph/",
+        "Typecheck passes"
+      ],
+      "priority": 96,
+      "passes": false,
+      "notes": "Prep for US-097. Skills are documentation-only changes; behavior changes when US-097 lands the new pipeline. Files: scripts/ralph/skills/init_course/SKILL.md, scripts/ralph/skills/generate_lesson/SKILL.md.",
+      "tags": []
+    },
+    {
+      "id": "US-097",
+      "title": "Replace ralph orchestrator in /api/courses/generate with sequential lesson pipeline",
+      "description": "As the course-generation backend, I want to iterate the lessons in course.json sequentially with one `claude -p` per lesson — no ralph.sh, no worktrees, no branches, no git push — so a single push hiccup or an overwritten dev backlog can never block course generation again. Reproduces the failure mode in courses/opencv-in-computer-vision-a-practical-intermediate-course/.generation.log (push exit !=0 on attempt 1 leaves orphan ref → all retries fail non-fast-forward → 0 lessons generated).",
+      "acceptanceCriteria": [
+        "POST /api/courses/generate no longer spawns ./scripts/ralph/ralph.sh; generation.ts is rewritten so after init_course it reads courses/<slug>/course.json and iterates lessons sequentially",
+        "For each lesson: spawn one `claude -p '...generate_lesson, slug=<slug>, lesson-slug=<lesson-slug>...' --dangerously-skip-permissions` in the main repo CWD; lesson JSON lands at courses/<slug>/lessons/<lesson-slug>.json and is validated against LessonSchema post-spawn",
+        "SSE stream still emits stage / log / progress / done / error events; progress emits current/total per lesson so the wizard's progress bar advances",
+        "A failing single lesson is recorded but does NOT abort the run; remaining lessons continue; the final done event includes a failedLessons summary (or an error event lists them if any failed)",
+        "Cancel (DELETE /api/courses/generate?id=...) terminates the in-flight lesson child cleanly (SIGTERM → SIGKILL grace, same as current)",
+        "After a full generation, `git diff` shows changes only under courses/<slug>/ — scripts/ralph/{prd.json,progress.txt,archive/} and .worktrees/ and any ralph/* branches stay untouched",
+        "generation.test.ts updated: GENERATION_MOCK=1 covers happy path (multi-lesson loop), single-lesson-failure isolation, and cancel mid-run; old ralph-spawn assertions removed",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 97,
+      "passes": false,
+      "notes": "Depends on US-096. Files: src/lib/server/generation.ts, src/lib/server/generation.test.ts, possibly minor changes in src/app/api/courses/generate/route.ts. Also resolves the prd.json overwrite issue the user flagged separately, because scripts/ralph/ is no longer touched by this flow.",
+      "tags": []
+    },
+    {
+      "id": "US-098",
+      "title": "Per-lesson retry + structured per-course log layout for course-generation pipeline",
+      "description": "As the new course-generation pipeline (US-097), I want each lesson's `claude -p` invocation to support up to N attempts with failure context fed back to the agent on retry, plus a structured log layout under courses/<slug>/.gen-logs/, so transient failures (rate limit, schema validation slip, timeout) don't kill a lesson and the audit trail of every attempt is preserved.",
+      "acceptanceCriteria": [
+        "Per-lesson retry loop: configurable via env (LESSON_MAX_RETRIES, default 2 → 3 total attempts; LESSON_TIMEOUT_SEC, default 1800), retries on non-zero exit OR on LessonSchema validation failure of the produced JSON",
+        "On retry, the next `claude -p` prompt includes a 'PREVIOUS ATTEMPT FAILED:\\n<reason>' block (reason: tail of stderr / Zod issues / 'exited with code N' / 'timeout after Ns') — mirrors ralph's pattern from scripts/ralph/ralph.sh:992-996",
+        "Per-attempt timeout: SIGTERM → wait sigkillGraceMs → SIGKILL (same pattern as the existing cancel handler in generation.ts:271-292); timed-out attempt counts as a failed attempt",
+        "Successful retry → lesson marked done, NOT included in failedLessons",
+        "Exhausted retries → lesson appears in failedLessons (SSE event payload + failed_report.json); pipeline continues with next lesson",
+        "Log layout per course: courses/<slug>/.generation.log (existing master tee, unchanged); courses/<slug>/.gen-logs/init_course.log (init stage output); courses/<slug>/.gen-logs/<lesson-slug>.log (all attempts appended, each preceded by '=== Attempt N — <ISO timestamp> ==='); courses/<slug>/.gen-logs/failed_report.json ([{lessonSlug, attempts, lastError, logPath}], only for exhausted-retry lessons)",
+        ".gen-logs/ committed to git (no .gitignore changes); matches existing pattern of .generation.log + ralph-logs/ in the opencv course folder",
+        "generation.test.ts covers: (a) first attempt fails → retry succeeds → lesson done, log has 2 attempt headers; (b) all attempts fail → lesson in failed_report.json, log has 3 attempt headers, pipeline still emits final done listing the failed lesson; (c) per-attempt timeout fires → SIGKILL grace → next attempt starts with PREVIOUS ATTEMPT FAILED context",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 98,
+      "passes": false,
+      "notes": "Depends on US-097 (extends the new pipeline; nothing to extend if US-097 hasn't landed). Files: src/lib/server/generation.ts, src/lib/server/generation.test.ts, possibly add genLogsDir(slug) helper in src/lib/server/paths.ts.",
+      "tags": []
+    },
+    {
+      "id": "US-099",
+      "title": "End-to-end smoke test: generate 'PyTorch for Python Developers' course via new pipeline",
+      "description": "As the project, I want to validate the new course-generation pipeline (US-096/097/098) end-to-end by generating a small real course ('PyTorch for Python Developers', 2 modules × 3 lessons), so we have a known-good baseline that proves the pipeline works without leaking into scripts/ralph/ and that the resulting course actually renders in the webapp.",
+      "acceptanceCriteria": [
+        "Fixture scripts/smoke-tests/pytorch-course-spec.json with topic 'PyTorch for Python Developers', level intermediate, theoryPracticeRatio 0.5, draftStructure: 2 modules × 3 lessons (~6 lessons total)",
+        "Runner scripts/smoke-tests/run-pytorch-course.sh (or .ts) that: assumes dev server running on http://localhost:3000, POSTs the fixture to /api/courses, triggers POST /api/courses/generate, streams SSE until 'done' (with generous timeout, e.g. 7200s), exits non-zero on 'error' or any failedLessons",
+        "Run the runner once against the real pipeline; commit the produced courses/pytorch-for-python-developers/ folder (course.json + 6 lesson JSONs + research.md + sources.md + .generation.log + .gen-logs/) as the baseline",
+        "courses/pytorch-for-python-developers/course.json validates CourseSchema and has exactly 2 modules × 3 lessons",
+        "courses/pytorch-for-python-developers/lessons/*.json — exactly 6 files, each validates LessonSchema",
+        "sources.md lists ≥3 stable references per lesson",
+        ".gen-logs/init_course.log exists; one <lesson-slug>.log per lesson; failed_report.json either absent or empty array",
+        "git status --short after the run shows changes ONLY under courses/pytorch-for-python-developers/ and the fixture/runner — ZERO under scripts/ralph/ and zero ralph/* branches created",
+        "Browser verification (playwright-skill): open http://localhost:3000/courses/pytorch-for-python-developers, page returns 200, lists 6 lessons in 2 modules; click into one lesson, sections render without console errors",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 100,
+      "passes": false,
+      "notes": "Depends on US-096 + US-097 + US-098 (must all land first; retry mechanism in US-098 is what makes this practical against transient claude failures). Real generation time: 30 min – 2 h wall-clock + claude usage cost. Likely run manually rather than by autonomous ralph due to wall-clock exceeding standard TASK_TIMEOUT_SEC=1800s — operator runs the script once and lands the resulting baseline.",
+      "tags": [
+        "ui"
+      ],
+      "timeout": 21600
+    },
+    {
+      "id": "US-100",
+      "title": "Add per-story 'timeout' field to ralph orchestrator (overrides TASK_TIMEOUT_SEC)",
+      "description": "As ralph orchestrator, I want each story in prd.json to optionally specify a `timeout` field (seconds) that overrides the global TASK_TIMEOUT_SEC for that single task, so long-running stories like end-to-end smoke tests can run autonomously without bumping the global timeout for everyone else.",
+      "acceptanceCriteria": [
+        "ralph.sh reads optional .timeout field from the current story via jq; if present (positive integer), uses it as per-task timeout; if absent or invalid, falls back to global TASK_TIMEOUT_SEC (with a warning log on invalid)",
+        "The override applies to BOTH the `timeout` wrapper around `claude` invocation in run_worker AND the SOFT_DEADLINE_BUFFER_SEC calculation at ralph.sh:973-978 so the soft deadline scales correctly",
+        "The 'TIME BUDGET (HARD CONSTRAINT)' section of the enriched agent prompt reflects the EFFECTIVE timeout (so the agent knows its real budget, not the default)",
+        "The startup banner / per-task logs mention the effective timeout when it differs from the global default",
+        "Comment in ralph.config near TASK_TIMEOUT_SEC documents the per-story override pattern (e.g. {\"id\": \"US-099\", ..., \"timeout\": 21600})",
+        "Manual smoke test recipe in PR/notes: pick a tiny story, set timeout: 60, confirm ralph honors it (claude is killed at 60s) — automated test optional since this is bash",
+        "bash -n scripts/ralph/ralph.sh passes (syntax check)"
+      ],
+      "priority": 99,
+      "passes": false,
+      "notes": "Unblocks US-099 (PyTorch smoke test, timeout: 21600 for ~6h budget). Files: scripts/ralph/ralph.sh, scripts/ralph/ralph.config.",
+      "tags": []
     }
   ]
 }
