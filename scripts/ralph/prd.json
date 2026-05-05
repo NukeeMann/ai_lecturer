@@ -2243,6 +2243,127 @@
       "passes": false,
       "notes": "User staring at \"Waiting for output…\" for tens of minutes is the symptom. Each stream-json event is one line of JSON on stdout — the existing pumpStream newline-splitter already handles that; the new code just needs to JSON-decode and pull out human-readable fields.",
       "tags": []
+    },
+    {
+      "id": "US-103",
+      "title": "Add 'Upload materials' entry path on /create with multi-file picker (PDF/PPTX/DOCX/TXT/JSON)",
+      "description": "As a user starting a new course on /create, I want to optionally upload source materials (lecture slides, exam papers, PDFs, question banks) up front so the generated curriculum and quizzes can be grounded in my content instead of being invented from scratch. When I take this path, the file picker is the first step — before the intent questions.",
+      "acceptanceCriteria": [
+        "/create landing offers two entry paths: 'Start from scratch' (existing flow, unchanged) and 'I have materials' (new path)",
+        "'I have materials' opens a multi-file picker that accepts .pdf, .pptx, .docx, .txt, .json (question bank) — front-end MIME + extension validation, with per-file size limit (document the chosen cap in notes/code)",
+        "Backend POST /api/courses/upload-sources accepts multipart/form-data, validates types + sizes server-side, and stores files under /courses/<slug>/sources/<original-filename> preserving original filename (sanitized; collisions get a numeric suffix)",
+        "If the slug does not yet exist at upload time, files are staged in a temporary draft location keyed by a draft id, then moved into /courses/<slug>/sources/ once the slug is finalized at the start of /init_course",
+        "After the upload step, the user proceeds into the existing intent questions; uploaded file list is visible (filename + size + remove button) and persists across the rest of the /create flow",
+        "Verify in browser using playwright-skill: navigate to /create, choose 'I have materials', upload one PDF + one TXT, confirm both appear in the list, remove one, confirm the staged file is deleted server-side, advance to next stage",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 103,
+      "passes": false,
+      "notes": "Wiring uploaded files into the actual generation prompts is US-104. This story is upload UX + storage only.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-104",
+      "title": "Wire uploaded source files into /init_course + per-lesson generation prompts",
+      "description": "As a user who uploaded source materials in Stage 0 (US-103), I want the generation pipeline to actually use those files so the curriculum, lesson plans, and quizzes are grounded in my content rather than ignoring it.",
+      "acceptanceCriteria": [
+        "src/lib/server/generation.ts enumerates files in /courses/<slug>/sources/ (if any) and injects their absolute paths into the /init_course prompt as a 'Source materials' section, instructing claude to read them via the Read tool before drafting the curriculum",
+        "Per-lesson generation prompts (defaultLessonCommand) receive the same source file paths so individual lessons can pull facts/quotes/figures from the originals",
+        "If /courses/<slug>/sources/ is empty or absent, the existing prompt is used unchanged (no behavior change for the 'Start from scratch' path)",
+        "The injected paths are absolute and stable — claude must be able to invoke Read on them from the ralph worktree",
+        "Manual smoke documented in notes: upload one PDF in /create, kick off generation with GENERATION_MOCK off, confirm init_course log shows a Read tool call against the uploaded file",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 104,
+      "passes": false,
+      "notes": "Depends on US-103 (sources directory must exist). Pure server-side wiring — no UI changes here.",
+      "tags": []
+    },
+    {
+      "id": "US-105",
+      "title": "Persist per-stage generation logs to disk + scrollback panel for completed stages",
+      "description": "As a user watching course generation, I want to scroll back into earlier stages' output (e.g. the full /init_course log) after the pipeline has moved on, so I can review what claude actually decided. Today the SSE log panel only shows live output for the current stage and the previous stage's content is lost as soon as the next one starts.",
+      "acceptanceCriteria": [
+        "Each generation stage's stdout/stderr is appended to /courses/<slug>/logs/<stage>.log on disk as it streams (init_course, lesson-<n>, etc.) — one file per stage, persisted across server restarts",
+        "Generation log panel in /create renders one collapsible section per stage; completed stages start collapsed, the active stage starts expanded and auto-scrolls",
+        "Expanding a completed stage loads its full log from disk via a new GET /api/courses/<slug>/logs/<stage> endpoint and renders it in a scrollable container (lazy-load on first expand)",
+        "When the generation page is opened mid-run for a slug that already has logs on disk (e.g. after returning from US-106's banner), all completed stages are shown collapsed with their persisted content available, and the active stage resumes streaming",
+        "Verify in browser using playwright-skill: kick off a mock generation that produces multi-stage output (GENERATION_MOCK=1), wait for stage transition, expand the previous stage, confirm its content is visible and matches the on-disk file",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 105,
+      "passes": false,
+      "notes": "Scope: scrollback within the current generation session only. Cross-session history (browsing yesterday's runs) is out of scope.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-106",
+      "title": "Detect active generation run on /create and show 'Resume generation' banner",
+      "description": "As a user who closed the browser tab during a long generation, I want /create to detect that a run is still in progress when I come back and offer me a one-click way to jump back into the live generation panel. The agent itself never stops on tab close (it's a server-side ralph spawn), but currently there's no way to find it again from the UI.",
+      "acceptanceCriteria": [
+        "On /create mount, the page calls GET /api/courses/active-run and renders a sticky top banner if any run is currently active: 'Trwa generacja kursu <name> — <stage>' + 'Wróć do generacji' button",
+        "Clicking 'Wróć do generacji' navigates to the existing generation view for that slug and reattaches to its SSE stream + persisted logs (synergy with US-105)",
+        "The banner does NOT auto-redirect — the user can dismiss it and start a new course flow if they choose (queueing is handled by US-107)",
+        "GET /api/courses/active-run returns { active: false } | { active: true, slug, name, stage } based on the in-memory activeRun registry in src/lib/server/generation.ts (also reconciles against /courses/<slug>/logs/ on cold start so a run survives a server restart if its child process is still alive)",
+        "Verify in browser using playwright-skill: kick off a long mock generation, navigate away to /, navigate back to /create, confirm banner appears with the correct course name and clicking it lands in the generation view with logs visible",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 106,
+      "passes": false,
+      "notes": "Pairs with US-101 (race fix) — both touch the activeRun registry.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-107",
+      "title": "Sequential queue for course generation runs (one ralph at a time)",
+      "description": "As a user who started a course generation and then wants to begin another one without waiting hours, I want the second course's generation to be accepted and queued instead of rejected. Only one ralph pipeline runs at a time; the next queued course starts automatically when the current one finishes.",
+      "acceptanceCriteria": [
+        "POST /api/courses/generate, when an activeRun already exists, enqueues the new run instead of returning GenerationConflictError (the conflict error stays for true duplicates of the same slug — see US-101)",
+        "Queue is FIFO, persisted to disk (e.g. ~/.ai-lecturer/generation-queue.json) so it survives server restarts; on startup the server resumes the queue head if no activeRun exists",
+        "When the active run completes (or fails), the next queued run is started automatically with the same generation pipeline",
+        "/create generation view shows queued status for runs that are waiting: 'W kolejce — <position>/<total>' and the course name; updates live when position changes",
+        "GET /api/courses/active-run returns queue context too: { active, queue: [{ slug, name, position }] } so the banner from US-106 can show 'X w kolejce' when relevant",
+        "Verify in browser using playwright-skill: kick off mock generation A, immediately POST a second mock generation B for a different slug, confirm B shows 'W kolejce — 1/1' and starts automatically when A finishes",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 107,
+      "passes": false,
+      "notes": "Depends on US-101 (race fix) and US-106 (banner) being merged first or at least scoped consistently — all three touch activeRun + queue state in src/lib/server/generation.ts.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-108",
+      "title": "Redesign lesson progress panel: horizontal slider + in-place started→done transitions + 'N/total' labels",
+      "description": "As a user watching a 63-lesson course generate, I want the lesson progress panel to be readable at a glance instead of a vertical wall of stacked tiles. Today new lesson tiles append one by one with full lesson titles, which quickly overflows the panel. I want all slots pre-rendered as a horizontal slider with numeric labels, where each slot transitions in place from pending → started → done as work progresses.",
+      "acceptanceCriteria": [
+        "All lesson slots render up front as soon as the curriculum is known (e.g. all 63 placeholders visible at the start of the lesson-generation stage), each with state 'pending'",
+        "Each slot displays only its number (e.g. '6/63') as the primary label — full lesson title is available on hover/tooltip but not in the default layout",
+        "Slots are laid out as a horizontal slider/carousel (overflow-x with scroll-snap, keyboard arrows + drag to scroll); panel height stays fixed regardless of lesson count",
+        "State transitions happen in place on the existing slot — no new tile is appended when a lesson starts or finishes; only the slot's tag/icon changes (pending → started → done, with appropriate color/animation per existing design tokens)",
+        "Auto-scroll keeps the active 'started' slot in view as generation progresses",
+        "Verify in browser using playwright-skill: trigger a mock generation with >20 lessons, confirm all slots are visible up front, confirm the active slot tag changes in place (no new DOM nodes appended), confirm horizontal scrolling works and full title shows on hover",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 108,
+      "passes": false,
+      "notes": "Pure UI redesign — no changes to the generation pipeline or SSE event shape (slot state still derives from existing per-lesson events). Reuse existing design tokens for tag colors.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
