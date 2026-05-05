@@ -336,8 +336,9 @@ describe('startGeneration spawn wrapper', () => {
 
     await waitForFinish(run);
     expect(lessonCommand).toHaveBeenCalledTimes(2);
-    expect(lessonCommand).toHaveBeenNthCalledWith(1, 'demo', 'alpha');
-    expect(lessonCommand).toHaveBeenNthCalledWith(2, 'demo', 'beta');
+    // Third arg (previousAttemptReason) is undefined on the first attempt.
+    expect(lessonCommand).toHaveBeenNthCalledWith(1, 'demo', 'alpha', undefined);
+    expect(lessonCommand).toHaveBeenNthCalledWith(2, 'demo', 'beta', undefined);
   });
 
   it('isolates a single lesson failure: pipeline continues, done lists failedLessons', async () => {
@@ -346,6 +347,9 @@ describe('startGeneration spawn wrapper', () => {
     const run = await startGeneration('demo', {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
+      // Retries are exercised by their own dedicated tests below; here we
+      // pin maxRetries=0 so the failed lesson terminates on its first attempt.
+      lessonMaxRetries: 0,
     });
 
     // Init succeeds with 2 lessons.
@@ -371,7 +375,10 @@ describe('startGeneration spawn wrapper', () => {
       | undefined;
     expect(done).toBeDefined();
     expect(done?.courseSlug).toBe('demo');
-    expect(done?.failedLessons).toEqual([{ slug: 'bad', reason: 'exited 2' }]);
+    expect(done?.failedLessons.length).toBe(1);
+    expect(done?.failedLessons[0].slug).toBe('bad');
+    expect(done?.failedLessons[0].reason).toMatch(/exited with code 2/);
+    expect(done?.failedLessons[0].reason).toContain('something exploded');
     expect(run.events.find((e) => e.type === 'error')).toBeUndefined();
 
     // Both lessons emitted started; only `good` emitted a `done` stage; `bad` emitted error.
@@ -400,6 +407,9 @@ describe('startGeneration spawn wrapper', () => {
     const run = await startGeneration('demo', {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
+      // Single-attempt path so the malformed JSON is the only output and
+      // we don't need to script multiple retry children.
+      lessonMaxRetries: 0,
     });
 
     const init = await scripted.nextChild();
@@ -607,6 +617,196 @@ describe('startGeneration spawn wrapper', () => {
   it('default lesson prompt rejects unsafe slugs', () => {
     expect(() => defaultLessonCommand('../etc', 'foo')).toThrow(/Invalid slug/i);
     expect(() => defaultLessonCommand('demo', 'a/b')).toThrow(/Invalid slug/i);
+  });
+
+  it('default lesson prompt prepends PREVIOUS ATTEMPT FAILED block when given a retry reason', () => {
+    const spec = defaultLessonCommand('demo', 'lesson-a', 'exited with code 1\nrate limited');
+    expect(spec.command).toBe('claude');
+    const prompt = spec.args[1];
+    expect(prompt).toMatch(/^PREVIOUS ATTEMPT FAILED:/);
+    expect(prompt).toContain('rate limited');
+    expect(prompt).toContain('Fix these issues specifically');
+    // Base brief still present after the failure block.
+    expect(prompt).toContain('generate_lesson');
+    expect(prompt).toContain('scripts/ralph/skills/generate_lesson/SKILL.md');
+  });
+
+  it('retries a failed lesson and marks it done when the retry succeeds', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['retryme']);
+    init.finishWithExit(0);
+
+    // Attempt 1: non-zero exit + stderr, no file written.
+    const a1 = await scripted.nextChild();
+    a1.emitStderr('rate limited\n');
+    a1.finishWithExit(1);
+
+    // Attempt 2: writes a valid lesson and exits 0.
+    const a2 = await scripted.nextChild();
+    await writeStubLesson('demo', 'retryme');
+    a2.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Lesson is done, NOT in failedLessons.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
+
+    // ONE started + ONE done stage event for the lesson (not per attempt).
+    const lessonStages = run.events.filter(
+      (e) => e.type === 'stage' && e.name === 'lesson:retryme',
+    );
+    expect(lessonStages).toEqual([
+      { type: 'stage', name: 'lesson:retryme', status: 'started' },
+      { type: 'stage', name: 'lesson:retryme', status: 'done' },
+    ]);
+
+    // Per-lesson log records BOTH attempts' headers.
+    const logRaw = await fs.readFile(
+      path.join(coursesRoot, 'demo', '.gen-logs', 'retryme.log'),
+      'utf8',
+    );
+    const headers = logRaw.match(/=== Attempt \d+ —/g) ?? [];
+    expect(headers).toEqual(['=== Attempt 1 —', '=== Attempt 2 —']);
+    expect(logRaw).toContain('rate limited');
+
+    // Retry attempt's prompt carries the PREVIOUS ATTEMPT FAILED context.
+    const retryPrompt = a2.args.join(' ');
+    expect(retryPrompt).toContain('PREVIOUS ATTEMPT FAILED');
+    expect(retryPrompt).toMatch(/exited with code 1/);
+
+    // No failed_report.json written (no exhausted-retry lessons).
+    const reportExists = await fs
+      .access(path.join(coursesRoot, 'demo', '.gen-logs', 'failed_report.json'))
+      .then(() => true)
+      .catch(() => false);
+    expect(reportExists).toBe(false);
+  });
+
+  it('records exhausted-retry lessons in failed_report.json and still emits done with failedLessons', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['doomed', 'lucky']);
+    init.finishWithExit(0);
+
+    // 'doomed' fails on every one of its 3 attempts (non-zero exit).
+    for (let i = 0; i < 3; i++) {
+      const attempt = await scripted.nextChild();
+      attempt.emitStderr(`boom ${i + 1}\n`);
+      attempt.finishWithExit(1);
+    }
+
+    // 'lucky' succeeds on its first attempt.
+    const lucky = await scripted.nextChild();
+    await writeStubLesson('demo', 'lucky');
+    lucky.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Pipeline still emits `done` because 'lucky' generated successfully.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons.map((f) => f.slug)).toEqual(['doomed']);
+    expect(done?.failedLessons[0].reason).toMatch(/exited with code 1/);
+
+    // Per-lesson log records all 3 attempt headers.
+    const logRaw = await fs.readFile(
+      path.join(coursesRoot, 'demo', '.gen-logs', 'doomed.log'),
+      'utf8',
+    );
+    const headers = logRaw.match(/=== Attempt \d+ —/g) ?? [];
+    expect(headers).toEqual(['=== Attempt 1 —', '=== Attempt 2 —', '=== Attempt 3 —']);
+
+    // failed_report.json exists with exactly one entry pointing at the per-lesson log.
+    const reportRaw = await fs.readFile(
+      path.join(coursesRoot, 'demo', '.gen-logs', 'failed_report.json'),
+      'utf8',
+    );
+    const report = JSON.parse(reportRaw) as Array<{
+      lessonSlug: string;
+      attempts: number;
+      lastError: string;
+      logPath: string;
+    }>;
+    expect(report).toHaveLength(1);
+    expect(report[0].lessonSlug).toBe('doomed');
+    expect(report[0].attempts).toBe(3);
+    expect(report[0].lastError).toMatch(/exited with code 1/);
+    expect(report[0].logPath).toBe('.gen-logs/doomed.log');
+
+    // Init log was teed to .gen-logs/init_course.log.
+    const initLog = await fs.readFile(
+      path.join(coursesRoot, 'demo', '.gen-logs', 'init_course.log'),
+      'utf8',
+    );
+    expect(typeof initLog).toBe('string');
+  });
+
+  it('per-attempt timeout SIGTERMs then SIGKILLs and the next attempt sees a timeout retry context', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      // Tight timing so the test runs in well under a second of real time.
+      lessonTimeoutMs: 30,
+      sigkillGraceMs: 30,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['hangs']);
+    init.finishWithExit(0);
+
+    // Attempt 1: child never exits on its own — let the per-attempt timeout
+    // fire. FakeChildProcess.kill('SIGKILL') auto-finishes the child, so the
+    // close event drains naturally and the loop moves on.
+    const attempt1 = await scripted.nextChild();
+    attempt1.emitStdout('working...\n');
+
+    // Wait for the second spawn — it can only happen after attempt 1 closes,
+    // which only happens after SIGTERM → grace → SIGKILL.
+    const attempt2 = await scripted.nextChild();
+    expect(attempt1.killSignals).toContain('SIGTERM');
+    expect(attempt1.killSignals).toContain('SIGKILL');
+
+    // Retry prompt carries the timeout context from the prior attempt.
+    const retryPrompt = attempt2.args.join(' ');
+    expect(retryPrompt).toContain('PREVIOUS ATTEMPT FAILED');
+    expect(retryPrompt).toMatch(/timeout after \d+s/);
+
+    // Let attempt 2 succeed so the run finalises cleanly.
+    await writeStubLesson('demo', 'hangs');
+    attempt2.finishWithExit(0);
+
+    await waitForFinish(run);
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
   });
 
   it('SIGTERMs the active child on cancel and SIGKILLs after the grace window', async () => {

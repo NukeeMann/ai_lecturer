@@ -50,3 +50,7 @@ export function lessonFile(slug: string, lessonSlug: string): string {
   assertSafeSlug(lessonSlug);
   return path.join(courseDir(slug), 'lessons', `${lessonSlug}.json`);
 }
+
+export function genLogsDir(slug: string): string {
+  return path.join(courseDir(slug), '.gen-logs');
+}
