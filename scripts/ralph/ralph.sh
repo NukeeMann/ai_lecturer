@@ -937,6 +937,22 @@ run_worker() {
       else .tags end
     else empty end')
 
+  # Per-story `timeout` field overrides the global TASK_TIMEOUT_SEC for this
+  # one task. Lets a long-running story (e.g. an end-to-end smoke test) get a
+  # bigger budget without inflating the default for every other story. Must be
+  # a positive integer (seconds); anything else logs a warning and falls back.
+  local effective_timeout_sec="$TASK_TIMEOUT_SEC"
+  local story_timeout_raw
+  story_timeout_raw=$(echo "$story_json" | jq -r '.timeout // empty')
+  if [ -n "$story_timeout_raw" ]; then
+    if [[ "$story_timeout_raw" =~ ^[1-9][0-9]*$ ]]; then
+      effective_timeout_sec="$story_timeout_raw"
+      log_task "$task_id" "Per-story timeout override: ${effective_timeout_sec}s (global TASK_TIMEOUT_SEC=${TASK_TIMEOUT_SEC}s)"
+    else
+      log_task "$task_id" "${YELLOW}WARN${RST} ignoring invalid .timeout=\"$story_timeout_raw\" (must be positive integer seconds) — using global TASK_TIMEOUT_SEC=${TASK_TIMEOUT_SEC}s"
+    fi
+  fi
+
   # Lazy playwright-skill setup: only when THIS task has tag `ui`.
   # Chromium download (~300MB) is deferred until actually needed.
   # Flock serializes parallel UI tasks so chromium cache isn't fetched twice.
@@ -971,9 +987,9 @@ run_worker() {
   # than 60s of working time, fall back to half the timeout — still better
   # than nothing, and obvious to the agent that the task is too tight.
   local soft_deadline_sec deadline_epoch
-  soft_deadline_sec=$(( TASK_TIMEOUT_SEC - SOFT_DEADLINE_BUFFER_SEC ))
+  soft_deadline_sec=$(( effective_timeout_sec - SOFT_DEADLINE_BUFFER_SEC ))
   if [ "$soft_deadline_sec" -lt 60 ]; then
-    soft_deadline_sec=$(( TASK_TIMEOUT_SEC / 2 ))
+    soft_deadline_sec=$(( effective_timeout_sec / 2 ))
   fi
   deadline_epoch=$(( $(date +%s) + soft_deadline_sec ))
 
@@ -996,7 +1012,7 @@ $last_failure
 Fix these issues specifically.")
 
 TIME BUDGET (HARD CONSTRAINT):
-- Hard timeout: ${TASK_TIMEOUT_SEC}s. After this you are SIGKILLed mid-step — no chance to write anything.
+- Hard timeout: ${effective_timeout_sec}s. After this you are SIGKILLed mid-step — no chance to write anything.
 - Soft deadline: ${soft_deadline_sec}s from agent start (= hard timeout minus a ${SOFT_DEADLINE_BUFFER_SEC}s graceful-shutdown buffer).
 - Absolute deadline epoch is exposed as env var \$RALPH_DEADLINE_EPOCH. Check elapsed periodically with: test \$(date +%s) -ge \$RALPH_DEADLINE_EPOCH
 - When you reach the soft deadline, regardless of progress:
@@ -1029,7 +1045,7 @@ $recent_progress")"
   # aren't silently dropped.
   # pipefail (set at top of file) ensures claude's exit code (e.g. 124 on
   # timeout) propagates even when jq exits 0 at the end of the pipe.
-  log_task "$task_id" "Running claude in worktree (hard ${TASK_TIMEOUT_SEC}s, soft ${soft_deadline_sec}s)..."
+  log_task "$task_id" "Running claude in worktree (hard ${effective_timeout_sec}s, soft ${soft_deadline_sec}s)..."
 
   local exit_code=0
   # Wrap the agent in `setsid` so we can reap any long-running children
@@ -1042,7 +1058,7 @@ $recent_progress")"
   local sid_file="$SESSION_DIR/${task_id}.sid"
   rm -f "$sid_file"
   RALPH_TASK_ID="$task_id" \
-  RALPH_TIMEOUT_SEC="$TASK_TIMEOUT_SEC" \
+  RALPH_TIMEOUT_SEC="$effective_timeout_sec" \
   RALPH_SOFT_DEADLINE_SEC="$soft_deadline_sec" \
   RALPH_DEADLINE_EPOCH="$deadline_epoch" \
   RALPH_SID_FILE="$sid_file" \
@@ -1108,9 +1124,9 @@ $recent_progress")"
   fi
 
   if [ $exit_code -eq 124 ]; then
-    log_task "$task_id" "${RED}TIMEOUT${RST} after ${TASK_TIMEOUT_SEC}s — running diagnostician..."
+    log_task "$task_id" "${RED}TIMEOUT${RST} after ${effective_timeout_sec}s — running diagnostician..."
     capture_failure_context "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" \
-      "TIMEOUT after ${TASK_TIMEOUT_SEC}s. Agent was killed mid-run — likely scope too large, infinite loop, or stuck on a single problem. Narrow your approach and commit incrementally."
+      "TIMEOUT after ${effective_timeout_sec}s. Agent was killed mid-run — likely scope too large, infinite loop, or stuck on a single problem. Narrow your approach and commit incrementally."
 
     run_diagnostician "$task_id" "$worktree_dir" "$logfile" "$last_failure_file" "$branch"
 
@@ -1508,7 +1524,7 @@ fi
 # trap when they source this file.
 trap cleanup_on_interrupt INT TERM
 
-log "Ralph starting | parallel=$PARALLEL model=$MODEL mode=$MODE base=$BASE_BRANCH max_iter=$MAX_ITERATIONS max_retry=$MAX_RETRIES"
+log "Ralph starting | parallel=$PARALLEL model=$MODEL mode=$MODE base=$BASE_BRANCH max_iter=$MAX_ITERATIONS max_retry=$MAX_RETRIES timeout=${TASK_TIMEOUT_SEC}s (per-story .timeout overrides supported)"
 if [ -n "$VALIDATE_CMD" ]; then
   log "Validate: $VALIDATE_CMD"
 else

@@ -163,3 +163,26 @@ Previous log archived to: archive/progress-2026-05-04-2214.txt
   - When you change a public factory's signature (added a 3rd optional arg), TypeScript covariance lets existing 2-arg vi.fn implementations still satisfy the new type at the SpawnDeps boundary. But `vi.fn().mock.calls` still records the actually-passed argv, so `toHaveBeenNthCalledWith(1, 'demo', 'alpha')` becomes `toHaveBeenNthCalledWith(1, 'demo', 'alpha', undefined)`. Update test assertions accordingly.
   - A `Math.round(timeoutMs / 1000)` for the user-visible "timeout after Ns" reason rounds sub-1s timeouts to `0s`. Tests using tight (e.g. 30ms) timeouts should match `/timeout after \d+s/` rather than asserting a specific number.
 ---
+
+## 2026-05-05 — US-100 — Per-story `timeout` field overrides TASK_TIMEOUT_SEC
+
+- `scripts/ralph/ralph.sh`: added per-story `timeout` override in `run_worker`. Right after `story_tags` is parsed (just before the playwright-skill bootstrap), `story_timeout_raw=$(echo "$story_json" | jq -r '.timeout // empty')` reads the optional field. A new `effective_timeout_sec` defaults to `TASK_TIMEOUT_SEC`; when the raw value matches `^[1-9][0-9]*$` it replaces the default and a `Per-story timeout override: …s (global TASK_TIMEOUT_SEC=…s)` task log is emitted. Anything else (negative, zero, non-numeric, `0123`) logs a `WARN ignoring invalid .timeout=…` line and falls back to the global default — `set -u` is happy because `effective_timeout_sec` is initialized before the conditional.
+- The override now flows through everywhere a per-task timeout was hardcoded to `TASK_TIMEOUT_SEC`:
+  - Soft-deadline calc at ralph.sh:990-993 (`soft_deadline_sec = effective_timeout_sec - SOFT_DEADLINE_BUFFER_SEC`, with the `<60s` fallback halving `effective_timeout_sec`).
+  - The "TIME BUDGET (HARD CONSTRAINT)" `Hard timeout: …s` line in the enriched agent prompt.
+  - The `Running claude in worktree (hard …s, soft …s)` task log.
+  - The env var `RALPH_TIMEOUT_SEC` exported into the `setsid bash -c …` wrapper that calls `timeout "$RALPH_TIMEOUT_SEC" claude …` — so the actual `timeout(1)` SIGTERM/SIGKILL fires at the override.
+  - Both `TIMEOUT after …s` log lines and the failure-context capture text, so retry agents see the real budget that was overrun.
+- Startup banner now ends with `… timeout=${TASK_TIMEOUT_SEC}s (per-story .timeout overrides supported)` so a reader can see the global default plus a hint that overrides exist; the per-task override-detected log handles the "differs from global" case at task time.
+- `scripts/ralph/ralph.config`: extended the `TASK_TIMEOUT_SEC` comment block with a note about the per-story `timeout` field, an "invalid → fallback + warn" sentence, and an example entry `{ "id": "US-099", "title": "...", "timeout": 21600, ... }`.
+- Quality: `bash -n scripts/ralph/ralph.sh` passes (the AC's mandated check). No TS files touched, so typecheck/lint/vitest are not in scope. No `ui` tag → no browser verification.
+- Manual smoke test recipe (per AC; not run automatically because bash-only):
+  1. Pick a tiny story in `scripts/ralph/prd.json` and add `"timeout": 60`.
+  2. Run `./scripts/ralph/ralph.sh --max-iterations 1 --parallel 1`.
+  3. Expect `Per-story timeout override: 60s (global TASK_TIMEOUT_SEC=…s)`, then `Running claude in worktree (hard 60s, soft 30s)` (60-600 < 60 → falls back to 60/2=30), then a `TIMEOUT after 60s` line at ~T+60s and the diagnostician kicking in. Restore the story afterwards.
+- **Learnings for future iterations:**
+  - When parsing an optional integer from JSON via `jq -r '.field // empty'`, a JSON `null` or missing key both produce empty string — fine for an "absent → default" path. But a JSON number like `21600` becomes the string `"21600"` (no `.0`), so `[[ "$x" =~ ^[1-9][0-9]*$ ]]` is the right validator. Strings like `"3600"` accidentally pass too, which is acceptable here because the orchestrator should be lenient about quoting in prd.json — but if you ever need strict-integer-only, switch to `jq -r '(.field | numbers // empty)'`.
+  - When you replace a global like `TASK_TIMEOUT_SEC` with a per-task `effective_timeout_sec`, audit every site (use `grep -n TASK_TIMEOUT_SEC`) instead of relying on the AC's enumerated list — the failure-context message and env var were easy to miss because they're not on the "obvious" timeout path.
+  - `set -u` plus `local foo=$bar` inside a function: the local declaration runs even when `bar` is being read — initialize defaults FIRST (`local effective_timeout_sec="$TASK_TIMEOUT_SEC"`), then conditionally override. This avoids "unbound variable" if a later code path reads the local before the conditional fires.
+  - `local` declarations don't allow command substitutions in the same line to capture exit codes via pipefail — `local x=$(cmd | jq …)` always returns 0. Existing code splits these into `local x` then `x=$(...)` for a reason. Followed that pattern for `story_timeout_raw`.
+---
