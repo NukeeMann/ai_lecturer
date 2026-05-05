@@ -36,7 +36,17 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Plus, Trash2, ArrowLeft, Sparkles } from 'lucide-react';
+import {
+  ArrowLeft,
+  GripVertical,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+} from 'lucide-react';
+
+import type { CourseStructure } from '@/lib/wizard/structure';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,96 +109,48 @@ function capitalize(s: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-const LEVEL_DESCRIPTORS: Record<Level, string> = {
-  beginner: 'A beginner-friendly introduction',
-  intermediate: 'A practical guide',
-  advanced: 'A focused deep dive',
-};
-
-const MODULE_TEMPLATES: { title: (topic: string) => string; lessons: string[] }[] = [
-  {
-    title: (topic) => `Module 1: Intro to ${topic}`,
-    lessons: ['What is it?', 'Why it matters', 'A first example', 'Wrap up'],
-  },
-  {
-    title: () => `Module 2: Core concepts`,
-    lessons: ['Foundations', 'Key building blocks', 'Common patterns', 'Hands-on practice'],
-  },
-  {
-    title: () => `Module 3: Putting it together`,
-    lessons: [
-      'Real-world applications',
-      'Edge cases & gotchas',
-      'Best practices',
-      'Where to go next',
-    ],
-  },
-  {
-    title: () => `Module 4: Advanced techniques`,
-    lessons: [
-      'Going deeper',
-      'Optimization tricks',
-      'Less obvious pitfalls',
-      'Hands-on advanced practice',
-    ],
-  },
-  {
-    title: () => `Module 5: Capstone & next steps`,
-    lessons: [
-      'A capstone project',
-      'Comparing to alternatives',
-      'How experts approach this',
-      'Curated reading list',
-    ],
-  },
-  {
-    title: () => `Module 6: Specialised topics`,
-    lessons: [
-      'Niche application 1',
-      'Niche application 2',
-      'Edge-of-field research',
-      'Open problems',
-    ],
-  },
-];
-
-const DURATION_PROFILE: Record<DurationTarget, { moduleCount: number; lessonsPerModule: number }> = {
-  short: { moduleCount: 1, lessonsPerModule: 4 },
-  standard: { moduleCount: 3, lessonsPerModule: 4 },
-  extensive: { moduleCount: 4, lessonsPerModule: 6 },
-  comprehensive: { moduleCount: 6, lessonsPerModule: 8 },
-};
-
-export function seedStructure(
-  rawTopic: string,
-  level: Level | null,
-  durationTarget: DurationTarget | null = null,
-): StructureDraft {
-  const topic = rawTopic.trim() || 'this topic';
-  const titleTopic = capitalize(topic);
-  const lvl = level ?? 'beginner';
-  const profile = DURATION_PROFILE[durationTarget ?? 'standard'];
-  const moduleCount = Math.min(profile.moduleCount, MODULE_TEMPLATES.length);
+export function emptyStructure(rawTopic: string): StructureDraft {
+  const topic = rawTopic.trim();
+  const titleTopic = capitalize(topic) || 'New course';
   return {
     courseTitle: titleTopic,
-    courseDescription: `${LEVEL_DESCRIPTORS[lvl]} to ${topic}.`,
-    modules: MODULE_TEMPLATES.slice(0, moduleCount).map((tpl) => {
-      const baseLessons = tpl.lessons;
-      const lessons: string[] = [];
-      for (let i = 0; i < profile.lessonsPerModule; i++) {
-        lessons.push(baseLessons[i % baseLessons.length]);
-      }
-      return {
+    courseDescription: 'Add a description for your course.',
+    modules: [
+      {
         id: makeId(),
-        title: tpl.title(titleTopic),
-        lessons: lessons.map((lessonTitle, i) => ({
-          id: makeId(),
-          title: `Lesson ${i + 1}: ${lessonTitle}`,
-          summary: 'Brief 1-line description.',
-          estimatedMinutes: 10,
-        })),
-      };
-    }),
+        title: 'Module 1: New module',
+        lessons: [
+          {
+            id: makeId(),
+            title: 'Lesson 1: New lesson',
+            summary: 'Brief 1-line description.',
+            estimatedMinutes: 10,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+export function courseStructureToDraft(
+  structure: CourseStructure,
+): StructureDraft {
+  return {
+    courseTitle: structure.courseTitle.trim(),
+    courseDescription: structure.courseDescription.trim(),
+    modules: structure.modules.map((m) => ({
+      id: makeId(),
+      title: m.title.trim(),
+      lessons: m.lessons.map((l) => ({
+        id: makeId(),
+        title: l.title.trim(),
+        summary: l.description.trim(),
+        estimatedMinutes:
+          Number.isFinite(l.estimatedMinutes) && l.estimatedMinutes > 0
+            ? Math.round(l.estimatedMinutes)
+            : 10,
+      })),
+    })),
   };
 }
 
@@ -199,59 +161,132 @@ interface Stage3Props {
   setDraft: Dispatch<SetStateAction<Draft>>;
   onNext: () => void;
   onBack: () => void;
+  /** Optional fetch override for tests. */
+  fetchImpl?: typeof fetch;
 }
 
-export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage3Props) {
+type LoadState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'ready' }
+  | { kind: 'manual' }
+  | { kind: 'error'; message: string };
+
+export default function Stage3Cascade({
+  draft,
+  setDraft,
+  onNext,
+  onBack,
+  fetchImpl,
+}: Stage3Props) {
+  const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
+
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
-  // One-shot guard for the on-mount stale check / initial seed (we only want
-  // to evaluate "did upstream change while I was away?" once per mount).
+  const [state, setState] = useState<LoadState>(
+    draft.structure ? { kind: 'ready' } : { kind: 'idle' },
+  );
   const stalenessHandledRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // Re-seed the structure with current topic/level/duration AND record a
-  // fresh cache snapshot. Used both for first-entry seed and stale-reopen
-  // regeneration.
-  const seedAndCache = useCallback(() => {
-    setDraft((d) => {
-      const next = seedStructure(d.topic, d.level, d.durationTarget);
-      const draftWithStructure = { ...d, structure: next };
-      const generatedHash = computeStageInputHash('structure', draftWithStructure);
-      return {
-        ...draftWithStructure,
-        caches: {
-          ...(d.caches ?? {}),
-          structure: {
-            upstreamHashes: snapshotUpstreamHashes('structure', draftWithStructure),
-            generatedHash,
+  const loadAndCache = useCallback(async () => {
+    if (!f) {
+      setState({
+        kind: 'error',
+        message: 'fetch is unavailable in this environment',
+      });
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setState({ kind: 'loading' });
+    try {
+      const res = await f('/api/wizard/structure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: draft.topic,
+          refine: {
+            level: draft.level,
+            durationTarget: draft.durationTarget,
+            theoryPracticeRatio: draft.theoryPracticeRatio,
           },
-        },
-      };
-    });
-  }, [setDraft]);
+          clarification: draft.clarification ?? undefined,
+        }),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (!res.ok) {
+        let message = `Server returned ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body && typeof body.error === 'string') message = body.error;
+        } catch {
+          /* non-JSON body */
+        }
+        setState({ kind: 'error', message });
+        return;
+      }
+      const body = (await res.json()) as CourseStructure;
+      const next = courseStructureToDraft(body);
+      setDraft((d) => {
+        const draftWithStructure = { ...d, structure: next };
+        return {
+          ...draftWithStructure,
+          caches: {
+            ...(d.caches ?? {}),
+            structure: {
+              upstreamHashes: snapshotUpstreamHashes(
+                'structure',
+                draftWithStructure,
+              ),
+              generatedHash: computeStageInputHash(
+                'structure',
+                draftWithStructure,
+              ),
+            },
+          },
+        };
+      });
+      setState({ kind: 'ready' });
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setState({ kind: 'error', message: (err as Error).message });
+    }
+  }, [
+    draft.topic,
+    draft.level,
+    draft.durationTarget,
+    draft.theoryPracticeRatio,
+    draft.clarification,
+    f,
+    setDraft,
+  ]);
 
-  // Seed on first entry / stale reopen. The ref-gate makes this a one-shot
-  // subscription pattern; eslint's set-state-in-effect rule still flags it.
+  // First-time entry: load if there's no structure, or check staleness once
+  // and either re-load (no edits) or open the confirm dialog (has edits).
   useEffect(() => {
     if (stalenessHandledRef.current) return;
     stalenessHandledRef.current = true;
     if (!draft.structure) {
-      seedAndCache();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      void loadAndCache();
       return;
     }
     const cache = draft.caches?.structure;
     if (isStageStale('structure', draft, cache)) {
       if (hasUserEdits('structure', draft, cache)) {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setConfirmRegenerate(true);
       } else {
-        seedAndCache();
+        void loadAndCache();
       }
     }
-  }, [draft, seedAndCache]);
+  }, [draft, loadAndCache]);
 
   const handleConfirmRegenerate = useCallback(() => {
     setConfirmRegenerate(false);
-    seedAndCache();
-  }, [seedAndCache]);
+    void loadAndCache();
+  }, [loadAndCache]);
 
   const handleKeepCurrent = useCallback(() => {
     setConfirmRegenerate(false);
@@ -273,6 +308,45 @@ export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage
       };
     });
   }, [setDraft]);
+
+  const handleRegenerate = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        'Regenerate the structure? Any edits you have made will be lost.',
+      );
+      if (!ok) return;
+    }
+    void loadAndCache();
+  }, [loadAndCache]);
+
+  const handleBuildManually = useCallback(() => {
+    setDraft((d) => {
+      const next = d.structure ?? emptyStructure(d.topic);
+      const draftWithStructure = { ...d, structure: next };
+      return {
+        ...draftWithStructure,
+        caches: {
+          ...(d.caches ?? {}),
+          structure: {
+            upstreamHashes: snapshotUpstreamHashes(
+              'structure',
+              draftWithStructure,
+            ),
+            generatedHash: computeStageInputHash(
+              'structure',
+              draftWithStructure,
+            ),
+          },
+        },
+      };
+    });
+    setState({ kind: 'manual' });
+  }, [setDraft]);
+
+  const handleBack = useCallback(() => {
+    abortRef.current?.abort();
+    onBack();
+  }, [onBack]);
 
   const structure = draft.structure;
   const [selectedModuleId, setSelectedModuleId] = useState<string | null>(null);
@@ -414,6 +488,132 @@ export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage
     () => structure?.modules.reduce((acc, m) => acc + m.lessons.length, 0) ?? 0,
     [structure],
   );
+
+  if (state.kind === 'idle' || state.kind === 'loading') {
+    return (
+      <div style={stageWrapStyle} data-testid="stage3-loading-wrapper">
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-7) var(--space-6)',
+            background: 'var(--bg-subtle)',
+          }}
+        >
+          <div
+            data-testid="stage3-loading"
+            style={{
+              padding: 'var(--space-5)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-md)',
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            <Sparkles size={14} strokeWidth={2} />
+            Generating course structure…
+          </div>
+        </div>
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-elevated)',
+            padding: 'var(--space-4) var(--space-6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <button
+            type="button"
+            data-testid="wizard-back"
+            onClick={handleBack}
+            style={ghostBtnStyle}
+          >
+            <ArrowLeft size={14} strokeWidth={2} />
+            Back
+          </button>
+          <span />
+        </div>
+      </div>
+    );
+  }
+
+  if (state.kind === 'error') {
+    return (
+      <div style={stageWrapStyle} data-testid="stage3-error-wrapper">
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 'var(--space-7) var(--space-6)',
+            background: 'var(--bg-subtle)',
+          }}
+        >
+          <div data-testid="stage3-error" role="alert" style={errorBubbleStyle}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>
+              Couldn&apos;t generate the structure
+            </div>
+            <div
+              data-testid="stage3-error-message"
+              style={{ fontSize: 'var(--fs-xs)', lineHeight: 1.45 }}
+            >
+              {state.message}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button
+                type="button"
+                data-testid="stage3-retry"
+                onClick={() => void loadAndCache()}
+                style={errorButtonStyle}
+              >
+                <RefreshCw size={12} strokeWidth={2} />
+                Retry
+              </button>
+              <button
+                type="button"
+                data-testid="stage3-build-manually"
+                onClick={handleBuildManually}
+                style={errorButtonStyle}
+              >
+                <Pencil size={12} strokeWidth={2} />
+                Build manually
+              </button>
+            </div>
+          </div>
+        </div>
+        <div
+          style={{
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-elevated)',
+            padding: 'var(--space-4) var(--space-6)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <button
+            type="button"
+            data-testid="wizard-back"
+            onClick={handleBack}
+            style={ghostBtnStyle}
+          >
+            <ArrowLeft size={14} strokeWidth={2} />
+            Back
+          </button>
+          <span />
+        </div>
+      </div>
+    );
+  }
 
   if (!structure) {
     return (
@@ -580,26 +780,38 @@ export default function Stage3Cascade({ draft, setDraft, onNext, onBack }: Stage
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 'var(--space-3)',
         }}
       >
         <button
           type="button"
           data-testid="wizard-back"
-          onClick={onBack}
+          onClick={handleBack}
           style={ghostBtnStyle}
         >
           <ArrowLeft size={14} strokeWidth={2} />
           Back
         </button>
-        <button
-          type="button"
-          data-testid="wizard-next"
-          onClick={onNext}
-          style={primaryBtnStyle}
-        >
-          <Sparkles size={14} strokeWidth={2} />
-          Looks good — generate
-        </button>
+        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+          <button
+            type="button"
+            data-testid="stage3-regenerate"
+            onClick={handleRegenerate}
+            style={ghostBtnStyle}
+          >
+            <RefreshCw size={14} strokeWidth={2} />
+            Regenerate
+          </button>
+          <button
+            type="button"
+            data-testid="wizard-next"
+            onClick={onNext}
+            style={primaryBtnStyle}
+          >
+            <Sparkles size={14} strokeWidth={2} />
+            Looks good — generate
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1421,4 +1633,29 @@ const primaryBtnStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   transition: 'background var(--t-fast), opacity var(--t-fast)',
+};
+
+const errorBubbleStyle: CSSProperties = {
+  padding: 'var(--space-4)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--danger-subtle, rgba(220, 38, 38, 0.08))',
+  color: 'var(--danger, #b91c1c)',
+  fontSize: 'var(--fs-sm)',
+  border: '1px solid var(--danger, #fca5a5)',
+  maxWidth: 480,
+};
+
+const errorButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  height: 30,
+  padding: '0 12px',
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-secondary)',
+  fontSize: 'var(--fs-xs)',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
 };
