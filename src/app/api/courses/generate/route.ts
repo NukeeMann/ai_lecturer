@@ -3,8 +3,8 @@ import { promises as fs } from 'node:fs';
 import {
   ClaudeUnavailableError,
   GenerationConflictError,
+  enqueueGeneration,
   getRunById,
-  startGeneration,
 } from '@/lib/server/generation';
 import { InvalidSlugError, assertSafeSlug, courseSpecFile } from '@/lib/server/paths';
 
@@ -40,10 +40,27 @@ export async function POST(req: Request) {
   }
 
   try {
-    const run = await startGeneration(slug);
-    return NextResponse.json({ id: run.id, slug: run.slug }, { status: 202 });
+    // US-107: enqueueGeneration replaces the bare startGeneration call. When
+    // a different slug is already running, the request is appended to a
+    // FIFO queue persisted in ~/.ai-lecturer/generation-queue.json instead
+    // of returning 409. Same-slug requests still attach to the existing run
+    // (US-105) — that idempotency lives inside enqueueGeneration too.
+    const result = await enqueueGeneration(slug);
+    if (result.kind === 'started') {
+      return NextResponse.json(
+        { id: result.run.id, slug: result.run.slug },
+        { status: 202 },
+      );
+    }
+    return NextResponse.json(
+      { queued: true, slug: result.slug, position: result.position, total: result.total },
+      { status: 202 },
+    );
   } catch (err) {
     if (err instanceof GenerationConflictError) {
+      // Defensive only — enqueueGeneration shouldn't throw conflict in the
+      // US-107 flow, but the error class still exists for code paths that
+      // call startGeneration directly.
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
     if (err instanceof ClaudeUnavailableError) {

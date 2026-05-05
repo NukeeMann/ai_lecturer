@@ -7,11 +7,13 @@ import { Readable } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 
 import {
+  __getQueueForTesting,
   __resetForTesting,
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
   defaultInitCourseCommand,
   defaultLessonCommand,
+  enqueueGeneration,
   formatStreamJsonLine,
   GenerationConflictError,
   getActiveRun,
@@ -186,6 +188,10 @@ async function writeStubLesson(slug: string, lessonSlug: string) {
 beforeEach(async () => {
   coursesRoot = await fs.mkdtemp(path.join(tmpdir(), 'ai-gen-test-'));
   process.env.COURSES_ROOT_OVERRIDE = coursesRoot;
+  // US-107: pin the persisted FIFO queue to a per-test tmpfile so concurrent
+  // suites and the user's real ~/.ai-lecturer/generation-queue.json don't
+  // bleed into each other.
+  process.env.GENERATION_QUEUE_FILE_OVERRIDE = path.join(coursesRoot, 'generation-queue.json');
   __resetForTesting();
 });
 
@@ -193,6 +199,7 @@ afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
   delete process.env.COURSES_ROOT_OVERRIDE;
+  delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -1312,7 +1319,7 @@ describe('POST /api/courses/generate (route)', () => {
     expect(sameBody.slug).toBe('demo');
   });
 
-  it('returns 409 on a second concurrent attempt for a DIFFERENT slug', async () => {
+  it('queues a second concurrent attempt for a DIFFERENT slug instead of 409 (US-107)', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     await fs.mkdir(path.join(coursesRoot, 'other'), { recursive: true });
     await fs.writeFile(
@@ -1340,13 +1347,23 @@ describe('POST /api/courses/generate (route)', () => {
     expect(ok.status).toBe(202);
     await scripted.nextChild();
 
-    const conflict = await postGenerate(
+    const queued = await postGenerate(
       new Request('http://localhost/api/courses/generate', {
         method: 'POST',
         body: JSON.stringify({ slug: 'other' }),
       }),
     );
-    expect(conflict.status).toBe(409);
+    expect(queued.status).toBe(202);
+    const queuedBody = (await queued.json()) as {
+      queued: boolean;
+      slug: string;
+      position: number;
+      total: number;
+    };
+    expect(queuedBody.queued).toBe(true);
+    expect(queuedBody.slug).toBe('other');
+    expect(queuedBody.position).toBe(1);
+    expect(queuedBody.total).toBe(1);
   });
 
   it('DELETE cancels the active run', async () => {
@@ -1438,7 +1455,7 @@ describe('POST /api/courses/generate (route)', () => {
 describe('getActiveRunSummary (US-106)', () => {
   it('returns {active:false} when nothing is in flight', async () => {
     const summary = await getActiveRunSummary();
-    expect(summary).toEqual({ active: false });
+    expect(summary).toEqual({ active: false, queue: [] });
   });
 
   it('reports the in-memory run with its current stage and resolves the name from course-spec.json', async () => {
@@ -1477,6 +1494,7 @@ describe('getActiveRunSummary (US-106)', () => {
       slug: 'demo',
       name: 'My Resumed Course',
       stage: 'init_course',
+      queue: [],
     });
   });
 
@@ -1558,6 +1576,226 @@ describe('getActiveRunSummary (US-106)', () => {
       slug: 'survivor',
       name: 'survivor',
       stage: 'lesson:intro',
+      queue: [],
     });
+  });
+});
+
+describe('enqueueGeneration / sequential queue (US-107)', () => {
+  it('starts immediately when nothing is active', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const result = await enqueueGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    expect(result.kind).toBe('started');
+    if (result.kind === 'started') {
+      expect(result.run.slug).toBe('demo');
+    }
+  });
+
+  it('queues a different slug when one is already in flight, in FIFO order', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'second'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'third'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const first = await enqueueGeneration('demo');
+    expect(first.kind).toBe('started');
+    await scripted.nextChild();
+
+    const second = await enqueueGeneration('second');
+    expect(second.kind).toBe('queued');
+    if (second.kind === 'queued') {
+      expect(second.slug).toBe('second');
+      expect(second.position).toBe(1);
+      expect(second.total).toBe(1);
+    }
+
+    const third = await enqueueGeneration('third');
+    expect(third.kind).toBe('queued');
+    if (third.kind === 'queued') {
+      expect(third.position).toBe(2);
+      expect(third.total).toBe(2);
+    }
+
+    expect(await __getQueueForTesting()).toEqual(['second', 'third']);
+  });
+
+  it('returns existing run idempotently when same slug is enqueued while active', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const first = await enqueueGeneration('demo');
+    expect(first.kind).toBe('started');
+    await scripted.nextChild();
+
+    const same = await enqueueGeneration('demo');
+    expect(same.kind).toBe('started');
+    if (first.kind === 'started' && same.kind === 'started') {
+      expect(same.run).toBe(first.run);
+    }
+    expect(await __getQueueForTesting()).toEqual([]);
+  });
+
+  it('returns existing position when same slug is enqueued while already pending', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'pending'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    await enqueueGeneration('demo');
+    await scripted.nextChild();
+
+    const queued = await enqueueGeneration('pending');
+    expect(queued.kind).toBe('queued');
+
+    const sameQueued = await enqueueGeneration('pending');
+    expect(sameQueued.kind).toBe('queued');
+    if (sameQueued.kind === 'queued') {
+      expect(sameQueued.position).toBe(1);
+      expect(sameQueued.total).toBe(1);
+    }
+    // Still exactly one entry in the queue (not two duplicates).
+    expect(await __getQueueForTesting()).toEqual(['pending']);
+  });
+
+  it('persists the queue to disk on every change', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'next'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    await enqueueGeneration('demo');
+    await scripted.nextChild();
+    await enqueueGeneration('next');
+
+    const queueFile = process.env.GENERATION_QUEUE_FILE_OVERRIDE!;
+    const raw = await fs.readFile(queueFile, 'utf8');
+    const parsed = JSON.parse(raw) as { entries: Array<{ slug: string }> };
+    expect(parsed.entries.map((e) => e.slug)).toEqual(['next']);
+  });
+
+  it('auto-starts the next queued slug when the active run finishes', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'next'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const first = await enqueueGeneration('demo');
+    expect(first.kind).toBe('started');
+
+    const init = await scripted.nextChild();
+
+    const second = await enqueueGeneration('next');
+    expect(second.kind).toBe('queued');
+
+    // Finish 'demo' init with no course.json so the pipeline finalizes
+    // (error path) — finalize must still drain the queue.
+    init.finishWithExit(0);
+
+    if (first.kind !== 'started') throw new Error('first not started');
+    await waitForFinish(first.run);
+    // The drainer is fire-and-forget — give it a tick to advance.
+    for (let i = 0; i < 20; i++) {
+      if (getActiveRun() && getActiveRun()?.slug === 'next') break;
+      await new Promise((r) => setImmediate(r));
+    }
+
+    const active = getActiveRun();
+    expect(active).not.toBeNull();
+    expect(active?.slug).toBe('next');
+    expect(await __getQueueForTesting()).toEqual([]);
+  });
+
+  it('reports queue context via getActiveRunSummary while a run is active', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'next'), { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, 'next', 'course-spec.json'),
+      JSON.stringify({
+        topic: 'x',
+        level: 'beginner',
+        durationTarget: 'short',
+        theoryPracticeRatio: 0.5,
+        draftStructure: { courseTitle: 'Next One', courseDescription: '', modules: [] },
+        createdAt: '2026-04-30T00:00:00Z',
+      }),
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    await enqueueGeneration('demo');
+    await scripted.nextChild();
+    await enqueueGeneration('next');
+
+    const summary = await getActiveRunSummary();
+    expect(summary.active).toBe(true);
+    if (summary.active) {
+      expect(summary.slug).toBe('demo');
+      expect(summary.queue).toEqual([
+        { slug: 'next', name: 'Next One', position: 1 },
+      ]);
+    }
+  });
+
+  it('loads the persisted queue on cold start and resumes the head', async () => {
+    // Simulate a server restart: pre-write a queue file for a slug whose
+    // course-spec.json is on disk, then trigger getActiveRunSummary which
+    // is the load-and-drain entry point.
+    await fs.mkdir(path.join(coursesRoot, 'resume-me'), { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, 'resume-me', 'course-spec.json'),
+      JSON.stringify({ stub: true }),
+      'utf8',
+    );
+    const queueFile = process.env.GENERATION_QUEUE_FILE_OVERRIDE!;
+    await fs.mkdir(path.dirname(queueFile), { recursive: true });
+    await fs.writeFile(
+      queueFile,
+      JSON.stringify({
+        entries: [{ slug: 'resume-me', enqueuedAt: '2026-05-05T00:00:00.000Z' }],
+      }),
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    // First poll triggers ensureQueueLoaded + maybeStartQueueHead. The
+    // active run isn't synchronously assigned (startGeneration awaits
+    // before activeRun = run), so the first response shows queue but no
+    // active. The next tick will spawn.
+    await getActiveRunSummary();
+
+    // Allow the drainer to finish starting.
+    await scripted.nextChild();
+    expect(getActiveRun()?.slug).toBe('resume-me');
   });
 });

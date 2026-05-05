@@ -62,15 +62,24 @@ interface UploadedMaterial {
   type: string;
 }
 
-// US-106 — shape of GET /api/courses/active-run.
+// US-106 / US-107 — shape of GET /api/courses/active-run. Queue context was
+// added in US-107 so the resume banner can show "X w kolejce" alongside the
+// active run.
+interface QueueEntry {
+  slug: string;
+  name: string;
+  position: number;
+}
+
 type ActiveRunResponse =
-  | { active: false }
-  | { active: true; slug: string; name: string; stage: string };
+  | { active: false; queue: QueueEntry[] }
+  | { active: true; slug: string; name: string; stage: string; queue: QueueEntry[] };
 
 interface ActiveRun {
   slug: string;
   name: string;
   stage: string;
+  queueLength: number;
 }
 
 // Surfaced both to the route and the UI so they stay in sync.
@@ -188,8 +197,9 @@ export default function CreatePage() {
         const body = (await res.json()) as ActiveRunResponse;
         if (cancelled) return;
         if (body && body.active === true) {
+          const ql = Array.isArray(body.queue) ? body.queue.length : 0;
           // eslint-disable-next-line react-hooks/set-state-in-effect
-          setActiveRun({ slug: body.slug, name: body.name, stage: body.stage });
+          setActiveRun({ slug: body.slug, name: body.name, stage: body.stage, queueLength: ql });
         } else {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setActiveRun(null);
@@ -1118,6 +1128,14 @@ function ResumeBanner({
         <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
           {activeRun.stage}
         </span>
+        {activeRun.queueLength > 0 && (
+          <>
+            {' · '}
+            <span data-testid="resume-banner-queue">
+              {activeRun.queueLength} w kolejce
+            </span>
+          </>
+        )}
       </span>
       <button
         type="button"
@@ -2027,11 +2045,20 @@ function StageLogSection({
 
 function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
   const router = useRouter();
-  const [phase, setPhase] = useState<'starting' | 'running' | 'done' | 'error'>('starting');
+  const [phase, setPhase] = useState<
+    'starting' | 'queued' | 'running' | 'done' | 'error'
+  >('starting');
   const [genId, setGenId] = useState<string | null>(null);
   const [stages, setStages] = useState<StageEntry[]>([]);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // US-107: when our slug is queued behind another active run, poll
+  // /api/courses/active-run to update position and detect when our slug
+  // becomes the active run (then transition to 'running' and attach SSE).
+  const [queueInfo, setQueueInfo] = useState<{
+    position: number;
+    total: number;
+  } | null>(null);
 
   // The disk-name of the most recent 'started' stage. Streamed `log` events
   // are appended to this stage's `liveLines`.
@@ -2239,6 +2266,132 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   useEffect(() => {
     let cancelled = false;
     let eventSource: EventSource | null = null;
+    let queuePollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const attachStream = (id: string) => {
+      eventSource = new EventSource(`/api/courses/generate/stream/${id}`);
+      wireStreamHandlers(eventSource);
+    };
+
+    const wireStreamHandlers = (es: EventSource) => {
+      es.addEventListener('log', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { line: string };
+          appendLogToActive(data.line);
+        } catch {
+          /* malformed event */
+        }
+      });
+      es.addEventListener('stage', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as {
+            name: string;
+            status: StageStatus;
+          };
+          upsertStageStatus(data.name, data.status);
+        } catch {
+          /* malformed */
+        }
+      });
+      es.addEventListener('progress', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { current: number; total: number };
+          setProgress({ current: data.current, total: data.total });
+        } catch {
+          /* malformed */
+        }
+      });
+      es.addEventListener('done', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as { courseSlug: string };
+          setPhase('done');
+          es.close();
+          // Tiny delay so the user sees the success state before the page swap.
+          window.setTimeout(() => {
+            router.push(`/courses/${data.courseSlug}`);
+          }, 600);
+        } catch {
+          /* malformed */
+        }
+      });
+      es.addEventListener('error', (ev: MessageEvent) => {
+        // SSE built-in onerror fires with no data; only treat as fatal if
+        // the payload says so (i.e. our structured `error` event).
+        if (typeof (ev as MessageEvent).data === 'string' && ev.data.length > 0) {
+          try {
+            const data = JSON.parse(ev.data) as { message: string };
+            setErrorMessage(data.message);
+            setPhase('error');
+            es.close();
+          } catch {
+            /* network blip — let the browser auto-reconnect */
+          }
+        }
+      });
+    };
+
+    const promoteToRunning = async (): Promise<boolean> => {
+      // The queued slug just became active. POST again to retrieve the
+      // SSE id (idempotent, US-105) then attach the stream.
+      try {
+        const res = await fetch('/api/courses/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slug }),
+        });
+        if (cancelled) return true;
+        if (!res.ok) return false;
+        const body = (await res.json()) as
+          | { id: string; slug: string }
+          | { queued: true; slug: string; position: number; total: number };
+        if ('id' in body) {
+          setGenId(body.id);
+          genIdRef.current = body.id;
+          setQueueInfo(null);
+          setPhase('running');
+          attachStream(body.id);
+          return true;
+        }
+        return false;
+      } catch {
+        return false;
+      }
+    };
+
+    const startQueuePolling = () => {
+      if (queuePollTimer) return;
+      queuePollTimer = setInterval(() => {
+        void (async () => {
+          if (cancelled) return;
+          try {
+            const res = await fetch('/api/courses/active-run', { cache: 'no-store' });
+            if (cancelled || !res.ok) return;
+            const body = (await res.json()) as ActiveRunResponse;
+            if (cancelled) return;
+            if (body.active && body.slug === slug) {
+              // Our slug is now the active run. Stop polling, attach SSE.
+              if (queuePollTimer) {
+                clearInterval(queuePollTimer);
+                queuePollTimer = null;
+              }
+              await promoteToRunning();
+              return;
+            }
+            const ourEntry = body.queue.find((e) => e.slug === slug);
+            if (ourEntry) {
+              setQueueInfo({ position: ourEntry.position, total: body.queue.length });
+            }
+            // If we're not in queue and not active, we may have been picked
+            // up since the last poll — try to promote.
+            if (!ourEntry && body.active && body.slug !== slug) {
+              // Still queued behind a different active run — stay put.
+            }
+          } catch {
+            /* transient network — try again next tick */
+          }
+        })();
+      }, 1500);
+    };
 
     const start = async () => {
       try {
@@ -2291,67 +2444,29 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
           setPhase('error');
           return;
         }
-        const body = (await res.json()) as { id: string };
+        const body = (await res.json()) as
+          | { id: string; slug: string }
+          | { queued: true; slug: string; position: number; total: number };
+
+        // US-107: when another generation is already running, the server
+        // enqueues us instead of starting immediately. Show "W kolejce —
+        // <position>/<total>" and poll active-run until our turn arrives.
+        if ('queued' in body && body.queued) {
+          setQueueInfo({ position: body.position, total: body.total });
+          setPhase('queued');
+          startQueuePolling();
+          return;
+        }
+        if (!('id' in body)) {
+          setErrorMessage('Server returned an unexpected response');
+          setPhase('error');
+          return;
+        }
         setGenId(body.id);
         genIdRef.current = body.id;
         setPhase('running');
 
-        eventSource = new EventSource(`/api/courses/generate/stream/${body.id}`);
-
-        eventSource.addEventListener('log', (ev: MessageEvent) => {
-          try {
-            const data = JSON.parse(ev.data) as { line: string };
-            appendLogToActive(data.line);
-          } catch {
-            /* malformed event */
-          }
-        });
-        eventSource.addEventListener('stage', (ev: MessageEvent) => {
-          try {
-            const data = JSON.parse(ev.data) as {
-              name: string;
-              status: StageStatus;
-            };
-            upsertStageStatus(data.name, data.status);
-          } catch {
-            /* malformed */
-          }
-        });
-        eventSource.addEventListener('progress', (ev: MessageEvent) => {
-          try {
-            const data = JSON.parse(ev.data) as { current: number; total: number };
-            setProgress({ current: data.current, total: data.total });
-          } catch {
-            /* malformed */
-          }
-        });
-        eventSource.addEventListener('done', (ev: MessageEvent) => {
-          try {
-            const data = JSON.parse(ev.data) as { courseSlug: string };
-            setPhase('done');
-            eventSource?.close();
-            // Tiny delay so the user sees the success state before the page swap.
-            window.setTimeout(() => {
-              router.push(`/courses/${data.courseSlug}`);
-            }, 600);
-          } catch {
-            /* malformed */
-          }
-        });
-        eventSource.addEventListener('error', (ev: MessageEvent) => {
-          // SSE built-in onerror fires with no data; only treat as fatal if
-          // the payload says so (i.e. our structured `error` event).
-          if (typeof (ev as MessageEvent).data === 'string' && ev.data.length > 0) {
-            try {
-              const data = JSON.parse(ev.data) as { message: string };
-              setErrorMessage(data.message);
-              setPhase('error');
-              eventSource?.close();
-            } catch {
-              /* network blip — let the browser auto-reconnect */
-            }
-          }
-        });
+        attachStream(body.id);
       } catch (err) {
         if (cancelled) return;
         setErrorMessage(err instanceof Error ? err.message : String(err));
@@ -2369,6 +2484,10 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
         } catch {
           /* already closed */
         }
+      }
+      if (queuePollTimer) {
+        clearInterval(queuePollTimer);
+        queuePollTimer = null;
       }
       // US-106: closing the tab MUST NOT kill the server-side run — the resume
       // banner depends on the child still being alive when the user returns.
@@ -2448,8 +2567,25 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Course generated'
               : phase === 'error'
                 ? 'Generation failed'
-                : 'Generating your course…'}
+                : phase === 'queued'
+                  ? 'Twoja generacja czeka w kolejce'
+                  : 'Generating your course…'}
           </h1>
+          {phase === 'queued' && queueInfo && (
+            <p
+              data-testid="stage5-queued-status"
+              data-queue-position={queueInfo.position}
+              data-queue-total={queueInfo.total}
+              style={{
+                marginTop: 'var(--space-3)',
+                fontSize: 'var(--fs-md)',
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--accent-text)',
+              }}
+            >
+              W kolejce — {queueInfo.position}/{queueInfo.total}
+            </p>
+          )}
           <p
             style={{
               marginTop: 6,
@@ -2462,7 +2598,9 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Redirecting to your course…'
               : phase === 'error'
                 ? 'See details below — or go back to fix the issue and try again.'
-                : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
+                : phase === 'queued'
+                  ? 'Inny kurs jest właśnie generowany. Twój start nastąpi automatycznie, gdy tamten się zakończy.'
+                  : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
           </p>
 
           {progressPercent !== null && phase !== 'error' && (
