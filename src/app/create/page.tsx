@@ -1,8 +1,30 @@
 'use client';
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction,
+} from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, FileText, Sparkles, Upload, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Sparkles,
+  Upload,
+  X,
+} from 'lucide-react';
 import Stage3Cascade, {
   type Draft,
   type Level,
@@ -1697,31 +1719,174 @@ function Stage4Approval({
 
 // ─── Stage 5 — Generate (live progress) ──────────────────────────────────────
 
-interface GenerationLogLine {
-  key: number;
-  text: string;
-}
-
 interface ProgressState {
   current: number;
   total: number;
+}
+
+type StageStatus = 'started' | 'done' | 'error';
+
+interface StageEntry {
+  name: string;          // SSE stage name ('init_course' or 'lesson:<slug>')
+  diskName: string;      // basename used for URL/disk lookup
+  status: StageStatus;
+  liveLines: string[];   // streamed lines for the active session
+  expanded: boolean;
+  diskContent: string | null;  // populated lazily from GET /logs/<stage>
+  diskLoading: boolean;
+  diskError: string | null;
+  hydrated: boolean;     // true if seeded from /logs index (page opened mid-run)
+}
+
+// Map an SSE stage event name to the on-disk basename used in /logs/<stage>.
+// The pipeline emits 'init_course' verbatim and prefixes lesson stages with
+// 'lesson:' (see startGenerationInner.runLesson). The disk filename strips
+// that prefix.
+export function stageDiskName(sseName: string): string {
+  return sseName.startsWith('lesson:') ? sseName.slice('lesson:'.length) : sseName;
+}
+
+// One collapsible section per generation stage. The active stage shows the
+// streamed liveLines (auto-scrolled). Completed stages show their persisted
+// disk log, lazily fetched on first expand. See US-105 AC.
+function StageLogSection({
+  entry,
+  onToggle,
+  activeLogElRef,
+}: {
+  entry: StageEntry;
+  onToggle: () => void;
+  activeLogElRef: RefObject<HTMLPreElement | null> | null;
+}) {
+  const isActive = entry.status === 'started';
+  const statusBadgeBg =
+    entry.status === 'done'
+      ? 'var(--success, #10b981)'
+      : entry.status === 'error'
+        ? 'var(--danger-subtle, rgba(220, 38, 38, 0.10))'
+        : 'var(--accent-subtle)';
+  const statusBadgeColor =
+    entry.status === 'done'
+      ? 'white'
+      : entry.status === 'error'
+        ? 'var(--danger, #b91c1c)'
+        : 'var(--accent-text)';
+
+  const bodyText = isActive
+    ? entry.liveLines.join('\n')
+    : entry.diskContent !== null
+      ? entry.diskContent
+      : entry.liveLines.length > 0
+        ? entry.liveLines.join('\n')
+        : '';
+
+  return (
+    <div
+      data-testid={`stage5-stage-${entry.diskName}`}
+      data-stage-name={entry.name}
+      data-stage-status={entry.status}
+      data-stage-expanded={entry.expanded ? 'true' : 'false'}
+      style={{ borderTop: '1px solid var(--border)' }}
+    >
+      <button
+        type="button"
+        data-testid={`stage5-stage-toggle-${entry.diskName}`}
+        onClick={onToggle}
+        aria-expanded={entry.expanded}
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          gap: 8,
+          padding: '8px 12px',
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--text)',
+          cursor: 'pointer',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 'var(--fs-xs)',
+          textAlign: 'left',
+        }}
+      >
+        {entry.expanded ? (
+          <ChevronDown size={14} strokeWidth={2} />
+        ) : (
+          <ChevronRight size={14} strokeWidth={2} />
+        )}
+        <span style={{ flex: 1, fontWeight: 600 }}>{entry.name}</span>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            padding: '2px 8px',
+            borderRadius: 'var(--radius-full)',
+            fontSize: 10.5,
+            background: statusBadgeBg,
+            color: statusBadgeColor,
+            border:
+              entry.status === 'error'
+                ? '1px solid var(--danger, #fca5a5)'
+                : 'none',
+          }}
+        >
+          {entry.status}
+        </span>
+      </button>
+      {entry.expanded && (
+        <pre
+          ref={activeLogElRef ?? undefined}
+          data-testid={`stage5-stage-log-${entry.diskName}`}
+          style={{
+            margin: 0,
+            padding: '10px 12px',
+            maxHeight: '320px',
+            overflow: 'auto',
+            background: 'var(--code-bg, #0f172a)',
+            borderTop: '1px solid var(--border)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11.5,
+            color: 'var(--code-text, #e2e8f0)',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {entry.diskLoading && bodyText.length === 0 ? (
+            <span style={{ color: 'var(--text-tertiary)' }}>Loading log…</span>
+          ) : entry.diskError && bodyText.length === 0 ? (
+            <span style={{ color: 'var(--danger, #b91c1c)' }}>
+              Failed to load log: {entry.diskError}
+            </span>
+          ) : bodyText.length === 0 ? (
+            <span style={{ color: 'var(--text-tertiary)' }}>
+              {isActive ? 'Waiting for output…' : 'Empty log.'}
+            </span>
+          ) : (
+            bodyText
+          )}
+        </pre>
+      )}
+    </div>
+  );
 }
 
 function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
   const router = useRouter();
   const [phase, setPhase] = useState<'starting' | 'running' | 'done' | 'error'>('starting');
   const [genId, setGenId] = useState<string | null>(null);
-  const [logLines, setLogLines] = useState<GenerationLogLine[]>([]);
-  const [stages, setStages] = useState<{ name: string; status: 'started' | 'done' | 'error' }[]>([]);
+  const [stages, setStages] = useState<StageEntry[]>([]);
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showFullLog, setShowFullLog] = useState(false);
 
-  const lineKeyRef = useRef(0);
-  const logScrollRef = useRef<HTMLPreElement | null>(null);
+  // The disk-name of the most recent 'started' stage. Streamed `log` events
+  // are appended to this stage's `liveLines`.
+  const activeRef = useRef<string | null>(null);
   const phaseRef = useRef(phase);
   const genIdRef = useRef<string | null>(null);
   const cancelInFlightRef = useRef(false);
+  // Per-active-stage scroll container. We auto-scroll the active stage to
+  // bottom whenever its liveLines grow.
+  const activeLogElRef = useRef<HTMLPreElement | null>(null);
+  const activeLineCountRef = useRef(0);
 
   useEffect(() => {
     phaseRef.current = phase;
@@ -1730,12 +1895,189 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     genIdRef.current = genId;
   }, [genId]);
 
-  // Auto-scroll the log to the bottom on new lines (best-effort).
+  const upsertStageStatus = useCallback((sseName: string, status: StageStatus) => {
+    const diskName = stageDiskName(sseName);
+    setStages((prev) => {
+      const next = [...prev];
+      const idx = next.findIndex((s) => s.diskName === diskName);
+      if (status === 'started') {
+        // Auto-collapse all previously-expanded entries; expand the new one.
+        for (let i = 0; i < next.length; i++) {
+          if (next[i].expanded) next[i] = { ...next[i], expanded: false };
+        }
+      }
+      if (idx === -1) {
+        next.push({
+          name: sseName,
+          diskName,
+          status,
+          liveLines: [],
+          expanded: status === 'started' || status === 'error',
+          diskContent: null,
+          diskLoading: false,
+          diskError: null,
+          hydrated: false,
+        });
+      } else {
+        const existing = next[idx];
+        next[idx] = {
+          ...existing,
+          name: sseName,
+          status,
+          // On a fresh 'started', clear stale streamed lines from a prior
+          // session but keep diskContent so the user's expand still has it.
+          liveLines: status === 'started' ? [] : existing.liveLines,
+          expanded:
+            status === 'started'
+              ? true
+              : status === 'error'
+                ? true
+                : existing.expanded,
+        };
+      }
+      return next;
+    });
+    if (status === 'started') {
+      activeRef.current = diskName;
+      // Reset the auto-scroll counter so the new active stage starts scrolled.
+      activeLineCountRef.current = 0;
+    }
+  }, []);
+
+  const appendLogToActive = useCallback((line: string) => {
+    const active = activeRef.current;
+    if (!active) return;
+    setStages((prev) => {
+      const next = [...prev];
+      const idx = next.findIndex((s) => s.diskName === active);
+      if (idx === -1) return prev;
+      const cur = next[idx];
+      const liveLines = [...cur.liveLines, line];
+      // Keep buffer bounded so very long runs don't OOM the browser.
+      if (liveLines.length > 5000) liveLines.splice(0, liveLines.length - 5000);
+      next[idx] = { ...cur, liveLines };
+      return next;
+    });
+  }, []);
+
+  const setStageExpanded = useCallback((diskName: string, expanded: boolean) => {
+    setStages((prev) => {
+      const idx = prev.findIndex((s) => s.diskName === diskName);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], expanded };
+      return next;
+    });
+  }, []);
+
+  const fetchStageDiskContent = useCallback(
+    async (diskName: string) => {
+      setStages((prev) => {
+        const idx = prev.findIndex((s) => s.diskName === diskName);
+        if (idx === -1) return prev;
+        if (prev[idx].diskLoading) return prev;
+        if (prev[idx].diskContent !== null) return prev;
+        const next = [...prev];
+        next[idx] = { ...next[idx], diskLoading: true, diskError: null };
+        return next;
+      });
+      try {
+        const res = await fetch(
+          `/api/courses/${encodeURIComponent(slug)}/logs/${encodeURIComponent(diskName)}`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) {
+          const message = res.status === 404 ? 'Log not yet on disk' : `Server returned ${res.status}`;
+          setStages((prev) => {
+            const idx = prev.findIndex((s) => s.diskName === diskName);
+            if (idx === -1) return prev;
+            const next = [...prev];
+            next[idx] = { ...next[idx], diskLoading: false, diskError: message };
+            return next;
+          });
+          return;
+        }
+        const text = await res.text();
+        setStages((prev) => {
+          const idx = prev.findIndex((s) => s.diskName === diskName);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          next[idx] = {
+            ...next[idx],
+            diskContent: text,
+            diskLoading: false,
+            diskError: null,
+          };
+          return next;
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setStages((prev) => {
+          const idx = prev.findIndex((s) => s.diskName === diskName);
+          if (idx === -1) return prev;
+          const next = [...prev];
+          next[idx] = { ...next[idx], diskLoading: false, diskError: message };
+          return next;
+        });
+      }
+    },
+    [slug],
+  );
+
+  const handleToggle = useCallback(
+    (entry: StageEntry) => {
+      const willExpand = !entry.expanded;
+      setStageExpanded(entry.diskName, willExpand);
+      // Lazy-load disk content on first expand of a non-active stage.
+      if (
+        willExpand &&
+        entry.status !== 'started' &&
+        entry.diskContent === null &&
+        !entry.diskLoading
+      ) {
+        void fetchStageDiskContent(entry.diskName);
+      }
+    },
+    [fetchStageDiskContent, setStageExpanded],
+  );
+
+  // Hydrate completed stages from /api/courses/<slug>/logs (collapsed).
+  // This runs before SSE attaches so that stages already on disk are visible
+  // even before any live event arrives. AC: "When the generation page is
+  // opened mid-run for a slug that already has logs on disk, all completed
+  // stages are shown collapsed with their persisted content available".
   useEffect(() => {
-    const el = logScrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [logLines]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/courses/${encodeURIComponent(slug)}/logs`, {
+          cache: 'no-store',
+        });
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as { stages?: { stage: string }[] };
+        if (cancelled || !Array.isArray(data.stages)) return;
+        setStages((prev) => {
+          if (prev.length > 0) return prev; // SSE already added live entries
+          return data.stages!.map((s) => ({
+            name: s.stage === 'init_course' ? 'init_course' : `lesson:${s.stage}`,
+            diskName: s.stage,
+            status: 'done' as StageStatus,
+            liveLines: [],
+            expanded: false,
+            diskContent: null,
+            diskLoading: false,
+            diskError: null,
+            hydrated: true,
+          }));
+        });
+      } catch {
+        /* hydration is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
 
   // Kick off the run and subscribe to its SSE stream.
   useEffect(() => {
@@ -1744,12 +2086,31 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
 
     const start = async () => {
       try {
-        const res = await fetch('/api/courses/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug }),
-        });
+        // Brief retry on 409 GenerationConflictError. Server-side
+        // startGeneration is already idempotent for the same slug once an
+        // active run exists, but there's a tiny window during the very
+        // first POST where the reservation flag is set BEFORE activeRun
+        // is — a concurrent retry (e.g. React StrictMode dev double-mount)
+        // can land in that window and 409. A short backoff loop walks past
+        // it without bothering the user.
+        let res: Response | null = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          if (cancelled) return;
+          res = await fetch('/api/courses/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slug }),
+          });
+          if (cancelled) return;
+          if (res.status !== 409) break;
+          await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
+        }
         if (cancelled) return;
+        if (!res) {
+          setErrorMessage('Failed to start generation');
+          setPhase('error');
+          return;
+        }
         if (res.status === 503) {
           let message = 'Install Claude Code CLI or sign in to Claude Max';
           try {
@@ -1784,19 +2145,18 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
         eventSource.addEventListener('log', (ev: MessageEvent) => {
           try {
             const data = JSON.parse(ev.data) as { line: string };
-            setLogLines((prev) => {
-              const next = [...prev, { key: ++lineKeyRef.current, text: data.line }];
-              // Keep buffer bounded so very long runs don't OOM the browser.
-              return next.length > 5000 ? next.slice(next.length - 5000) : next;
-            });
+            appendLogToActive(data.line);
           } catch {
             /* malformed event */
           }
         });
         eventSource.addEventListener('stage', (ev: MessageEvent) => {
           try {
-            const data = JSON.parse(ev.data) as { name: string; status: 'started' | 'done' | 'error' };
-            setStages((prev) => [...prev, { name: data.name, status: data.status }]);
+            const data = JSON.parse(ev.data) as {
+              name: string;
+              status: StageStatus;
+            };
+            upsertStageStatus(data.name, data.status);
           } catch {
             /* malformed */
           }
@@ -1869,7 +2229,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
         }
       }
     };
-  }, [slug, router]);
+  }, [slug, router, appendLogToActive, upsertStageStatus]);
 
   const handleCancelClick = async () => {
     if (cancelInFlightRef.current) return;
@@ -1889,7 +2249,21 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     ? Math.min(100, Math.round((progress.current / progress.total) * 100))
     : null;
 
-  const tailLog = useMemo(() => logLines.slice(-200), [logLines]);
+  // Auto-scroll the active stage's pre to bottom when its liveLines grow.
+  const activeStage = stages.find((s) => s.diskName === activeRef.current && s.status === 'started');
+  useEffect(() => {
+    const el = activeLogElRef.current;
+    if (!el) return;
+    if (!activeStage) return;
+    if (activeStage.liveLines.length === activeLineCountRef.current) return;
+    activeLineCountRef.current = activeStage.liveLines.length;
+    el.scrollTop = el.scrollHeight;
+  }, [activeStage]);
+
+  const totalLogLines = useMemo(
+    () => stages.reduce((sum, s) => sum + s.liveLines.length, 0),
+    [stages],
+  );
 
   return (
     <div style={stageWrapStyle}>
@@ -2050,33 +2424,20 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
                 fontSize: 'var(--fs-sm)',
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>{errorMessage}</div>
-              <button
-                type="button"
-                data-testid="stage5-toggle-full-log"
-                onClick={() => setShowFullLog((v) => !v)}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'var(--danger, #b91c1c)',
-                  fontSize: 'var(--fs-xs)',
-                  textDecoration: 'underline',
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontFamily: 'inherit',
-                }}
-              >
-                {showFullLog ? 'Hide full log' : 'Show full log'}
-              </button>
+              <div style={{ fontWeight: 600 }}>{errorMessage}</div>
+              <div style={{ marginTop: 4, fontSize: 'var(--fs-xs)', opacity: 0.85 }}>
+                Expand any stage below to review its full log.
+              </div>
             </div>
           )}
 
           <div
+            data-testid="stage5-log-panel"
             style={{
               marginTop: 'var(--space-5)',
               border: '1px solid var(--border)',
               borderRadius: 'var(--radius-md)',
-              background: 'var(--code-bg, #0f172a)',
+              background: 'var(--bg-elevated)',
               overflow: 'hidden',
             }}
           >
@@ -2090,30 +2451,31 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
                 borderBottom: '1px solid var(--border)',
               }}
             >
-              Generation log {logLines.length > 0 && `(${logLines.length} lines)`}
+              Generation log {totalLogLines > 0 && `(${totalLogLines} lines)`}
             </div>
-            <pre
-              ref={logScrollRef}
-              data-testid="stage5-log"
-              style={{
-                margin: 0,
-                padding: '10px 12px',
-                maxHeight: showFullLog ? '60vh' : '320px',
-                overflow: 'auto',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 11.5,
-                color: 'var(--code-text, #e2e8f0)',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
-              }}
-            >
-              {(showFullLog ? logLines : tailLog)
-                .map((line) => line.text)
-                .join('\n')}
-              {logLines.length === 0 && phase !== 'error' && (
-                <span style={{ color: 'var(--text-tertiary)' }}>Waiting for output…</span>
-              )}
-            </pre>
+            {stages.length === 0 ? (
+              <div
+                style={{
+                  padding: '14px 12px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 11.5,
+                  color: 'var(--text-tertiary)',
+                }}
+              >
+                {phase === 'error' ? 'No stages started.' : 'Waiting for output…'}
+              </div>
+            ) : (
+              stages.map((entry) => (
+                <StageLogSection
+                  key={entry.diskName}
+                  entry={entry}
+                  onToggle={() => handleToggle(entry)}
+                  activeLogElRef={
+                    entry.status === 'started' ? activeLogElRef : null
+                  }
+                />
+              ))
+            )}
           </div>
 
           <div
