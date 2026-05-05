@@ -10,6 +10,7 @@ import {
   __resetForTesting,
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
+  defaultInitCourseCommand,
   GenerationConflictError,
   getActiveRun,
   getRunById,
@@ -31,6 +32,8 @@ class FakeChildProcess extends EventEmitter {
   killed = false;
   killSignals: NodeJS.Signals[] = [];
   pid = 12345;
+  command: string = '';
+  args: readonly string[] = [];
   constructor() {
     super();
     this.stdout = new Readable({ read() {} });
@@ -78,8 +81,10 @@ function makeScriptedSpawn(): ScriptedSpawn {
   const children: FakeChildProcess[] = [];
   const waiters: Array<(c: FakeChildProcess) => void> = [];
   let consumed = 0;
-  const spawn = (() => {
+  const spawn = ((command: string, args: readonly string[] = []) => {
     const child = new FakeChildProcess();
+    child.command = command;
+    child.args = [...args];
     children.push(child);
     const waiter = waiters.shift();
     if (waiter) waiter(child);
@@ -178,9 +183,16 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    // First child is claude
+    // First child is claude — emulate it actually running the skill by
+    // dropping a stub course.json on disk before exit so the post-init guard
+    // sees real output.
     const claude = await scripted.nextChild();
     claude.emitStdout('claude says hi\n');
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'course.json'),
+      JSON.stringify({ slug: 'demo' }),
+      'utf8',
+    );
     claude.finishWithExit(0);
 
     // Second child is ralph
@@ -229,6 +241,11 @@ describe('startGeneration spawn wrapper', () => {
     const claude = await scripted.nextChild();
     claude.emitStdout('claude-stdout-line\n');
     claude.emitStderr('claude-stderr-line\n');
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'course.json'),
+      JSON.stringify({ slug: 'demo' }),
+      'utf8',
+    );
     claude.finishWithExit(0);
     const ralph = await scripted.nextChild();
     ralph.emitStdout('ralph-stdout-line\n');
@@ -272,6 +289,71 @@ describe('startGeneration spawn wrapper', () => {
         isExecutableInPath: () => true,
       }),
     ).rejects.toBeInstanceOf(GenerationConflictError);
+  });
+
+  it('finalizes as error when init exits 0 but course.json is missing (Unknown command bug)', async () => {
+    // Reproduces US-095: `claude -p '/init_course <slug>'` printed
+    // "Unknown command: /init_course" and exited 0 without ever invoking the
+    // skill. ralph then ran against the existing AI-Lecturer prd.json (all
+    // stories already passes:true), exited 0 in seconds, and the SSE stream
+    // emitted `done` — so the wizard redirected to a 404 page.
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const claude = await scripted.nextChild();
+    claude.emitStdout('Unknown command: /init_course\n');
+    claude.finishWithExit(0); // intentionally do NOT write course.json
+
+    await waitForFinish(run);
+
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).toEqual([
+      { type: 'stage', name: 'init_course', status: 'started' },
+      { type: 'stage', name: 'init_course', status: 'error' },
+    ]);
+
+    const error = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string }
+      | undefined;
+    expect(error).toBeDefined();
+    expect(error?.message).toMatch(/init_course did not produce course\.json/i);
+    expect(error?.message).toMatch(/\.generation\.log/i);
+
+    expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
+
+    // Pipeline must NOT have proceeded to ralph.
+    expect(scripted.children.length).toBe(1);
+
+    // course.json was never written (sanity).
+    await expect(
+      fs.access(path.join(coursesRoot, 'demo', 'course.json')),
+    ).rejects.toBeDefined();
+    expect(run.finished).toBe(true);
+    expect(getActiveRun()).toBeNull();
+  });
+
+  it('default init prompt names the SKILL.md path and avoids the slash-command form', () => {
+    const spec = defaultInitCourseCommand('demo');
+    expect(spec.command).toBe('claude');
+    expect(spec.args[0]).toBe('-p');
+    const prompt = spec.args[1];
+    expect(prompt).toContain('init_course');
+    expect(prompt).toContain('scripts/ralph/skills/init_course/SKILL.md');
+    expect(prompt).toContain('demo');
+    // The pre-fix bug was using `/init_course <slug>` as the prompt body —
+    // claude in -p mode treats that as literal text and prints "Unknown
+    // command:" before exiting 0. Guard against a regression.
+    expect(prompt).not.toMatch(/^\s*\/init_course\b/);
+    expect(spec.args).toContain('--dangerously-skip-permissions');
+  });
+
+  it('default init prompt rejects unsafe slugs (assertSafeSlug)', () => {
+    expect(() => defaultInitCourseCommand('../etc')).toThrow(/Invalid slug/i);
+    expect(() => defaultInitCourseCommand('a/b')).toThrow(/Invalid slug/i);
   });
 
   it('SIGTERMs the active child on cancel and SIGKILLs after the grace window', async () => {
@@ -430,6 +512,11 @@ describe('POST /api/courses/generate (route)', () => {
 
     const claude = await scripted.nextChild();
     claude.emitStdout('hello-world\n');
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'course.json'),
+      JSON.stringify({ slug: 'demo' }),
+      'utf8',
+    );
     claude.finishWithExit(0);
     const ralph = await scripted.nextChild();
     ralph.emitStdout('Lesson 1/1\n');

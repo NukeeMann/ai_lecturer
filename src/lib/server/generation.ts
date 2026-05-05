@@ -1,9 +1,10 @@
 // Server-only module that owns the (single) running course-generation
 // subprocess and exposes its output as a stream of structured events.
 //
-// Pipeline: `claude -p '/init_course <slug>' …` then `./scripts/ralph/ralph.sh`.
-// Both child processes run with stdout+stderr captured to the run's event log
-// AND tee'd to `/courses/<slug>/.generation.log`. Concurrency is gated to 1.
+// Pipeline: a natural-language brief that points `claude -p` at the
+// init_course skill, then `./scripts/ralph/ralph.sh`. Both child processes
+// run with stdout+stderr captured to the run's event log AND tee'd to
+// `/courses/<slug>/.generation.log`. Concurrency is gated to 1.
 
 import {
   spawn as defaultSpawn,
@@ -13,7 +14,7 @@ import {
 } from 'node:child_process';
 import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
-import { courseDir } from './paths';
+import { assertSafeSlug, courseDir, courseFile } from './paths';
 
 export type GenerationEvent =
   | { type: 'log'; line: string }
@@ -94,7 +95,29 @@ function defaultIsExecutableInPath(cmd: string): boolean {
   }
 }
 
-function defaultInitCourseCommand(slug: string): { command: string; args: string[] } {
+export function defaultInitCourseCommand(slug: string): { command: string; args: string[] } {
+  // Defence-in-depth: callers (the route + courseDir) already assert this, but
+  // we re-check here so the slug we splice into the prompt cannot escape.
+  assertSafeSlug(slug);
+  // Test-only escape hatches for the playwright browser test:
+  //   GENERATION_MOCK=broken           — every run emulates the pre-fix bug
+  //   GENERATION_MOCK=1 + slug starts with `broken-` — same, but per-slug so a
+  //                                        single dev server can drive BOTH
+  //                                        the broken and the happy scenario
+  //                                        in one playwright run.
+  // The broken stub prints 'Unknown command: /init_course' and exits 0 without
+  // ever writing course.json — exactly what `claude -p '/init_course <slug>'`
+  // did before the fix, so the post-init guard can be exercised end-to-end.
+  if (
+    process.env.GENERATION_MOCK === 'broken' ||
+    (process.env.GENERATION_MOCK === '1' && slug.startsWith('broken-'))
+  ) {
+    const script = `
+console.log('Unknown command: /init_course');
+process.exit(0);
+`;
+    return { command: process.execPath, args: ['-e', script] };
+  }
   if (process.env.GENERATION_MOCK === '1') {
     // Test-only fast path that writes a valid stub course.json + lesson and
     // emits a few log lines. Lets the playwright browser test exercise the
@@ -152,9 +175,24 @@ setTimeout(() => {
 `;
     return { command: process.execPath, args: ['-e', script] };
   }
+  // Natural-language brief instead of a `/init_course` slash command. claude's
+  // print mode (`-p`) treats slash commands as literal prompt text and just
+  // prints "Unknown command:" before exiting 0 — we have to name the skill in
+  // prose and point the agent at its SKILL.md so it actually runs the steps.
+  // Mirrors the pattern in scripts/ralph/ralph.sh:612 / :1053. The slug is
+  // safe to splice (assertSafeSlug above limits it to [A-Za-z0-9-_]) and is
+  // passed as an argv element, never via a shell.
+  const prompt =
+    `Run the init_course skill defined in scripts/ralph/skills/init_course/SKILL.md. ` +
+    `Argument: slug = "${slug}". ` +
+    `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course-spec.json: ` +
+    `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md), ` +
+    `do the architect pass (write /courses/${slug}/course.json validated against CourseSchema), ` +
+    `then write a fresh scripts/ralph/prd.json with one story per lesson. ` +
+    `Do not generate lesson content here — that happens in the next ralph stage.`;
   return {
     command: 'claude',
-    args: ['-p', `/init_course ${slug}`, '--dangerously-skip-permissions'],
+    args: ['-p', prompt, '--dangerously-skip-permissions'],
   };
 }
 
@@ -405,6 +443,22 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
     if (initResult.exit !== 0) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
       finalize('error', `init_course failed (exit ${initResult.exit})`);
+      return;
+    }
+    // Post-init guard: claude in -p mode silently no-ops on prompts it
+    // doesn't understand (the original bug printed "Unknown command:" and
+    // exited 0). If course.json is missing, ralph would still find the old
+    // AI-Lecturer prd.json with everything passes:true, exit 0 in seconds,
+    // and the SSE stream would emit `done` despite nothing having been
+    // generated — so the wizard would redirect to a 404 page.
+    try {
+      await fs.access(courseFile(slug));
+    } catch {
+      emit({ type: 'stage', name: 'init_course', status: 'error' });
+      finalize(
+        'error',
+        'init_course did not produce course.json — check .generation.log',
+      );
       return;
     }
     emit({ type: 'stage', name: 'init_course', status: 'done' });
