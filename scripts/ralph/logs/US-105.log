@@ -1,0 +1,33 @@
+[2026-05-05T21:55:01+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T21:56:54+0200] Now let me look at the existing generation tests so I know what shape expectations to update:
+[2026-05-05T21:57:53+0200] Let me update the path helper:
+[2026-05-05T21:58:08+0200] Now let's check the test references and update them:
+[2026-05-05T21:58:20+0200] Now let's create the API routes for logs. First the index route:
+[2026-05-05T21:58:58+0200] Now let me refactor the Stage5Generate component. First, look at its full scope so I know what to preserve:
+[2026-05-05T22:00:00+0200] Now refactor Stage5Generate. Let me replace the entire component body:
+[2026-05-05T22:00:41+0200] Now replace the Stage5Generate component with the refactored version:
+[2026-05-05T22:01:50+0200] Now replace the JSX rendering portion:
+[2026-05-05T22:02:12+0200] Now add the StageLogSection helper component. Let me add it right before Stage5Generate:
+[2026-05-05T22:02:42+0200] Now let me run typecheck:
+[2026-05-05T22:03:02+0200] All 549 tests pass. Now let me add unit tests for the new endpoints:
+[2026-05-05T22:04:15+0200] All 558 tests pass. Now also run typecheck to be safe:
+[2026-05-05T22:09:26+0200] Now let me write the playwright test:
+[2026-05-05T22:12:31+0200] Let me find the existing ref declarations and add a startedRef:
+[2026-05-05T22:13:11+0200] Let me revert the startedRef change and instead make POST `/api/courses/generate` idempotent for the same slug:
+[2026-05-05T22:15:25+0200] All 560 tests pass. Now re-run the playwright test:
+[2026-05-05T22:18:33+0200] All checks passed. Let me verify the screenshots:
+[2026-05-05T22:19:35+0200] Now append progress notes:
+[2026-05-05T22:21:24+0200] US-105 is committed (610bd71) with `passes: true`. Summary:
+
+- **Disk persistence**: `genLogsDir(slug)` now resolves to `<courseDir>/logs/`; init + per-lesson stages stream into `logs/<stage>.log`.
+- **New endpoints**: `GET /api/courses/[slug]/logs` (index, sorted by mtime) and `GET /api/courses/[slug]/logs/[stage]` (text/plain body); both validate slug + stage.
+- **UI refactor**: Stage 6 panel now renders one collapsible `StageLogSection` per stage. Active stage starts expanded + auto-scrolls; completed stages start collapsed and lazy-load disk content via the new endpoint on first expand. Mid-run mount hydrates completed stages from `/logs` index.
+- **Idempotent POST**: `startGeneration` now returns the existing run when the same slug is requested again, fixing React StrictMode dev double-mount 409s and laying groundwork for US-106's resume banner. Different-slug second call still 409s.
+- **Quality**: typecheck clean; vitest 26 files / 560 tests passing (+11 new). Playwright (headless, GENERATION_MOCK=1, port 3066) drives the full wizard, watches the init_course→intro stage transition, expands the previous stage, and verifies disk content matches the rendered panel byte-for-byte. Screenshots in `/tmp/us-105-*.png`.
+[2026-05-05T22:21:24+0200] [result success turns=165 cost=$17.43991975000001] US-105 is committed (610bd71) with `passes: true`. Summary:
+
+- **Disk persistence**: `genLogsDir(slug)` now resolves to `<courseDir>/logs/`; init + per-lesson stages stream into `logs/<stage>.log`.
+- **New endpoints**: `GET /api/courses/[slug]/logs` (index, sorted by mtime) and `GET /api/courses/[slug]/logs/[stage]` (text/plain body); both validate slug + stage.
+- **UI refactor**: Stage 6 panel now renders one collapsible `StageLogSection` per stage. Active stage starts expanded + auto-scrolls; completed stages start collapsed and lazy-load disk content via the new endpoint on first expand. Mid-run mount hydrates completed stages from `/logs` index.
+- **Idempotent POST**: `startGeneration` now returns the existing run when the same slug is requested again, fixing React StrictMode dev double-mount 409s and laying groundwork for US-106's resume banner. Different-slug second call still 409s.
+- **Quality**: typecheck clean; vitest 26 files / 560 tests passing (+11 new). Playwright (headless, GENERATION_MOCK=1, port 3066) drives the full wizard, watches the init_course→intro stage transition, expands the previous stage, and verifies disk content matches the rendered panel byte-for-byte. Screenshots in `/tmp/us-105-*.png`.
