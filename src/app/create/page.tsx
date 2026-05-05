@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, FileText, Sparkles, Upload, X } from 'lucide-react';
 import Stage3Cascade, {
   type Draft,
   type Level,
@@ -26,6 +26,35 @@ const DEFAULT_DRAFT: Draft = {
   clarification: undefined,
   structure: null,
 };
+
+// US-103 — Stages 'choose' and 'materials' are pre-flow steps. The
+// existing 6-step wizard kicks in once the user reaches stage 1.
+type WizardStage = 'choose' | 'materials' | 1 | 2 | 3 | 4 | 5 | 6;
+
+type EntryPath = 'scratch' | 'materials';
+
+interface UploadedMaterial {
+  originalName: string;
+  sanitizedName: string;
+  size: number;
+  type: string;
+}
+
+// Surfaced both to the route and the UI so they stay in sync.
+const MATERIAL_ALLOWED_EXTS = ['.pdf', '.pptx', '.docx', '.txt', '.json'] as const;
+const MATERIAL_MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MiB. Mirrors src/lib/server/sources.ts MAX_FILE_SIZE_BYTES.
+const MATERIAL_ACCEPT_ATTR = MATERIAL_ALLOWED_EXTS.join(',');
+
+function formatFileSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileExtension(name: string): string {
+  const i = name.lastIndexOf('.');
+  return i >= 0 ? name.slice(i).toLowerCase() : '';
+}
 
 const STAGES = [
   { id: 1, label: 'Topic' },
@@ -77,11 +106,17 @@ function ratioLabel(ratio: number): string {
 
 export default function CreatePage() {
   const router = useRouter();
-  const [stage, setStage] = useState<number>(1);
+  const [stage, setStage] = useState<WizardStage>('choose');
   const [draft, setDraft] = useState<Draft>(DEFAULT_DRAFT);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submittedSlug, setSubmittedSlug] = useState<string | null>(null);
+  // US-103 — entry-path state. `entryPath === 'materials'` triggers the
+  // pre-flow file-picker step; the staged uploads are bound to a server-
+  // side draftId until POST /api/courses promotes them to the slug.
+  const [entryPath, setEntryPath] = useState<EntryPath | null>(null);
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [materials, setMaterials] = useState<UploadedMaterial[]>([]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -94,7 +129,7 @@ export default function CreatePage() {
   }, []);
 
   const goToDashboard = () => {
-    if (draft.topic.trim().length > 0) {
+    if (draft.topic.trim().length > 0 || materials.length > 0) {
       const ok = window.confirm('Discard this draft and return to the dashboard?');
       if (!ok) return;
     }
@@ -102,8 +137,25 @@ export default function CreatePage() {
   };
 
   const handleStepperJump = (id: number) => {
-    if (id < stage) setStage(id);
+    if (typeof stage === 'number' && id < stage) setStage(id as WizardStage);
   };
+
+  const handleRemoveMaterial = useCallback(
+    async (sanitizedName: string) => {
+      if (!draftId) return;
+      // Optimistic local removal; the server delete is best-effort.
+      setMaterials((prev) => prev.filter((m) => m.sanitizedName !== sanitizedName));
+      try {
+        await fetch(
+          `/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=${encodeURIComponent(sanitizedName)}`,
+          { method: 'DELETE' },
+        );
+      } catch {
+        /* best-effort — local state already reflects removal */
+      }
+    },
+    [draftId],
+  );
 
   const handleGenerate = async () => {
     if (submitting) return;
@@ -115,10 +167,13 @@ export default function CreatePage() {
       // Retry loop for 409 collisions: prompt for a new title and try again.
       while (true) {
         const spec = buildCourseSpec(draft, { ...draft.structure, courseTitle: title });
+        // US-103: piggyback the staged-uploads draft id alongside the
+        // spec so the server can move staged sources into /sources/.
+        const payload = draftId ? { ...spec, draftId } : spec;
         const res = await fetch('/api/courses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(spec),
+          body: JSON.stringify(payload),
         });
         if (res.status === 201) {
           const body = (await res.json()) as { slug: string };
@@ -178,18 +233,58 @@ export default function CreatePage() {
     return ids;
   }, [draft]);
 
+  // The first numeric stage to land on after the entry-choice step. From
+  // both 'choose' and 'materials' we go to Stage 1 (Topic).
+  const goToStage = (next: WizardStage) => setStage(next);
+
+  // Where Stage 1's back button should send the user. If they came in via
+  // the materials path, "Back" returns to the picker so they can amend
+  // uploads; otherwise back to the entry-choice landing.
+  const stage1Back: () => void = () => setStage(entryPath === 'materials' ? 'materials' : 'choose');
+
+  const showStepper = typeof stage === 'number';
+
   return (
     <div style={pageStyle}>
-      <header style={headerStyle}>
-        <Stepper current={stage} onJump={handleStepperJump} staleStageIds={staleStageIds} />
-      </header>
+      {showStepper && (
+        <header style={headerStyle}>
+          <Stepper current={stage as number} onJump={handleStepperJump} staleStageIds={staleStageIds} />
+        </header>
+      )}
+      {showStepper && materials.length > 0 && (
+        <MaterialsBanner materials={materials} onRemove={handleRemoveMaterial} />
+      )}
       <main style={mainStyle}>
+        {stage === 'choose' && (
+          <StageChoose
+            onScratch={() => {
+              setEntryPath('scratch');
+              goToStage(1);
+            }}
+            onMaterials={() => {
+              setEntryPath('materials');
+              goToStage('materials');
+            }}
+            onBack={goToDashboard}
+          />
+        )}
+        {stage === 'materials' && (
+          <StageMaterials
+            draftId={draftId}
+            onDraftIdAssigned={setDraftId}
+            materials={materials}
+            setMaterials={setMaterials}
+            onRemove={handleRemoveMaterial}
+            onNext={() => goToStage(1)}
+            onBack={() => setStage('choose')}
+          />
+        )}
         {stage === 1 && (
           <Stage1
             draft={draft}
             setDraft={setDraft}
             onNext={() => setStage(2)}
-            onBack={goToDashboard}
+            onBack={stage1Back}
           />
         )}
         {stage === 2 && (
@@ -380,6 +475,665 @@ function Stepper({
     </div>
   );
 }
+
+// ─── Stage Choose / Stage Materials (US-103) ─────────────────────────────────
+
+function StageChoose({
+  onScratch,
+  onMaterials,
+  onBack,
+}: {
+  onScratch: () => void;
+  onMaterials: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div style={stageWrapStyle}>
+      <div
+        data-testid="stage-choose"
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 'var(--space-7) var(--space-6)',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 720 }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--accent-text)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              fontWeight: 600,
+              marginBottom: 8,
+            }}
+          >
+            Start a new course
+          </div>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontSize: 'var(--fs-2xl)',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            How would you like to begin?
+          </h1>
+          <p
+            style={{
+              marginTop: 6,
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+              lineHeight: 1.55,
+              marginBottom: 'var(--space-6)',
+            }}
+          >
+            Either tell us the topic and we&apos;ll plan it from scratch, or upload your own
+            materials so the curriculum is grounded in your content.
+          </p>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 'var(--space-4)',
+            }}
+          >
+            <button
+              type="button"
+              data-testid="entry-scratch"
+              onClick={onScratch}
+              style={entryCardStyle}
+            >
+              <span
+                aria-hidden
+                style={entryCardIconStyle}
+              >
+                <Sparkles size={20} strokeWidth={2} />
+              </span>
+              <span
+                style={{
+                  fontSize: 'var(--fs-md)',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  marginTop: 14,
+                }}
+              >
+                Start from scratch
+              </span>
+              <span
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--text-tertiary)',
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                }}
+              >
+                Tell us a topic and we&apos;ll research, structure, and write it for you.
+              </span>
+            </button>
+            <button
+              type="button"
+              data-testid="entry-materials"
+              onClick={onMaterials}
+              style={entryCardStyle}
+            >
+              <span
+                aria-hidden
+                style={entryCardIconStyle}
+              >
+                <Upload size={20} strokeWidth={2} />
+              </span>
+              <span
+                style={{
+                  fontSize: 'var(--fs-md)',
+                  fontWeight: 600,
+                  color: 'var(--text)',
+                  marginTop: 14,
+                }}
+              >
+                I have materials
+              </span>
+              <span
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--text-tertiary)',
+                  marginTop: 4,
+                  lineHeight: 1.5,
+                }}
+              >
+                Upload PDFs, slides, notes, or a question bank — we&apos;ll ground the course
+                in your content.
+              </span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <Footer onBack={onBack} backLabel="Cancel" hideNext />
+    </div>
+  );
+}
+
+function StageMaterials({
+  draftId,
+  onDraftIdAssigned,
+  materials,
+  setMaterials,
+  onRemove,
+  onNext,
+  onBack,
+}: {
+  draftId: string | null;
+  onDraftIdAssigned: (id: string) => void;
+  materials: UploadedMaterial[];
+  setMaterials: Dispatch<SetStateAction<UploadedMaterial[]>>;
+  onRemove: (sanitizedName: string) => void | Promise<void>;
+  onNext: () => void;
+  onBack: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [errors, setErrors] = useState<{ name: string; reason: string }[]>([]);
+  const [generalError, setGeneralError] = useState<string | null>(null);
+
+  const handleFiles = useCallback(
+    async (files: FileList | File[]) => {
+      const list = Array.from(files);
+      if (list.length === 0) return;
+      // Front-end validation: extension + size. MIME is checked again on
+      // the server (browsers sometimes return '' for unknown extensions).
+      const localErrors: { name: string; reason: string }[] = [];
+      const accepted: File[] = [];
+      for (const f of list) {
+        const ext = fileExtension(f.name);
+        if (!MATERIAL_ALLOWED_EXTS.includes(ext as (typeof MATERIAL_ALLOWED_EXTS)[number])) {
+          localErrors.push({ name: f.name, reason: `Unsupported extension "${ext || '(none)'}"` });
+          continue;
+        }
+        if (f.size > MATERIAL_MAX_SIZE_BYTES) {
+          localErrors.push({
+            name: f.name,
+            reason: `File too large (${formatFileSize(f.size)} > ${formatFileSize(MATERIAL_MAX_SIZE_BYTES)})`,
+          });
+          continue;
+        }
+        accepted.push(f);
+      }
+      if (localErrors.length > 0) setErrors((prev) => [...prev, ...localErrors]);
+      if (accepted.length === 0) return;
+
+      setUploading(true);
+      setGeneralError(null);
+      try {
+        const fd = new FormData();
+        if (draftId) fd.set('draftId', draftId);
+        for (const f of accepted) fd.append('files', f);
+        const res = await fetch('/api/courses/upload-sources', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!res.ok && res.status !== 400) {
+          let msg = `Upload failed (${res.status})`;
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body && typeof body.error === 'string') msg = body.error;
+          } catch {
+            /* non-JSON body */
+          }
+          setGeneralError(msg);
+          return;
+        }
+        const body = (await res.json()) as {
+          draftId?: string;
+          files?: UploadedMaterial[];
+          rejected?: { name: string; reason: string }[];
+          error?: string;
+        };
+        if (res.status === 400 && body.error && (!body.files || body.files.length === 0)) {
+          setGeneralError(body.error);
+          return;
+        }
+        if (body.draftId && !draftId) onDraftIdAssigned(body.draftId);
+        if (body.files && body.files.length > 0) {
+          setMaterials((prev) => {
+            const seen = new Set(prev.map((m) => m.sanitizedName));
+            const next = [...prev];
+            for (const m of body.files!) {
+              if (!seen.has(m.sanitizedName)) next.push(m);
+            }
+            return next;
+          });
+        }
+        if (body.rejected && body.rejected.length > 0) {
+          setErrors((prev) => [...prev, ...body.rejected!]);
+        }
+      } catch (err) {
+        setGeneralError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setUploading(false);
+      }
+    },
+    [draftId, onDraftIdAssigned, setMaterials],
+  );
+
+  const onPick = () => inputRef.current?.click();
+
+  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      void handleFiles(e.target.files);
+      // Reset so picking the same file again still fires onChange.
+      e.target.value = '';
+    }
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (e.dataTransfer.files) void handleFiles(e.dataTransfer.files);
+  };
+
+  return (
+    <div style={stageWrapStyle}>
+      <div
+        data-testid="stage-materials"
+        style={{
+          flex: 1,
+          overflow: 'auto',
+          padding: 'var(--space-7) var(--space-6)',
+        }}
+      >
+        <div style={{ width: '100%', maxWidth: 720, margin: '0 auto' }}>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--accent-text)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              fontWeight: 600,
+              marginBottom: 8,
+            }}
+          >
+            Step 1 — Upload your materials
+          </div>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: 'var(--font-display)',
+              fontSize: 'var(--fs-2xl)',
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            What should we ground the course in?
+          </h1>
+          <p
+            style={{
+              marginTop: 6,
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+              lineHeight: 1.55,
+            }}
+          >
+            Add lecture slides, lecture notes, exam papers, or a question bank. Accepted:{' '}
+            {MATERIAL_ALLOWED_EXTS.join(' · ')}. Up to {formatFileSize(MATERIAL_MAX_SIZE_BYTES)} per file.
+          </p>
+
+          <input
+            ref={inputRef}
+            type="file"
+            multiple
+            accept={MATERIAL_ACCEPT_ATTR}
+            onChange={onInputChange}
+            data-testid="materials-input"
+            style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+          />
+
+          <div
+            data-testid="materials-dropzone"
+            onClick={onPick}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDrop}
+            style={{
+              marginTop: 'var(--space-5)',
+              padding: 'var(--space-6)',
+              borderRadius: 'var(--radius-md)',
+              border: '1.5px dashed var(--border-strong)',
+              background: 'var(--bg-elevated)',
+              textAlign: 'center',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            <Upload
+              size={24}
+              strokeWidth={1.8}
+              style={{ display: 'block', margin: '0 auto', color: 'var(--text-tertiary)' }}
+            />
+            <div style={{ marginTop: 10, fontWeight: 500, color: 'var(--text)' }}>
+              Click to choose files, or drag &amp; drop
+            </div>
+            <div style={{ marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
+              {uploading ? 'Uploading…' : `${MATERIAL_ALLOWED_EXTS.join(' · ')} · max ${formatFileSize(MATERIAL_MAX_SIZE_BYTES)}`}
+            </div>
+          </div>
+
+          {generalError && (
+            <div
+              role="alert"
+              data-testid="materials-general-error"
+              style={{
+                marginTop: 'var(--space-3)',
+                padding: 'var(--space-3) var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--danger-subtle, rgba(220, 38, 38, 0.08))',
+                color: 'var(--danger, #b91c1c)',
+                border: '1px solid var(--danger, #fca5a5)',
+                fontSize: 'var(--fs-sm)',
+              }}
+            >
+              {generalError}
+            </div>
+          )}
+
+          {errors.length > 0 && (
+            <ul
+              data-testid="materials-errors"
+              style={{
+                marginTop: 'var(--space-3)',
+                padding: 'var(--space-3) var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--warning-subtle, rgba(217, 119, 6, 0.08))',
+                color: 'var(--warning, #b45309)',
+                border: '1px solid var(--warning, #fde68a)',
+                fontSize: 'var(--fs-xs)',
+                listStyle: 'disc',
+                paddingInlineStart: 'var(--space-5)',
+                margin: 'var(--space-3) 0 0',
+              }}
+            >
+              {errors.map((e, i) => (
+                <li key={i}>
+                  <strong>{e.name}</strong> — {e.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div style={{ marginTop: 'var(--space-5)' }}>
+            <div
+              style={{
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--text-tertiary)',
+                marginBottom: 6,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                fontWeight: 600,
+              }}
+            >
+              Uploaded ({materials.length})
+            </div>
+            {materials.length === 0 ? (
+              <div
+                data-testid="materials-empty"
+                style={{
+                  padding: 'var(--space-3) var(--space-4)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px dashed var(--border)',
+                  color: 'var(--text-tertiary)',
+                  fontSize: 'var(--fs-sm)',
+                }}
+              >
+                No files yet. You can also{' '}
+                <button
+                  type="button"
+                  data-testid="materials-skip-link"
+                  onClick={onNext}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--accent-text)',
+                    cursor: 'pointer',
+                    padding: 0,
+                    font: 'inherit',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  skip this step
+                </button>
+                .
+              </div>
+            ) : (
+              <ul
+                data-testid="materials-list"
+                style={{
+                  margin: 0,
+                  padding: 0,
+                  listStyle: 'none',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                {materials.map((m) => (
+                  <li
+                    key={m.sanitizedName}
+                    data-testid="materials-item"
+                    data-filename={m.sanitizedName}
+                    style={materialRowStyle}
+                  >
+                    <FileText size={14} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+                    <span
+                      style={{
+                        flex: 1,
+                        fontSize: 'var(--fs-sm)',
+                        color: 'var(--text)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={m.originalName}
+                    >
+                      {m.sanitizedName}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--text-tertiary)',
+                        fontFamily: 'var(--font-mono)',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {formatFileSize(m.size)}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="materials-remove"
+                      data-filename={m.sanitizedName}
+                      aria-label={`Remove ${m.sanitizedName}`}
+                      onClick={() => void onRemove(m.sanitizedName)}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-tertiary)',
+                        cursor: 'pointer',
+                        padding: 4,
+                        borderRadius: 'var(--radius-sm)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <X size={14} strokeWidth={2} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+      <Footer
+        onBack={onBack}
+        onNext={onNext}
+        canNext
+        backLabel="Back"
+        nextLabel={materials.length > 0 ? 'Continue' : 'Skip'}
+      />
+    </div>
+  );
+}
+
+function MaterialsBanner({
+  materials,
+  onRemove,
+}: {
+  materials: UploadedMaterial[];
+  onRemove: (sanitizedName: string) => void | Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div
+      data-testid="materials-banner"
+      style={{
+        flexShrink: 0,
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--bg-elevated)',
+        padding: '8px var(--space-6)',
+      }}
+    >
+      <button
+        type="button"
+        data-testid="materials-banner-toggle"
+        onClick={() => setExpanded((v) => !v)}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 8,
+          background: 'transparent',
+          border: 'none',
+          padding: 0,
+          color: 'var(--text-secondary)',
+          fontSize: 'var(--fs-xs)',
+          cursor: 'pointer',
+          fontFamily: 'inherit',
+        }}
+      >
+        <FileText size={12} strokeWidth={2} />
+        <span>
+          {materials.length} material{materials.length === 1 ? '' : 's'} attached
+        </span>
+        <span style={{ color: 'var(--text-tertiary)' }}>
+          {expanded ? '▴ hide' : '▾ show'}
+        </span>
+      </button>
+      {expanded && (
+        <ul
+          data-testid="materials-banner-list"
+          style={{
+            margin: '8px 0 0',
+            padding: 0,
+            listStyle: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          {materials.map((m) => (
+            <li
+              key={m.sanitizedName}
+              data-filename={m.sanitizedName}
+              style={{ ...materialRowStyle, padding: '4px 8px' }}
+            >
+              <FileText size={12} strokeWidth={2} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
+              <span
+                style={{
+                  flex: 1,
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                }}
+                title={m.originalName}
+              >
+                {m.sanitizedName}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-tertiary)',
+                  fontFamily: 'var(--font-mono)',
+                  flexShrink: 0,
+                }}
+              >
+                {formatFileSize(m.size)}
+              </span>
+              <button
+                type="button"
+                data-testid="materials-banner-remove"
+                data-filename={m.sanitizedName}
+                aria-label={`Remove ${m.sanitizedName}`}
+                onClick={() => void onRemove(m.sanitizedName)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  padding: 2,
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={12} strokeWidth={2} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const entryCardStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  textAlign: 'left',
+  padding: 'var(--space-5)',
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: 'var(--radius-md)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  transition: 'border-color var(--t-fast), background var(--t-fast)',
+};
+
+const entryCardIconStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 40,
+  height: 40,
+  borderRadius: 'var(--radius-sm)',
+  background: 'var(--accent-subtle)',
+  color: 'var(--accent-text)',
+};
+
+const materialRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '6px 10px',
+  background: 'var(--bg)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+};
 
 // ─── Stage 1 — Topic ─────────────────────────────────────────────────────────
 
