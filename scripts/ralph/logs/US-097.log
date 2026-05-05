@@ -1,0 +1,36 @@
+[2026-05-05T12:35:07+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T12:36:12+0200] Now I have the full picture. Let me look at the create page to understand what UI consumers expect from the SSE stream, and the route.ts stream endpoint.
+[2026-05-05T12:37:46+0200] Now I have a complete picture. Let me write the new `generation.ts`.
+[2026-05-05T12:39:41+0200] Now let me update the test file.
+[2026-05-05T12:42:14+0200] Typecheck clean. Now run vitest.
+[2026-05-05T12:42:18+0200] All 26 tests pass. Now run the full test suite.
+[2026-05-05T12:42:24+0200] 25 files / 478 tests pass (was 472 before; +6 from the new pipeline tests). Now lint touched files.
+[2026-05-05T12:42:31+0200] Clean. The acceptance criterion "no UI tag" — this story has no `ui` tag, so skip browser testing. Now update progress.txt and prd.json, then commit.
+[2026-05-05T12:43:35+0200] Now append the US-097 progress entry.
+[2026-05-05T12:44:29+0200] Now flip US-097's `passes` to true.
+[2026-05-05T12:44:52+0200] Now run a final quality check and commit.
+[2026-05-05T12:45:17+0200] `passes: true` is in HEAD on commit `5be2f7d`.
+[2026-05-05T12:45:33+0200] US-097 done. Commit `5be2f7d` is in HEAD with `passes: true` flipped on US-097 only.
+
+**What landed:**
+- `src/lib/server/generation.ts` — dropped the `ralph` stage entirely. After init_course, parse `course.json` with `CourseSchema`, flatten `modules.flatMap(m => m.lessons)`, then for each lesson spawn ONE `claude -p '<natural-language brief naming generate_lesson + both slugs>' --dangerously-skip-permissions` in the main repo CWD. Read the produced `courses/<slug>/lessons/<lesson-slug>.json` and validate with `LessonSchema`. Failures (non-zero exit, missing file, schema mismatch) get recorded in `failedLessons` and the loop continues. New exports: `defaultLessonCommand`, `FailedLesson`. `SpawnDeps.ralphCommand` removed in favour of `lessonCommand`. The `done` event now carries `failedLessons: FailedLesson[]`; `error` may carry it too. If every lesson fails, finalize as `error`. Per-lesson `progress` events emit explicitly; the old `tryParseProgress` log-line scraper is gone.
+- `src/lib/server/generation.test.ts` — added 7 new cases (multi-lesson happy path, lessonCommand factory injection, single-lesson failure isolation, post-spawn LessonSchema validation, cancel mid-run, defaultLessonCommand prompt + slug safety) and updated 2 existing cases to write a stub `course.json` + lesson before letting children exit. All ralph-spawn assertions removed.
+- `scripts/ralph/{prd.json, progress.txt}` — flipped US-097 `passes: true`; appended progress entry with learnings.
+
+**Verification:**
+- `npm run typecheck` clean.
+- `npx vitest run` 25 files / 478 tests pass (+6 from this story).
+- `npm run lint -- src/lib/server/generation.ts src/lib/server/generation.test.ts` zero warnings.
+- No `ui` tag → skipped browser verification per ralph CLAUDE.md.
+[2026-05-05T12:45:33+0200] [result success turns=53 cost=$4.840515000000001] US-097 done. Commit `5be2f7d` is in HEAD with `passes: true` flipped on US-097 only.
+
+**What landed:**
+- `src/lib/server/generation.ts` — dropped the `ralph` stage entirely. After init_course, parse `course.json` with `CourseSchema`, flatten `modules.flatMap(m => m.lessons)`, then for each lesson spawn ONE `claude -p '<natural-language brief naming generate_lesson + both slugs>' --dangerously-skip-permissions` in the main repo CWD. Read the produced `courses/<slug>/lessons/<lesson-slug>.json` and validate with `LessonSchema`. Failures (non-zero exit, missing file, schema mismatch) get recorded in `failedLessons` and the loop continues. New exports: `defaultLessonCommand`, `FailedLesson`. `SpawnDeps.ralphCommand` removed in favour of `lessonCommand`. The `done` event now carries `failedLessons: FailedLesson[]`; `error` may carry it too. If every lesson fails, finalize as `error`. Per-lesson `progress` events emit explicitly; the old `tryParseProgress` log-line scraper is gone.
+- `src/lib/server/generation.test.ts` — added 7 new cases (multi-lesson happy path, lessonCommand factory injection, single-lesson failure isolation, post-spawn LessonSchema validation, cancel mid-run, defaultLessonCommand prompt + slug safety) and updated 2 existing cases to write a stub `course.json` + lesson before letting children exit. All ralph-spawn assertions removed.
+- `scripts/ralph/{prd.json, progress.txt}` — flipped US-097 `passes: true`; appended progress entry with learnings.
+
+**Verification:**
+- `npm run typecheck` clean.
+- `npx vitest run` 25 files / 478 tests pass (+6 from this story).
+- `npm run lint -- src/lib/server/generation.ts src/lib/server/generation.test.ts` zero warnings.
+- No `ui` tag → skipped browser verification per ralph CLAUDE.md.
