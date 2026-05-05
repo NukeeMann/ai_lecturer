@@ -1,0 +1,50 @@
+[2026-05-05T22:21:55+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T22:23:02+0200] Now let me look at the existing API routes structure and how the generation is wired.
+[2026-05-05T22:24:32+0200] Let me look at the generation tests to understand the patterns, then start implementing.
+[2026-05-05T22:24:42+0200] Now let me start implementing. First, let me design the changes to `generation.ts`:
+[2026-05-05T22:25:05+0200] Now I understand the codebase. Let me start implementing. First, I'll modify `generation.ts` to add active-run tracking with cold-start reconciliation:
+[2026-05-05T22:25:13+0200] Now add the `currentStage` field and `ActiveRunSummary` type, plus the helper functions:
+[2026-05-05T22:25:50+0200] Now wire the marker writes/removes and `currentStage` updates into the run lifecycle:
+[2026-05-05T22:26:05+0200] Now let me add the marker write at child spawn time (so we get the actual PID), at startGeneration boot, and removal in finalize:
+[2026-05-05T22:26:10+0200] Now update `finalize` to remove the marker, and add the initial marker write at startGenerationInner:
+[2026-05-05T22:26:15+0200] Now add an initial marker write inside startGenerationInner right after activeRun is assigned:
+[2026-05-05T22:26:29+0200] Also update `__resetForTesting` to forget any reservation cleanly (it already does), and check: do we want startGenerationInner's "rollback path" to remove a marker if startup fails before activeRun is assigned? The marker is written *after* activeRun assignment, so on rollback it wouldn't be there. Good.
+
+Let me also consider: what if `startGenerationInner` throws BEFORE the activeRun assignment (e.g., claude not in PATH)? No marker exists so nothing to clean up. 
+
+Now create the GET /api/courses/active-run route:
+[2026-05-05T22:26:41+0200] Now I'll add the ResumeBanner to /create page. First let me update the create page to read `?resume=<slug>` and render the banner:
+[2026-05-05T22:26:59+0200] Now define the types and ResumeBanner component, then render it. Let me add the types near the top:
+[2026-05-05T22:27:03+0200] Now render the banner. Let me find where the page renders and inject the banner:
+[2026-05-05T22:27:11+0200] Now add the ResumeBanner component. Let me put it near MaterialsBanner:
+[2026-05-05T22:27:55+0200] Let me check if any tests rely on the cancel-on-unmount sendBeacon behavior:
+[2026-05-05T22:28:13+0200] The sendBeacon cancel-on-tab-close contradicts US-106's premise ("the agent never stops on tab close"). Let me remove it:
+[2026-05-05T22:28:53+0200] Now write tests. Let me check what test patterns exist for the api.test.ts file:
+[2026-05-05T22:29:01+0200] Now let me add tests for the active-run route and getActiveRunSummary helper. First, append to api.test.ts:
+[2026-05-05T22:29:45+0200] Now add a test for the in-memory active run path in generation.test.ts:
+[2026-05-05T22:30:33+0200] Typecheck passes. Now run vitest:
+[2026-05-05T22:30:49+0200] Need to wait for the async marker write. Let me adjust:
+[2026-05-05T22:31:14+0200] All 572 tests pass. Now run the playwright test. First, let me check the playwright skill:
+[2026-05-05T22:31:35+0200] I need a longer-running mock so the banner has time to appear. Let me kill the dev server and modify the mock to honor an env var:
+[2026-05-05T22:33:09+0200] Dev server is up and the API endpoint works. Now write the playwright test:
+[2026-05-05T22:34:30+0200] Let me update the playwright test to handle the actual flow better:
+[2026-05-05T22:35:58+0200] US-106 ALL CHECKS PASSED in the browser. Now let me clean up and prepare the commit:
+[2026-05-05T22:36:07+0200] Now update prd.json and progress.txt, then commit:
+[2026-05-05T22:36:17+0200] Now append the progress entry. Let me check the current progress.txt size to be sure:
+[2026-05-05T22:37:28+0200] Now stage and commit. Let me kill the dev server first since the commit shouldn't depend on it being up:
+[2026-05-05T22:38:01+0200] Commit landed at e90d68c with US-106 passes=true.
+
+Summary of US-106:
+- **`generation.ts`**: New `getActiveRunSummary()` + `ActiveRunSummary` type + `currentStage` field on `GenerationRun`. Writes `<courseDir>/.generating.json` markers with `{childPid, slug, stage, startedAt}` at run start, on each child spawn, and on each `stage:started`; removes them in `finalize`. Cold-start reconciliation scans markers and probes PID liveness via `process.kill(pid, 0)`. Stale markers are unlinked inline.
+- **`/api/courses/active-run`**: thin route returning `{active:false} | {active:true, slug, name, stage}`. Name resolved from `course.json#title` (preferred) or `course-spec.json#draftStructure.courseTitle` (fallback) or slug.
+- **`/create` page**: sticky `ResumeBanner` ('Trwa generacja kursu <name> — <stage>' + 'Wróć do generacji') driven by mount-time fetch of active-run. New `?resume=<slug>` query support for the resume click. Banner hides when already on Stage 6 for the running slug. Removed `sendBeacon`-on-unmount cancel so tab close no longer kills the run.
+- **Tests**: 12 new (5 in generation.test.ts, 7 in api.test.ts). All 572 vitest pass; typecheck clean.
+- **Browser**: playwright drove the wizard end-to-end with `GENERATION_MOCK_INIT_DELAY_MS=15000` (new env knob), confirmed banner appears on return to /create with correct name/stage, click lands in Stage 6 with init_course log section visible, and dismiss (X) flow works in a fresh browser context.
+[2026-05-05T22:38:01+0200] [result success turns=105 cost=$10.924591] Commit landed at e90d68c with US-106 passes=true.
+
+Summary of US-106:
+- **`generation.ts`**: New `getActiveRunSummary()` + `ActiveRunSummary` type + `currentStage` field on `GenerationRun`. Writes `<courseDir>/.generating.json` markers with `{childPid, slug, stage, startedAt}` at run start, on each child spawn, and on each `stage:started`; removes them in `finalize`. Cold-start reconciliation scans markers and probes PID liveness via `process.kill(pid, 0)`. Stale markers are unlinked inline.
+- **`/api/courses/active-run`**: thin route returning `{active:false} | {active:true, slug, name, stage}`. Name resolved from `course.json#title` (preferred) or `course-spec.json#draftStructure.courseTitle` (fallback) or slug.
+- **`/create` page**: sticky `ResumeBanner` ('Trwa generacja kursu <name> — <stage>' + 'Wróć do generacji') driven by mount-time fetch of active-run. New `?resume=<slug>` query support for the resume click. Banner hides when already on Stage 6 for the running slug. Removed `sendBeacon`-on-unmount cancel so tab close no longer kills the run.
+- **Tests**: 12 new (5 in generation.test.ts, 7 in api.test.ts). All 572 vitest pass; typecheck clean.
+- **Browser**: playwright drove the wizard end-to-end with `GENERATION_MOCK_INIT_DELAY_MS=15000` (new env knob), confirmed banner appears on return to /create with correct name/stage, click lands in Stage 6 with init_course log section visible, and dismiss (X) flow works in a fresh browser context.
