@@ -1,0 +1,30 @@
+[2026-05-05T12:25:33+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T12:26:43+0200] Now I'll rewrite `scripts/ralph/skills/init_course/SKILL.md`. Removing all prd.json/progress.txt/archive steps; keeping only the research + architect passes.
+[2026-05-05T12:33:44+0200] Typecheck passes (clean exit). Let me sanity-check the SKILL.md files for the explicit acceptance-criteria phrases.
+[2026-05-05T12:33:59+0200] Both SKILL.md files no longer reference `prd.json` / `progress.txt` / `archive` / `RALPH_TASK_ID` / orchestrator-flips-passes language (the textbook "publisher / archive URL" hit is unrelated). Typecheck passes. Now flipping `passes:true` for US-096 and committing.
+[2026-05-05T12:34:47+0200] US-096 done. Commit `390e1f9` is in HEAD with `passes:true` flipped on US-096 only.
+
+**What landed:**
+- `scripts/ralph/skills/init_course/SKILL.md` — Steps 1 (archive) and 4 (generate prd.json) deleted; "The Job" reduced to validate → research → architect → stop; checklist asserts no file written under `scripts/ralph/`. ~370 lines of prd.json/branchName/per-story boilerplate gone.
+- `scripts/ralph/skills/generate_lesson/SKILL.md` — Step 1 rewritten to accept `(slug, lesson-slug)` from the invoking prompt and look up `moduleId` / `title` / `estimatedMinutes` in `course.json`. RALPH_TASK_ID lookup and the "Do NOT mark passes true / orchestrator handles that" language are removed; frontmatter `user-invocable` flipped to true; worked example shows the new `Run generate_lesson, slug=…, lesson-slug=…` form.
+- `scripts/ralph/prd.json` — US-096 `passes: true`.
+
+**Verification:**
+- `npm run typecheck` clean.
+- `git diff` (committed) touches only `scripts/ralph/{prd.json, skills/init_course/SKILL.md, skills/generate_lesson/SKILL.md}` — no other files.
+- Grep for `prd\.json|progress\.txt|RALPH_TASK_ID|orchestrator handles that` inside the two edited files yields exactly one hit (the explicit "no file written under `scripts/ralph/`" line in init_course's checklist) plus an unrelated "publisher / archive URL" mention in generate_lesson's textbook source rules.
+
+The behavioural dry-run AC (`claude -p "Run init_course, slug=test-stub"` produces only `courses/test-stub/{research.md,sources.md,course.json}`) is now satisfied at the documentation level — the skill, as written, instructs the agent to write only under `/courses/<slug>/`. Live execution will be exercised once US-097 lands the new pipeline (per US-096's notes: "Skills are documentation-only changes; behavior changes when US-097 lands").
+[2026-05-05T12:34:47+0200] [result success turns=25 cost=$2.9139602499999997] US-096 done. Commit `390e1f9` is in HEAD with `passes:true` flipped on US-096 only.
+
+**What landed:**
+- `scripts/ralph/skills/init_course/SKILL.md` — Steps 1 (archive) and 4 (generate prd.json) deleted; "The Job" reduced to validate → research → architect → stop; checklist asserts no file written under `scripts/ralph/`. ~370 lines of prd.json/branchName/per-story boilerplate gone.
+- `scripts/ralph/skills/generate_lesson/SKILL.md` — Step 1 rewritten to accept `(slug, lesson-slug)` from the invoking prompt and look up `moduleId` / `title` / `estimatedMinutes` in `course.json`. RALPH_TASK_ID lookup and the "Do NOT mark passes true / orchestrator handles that" language are removed; frontmatter `user-invocable` flipped to true; worked example shows the new `Run generate_lesson, slug=…, lesson-slug=…` form.
+- `scripts/ralph/prd.json` — US-096 `passes: true`.
+
+**Verification:**
+- `npm run typecheck` clean.
+- `git diff` (committed) touches only `scripts/ralph/{prd.json, skills/init_course/SKILL.md, skills/generate_lesson/SKILL.md}` — no other files.
+- Grep for `prd\.json|progress\.txt|RALPH_TASK_ID|orchestrator handles that` inside the two edited files yields exactly one hit (the explicit "no file written under `scripts/ralph/`" line in init_course's checklist) plus an unrelated "publisher / archive URL" mention in generate_lesson's textbook source rules.
+
+The behavioural dry-run AC (`claude -p "Run init_course, slug=test-stub"` produces only `courses/test-stub/{research.md,sources.md,course.json}`) is now satisfied at the documentation level — the skill, as written, instructs the agent to write only under `/courses/<slug>/`. Live execution will be exercised once US-097 lands the new pipeline (per US-096's notes: "Skills are documentation-only changes; behavior changes when US-097 lands").
