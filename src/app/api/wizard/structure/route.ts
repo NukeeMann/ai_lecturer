@@ -48,6 +48,10 @@ export async function POST(req: Request) {
       const reply = await connector.chat({
         systemPrompt: STRUCTURE_SYSTEM_PROMPT,
         userMessage,
+        // Structure generation drafts a full course outline with Opus and
+        // routinely takes >60s; the connector default is meant for
+        // interactive lesson chat.
+        timeoutMs: 240_000,
       });
       const result: CourseStructure = parseStructureResponse(reply);
       return NextResponse.json(result);

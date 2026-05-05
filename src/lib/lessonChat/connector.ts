@@ -25,6 +25,9 @@ export interface ConnectorRequest {
   /** User-facing message body (typically lesson context + question). */
   userMessage: string;
   history?: ChatMessage[];
+  /** Per-call override for the subprocess timeout (ms). Falls back to the
+   *  connector's factory default when omitted. */
+  timeoutMs?: number;
 }
 
 export type ConnectorName = 'agent-sdk' | 'subprocess';
@@ -85,7 +88,7 @@ export function subprocessConnector(
     name: 'subprocess',
     chat(req) {
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
-      return runClaudeCli(spawnFn, command, prompt, timeoutMs, killGraceMs);
+      return runClaudeCli(spawnFn, command, prompt, req.timeoutMs ?? timeoutMs, killGraceMs);
     },
     chatStream(req, signal) {
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt);

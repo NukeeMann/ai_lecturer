@@ -759,6 +759,7 @@ export default function DashboardPage() {
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadData = useCallback(async () => {
     try {
@@ -809,12 +810,25 @@ export default function DashboardPage() {
 
   const enriched = useMemo(() => {
     if (!courses) return [];
-    return courses.map((c) => ({
+    const all = courses.map((c) => ({
       course: c,
       stats: statsFor(c, progress),
       href: cardHref(c, progress),
     }));
-  }, [courses, progress]);
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length === 0) return all;
+    return all.filter(({ course }) => {
+      if (course.title.toLowerCase().includes(q)) return true;
+      if (course.description.toLowerCase().includes(q)) return true;
+      for (const m of course.modules) {
+        if (m.title.toLowerCase().includes(q)) return true;
+        for (const l of m.lessons) {
+          if (l.title.toLowerCase().includes(q)) return true;
+        }
+      }
+      return false;
+    });
+  }, [courses, progress, searchQuery]);
 
   return (
     <div style={pageStyle}>
@@ -822,7 +836,14 @@ export default function DashboardPage() {
         <div style={headerLeftStyle}>
           <AppLogoLink />
         </div>
-        <div style={headerSearchWrapStyle}>
+        <form
+          role="search"
+          style={headerSearchWrapStyle}
+          onSubmit={(e) => {
+            e.preventDefault();
+            (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.blur();
+          }}
+        >
           <Search
             size={14}
             strokeWidth={2}
@@ -837,9 +858,11 @@ export default function DashboardPage() {
             type="search"
             placeholder="Search courses, lessons…"
             style={headerSearchInputStyle}
-            aria-label="Search (decorative)"
+            aria-label="Search courses and lessons"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
           />
-        </div>
+        </form>
         <div style={headerRightStyle}>
           <button type="button" aria-label="Settings" style={headerIconBtnStyle}>
             <Settings size={16} strokeWidth={2} />
@@ -897,6 +920,21 @@ export default function DashboardPage() {
 
         {courses === null ? null : courses.length === 0 ? (
           <EmptyState />
+        ) : enriched.length === 0 ? (
+          <div
+            data-testid="course-grid-empty"
+            style={{
+              padding: 'var(--space-7) var(--space-6)',
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-xl)',
+              color: 'var(--text-tertiary)',
+              fontSize: 'var(--fs-sm)',
+              textAlign: 'center',
+            }}
+          >
+            No matches for &ldquo;{searchQuery.trim()}&rdquo;.
+          </div>
         ) : (
           <div
             data-testid="course-grid"
