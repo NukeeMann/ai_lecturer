@@ -2090,6 +2090,26 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-095",
+      "title": "Fix: Stage 5 generation silently 404s because /init_course slash command isn't dispatched in `claude -p`",
+      "description": "As a learner clicking Generate in the wizard, when the backend invokes `claude -p '/init_course <slug>'`, claude's print mode treats the slash command as literal prompt text and prints 'Unknown command:' before exiting 0; the pipeline then advances to ralph.sh which finds the existing AI-Lecturer MVP prd.json (all stories already passes:true), exits 0 in ~1s, the SSE stream emits 'done', and the frontend redirects to /courses/<slug> — which 404s because course.json was never written. Expected: init_course actually runs (writes course.json + a per-lesson prd.json), or the user sees a real error rather than a redirect to a 404 page.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix: a generation.test.ts case that stubs `claude` to print 'Unknown command: /init_course' and exit 0, asserts that the SSE stream emits a `type:'error'` event (not `type:'done'`) and that course.json is detected as missing",
+        "defaultInitCourseCommand in src/lib/server/generation.ts replaces the slash-command form with a natural-language prompt that names the skill and its SKILL.md path (mirrors the pattern in scripts/ralph/ralph.sh:612 / :1053). The slug must be interpolated safely (no shell expansion, same `assertSafeSlug` rules)",
+        "Post-init guard added: after the init stage exits, generation.ts verifies courses/<slug>/course.json exists; if missing, finalize the run as `error` with an actionable message ('init_course did not produce course.json — check .generation.log') and do NOT proceed to ralph.sh",
+        "Existing generation.test.ts cases that assert the spawned command shape are updated to match the new prompt; do not change unrelated assertions",
+        "Verify in browser using playwright-skill: drive the wizard end-to-end with a stub that emulates the broken claude (prints 'Unknown command:' + exits 0) and confirm Stage 5 surfaces the error message and does NOT redirect; then run a happy-path stub that writes course.json and confirm the redirect still works",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 95,
+      "passes": false,
+      "notes": "Reproduction (2026-05-05): courses/opencv-in-computer-vision-from-pixels-to-pipelines/.generation.log shows 'Unknown command: /init_course' on line 1 followed by ralph's 'ALL TASKS DONE (94/94) in 0 iterations'. Working pattern reference: scripts/ralph/ralph.sh:612 and :1053 both invoke `claude -p \"$prompt\"` with a natural-language brief, never with a slash command. The init_course skill lives at scripts/ralph/skills/init_course/SKILL.md.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
