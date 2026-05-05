@@ -1900,6 +1900,19 @@ interface ProgressState {
 
 type StageStatus = 'started' | 'done' | 'error';
 
+// US-108 — lesson slot in the horizontal progress slider. Sourced from
+// GET /api/courses/<slug>/curriculum (course.json once init_course finishes,
+// course-spec.json fallback before that).
+interface CurriculumLesson {
+  slug: string;
+  title: string;
+  moduleId: string | null;
+  moduleTitle: string;
+  index: number;
+}
+
+type LessonSlotStatus = 'pending' | 'started' | 'done' | 'error';
+
 interface StageEntry {
   name: string;          // SSE stage name ('init_course' or 'lesson:<slug>')
   diskName: string;      // basename used for URL/disk lookup
@@ -1918,6 +1931,371 @@ interface StageEntry {
 // that prefix.
 export function stageDiskName(sseName: string): string {
   return sseName.startsWith('lesson:') ? sseName.slice('lesson:'.length) : sseName;
+}
+
+// US-108 — pre-rendered horizontal slider of every planned lesson slot.
+//
+// Each slot transitions in place from 'pending' → 'started' → 'done' (or
+// 'error') as SSE stage events arrive — no new DOM nodes are appended after
+// the initial mount. The full lesson title is exposed via the native title
+// attribute (tooltip on hover); the visible label is just the 1-based
+// "<n>/<total>" counter so a 63-lesson course doesn't overflow the panel.
+//
+// Layout: overflow-x with scroll-snap so users can flick through slots. The
+// container is keyboard-focusable (tabIndex=0); ArrowLeft/ArrowRight scroll
+// by one slot at a time and Home/End jump to the ends. Pointer-drag scroll
+// is enabled so the slider also feels right on touch / trackpad.
+function LessonSlotsSlider({
+  lessons,
+  statuses,
+  activeSlug,
+}: {
+  lessons: CurriculumLesson[];
+  statuses: Map<string, LessonSlotStatus>;
+  activeSlug: string | null;
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const slotRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  // Keep the active slot in view as generation progresses. We watch the
+  // active slug rather than the status map so the scroll only fires on
+  // transitions (and not on every re-render that keeps the same slug live).
+  useEffect(() => {
+    if (!activeSlug) return;
+    const el = slotRefs.current.get(activeSlug);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [activeSlug]);
+
+  const total = lessons.length;
+
+  const scrollByOne = useCallback((direction: 1 | -1) => {
+    const track = trackRef.current;
+    if (!track) return;
+    // Slot widths are uniform; pick the first one as the step amount.
+    const firstSlot = track.querySelector('[data-lesson-slot]') as HTMLElement | null;
+    const step = firstSlot ? firstSlot.getBoundingClientRect().width + 8 : 80;
+    track.scrollBy({ left: direction * step, behavior: 'smooth' });
+  }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        scrollByOne(1);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        scrollByOne(-1);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        trackRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        const t = trackRef.current;
+        if (t) t.scrollTo({ left: t.scrollWidth, behavior: 'smooth' });
+      }
+    },
+    [scrollByOne],
+  );
+
+  // Pointer-drag scrolling. We commit to drag-mode after a small movement
+  // threshold so plain clicks on slots still register normally.
+  const dragStateRef = useRef<{
+    active: boolean;
+    startX: number;
+    startScroll: number;
+    moved: boolean;
+  } | null>(null);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const track = trackRef.current;
+    if (!track) return;
+    dragStateRef.current = {
+      active: true,
+      startX: e.clientX,
+      startScroll: track.scrollLeft,
+      moved: false,
+    };
+  }, []);
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    const track = trackRef.current;
+    if (!drag || !drag.active || !track) return;
+    const dx = e.clientX - drag.startX;
+    if (!drag.moved && Math.abs(dx) > 4) {
+      drag.moved = true;
+      track.setPointerCapture(e.pointerId);
+      track.style.cursor = 'grabbing';
+    }
+    if (drag.moved) {
+      track.scrollLeft = drag.startScroll - dx;
+    }
+  }, []);
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragStateRef.current;
+    const track = trackRef.current;
+    if (track) {
+      track.style.cursor = '';
+      try {
+        track.releasePointerCapture(e.pointerId);
+      } catch {
+        /* not captured */
+      }
+    }
+    if (drag) drag.active = false;
+  }, []);
+
+  const startedCount = useMemo(() => {
+    let n = 0;
+    for (const s of statuses.values()) if (s === 'started') n++;
+    return n;
+  }, [statuses]);
+  const doneCount = useMemo(() => {
+    let n = 0;
+    for (const s of statuses.values()) if (s === 'done') n++;
+    return n;
+  }, [statuses]);
+
+  return (
+    <div
+      data-testid="stage5-lesson-slots"
+      data-lesson-total={total}
+      data-lesson-done={doneCount}
+      data-lesson-started={startedCount}
+      style={{ marginTop: 'var(--space-5)' }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 6,
+          fontFamily: 'var(--font-mono)',
+          fontSize: 'var(--fs-xs)',
+          color: 'var(--text-secondary)',
+        }}
+      >
+        <span>Lesson progress</span>
+        <span data-testid="stage5-lesson-slots-summary">
+          {doneCount} / {total} done{startedCount > 0 ? ` · ${startedCount} in progress` : ''}
+        </span>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 6,
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-elevated)',
+          padding: 6,
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Scroll lessons left"
+          data-testid="stage5-lesson-slots-prev"
+          onClick={() => scrollByOne(-1)}
+          style={sliderArrowStyle}
+        >
+          <ArrowLeft size={14} strokeWidth={2} />
+        </button>
+        <div
+          ref={trackRef}
+          tabIndex={0}
+          role="listbox"
+          aria-label="Lesson generation progress"
+          onKeyDown={handleKeyDown}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={{
+            flex: 1,
+            display: 'flex',
+            gap: 8,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            scrollSnapType: 'x mandatory',
+            scrollPaddingInline: 16,
+            scrollbarWidth: 'thin',
+            outline: 'none',
+            cursor: 'grab',
+            // Fixed height regardless of lesson count — AC bullet 3.
+            height: 64,
+            alignItems: 'center',
+            paddingInline: 4,
+          }}
+        >
+          {lessons.map((l) => {
+            const status = statuses.get(l.slug) ?? 'pending';
+            return (
+              <LessonSlot
+                key={l.slug}
+                lesson={l}
+                total={total}
+                status={status}
+                slotRef={(el) => {
+                  if (el) slotRefs.current.set(l.slug, el);
+                  else slotRefs.current.delete(l.slug);
+                }}
+              />
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          aria-label="Scroll lessons right"
+          data-testid="stage5-lesson-slots-next"
+          onClick={() => scrollByOne(1)}
+          style={sliderArrowStyle}
+        >
+          <ArrowRight size={14} strokeWidth={2} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const sliderArrowStyle: CSSProperties = {
+  flexShrink: 0,
+  width: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  border: 'none',
+  borderRadius: 'var(--radius-sm)',
+  cursor: 'pointer',
+};
+
+function LessonSlot({
+  lesson,
+  total,
+  status,
+  slotRef,
+}: {
+  lesson: CurriculumLesson;
+  total: number;
+  status: LessonSlotStatus;
+  slotRef: (el: HTMLDivElement | null) => void;
+}) {
+  const palette = lessonSlotPalette(status);
+  const labelNumber = lesson.index + 1;
+  return (
+    <div
+      ref={slotRef}
+      data-testid={`lesson-slot-${lesson.slug}`}
+      data-lesson-slug={lesson.slug}
+      data-lesson-index={lesson.index}
+      data-status={status}
+      title={lesson.title}
+      aria-label={`Lesson ${labelNumber} of ${total}: ${lesson.title} (${status})`}
+      role="option"
+      aria-selected={status === 'started'}
+      style={{
+        flexShrink: 0,
+        scrollSnapAlign: 'center',
+        minWidth: 64,
+        height: 48,
+        padding: '0 12px',
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 2,
+        borderWidth: 1,
+        borderStyle: 'solid',
+        borderColor: palette.border,
+        borderRadius: 'var(--radius-md)',
+        background: palette.background,
+        color: palette.color,
+        fontFamily: 'var(--font-mono)',
+        fontSize: 'var(--fs-xs)',
+        fontWeight: 600,
+        // Smooth color/border transition so the in-place change is visible.
+        transition: 'background var(--t-fast), border-color var(--t-fast), color var(--t-fast)',
+        boxShadow: status === 'started' ? '0 0 0 2px var(--accent-subtle)' : 'none',
+      }}
+    >
+      <span>
+        {labelNumber}/{total}
+      </span>
+      <LessonSlotIcon status={status} />
+    </div>
+  );
+}
+
+function LessonSlotIcon({ status }: { status: LessonSlotStatus }) {
+  if (status === 'done') {
+    return <Check size={11} strokeWidth={3} aria-hidden />;
+  }
+  if (status === 'error') {
+    return <AlertTriangle size={11} strokeWidth={2.5} aria-hidden />;
+  }
+  if (status === 'started') {
+    return (
+      <span
+        aria-hidden
+        style={{
+          display: 'inline-block',
+          width: 9,
+          height: 9,
+          borderRadius: '50%',
+          border: '1.5px solid currentColor',
+          borderTopColor: 'transparent',
+          animation: 'us108-slot-spin 0.9s linear infinite',
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: 'inline-block',
+        width: 6,
+        height: 6,
+        borderRadius: '50%',
+        background: 'currentColor',
+        opacity: 0.4,
+      }}
+    />
+  );
+}
+
+function lessonSlotPalette(status: LessonSlotStatus): {
+  background: string;
+  color: string;
+  border: string;
+} {
+  if (status === 'done') {
+    return {
+      background: 'var(--success, #10b981)',
+      color: 'white',
+      border: 'var(--success, #10b981)',
+    };
+  }
+  if (status === 'started') {
+    return {
+      background: 'var(--accent-subtle)',
+      color: 'var(--accent-text)',
+      border: 'var(--accent)',
+    };
+  }
+  if (status === 'error') {
+    return {
+      background: 'var(--danger-subtle, rgba(220, 38, 38, 0.10))',
+      color: 'var(--danger, #b91c1c)',
+      border: 'var(--danger, #fca5a5)',
+    };
+  }
+  return {
+    background: 'var(--bg-subtle, var(--bg-elevated))',
+    color: 'var(--text-tertiary)',
+    border: 'var(--border)',
+  };
 }
 
 // One collapsible section per generation stage. The active stage shows the
@@ -2059,6 +2437,12 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     position: number;
     total: number;
   } | null>(null);
+
+  // US-108 — pre-rendered lesson slots. Sourced from
+  // GET /api/courses/<slug>/curriculum (course.json once init_course finishes,
+  // course-spec.json fallback before that).
+  const [curriculum, setCurriculum] = useState<CurriculumLesson[] | null>(null);
+  const [curriculumSource, setCurriculumSource] = useState<'course' | 'spec' | null>(null);
 
   // The disk-name of the most recent 'started' stage. Streamed `log` events
   // are appended to this stage's `liveLines`.
@@ -2223,6 +2607,66 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     },
     [fetchStageDiskContent, setStageExpanded],
   );
+
+  // US-108 — fetch the planned lesson list so the progress slider can
+  // pre-render every slot before per-lesson generation starts. Refetched
+  // when init_course finishes so we can upgrade from the spec-derived
+  // placeholder slugs (slugify(title)) to the canonical course.json slugs.
+  const refetchCurriculum = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(slug)}/curriculum`,
+        { cache: 'no-store' },
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        source: 'course' | 'spec';
+        total: number;
+        lessons: CurriculumLesson[];
+      };
+      setCurriculum(data.lessons);
+      setCurriculumSource(data.source);
+    } catch {
+      /* best-effort — placeholders just stay empty if fetch fails */
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    void refetchCurriculum();
+  }, [refetchCurriculum]);
+
+  // Once we have authoritative course.json data we can stop polling.
+  const initCourseDone = useMemo(
+    () =>
+      stages.some(
+        (s) => s.diskName === 'init_course' && (s.status === 'done' || s.status === 'error'),
+      ),
+    [stages],
+  );
+  useEffect(() => {
+    if (!initCourseDone) return;
+    if (curriculumSource === 'course') return;
+    void refetchCurriculum();
+  }, [initCourseDone, curriculumSource, refetchCurriculum]);
+
+  // Derive lesson statuses from the SSE stage events. The map is keyed by
+  // the lesson slug (stage diskName for `lesson:<slug>` entries). Slots not
+  // present in the map render as 'pending'.
+  const lessonStatuses = useMemo(() => {
+    const map = new Map<string, LessonSlotStatus>();
+    for (const s of stages) {
+      if (!s.name.startsWith('lesson:')) continue;
+      map.set(s.diskName, s.status as LessonSlotStatus);
+    }
+    return map;
+  }, [stages]);
+
+  const activeLessonSlug = useMemo(() => {
+    for (const [k, v] of lessonStatuses) {
+      if (v === 'started') return k;
+    }
+    return null;
+  }, [lessonStatuses]);
 
   // Hydrate completed stages from /api/courses/<slug>/logs (collapsed).
   // This runs before SSE attaches so that stages already on disk are visible
@@ -2646,51 +3090,12 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
             </div>
           )}
 
-          {stages.length > 0 && (
-            <div
-              data-testid="stage5-stages"
-              style={{
-                marginTop: 'var(--space-5)',
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 8,
-              }}
-            >
-              {stages.map((s, i) => (
-                <span
-                  key={i}
-                  data-stage-name={s.name}
-                  data-stage-status={s.status}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    fontSize: 'var(--fs-xs)',
-                    fontFamily: 'var(--font-mono)',
-                    padding: '4px 10px',
-                    borderRadius: 'var(--radius-full)',
-                    background:
-                      s.status === 'done'
-                        ? 'var(--success, #10b981)'
-                        : s.status === 'error'
-                          ? 'var(--danger-subtle, rgba(220, 38, 38, 0.10))'
-                          : 'var(--accent-subtle)',
-                    color:
-                      s.status === 'done'
-                        ? 'white'
-                        : s.status === 'error'
-                          ? 'var(--danger, #b91c1c)'
-                          : 'var(--accent-text)',
-                    border:
-                      s.status === 'error'
-                        ? '1px solid var(--danger, #fca5a5)'
-                        : 'none',
-                  }}
-                >
-                  {s.name} · {s.status}
-                </span>
-              ))}
-            </div>
+          {curriculum && curriculum.length > 0 && (
+            <LessonSlotsSlider
+              lessons={curriculum}
+              statuses={lessonStatuses}
+              activeSlug={activeLessonSlug}
+            />
           )}
 
           {phase === 'error' && errorMessage && (

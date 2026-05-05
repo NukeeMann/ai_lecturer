@@ -24,6 +24,7 @@ import {
 import { GET as getLogsIndex } from '@/app/api/courses/[slug]/logs/route';
 import { GET as getLogStage } from '@/app/api/courses/[slug]/logs/[stage]/route';
 import { GET as getActiveRunRoute } from '@/app/api/courses/active-run/route';
+import { GET as getCurriculum } from '@/app/api/courses/[slug]/curriculum/route';
 import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
@@ -1000,5 +1001,179 @@ describe('GET /api/courses/active-run (US-106)', () => {
       | { active: true; name: string };
     expect(body.active).toBe(true);
     if (body.active) expect(body.name).toBe('nameless-run');
+  });
+});
+
+// US-108 — pre-rendered lesson slot slider in /create's Stage 6 panel.
+describe('GET /api/courses/[slug]/curriculum (US-108)', () => {
+  type Body = {
+    source: 'course' | 'spec';
+    total: number;
+    lessons: Array<{
+      slug: string;
+      title: string;
+      moduleId: string | null;
+      moduleTitle: string;
+      index: number;
+    }>;
+  };
+
+  it('returns 400 on unsafe slug', async () => {
+    const res = await getCurriculum(
+      new Request('http://x/api/courses/.../curriculum'),
+      { params: Promise.resolve({ slug: '..' }) },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when neither course.json nor course-spec.json exist', async () => {
+    const res = await getCurriculum(
+      new Request('http://x/api/courses/nope/curriculum'),
+      { params: Promise.resolve({ slug: 'nope' }) },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('falls back to course-spec.json when course.json is missing', async () => {
+    const dir = path.join(coursesRoot, 'planned');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'course-spec.json'),
+      JSON.stringify({
+        ...sampleSpec('Planned Course'),
+        draftStructure: {
+          courseTitle: 'Planned Course',
+          courseDescription: 'd',
+          modules: [
+            {
+              title: 'Foundations',
+              lessons: [
+                { title: 'What Is A Neuron', summary: 's', estimatedMinutes: 25 },
+                { title: 'Layers and activations', summary: 's', estimatedMinutes: 35 },
+              ],
+            },
+            {
+              title: 'Optimization',
+              lessons: [
+                { title: 'Gradient descent', summary: 's', estimatedMinutes: 45 },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const res = await getCurriculum(
+      new Request('http://x/api/courses/planned/curriculum'),
+      { params: Promise.resolve({ slug: 'planned' }) },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Body;
+    expect(body.source).toBe('spec');
+    expect(body.total).toBe(3);
+    expect(body.lessons.map((l) => l.slug)).toEqual([
+      'what-is-a-neuron',
+      'layers-and-activations',
+      'gradient-descent',
+    ]);
+    expect(body.lessons.map((l) => l.title)).toEqual([
+      'What Is A Neuron',
+      'Layers and activations',
+      'Gradient descent',
+    ]);
+    expect(body.lessons.map((l) => l.moduleTitle)).toEqual([
+      'Foundations',
+      'Foundations',
+      'Optimization',
+    ]);
+    expect(body.lessons.map((l) => l.index)).toEqual([0, 1, 2]);
+    // moduleId is unknown until init_course produces course.json.
+    expect(body.lessons.every((l) => l.moduleId === null)).toBe(true);
+  });
+
+  it('prefers course.json when present and exposes canonical slugs', async () => {
+    await writeCourseFile('realised', {
+      schemaVersion: 1,
+      slug: 'realised',
+      title: 'Realised',
+      description: 'd',
+      accentColor: 'indigo',
+      icon: 'sigma',
+      modules: [
+        {
+          id: 'm-foundations',
+          title: 'Foundations',
+          summary: 's',
+          lessons: [
+            { slug: 'overview', title: 'Course overview', estimatedMinutes: 10 },
+            { slug: 'first-steps', title: 'First steps', estimatedMinutes: 20 },
+          ],
+        },
+        {
+          id: 'm-optimization',
+          title: 'Optimization',
+          summary: 's',
+          lessons: [
+            { slug: 'gradient-descent', title: 'Gradient descent', estimatedMinutes: 45 },
+          ],
+        },
+      ],
+      createdAt: '2026-04-30T00:00:00Z',
+      updatedAt: '2026-04-30T00:00:00Z',
+    });
+    const res = await getCurriculum(
+      new Request('http://x/api/courses/realised/curriculum'),
+      { params: Promise.resolve({ slug: 'realised' }) },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Body;
+    expect(body.source).toBe('course');
+    expect(body.total).toBe(3);
+    expect(body.lessons.map((l) => l.slug)).toEqual([
+      'overview',
+      'first-steps',
+      'gradient-descent',
+    ]);
+    expect(body.lessons.map((l) => l.moduleId)).toEqual([
+      'm-foundations',
+      'm-foundations',
+      'm-optimization',
+    ]);
+  });
+
+  it('handles a 60+ lesson course and preserves stable order', async () => {
+    const lessons = Array.from({ length: 63 }, (_, i) => ({
+      slug: `lesson-${i + 1}`,
+      title: `Lesson ${i + 1}`,
+      estimatedMinutes: 5,
+    }));
+    await writeCourseFile('big', {
+      schemaVersion: 1,
+      slug: 'big',
+      title: 'Big',
+      description: 'd',
+      accentColor: 'indigo',
+      icon: 'sigma',
+      modules: [
+        {
+          id: 'm-only',
+          title: 'Only module',
+          summary: 's',
+          lessons,
+        },
+      ],
+      createdAt: '2026-04-30T00:00:00Z',
+      updatedAt: '2026-04-30T00:00:00Z',
+    });
+    const res = await getCurriculum(
+      new Request('http://x/api/courses/big/curriculum'),
+      { params: Promise.resolve({ slug: 'big' }) },
+    );
+    const body = (await res.json()) as Body;
+    expect(body.total).toBe(63);
+    expect(body.lessons[0].slug).toBe('lesson-1');
+    expect(body.lessons[62].slug).toBe('lesson-63');
+    expect(body.lessons.map((l) => l.index)).toEqual(
+      Array.from({ length: 63 }, (_, i) => i),
+    );
   });
 });
