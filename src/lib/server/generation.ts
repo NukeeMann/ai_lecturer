@@ -209,7 +209,19 @@ setTimeout(() => {
     `Do NOT touch scripts/ralph/.`;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      // --output-format stream-json makes claude emit one JSON event per
+      // stdout line as it works (assistant deltas, tool invocations) instead
+      // of buffering everything until the run finishes. claude requires
+      // --verbose alongside stream-json under -p; pumpStream / formatStreamJsonLine
+      // turn each event into a human-readable log line. See US-102.
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 
@@ -279,12 +291,136 @@ console.log('[mock generate_lesson] done ${lessonSlug}');
     : baseBrief;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      // See defaultInitCourseCommand for why --output-format stream-json
+      // + --verbose is set; same incremental-streaming requirement applies
+      // per-lesson. US-102.
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 
 function makeRunId(): string {
   return `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Convert one raw stdout/stderr line to zero or more human-readable log lines.
+ *
+ * Lines that look like Claude Code's `--output-format stream-json` events
+ * (one JSON object per line with a known `type` field) are decoded into
+ * concise text — assistant text deltas, tool invocations, tool results, and
+ * lifecycle markers — so the SSE log panel surfaces incremental progress
+ * instead of opaque JSON. Any line that isn't a recognised stream-json event
+ * (mock output, plain stderr, the "Unknown command:" pre-fix path) passes
+ * through unchanged.
+ */
+export function formatStreamJsonLine(rawLine: string): string[] {
+  if (rawLine.length === 0) return [rawLine];
+  if (rawLine[0] !== '{') return [rawLine];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawLine);
+  } catch {
+    return [rawLine];
+  }
+  if (typeof parsed !== 'object' || parsed === null) return [rawLine];
+  const obj = parsed as Record<string, unknown>;
+  const type = obj.type;
+  if (typeof type !== 'string') return [rawLine];
+
+  switch (type) {
+    case 'system': {
+      const subtype = typeof obj.subtype === 'string' ? obj.subtype : '';
+      const model = typeof obj.model === 'string' ? obj.model : '';
+      const tag = [subtype, model].filter(Boolean).join(' ');
+      return [tag ? `[system ${tag}]` : '[system]'];
+    }
+    case 'assistant': {
+      const message = obj.message as { content?: unknown } | undefined;
+      const content = Array.isArray(message?.content) ? message.content : [];
+      const out: string[] = [];
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null) continue;
+        const b = block as Record<string, unknown>;
+        const blockType = b.type;
+        if (blockType === 'text' && typeof b.text === 'string') {
+          for (const ln of b.text.split(/\r?\n/)) {
+            if (ln.length > 0) out.push(ln);
+          }
+        } else if (blockType === 'tool_use') {
+          const name = typeof b.name === 'string' ? b.name : 'tool';
+          out.push(`→ ${name}(${formatToolInput(b.input)})`);
+        }
+        // 'thinking' blocks deliberately suppressed — they're verbose and
+        // not user-facing context.
+      }
+      return out;
+    }
+    case 'user': {
+      const message = obj.message as { content?: unknown } | undefined;
+      const content = Array.isArray(message?.content) ? message.content : [];
+      const out: string[] = [];
+      for (const block of content) {
+        if (typeof block !== 'object' || block === null) continue;
+        const b = block as Record<string, unknown>;
+        if (b.type !== 'tool_result') continue;
+        const text = extractToolResultText(b.content);
+        const firstLine = text.split(/\r?\n/)[0] ?? '';
+        const trimmed = firstLine.length > 200 ? `${firstLine.slice(0, 200)}…` : firstLine;
+        out.push(trimmed.length > 0 ? `← ${trimmed}` : '← (empty)');
+      }
+      return out;
+    }
+    case 'result': {
+      const subtype = typeof obj.subtype === 'string' ? obj.subtype : '';
+      const isError = obj.is_error === true;
+      const durationMs = typeof obj.duration_ms === 'number' ? obj.duration_ms : null;
+      const tag = isError ? 'error' : subtype || 'ok';
+      const tail = durationMs !== null ? ` (${(durationMs / 1000).toFixed(1)}s)` : '';
+      return [`[result ${tag}${tail}]`];
+    }
+    default:
+      return [`[${type}]`];
+  }
+}
+
+function formatToolInput(input: unknown): string {
+  if (typeof input !== 'object' || input === null) return '';
+  const obj = input as Record<string, unknown>;
+  const keys = Object.keys(obj);
+  if (keys.length === 0) return '';
+  // Pick the most informative key for one-line summaries. Order matches the
+  // Claude Code tool catalog: file ops first, then shell, then search/web.
+  const PREFERRED = ['file_path', 'path', 'command', 'pattern', 'url', 'description', 'query'];
+  for (const k of PREFERRED) {
+    const v = obj[k];
+    if (typeof v === 'string') return `${k}: ${truncate(v, 80)}`;
+  }
+  const firstKey = keys[0];
+  const v = obj[firstKey];
+  const stringy = typeof v === 'string' ? v : JSON.stringify(v);
+  return `${firstKey}: ${truncate(stringy ?? '', 80)}`;
+}
+
+function extractToolResultText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null) continue;
+    const p = part as Record<string, unknown>;
+    if (p.type === 'text' && typeof p.text === 'string') return p.text;
+  }
+  return '';
+}
+
+function truncate(s: string, limit: number): string {
+  return s.length > limit ? `${s.slice(0, limit)}…` : s;
 }
 
 interface ChildSpec {
@@ -430,23 +566,32 @@ async function startGenerationInner(
     let stderrBuf = '';
     const extraStream = opts.extraStream ?? null;
 
-    const flushLine = (line: string) => {
-      if (line.length === 0 && !stdoutBuf && !stderrBuf) return;
-      if (!logStreamClosed) {
-        try {
-          logStream.write(`${line}\n`);
-        } catch {
-          /* log file already closed — fall through */
+    const flushLine = (rawLine: string) => {
+      if (rawLine.length === 0 && !stdoutBuf && !stderrBuf) return;
+      // claude -p --output-format stream-json emits one JSON event per line;
+      // formatStreamJsonLine decodes each into zero-or-more human-readable
+      // lines (assistant text deltas, tool invocations, lifecycle markers).
+      // Non-JSON lines (mock output, stderr, the "Unknown command:" path)
+      // pass through unchanged. See US-102.
+      const formatted = formatStreamJsonLine(rawLine);
+      for (const line of formatted) {
+        if (line.length === 0 && !stdoutBuf && !stderrBuf) continue;
+        if (!logStreamClosed) {
+          try {
+            logStream.write(`${line}\n`);
+          } catch {
+            /* log file already closed — fall through */
+          }
         }
-      }
-      if (extraStream) {
-        try {
-          extraStream.write(`${line}\n`);
-        } catch {
-          /* per-stage stream may already be closed — ignore */
+        if (extraStream) {
+          try {
+            extraStream.write(`${line}\n`);
+          } catch {
+            /* per-stage stream may already be closed — ignore */
+          }
         }
+        emit({ type: 'log', line });
       }
-      emit({ type: 'log', line });
     };
 
     const pump = (which: 'out' | 'err') => (chunk: Buffer | string) => {
