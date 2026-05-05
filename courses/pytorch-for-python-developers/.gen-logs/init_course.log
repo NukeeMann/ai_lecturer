@@ -1,0 +1,15 @@
+All three artefacts written and validated. Summary:
+
+**Files written under `/courses/pytorch-for-python-developers/`:**
+- `research.md` — six-section research pass (topic summary, prerequisites, key concepts, common misconceptions, suggested ordering, notes for lesson generation) tailored to `level=intermediate`, `durationTarget=standard`, `theoryPracticeRatio=0.5`, and the spec's clarifications (pure PyTorch, NumPy as reference, CPU-only execution).
+- `sources.md` — 5 course-wide references plus ≥ 3 stable per-lesson references for each of the 6 lessons (PyTorch official docs, official tutorials, the PyTorch NeurIPS paper, the original Adam paper, NVIDIA CUDA guide, scikit/Stanford CS231n, Goodfellow et al. *Deep Learning*, 3Blue1Brown). Every entry has `kind`; books and papers carry `author` + `year`.
+- `course.json` — validates against `CourseSchema`. Honours the `clarification` directive to keep the 2-module / 6-lesson shape exactly; only titles refined (lesson 3 → "Devices: CPU, CUDA, and Tensor Placement", lesson 6 → "A Full Training Step End-to-End"). Each lesson slug is exactly `slugify(title)` — every `## <title>` heading in `sources.md` resolves deterministically. `accentColor=terracotta`, `icon=flame`.
+
+**Validation:**
+- `CourseSpecSchema.parse(course-spec.json)` — OK
+- `CourseSchema.parse(course.json)` — OK
+- All 6 lesson slugs unique; each equals `slugify(title)` (caught one mismatch — `nn.Module` slugifies to `nnmodule` because `.` is stripped, not converted to `-`; fixed).
+- Every lesson title has a matching `## <title>` heading in `sources.md`.
+- `git status` shows changes only under `courses/pytorch-for-python-developers/` — nothing touched under `scripts/ralph/`.
+
+No lesson content was generated; the webapp's generation backend will invoke `generate_lesson` per lesson next.

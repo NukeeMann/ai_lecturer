@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "slug": "loss-functions-and-optimizers",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m2",
+  "title": "Loss Functions and Optimizers",
+  "eyebrow": "A MINIMAL TRAINING LOOP",
+  "description": "Pair a scalar loss with an optimizer — and meet the .zero_grad() / .step() pattern that drives every PyTorch training step.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "intro-loss",
+      "title": "A loss is one scalar — chosen to fit the task",
+      "type": "theory",
+      "data": {
+        "markdown": "A **loss function** reduces a `(prediction, target)` pair to a single number — and that scalar is the only thing PyTorch's autograd engine can differentiate without a manual hint. The art is picking one that *matches the task*:\n\n- **Regression** (continuous targets) → `nn.MSELoss` or `nn.L1Loss`.\n- **Multi-class classification** (one true class per sample) → `nn.CrossEntropyLoss`. Its inputs are *raw logits* — do **not** apply a softmax first; the class folds it in.\n- **Binary or multi-label classification** → `nn.BCEWithLogitsLoss`. Same rule: raw logits in, no manual sigmoid.\n\nFor mean-squared error on a batch of $N$ predictions:\n\n$$ \\mathcal{L}_\\text{MSE}(\\hat y, y) = \\frac{1}{N}\\sum_{i=1}^{N}\\bigl(\\hat y_i - y_i\\bigr)^2 $$\n\nIn PyTorch this is two lines:\n\n```python\nloss_fn = nn.MSELoss()\nloss = loss_fn(pred, target)   # scalar tensor\nloss.backward()                 # autograd fills .grad on every parameter\n```\n\n`loss` must be a **scalar** for `loss.backward()` to work without an explicit `gradient=` argument. Reductions (`mean` is the default; `'sum'` and `'none'` exist) are how a per-sample loss collapses to one number."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/nn.html#loss-functions",
+          "title": "Loss Functions — torch.nn documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "losses-table",
+      "title": "Common losses at a glance",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "loss", "label": "Loss", "type": "string", "sortable": false },
+          { "key": "useCase", "label": "Use case", "type": "string", "sortable": false },
+          { "key": "inputs", "label": "Predicted / target shape", "type": "string", "sortable": false },
+          { "key": "torchClass", "label": "torch.nn class", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          { "loss": "MSE", "useCase": "Regression — squared residuals", "inputs": "pred (N, d) float, target (N, d) float", "torchClass": "nn.MSELoss" },
+          { "loss": "L1 (MAE)", "useCase": "Regression robust to outliers — absolute residuals", "inputs": "pred (N, d) float, target (N, d) float", "torchClass": "nn.L1Loss" },
+          { "loss": "Cross-entropy", "useCase": "Multi-class classification (one true class per sample)", "inputs": "logits (N, C) float, target (N,) int64 class indices", "torchClass": "nn.CrossEntropyLoss" },
+          { "loss": "BCE-with-logits", "useCase": "Binary or multi-label classification", "inputs": "logits (N,) or (N, C) float, target same shape, values in {0, 1}", "torchClass": "nn.BCEWithLogitsLoss" }
+        ]
+      }
+    },
+    {
+      "id": "optimizer-step",
+      "title": "An optimizer turns gradients into parameter updates",
+      "type": "theory",
+      "data": {
+        "markdown": "With a scalar loss in hand, an **optimizer** is the object that takes the `.grad` autograd has attached to each parameter and rewrites the parameter in place. The contract is two calls — `.zero_grad()` clears stale gradients *before* the backward pass, and `.step()` applies the update *after* it.\n\nThe simplest update rule, **stochastic gradient descent**, just walks downhill in proportion to the gradient:\n\n$$ \\theta \\leftarrow \\theta - \\eta \\cdot \\nabla_\\theta \\mathcal{L} $$\n\nwhere $\\theta$ is a parameter and $\\eta$ is the learning rate. Adam adds per-parameter running first and second moments on top of that — same `.zero_grad()` / `.step()` interface, more state under the hood, usually a sensible default when you don't want to tune `lr` by hand.\n\n```python\nimport torch.optim as optim\n\nopt_sgd  = optim.SGD(model.parameters(), lr=0.01)\nopt_adam = optim.Adam(model.parameters(), lr=1e-3)\n```\n\nTwo contracts to internalise:\n\n1. **The optimizer holds a reference to `model.parameters()`** — passed in at construction time. If you bolt a new layer onto the model after that point, the optimizer will not see it; rebuild the optimizer.\n2. **`.grad` accumulates.** PyTorch *adds to* `.grad` on each backward call rather than overwriting it. That is the entire reason `.zero_grad()` exists — without it, the next step would walk along a *sum* of stale gradients."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/optim.html",
+          "title": "torch.optim — PyTorch documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://arxiv.org/abs/1412.6980",
+          "title": "Adam: A Method for Stochastic Optimization",
+          "kind": "paper",
+          "author": "Diederik P. Kingma, Jimmy Ba",
+          "year": 2014
+        }
+      ]
+    },
+    {
+      "id": "check-zero-grad",
+      "title": "Why zero_grad?",
+      "type": "quiz",
+      "data": {
+        "question": "Why does every PyTorch training loop call optimizer.zero_grad() before the backward pass?",
+        "options": [
+          ".backward() refuses to run twice in a row unless gradients are cleared first.",
+          "Because .grad accumulates across backward calls — without zero_grad, the next step would walk along a sum of stale gradients.",
+          "PyTorch needs to reset the computation graph between iterations, and zero_grad is what frees it.",
+          "zero_grad flips the model into eval mode for the next batch so dropout doesn't fire during training."
+        ],
+        "correct": [1],
+        "explanation": "PyTorch *adds to* `.grad` on each backward pass — it never overwrites. Without `zero_grad`, the second iteration's `.step()` would update parameters using gradient_iter1 + gradient_iter2, which is almost never what you want. The other options confuse this with unrelated mechanics: the computation graph is freed automatically after one backward (use `retain_graph=True` to opt out), and train/eval mode is toggled by `model.train()` / `model.eval()`, not the optimizer.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-sgd-step",
+      "title": "Implement one SGD step on a tiny linear regression",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Write `sgd_step(w, x, y, lr)` for the one-parameter model `pred = w * x` (no bias, single scalar weight) under mean-squared-error loss. The function should:\n\n1. compute `pred = w * x` (the **forward** pass),\n2. compute `loss = mean((pred - y) ** 2)` (the **loss**),\n3. compute `grad = mean(2 * (pred - y) * x)` (the **backward** — the analytical derivative of the loss with respect to `w`),\n4. compute `new_w = w - lr * grad` (the **optimizer step**),\n5. return `(loss, new_w)` — the loss is the value **before** the step, matching what PyTorch logs *before* `optimizer.step()` mutates the parameters.\n\nIn PyTorch this would be `optim.zero_grad(); loss = ((w*x - y)**2).mean(); loss.backward(); optim.step()` — but Pyodide doesn't ship `torch`, so we replicate the math by hand to feel exactly what `.backward()` and `.step()` are computing under the hood.\n\n```\n>>> import numpy as np\n>>> sgd_step(2.0, np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.01)\n(0.0, 2.0)\n```",
+        "starterCode": "import numpy as np\n\ndef sgd_step(w, x, y, lr):\n    \"\"\"One SGD step on pred = w * x with mean-squared-error loss.\n\n    Args:\n        w: scalar float — the parameter being trained.\n        x: 1-D numpy array of inputs.\n        y: 1-D numpy array of targets, same length as x.\n        lr: scalar float — the learning rate.\n    Returns:\n        (loss_before_step: float, new_w: float)\n    \"\"\"\n    # 1. forward:  pred = w * x\n    # 2. loss   :  mean((pred - y)**2)\n    # 3. grad   :  d loss / d w  =  mean(2 * (pred - y) * x)\n    # 4. step   :  w_new = w - lr * grad\n    return 0.0, w\n",
+        "tests": [
+          {
+            "name": "loss_is_zero_at_optimum",
+            "body": "import numpy as np\nloss, new_w = sgd_step(2.0, np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.01)\nassert loss == 0.0\nassert new_w == 2.0",
+            "hidden": false
+          },
+          {
+            "name": "single_step_loss_and_w_match_analytical_values",
+            "body": "import numpy as np\nloss, new_w = sgd_step(0.0, np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.01)\nassert abs(loss - 56.0 / 3.0) < 1e-9\nassert abs(new_w - 56.0 / 300.0) < 1e-9"
+          },
+          {
+            "name": "lr_zero_leaves_w_unchanged",
+            "body": "import numpy as np\n_, new_w = sgd_step(0.5, np.array([1.0, 2.0, 3.0]), np.array([2.0, 4.0, 6.0]), 0.0)\nassert new_w == 0.5"
+          },
+          {
+            "name": "many_steps_converge_to_true_slope",
+            "body": "import numpy as np\nx = np.linspace(-1.0, 1.0, 32)\ny = 2.0 * x\nw = 0.0\nfor _ in range(500):\n    _, w = sgd_step(w, x, y, 0.05)\nassert abs(w - 2.0) < 1e-3"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef sgd_step(w, x, y, lr):\n    pred = w * x\n    loss = float(((pred - y) ** 2).mean())\n    grad = float((2.0 * (pred - y) * x).mean())\n    new_w = w - lr * grad\n    return loss, new_w\n"
+      }
+    },
+    {
+      "id": "play-tune",
+      "title": "Tune the learning rate, watch the loss",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\nx = np.linspace(-1.0, 1.0, 32)\ny = 2.0 * x  # true slope w = 2.0; we start from w = 0.0\n\nw = 0.0\nlr = 0.05  # try 0.01, 0.1, 0.5, 1.5 — what breaks first?\nfor step in range(50):\n    pred = w * x\n    loss = float(((pred - y) ** 2).mean())\n    grad = float((2.0 * (pred - y) * x).mean())\n    w = w - lr * grad\n    if step % 10 == 0:\n        print(f'step {step:3d}  loss={loss:.6f}  w={w:.4f}')\nprint(f'final w = {w:.4f}  (true slope = 2.0)')\n",
+        "encouragement": "Push the learning rate up until the loss diverges — that boundary is what every optimizer's lr schedule is fighting to stay below."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/docs/stable/nn.html#loss-functions",
+      "title": "Loss Functions — torch.nn documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/optim.html",
+      "title": "torch.optim — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/tutorials/beginner/basics/optimization_tutorial.html",
+      "title": "PyTorch Tutorial — Optimizing Model Parameters",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1412.6980",
+      "title": "Adam: A Method for Stochastic Optimization",
+      "kind": "paper",
+      "author": "Diederik P. Kingma, Jimmy Ba",
+      "year": 2014
+    },
+    {
+      "url": "https://www.manning.com/books/deep-learning-with-pytorch",
+      "title": "Deep Learning with PyTorch",
+      "kind": "book",
+      "author": "Eli Stevens, Luca Antiga, Thomas Viehmann",
+      "year": 2020
+    }
+  ]
+}
