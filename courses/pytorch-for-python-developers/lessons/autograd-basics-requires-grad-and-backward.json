@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "slug": "autograd-basics-requires-grad-and-backward",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m1",
+  "title": "Autograd Basics: requires_grad and backward()",
+  "eyebrow": "TENSORS & AUTOGRAD",
+  "description": "Opt a tensor into the autograd graph with requires_grad, run a backward pass, and read the accumulated gradient off .grad — the one feature that makes PyTorch not just NumPy with a GPU.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "what-autograd-does",
+      "title": "What autograd does",
+      "type": "theory",
+      "data": {
+        "markdown": "NumPy does arithmetic. PyTorch does arithmetic **and** keeps track of how to differentiate it. That bookkeeping is called **autograd**, and it is the one feature that distinguishes a `torch.Tensor` from a `numpy.ndarray`.\n\nThree pieces are involved:\n\n1. **`requires_grad`.** A per-tensor opt-in. Set it to `True` on the leaves whose gradients you want — model parameters during training, rarely the input.\n2. **The dynamic computation graph.** Whenever a tensor with `requires_grad=True` flows through an op (`+`, `*`, `**`, `torch.matmul`, …), PyTorch records that op as a node in a directed acyclic graph. The graph is rebuilt from scratch on every forward pass.\n3. **`.backward()`.** Calling `.backward()` on a *scalar* output traverses the graph in reverse, applies the chain rule at every node, and accumulates the result on the `.grad` attribute of every leaf that opted in.\n\nThe chain rule for a single composition is the rule the engine repeats at every node:\n\n$$ \\frac{\\partial L}{\\partial x} \\;=\\; \\frac{\\partial L}{\\partial y} \\cdot \\frac{\\partial y}{\\partial x} $$\n\nIn a model with millions of parameters, `.backward()` is just this chain-rule step applied along every path of the recorded graph — once, end-to-end. Every parameter ends up with its `.grad` filled in, ready for the optimizer."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/tutorials/beginner/basics/autogradqs_tutorial.html",
+          "title": "PyTorch Tutorial — Automatic Differentiation with torch.autograd",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tiny-graph-by-hand",
+      "title": "A tiny graph, walked by hand",
+      "type": "theory",
+      "data": {
+        "markdown": "The smallest interesting autograd example: differentiate $y = x^3$ at $x = 2$. By hand:\n\n$$ y = x^3 \\quad\\Longrightarrow\\quad \\frac{dy}{dx} = 3x^2 \\quad\\Longrightarrow\\quad \\left.\\frac{dy}{dx}\\right|_{x=2} = 12 $$\n\nIn PyTorch the same computation is four lines:\n\n```python\nimport torch\n\nx = torch.tensor(2.0, requires_grad=True)\ny = x ** 3\ny.backward()           # reverse pass through the graph\nprint(x.grad)          # tensor(12.)\n```\n\nA few details worth noticing:\n\n- **`x` is a leaf** — created directly by you, not the output of an op. Only leaves with `requires_grad=True` accumulate `.grad`. `y` is *not* a leaf, so `y.grad` stays `None` after the backward pass (PyTorch even warns you if you try to read it).\n- **`y` must be a scalar** for the parameterless `y.backward()` to work. If `y` is a vector you either reduce it first (`y.sum().backward()`) or pass an explicit `gradient=` argument.\n- **The graph is freed by default** once `.backward()` finishes. Calling `y.backward()` a second time on the *same* `y` raises `RuntimeError: Trying to backward through the graph a second time`. Pass `retain_graph=True` only when you genuinely need it — almost never in normal training, where each iteration rebuilds the graph from scratch."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/notes/autograd.html",
+          "title": "Autograd mechanics — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "check-grad-accumulation",
+      "title": "What does .backward() do to an existing .grad?",
+      "type": "quiz",
+      "data": {
+        "question": "You call `loss.backward()`, then run a fresh forward pass and call `loss.backward()` again — without touching `.grad` in between. What happens to a leaf parameter's `.grad`?",
+        "options": [
+          "It is overwritten with the newly-computed gradient.",
+          "It is added to — the new gradient accumulates onto the previous value.",
+          "It is reset to None and then filled with the new gradient.",
+          "PyTorch raises an error because a tensor can only be backwarded through once."
+        ],
+        "correct": [1],
+        "explanation": "PyTorch *accumulates* gradients on `.grad` — every `.backward()` call **adds** to whatever was already there. That is exactly why every training loop calls `optimizer.zero_grad()` (or `param.grad = None`) before the next forward pass: without that reset, this iteration's gradient would be polluted by leftovers from the previous one. The graph itself is freed after each backward (so calling backward through the literal *same* `y` twice does raise), but starting a fresh forward pass and backwarding through the new `y` is fine — and it accumulates onto whatever `.grad` already held.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "fill-in-the-ritual",
+      "title": "Fill in the canonical autograd ritual",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Complete the four-line autograd ritual for $y = x^3$ at $x = 2$. Three slots: the keyword that opts a tensor into the autograd graph, the method that triggers the reverse pass, and the attribute where the gradient lands.",
+        "language": "python",
+        "template": "import torch\n\nx = torch.tensor(2.0, {{optin}})\ny = x ** 3\n\ny.{{trigger}}()\nprint(float(x.{{readout}}))   # 12.0\n",
+        "slots": [
+          {
+            "id": "optin",
+            "hint": "Per-tensor flag that opts this leaf into the autograd graph.",
+            "validation": { "kind": "oneOf", "values": ["requires_grad=True"] }
+          },
+          {
+            "id": "trigger",
+            "hint": "Method on a scalar tensor that runs reverse-mode autodiff through the recorded graph.",
+            "validation": { "kind": "exact", "value": "backward" }
+          },
+          {
+            "id": "readout",
+            "hint": "Attribute on a leaf tensor where the accumulated gradient lands.",
+            "validation": { "kind": "exact", "value": "grad" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-manual-chain-rule",
+      "title": "What backward does at one node",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "When `.backward()` traverses the graph it applies the local chain rule at every node. For an affine op $y = w \\cdot x + b$ the local Jacobians are simple:\n\n$$ \\frac{\\partial y}{\\partial w} = x, \\qquad \\frac{\\partial y}{\\partial b} = 1, \\qquad \\frac{\\partial y}{\\partial x} = w $$\n\nGiven the upstream gradient $\\frac{\\partial L}{\\partial y}$, the chain rule yields:\n\n$$ \\frac{\\partial L}{\\partial w} = x \\cdot \\frac{\\partial L}{\\partial y}, \\qquad \\frac{\\partial L}{\\partial b} = \\frac{\\partial L}{\\partial y}, \\qquad \\frac{\\partial L}{\\partial x} = w \\cdot \\frac{\\partial L}{\\partial y} $$\n\nWrite `linear_backward(w, x, dL_dy)` that returns the tuple `(dL_dw, dL_db, dL_dx)` — exactly what autograd would put on each leaf after `.backward()` for this single node. Use plain Python floats (Pyodide has no `torch`, so we exercise the maths directly).\n\n```\n>>> linear_backward(3.0, 2.0, 1.0)\n(2.0, 1.0, 3.0)\n```",
+        "starterCode": "def linear_backward(w, x, dL_dy):\n    # y = w * x + b\n    # Return (dL/dw, dL/db, dL/dx) given the upstream gradient dL/dy.\n    # No torch needed — this is exactly what autograd computes at one affine node.\n    return (0.0, 0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "matches_worked_example",
+            "body": "dw, db, dx = linear_backward(3.0, 2.0, 1.0)\nassert dw == 2.0 and db == 1.0 and dx == 3.0",
+            "hidden": false
+          },
+          {
+            "name": "zero_upstream_zeroes_all_grads",
+            "body": "assert linear_backward(7.5, -4.0, 0.0) == (0.0, 0.0, 0.0)"
+          },
+          {
+            "name": "db_equals_upstream_regardless_of_w_and_x",
+            "body": "_, db, _ = linear_backward(123.0, -45.6, 2.5)\nassert db == 2.5"
+          },
+          {
+            "name": "dw_and_dx_swap_when_w_and_x_swap",
+            "body": "dw1, _, dx1 = linear_backward(2.0, 5.0, 1.0)\ndw2, _, dx2 = linear_backward(5.0, 2.0, 1.0)\nassert dw1 == dx2 and dx1 == dw2"
+          }
+        ],
+        "solution": "def linear_backward(w, x, dL_dy):\n    dL_dw = x * dL_dy\n    dL_db = dL_dy\n    dL_dx = w * dL_dy\n    return (dL_dw, dL_db, dL_dx)\n"
+      },
+      "sources": [
+        {
+          "url": "https://cs231n.github.io/optimization-2/",
+          "title": "CS231n — Backpropagation, Intuitions",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "title": "Compose two affine nodes by hand",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Compose two affine ops by hand and watch the chain rule cascade:\n#     y = w1 * x  + b1     # node 1\n#     z = w2 * y  + b2     # node 2\n# So dL/dw1 should equal x  * w2 * dL/dz,\n# and dL/dx  should equal w1 * w2 * dL/dz.\n\nw1, b1 = 2.0, 0.5\nw2, b2 = -1.5, 1.0\nx = 3.0\n\ny = w1 * x + b1\nz = w2 * y + b2\n\n# Pretend the loss has gradient dL/dz = 1.0 flowing in:\ndL_dz = 1.0\n\n# Local backward through node 2 (z = w2*y + b2):\ndL_dw2 = y  * dL_dz\ndL_db2 = dL_dz\ndL_dy  = w2 * dL_dz\n\n# Local backward through node 1 (y = w1*x + b1):\ndL_dw1 = x  * dL_dy\ndL_db1 = dL_dy\ndL_dx  = w1 * dL_dy\n\nprint('forward:', y, z)\nprint('grads  :', dL_dw1, dL_db1, dL_dw2, dL_db2, dL_dx)\n\n# Try changing w1 / w2 / x / dL_dz and see the gradients move — this is\n# exactly what z.backward() would put on each leaf if every variable above\n# were a torch tensor with requires_grad=True.\n",
+        "encouragement": "Tweak any of w1, w2, x, or dL_dz and watch how a small change at the loss propagates through the chain — autograd is just this, repeated."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/tutorials/beginner/basics/autogradqs_tutorial.html",
+      "title": "PyTorch Tutorial — Automatic Differentiation with torch.autograd",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/notes/autograd.html",
+      "title": "Autograd mechanics — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://openreview.net/pdf?id=BJJsrmfCZ",
+      "title": "Automatic differentiation in PyTorch",
+      "kind": "paper",
+      "author": "Adam Paszke, Sam Gross, Soumith Chintala, Gregory Chanan, Edward Yang, Zachary DeVito, Zeming Lin, Alban Desmaison, Luca Antiga, Adam Lerer",
+      "year": 2017
+    },
+    {
+      "url": "https://cs231n.github.io/optimization-2/",
+      "title": "CS231n — Backpropagation, Intuitions",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.manning.com/books/deep-learning-with-pytorch",
+      "title": "Deep Learning with PyTorch",
+      "kind": "book",
+      "author": "Eli Stevens, Luca Antiga, Thomas Viehmann",
+      "year": 2020
+    }
+  ]
+}

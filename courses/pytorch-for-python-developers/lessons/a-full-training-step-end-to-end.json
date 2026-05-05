@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "slug": "a-full-training-step-end-to-end",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m2",
+  "title": "A Full Training Step End-to-End",
+  "eyebrow": "MINIMAL TRAINING LOOP",
+  "description": "Compose the canonical six-line training step — zero_grad → forward → loss → backward → step — and run it for fifty iterations on a tiny synthetic regression.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "the-six-lines",
+      "title": "The canonical six-line training step",
+      "type": "theory",
+      "data": {
+        "markdown": "You now have all the pieces. An `nn.Module` exposes parameters. A loss function maps `(prediction, target)` to a scalar tensor. An optimizer holds a reference to those parameters plus a learning rate. The canonical PyTorch training **step** wires them together in six lines:\n\n```python\nfor x, y in dataloader:\n    optim.zero_grad()              # 1. clear last iteration's gradients\n    y_hat = model(x)               # 2. forward pass — builds the autograd graph\n    loss = loss_fn(y_hat, y)       # 3. scalar loss\n    loss.backward()                # 4. reverse-mode autodiff fills .grad on every parameter\n    optim.step()                   # 5. apply the update rule (e.g. SGD: p ← p − lr · p.grad)\n    running_loss += loss.item()    # 6. detach the scalar for logging\n```\n\nFor mean-squared-error regression, line 3 evaluates\n\n$$\\mathcal{L}(\\theta) = \\frac{1}{n}\\sum_{i=1}^{n}\\bigl(\\hat{y}_i - y_i\\bigr)^2$$\n\nand line 5 applies the gradient-descent update $\\theta \\leftarrow \\theta - \\eta\\, \\nabla_{\\theta}\\mathcal{L}$. A full *training loop* is just this step run inside `for epoch in range(num_epochs): for batch in dataloader:` — there is no extra ceremony to learn. Every PyTorch script you read in the wild is a variation on these six lines."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/tutorials/beginner/basics/optimization_tutorial.html",
+          "title": "PyTorch Tutorial — Optimizing Model Parameters",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "what-each-call-does",
+      "title": "What each call actually does",
+      "type": "theory",
+      "data": {
+        "markdown": "The three method calls have very different jobs and they are easy to mix up.\n\n- **`optim.zero_grad()`** — sets every `p.grad` to zero (or to `None` with `set_to_none=True`). Without it, the *next* `loss.backward()` **adds** to whatever was already in `.grad`. Backward accumulates; it does not replace. This is the single most-asked *\"why is my model not training\"* question on every PyTorch forum.\n- **`loss.backward()`** — walks the computation graph in reverse and writes `.grad` on every leaf tensor with `requires_grad=True`. By default the graph is freed afterwards: a second `.backward()` on the same graph raises unless you pass `retain_graph=True`.\n- **`optim.step()`** — reads the freshly-written `.grad` values and updates the parameters in place. It does *not* clear `.grad` afterwards — that is `zero_grad`'s job at the top of the next iteration.\n\n`loss.item()` is the bridge from a 0-D tensor back to a Python `float`. Use it for logging — it detaches from the graph, so accumulating `running_loss += loss.item()` over many steps does not silently keep every batch's computation graph alive in memory."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/optim.html",
+          "title": "torch.optim — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "check-zero-grad",
+      "title": "Quick check: what if you forget zero_grad?",
+      "type": "quiz",
+      "data": {
+        "question": "You delete `optim.zero_grad()` from the training step and keep every other line unchanged. What happens?",
+        "options": [
+          "Nothing changes — `loss.backward()` zeroes the gradients before computing them.",
+          "Gradients from previous iterations accumulate into `.grad`, so each step uses the sum of every prior gradient and the loss usually diverges.",
+          "PyTorch raises `RuntimeError: gradients not zeroed` and the training loop crashes immediately.",
+          "The model trains faster because the leftover gradients act like SGD momentum."
+        ],
+        "correct": [1],
+        "explanation": "PyTorch's autograd `.backward()` **adds** to `.grad`; it never replaces. Without `zero_grad()`, every iteration's gradient is summed into the previous ones — by step 10 you are stepping along the sum of ten gradients, almost always pointing nowhere useful, and the loss explodes. PyTorch raises no error: it has no way to tell whether you wanted the accumulation (a real, deliberate technique used for large effective batch sizes) or forgot. Genuine SGD momentum is implemented by `SGD(momentum=0.9)` via a separate buffer — it is not what raw gradient accumulation gives you.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "fill-the-idiom",
+      "title": "Fill in the canonical PyTorch training step",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Three method names frame the forward pass in every PyTorch training script. Fill them in. (No tests run on this exercise — the model uses `torch`, which is not available in the in-browser Python; the slot grader checks the names directly.)",
+        "language": "python",
+        "template": "import torch\nimport torch.nn as nn\n\nmodel = nn.Linear(1, 1)\nloss_fn = nn.MSELoss()\noptim = torch.optim.SGD(model.parameters(), lr=0.1)\n\nx = torch.randn(32, 1)\ny = 2.0 * x + 1.0\n\nfor step in range(50):\n    optim.{{clear_grads}}()\n    y_hat = model(x)\n    loss = loss_fn(y_hat, y)\n    loss.{{run_backward}}()\n    optim.{{apply_update}}()\n",
+        "slots": [
+          {
+            "id": "clear_grads",
+            "hint": "Method on the optimizer that resets every parameter's .grad before the new forward pass.",
+            "validation": { "kind": "exact", "value": "zero_grad" }
+          },
+          {
+            "id": "run_backward",
+            "hint": "Method on the scalar loss tensor that runs reverse-mode autodiff and fills .grad on every leaf parameter.",
+            "validation": { "kind": "exact", "value": "backward" }
+          },
+          {
+            "id": "apply_update",
+            "hint": "Method on the optimizer that applies the SGD update rule once per iteration.",
+            "validation": { "kind": "exact", "value": "step" }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 1,
+            "markdown": "Each blank is a single method name — no parentheses, no module path."
+          },
+          {
+            "revealAfterAttempts": 3,
+            "markdown": "The order is `zero_grad → forward → loss → backward → step`. The first blank is on the optimizer; the second is on the loss tensor; the third is on the optimizer again."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-train-step",
+      "title": "Run one SGD step by hand",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "PyTorch's `optim.step()` does the same thing under the hood that you would do with paper and pencil: subtract `lr · gradient` from each parameter. Implement that step explicitly for the simplest possible model — a one-feature linear regression $\\hat y = w x + b$ — using only NumPy.\n\nWrite `train_step(x, y, w, b, lr)` that performs **one** gradient-descent step on the MSE loss\n\n$$\\mathcal L(w, b) = \\frac{1}{n}\\sum_{i=1}^{n}\\bigl(w x_i + b - y_i\\bigr)^2$$\n\nand returns `(new_w, new_b, loss)` where `loss` is the **MSE evaluated *before* the update** (a Python `float`). Closed-form gradients:\n\n$$\\frac{\\partial \\mathcal L}{\\partial w} = \\frac{2}{n}\\sum_i\\bigl(w x_i + b - y_i\\bigr) x_i, \\qquad \\frac{\\partial \\mathcal L}{\\partial b} = \\frac{2}{n}\\sum_i\\bigl(w x_i + b - y_i\\bigr).$$\n\n```\n>>> w, b, loss = train_step(np.array([0.0, 1.0]), np.array([1.0, 3.0]), 0.0, 0.0, 0.1)\n>>> round(loss, 4)\n5.0\n```\n\n*(Pyodide does not ship PyTorch, so we exercise the gradient math directly. The same `(new_w, new_b)` would come out of one call to `optim.step()` on a `nn.Linear(1, 1)` with SGD.)*",
+        "starterCode": "import numpy as np\n\ndef train_step(x, y, w, b, lr):\n    \"\"\"One SGD step of MSE regression on y_hat = w * x + b.\n\n    Returns (new_w, new_b, loss) where:\n      - new_w, new_b are floats updated by w - lr * dL/dw, b - lr * dL/db\n      - loss is the MSE before the update, as a Python float.\n    \"\"\"\n    # TODO:\n    #   1. predict   y_hat = w * x + b\n    #   2. residual  r = y_hat - y\n    #   3. loss      mean(r ** 2)\n    #   4. grads     dw = (2/n) * sum(r * x);  db = (2/n) * sum(r)\n    #   5. update    new_w = w - lr * dw;     new_b = b - lr * db\n    return w, b, 0.0\n",
+        "tests": [
+          {
+            "name": "loss_is_python_float",
+            "body": "import numpy as np\nx = np.array([0.0, 1.0, 2.0])\ny = np.array([1.0, 3.0, 5.0])\n_, _, loss = train_step(x, y, 0.0, 0.0, 0.1)\nassert isinstance(loss, float), f'loss should be a Python float, got {type(loss).__name__}'",
+            "hidden": false
+          },
+          {
+            "name": "single_step_decreases_loss",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nx = rng.uniform(-1.0, 1.0, size=64)\ny = 2.0 * x + 1.0\nw0, b0 = 0.0, 0.0\n_, _, loss_before = train_step(x, y, w0, b0, 0.0)\nw1, b1, _ = train_step(x, y, w0, b0, 0.1)\n_, _, loss_after = train_step(x, y, w1, b1, 0.0)\nassert loss_after < loss_before, f'one SGD step should reduce the loss; got {loss_before} -> {loss_after}'"
+          },
+          {
+            "name": "gradient_signs_point_toward_truth",
+            "body": "import numpy as np\nx = np.array([1.0, 2.0, 3.0, 4.0])\ny = 2.0 * x\nnew_w, new_b, _ = train_step(x, y, 0.0, 0.0, 0.01)\nassert new_w > 0.0, f'true slope is +2; new_w should move positive, got {new_w}'\nassert abs(new_b) < 1e-6 or new_b > 0.0, f'with y=2x and zero init, new_b should be ~0 or slightly positive, got {new_b}'"
+          },
+          {
+            "name": "fifty_iterations_converge",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nx = rng.uniform(-1.0, 1.0, size=128)\ny = 2.0 * x + 1.0\nw, b = 0.0, 0.0\nfor _ in range(200):\n    w, b, loss = train_step(x, y, w, b, 0.1)\nassert loss < 1e-3, f'after 200 steps with lr=0.1, loss should be < 1e-3; got {loss}'\nassert abs(w - 2.0) < 0.05, f'w should converge to ~2.0; got {w}'\nassert abs(b - 1.0) < 0.05, f'b should converge to ~1.0; got {b}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef train_step(x, y, w, b, lr):\n    n = len(x)\n    y_hat = w * x + b\n    r = y_hat - y\n    loss = float(np.mean(r ** 2))\n    dw = (2.0 / n) * float(np.sum(r * x))\n    db = (2.0 / n) * float(np.sum(r))\n    new_w = float(w - lr * dw)\n    new_b = float(b - lr * db)\n    return new_w, new_b, loss\n"
+      }
+    },
+    {
+      "id": "sandbox-watch-loss-drop",
+      "title": "Watch the loss drop",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Synthetic data: y = 2x + 1 + small Gaussian noise.\nrng = np.random.default_rng(0)\nx = rng.uniform(-1.0, 1.0, size=64)\ny = 2.0 * x + 1.0 + 0.05 * rng.standard_normal(64)\n\n# def train_step(x, y, w, b, lr):  ...   # paste your solution from the previous section\n\nw, b = 0.0, 0.0\nlr = 0.1\n\n# for step in range(80):\n#     w, b, loss = train_step(x, y, w, b, lr)\n#     if step % 10 == 0:\n#         print(f'step={step:3d}  w={w:6.3f}  b={b:6.3f}  loss={loss:.5f}')\n\n# Things to try:\n#   - lower lr to 0.01: convergence slows, loss curve becomes a smooth glide\n#   - raise lr to 1.5:  the same code diverges to nan within a handful of steps\n#   - replace the noise with rng.standard_normal(64) (sd=1.0): the floor on loss rises\n",
+        "encouragement": "Drop the learning rate to 0.01 and watch convergence slow; raise it to 1.5 and watch the loss explode — the same edge cases bite a real PyTorch loop, just with a hidden `nan` instead of a crash."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/tutorials/beginner/basics/optimization_tutorial.html",
+      "title": "PyTorch Tutorial — Optimizing Model Parameters",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html",
+      "title": "PyTorch Tutorial — Training a Classifier (CIFAR-10)",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/generated/torch.no_grad.html",
+      "title": "torch.no_grad — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/optim.html",
+      "title": "torch.optim — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.manning.com/books/deep-learning-with-pytorch",
+      "title": "Deep Learning with PyTorch",
+      "kind": "book",
+      "author": "Eli Stevens, Luca Antiga, Thomas Viehmann",
+      "year": 2020
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=aircAruvnKk",
+      "title": "3Blue1Brown — But what is a neural network?",
+      "kind": "video",
+      "author": "Grant Sanderson",
+      "year": 2017
+    }
+  ]
+}

@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "slug": "devices-cpu-cuda-and-tensor-placement",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m1",
+  "title": "Devices: CPU, CUDA, and Tensor Placement",
+  "eyebrow": "TENSORS & AUTOGRAD",
+  "description": "Every tensor lives on exactly one device — CPU or CUDA — and operations require all operands on the same one. Learn the canonical device-agnostic idiom that ports between machines.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "where-tensors-live",
+      "title": "A tensor lives on exactly one device",
+      "type": "theory",
+      "data": {
+        "markdown": "Every PyTorch tensor's storage lives in **exactly one place** — the host's CPU memory, a CUDA GPU's memory, or another accelerator (`mps` on Apple Silicon, `xpu`, …). Read it off any tensor with `t.device`:\n\n```python\nimport torch\n\nx = torch.randn(2, 3)                  # CPU is the default\nprint(x.device)                        # device(type='cpu')\n\nif torch.cuda.is_available():\n    y = torch.randn(2, 3, device='cuda')\n    print(y.device)                    # device(type='cuda', index=0)\n```\n\nThe rule that drives ~90% of device bugs in real PyTorch code is short:\n\n> **All operands of an operation must live on the same device.**\n\nMix a CPU tensor and a CUDA tensor in one expression and PyTorch refuses:\n\n```\nRuntimeError: Expected all tensors to be on the same device,\nbut found at least two devices, cuda:0 and cpu!\n```\n\nThere is no implicit transfer. You decide where each tensor lives, and you keep them together.\n\n*Device strings.* `'cpu'` is unambiguous. `'cuda'` is shorthand for `'cuda:0'` — the current default GPU; on a multi-GPU box `'cuda:1'` selects index 1. The host program runs on the CPU regardless: the GPU is a co-processor with its own separate memory."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/tensor_attributes.html#torch.device",
+          "title": "torch.device — PyTorch documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://pytorch.org/docs/stable/notes/cuda.html",
+          "title": "CUDA semantics — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "to-is-not-in-place",
+      "title": ".to() returns a new tensor — bind the result",
+      "type": "theory",
+      "data": {
+        "markdown": "The canonical move-and-cast operation is `Tensor.to(...)`. It is **not in place** — it returns a new tensor on the target device (or returns `self` unchanged if the source is already on that device with a matching dtype):\n\n```python\nx = torch.randn(2, 3)                  # CPU\nx.to('cuda')                           # silently discarded — new tensor not bound!\nx = x.to('cuda')                       # correct — rebind to capture the move\n```\n\nThe same shape applies to the convenience aliases — `.cpu()`, `.cuda()`, `.float()`, `.double()` — they all return a new tensor. Forgetting the assignment is one of the most common device bugs in PyTorch code, and it fails *silently*: the old CPU tensor is still bound to `x`, and only later does an op crash when it expects `x` to be on the GPU.\n\nA second subtlety: when source and target match exactly, `.to()` returns the original tensor (no copy). So calling `x = x.to(device)` repeatedly is cheap when nothing changes — useful when you write a function that doesn't know whether its input is already on the target device."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/generated/torch.Tensor.to.html",
+          "title": "torch.Tensor.to — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cloze-device-idiom",
+      "title": "The canonical device-agnostic pattern",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Real PyTorch code rarely hard-codes `'cpu'` or `'cuda'`. It picks the best available device **once**, at the top of the script, then threads that `device` variable through every tensor and model construction. The same source then runs unchanged on a CPU-only laptop and a multi-GPU server.\n\nFill in the three blanks below — this exact idiom appears in nearly every official PyTorch tutorial.",
+        "language": "python",
+        "template": "import torch\n\n# Pick the best device once. On a CPU-only machine this falls back to 'cpu'.\ndevice = 'cuda' if torch.{{cuda_check}} else 'cpu'\n\n# Build a tensor on CPU, then move it to the chosen device.\n# Remember: .to() returns a NEW tensor — always bind the result.\nx = torch.randn(3, 4)\nx = x.{{move_call}}\n\n# Both operands of an op must live on the same device — pass it explicitly.\ny = torch.zeros(3, 4, device={{device_arg}})\n\nprint((x + y).device)\n",
+        "slots": [
+          {
+            "id": "cuda_check",
+            "hint": "The function on the torch.cuda submodule that returns True when a CUDA GPU is reachable. Don't forget the parentheses — it's a call, not a property.",
+            "validation": {
+              "kind": "regex",
+              "pattern": "cuda\\.is_available\\(\\s*\\)"
+            }
+          },
+          {
+            "id": "move_call",
+            "hint": "The method that returns a new tensor on the target device. It takes the device as its argument.",
+            "validation": {
+              "kind": "regex",
+              "pattern": "to\\(\\s*device\\s*\\)"
+            }
+          },
+          {
+            "id": "device_arg",
+            "hint": "Pass the same variable you computed two lines up — don't re-derive it.",
+            "validation": {
+              "kind": "exact",
+              "value": "device"
+            }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 2,
+            "markdown": "The `torch.cuda` submodule has a probe that returns `True` when a CUDA GPU is reachable: `torch.cuda.is_available()`. The `.to(...)` method takes the destination device and returns the moved tensor."
+          }
+        ]
+      }
+    },
+    {
+      "id": "check-misconceptions",
+      "title": "Quick check: what's wrong with this line?",
+      "type": "quiz",
+      "data": {
+        "question": "A colleague writes `x.to('cuda')` on a fresh line, then later sees `RuntimeError: Expected all tensors to be on the same device` when `x` is added to a CUDA tensor. What is the bug?",
+        "options": [
+          "`x.to('cuda')` only works when `x` is already a leaf tensor with `requires_grad=True`.",
+          "`x.to('cuda')` returns a new tensor on the GPU; the result was not bound back to `x`, so `x` is still on the CPU.",
+          "PyTorch silently transfers tensors between devices, so the error must come from something else.",
+          "`'cuda'` is not a valid argument to `.to()` — they should have written `.gpu()` instead."
+        ],
+        "correct": [1],
+        "explanation": "`.to(...)` is **functional**, not in-place. It returns a new tensor on the target device (or `self` if no move is needed) and the colleague forgot to bind the result. The fix is one character: `x = x.to('cuda')`. PyTorch never moves tensors between devices implicitly — the runtime error you see later is exactly the safety net that catches this kind of mistake. (`.gpu()` does not exist; `.cuda()` is a valid alias for `.to('cuda')` but has the same bind-the-result rule.)",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/generated/torch.Tensor.to.html",
+          "title": "torch.Tensor.to — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-probe-devices",
+      "title": "Probe what your machine supports",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import torch\n\n# Discover what devices this machine actually offers.\nprint('CUDA available :', torch.cuda.is_available())\nprint('Device count   :', torch.cuda.device_count() if torch.cuda.is_available() else 0)\nprint('Default dtype  :', torch.get_default_dtype())\n\ndevice = 'cuda' if torch.cuda.is_available() else 'cpu'\nprint('Chosen device  :', device)\n\nx = torch.randn(2, 3)\nprint('x.device       :', x.device)\n\n# The convenience aliases all return a NEW tensor — try forgetting the assignment\n# and watch x.device stay on the CPU even though .cuda() ran without error.\n# x.cuda()                         # discarded\n# x = x.to(device)                 # the right shape\n\n# A re-move to the same device is a no-op (returns self) — cheap to call defensively.\n# x = x.to(device)\n",
+        "encouragement": "Try toggling between `'cpu'` and `'cuda'` (when available) and printing `(x + y).device` after each move — feel where the rule \"same device on both sides\" actually bites."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/docs/stable/tensor_attributes.html#torch.device",
+      "title": "torch.device — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/notes/cuda.html",
+      "title": "CUDA semantics — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/generated/torch.Tensor.to.html",
+      "title": "torch.Tensor.to — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/",
+      "title": "CUDA C++ Programming Guide — Introduction",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.manning.com/books/deep-learning-with-pytorch",
+      "title": "Deep Learning with PyTorch",
+      "kind": "book",
+      "author": "Eli Stevens, Luca Antiga, Thomas Viehmann",
+      "year": 2020
+    }
+  ]
+}

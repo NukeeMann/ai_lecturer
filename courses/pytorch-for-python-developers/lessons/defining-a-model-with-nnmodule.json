@@ -1,0 +1,177 @@
+{
+  "schemaVersion": 1,
+  "slug": "defining-a-model-with-nnmodule",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m2",
+  "title": "Defining a Model with nn.Module",
+  "eyebrow": "TRAINING LOOP",
+  "description": "nn.Module is the container that owns trainable parameters and exposes them to an optimizer — the smallest scaffolding you need to turn tensors into a learnable model.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "why-a-container",
+      "title": "Why we need a container",
+      "type": "theory",
+      "data": {
+        "markdown": "You already have everything you need to do gradient descent: tensors, `requires_grad`, and `.backward()`. But once a model has more than two or three parameters, two practical problems show up:\n\n1. The optimizer needs **a single iterable** of every trainable tensor — not a hand-maintained list you keep in sync by hand.\n2. You want to flip behaviour like Dropout / BatchNorm between training and inference **across the whole model at once** — without reaching into each layer.\n\n`nn.Module` is the base class that solves both. You subclass it, assign your trainable parts as attributes inside `__init__`, and PyTorch automatically registers them so that `model.parameters()` yields every leaf and `model.train()` / `model.eval()` recurses into every submodule.\n\n```python\nimport torch\nfrom torch import nn\n\nclass MLP(nn.Module):\n    def __init__(self, in_dim, hidden, out_dim):\n        super().__init__()\n        self.l1 = nn.Linear(in_dim, hidden)\n        self.l2 = nn.Linear(hidden, out_dim)\n\n    def forward(self, x):\n        return self.l2(torch.relu(self.l1(x)))\n```\n\nThat is the whole shape. Two attributes, one `forward`, and the framework handles the bookkeeping."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/generated/torch.nn.Module.html",
+          "title": "torch.nn.Module — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "the-contract",
+      "title": "The contract: __init__, forward, __call__, parameters",
+      "type": "theory",
+      "data": {
+        "markdown": "Four touchpoints make up the `nn.Module` contract:\n\n- **`__init__`** — call `super().__init__()` first, then assign every submodule (`nn.Linear`, `nn.Conv2d`, …) and every standalone `nn.Parameter` as `self.<name>`. Assignment is the registration mechanism — there is no separate `register()` step you can forget.\n- **`forward(self, x)`** — the actual computation. Take a tensor (or a tuple of tensors), return a tensor. *Never call `.forward()` directly from outside the class.*\n- **`__call__`** — supplied by `nn.Module`. It runs the forward and pre/post hooks the framework relies on. So you write `out = model(x)`, **not** `out = model.forward(x)`.\n- **`.parameters()`** — generator that yields every registered `nn.Parameter` in the module *and recursively in every submodule*. This is exactly what you hand to an optimizer:\n\n```python\nmodel = MLP(4, 16, 2)\noptim = torch.optim.SGD(model.parameters(), lr=1e-2)\n\nfor name, p in model.named_parameters():\n    print(name, tuple(p.shape))\n# l1.weight (16, 4)\n# l1.bias   (16,)\n# l2.weight (2, 16)\n# l2.bias   (2,)\n```\n\nThe four parameters above are exactly what gradient descent will move. If you assign a layer *after* construction, you must rebuild the optimizer — it captured the parameter list at the moment you handed it in."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/tutorials/beginner/basics/buildmodel_tutorial.html",
+          "title": "PyTorch Tutorial — Build the Neural Network",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "check-call-vs-forward",
+      "title": "model(x) or model.forward(x)?",
+      "type": "quiz",
+      "data": {
+        "question": "You finish your `MLP` and want to run a single example through it. Which call is the right one — and why?",
+        "options": [
+          "`model.forward(x)` — `forward` is the method you defined, so calling it directly is the most explicit option.",
+          "`model(x)` — `__call__` runs the registered forward and pre/post hooks; `model.forward(x)` silently skips them.",
+          "Either — `model(x)` is just sugar for `model.forward(x)` and they are completely equivalent.",
+          "`model.__call__(x)` — required so PyTorch can build the autograd graph; `model(x)` does not."
+        ],
+        "correct": [1],
+        "explanation": "`nn.Module.__call__` is what wires the framework to your model: it runs forward and pre/post hooks (used by features like `register_forward_hook`, gradient checkpointing, and some quantization passes). Calling `model.forward(x)` *does* compute the output, but it bypasses those hooks — a trap that bites you the day you add a hook and wonder why it never fires. Always write `model(x)`. (And `model(x)` already routes through `__call__`, so writing it out explicitly buys you nothing.)",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-mini-module",
+      "title": "Build a mini Module in pure Python",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "PyTorch's `nn.Module` is not magic — under the hood it just intercepts attribute assignment, keeps a dict of registered parameters, and dispatches `__call__` to your `forward`. Re-implement the same skeleton in pure Python+NumPy so the contract is unmistakable:\n\nFinish the `Linear` class below — a stand-in for `torch.nn.Linear`. It must:\n\n1. Inherit from `MiniModule` (provided) and call `super().__init__()`.\n2. Create two `MiniParameter` attributes, `self.weight` (shape `(out_features, in_features)`) and `self.bias` (shape `(out_features,)`), initialised with `np.zeros(...)`.\n3. Define `forward(self, x)` that returns `x @ self.weight.value.T + self.bias.value`.\n\nWith those three steps in place, `linear.parameters()` will yield both arrays — and `linear(x)` will dispatch to `forward(x)` — *without you touching `parameters()` or `__call__`*. That is exactly what `nn.Module` does for you in PyTorch.\n\n*(Pyodide does not ship PyTorch, so we exercise the pattern in NumPy. Every name carries over: `MiniParameter` → `nn.Parameter`, `MiniModule` → `nn.Module`, `Linear` → `nn.Linear`.)*",
+        "starterCode": "import numpy as np\n\nclass MiniParameter:\n    \"\"\"Stand-in for nn.Parameter: a trainable array wrapper.\"\"\"\n    def __init__(self, value):\n        self.value = np.asarray(value, dtype=np.float64)\n\nclass MiniModule:\n    \"\"\"Stand-in for nn.Module:\n    - assignment of a MiniParameter registers it,\n    - .parameters() yields every registered MiniParameter,\n    - calling the module dispatches to .forward().\n    \"\"\"\n    def __init__(self):\n        # Use object.__setattr__ to bypass our custom __setattr__ on this one line.\n        object.__setattr__(self, '_params', {})\n\n    def __setattr__(self, name, value):\n        if isinstance(value, MiniParameter):\n            self._params[name] = value\n        super().__setattr__(name, value)\n\n    def parameters(self):\n        return list(self._params.values())\n\n    def __call__(self, x):\n        return self.forward(x)\n\n    def forward(self, x):\n        raise NotImplementedError\n\nclass Linear(MiniModule):\n    \"\"\"Affine layer: y = x @ W.T + b. Mirror of torch.nn.Linear.\"\"\"\n    def __init__(self, in_features, out_features):\n        # TODO 1: call super().__init__()\n        # TODO 2: assign self.weight = MiniParameter(np.zeros((out_features, in_features)))\n        # TODO 3: assign self.bias   = MiniParameter(np.zeros(out_features))\n        pass\n\n    def forward(self, x):\n        # TODO 4: return x @ self.weight.value.T + self.bias.value\n        pass\n",
+        "tests": [
+          {
+            "name": "registers_two_parameters",
+            "body": "layer = Linear(3, 5)\nparams = layer.parameters()\nassert len(params) == 2, f'expected 2 parameters, got {len(params)}'\nassert all(isinstance(p, MiniParameter) for p in params)",
+            "hidden": false
+          },
+          {
+            "name": "weight_and_bias_have_correct_shapes",
+            "body": "layer = Linear(3, 5)\nassert layer.weight.value.shape == (5, 3)\nassert layer.bias.value.shape == (5,)"
+          },
+          {
+            "name": "forward_returns_correct_output_shape",
+            "body": "import numpy as np\nlayer = Linear(4, 2)\nout = layer(np.ones((7, 4)))\nassert out.shape == (7, 2)"
+          },
+          {
+            "name": "calling_module_dispatches_to_forward",
+            "body": "import numpy as np\nlayer = Linear(2, 3)\n# Set weight/bias so we can predict the output exactly.\nlayer.weight.value = np.array([[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])\nlayer.bias.value = np.array([10.0, 20.0, 30.0])\nout = layer(np.array([[2.0, 5.0]]))\nassert np.allclose(out, np.array([[12.0, 25.0, 37.0]]))"
+          }
+        ],
+        "solution": "import numpy as np\n\nclass MiniParameter:\n    def __init__(self, value):\n        self.value = np.asarray(value, dtype=np.float64)\n\nclass MiniModule:\n    def __init__(self):\n        object.__setattr__(self, '_params', {})\n    def __setattr__(self, name, value):\n        if isinstance(value, MiniParameter):\n            self._params[name] = value\n        super().__setattr__(name, value)\n    def parameters(self):\n        return list(self._params.values())\n    def __call__(self, x):\n        return self.forward(x)\n    def forward(self, x):\n        raise NotImplementedError\n\nclass Linear(MiniModule):\n    def __init__(self, in_features, out_features):\n        super().__init__()\n        self.weight = MiniParameter(np.zeros((out_features, in_features)))\n        self.bias = MiniParameter(np.zeros(out_features))\n\n    def forward(self, x):\n        return x @ self.weight.value.T + self.bias.value\n"
+      }
+    },
+    {
+      "id": "cloze-pytorch-mlp",
+      "title": "Now write the same MLP in PyTorch",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Translate the pattern you just built into real PyTorch syntax. Fill in the four blanks so the class is a valid `nn.Module` MLP with two linear layers and a ReLU.\n\n*(This snippet is graded by matching the text you type in each blank — it is not run, because Pyodide does not ship PyTorch. The same code runs unchanged on a real Python install with PyTorch installed.)*",
+        "language": "python",
+        "template": "import torch\nfrom torch import nn\n\nclass MLP(nn.{{base}}):\n    def __init__(self, in_dim, hidden, out_dim):\n        {{super_call}}\n        self.l1 = nn.{{linear}}(in_dim, hidden)\n        self.l2 = nn.Linear(hidden, out_dim)\n\n    def {{method}}(self, x):\n        return self.l2(torch.relu(self.l1(x)))\n",
+        "slots": [
+          {
+            "id": "base",
+            "hint": "The base class every PyTorch model subclasses.",
+            "validation": { "kind": "exact", "value": "Module" }
+          },
+          {
+            "id": "super_call",
+            "hint": "Initialise the nn.Module bookkeeping (the parameter dict, the hook lists, …) before any attribute assignment.",
+            "validation": { "kind": "oneOf", "values": ["super().__init__()", "nn.Module.__init__(self)"] }
+          },
+          {
+            "id": "linear",
+            "hint": "The workhorse affine layer: takes (in_features, out_features) and exposes weight + bias.",
+            "validation": { "kind": "exact", "value": "Linear" }
+          },
+          {
+            "id": "method",
+            "hint": "The method nn.Module's __call__ dispatches to.",
+            "validation": { "kind": "exact", "value": "forward" }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 1,
+            "markdown": "All four blanks are single tokens. The first is the base class name, the second is the parent-class init call, the third is the linear-layer class, the fourth is the method name `nn.Module` looks for."
+          },
+          {
+            "revealAfterAttempts": 3,
+            "markdown": "From top to bottom: `Module`, `super().__init__()`, `Linear`, `forward`."
+          }
+        ]
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/generated/torch.nn.Linear.html",
+          "title": "torch.nn.Linear — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox",
+      "title": "Extend the mini Module",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\nclass MiniParameter:\n    def __init__(self, value):\n        self.value = np.asarray(value, dtype=np.float64)\n\nclass MiniModule:\n    def __init__(self):\n        object.__setattr__(self, '_params', {})\n    def __setattr__(self, name, value):\n        if isinstance(value, MiniParameter):\n            self._params[name] = value\n        super().__setattr__(name, value)\n    def parameters(self):\n        return list(self._params.values())\n    def __call__(self, x):\n        return self.forward(x)\n    def forward(self, x):\n        raise NotImplementedError\n\nclass Linear(MiniModule):\n    def __init__(self, in_features, out_features):\n        super().__init__()\n        # Random init — closer to what nn.Linear actually does.\n        self.weight = MiniParameter(np.random.randn(out_features, in_features) * 0.1)\n        self.bias = MiniParameter(np.zeros(out_features))\n    def forward(self, x):\n        return x @ self.weight.value.T + self.bias.value\n\n# Try assembling a two-layer MLP with a ReLU between them.\n# Hint: a class that owns two Linear submodules. How many parameters does\n# .parameters() give you back? (Note: nested registration of *submodules*\n# is not implemented in our MiniModule — you will see only the params\n# you assign directly. nn.Module recurses into submodules for you.)\n\nclass MLP(MiniModule):\n    def __init__(self, in_dim, hidden, out_dim):\n        super().__init__()\n        self.l1 = Linear(in_dim, hidden)\n        self.l2 = Linear(hidden, out_dim)\n    def forward(self, x):\n        h = self.l1(x)\n        h = np.maximum(h, 0)  # ReLU\n        return self.l2(h)\n\nmodel = MLP(in_dim=4, hidden=16, out_dim=2)\nx = np.random.randn(3, 4)\nprint('output shape :', model(x).shape)\nprint('top-level    :', len(model.parameters()), 'parameters registered (only the ones we assigned directly)')\n",
+        "encouragement": "Add a third Linear layer or a different activation and see how the output shape and parameter count change."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/docs/stable/generated/torch.nn.Module.html",
+      "title": "torch.nn.Module — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/tutorials/beginner/basics/buildmodel_tutorial.html",
+      "title": "PyTorch Tutorial — Build the Neural Network",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/generated/torch.nn.Linear.html",
+      "title": "torch.nn.Linear — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1912.01703",
+      "title": "PyTorch: An Imperative Style, High-Performance Deep Learning Library",
+      "kind": "paper",
+      "author": "Adam Paszke et al.",
+      "year": 2019
+    },
+    {
+      "url": "https://www.deeplearningbook.org/contents/mlp.html",
+      "title": "Deep Learning, Chapter 6: Deep Feedforward Networks",
+      "kind": "book",
+      "author": "Ian Goodfellow, Yoshua Bengio, Aaron Courville",
+      "year": 2016
+    }
+  ]
+}

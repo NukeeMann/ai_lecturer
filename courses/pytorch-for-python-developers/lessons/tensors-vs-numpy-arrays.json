@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "slug": "tensors-vs-numpy-arrays",
+  "courseSlug": "pytorch-for-python-developers",
+  "moduleId": "m1",
+  "title": "Tensors vs NumPy Arrays",
+  "eyebrow": "TENSORS & AUTOGRAD",
+  "description": "A torch.Tensor is a NumPy ndarray with three extras — a device, an opt-in gradient, and a memory-sharing bridge back to NumPy.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "intro",
+      "title": "Tensors are NumPy arrays plus three things",
+      "type": "theory",
+      "data": {
+        "markdown": "If you already think in `numpy.ndarray`, a `torch.Tensor` is the same idea — a strided n-dimensional array of one dtype — with **three extra ideas glued on**:\n\n- **Device.** A tensor's storage lives on the CPU, a CUDA GPU, or another accelerator. Operations require every operand on the *same* device.\n- **`requires_grad`.** Tensors can opt in to **autograd** — the recorded-graph differentiation engine that powers training in PyTorch. NumPy has no equivalent.\n- **A memory-sharing bridge.** `torch.from_numpy(a)` wraps a NumPy buffer and `t.numpy()` unwraps a CPU tensor; on CPU, both views share the same bytes — conversions are usually free.\n\nEverything else in this course composes from these three additions. The shape / dtype / broadcasting / slicing vocabulary you already know from NumPy carries over with the same names."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/tutorials/beginner/basics/tensorqs_tutorial.html",
+          "title": "PyTorch Tutorial — Tensors",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cheatsheet",
+      "title": "NumPy ↔ PyTorch quick reference",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "concept", "label": "What you want", "type": "string", "sortable": false },
+          { "key": "numpy", "label": "NumPy", "type": "string", "sortable": false },
+          { "key": "pytorch", "label": "PyTorch", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          { "concept": "Create from a Python list", "numpy": "np.array([1, 2, 3])", "pytorch": "torch.tensor([1, 2, 3])" },
+          { "concept": "Zeros of a given shape", "numpy": "np.zeros((2, 3))", "pytorch": "torch.zeros(2, 3)" },
+          { "concept": "Random standard-normal", "numpy": "np.random.randn(2, 3)", "pytorch": "torch.randn(2, 3)" },
+          { "concept": "Shape attribute", "numpy": "a.shape", "pytorch": "t.shape  # or t.size()" },
+          { "concept": "Numeric dtype", "numpy": "a.dtype  # e.g. float32", "pytorch": "t.dtype  # e.g. torch.float32" },
+          { "concept": "Reshape (cheap view)", "numpy": "a.reshape(6)", "pytorch": "t.view(6)  # or t.reshape(6)" },
+          { "concept": "Element-wise add", "numpy": "a + b", "pytorch": "t + s" },
+          { "concept": "Matrix multiply", "numpy": "a @ b", "pytorch": "t @ s" },
+          { "concept": "Sum / mean", "numpy": "a.sum() / a.mean()", "pytorch": "t.sum() / t.mean()" },
+          { "concept": "Cast to another dtype", "numpy": "a.astype(np.float32)", "pytorch": "t.float()  # or t.to(torch.float32)" },
+          { "concept": "Bridge to the other library", "numpy": "torch.from_numpy(a)", "pytorch": "t.numpy()  # CPU tensor only" }
+        ]
+      }
+    },
+    {
+      "id": "check-misconception",
+      "title": "PyTorch is just NumPy with a GPU?",
+      "type": "quiz",
+      "data": {
+        "question": "An engineer says \"PyTorch is just NumPy with a GPU.\" Which statement best corrects them?",
+        "options": [
+          "Correct — the only meaningful difference is that tensors can live on a CUDA device.",
+          "Wrong — tensors also track gradients via autograd, which NumPy arrays don't.",
+          "Wrong — tensors and NumPy arrays use entirely separate memory layouts that can never be bridged.",
+          "Correct — torch.Tensor is implemented as a thin wrapper around numpy.ndarray."
+        ],
+        "correct": [1],
+        "explanation": "GPU support is the visible perk, but the load-bearing feature is **autograd** — the dynamic graph PyTorch records over every op on tensors with `requires_grad=True` so that `.backward()` can compute gradients. (CPU tensors can in fact share memory with NumPy arrays via `torch.from_numpy` / `.numpy()`, and `torch.Tensor` is its own C++ class — not an `ndarray` wrapper.) NumPy-with-a-GPU is what CuPy is; PyTorch is NumPy-with-autograd.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "bridge",
+      "title": "The bridge: torch.from_numpy and .numpy()",
+      "type": "theory",
+      "data": {
+        "markdown": "Two functions move data between the libraries — and on the CPU, they **share memory** without copying:\n\n```python\nimport numpy as np\nimport torch\n\na = np.array([1, 2, 3], dtype=np.float32)\nt = torch.from_numpy(a)   # t is a view onto a's buffer\na[0] = 99.0\nprint(t)                  # tensor([99.,  2.,  3.])\n```\n\nThe sharing rule has three caveats worth memorising:\n\n1. **CPU only.** A CUDA tensor cannot share memory with a NumPy array — `t.cpu().numpy()` quietly copies.\n2. **Contiguous, supported dtype.** Non-contiguous tensors and unsupported dtypes (e.g. `bfloat16`) force a copy.\n3. **Lifetime is shared.** As long as either side is alive, the buffer stays alive — don't free the NumPy array while the tensor still references it."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/generated/torch.from_numpy.html",
+          "title": "torch.from_numpy — PyTorch documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-metadata",
+      "title": "Read the metadata a tensor would expose",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "PyTorch's `torch.Tensor` and NumPy's `ndarray` expose **the same four metadata attributes** — `shape`, `dtype`, `ndim`, and the byte size of the underlying buffer. Write `tensor_metadata(arr)` for a NumPy array; the *same* function would work on a torch tensor with one swap (`arr.element_size() * arr.numel()` instead of `arr.nbytes`).\n\nReturn a `dict` with keys:\n\n- `shape` — a `tuple` of ints (the array's shape),\n- `dtype` — a `str` like `'float32'` (`str(arr.dtype)` is the trick),\n- `ndim` — an `int` (number of dimensions),\n- `nbytes` — an `int` (total bytes of the underlying buffer).\n\n```\n>>> tensor_metadata(np.zeros((3, 4), dtype=np.float32))\n{'shape': (3, 4), 'dtype': 'float32', 'ndim': 2, 'nbytes': 48}\n```\n\n*(Pyodide preinstalls NumPy but not PyTorch, so we exercise the NumPy side here — the attribute names are identical on `torch.Tensor`.)*",
+        "starterCode": "import numpy as np\n\ndef tensor_metadata(arr):\n    # Return a dict with keys: shape (tuple), dtype (str), ndim (int), nbytes (int).\n    # The same four attributes exist on torch.Tensor — use\n    #   t.element_size() * t.numel()\n    # in place of arr.nbytes when you meet the torch version next lesson.\n    return {}\n",
+        "tests": [
+          {
+            "name": "shape_is_tuple_of_ints",
+            "body": "import numpy as np\narr = np.zeros((3, 4), dtype=np.float32)\nmd = tensor_metadata(arr)\nassert md['shape'] == (3, 4)\nassert isinstance(md['shape'], tuple)",
+            "hidden": false
+          },
+          {
+            "name": "dtype_is_string",
+            "body": "import numpy as np\narr = np.zeros((2,), dtype=np.float32)\nassert tensor_metadata(arr)['dtype'] == 'float32'"
+          },
+          {
+            "name": "ndim_for_3d_array",
+            "body": "import numpy as np\narr = np.zeros((2, 3, 4))\nmd = tensor_metadata(arr)\nassert md['ndim'] == 3 and isinstance(md['ndim'], int)"
+          },
+          {
+            "name": "nbytes_matches_size_times_itemsize",
+            "body": "import numpy as np\narr = np.zeros((10,), dtype=np.int64)\nassert tensor_metadata(arr)['nbytes'] == 10 * 8"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef tensor_metadata(arr):\n    return {\n        'shape': tuple(arr.shape),\n        'dtype': str(arr.dtype),\n        'ndim': int(arr.ndim),\n        'nbytes': int(arr.nbytes),\n    }\n"
+      }
+    },
+    {
+      "id": "play",
+      "title": "Poke at the array attributes",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\na = np.arange(12, dtype=np.float32).reshape(3, 4)\nprint('shape   :', a.shape)\nprint('dtype   :', a.dtype)\nprint('ndim    :', a.ndim)\nprint('nbytes  :', a.nbytes)\nprint('strides :', a.strides)\n\n# Tweak the dtype, the shape, or the reshape and watch the strides shift.\n# Every attribute above has a same-named friend on torch.Tensor.\n",
+        "encouragement": "Change the dtype to int8 or float64 and watch nbytes and strides update — the same attributes show up unchanged on torch.Tensor next lesson."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/tutorials/beginner/basics/tensorqs_tutorial.html",
+      "title": "PyTorch Tutorial — Tensors",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/tensors.html",
+      "title": "torch.Tensor — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/generated/torch.from_numpy.html",
+      "title": "torch.from_numpy — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/absolute_beginners.html",
+      "title": "NumPy: the absolute basics for beginners",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.manning.com/books/deep-learning-with-pytorch",
+      "title": "Deep Learning with PyTorch",
+      "kind": "book",
+      "author": "Eli Stevens, Luca Antiga, Thomas Viehmann",
+      "year": 2020
+    }
+  ]
+}
