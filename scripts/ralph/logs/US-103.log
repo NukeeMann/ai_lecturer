@@ -1,0 +1,39 @@
+[2026-05-05T21:34:46+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T21:37:44+0200] Now I'll implement. Starting with the sources helper module.
+[2026-05-05T21:38:33+0200] Now create the upload-sources route handler.
+[2026-05-05T21:39:26+0200] Wire draft staging into POST /api/courses (slug finalization). Read the body's `draftId` and call `moveDraftSourcesToCourse` after spec write.
+[2026-05-05T21:39:40+0200] Now the frontend. I need to add a `'choose'` and `'materials'` stage to `/create/page.tsx`.
+[2026-05-05T21:40:05+0200] Now update the page-level state and routing:
+[2026-05-05T21:40:19+0200] Now update `handleGenerate` to pass `draftId` and update the stage rendering:
+[2026-05-05T21:40:31+0200] Now update the JSX to render the new pre-flow stages and the materials banner:
+[2026-05-05T21:40:50+0200] Now add the new components — `StageChoose`, `StageMaterials`, `MaterialsBanner`. I'll add them right after `Stage1` definition or near the top to keep similar stages adjacent. Let me add them before `Stage1`:
+[2026-05-05T21:41:58+0200] Run typecheck to surface any issues quickly:
+[2026-05-05T21:42:08+0200] Typecheck clean. Now write tests for the route + helpers.
+[2026-05-05T21:42:44+0200] Now add tests for the upload-sources route handler. Let me extend `api.test.ts`:
+[2026-05-05T21:42:57+0200] Append the route handler tests to api.test.ts:
+[2026-05-05T21:43:48+0200] All 77 tests pass. Now run the full test suite + typecheck:
+[2026-05-05T21:44:11+0200] All 538 tests pass (was 494). Now browser test via playwright. First boot dev server and detect.
+[2026-05-05T21:45:12+0200] Browser test passed. Verify screenshots exist and check for any leftover state:
+[2026-05-05T21:45:21+0200] Let me also confirm that the `.drafts/` directory will not accidentally end up tracked. I should add it to `.gitignore` since the Codebase Pattern says only `.ralph-locks/` should be ignored. The `.drafts/` is similar — server-side temp scratch — which should be ignored.
+[2026-05-05T21:45:30+0200] Now lint check + final test run + finalize:
+[2026-05-05T21:46:18+0200] Only one warning in my changes — an unused `eslint-disable` directive. Let me remove it:
+[2026-05-05T21:46:35+0200] Clean — zero lint issues in my changed files. Final test run:
+[2026-05-05T21:46:42+0200] Update prd.json + progress.txt and commit.
+[2026-05-05T21:47:00+0200] Append progress entry:
+[2026-05-05T21:47:50+0200] Stop dev server and commit.
+[2026-05-05T21:48:30+0200] US-103 complete. Commit `ef8531c` lands `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary**
+- New entry-choice landing on `/create` (`'Start from scratch'` vs `'I have materials'`); materials path opens a drag-and-drop multi-file picker (PDF/PPTX/DOCX/TXT/JSON, 50 MiB cap).
+- New `POST /api/courses/upload-sources` (multipart) stages files under `<coursesRoot>/.drafts/<draftId>/sources/` with sanitized names + numeric collision suffixes; `DELETE` and `GET` round it out.
+- `POST /api/courses` now consumes an optional top-level `draftId` and moves staged sources into `/courses/<slug>/sources/` via new `moveDraftSourcesToCourse()`.
+- `MaterialsBanner` persists the file list across wizard stages with remove controls.
+- 26 test files / 538 tests pass (was 494). Typecheck clean. Lint clean on changed files. Playwright browser test (`/tmp/us-103-*.png`) verified end-to-end: upload PDF+TXT, both visible, remove PDF, server-side staged file gone, advance to Stage 1.
+[2026-05-05T21:48:30+0200] [result success turns=84 cost=$7.756599750000001] US-103 complete. Commit `ef8531c` lands `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary**
+- New entry-choice landing on `/create` (`'Start from scratch'` vs `'I have materials'`); materials path opens a drag-and-drop multi-file picker (PDF/PPTX/DOCX/TXT/JSON, 50 MiB cap).
+- New `POST /api/courses/upload-sources` (multipart) stages files under `<coursesRoot>/.drafts/<draftId>/sources/` with sanitized names + numeric collision suffixes; `DELETE` and `GET` round it out.
+- `POST /api/courses` now consumes an optional top-level `draftId` and moves staged sources into `/courses/<slug>/sources/` via new `moveDraftSourcesToCourse()`.
+- `MaterialsBanner` persists the file list across wizard stages with remove controls.
+- 26 test files / 538 tests pass (was 494). Typecheck clean. Lint clean on changed files. Playwright browser test (`/tmp/us-103-*.png`) verified end-to-end: upload PDF+TXT, both visible, remove PDF, server-side staged file gone, advance to Stage 1.
