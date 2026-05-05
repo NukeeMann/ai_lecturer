@@ -21,6 +21,8 @@ import {
   DELETE as deleteUploadSources,
   GET as getUploadSources,
 } from '@/app/api/courses/upload-sources/route';
+import { GET as getLogsIndex } from '@/app/api/courses/[slug]/logs/route';
+import { GET as getLogStage } from '@/app/api/courses/[slug]/logs/[stage]/route';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
 import {
@@ -732,6 +734,116 @@ describe('POST /api/courses with draftId (US-103)', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     const res = await postCourse(req);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/courses/[slug]/logs (US-105)', () => {
+  const writeStageLog = async (slug: string, stage: string, content: string) => {
+    const dir = path.join(coursesRoot, slug, 'logs');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, `${stage}.log`), content, 'utf8');
+  };
+
+  it('returns empty stages array when the course has no logs/ dir yet', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const res = await getLogsIndex(new Request('http://x/api/courses/demo/logs'), {
+      params: Promise.resolve({ slug: 'demo' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { stages: unknown[] };
+    expect(body.stages).toEqual([]);
+  });
+
+  it('lists each .log basename, sorted by mtime ascending', async () => {
+    await writeStageLog('demo', 'init_course', 'init line\n');
+    // Stagger mtimes so the sort is deterministic.
+    await new Promise((r) => setTimeout(r, 12));
+    await writeStageLog('demo', 'tensors', 'lesson1 line\n');
+    await new Promise((r) => setTimeout(r, 12));
+    await writeStageLog('demo', 'autograd', 'lesson2 line\n');
+
+    const res = await getLogsIndex(new Request('http://x/api/courses/demo/logs'), {
+      params: Promise.resolve({ slug: 'demo' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { stages: { stage: string; bytes: number }[] };
+    expect(body.stages.map((s) => s.stage)).toEqual(['init_course', 'tensors', 'autograd']);
+    const init = body.stages.find((s) => s.stage === 'init_course');
+    expect(init?.bytes).toBe(Buffer.byteLength('init line\n', 'utf8'));
+  });
+
+  it('skips non-.log files in logs/', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'logs');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'init_course.log'), 'a', 'utf8');
+    await fs.writeFile(path.join(dir, 'failed_report.json'), '[]', 'utf8');
+    const res = await getLogsIndex(new Request('http://x/api/courses/demo/logs'), {
+      params: Promise.resolve({ slug: 'demo' }),
+    });
+    const body = (await res.json()) as { stages: { stage: string }[] };
+    expect(body.stages.map((s) => s.stage)).toEqual(['init_course']);
+  });
+
+  it('rejects an unsafe slug', async () => {
+    const res = await getLogsIndex(new Request('http://x/api/courses/..%2fevil/logs'), {
+      params: Promise.resolve({ slug: '../evil' }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/courses/[slug]/logs/[stage] (US-105)', () => {
+  const writeStageLog = async (slug: string, stage: string, content: string) => {
+    const dir = path.join(coursesRoot, slug, 'logs');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, `${stage}.log`), content, 'utf8');
+  };
+
+  it('returns the persisted log as text/plain', async () => {
+    const body = '[mock init_course] researching topic...\n[mock init_course] done\n';
+    await writeStageLog('demo', 'init_course', body);
+    const res = await getLogStage(new Request('http://x/api/courses/demo/logs/init_course'), {
+      params: Promise.resolve({ slug: 'demo', stage: 'init_course' }),
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toMatch(/^text\/plain/);
+    expect(await res.text()).toBe(body);
+  });
+
+  it('serves a lesson stage by its disk basename', async () => {
+    const body = '=== Attempt 1 ===\nworking...\n';
+    await writeStageLog('demo', 'tensors-vs-numpy-arrays', body);
+    const res = await getLogStage(
+      new Request('http://x/api/courses/demo/logs/tensors-vs-numpy-arrays'),
+      {
+        params: Promise.resolve({ slug: 'demo', stage: 'tensors-vs-numpy-arrays' }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(body);
+  });
+
+  it('returns 404 when the stage log is missing', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo', 'logs'), { recursive: true });
+    const res = await getLogStage(new Request('http://x/api/courses/demo/logs/missing'), {
+      params: Promise.resolve({ slug: 'demo', stage: 'missing' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects path-traversal in stage param', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const res = await getLogStage(new Request('http://x/api/courses/demo/logs/..'), {
+      params: Promise.resolve({ slug: 'demo', stage: '..' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects an unsafe slug', async () => {
+    const res = await getLogStage(new Request('http://x/api/courses/..%2fevil/logs/init_course'), {
+      params: Promise.resolve({ slug: '../evil', stage: 'init_course' }),
+    });
     expect(res.status).toBe(400);
   });
 });

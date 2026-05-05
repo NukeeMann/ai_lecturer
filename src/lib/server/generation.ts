@@ -6,7 +6,9 @@
 // course.json — no ralph.sh, no worktrees, no branches, no git push. Both
 // stages run with stdout+stderr captured to the run's event log AND tee'd to
 // `/courses/<slug>/.generation.log`. Per-stage output is also tee'd to
-// structured per-stage logs under `/courses/<slug>/.gen-logs/`. Per-lesson
+// structured per-stage logs under `/courses/<slug>/logs/` so the wizard can
+// reload completed-stage scrollback after the pipeline moves on (US-105).
+// Per-lesson
 // `claude` calls are retried up to N times (LESSON_MAX_RETRIES, default 2 →
 // 3 total attempts) with each attempt subject to LESSON_TIMEOUT_SEC
 // (default 1800s); on retry the prompt is prepended with a
@@ -479,6 +481,14 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
   // guard and the `startingGeneration = true` assignment) — otherwise two
   // concurrent callers both pass the guard before either reaches the
   // assignment and both go on to spawn a pipeline. See US-101.
+  // Idempotent attach for SAME slug: when the wizard's Stage 6 effect
+  // double-fires (React StrictMode dev double-mount, or US-106 banner
+  // resume), we'd rather hand back the existing run than 409 the user. The
+  // safety net only fires when slug matches; a different slug while a run
+  // is in flight still conflicts as before. See US-105.
+  if (activeRun && !activeRun.finished && activeRun.slug === slug) {
+    return activeRun;
+  }
   if ((activeRun && !activeRun.finished) || startingGeneration) {
     throw new GenerationConflictError();
   }
@@ -961,7 +971,7 @@ async function startGenerationInner(
           lessonSlug: lesson.slug,
           attempts: result.attempts,
           lastError: result.lastError || 'Cancelled by user',
-          logPath: `.gen-logs/${lesson.slug}.log`,
+          logPath: `logs/${lesson.slug}.log`,
         });
         await writeFailedReport(failedReport);
         finalize('error', 'Cancelled by user', failedLessons);
@@ -974,7 +984,7 @@ async function startGenerationInner(
           lessonSlug: lesson.slug,
           attempts: result.attempts,
           lastError: result.lastError,
-          logPath: `.gen-logs/${lesson.slug}.log`,
+          logPath: `logs/${lesson.slug}.log`,
         });
       }
       emit({ type: 'progress', current: i + 1, total });

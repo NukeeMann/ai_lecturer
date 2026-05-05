@@ -779,8 +779,28 @@ describe('startGeneration spawn wrapper', () => {
     expect(log).toContain('lesson-stderr-line');
   });
 
-  it('rejects a second concurrent run with GenerationConflictError', async () => {
+  it('idempotently returns the active run when the same slug is requested again (US-105)', async () => {
+    // The wizard's Stage 6 effect can fire POST /generate twice under React
+    // StrictMode dev double-mount; we'd rather hand back the existing run
+    // than 409 the user. Idempotency is keyed strictly on the slug.
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    await scripted.nextChild(); // claude is now running but not exited
+
+    const sameRun = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    expect(sameRun).toBe(run);
+  });
+
+  it('rejects a concurrent run for a DIFFERENT slug while one is in flight', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'other'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
       spawn: scripted.spawn,
@@ -790,7 +810,7 @@ describe('startGeneration spawn wrapper', () => {
     await scripted.nextChild(); // claude is now running but not exited
 
     await expect(
-      startGeneration('demo', {
+      startGeneration('other', {
         spawn: scripted.spawn,
         isExecutableInPath: () => true,
       }),
@@ -1050,7 +1070,7 @@ describe('startGeneration spawn wrapper', () => {
 
     // Per-lesson log records BOTH attempts' headers.
     const logRaw = await fs.readFile(
-      path.join(coursesRoot, 'demo', '.gen-logs', 'retryme.log'),
+      path.join(coursesRoot, 'demo', 'logs', 'retryme.log'),
       'utf8',
     );
     const headers = logRaw.match(/=== Attempt \d+ —/g) ?? [];
@@ -1064,7 +1084,7 @@ describe('startGeneration spawn wrapper', () => {
 
     // No failed_report.json written (no exhausted-retry lessons).
     const reportExists = await fs
-      .access(path.join(coursesRoot, 'demo', '.gen-logs', 'failed_report.json'))
+      .access(path.join(coursesRoot, 'demo', 'logs', 'failed_report.json'))
       .then(() => true)
       .catch(() => false);
     expect(reportExists).toBe(false);
@@ -1108,7 +1128,7 @@ describe('startGeneration spawn wrapper', () => {
 
     // Per-lesson log records all 3 attempt headers.
     const logRaw = await fs.readFile(
-      path.join(coursesRoot, 'demo', '.gen-logs', 'doomed.log'),
+      path.join(coursesRoot, 'demo', 'logs', 'doomed.log'),
       'utf8',
     );
     const headers = logRaw.match(/=== Attempt \d+ —/g) ?? [];
@@ -1116,7 +1136,7 @@ describe('startGeneration spawn wrapper', () => {
 
     // failed_report.json exists with exactly one entry pointing at the per-lesson log.
     const reportRaw = await fs.readFile(
-      path.join(coursesRoot, 'demo', '.gen-logs', 'failed_report.json'),
+      path.join(coursesRoot, 'demo', 'logs', 'failed_report.json'),
       'utf8',
     );
     const report = JSON.parse(reportRaw) as Array<{
@@ -1129,11 +1149,11 @@ describe('startGeneration spawn wrapper', () => {
     expect(report[0].lessonSlug).toBe('doomed');
     expect(report[0].attempts).toBe(3);
     expect(report[0].lastError).toMatch(/exited with code 1/);
-    expect(report[0].logPath).toBe('.gen-logs/doomed.log');
+    expect(report[0].logPath).toBe('logs/doomed.log');
 
-    // Init log was teed to .gen-logs/init_course.log.
+    // Init log was teed to logs/init_course.log.
     const initLog = await fs.readFile(
-      path.join(coursesRoot, 'demo', '.gen-logs', 'init_course.log'),
+      path.join(coursesRoot, 'demo', 'logs', 'init_course.log'),
       'utf8',
     );
     expect(typeof initLog).toBe('string');
@@ -1252,7 +1272,7 @@ describe('POST /api/courses/generate (route)', () => {
     expect(body.error).toMatch(/Install Claude Code CLI|sign in/i);
   });
 
-  it('returns 202 + id on success and 409 on a second concurrent attempt', async () => {
+  it('returns 202 + the same id on a repeat POST for the same slug (US-105)', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     await fs.writeFile(
       path.join(coursesRoot, 'demo', 'course-spec.json'),
@@ -1279,10 +1299,50 @@ describe('POST /api/courses/generate (route)', () => {
     // Hold the first child open so the slot stays busy.
     await scripted.nextChild();
 
-    const conflict = await postGenerate(
+    const same = await postGenerate(
       new Request('http://localhost/api/courses/generate', {
         method: 'POST',
         body: JSON.stringify({ slug: 'demo' }),
+      }),
+    );
+    expect(same.status).toBe(202);
+    const sameBody = (await same.json()) as { id: string; slug: string };
+    expect(sameBody.id).toBe(okBody.id);
+    expect(sameBody.slug).toBe('demo');
+  });
+
+  it('returns 409 on a second concurrent attempt for a DIFFERENT slug', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.mkdir(path.join(coursesRoot, 'other'), { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'course-spec.json'),
+      JSON.stringify({ stub: true }),
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(coursesRoot, 'other', 'course-spec.json'),
+      JSON.stringify({ stub: true }),
+      'utf8',
+    );
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const ok = await postGenerate(
+      new Request('http://localhost/api/courses/generate', {
+        method: 'POST',
+        body: JSON.stringify({ slug: 'demo' }),
+      }),
+    );
+    expect(ok.status).toBe(202);
+    await scripted.nextChild();
+
+    const conflict = await postGenerate(
+      new Request('http://localhost/api/courses/generate', {
+        method: 'POST',
+        body: JSON.stringify({ slug: 'other' }),
       }),
     );
     expect(conflict.status).toBe(409);
