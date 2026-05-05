@@ -1,0 +1,26 @@
+[2026-05-05T21:28:08+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T21:29:35+0200] Let me check the Stage 5 component and the route to understand the SSE flow.
+[2026-05-05T21:30:00+0200] Now I have enough context. Let me implement the changes.
+[2026-05-05T21:30:12+0200] Now let me add the `formatStreamJsonLine` helper and wire it into pumpStream.
+[2026-05-05T21:30:34+0200] Now wire `formatStreamJsonLine` into pumpStream's `flushLine`:
+[2026-05-05T21:30:48+0200] Now add tests. First let me check the existing tests use this format and update them to expect new args:
+[2026-05-05T21:30:57+0200] Now update the existing tests to also assert on new flags, and add new tests for formatStreamJsonLine + an end-to-end test for incremental streaming:
+[2026-05-05T21:31:19+0200] Now add a `formatStreamJsonLine` describe block and an end-to-end pumpStream test. Let me insert them at the top of the existing test file structure:
+[2026-05-05T21:31:42+0200] Now add an end-to-end test verifying that incremental stream-json events from the child get emitted as separate `log` SSE events as they arrive (not batched):
+[2026-05-05T21:32:01+0200] Now let me verify the test file compiles by running typecheck:
+[2026-05-05T21:32:10+0200] Typecheck clean. Now run the generation tests:
+[2026-05-05T21:32:15+0200] All 42 tests pass. Let me run the full test suite:
+[2026-05-05T21:32:21+0200] All 494 tests pass (was 483, added 11 new tests). Let me also run lint quickly to be safe:
+[2026-05-05T21:32:47+0200] No lint issues in my changed files. Let me check baseline lint state vs current state to confirm I didn't introduce new issues:
+[2026-05-05T21:33:00+0200] No new lint issues introduced. Now let me update progress.txt, mark US-102 as passing, and commit.
+[2026-05-05T21:34:04+0200] Now stage and commit:
+[2026-05-05T21:34:24+0200] US-102 done and committed (126247d).
+
+**What changed:** `defaultInitCourseCommand` and `defaultLessonCommand` now pass `--output-format stream-json --verbose` to `claude -p`. New exported helper `formatStreamJsonLine` decodes each stream-json event into concise lines (system tag, assistant text deltas, `→ Tool(arg)` invocations, `← result` summaries, `[result …]` markers); pumpStream's `flushLine` fans one raw line out to N decoded lines so the SSE log panel, `.generation.log`, and per-stage logs all see human-readable text incrementally instead of an end-of-stage JSON blob. Non-JSON lines pass through unchanged, so the `GENERATION_MOCK=1` mock path and the pre-fix "Unknown command:" guard are intact.
+
+**Quality:** typecheck clean, vitest 25 files / 494 tests passing (was 483 — added 11 unit tests for the formatter + 1 incremental-streaming e2e test that asserts events land in the SSE buffer mid-flight, before the child exits). Lint baseline unchanged.
+[2026-05-05T21:34:25+0200] [result success turns=36 cost=$3.14612275] US-102 done and committed (126247d).
+
+**What changed:** `defaultInitCourseCommand` and `defaultLessonCommand` now pass `--output-format stream-json --verbose` to `claude -p`. New exported helper `formatStreamJsonLine` decodes each stream-json event into concise lines (system tag, assistant text deltas, `→ Tool(arg)` invocations, `← result` summaries, `[result …]` markers); pumpStream's `flushLine` fans one raw line out to N decoded lines so the SSE log panel, `.generation.log`, and per-stage logs all see human-readable text incrementally instead of an end-of-stage JSON blob. Non-JSON lines pass through unchanged, so the `GENERATION_MOCK=1` mock path and the pre-fix "Unknown command:" guard are intact.
+
+**Quality:** typecheck clean, vitest 25 files / 494 tests passing (was 483 — added 11 unit tests for the formatter + 1 incremental-streaming e2e test that asserts events land in the SSE buffer mid-flight, before the child exits). Lint baseline unchanged.
