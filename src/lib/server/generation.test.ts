@@ -15,6 +15,7 @@ import {
   formatStreamJsonLine,
   GenerationConflictError,
   getActiveRun,
+  getActiveRunSummary,
   getRunById,
   sseEncode,
   startGeneration,
@@ -1431,5 +1432,132 @@ describe('POST /api/courses/generate (route)', () => {
       params: Promise.resolve({ id: 'missing' }),
     });
     expect(res.status).toBe(404);
+  });
+});
+
+describe('getActiveRunSummary (US-106)', () => {
+  it('returns {active:false} when nothing is in flight', async () => {
+    const summary = await getActiveRunSummary();
+    expect(summary).toEqual({ active: false });
+  });
+
+  it('reports the in-memory run with its current stage and resolves the name from course-spec.json', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', 'course-spec.json'),
+      JSON.stringify({
+        topic: 'whatever',
+        level: 'beginner',
+        durationTarget: 'short',
+        theoryPracticeRatio: 0.5,
+        draftStructure: {
+          courseTitle: 'My Resumed Course',
+          courseDescription: '',
+          modules: [],
+        },
+        createdAt: '2026-04-30T00:00:00Z',
+      }),
+      'utf8',
+    );
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    void run;
+
+    // Init child has spawned and stage:started has fired.
+    await scripted.nextChild();
+    // Flush microtasks so the synchronous emit() has updated currentStage.
+    await new Promise((r) => setImmediate(r));
+
+    const summary = await getActiveRunSummary();
+    expect(summary).toEqual({
+      active: true,
+      slug: 'demo',
+      name: 'My Resumed Course',
+      stage: 'init_course',
+    });
+  });
+
+  it('writes a .generating.json marker while the run is active and removes it on finalize', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    // Marker writes are fire-and-forget; poll briefly for the latest write
+    // (the one with the spawned child's PID) to land on disk.
+    const markerPath = path.join(coursesRoot, 'demo', '.generating.json');
+    let raw = '';
+    for (let i = 0; i < 100; i++) {
+      try {
+        raw = await fs.readFile(markerPath, 'utf8');
+        const m = JSON.parse(raw) as { childPid: number | null };
+        if (typeof m.childPid === 'number' && m.childPid > 0) break;
+      } catch {
+        /* not yet */
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    const marker = JSON.parse(raw) as {
+      slug: string;
+      stage: string | null;
+      childPid: number | null;
+    };
+    expect(marker.slug).toBe('demo');
+    expect(marker.stage).toBe('init_course');
+    expect(marker.childPid).toBe(init.pid);
+
+    // Finish the init child without writing course.json so the pipeline
+    // bails to the error finalize branch — that path also removes the marker.
+    init.finishWithExit(1);
+    await waitForFinish(run);
+
+    await expect(fs.access(markerPath)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('cold-start: skips a stale marker (dead PID) and unlinks it', async () => {
+    const dir = path.join(coursesRoot, 'ghosted');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: 9999999, // very high — guaranteed ESRCH on modern kernels
+        slug: 'ghosted',
+        stage: 'init_course',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const summary = await getActiveRunSummary();
+    expect(summary.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('cold-start: returns the live-PID marker and falls back to slug for the name', async () => {
+    const dir = path.join(coursesRoot, 'survivor');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.generating.json'),
+      JSON.stringify({
+        childPid: process.pid, // current process is alive by definition
+        slug: 'survivor',
+        stage: 'lesson:intro',
+        startedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+    const summary = await getActiveRunSummary();
+    expect(summary).toEqual({
+      active: true,
+      slug: 'survivor',
+      name: 'survivor',
+      stage: 'lesson:intro',
+    });
   });
 });

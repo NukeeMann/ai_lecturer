@@ -62,6 +62,17 @@ interface UploadedMaterial {
   type: string;
 }
 
+// US-106 — shape of GET /api/courses/active-run.
+type ActiveRunResponse =
+  | { active: false }
+  | { active: true; slug: string; name: string; stage: string };
+
+interface ActiveRun {
+  slug: string;
+  name: string;
+  stage: string;
+}
+
 // Surfaced both to the route and the UI so they stay in sync.
 const MATERIAL_ALLOWED_EXTS = ['.pdf', '.pptx', '.docx', '.txt', '.json'] as const;
 const MATERIAL_MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MiB. Mirrors src/lib/server/sources.ts MAX_FILE_SIZE_BYTES.
@@ -139,6 +150,10 @@ export default function CreatePage() {
   const [entryPath, setEntryPath] = useState<EntryPath | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [materials, setMaterials] = useState<UploadedMaterial[]>([]);
+  // US-106 — resume-banner state. Populated from GET /api/courses/active-run
+  // on mount; cleared when the user dismisses or resumes.
+  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -148,6 +163,44 @@ export default function CreatePage() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft((d) => ({ ...d, topic: t }));
     }
+    // US-106 — `?resume=<slug>` opens directly into the Stage 6 generation
+    // panel for that slug. Stage5Generate's effect calls POST /generate which
+    // is idempotent for the same slug (US-105) and reattaches to the live
+    // SSE stream + persisted logs.
+    const resume = params.get('resume');
+    if (resume && resume.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSubmittedSlug(resume);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage(6);
+    }
+  }, []);
+
+  // US-106 — probe the server for an in-flight run on mount. Banner shows
+  // unless the user explicitly dismissed it OR they're already inside Stage 6
+  // (resume target — banner would be redundant).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch('/api/courses/active-run', { cache: 'no-store' });
+        if (cancelled || !res.ok) return;
+        const body = (await res.json()) as ActiveRunResponse;
+        if (cancelled) return;
+        if (body && body.active === true) {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setActiveRun({ slug: body.slug, name: body.name, stage: body.stage });
+        } else {
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setActiveRun(null);
+        }
+      } catch {
+        /* best-effort — banner is a UX nicety */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const goToDashboard = () => {
@@ -266,8 +319,24 @@ export default function CreatePage() {
 
   const showStepper = typeof stage === 'number';
 
+  // US-106 — banner is shown unless the user dismissed it OR they're already
+  // inside Stage 6 for the same slug (where the live panel itself is the
+  // resume target — a banner pointing back to itself is noise).
+  const onResumeView = stage === 6 && submittedSlug === activeRun?.slug;
+  const showResumeBanner = activeRun !== null && !bannerDismissed && !onResumeView;
+
   return (
     <div style={pageStyle}>
+      {showResumeBanner && activeRun && (
+        <ResumeBanner
+          activeRun={activeRun}
+          onResume={() => {
+            setSubmittedSlug(activeRun.slug);
+            setStage(6);
+          }}
+          onDismiss={() => setBannerDismissed(true)}
+        />
+      )}
       {showStepper && (
         <header style={headerStyle}>
           <Stepper current={stage as number} onJump={handleStepperJump} staleStageIds={staleStageIds} />
@@ -1005,6 +1074,93 @@ function StageMaterials({
         backLabel="Back"
         nextLabel={materials.length > 0 ? 'Continue' : 'Skip'}
       />
+    </div>
+  );
+}
+
+// US-106 — sticky top banner shown when a generation run is detected on
+// /create mount. Lets the user one-click back into the live generation panel
+// (Stage 6) for the running slug, or dismiss to start a new course flow.
+function ResumeBanner({
+  activeRun,
+  onResume,
+  onDismiss,
+}: {
+  activeRun: ActiveRun;
+  onResume: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      data-testid="resume-banner"
+      data-resume-slug={activeRun.slug}
+      data-resume-stage={activeRun.stage}
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-3)',
+        padding: '10px var(--space-6)',
+        background: 'var(--accent-subtle)',
+        color: 'var(--accent-text)',
+        borderBottom: '1px solid var(--accent)',
+        fontSize: 'var(--fs-sm)',
+      }}
+    >
+      <Sparkles size={14} strokeWidth={2} />
+      <span data-testid="resume-banner-text" style={{ flex: 1 }}>
+        Trwa generacja kursu{' '}
+        <strong data-testid="resume-banner-name">{activeRun.name}</strong>
+        {' — '}
+        <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
+          {activeRun.stage}
+        </span>
+      </span>
+      <button
+        type="button"
+        data-testid="resume-banner-resume"
+        onClick={onResume}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          height: 30,
+          padding: '0 14px',
+          background: 'var(--accent)',
+          color: 'var(--text-on-accent)',
+          border: 'none',
+          borderRadius: 'var(--radius-md)',
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 500,
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+        }}
+      >
+        Wróć do generacji
+        <ArrowRight size={12} strokeWidth={2} />
+      </button>
+      <button
+        type="button"
+        data-testid="resume-banner-dismiss"
+        aria-label="Dismiss"
+        onClick={onDismiss}
+        style={{
+          background: 'transparent',
+          border: 'none',
+          color: 'var(--accent-text)',
+          cursor: 'pointer',
+          padding: 4,
+          borderRadius: 'var(--radius-sm)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <X size={14} strokeWidth={2} />
+      </button>
     </div>
   );
 }
@@ -2214,20 +2370,9 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
           /* already closed */
         }
       }
-      // If the user navigates away while still running, fire-and-forget a
-      // cancel so the subprocess doesn't keep consuming the slot.
-      const id = genIdRef.current;
-      if (id && phaseRef.current === 'running' && !cancelInFlightRef.current) {
-        cancelInFlightRef.current = true;
-        try {
-          if (typeof navigator !== 'undefined' && 'sendBeacon' in navigator) {
-            navigator.sendBeacon(`/api/courses/generate?id=${encodeURIComponent(id)}`);
-          }
-          void fetch(`/api/courses/generate?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
-        } catch {
-          /* best-effort */
-        }
-      }
+      // US-106: closing the tab MUST NOT kill the server-side run — the resume
+      // banner depends on the child still being alive when the user returns.
+      // Cancellation is explicit only (Cancel button → handleCancelClick).
     };
   }, [slug, router, appendLogToActive, upsertStageStatus]);
 
