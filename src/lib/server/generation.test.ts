@@ -12,6 +12,7 @@ import {
   ClaudeUnavailableError,
   defaultInitCourseCommand,
   defaultLessonCommand,
+  formatStreamJsonLine,
   GenerationConflictError,
   getActiveRun,
   getRunById,
@@ -193,6 +194,157 @@ afterEach(async () => {
   delete process.env.COURSES_ROOT_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
   vi.restoreAllMocks();
+});
+
+describe('formatStreamJsonLine (US-102)', () => {
+  it('passes non-JSON lines through unchanged', () => {
+    expect(formatStreamJsonLine('hello world')).toEqual(['hello world']);
+    expect(formatStreamJsonLine('[mock init_course] working...')).toEqual([
+      '[mock init_course] working...',
+    ]);
+    expect(formatStreamJsonLine('Unknown command: /init_course')).toEqual([
+      'Unknown command: /init_course',
+    ]);
+    expect(formatStreamJsonLine('')).toEqual(['']);
+  });
+
+  it('passes malformed JSON-looking lines through unchanged', () => {
+    expect(formatStreamJsonLine('{not json')).toEqual(['{not json']);
+    expect(formatStreamJsonLine('{}')).toEqual(['{}']);
+    // valid JSON but no `type` field — fall back to raw line
+    expect(formatStreamJsonLine('{"foo":"bar"}')).toEqual(['{"foo":"bar"}']);
+  });
+
+  it('formats a system init event as a compact tag', () => {
+    const ev = JSON.stringify({
+      type: 'system',
+      subtype: 'init',
+      model: 'claude-opus-4-7',
+      tools: ['Read', 'Write'],
+    });
+    expect(formatStreamJsonLine(ev)).toEqual(['[system init claude-opus-4-7]']);
+  });
+
+  it('extracts assistant text deltas as one line per non-empty paragraph', () => {
+    const ev = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Researching topic.\n\nWriting course.json now.' }],
+      },
+    });
+    expect(formatStreamJsonLine(ev)).toEqual([
+      'Researching topic.',
+      'Writing course.json now.',
+    ]);
+  });
+
+  it('renders tool_use blocks with the most informative argument', () => {
+    const read = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Read',
+            input: { file_path: '/tmp/courses/demo/research.md' },
+          },
+        ],
+      },
+    });
+    expect(formatStreamJsonLine(read)).toEqual([
+      '→ Read(file_path: /tmp/courses/demo/research.md)',
+    ]);
+
+    const bash = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'tool_use', name: 'Bash', input: { command: 'npm run build' } },
+        ],
+      },
+    });
+    expect(formatStreamJsonLine(bash)).toEqual(['→ Bash(command: npm run build)']);
+  });
+
+  it('truncates long string args in tool invocations', () => {
+    const longPath = '/very/'.padEnd(200, 'x');
+    const ev = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'tool_use', name: 'Read', input: { file_path: longPath } }],
+      },
+    });
+    const out = formatStreamJsonLine(ev);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toContain('→ Read(file_path: ');
+    expect(out[0]).toMatch(/…\)$/);
+    expect(out[0].length).toBeLessThan(longPath.length);
+  });
+
+  it('combines text and tool_use blocks from a single assistant event', () => {
+    const ev = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Reading the spec.' },
+          { type: 'tool_use', name: 'Read', input: { file_path: '/tmp/spec.md' } },
+        ],
+      },
+    });
+    expect(formatStreamJsonLine(ev)).toEqual([
+      'Reading the spec.',
+      '→ Read(file_path: /tmp/spec.md)',
+    ]);
+  });
+
+  it('summarises tool_result user events with first line of output', () => {
+    const ev = JSON.stringify({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            content: [{ type: 'text', text: 'line one\nline two\nline three' }],
+          },
+        ],
+      },
+    });
+    expect(formatStreamJsonLine(ev)).toEqual(['← line one']);
+  });
+
+  it('formats result events with subtype and duration', () => {
+    const ok = JSON.stringify({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      duration_ms: 12345,
+    });
+    expect(formatStreamJsonLine(ok)).toEqual(['[result success (12.3s)]']);
+
+    const err = JSON.stringify({
+      type: 'result',
+      subtype: 'error_max_turns',
+      is_error: true,
+    });
+    expect(formatStreamJsonLine(err)).toEqual(['[result error]']);
+  });
+
+  it('skips assistant events that contain only suppressed blocks (e.g. thinking)', () => {
+    const ev = JSON.stringify({
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'thinking', thinking: 'pondering...' }],
+      },
+    });
+    expect(formatStreamJsonLine(ev)).toEqual([]);
+  });
 });
 
 describe('sseEncode', () => {
@@ -478,6 +630,116 @@ describe('startGeneration spawn wrapper', () => {
     expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
   });
 
+  it('emits stream-json events as incremental human-readable log lines while the child is still running (US-102)', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+
+    // Mid-flight stream-json events arrive line-by-line on stdout BEFORE the
+    // child exits — without US-102's incremental decoding the SSE log panel
+    // wouldn't surface them until close. Each emit + microtask tick lets
+    // pumpStream flush the line into a `log` event before the next event
+    // pushes through.
+    const tick = () => new Promise((r) => setImmediate(r));
+
+    init.emitStdout(
+      JSON.stringify({
+        type: 'system',
+        subtype: 'init',
+        model: 'claude-opus-4-7',
+      }) + '\n',
+    );
+    await tick();
+    let logLinesSoFar = run.events
+      .filter((e) => e.type === 'log')
+      .map((e) => (e as { line: string }).line);
+    expect(logLinesSoFar).toContain('[system init claude-opus-4-7]');
+
+    init.emitStdout(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Researching topic.' }],
+        },
+      }) + '\n',
+    );
+    await tick();
+    logLinesSoFar = run.events
+      .filter((e) => e.type === 'log')
+      .map((e) => (e as { line: string }).line);
+    expect(logLinesSoFar).toContain('Researching topic.');
+    // Critically: BEFORE the child exits, the assistant text must already be
+    // in the log buffer — the whole point of stream-json is that we don't
+    // wait for end-of-stage to see anything.
+    expect(init.exitCode).toBeNull();
+
+    init.emitStdout(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Write',
+              input: { file_path: '/courses/demo/course.json' },
+            },
+          ],
+        },
+      }) + '\n',
+    );
+    await tick();
+
+    await writeStubCourse('demo', ['intro']);
+    init.emitStdout(
+      JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        duration_ms: 4500,
+      }) + '\n',
+    );
+    init.finishWithExit(0);
+
+    const lesson = await scripted.nextChild();
+    await writeStubLesson('demo', 'intro');
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    const lines = run.events
+      .filter((e) => e.type === 'log')
+      .map((e) => (e as { line: string }).line);
+    // Raw stream-json JSON should NOT have leaked into the SSE log panel —
+    // every line must already be a decoded human-readable form.
+    expect(lines.some((l) => l.startsWith('{"type":'))).toBe(false);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '[system init claude-opus-4-7]',
+        'Researching topic.',
+        '→ Write(file_path: /courses/demo/course.json)',
+        '[result success (4.5s)]',
+      ]),
+    );
+
+    // The .generation.log file should also contain the human-readable lines,
+    // not the raw stream-json blob.
+    const logRaw = await fs.readFile(
+      path.join(coursesRoot, 'demo', '.generation.log'),
+      'utf8',
+    );
+    expect(logRaw).toContain('[system init claude-opus-4-7]');
+    expect(logRaw).toContain('Researching topic.');
+    expect(logRaw).toContain('→ Write(file_path: /courses/demo/course.json)');
+    expect(logRaw).not.toContain('"type":"assistant"');
+  });
+
   it('captures stdout AND stderr to /courses/<slug>/.generation.log across init + lesson stages', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
@@ -626,6 +888,12 @@ describe('startGeneration spawn wrapper', () => {
     // command:" before exiting 0. Guard against a regression.
     expect(prompt).not.toMatch(/^\s*\/init_course\b/);
     expect(spec.args).toContain('--dangerously-skip-permissions');
+    // US-102: incremental streaming requires --output-format stream-json
+    // (and --verbose to satisfy claude -p's flag combo) so the SSE log
+    // panel sees output line-by-line instead of one end-of-stage blob.
+    expect(spec.args).toContain('--output-format');
+    expect(spec.args).toContain('stream-json');
+    expect(spec.args).toContain('--verbose');
   });
 
   it('default init prompt rejects unsafe slugs (assertSafeSlug)', () => {
@@ -646,6 +914,10 @@ describe('startGeneration spawn wrapper', () => {
     // Same regression guard as the init prompt.
     expect(prompt).not.toMatch(/^\s*\/generate_lesson\b/);
     expect(spec.args).toContain('--dangerously-skip-permissions');
+    // US-102: per-lesson generation must also stream incrementally.
+    expect(spec.args).toContain('--output-format');
+    expect(spec.args).toContain('stream-json');
+    expect(spec.args).toContain('--verbose');
   });
 
   it('default lesson prompt rejects unsafe slugs', () => {
