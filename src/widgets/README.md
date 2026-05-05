@@ -1,10 +1,11 @@
 # Widgets
 
-This folder contains every widget the lesson stream can render. The MVP ships
-six built-in types (`theory`, `quiz`, `code`, `demo`, `sandbox`, `histogram`)
-plus a `custom` placeholder. Each widget is self-contained: a Zod data schema,
-a React component, an editor form, and a registry entry — no other module
-needs to know it exists.
+This folder contains every widget the lesson stream can render. The current
+set is twelve built-in types (`theory`, `quiz`, `code`, `codeCloze`, `demo`,
+`sandbox`, `histogram`, `plotImage`, `parametricExplorer`, `dragMatch`,
+`dataTable`, `video`) plus a `custom` placeholder. Each widget is
+self-contained: a Zod data schema, a React component, an editor form, and a
+registry entry — no other module needs to know it exists.
 
 This document explains the contract and walks through the five steps to add
 your own widget type. The `Histogram/` folder is the working reference
@@ -53,14 +54,20 @@ content stays the focus, not the chrome.
 
 Existing accents (light theme) — avoid clashes:
 
-| widget    | accent     |
-| --------- | ---------- |
-| theory    | `#56524a`  |
-| demo      | `#2563eb`  |
-| quiz      | `#6b3eaa`  |
-| code      | `#0d7a5f`  |
-| sandbox   | `#b45309`  |
-| histogram | `#4e7a85`  |
+| widget               | accent     |
+| -------------------- | ---------- |
+| theory               | `#56524a`  |
+| demo                 | `#2563eb`  |
+| quiz                 | `#6b3eaa`  |
+| code                 | `#0d7a5f`  |
+| code-cloze           | `#1f6f8b`  |
+| sandbox              | `#b45309`  |
+| histogram            | `#4e7a85`  |
+| plot-image           | `#876b3a`  |
+| parametric-explorer  | `#5a4f8a`  |
+| drag-match           | `#8a4a6f`  |
+| data-table           | `#4a6f8a`  |
+| video                | `#b94a6f`  |
 
 ### 2. Define the Zod data schema in `src/widgets/<Name>/schema.ts`
 
