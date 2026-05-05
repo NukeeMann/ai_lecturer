@@ -16,8 +16,18 @@ import {
   GET as getAsset,
   PUT as putAsset,
 } from '@/app/api/courses/[slug]/assets/[...path]/route';
+import {
+  POST as postUploadSources,
+  DELETE as deleteUploadSources,
+  GET as getUploadSources,
+} from '@/app/api/courses/upload-sources/route';
 import { atomicWriteJson } from '@/lib/server/atomic';
 import { slugify } from '@/lib/server/paths';
+import {
+  draftSourcesDir,
+  courseSourcesDir,
+  makeDraftId,
+} from '@/lib/server/sources';
 
 let coursesRoot: string;
 
@@ -457,6 +467,271 @@ describe('PUT /api/courses/[slug]/assets/[...path]', () => {
     const res = await putAsset(req, {
       params: Promise.resolve({ slug: 'algebra', path: ['..', 'secret.png'] }),
     });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── US-103 — POST/DELETE /api/courses/upload-sources ───────────────────────
+
+function fileFromString(name: string, mime: string, content: string | Uint8Array): File {
+  // `Blob`'s typings expect a strict ArrayBuffer-backed view; cast the
+  // input through `BlobPart[]` so a Uint8Array constructed in tests
+  // (whose backing buffer TS infers as the loose `ArrayBufferLike`)
+  // still satisfies the constructor signature.
+  const blob = new Blob([content as BlobPart], { type: mime });
+  return new File([blob], name, { type: mime });
+}
+
+describe('POST /api/courses/upload-sources (US-103)', () => {
+  it('stages a fresh upload under a new draftId and returns the file list', async () => {
+    const fd = new FormData();
+    fd.append('files', fileFromString('lecture.pdf', 'application/pdf', 'pdf-bytes'));
+    fd.append('files', fileFromString('notes.txt', 'text/plain', 'note text'));
+    const req = new Request('http://x/api/courses/upload-sources', {
+      method: 'POST',
+      body: fd,
+    });
+    const res = await postUploadSources(req);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      draftId: string;
+      files: { sanitizedName: string; size: number }[];
+      rejected: unknown[];
+    };
+    expect(typeof body.draftId).toBe('string');
+    expect(body.draftId.length).toBeGreaterThanOrEqual(6);
+    expect(body.files.map((f) => f.sanitizedName).sort()).toEqual(['lecture.pdf', 'notes.txt']);
+    expect(body.rejected).toEqual([]);
+
+    // Files must actually live on disk under the staged dir.
+    const staged = await fs.readdir(draftSourcesDir(body.draftId));
+    expect(new Set(staged)).toEqual(new Set(['lecture.pdf', 'notes.txt']));
+  });
+
+  it('appends to the same draftId on subsequent POSTs', async () => {
+    const fd1 = new FormData();
+    fd1.append('files', fileFromString('a.pdf', 'application/pdf', 'one'));
+    const r1 = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd1 }),
+    );
+    const b1 = (await r1.json()) as { draftId: string };
+
+    const fd2 = new FormData();
+    fd2.append('draftId', b1.draftId);
+    fd2.append('files', fileFromString('b.txt', 'text/plain', 'two'));
+    const r2 = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd2 }),
+    );
+    expect(r2.status).toBe(201);
+    const b2 = (await r2.json()) as { draftId: string; files: { sanitizedName: string }[] };
+    expect(b2.draftId).toBe(b1.draftId);
+    expect(b2.files.map((f) => f.sanitizedName)).toEqual(['b.txt']);
+    const staged = await fs.readdir(draftSourcesDir(b1.draftId));
+    expect(new Set(staged)).toEqual(new Set(['a.pdf', 'b.txt']));
+  });
+
+  it('appends a numeric collision suffix when reusing the same draftId', async () => {
+    const fd1 = new FormData();
+    fd1.append('files', fileFromString('a.pdf', 'application/pdf', 'one'));
+    const r1 = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd1 }),
+    );
+    const b1 = (await r1.json()) as { draftId: string };
+
+    const fd2 = new FormData();
+    fd2.append('draftId', b1.draftId);
+    fd2.append('files', fileFromString('a.pdf', 'application/pdf', 'two'));
+    const r2 = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd2 }),
+    );
+    const b2 = (await r2.json()) as { files: { sanitizedName: string }[] };
+    expect(b2.files.map((f) => f.sanitizedName)).toEqual(['a (2).pdf']);
+  });
+
+  it('rejects an unsupported extension and returns 400 when EVERY file is rejected', async () => {
+    const fd = new FormData();
+    fd.append('files', fileFromString('hack.exe', 'application/octet-stream', 'x'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { files: unknown[]; rejected: { reason: string }[] };
+    expect(body.files).toEqual([]);
+    expect(body.rejected).toHaveLength(1);
+    expect(body.rejected[0].reason).toMatch(/Unsupported (filename|extension)/);
+  });
+
+  it('partial-accepts: stores valid files and reports rejected ones', async () => {
+    const fd = new FormData();
+    fd.append('files', fileFromString('good.pdf', 'application/pdf', 'pdf'));
+    fd.append('files', fileFromString('bad.exe', 'application/octet-stream', 'x'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      files: { sanitizedName: string }[];
+      rejected: { name: string }[];
+    };
+    expect(body.files.map((f) => f.sanitizedName)).toEqual(['good.pdf']);
+    expect(body.rejected.map((r) => r.name)).toEqual(['bad.exe']);
+  });
+
+  it('rejects an oversized file', async () => {
+    // Construct a "large" file by making a Blob whose size exceeds the cap.
+    // Allocate a sparse Uint8Array — actual content irrelevant, only size
+    // matters for the validator.
+    const big = new Uint8Array(50 * 1024 * 1024 + 10);
+    const fd = new FormData();
+    fd.append('files', fileFromString('huge.pdf', 'application/pdf', big));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { rejected: { reason: string }[] };
+    expect(body.rejected[0].reason).toMatch(/too large/i);
+  });
+
+  it('rejects a malicious draftId', async () => {
+    const fd = new FormData();
+    fd.append('draftId', '../../etc');
+    fd.append('files', fileFromString('a.pdf', 'application/pdf', 'x'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when there are no files at all', async () => {
+    const fd = new FormData();
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('writes under <slug>/sources when a finalized slug is given', async () => {
+    const fd = new FormData();
+    fd.append('slug', 'algebra');
+    fd.append('files', fileFromString('a.pdf', 'application/pdf', 'pdf'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    const stored = await fs.readdir(courseSourcesDir('algebra'));
+    expect(stored).toEqual(['a.pdf']);
+  });
+});
+
+describe('DELETE /api/courses/upload-sources (US-103)', () => {
+  it('removes a single staged file by draftId', async () => {
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    await fs.writeFile(path.join(draftSourcesDir(draftId), 'a.pdf'), 'x');
+    await fs.writeFile(path.join(draftSourcesDir(draftId), 'b.pdf'), 'y');
+
+    const res = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=a.pdf`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const remaining = await fs.readdir(draftSourcesDir(draftId));
+    expect(remaining).toEqual(['b.pdf']);
+  });
+
+  it('returns 404 for an unknown filename', async () => {
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    const res = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=nope.pdf`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects path traversal in filename', async () => {
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    const res = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=${encodeURIComponent('../etc/passwd')}`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 with no draftId and no slug', async () => {
+    const res = await deleteUploadSources(
+      new Request('http://x/api/courses/upload-sources?filename=a.pdf', { method: 'DELETE' }),
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/courses/upload-sources (US-103)', () => {
+  it('lists files for a draftId', async () => {
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    await fs.writeFile(path.join(draftSourcesDir(draftId), 'a.pdf'), 'aa');
+    const res = await getUploadSources(
+      new Request(`http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}`),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { files: { sanitizedName: string; size: number }[] };
+    expect(body.files).toEqual([{ sanitizedName: 'a.pdf', size: 2 }]);
+  });
+});
+
+describe('POST /api/courses with draftId (US-103)', () => {
+  it('moves staged sources into the new course directory', async () => {
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    await fs.writeFile(path.join(draftSourcesDir(draftId), 'lecture.pdf'), 'pdf');
+    await fs.writeFile(path.join(draftSourcesDir(draftId), 'notes.txt'), 'txt');
+
+    const spec = sampleSpec('Course With Materials');
+    const req = new Request('http://x/api/courses', {
+      method: 'POST',
+      body: JSON.stringify({ ...spec, draftId }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await postCourse(req);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { slug: string; movedSources: string[] };
+    expect(body.slug).toBe('course-with-materials');
+    expect(new Set(body.movedSources)).toEqual(new Set(['lecture.pdf', 'notes.txt']));
+
+    const dir = courseSourcesDir(body.slug);
+    expect(new Set(await fs.readdir(dir))).toEqual(new Set(['lecture.pdf', 'notes.txt']));
+    // Draft directory should have been removed.
+    await expect(fs.access(draftSourcesDir(draftId))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('ignores a draftId pointing at a non-existent draft (no error)', async () => {
+    const draftId = makeDraftId();
+    const spec = sampleSpec('Course No Materials');
+    const req = new Request('http://x/api/courses', {
+      method: 'POST',
+      body: JSON.stringify({ ...spec, draftId }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await postCourse(req);
+    expect(res.status).toBe(201);
+  });
+
+  it('returns 400 on a malicious draftId', async () => {
+    const spec = sampleSpec('Course');
+    const req = new Request('http://x/api/courses', {
+      method: 'POST',
+      body: JSON.stringify({ ...spec, draftId: '../etc' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await postCourse(req);
     expect(res.status).toBe(400);
   });
 });
