@@ -1,0 +1,21 @@
+[2026-05-05T12:57:46+0200] [rate_limit five_hour status=allowed]
+[2026-05-05T12:59:14+0200] Now I have a complete picture. Let me make the changes.
+[2026-05-05T12:59:53+0200] Now update the startup banner to surface the global default timeout, and document the override pattern in `ralph.config`.
+[2026-05-05T13:00:13+0200] Now run the bash syntax check and verify the changes look right.
+[2026-05-05T13:00:19+0200] Let me also check if there are any tests for ralph.sh that might rely on these strings.
+[2026-05-05T13:00:28+0200] No bats/tests for ralph.sh itself. Now run typecheck and lint to make sure my changes don't break anything in the broader project.
+[2026-05-05T13:00:38+0200] Now mark US-100 as done in prd.json and append to progress.txt.
+[2026-05-05T13:01:46+0200] US-100 is done and committed (`bb98cb8`). Summary:
+
+- `scripts/ralph/ralph.sh`: in `run_worker`, added a `effective_timeout_sec` (default = `TASK_TIMEOUT_SEC`) populated from each story's optional `.timeout` jq field. Positive integer → use it (with a per-task override log); anything else → WARN + fallback. The override flows through the soft-deadline calc, the TIME BUDGET prompt section, the `Running claude` task log, the env var passed into `timeout(1) claude …`, and both `TIMEOUT after …s` lines.
+- Startup banner now shows `timeout=${TASK_TIMEOUT_SEC}s (per-story .timeout overrides supported)`.
+- `scripts/ralph/ralph.config`: documented the per-story override with an example entry.
+- `bash -n scripts/ralph/ralph.sh` passes.
+- `scripts/ralph/prd.json`: US-100 `passes: true`.
+[2026-05-05T13:01:46+0200] [result success turns=39 cost=$2.4092107499999997] US-100 is done and committed (`bb98cb8`). Summary:
+
+- `scripts/ralph/ralph.sh`: in `run_worker`, added a `effective_timeout_sec` (default = `TASK_TIMEOUT_SEC`) populated from each story's optional `.timeout` jq field. Positive integer → use it (with a per-task override log); anything else → WARN + fallback. The override flows through the soft-deadline calc, the TIME BUDGET prompt section, the `Running claude` task log, the env var passed into `timeout(1) claude …`, and both `TIMEOUT after …s` lines.
+- Startup banner now shows `timeout=${TASK_TIMEOUT_SEC}s (per-story .timeout overrides supported)`.
+- `scripts/ralph/ralph.config`: documented the per-story override with an example entry.
+- `bash -n scripts/ralph/ralph.sh` passes.
+- `scripts/ralph/prd.json`: US-100 `passes: true`.
