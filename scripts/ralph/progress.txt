@@ -101,3 +101,35 @@ Previous log archived to: archive/progress-2026-05-06-1310.txt
   - `playwright-skill/run.js` only auto-wraps the executed file when it lacks BOTH `require(` and `(async () => {`. A test file shaped as `module.exports = async ({ chromium }) => { ... }` is treated as a complete module and its body is never invoked — write your test as a plain `const { chromium } = require('playwright'); (async () => { ... })();` IIFE so the runner picks up the auto-wrap-or-execute path correctly.
   - Test-only refactor pattern for non-jsdom vitest: when the logic you want to cover lives inside a JSX `onSubmit`/`onClick` handler, extract it as a pure helper next to its data module (e.g. `src/lib/dashboard.ts`'s `searchEnterTarget`). The component then becomes a one-liner caller and the helper gets fast unit coverage. Avoids needing jsdom + RTL for what is fundamentally pure logic. See also `src/lib/lessons/advance.ts` (US-081) for the same pattern around auto-advance payload building.
 ---
+
+## 2026-05-06 - US-119 - i18n sweep — replace Polish hardcoded UI strings with English
+- Audited all UI source files for Polish strings (diacritic scan + targeted Polish-word grep). Found 7 hardcoded Polish UI strings — all in three files:
+  - `src/app/page.tsx` (dashboard "New course" CTA, ×2 occurrences)
+  - `src/app/create/page.tsx` (resume banner + Stage-5 queued state)
+  - `src/components/Sources.tsx` ("Źródła / Sources" panel header)
+- Created `src/lib/i18n/strings.ts` as the single source-of-truth for chrome / UI strings (English). Course content (lesson titles, widget bodies, generated text) is intentionally NOT stored there. Module shape is a flat namespaced object (`strings.dashboard.newCourse`, `strings.resumeBanner.{generatingPrefix,inQueueSuffix,resumeCta}`, `strings.generation.{queuedHeading,queuedDescription,queuePositionPrefix}`, `strings.sources.heading`). US-121's PL toggle can swap by replacing the export.
+- Translations applied:
+  - `Nowy kurs` → `New course` (dashboard "New course" CTA, both empty-state and header variants).
+  - `Trwa generacja kursu <name> — <stage> · <n> w kolejce` → `Generating course <name> — <stage> · <n> in queue` (resume banner).
+  - `Wróć do generacji` → `Back to generation` (resume-banner CTA).
+  - `Twoja generacja czeka w kolejce` → `Your generation is queued` (Stage-5 queued heading).
+  - `W kolejce — <position>/<total>` → `In queue — <position>/<total>` (Stage-5 queued status line).
+  - `Inny kurs jest właśnie generowany. Twój start nastąpi automatycznie, gdy tamten się zakończy.` → `Another course is currently being generated. Yours will start automatically as soon as that one finishes.` (Stage-5 queued description).
+  - `Źródła / Sources` → `Sources` (LessonSourcesPanel header).
+  - Updated three matching code comments (`src/app/create/page.tsx` × 2 + `src/lib/server/generation.ts`) that referenced the old Polish strings, so future readers don't get confused that the rendered UI still says them.
+- Files changed: `src/lib/i18n/strings.ts` (new), `src/app/page.tsx`, `src/app/create/page.tsx`, `src/components/Sources.tsx`, `src/lib/server/generation.ts` (comment-only).
+- Excluded by design (course content, NOT chrome): `src/lib/lessonChat/context.test.ts` ('Moduł 1' eyebrow test fixture) and `src/lib/server/api.test.ts` ('Algebra Liniowa: część 1' slugify test input). Course-content surfaces are also excluded from the playwright sweep below — they're authored at generation time and intentionally allowed to be in any language.
+- Tests
+  - Typecheck (`tsc --noEmit`): clean.
+  - Lint (`npx eslint src`): no new errors. The 4 pre-existing errors (3 in `src/app/create/page.tsx`: lines 2729/2743 `set-state-in-effect`, 3058 `refs`-during-render; 1 in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx:357`) reproduce on a clean stash → not introduced by US-119.
+  - Vitest (`npx vitest run`): 621 / 621 passed. (The previously-flaky `getActiveRunSummary > writes a .generating.json marker…` test passed this run; it's a known intermittent JSON-parse race documented in the US-118 progress entry.)
+- Browser-verified via `scripts/ralph/skills/playwright-skill` against a port-3019 dev server. Tested pages: `/` (dashboard), `/create` (wizard), `/courses/gauss-basics/lessons/filtr-gaussa-w-praktyce` (lesson with sources), `/courses/gauss-basics` (course page). The test runs a Polish diacritic + Polish-chrome-word scan over `document.body.innerText` after excluding course-content selectors, plus targeted assertions:
+  - dashboard `[data-testid="new-course-cta"]` reads exactly `"New course"`.
+  - lesson page `<span>Sources</span>` exists, `Źródła` count == 0, "All courses" / "Previous" / "Next" chrome present.
+  - All 8 checks passed. Screenshots: `/tmp/us119-{dashboard,create,lesson,course}.png`.
+- **Learnings for future iterations:**
+  - Single source of truth lives at `src/lib/i18n/strings.ts`. New chrome strings should be added there, then imported as `import { strings } from '@/lib/i18n/strings';`. The shape is a plain namespaced const (no t() function, no interpolation helpers) — components compose dynamic parts inline (e.g. `{strings.resumeBanner.generatingPrefix}{' '}<strong>{name}</strong>`). For US-121 (PL toggle), the simplest path is a runtime `useLocale()` hook returning either `strings.en` or `strings.pl` from a refactored module; the call sites already access via property paths so a hook swap is mostly mechanical.
+  - When Polish-string-grepping the codebase, EITHER scan for `[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]` (catches diacritic words) OR for distinct Polish words without diacritics (`Trwa`, `kursu`, `kolejce`, `generacji`, etc.) — both are needed because some Polish translations like "W kolejce" use only ASCII. The combined regex used in this story: `\b(Trwa|trwa|kolejce|kursu|kursie|kursy|kursów|lekcji|lekcje|moduł|modułu|moduły|tworzymy|generacji|generację|generacja)\b`.
+  - When playwright-scanning for Polish strings, you MUST exclude course-content selectors (`[data-testid="course-card"]`, `[data-testid="continue-hero"]`, `[data-testid="lesson-body"]`, `[data-section-id]`, `h1/h2/h3` lesson titles, the breadcrumb course/module/lesson labels, the next-lesson preview). Course content is authored in any language by design; only chrome (CTAs, navigation, panel headers, settings, error messages) is in scope for the sweep. A naive full-page diacritic scan over a course written in Polish will fail loudly even when the chrome is 100% English.
+  - The `LessonSourcesPanel` returns `null` when `sources.length === 0`. To verify the "Sources" header renders, target a lesson that actually has sources (e.g. `gauss-basics/filtr-gaussa-w-praktyce` has 4) — the always-handy `gauss-basics/wprowadzenie-do-filtrowania` has none and silently hides the panel.
+---

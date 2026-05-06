@@ -45,6 +45,7 @@ import {
   computeSliderEdges,
 } from '@/lib/lessons/lessonSlots';
 import { reverseLogLines, reverseLiveLogLines } from '@/lib/lessons/genLog';
+import { strings } from '@/lib/i18n/strings';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -70,7 +71,7 @@ interface UploadedMaterial {
 }
 
 // US-106 / US-107 — shape of GET /api/courses/active-run. Queue context was
-// added in US-107 so the resume banner can show "X w kolejce" alongside the
+// added in US-107 so the resume banner can show "X in queue" alongside the
 // active run.
 interface QueueEntry {
   slug: string;
@@ -1140,7 +1141,7 @@ function ResumeBanner({
     >
       <Sparkles size={14} strokeWidth={2} />
       <span data-testid="resume-banner-text" style={{ flex: 1 }}>
-        Trwa generacja kursu{' '}
+        {strings.resumeBanner.generatingPrefix}{' '}
         <strong data-testid="resume-banner-name">{activeRun.name}</strong>
         {' — '}
         <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
@@ -1150,7 +1151,7 @@ function ResumeBanner({
           <>
             {' · '}
             <span data-testid="resume-banner-queue">
-              {activeRun.queueLength} w kolejce
+              {activeRun.queueLength} {strings.resumeBanner.inQueueSuffix}
             </span>
           </>
         )}
@@ -1175,7 +1176,7 @@ function ResumeBanner({
           cursor: 'pointer',
         }}
       >
-        Wróć do generacji
+        {strings.resumeBanner.resumeCta}
         <ArrowRight size={12} strokeWidth={2} />
       </button>
       <button
@@ -2986,7 +2987,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
           | { queued: true; slug: string; position: number; total: number };
 
         // US-107: when another generation is already running, the server
-        // enqueues us instead of starting immediately. Show "W kolejce —
+        // enqueues us instead of starting immediately. Show "In queue —
         // <position>/<total>" and poll active-run until our turn arrives.
         if ('queued' in body && body.queued) {
           setQueueInfo({ position: body.position, total: body.total });
@@ -3108,7 +3109,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               : phase === 'error'
                 ? 'Generation failed'
                 : phase === 'queued'
-                  ? 'Twoja generacja czeka w kolejce'
+                  ? strings.generation.queuedHeading
                   : 'Generating your course…'}
           </h1>
           {phase === 'queued' && queueInfo && (
@@ -3123,7 +3124,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
                 color: 'var(--accent-text)',
               }}
             >
-              W kolejce — {queueInfo.position}/{queueInfo.total}
+              {strings.generation.queuePositionPrefix} {queueInfo.position}/{queueInfo.total}
             </p>
           )}
           <p
@@ -3139,7 +3140,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               : phase === 'error'
                 ? 'See details below — or go back to fix the issue and try again.'
                 : phase === 'queued'
-                  ? 'Inny kurs jest właśnie generowany. Twój start nastąpi automatycznie, gdy tamten się zakończy.'
+                  ? strings.generation.queuedDescription
                   : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
           </p>
 
