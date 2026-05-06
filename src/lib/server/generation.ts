@@ -34,7 +34,7 @@ import {
   genLogsDir,
   lessonFile,
 } from './paths';
-import { listCourseSourceFilesSync } from './sources';
+import { listCourseSourceFilesSync, resolveSourcePathForPrompt } from './sources';
 
 export interface FailedLesson {
   slug: string;
@@ -571,10 +571,19 @@ setTimeout(() => {
   // curriculum in user-supplied content. When the directory is empty/absent
   // (the "Start from scratch" path) the prompt is unchanged.
   const sourcePaths = listCourseSourceFilesSync(slug);
+  // US-124: for .docx the original file is unreadable to Claude Code's Read
+  // tool (it's a zip-of-XML), so swap in the pre-extracted markdown sibling
+  // when one was produced at upload time. The original .docx is NOT injected
+  // into the prompt — pointing Read at a binary blob just wastes a turn.
+  const resolvedSources = sourcePaths.map(resolveSourcePathForPrompt);
   const sourcesSection =
-    sourcePaths.length > 0
-      ? ` Source materials uploaded by the user (the curriculum MUST be grounded in these files — invoke the Read tool on EACH path BEFORE drafting course.json so every module/lesson/quiz item traces back to this content rather than generic textbook material):\n${sourcePaths
-          .map((p) => `- ${p}`)
+    resolvedSources.length > 0
+      ? ` Source materials uploaded by the user (the curriculum MUST be grounded in these files — invoke the Read tool on EACH path BEFORE drafting course.json so every module/lesson/quiz item traces back to this content rather than generic textbook material):\n${resolvedSources
+          .map((s) =>
+            s.extractedFrom
+              ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
+              : `- ${s.readPath}`,
+          )
           .join('\n')}\n`
       : '';
   const prompt =
@@ -660,10 +669,18 @@ console.log('[mock generate_lesson] done ${lessonSlug}');
   // from the originals. When no sources were uploaded, the brief is
   // unchanged.
   const sourcePaths = listCourseSourceFilesSync(slug);
+  // US-124: same docx → .extracted/<name>.md swap as defaultInitCourseCommand.
+  // The lesson generator must point Read at a parseable text format, never at
+  // the original docx blob.
+  const resolvedSources = sourcePaths.map(resolveSourcePathForPrompt);
   const sourcesSection =
-    sourcePaths.length > 0
-      ? ` Source materials uploaded by the user (pull facts, quotes, examples, and figures from these files — invoke the Read tool on the relevant path(s) BEFORE authoring this lesson so its content is grounded in the originals rather than invented):\n${sourcePaths
-          .map((p) => `- ${p}`)
+    resolvedSources.length > 0
+      ? ` Source materials uploaded by the user (pull facts, quotes, examples, and figures from these files — invoke the Read tool on the relevant path(s) BEFORE authoring this lesson so its content is grounded in the originals rather than invented):\n${resolvedSources
+          .map((s) =>
+            s.extractedFrom
+              ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
+              : `- ${s.readPath}`,
+          )
           .join('\n')}\n`
       : '';
   const baseBrief =
