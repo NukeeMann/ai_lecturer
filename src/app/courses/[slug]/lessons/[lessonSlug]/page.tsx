@@ -3046,51 +3046,10 @@ function SectionRenderer({
     body = <Body data={section.data} />;
   }
 
-  const completionCheckbox: ReactNode = (
-    <label
-      data-section-complete-checkbox
-      data-checked={manuallyCompleted ? 'true' : 'false'}
-      title={
-        manuallyCompleted
-          ? 'Unmark section as completed'
-          : 'Mark section as completed'
-      }
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: 22,
-        height: 22,
-        cursor: 'pointer',
-        flexShrink: 0,
-      }}
-    >
-      <input
-        type="checkbox"
-        data-testid={`section-complete-${section.id}`}
-        aria-label={
-          manuallyCompleted
-            ? `Mark section "${section.title}" as not completed`
-            : `Mark section "${section.title}" as completed`
-        }
-        checked={manuallyCompleted}
-        onChange={(e) => onToggleManualComplete(e.currentTarget.checked)}
-        style={{
-          width: 16,
-          height: 16,
-          margin: 0,
-          cursor: 'pointer',
-          accentColor: 'var(--success)',
-        }}
-      />
-    </label>
-  );
-
   const headerActions: ReactNode = (
     <>
       {sourcesNode}
       {pencilNode}
-      {completionCheckbox}
     </>
   );
 
@@ -3114,6 +3073,19 @@ function SectionRenderer({
         description={section.description}
         status={status}
         headerActions={headerActions}
+        checkbox={{
+          completed: status === 'done',
+          onToggle: onToggleManualComplete,
+          testId: `section-complete-${section.id}`,
+          ariaLabel: {
+            checked: `Mark section "${section.title}" as not completed`,
+            unchecked: `Mark section "${section.title}" as completed`,
+          },
+          title: {
+            checked: 'Unmark section as completed',
+            unchecked: 'Mark section as completed',
+          },
+        }}
       >
         {body}
       </Widget>
