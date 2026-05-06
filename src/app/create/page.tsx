@@ -25,6 +25,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { AppLogoLink } from '@/components/AppLogo';
 import { SettingsMenu } from '@/components/SettingsMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import Stage3Cascade, {
@@ -356,7 +357,9 @@ export default function CreatePage() {
         />
       )}
       <header style={headerStyle}>
-        <div style={headerSlotStyle} />
+        <div style={headerSlotStyle}>
+          <AppLogoLink />
+        </div>
         <div style={headerCenterStyle}>
           {showStepper ? (
             <Stepper
