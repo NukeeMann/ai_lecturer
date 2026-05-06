@@ -1,0 +1,37 @@
+[2026-05-06T22:31:53+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T22:33:38+0200] Now let me also test the failure case to know what error mammoth throws:
+[2026-05-06T22:33:48+0200] Now let me create the docx module:
+[2026-05-06T22:34:19+0200] Now let me update sources.ts to add the new helpers. Let me first re-read the current file around the move function:
+[2026-05-06T22:34:32+0200] Now let me update `listSourceFilenames` to filter out the .extracted directory (since GET should not enumerate it). Let me also add the new helper functions and update moveDraftSourcesToCourse:
+[2026-05-06T22:34:53+0200] Now let me update `listSourceFilenames` to filter out the .extracted dir:
+[2026-05-06T22:35:03+0200] Now update `moveDraftSourcesToCourse` to also move the extracted sibling:
+[2026-05-06T22:35:27+0200] Now let me update the upload-sources route to call extractDocxToMarkdown after writing the docx, and unlink the sibling on DELETE:
+[2026-05-06T22:35:46+0200] Now update DELETE to unlink the .extracted sibling for docx:
+[2026-05-06T22:35:53+0200] Now let's update generation.ts to use resolveSourcePathForPrompt. Let me edit both the init course and lesson commands:
+[2026-05-06T22:37:45+0200] Now let me add the new tests for `resolveSourcePathForPrompt` and `moveDraftSourcesToCourse` with extracted siblings to sources.test.ts:
+[2026-05-06T22:38:32+0200] Now run the generation tests too:
+[2026-05-06T22:39:08+0200] All tests pass. Now let me do the smoke test. The acceptance criteria says: upload via the upload-sources endpoint into a draft, finalize a course, then verify the .extracted/.../.md exists.
+[2026-05-06T22:40:04+0200] Smoke test passed. Now let me also do a quick check to verify GET still hides the .extracted dir:
+[2026-05-06T22:40:20+0200] Also let me verify DELETE for docx unlinks the sibling:
+[2026-05-06T22:40:35+0200] All smoke tests pass. Let me update progress.txt and prd.json, then commit:
+[2026-05-06T22:41:03+0200] Now let me append to progress.txt:
+[2026-05-06T22:42:40+0200] US-124 done and committed in `5f73e3e`. `passes: true` is in HEAD for US-124.
+
+Summary of what landed:
+- **Runtime dep:** `mammoth 1.12.0` added to `package.json` dependencies.
+- **`src/lib/server/docx.ts` (new):** `extractDocxToMarkdown(src, dest)` runs mammoth's markdown converter, writes the `.md`, returns `{ok:true, markdown, warnings}` / `{ok:false, reason}`. Non-fatal mammoth messages → warnings.
+- **`src/lib/server/sources.ts`:** added `EXTRACTED_DIRNAME = '.extracted'`, `extractedSiblingPath`, `resolveSourcePathForPrompt` (sibling .md for .docx when on disk, original otherwise). `moveDraftSourcesToCourse` now moves the `(docx, .extracted/<name>.md)` pair together with matching collision suffix.
+- **POST/DELETE `/api/courses/upload-sources`:** POST extracts each .docx after write; failures log+continue (still 201). DELETE for a .docx idempotently unlinks the sibling.
+- **`generation.ts`:** both `defaultInitCourseCommand` and `defaultLessonCommand` map source files through `resolveSourcePathForPrompt`; for a docx-with-sibling the prompt line reads `- /…/.extracted/<name>.docx.md (extracted text from <name>.docx)` and the original .docx path is not injected.
+- **Tests:** docx happy/failure paths (with an inline base64 fixture), resolveSourcePathForPrompt for pdf/docx, moveDraftSourcesToCourse pair-propagation incl. collision suffix; full suite 33 files / 649 tests pass; typecheck + eslint clean.
+- **Smoke test:** `npx tsx` script uploaded the user's real `Lista pytań kierunkowych.docx`, the extractor produced ~2.16 MiB of Polish markdown including the literal substring, and `moveDraftSourcesToCourse` promoted both files to the final course slug intact.
+[2026-05-06T22:42:40+0200] [result success turns=84 cost=$6.805046249999999] US-124 done and committed in `5f73e3e`. `passes: true` is in HEAD for US-124.
+
+Summary of what landed:
+- **Runtime dep:** `mammoth 1.12.0` added to `package.json` dependencies.
+- **`src/lib/server/docx.ts` (new):** `extractDocxToMarkdown(src, dest)` runs mammoth's markdown converter, writes the `.md`, returns `{ok:true, markdown, warnings}` / `{ok:false, reason}`. Non-fatal mammoth messages → warnings.
+- **`src/lib/server/sources.ts`:** added `EXTRACTED_DIRNAME = '.extracted'`, `extractedSiblingPath`, `resolveSourcePathForPrompt` (sibling .md for .docx when on disk, original otherwise). `moveDraftSourcesToCourse` now moves the `(docx, .extracted/<name>.md)` pair together with matching collision suffix.
+- **POST/DELETE `/api/courses/upload-sources`:** POST extracts each .docx after write; failures log+continue (still 201). DELETE for a .docx idempotently unlinks the sibling.
+- **`generation.ts`:** both `defaultInitCourseCommand` and `defaultLessonCommand` map source files through `resolveSourcePathForPrompt`; for a docx-with-sibling the prompt line reads `- /…/.extracted/<name>.docx.md (extracted text from <name>.docx)` and the original .docx path is not injected.
+- **Tests:** docx happy/failure paths (with an inline base64 fixture), resolveSourcePathForPrompt for pdf/docx, moveDraftSourcesToCourse pair-propagation incl. collision suffix; full suite 33 files / 649 tests pass; typecheck + eslint clean.
+- **Smoke test:** `npx tsx` script uploaded the user's real `Lista pytań kierunkowych.docx`, the extractor produced ~2.16 MiB of Polish markdown including the literal substring, and `moveDraftSourcesToCourse` promoted both files to the final course slug intact.
