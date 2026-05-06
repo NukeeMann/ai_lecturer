@@ -49,20 +49,39 @@ export async function extractDocxToMarkdown(
 ): Promise<ExtractDocxResult> {
   let result: MammothResult;
   try {
-    result = await mammoth.convertToMarkdown({ path: srcPath });
+    // Override the default `data:image/...;base64,` inline embedding (US-126):
+    // the wizard / curriculum generators consume this markdown as plain text,
+    // and base64 image blobs add no comprehension value while burning the prompt
+    // budget (one reference fixture went from 2.26M chars → ~107k chars after
+    // this change). The non-empty placeholder src ensures mammoth's markdown
+    // writer actually emits the image marker — it skips images whose src AND
+    // alt are both empty — and the post-process below collapses it to `[image]`.
+    result = await mammoth.convertToMarkdown(
+      { path: srcPath },
+      { convertImage: mammoth.images.imgElement(() => ({ src: '[image]' })) },
+    );
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
   const warnings = (result.messages ?? [])
     .filter((m) => m.type !== 'error')
     .map((m) => m.message);
+  const markdown = stripImageMarkdown(result.value);
   try {
     await fs.mkdir(path.dirname(destPath), { recursive: true });
-    await fs.writeFile(destPath, result.value, 'utf8');
+    await fs.writeFile(destPath, markdown, 'utf8');
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
-  return { ok: true, markdown: result.value, warnings };
+  return { ok: true, markdown, warnings };
+}
+
+// Replace every `![alt](src)` produced by mammoth with the literal `[image]`
+// token. Mammoth emits images inline within paragraphs, so the surrounding
+// blank lines from the source paragraph break already preserve placement —
+// we do not need to inject extra newlines around the placeholder.
+function stripImageMarkdown(md: string): string {
+  return md.replace(/!\[[^\]]*\]\([^)]*\)/g, '[image]');
 }
 
 interface MammothMessage {
@@ -75,6 +94,33 @@ interface MammothResult {
   messages: MammothMessage[];
 }
 
+interface MammothImageElement {
+  contentType: string;
+  altText?: string;
+  readAsBase64String(): Promise<string>;
+}
+
+interface MammothImageAttributes {
+  src?: string;
+  alt?: string;
+}
+
+interface MammothImagesApi {
+  imgElement(
+    func: (image: MammothImageElement) =>
+      | MammothImageAttributes
+      | Promise<MammothImageAttributes>,
+  ): unknown;
+}
+
+interface MammothConvertOptions {
+  convertImage?: unknown;
+}
+
 interface MammothModule {
-  convertToMarkdown(input: { path: string } | { buffer: Buffer }): Promise<MammothResult>;
+  convertToMarkdown(
+    input: { path: string } | { buffer: Buffer },
+    options?: MammothConvertOptions,
+  ): Promise<MammothResult>;
+  images: MammothImagesApi;
 }
