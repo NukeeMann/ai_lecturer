@@ -184,3 +184,44 @@ Previous log archived to: archive/progress-2026-05-05-2319.txt
   - **`scripts/ralph/skills/playwright-skill/run.js` does NOT call `module.exports`.** It just `require()`s the temp file. Test scripts must be self-executing — wrap in `(async () => { ... })();` and call `chromium.launch()` / `browser.close()` explicitly. The wrapper in `run.js` only kicks in when the script has zero `require()` calls; if you `require('playwright')`, the runner trusts you and just executes.
   - **Verifying "no empty space when omitted" = compare `headerBottom` vs `bodyTop`.** Don't just check that the description element is absent — also check that the rendered layout closes up. With the optional band rendered as a sibling between header and body, the easiest assertion is `bodyTop - headerBottom <= 2` (allowing sub-pixel rounding). If a future edit accidentally always renders an empty `<p>`, this assertion catches it where a pure DOM-presence check wouldn't.
 ---
+
+## 2026-05-06 13:10 - US-114
+- Code widget input materials panel + output media:
+  - Schema (`src/widgets/Code/schema.ts`) extended with two optional fields:
+    - `inputs: Array<CodeInput>` where `CodeInput` is a `z.discriminatedUnion('kind', [...])` covering `image | video | file | text`. `image`/`video` carry `src` (+ optional `alt`/`caption`); `file` carries `src + filename` (+ optional caption); `text` carries `content` (+ optional label).
+    - `outputMedia?: CodeOutputMedia` — `z.discriminatedUnion('kind', [...])` of `image | video` only.
+  - `CodeWidget.tsx`: renders a new `<InputsPanel>` ABOVE the `CodeRunner` whenever `data.inputs?.length > 0`. Image/video inputs render via inline `<img>`/`<video controls>` (with optional caption); file inputs render a `<a download>` card with filename + Download icon; text inputs render a `<pre>` styled readonly box (with optional label). When `data.inputs` is absent or empty the panel is not emitted at all (no empty container).
+  - Output media: `CodeRunner.tsx` gained an `outputMediaSlot?: ReactNode` prop; `CodeWidget` passes `<OutputMediaBlock media={data.outputMedia} />` whenever `data.outputMedia` is set. The slot renders INSIDE the existing `[data-coderunner-output]` panel (alongside any stdout/stderr/traceback), so it appears in the output area regardless of run state. When omitted, no slot is rendered.
+- Files changed:
+  - `src/widgets/Code/schema.ts` — added `CodeInputSchema`, `CodeOutputMediaSchema`, optional fields on `CodeDataSchema`, exported types.
+  - `src/widgets/Code/CodeWidget.tsx` — new `InputsPanel` / `InputItem` / `OutputMediaBlock` components + wiring; pulled `Download` and `FileText` icons.
+  - `src/widgets/Code/CodeRunner.tsx` — `outputMediaSlot` prop wired into the output-panel render.
+  - `src/widgets/schemas/code.json` + `src/widgets/schemas/lesson.json` — regenerated via `npm run build:schemas`.
+  - `src/lib/schemas/schemas.test.ts` — 4 new vitest cases asserting parse acceptance, defaults, and required-filename / output-media-kind validation.
+  - `scripts/ralph/prd.json` — `US-114.passes` → `true`.
+- Quality gates:
+  - `npm run typecheck` clean.
+  - `npm test` 607/607 passing (was 603, added 4). Note: a separate test (`generation.test.ts > writes a .generating.json marker…`) is a known-flaky race on parallel atomic writes — passes in isolation, can fail under full-suite parallelism. Re-running the full suite restored a green pass; behaviour is independent of US-114.
+- Browser verification (`/tmp/playwright-test-US-114.js`, dev server on :3114 with `COURSES_ROOT_OVERRIDE=/tmp/us114-courses`):
+  - Lesson `intro` carries two code sections: `code-mixed` (1 image + 1 file + 1 text input + image outputMedia) and `code-bare` (no inputs, no outputMedia).
+  - `code-mixed`:
+    - 3 `[data-codewidget-input]` rendered (kinds image/file/text).
+    - Image input loaded (`naturalWidth=648`).
+    - File card has `href=/api/courses/us114-test/assets/data.csv`, `download=data.csv`, label includes filename.
+    - Text input renders content `"alice\nbob\ncarol"`.
+    - `[data-codewidget-output-media]` present; `[data-codewidget-output-img]` loaded (`naturalWidth=648`).
+    - Layout: `inputsBottom == editorTop` (1004.77 == 1004.77) → inputs panel sits exactly above the editor; `outputMediaRect` (top 1137.69 / bottom 1658.70) is contained within `outputPanelRect` (top 1089.19 / bottom 1674.70) → output media is inline in the output area.
+  - `code-bare`: zero `[data-codewidget-inputs]`, zero `[data-codewidget-output-media]` — no broken empty panels.
+  - Tablet viewport (768×1024): input image width 401.98 ≤ section width 444 → media scales correctly under narrower viewports. Mobile screenshot captured at 375 px.
+  - Zero console errors during page load.
+  - Screenshots: `/tmp/us114-fullpage.png`, `/tmp/us114-mixed-section.png`, `/tmp/us114-bare-section.png`, `/tmp/us114-mixed-tablet.png`, `/tmp/us114-mixed-mobile.png`.
+- Assumptions / interpretation:
+  - "Adjacent to (or above)" interpreted as ABOVE the code block (in document order). A side-by-side layout would force the code editor to compete with a fixed-width column on narrow viewports; a vertical stack adapts to all widths and matches the pattern used by other widgets (PlotImage's figure sits above its source panel).
+  - "In addition to any text/log output" interpreted as: the `outputMediaSlot` is rendered inside the output panel as a sibling of the stdout/stderr/traceback block. So if a run produces stdout AND outputMedia is set, both render together. When the panel is in placeholder/loading state, the media is omitted (it's still inside the same conditional branch that renders `OutputBody`).
+  - For backwards compatibility, both `inputs` and `outputMedia` are optional — existing `CodeData` JSON in `courses/` parses unchanged.
+- **Learnings for future iterations:**
+  - **`z.discriminatedUnion('kind', [...])` is the right shape for "polymorphic content array".** Each variant only needs the fields it actually uses (`image` doesn't need `filename`, `text` doesn't need `src`), and TS narrows correctly inside `if (input.kind === 'image')` blocks. The original AC-suggested shape `{ kind, src?, content?, filename? }` would force every consumer to handle every undefined branch; the discriminated union encodes the invariant at the type level.
+  - **`CodeRunner` slot extension pattern.** Adding `outputMediaSlot?: ReactNode` and rendering it inside the output panel (as a sibling of `<OutputBody>`) is the cleanest way to extend the runner without forking it. It mirrors the existing `extraPanel` slot pattern (US-011) — slots stay opt-in, default behaviour for non-Code widgets (Sandbox, ParametricExplorer) is unchanged.
+  - **Image-asset PNGs already exist in committed `courses/`.** Reusing one (e.g. `courses/gauss-basics/assets/plots/gauss1d.png`) for a hermetic playwright fixture is faster than generating a new PNG. Just `cp` it into `/tmp/<test-courses>/<slug>/assets/` — `COURSES_ROOT_OVERRIDE` then makes `/api/courses/<slug>/assets/<path>` resolve to the temp copy.
+  - **For "AC must show layout adapts gracefully" assertions, render TWO widgets (one full, one bare) in the same lesson and assert presence/absence on each.** That gives a single browser load that proves both the populated panel and the no-panel case in the same DOM, instead of needing two separate goto's. The orchestrator `[data-section-id]` selector scopes each assertion cleanly.
+---

@@ -79,6 +79,11 @@ export interface CodeRunnerProps {
    * runs Python via `runWithTests` (e.g. Code).
    */
   actionRunning?: boolean;
+  /**
+   * Optional content rendered inside the output panel alongside any text/log
+   * output (US-114). Used by Code widget to surface inline image/video output.
+   */
+  outputMediaSlot?: ReactNode;
 }
 
 const FONT_SIZE = '13px';
@@ -576,6 +581,7 @@ export function CodeRunner({
   onReset,
   outputPlaceholder = 'Press ▶ Run to execute.',
   actionRunning = false,
+  outputMediaSlot,
 }: CodeRunnerProps) {
   const { status, run, stop } = usePyodide();
   const [code, setCode] = useState<string>(initialCode ?? starterCode);
@@ -797,15 +803,24 @@ export function CodeRunner({
             </Callout>
           </div>
         ) : (
-          <OutputBody
-            output={output}
-            running={running}
-            placeholder={outputPlaceholder}
-            collapsed={outputCollapsed}
-            onToggleCollapsed={() => setOutputCollapsed((v) => !v)}
-            tracebackOpen={tracebackOpen}
-            onToggleTraceback={() => setTracebackOpen((v) => !v)}
-          />
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-3)',
+            }}
+          >
+            <OutputBody
+              output={output}
+              running={running}
+              placeholder={outputPlaceholder}
+              collapsed={outputCollapsed}
+              onToggleCollapsed={() => setOutputCollapsed((v) => !v)}
+              tracebackOpen={tracebackOpen}
+              onToggleTraceback={() => setTracebackOpen((v) => !v)}
+            />
+            {outputMediaSlot}
+          </div>
         )}
       </div>
       {extraPanel !== undefined && (
