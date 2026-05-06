@@ -13,6 +13,7 @@ import {
   courseSourcesDir,
   extractedSiblingPath,
   listCourseSourceFilesSync,
+  loadStagedSourcesForPrompt,
   makeDraftId,
   moveDraftSourcesToCourse,
   resolveSourcePathForPrompt,
@@ -397,5 +398,147 @@ describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', 
     await expect(
       fs.access(path.join(dst, EXTRACTED_DIRNAME, 'orphan.docx.md')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('loadStagedSourcesForPrompt (US-125)', () => {
+  it('returns [] when the draft directory does not exist', () => {
+    const id = makeDraftId();
+    expect(loadStagedSourcesForPrompt(id)).toEqual([]);
+  });
+
+  it('rejects path-traversal draft ids before touching the filesystem', () => {
+    expect(() => loadStagedSourcesForPrompt('../foo')).toThrow(/Invalid draftId/);
+    expect(() => loadStagedSourcesForPrompt('a/b')).toThrow(/Invalid draftId/);
+  });
+
+  it('reads .txt + .docx (via .extracted sibling) + .pdf in lexicographic order', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'a.txt'), 'plain text body');
+    await fs.writeFile(path.join(src, 'm.docx'), 'binary-docx');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'm.docx.md'),
+      '# Heading\n\nExtracted body.',
+    );
+    await fs.writeFile(path.join(src, 'z.pdf'), 'binary-pdf');
+
+    const out = loadStagedSourcesForPrompt(id);
+    expect(out).toHaveLength(3);
+
+    // Lexicographic: a.txt → m.docx → z.pdf
+    expect(out[0]).toEqual({
+      kind: 'text',
+      originalName: 'a.txt',
+      content: 'plain text body',
+    });
+    expect(out[1]).toEqual({
+      kind: 'text',
+      originalName: 'm.docx',
+      extractedFrom: 'm.docx',
+      content: '# Heading\n\nExtracted body.',
+    });
+    expect(out[2]).toEqual({
+      kind: 'binary-unsupported',
+      originalName: 'z.pdf',
+    });
+  });
+
+  it('marks .pptx as binary-unsupported (no extractor yet)', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(src, { recursive: true });
+    await fs.writeFile(path.join(src, 'deck.pptx'), 'binary-pptx');
+
+    const out = loadStagedSourcesForPrompt(id);
+    expect(out).toEqual([
+      { kind: 'binary-unsupported', originalName: 'deck.pptx' },
+    ]);
+  });
+
+  it('reads .json and .md as text', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(src, { recursive: true });
+    await fs.writeFile(path.join(src, 'data.json'), '{"ok":true}');
+    // .md not on the upload allow-list but readable if it lands here.
+    await fs.writeFile(path.join(src, 'aside.md'), '# md body');
+
+    const out = loadStagedSourcesForPrompt(id);
+    expect(out.find((e) => e.originalName === 'data.json')).toEqual({
+      kind: 'text',
+      originalName: 'data.json',
+      content: '{"ok":true}',
+    });
+    expect(out.find((e) => e.originalName === 'aside.md')).toEqual({
+      kind: 'text',
+      originalName: 'aside.md',
+      content: '# md body',
+    });
+  });
+
+  it('truncates a single file that exceeds perFileCharCap with the literal marker', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(src, { recursive: true });
+    // 100 chars; cap at 40.
+    const body = 'a'.repeat(100);
+    await fs.writeFile(path.join(src, 'big.txt'), body);
+
+    const out = loadStagedSourcesForPrompt(id, {
+      totalCharBudget: 1_000,
+      perFileCharCap: 40,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].kind).toBe('text');
+    if (out[0].kind === 'text') {
+      // Head 40 chars + truncation marker mentioning remaining 60.
+      expect(out[0].content.startsWith('a'.repeat(40))).toBe(true);
+      expect(out[0].content).toContain('[…truncated, 60 more chars…]');
+      expect(out[0].content.endsWith('[…truncated, 60 more chars…]')).toBe(true);
+    }
+  });
+
+  it('replaces files past totalCharBudget with the budget-exhausted placeholder', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(src, { recursive: true });
+    // Two large files. Lexicographic order: a.txt → b.txt.
+    await fs.writeFile(path.join(src, 'a.txt'), 'A'.repeat(200));
+    await fs.writeFile(path.join(src, 'b.txt'), 'B'.repeat(200));
+
+    const out = loadStagedSourcesForPrompt(id, {
+      totalCharBudget: 150,
+      perFileCharCap: 1_000,
+    });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      kind: 'text',
+      originalName: 'a.txt',
+      content: 'A'.repeat(200),
+    });
+    expect(out[1]).toEqual({
+      kind: 'text',
+      originalName: 'b.txt',
+      content: '(omitted: total character budget exhausted)',
+    });
+  });
+
+  it('downgrades a docx whose extracted sibling is unreadable to binary-unsupported', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'broken.docx'), 'docx-bytes');
+    // Sibling is a directory, not a file — readFileSync will throw EISDIR.
+    await fs.mkdir(
+      path.join(src, EXTRACTED_DIRNAME, 'broken.docx.md'),
+      { recursive: true },
+    );
+
+    const out = loadStagedSourcesForPrompt(id);
+    expect(out).toEqual([
+      { kind: 'binary-unsupported', originalName: 'broken.docx' },
+    ]);
   });
 });

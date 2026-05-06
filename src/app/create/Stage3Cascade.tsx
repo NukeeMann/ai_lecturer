@@ -168,6 +168,12 @@ interface Stage3Props {
   setDraft: Dispatch<SetStateAction<Draft>>;
   onNext: () => void;
   onBack: () => void;
+  /**
+   * Staged-uploads draft id (US-125). Forwarded to /api/wizard/structure so
+   * the route can ground the outline in the learner-uploaded source files.
+   * Null when the user came in via the "scratch" entry path.
+   */
+  draftId?: string | null;
   /** Optional fetch override for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -184,6 +190,7 @@ export default function Stage3Cascade({
   setDraft,
   onNext,
   onBack,
+  draftId,
   fetchImpl,
 }: Stage3Props) {
   const f = fetchImpl ?? (typeof fetch === 'function' ? fetch : undefined);
@@ -220,6 +227,7 @@ export default function Stage3Cascade({
             theoryPracticeRatio: draft.theoryPracticeRatio,
           },
           clarification: draft.clarification ?? undefined,
+          ...(draftId ? { draftId } : {}),
         }),
         signal: controller.signal,
       });
@@ -268,6 +276,7 @@ export default function Stage3Cascade({
     draft.durationTarget,
     draft.theoryPracticeRatio,
     draft.clarification,
+    draftId,
     f,
     setDraft,
   ]);

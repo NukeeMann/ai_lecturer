@@ -428,6 +428,7 @@ export default function CreatePage() {
           <Stage3Clarify
             draft={draft}
             setDraft={setDraft}
+            draftId={draftId}
             onNext={() => setStage(4)}
             onBack={() => setStage(2)}
           />
@@ -436,6 +437,7 @@ export default function CreatePage() {
           <Stage3Cascade
             draft={draft}
             setDraft={setDraft}
+            draftId={draftId}
             onNext={() => setStage(5)}
             onBack={() => setStage(3)}
           />

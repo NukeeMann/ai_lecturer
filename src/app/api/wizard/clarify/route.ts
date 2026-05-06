@@ -7,6 +7,10 @@ import {
   parseClarifyResponse,
   type ClarifyResponse,
 } from '@/lib/wizard/clarify';
+import {
+  loadStagedSourcesForPrompt,
+  type StagedSourceForPrompt,
+} from '@/lib/server/sources';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +43,22 @@ export async function POST(req: Request) {
     return NextResponse.json(UNAVAILABLE_BODY, { status: 503 });
   }
 
-  const userMessage = buildClarifyUserMessage(parsed.data) + CLARIFY_MODEL_HINT;
+  // US-125: when a draft id is supplied, ground the prompt in the staged
+  // uploads. An invalid id (path traversal etc.) is logged once and the
+  // route falls back to the source-less prompt rather than 400'ing.
+  let sources: StagedSourceForPrompt[] = [];
+  if (typeof parsed.data.draftId === 'string' && parsed.data.draftId.length > 0) {
+    try {
+      sources = loadStagedSourcesForPrompt(parsed.data.draftId);
+    } catch (err) {
+      console.warn(
+        `[wizard/clarify] ignoring draftId=${JSON.stringify(parsed.data.draftId)}: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  const userMessage =
+    buildClarifyUserMessage(parsed.data, sources) + CLARIFY_MODEL_HINT;
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {

@@ -8,6 +8,8 @@
  */
 import { z } from 'zod';
 
+import type { StagedSourceForPrompt } from '@/lib/server/sources';
+
 import { extractJsonPayload } from './clarify';
 
 export const RefineDraftSchema = z.object({
@@ -29,6 +31,12 @@ export const StructureRequestSchema = z.object({
   refine: RefineDraftSchema,
   /** Free-form clarification answers, keyed by `<id>: <question text>`. */
   clarification: z.record(z.string(), z.string()).optional(),
+  /**
+   * Optional staged-uploads draft id (US-125). When present, the route loads
+   * `<draftsRoot>/<draftId>/sources/` and grounds the outline in the
+   * learner-uploaded materials.
+   */
+  draftId: z.string().optional(),
 });
 
 export type StructureRequest = z.infer<typeof StructureRequestSchema>;
@@ -62,6 +70,7 @@ export const STRUCTURE_SYSTEM_PROMPT = [
   'Match the learner\'s requested length: short ≈ 3–5 lessons total, standard ≈ 8–12, extensive ≈ 20–30, comprehensive ≈ 40+. Spread lessons across modules sensibly (3–8 lessons per module).',
   'Respond with STRICT JSON only — no prose, no markdown fences. Schema: {"courseTitle":"…","courseDescription":"…","modules":[{"title":"…","lessons":[{"title":"…","description":"…","estimatedMinutes":12}, ...]}, ...]}.',
   'Every field is required and must be non-empty. Do not include ids, prerequisites, or any extra fields.',
+  'If learner-uploaded source materials are provided, the outline MUST be grounded in their topics and ordering wherever they cover the requested topic; only fall back to your own knowledge for gaps the materials do not cover.',
 ].join('\n');
 
 function ratioLabel(n: number): string {
@@ -85,7 +94,10 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
   }
 }
 
-export function buildStructureUserMessage(req: StructureRequest): string {
+export function buildStructureUserMessage(
+  req: StructureRequest,
+  sources?: readonly StagedSourceForPrompt[],
+): string {
   const { topic, description, refine, clarification } = req;
   const trimmedDescription = (description ?? '').trim();
   const lines = [
@@ -108,6 +120,23 @@ export function buildStructureUserMessage(req: StructureRequest): string {
     lines.push('', "Learner's clarification answers:");
     for (const [key, value] of answerEntries) {
       lines.push(`- ${key.trim()} → ${value.trim()}`);
+    }
+  }
+
+  if (sources && sources.length > 0) {
+    lines.push('', 'Learner-uploaded source materials:');
+    for (const s of sources) {
+      if (s.kind === 'binary-unsupported') {
+        lines.push(
+          `=== ${s.originalName} ===`,
+          '(binary file uploaded by learner; content extraction not yet supported — treat the filename as a hint about scope)',
+        );
+      } else {
+        const heading = s.extractedFrom
+          ? `=== ${s.originalName} (extracted from docx) ===`
+          : `=== ${s.originalName} ===`;
+        lines.push(heading, s.content);
+      }
     }
   }
 
