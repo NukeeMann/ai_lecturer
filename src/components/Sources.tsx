@@ -27,7 +27,7 @@ import {
   labelStyle,
 } from '@/components/EditorForm';
 import type { Source, SourceKind } from '@/lib/schemas/lesson';
-import { useLocaleStrings } from '@/lib/i18n/strings';
+import { strings } from '@/lib/i18n/strings';
 
 export const SOURCE_KIND_OPTIONS: SourceKind[] = ['paper', 'video', 'article', 'book'];
 
@@ -142,7 +142,6 @@ interface LessonSourcesPanelProps {
 export function LessonSourcesPanel({ sources }: LessonSourcesPanelProps) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  const strings = useLocaleStrings();
 
   if (sources.length === 0) return null;
 

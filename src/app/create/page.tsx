@@ -46,7 +46,7 @@ import {
   computeSliderEdges,
 } from '@/lib/lessons/lessonSlots';
 import { reverseLogLines, reverseLiveLogLines } from '@/lib/lessons/genLog';
-import { useLocaleStrings } from '@/lib/i18n/strings';
+import { strings } from '@/lib/i18n/strings';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -1122,7 +1122,6 @@ function ResumeBanner({
   onResume: () => void;
   onDismiss: () => void;
 }) {
-  const strings = useLocaleStrings();
   return (
     <div
       data-testid="resume-banner"
@@ -2521,7 +2520,6 @@ function StageLogSection({
 
 function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
   const router = useRouter();
-  const strings = useLocaleStrings();
   const [phase, setPhase] = useState<
     'starting' | 'queued' | 'running' | 'done' | 'error'
   >('starting');

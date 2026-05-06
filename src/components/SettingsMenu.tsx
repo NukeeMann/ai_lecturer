@@ -15,13 +15,6 @@ import {
   useKeyboardShortcuts,
   type KeyboardShortcut,
 } from '@/lib/hooks/useKeyboardShortcuts';
-import {
-  LOCALE_CHANGE_EVENT,
-  LOCALE_STORAGE_KEY,
-  readLocale,
-  stringsFor,
-  type Locale,
-} from '@/lib/i18n/strings';
 
 type ThemePref = 'light' | 'dark' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
@@ -248,7 +241,6 @@ export function SettingsMenu({
   const [accent, setAccent] = useState<Accent>(
     courseDefaultAccent ?? 'default',
   );
-  const [locale, setLocale] = useState<Locale>('en');
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Initial sync from localStorage. The boot script in layout.tsx applies the
@@ -261,8 +253,6 @@ export function SettingsMenu({
     setDensity(readDensity());
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFont(readFont());
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLocale(readLocale());
   }, []);
 
   // Resolve the visible accent selection from override + course default. Runs
@@ -282,18 +272,15 @@ export function SettingsMenu({
       setTheme(readThemePref());
       setDensity(readDensity());
       setFont(readFont());
-      setLocale(readLocale());
       if (courseSlug) {
         const override = readAccentOverride(courseSlug);
         setAccent(override ?? courseDefaultAccent ?? 'default');
       }
     }
     window.addEventListener(SETTINGS_CHANGE_EVENT, refresh);
-    window.addEventListener(LOCALE_CHANGE_EVENT, refresh);
     window.addEventListener('storage', refresh);
     return () => {
       window.removeEventListener(SETTINGS_CHANGE_EVENT, refresh);
-      window.removeEventListener(LOCALE_CHANGE_EVENT, refresh);
       window.removeEventListener('storage', refresh);
     };
   }, [courseSlug, courseDefaultAccent]);
@@ -393,23 +380,6 @@ export function SettingsMenu({
     [courseSlug],
   );
 
-  const onLocaleSelect = useCallback((next: Locale) => {
-    try {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, next);
-    } catch {
-      // localStorage unavailable; in-memory selection still works.
-    }
-    document.documentElement.setAttribute('data-locale', next);
-    setLocale(next);
-    window.dispatchEvent(new Event(LOCALE_CHANGE_EVENT));
-  }, []);
-
-  const t = stringsFor(locale);
-  const LANGUAGE_OPTIONS: { value: Locale; label: string }[] = [
-    { value: 'en', label: t.settings.languageOptionEn },
-    { value: 'pl', label: t.settings.languageOptionPl },
-  ];
-
   return (
     <div
       ref={containerRef}
@@ -464,13 +434,6 @@ export function SettingsMenu({
               testIdPrefix="settings-accent"
             />
           ) : null}
-          <SettingsGroup
-            label={t.settings.languageGroupLabel}
-            options={LANGUAGE_OPTIONS}
-            value={locale}
-            onSelect={onLocaleSelect}
-            testIdPrefix="settings-language"
-          />
         </div>
       ) : null}
     </div>
