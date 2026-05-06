@@ -1,0 +1,39 @@
+[2026-05-06T14:05:27+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T14:06:13+0200] Now I understand the layout. Let me check the tests and how /create handles the query params.
+[2026-05-06T14:06:29+0200] Now I'll modify the search form. Let me make the change:
+[2026-05-06T14:06:49+0200] Now let me run typecheck and existing tests.
+[2026-05-06T14:07:05+0200] Typecheck clean. Now let me check ESLint.
+[2026-05-06T14:07:22+0200] The single failing test is in `src/lib/server/generation.test.ts` (a marker-file race) — completely unrelated to my UI search change. Let me confirm it's pre-existing on the base branch.
+[2026-05-06T14:07:28+0200] Pre-existing failure on the base branch — confirmed unrelated to US-118.
+
+Now let me browser-verify with playwright. First, start the dev server.
+[2026-05-06T14:09:02+0200] The runner expects a self-running IIFE. Let me rewrite:
+[2026-05-06T14:09:39+0200] All three scenarios pass:
+- **A**: zero-match ENTER → `/create?topic=zzz-nonexistent-course-xyzzy` and `stage1-topic-input` is prefilled with the exact query.
+- **B**: with matches, ENTER stays on `/` (existing blur behavior preserved).
+- **C**: empty + ENTER stays on `/`.
+
+Now let me add a regression test for the search-form behavior, then update prd + progress and commit.
+[2026-05-06T14:09:55+0200] Let me check the existing dashboard helper module location:
+[2026-05-06T14:10:08+0200] I'll add a small pure helper in `src/lib/dashboard.ts` and unit-test it. Then refactor the search form to use it.
+[2026-05-06T14:10:20+0200] Now refactor `page.tsx` to use the helper:
+[2026-05-06T14:10:38+0200] Now add unit tests for the helper:
+[2026-05-06T14:11:02+0200] All 6 new tests pass. Now run typecheck + full suite + lint, then re-verify the playwright flow with the refactored code.
+[2026-05-06T14:11:32+0200] 620 passed (was 614), 1 pre-existing failure unchanged. Re-verify with playwright on the refactored code:
+[2026-05-06T14:11:42+0200] All scenarios pass after refactor. Now update prd.json + progress.txt and commit.
+[2026-05-06T14:13:02+0200] Commit landed in HEAD with `US-118 passes = true`. Now exit cleanly — leave the dev server alone (orchestrator will tear down the worktree).
+
+**Summary:**
+- Added pure helper `searchEnterTarget(query, hasMatches, coursesLoaded)` in `src/lib/dashboard.ts:24` — returns `/create?topic=<encoded>` only when query is non-empty, courses have loaded, and zero matches.
+- Wired it into the dashboard search `<form>` onSubmit at `src/app/page.tsx:828` — empty/has-match/pre-load cases keep the legacy blur-only behaviour.
+- 6 new unit tests in `src/lib/dashboard-searchEnter.test.ts`. Vitest 620 passed (+6); the single failure is pre-existing (`getActiveRunSummary` JSON-race, confirmed unchanged on the base branch).
+- Typecheck + ESLint clean.
+- Playwright-verified all three AC scenarios on a port-3018 dev server. Screenshots in `/tmp/us118-A-create-prefilled.png` and `/tmp/us118-B-stay-on-dashboard.png`.
+[2026-05-06T14:13:03+0200] [result success turns=51 cost=$2.9087675000000006] Commit landed in HEAD with `US-118 passes = true`. Now exit cleanly — leave the dev server alone (orchestrator will tear down the worktree).
+
+**Summary:**
+- Added pure helper `searchEnterTarget(query, hasMatches, coursesLoaded)` in `src/lib/dashboard.ts:24` — returns `/create?topic=<encoded>` only when query is non-empty, courses have loaded, and zero matches.
+- Wired it into the dashboard search `<form>` onSubmit at `src/app/page.tsx:828` — empty/has-match/pre-load cases keep the legacy blur-only behaviour.
+- 6 new unit tests in `src/lib/dashboard-searchEnter.test.ts`. Vitest 620 passed (+6); the single failure is pre-existing (`getActiveRunSummary` JSON-race, confirmed unchanged on the base branch).
+- Typecheck + ESLint clean.
+- Playwright-verified all three AC scenarios on a port-3018 dev server. Screenshots in `/tmp/us118-A-create-prefilled.png` and `/tmp/us118-B-stay-on-dashboard.png`.
