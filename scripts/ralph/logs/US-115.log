@@ -1,0 +1,16 @@
+[2026-05-06T13:10:45+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T13:12:20+0200] Found the constraint at line 2371 (`maxWidth: 760`). Let me check the design folder briefly and see if there are course-spec pages or other lesson-rendering paths that also use this fixed width.
+[2026-05-06T13:12:27+0200] Good — LessonChat is unrelated (chat widget side panel). The fix is purely in the lesson page's `LessonStream` container at line 2371 plus the matching `ContentSkeleton` bar at line 2289.
+
+Let me also check if any existing tests reference `760`/`maxWidth`/lesson-stream layout:
+[2026-05-06T13:12:52+0200] Let me check how to navigate to an existing lesson by looking at courses on disk:
+[2026-05-06T13:13:25+0200] Now write the playwright reproduction script (with both pre/post fix assertions). Then run it to capture pre-fix behavior:
+[2026-05-06T13:14:28+0200] Pre-fix behavior confirmed: stream stays at 760px even when the viewport is 3840px. Now apply the fix:
+[2026-05-06T13:14:37+0200] Now update the matching skeleton bar so the placeholder mirrors the new fluid layout:
+[2026-05-06T13:14:41+0200] Now re-run the playwright reproduction post-fix:
+[2026-05-06T13:15:06+0200] Post-fix passing. Stream now grows from 760→956 at 1280 and 760→3516 at 3840. Let me run typecheck + tests:
+[2026-05-06T13:15:28+0200] Typecheck clean, 607/607 tests pass. Now let me also do a brief responsive sanity check at mobile width to ensure I haven't broken narrow viewports:
+[2026-05-06T13:15:54+0200] Now flip US-115 passes=true and append progress log:
+[2026-05-06T13:16:28+0200] Diff looks clean. Stage and commit:
+[2026-05-06T13:16:43+0200] US-115 done and committed (564fa4e). Lesson stream container at `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx:2370` switched from `maxWidth: 760` to `width: '100%'` (skeleton bar at 2289 followed). Pre-fix playwright repro showed stream stuck at 760px across 1280→3840 viewports; post-fix it scales 956→3516. Typecheck clean, 607/607 tests pass, narrow-viewport sanity OK. `passes=true` for US-115 is in HEAD.
+[2026-05-06T13:16:43+0200] [result success turns=46 cost=$2.8170319999999993] US-115 done and committed (564fa4e). Lesson stream container at `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx:2370` switched from `maxWidth: 760` to `width: '100%'` (skeleton bar at 2289 followed). Pre-fix playwright repro showed stream stuck at 760px across 1280→3840 viewports; post-fix it scales 956→3516. Typecheck clean, 607/607 tests pass, narrow-viewport sanity OK. `passes=true` for US-115 is in HEAD.
