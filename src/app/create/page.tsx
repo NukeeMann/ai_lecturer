@@ -144,10 +144,6 @@ const DURATION_OPTIONS: { value: DurationTarget; label: string }[] = [
   { value: 'comprehensive', label: 'Comprehensive (40+)' },
 ];
 
-function wordCount(s: string): number {
-  return s.trim().split(/\s+/).filter(Boolean).length;
-}
-
 function ratioLabel(ratio: number): string {
   if (ratio < 34) return 'Mostly theory';
   if (ratio > 66) return 'Mostly practice';
@@ -1378,8 +1374,7 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
     return () => clearInterval(id);
   }, []);
 
-  const wc = wordCount(draft.topic);
-  const canNext = wc >= 3;
+  const canNext = draft.topic.trim().length > 0;
 
   return (
     <div style={stageWrapStyle}>
