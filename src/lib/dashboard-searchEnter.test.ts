@@ -22,20 +22,24 @@ describe('US-118 — searchEnterTarget', () => {
     expect(searchEnterTarget('linear algebra', true, true)).toBeNull();
   });
 
-  it('returns /create?topic=… when query is non-empty and yields zero matches', () => {
+  it('returns /create?topic=…&from=search when query is non-empty and yields zero matches', () => {
     expect(searchEnterTarget('linear algebra', false, true)).toBe(
-      '/create?topic=linear%20algebra',
+      '/create?topic=linear%20algebra&from=search',
     );
   });
 
   it('trims whitespace before encoding', () => {
-    expect(searchEnterTarget('  bayes  ', false, true)).toBe('/create?topic=bayes');
+    expect(searchEnterTarget('  bayes  ', false, true)).toBe(
+      '/create?topic=bayes&from=search',
+    );
   });
 
   it('encodes characters that are unsafe in a URL', () => {
     expect(searchEnterTarget('how transformers work?', false, true)).toBe(
-      '/create?topic=how%20transformers%20work%3F',
+      '/create?topic=how%20transformers%20work%3F&from=search',
     );
-    expect(searchEnterTarget('a&b', false, true)).toBe('/create?topic=a%26b');
+    expect(searchEnterTarget('a&b', false, true)).toBe(
+      '/create?topic=a%26b&from=search',
+    );
   });
 });

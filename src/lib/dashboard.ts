@@ -23,6 +23,9 @@ export function allCoursesComplete(
 // presses ENTER, jump them straight into the wizard with the query as the
 // pre-filled topic. Returns the target href, or null when the legacy no-op
 // (blur only) should be preserved (empty query / has matches / pre-load).
+// `from=search` tells /create to skip the 'choose' stage and behave as
+// though the user had clicked "Start from scratch" — they already typed a
+// topic, so re-asking would be redundant.
 export function searchEnterTarget(
   query: string,
   hasMatches: boolean,
@@ -32,5 +35,5 @@ export function searchEnterTarget(
   if (trimmed.length === 0) return null;
   if (!coursesLoaded) return null;
   if (hasMatches) return null;
-  return `/create?topic=${encodeURIComponent(trimmed)}`;
+  return `/create?topic=${encodeURIComponent(trimmed)}&from=search`;
 }

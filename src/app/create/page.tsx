@@ -178,6 +178,15 @@ export default function CreatePage() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDraft((d) => ({ ...d, topic: t }));
     }
+    // US-118 — `?from=search` means we arrived via the dashboard search bar
+    // hitting ENTER on a no-match query. The user already typed a topic, so
+    // skip the 'choose' stage and act as if they clicked "Start from scratch".
+    if (t && t.trim() && params.get('from') === 'search') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEntryPath('scratch');
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStage(1);
+    }
     // US-106 — `?resume=<slug>` opens directly into the Stage 6 generation
     // panel for that slug. Stage5Generate's effect calls POST /generate which
     // is idempotent for the same slug (US-105) and reattaches to the live
