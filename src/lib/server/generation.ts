@@ -80,7 +80,7 @@ export interface QueueSummaryEntry {
  * Summary returned by GET /api/courses/active-run (US-106). Lets the /create
  * page detect a still-running generation after a tab/server reload and offer
  * the user a one-click resume. As of US-107 the response also carries the
- * pending queue so callers can show "X w kolejce" context.
+ * pending queue so callers can show "X in queue" context.
  */
 export type ActiveRunSummary =
   | { active: false; queue: QueueSummaryEntry[] }

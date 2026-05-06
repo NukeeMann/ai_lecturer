@@ -19,6 +19,7 @@ import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import { allCoursesComplete, searchEnterTarget } from '@/lib/dashboard';
+import { strings } from '@/lib/i18n/strings';
 
 // ------- accent palette (per course.accentColor) ------------------------------
 // Keyed values come from src/styles/tokens.css. We intentionally hardcode hexes
@@ -733,7 +734,7 @@ function EmptyState() {
         }}
       >
         <Plus size={16} strokeWidth={2} />
-        Nowy kurs
+        {strings.dashboard.newCourse}
       </Link>
     </div>
   );
@@ -907,7 +908,7 @@ export default function DashboardPage() {
               style={primaryButtonStyle}
             >
               <Plus size={16} strokeWidth={2} />
-              Nowy kurs
+              {strings.dashboard.newCourse}
             </Link>
           )}
         </div>
