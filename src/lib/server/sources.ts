@@ -11,7 +11,7 @@
 // (if any) is moved into the new course directory via `moveDraftSourcesToCourse`.
 
 import path from 'node:path';
-import { promises as fs, existsSync, readdirSync } from 'node:fs';
+import { promises as fs, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { coursesRoot, courseDir, assertSafeSlug, InvalidSlugError } from './paths';
 
 /** Per-file size cap for uploaded source materials. 50 MiB — large enough
@@ -274,6 +274,162 @@ export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath 
     }
   }
   return { readPath: absPath, originalName };
+}
+
+/**
+ * Default token-budget caps for `loadStagedSourcesForPrompt` (US-125).
+ *
+ * 30k characters ≈ 7.5k tokens — leaves ample headroom in a 200k-context
+ * Opus call alongside the system prompt, the existing draft spec, the
+ * learner's clarification answers, and the model's reply. Per-file cap of
+ * 12k characters ensures one runaway upload can't dominate the prompt
+ * window even when a single file is well under the total budget.
+ */
+export const DEFAULT_TOTAL_CHAR_BUDGET = 30_000;
+export const DEFAULT_PER_FILE_CHAR_CAP = 12_000;
+
+export type StagedSourceForPrompt =
+  | {
+      kind: 'text';
+      originalName: string;
+      extractedFrom?: string;
+      content: string;
+    }
+  | {
+      kind: 'binary-unsupported';
+      originalName: string;
+    };
+
+const TEXT_SOURCE_EXTS: ReadonlySet<string> = new Set([
+  '.docx',
+  '.txt',
+  '.md',
+  '.json',
+]);
+
+const BUDGET_EXHAUSTED_PLACEHOLDER =
+  '(omitted: total character budget exhausted)';
+
+function truncationMarker(remaining: number): string {
+  return `\n\n[…truncated, ${remaining} more chars…]`;
+}
+
+/**
+ * Load every staged source file under `<draftsRoot>/<draftId>/sources/` into
+ * a prompt-ready array (US-125). Used by the wizard Clarify and Structure
+ * routes to ground their LLM calls in the learner's uploads BEFORE the
+ * outline is accepted (init_course only sees them after that).
+ *
+ * Behaviour:
+ * - Files are read in lexicographic order (matches `listCourseSourceFilesSync`).
+ * - For `.docx` the `.extracted/<name>.docx.md` sibling (US-124) is read
+ *   instead of the binary; `extractedFrom` is set on the result.
+ * - For `.txt`, `.md`, `.json` the file itself is read.
+ * - For `.pdf` and `.pptx` (no extractor yet) the entry is returned with
+ *   `kind: 'binary-unsupported'` — content omitted, originalName preserved.
+ *   Keeping them in the array means the prompt can mention "user uploaded
+ *   this but we can't read it" instead of silently dropping the upload.
+ * - Per-file content is truncated at `perFileCharCap` (default 12k) with the
+ *   marker `\n\n[…truncated, <N> more chars…]`.
+ * - Once the running total of returned content would exceed
+ *   `totalCharBudget` (default 30k), every subsequent text-extension file
+ *   becomes `kind: 'text'` with `content` set to a single-line placeholder
+ *   `'(omitted: total character budget exhausted)'`. The user must SEE in
+ *   the prompt that we know about the file rather than have it silently
+ *   disappear.
+ * - Read errors on individual files (e.g. permission denied on the
+ *   extracted sibling) downgrade that entry to `binary-unsupported` and log
+ *   a warning to the server console — they do not fail the whole call.
+ *
+ * Always returns an array — never throws for ENOENT on the draft directory.
+ * `assertSafeDraftId` is called first so a path-traversal id like `'../foo'`
+ * is rejected loud and early.
+ */
+export function loadStagedSourcesForPrompt(
+  draftId: string,
+  opts?: { totalCharBudget?: number; perFileCharCap?: number },
+): StagedSourceForPrompt[] {
+  assertSafeDraftId(draftId);
+  const totalBudget = opts?.totalCharBudget ?? DEFAULT_TOTAL_CHAR_BUDGET;
+  const perFileCap = opts?.perFileCharCap ?? DEFAULT_PER_FILE_CHAR_CAP;
+  const dir = draftSourcesDir(draftId);
+
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const fileNames = entries
+    .filter((e) => e.isFile())
+    .map((e) => e.name)
+    .sort();
+
+  const result: StagedSourceForPrompt[] = [];
+  let used = 0;
+
+  for (const name of fileNames) {
+    const ext = path.extname(name).toLowerCase();
+    const absPath = path.resolve(dir, name);
+    const resolved = resolveSourcePathForPrompt(absPath);
+    const originalName = resolved.originalName;
+
+    if (!TEXT_SOURCE_EXTS.has(ext)) {
+      // .pdf, .pptx, or any other non-text extension we can't extract yet.
+      result.push({ kind: 'binary-unsupported', originalName });
+      continue;
+    }
+
+    if (used >= totalBudget) {
+      // Budget already exhausted — keep the file visible but omit content.
+      result.push({
+        kind: 'text',
+        originalName,
+        ...(resolved.extractedFrom
+          ? { extractedFrom: resolved.extractedFrom }
+          : {}),
+        content: BUDGET_EXHAUSTED_PLACEHOLDER,
+      });
+      continue;
+    }
+
+    let raw: string;
+    try {
+      // Read the resolved path (extracted sibling for .docx, original for
+      // .txt/.md/.json). UTF-8 by spec; node defaults are fine here.
+      raw = readFileSync(resolved.readPath, 'utf8');
+    } catch (err) {
+      console.warn(
+        `[loadStagedSourcesForPrompt] failed to read ${resolved.readPath}: ${(err as Error).message}`,
+      );
+      result.push({ kind: 'binary-unsupported', originalName });
+      continue;
+    }
+
+    let content: string;
+    if (raw.length > perFileCap) {
+      const head = raw.slice(0, perFileCap);
+      const remaining = raw.length - perFileCap;
+      content = head + truncationMarker(remaining);
+    } else {
+      content = raw;
+    }
+
+    used += content.length;
+
+    result.push({
+      kind: 'text',
+      originalName,
+      ...(resolved.extractedFrom
+        ? { extractedFrom: resolved.extractedFrom }
+        : {}),
+      content,
+    });
+  }
+
+  return result;
 }
 
 /** List existing source filenames in a directory. Returns [] if the dir

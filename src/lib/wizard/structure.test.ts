@@ -1,4 +1,7 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 
 import * as connectorModule from '@/lib/lessonChat/connector';
 import type {
@@ -7,6 +10,8 @@ import type {
   ConnectorRequest,
 } from '@/lib/lessonChat/connector';
 import { POST } from '@/app/api/wizard/structure/route';
+import { draftSourcesDir, makeDraftId } from '@/lib/server/sources';
+import type { StagedSourceForPrompt } from '@/lib/server/sources';
 import {
   STRUCTURE_SYSTEM_PROMPT,
   StructureRequestSchema,
@@ -140,6 +145,60 @@ describe('buildStructureUserMessage', () => {
       refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
     });
     expect(blank).not.toMatch(/Description:/);
+  });
+
+  it('regression: produces identical output when sources is undefined or [] (US-125)', () => {
+    const reqArgs = {
+      topic: 'Linear algebra',
+      description: 'Goal',
+      refine: { level: 'beginner' as const, durationTarget: 'short' as const, theoryPracticeRatio: 50 },
+      clarification: { 'q1: goal': 'apply to ML' },
+    };
+    const baseline = buildStructureUserMessage(reqArgs);
+    const withUndefined = buildStructureUserMessage(reqArgs, undefined);
+    const withEmpty = buildStructureUserMessage(reqArgs, []);
+    expect(withUndefined).toBe(baseline);
+    expect(withEmpty).toBe(baseline);
+    expect(baseline).not.toContain('Learner-uploaded source materials:');
+  });
+
+  it('appends a Learner-uploaded source materials block BEFORE the final Generate line (US-125)', () => {
+    const sources: StagedSourceForPrompt[] = [
+      { kind: 'text', originalName: 'a.txt', content: 'TXT-BODY-XYZ' },
+      {
+        kind: 'text',
+        originalName: 'm.docx',
+        extractedFrom: 'm.docx',
+        content: 'DOCX-EXTRACTED-BODY',
+      },
+      { kind: 'binary-unsupported', originalName: 'z.pdf' },
+    ];
+    const msg = buildStructureUserMessage(
+      {
+        topic: 'Linear algebra',
+        refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+      },
+      sources,
+    );
+
+    expect(msg).toContain('Learner-uploaded source materials:');
+    expect(msg).toContain('=== a.txt ===');
+    expect(msg).toContain('TXT-BODY-XYZ');
+    expect(msg).toContain('=== m.docx (extracted from docx) ===');
+    expect(msg).toContain('DOCX-EXTRACTED-BODY');
+    expect(msg).toContain('=== z.pdf ===');
+
+    // Block order: header → each filename heading → final 'Generate …' instruction.
+    const headerIdx = msg.indexOf('Learner-uploaded source materials:');
+    const aIdx = msg.indexOf('=== a.txt ===');
+    const mIdx = msg.indexOf('=== m.docx (extracted from docx) ===');
+    const zIdx = msg.indexOf('=== z.pdf ===');
+    const generateIdx = msg.indexOf('Generate the full module → lesson outline');
+    expect(headerIdx).toBeGreaterThan(0);
+    expect(aIdx).toBeGreaterThan(headerIdx);
+    expect(mIdx).toBeGreaterThan(aIdx);
+    expect(zIdx).toBeGreaterThan(mIdx);
+    expect(generateIdx).toBeGreaterThan(zIdx);
   });
 });
 
@@ -466,5 +525,63 @@ describe('POST /api/wizard/structure', () => {
     expect(captured).not.toBeNull();
     const userMessage = (captured as unknown as ConnectorRequest).userMessage;
     expect(userMessage).toContain('apply to NLP at work');
+  });
+
+  it('forwards staged-uploads content into the user message when draftId is present (US-125)', async () => {
+    const coursesRoot = await fs.mkdtemp(
+      path.join(tmpdir(), 'ai-lecturer-structure-route-'),
+    );
+    process.env.COURSES_ROOT_OVERRIDE = coursesRoot;
+    try {
+      const draftId = makeDraftId();
+      const dir = draftSourcesDir(draftId);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'a.txt'), 'STAGED-TXT-CONTENT');
+
+      let captured: ConnectorRequest | null = null;
+      vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+        fakeConnector(async (req) => {
+          captured = req;
+          return VALID_REPLY;
+        }),
+      );
+
+      const res = await POST(
+        makeRequest({
+          topic: 'Linear algebra',
+          refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+          draftId,
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(captured).not.toBeNull();
+      const captured0 = captured as unknown as ConnectorRequest;
+      expect(captured0.userMessage).toContain('Learner-uploaded source materials:');
+      expect(captured0.userMessage).toContain('=== a.txt ===');
+      expect(captured0.userMessage).toContain('STAGED-TXT-CONTENT');
+    } finally {
+      delete process.env.COURSES_ROOT_OVERRIDE;
+      await fs.rm(coursesRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the Learner-uploaded source materials block when no draftId is sent (US-125)', async () => {
+    let captured: ConnectorRequest | null = null;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return VALID_REPLY;
+      }),
+    );
+    const res = await POST(
+      makeRequest({
+        topic: 'How transformers work',
+        refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(captured).not.toBeNull();
+    const captured0 = captured as unknown as ConnectorRequest;
+    expect(captured0.userMessage).not.toContain('Learner-uploaded source materials:');
   });
 });

@@ -29,6 +29,12 @@ interface Stage3ClarifyProps {
   setDraft: Dispatch<SetStateAction<Draft>>;
   onNext: () => void;
   onBack: () => void;
+  /**
+   * Staged-uploads draft id (US-125). Forwarded to /api/wizard/clarify so
+   * the route can ground the prompt in the learner-uploaded source files.
+   * Null when the user came in via the "scratch" entry path.
+   */
+  draftId?: string | null;
   /** Optional fetch override for tests. */
   fetchImpl?: typeof fetch;
 }
@@ -44,6 +50,7 @@ export default function Stage3Clarify({
   setDraft,
   onNext,
   onBack,
+  draftId,
   fetchImpl,
 }: Stage3ClarifyProps) {
   const [state, setState] = useState<LoadState>(
@@ -74,6 +81,7 @@ export default function Stage3Clarify({
             durationTarget: draft.durationTarget,
             theoryPracticeRatio: draft.theoryPracticeRatio,
           },
+          ...(draftId ? { draftId } : {}),
         }),
       });
       if (seq !== requestSeq.current) return;
@@ -122,7 +130,7 @@ export default function Stage3Clarify({
       if (seq !== requestSeq.current) return;
       setState({ kind: 'error', message: (err as Error).message });
     }
-  }, [draft.topic, draft.description, draft.level, draft.durationTarget, draft.theoryPracticeRatio, f, setDraft]);
+  }, [draft.topic, draft.description, draft.level, draft.durationTarget, draft.theoryPracticeRatio, draftId, f, setDraft]);
 
   // First-time entry / stale-reopen: kick off a load (or surface a confirm
   // dialog if the user has typed answers we'd otherwise discard). The

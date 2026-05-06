@@ -1,8 +1,13 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
 
 import * as connectorModule from '@/lib/lessonChat/connector';
 import type { ChatStreamEvent, Connector, ConnectorRequest } from '@/lib/lessonChat/connector';
 import { POST } from '@/app/api/wizard/clarify/route';
+import { draftSourcesDir, makeDraftId } from '@/lib/server/sources';
+import type { StagedSourceForPrompt } from '@/lib/server/sources';
 import {
   buildClarifyUserMessage,
   CLARIFY_SYSTEM_PROMPT,
@@ -115,6 +120,62 @@ describe('buildClarifyUserMessage', () => {
       refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
     });
     expect(blank).not.toMatch(/Description:/);
+  });
+
+  it('regression: produces identical output when sources is undefined or [] (US-125)', () => {
+    const reqArgs = {
+      topic: 'Linear algebra',
+      description: 'Goal',
+      refine: { level: 'beginner' as const, durationTarget: 'short' as const, theoryPracticeRatio: 50 },
+    };
+    const baseline = buildClarifyUserMessage(reqArgs);
+    const withUndefined = buildClarifyUserMessage(reqArgs, undefined);
+    const withEmpty = buildClarifyUserMessage(reqArgs, []);
+    expect(withUndefined).toBe(baseline);
+    expect(withEmpty).toBe(baseline);
+    expect(baseline).not.toContain('Learner-uploaded source materials:');
+  });
+
+  it('appends a Learner-uploaded source materials block BEFORE the final Generate line (US-125)', () => {
+    const sources: StagedSourceForPrompt[] = [
+      { kind: 'text', originalName: 'a.txt', content: 'TXT-BODY-XYZ' },
+      {
+        kind: 'text',
+        originalName: 'm.docx',
+        extractedFrom: 'm.docx',
+        content: 'DOCX-EXTRACTED-BODY',
+      },
+      { kind: 'binary-unsupported', originalName: 'z.pdf' },
+    ];
+    const msg = buildClarifyUserMessage(
+      {
+        topic: 'Linear algebra',
+        refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+      },
+      sources,
+    );
+
+    expect(msg).toContain('Learner-uploaded source materials:');
+    expect(msg).toContain('=== a.txt ===');
+    expect(msg).toContain('TXT-BODY-XYZ');
+    expect(msg).toContain('=== m.docx (extracted from docx) ===');
+    expect(msg).toContain('DOCX-EXTRACTED-BODY');
+    expect(msg).toContain('=== z.pdf ===');
+    expect(msg).toContain(
+      '(binary file uploaded by learner; content extraction not yet supported',
+    );
+
+    // Block order: header → each filename heading → final 'Generate …' instruction.
+    const headerIdx = msg.indexOf('Learner-uploaded source materials:');
+    const aIdx = msg.indexOf('=== a.txt ===');
+    const mIdx = msg.indexOf('=== m.docx (extracted from docx) ===');
+    const zIdx = msg.indexOf('=== z.pdf ===');
+    const generateIdx = msg.indexOf('Generate up to 10 clarification questions');
+    expect(headerIdx).toBeGreaterThan(0);
+    expect(aIdx).toBeGreaterThan(headerIdx);
+    expect(mIdx).toBeGreaterThan(aIdx);
+    expect(zIdx).toBeGreaterThan(mIdx);
+    expect(generateIdx).toBeGreaterThan(zIdx);
   });
 });
 
@@ -353,6 +414,69 @@ describe('POST /api/wizard/clarify', () => {
     expect(calls).toBe(2);
     const body = (await res.json()) as { error: string };
     expect(body.error).toMatch(/Clarification generator failed/);
+  });
+
+  it('forwards staged-uploads content into the user message when draftId is present (US-125)', async () => {
+    // Stand up an isolated coursesRoot containing one staged .txt source.
+    const coursesRoot = await fs.mkdtemp(
+      path.join(tmpdir(), 'ai-lecturer-clarify-route-'),
+    );
+    process.env.COURSES_ROOT_OVERRIDE = coursesRoot;
+    try {
+      const draftId = makeDraftId();
+      const dir = draftSourcesDir(draftId);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'a.txt'), 'STAGED-TXT-CONTENT');
+
+      let captured: ConnectorRequest | null = null;
+      vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+        fakeConnector(async (req) => {
+          captured = req;
+          return JSON.stringify({
+            questions: [{ id: 'q1', text: 'What is your goal?' }],
+          });
+        }),
+      );
+
+      const res = await POST(
+        makeRequest({
+          topic: 'Linear algebra',
+          refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+          draftId,
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(captured).not.toBeNull();
+      const captured0 = captured as unknown as ConnectorRequest;
+      expect(captured0.userMessage).toContain('Learner-uploaded source materials:');
+      expect(captured0.userMessage).toContain('=== a.txt ===');
+      expect(captured0.userMessage).toContain('STAGED-TXT-CONTENT');
+    } finally {
+      delete process.env.COURSES_ROOT_OVERRIDE;
+      await fs.rm(coursesRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('omits the Learner-uploaded source materials block when no draftId is sent (US-125)', async () => {
+    let captured: ConnectorRequest | null = null;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return JSON.stringify({
+          questions: [{ id: 'q1', text: 'What is your goal?' }],
+        });
+      }),
+    );
+    const res = await POST(
+      makeRequest({
+        topic: 'How transformers work',
+        refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(captured).not.toBeNull();
+    const captured0 = captured as unknown as ConnectorRequest;
+    expect(captured0.userMessage).not.toContain('Learner-uploaded source materials:');
   });
 
   it('caps response array at 10 even if model returns more', async () => {

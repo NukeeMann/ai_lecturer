@@ -6,6 +6,8 @@
  */
 import { z } from 'zod';
 
+import type { StagedSourceForPrompt } from '@/lib/server/sources';
+
 export const RefineDraftSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced']).nullable(),
   durationTarget: z
@@ -23,6 +25,13 @@ export const ClarifyRequestSchema = z.object({
    */
   description: z.string().optional(),
   refine: RefineDraftSchema,
+  /**
+   * Optional staged-uploads draft id (US-125). When present, the route loads
+   * `<draftsRoot>/<draftId>/sources/` and appends the readable content into
+   * the user message so the clarification questions reflect what the learner
+   * uploaded.
+   */
+  draftId: z.string().optional(),
 });
 
 export type ClarifyRequest = z.infer<typeof ClarifyRequestSchema>;
@@ -47,6 +56,7 @@ export const CLARIFY_SYSTEM_PROMPT = [
   'Respond with STRICT JSON only — no prose, no markdown fences. Schema: {"questions":[{"id":"q1","text":"…"}, ...]}.',
   'Each question id must be unique within the response (e.g. q1, q2, …). Each text must be one sentence, under 200 characters.',
   'Return at most 10 questions; fewer is fine if the topic is narrow.',
+  'If learner-uploaded source materials are provided, prioritise questions that fill gaps the materials do NOT already answer — do not ask about facts already stated in those files.',
 ].join('\n');
 
 function ratioLabel(n: number): string {
@@ -70,7 +80,10 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
   }
 }
 
-export function buildClarifyUserMessage(req: ClarifyRequest): string {
+export function buildClarifyUserMessage(
+  req: ClarifyRequest,
+  sources?: readonly StagedSourceForPrompt[],
+): string {
   const { topic, description, refine } = req;
   const trimmedDescription = (description ?? '').trim();
   const lines = [
@@ -84,6 +97,26 @@ export function buildClarifyUserMessage(req: ClarifyRequest): string {
     `- Learner level: ${refine.level ?? 'unspecified'}`,
     `- Length: ${durationLabel(refine.durationTarget)}`,
     `- Mix: ${ratioLabel(refine.theoryPracticeRatio)} (${refine.theoryPracticeRatio}/100)`,
+  );
+
+  if (sources && sources.length > 0) {
+    lines.push('', 'Learner-uploaded source materials:');
+    for (const s of sources) {
+      if (s.kind === 'binary-unsupported') {
+        lines.push(
+          `=== ${s.originalName} ===`,
+          '(binary file uploaded by learner; content extraction not yet supported — treat the filename as a hint about scope)',
+        );
+      } else {
+        const heading = s.extractedFrom
+          ? `=== ${s.originalName} (extracted from docx) ===`
+          : `=== ${s.originalName} ===`;
+        lines.push(heading, s.content);
+      }
+    }
+  }
+
+  lines.push(
     '',
     'Generate up to 10 clarification questions to ask the learner before drafting modules and lessons. Return JSON only.',
   );
