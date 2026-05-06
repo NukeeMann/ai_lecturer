@@ -1,0 +1,40 @@
+[2026-05-06T15:50:26+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T15:51:28+0200] Now I understand the full scope. Let me view the specific call-site lines to understand exactly how strings are referenced.
+[2026-05-06T15:51:50+0200] Now I'll refactor the strings module to provide EN + PL dictionaries with a `useLocaleStrings()` hook.
+[2026-05-06T15:52:20+0200] Now update SettingsMenu to add the Language group.
+[2026-05-06T15:52:33+0200] Now add Language state, options, handler, and render the group. Let me also localize the existing group labels via `stringsFor(locale)`.
+[2026-05-06T15:52:52+0200] Now add `onLocaleSelect` callback and the Language group rendering:
+[2026-05-06T15:53:01+0200] Now insert the Language group into the menu render. I'll put it last so it appears after Theme/Density/Font/Accent:
+[2026-05-06T15:53:11+0200] Now update the layout boot script to read locale and set `data-locale` on `<html>` for parity with theme/density/font:
+[2026-05-06T15:53:40+0200] Now update each call site. They are client components, so swap the `strings` constant for `useLocaleStrings()`. Start with `Sources.tsx`:
+[2026-05-06T15:53:48+0200] Now `src/app/page.tsx`. Two call sites for `strings.dashboard.newCourse` (in `EmptyState` and the main page header):
+[2026-05-06T15:54:03+0200] Now I need to find where the main page renders the second `strings.dashboard.newCourse` and ensure that component also uses the hook. Line 911 — let me find the function definition:
+[2026-05-06T15:54:07+0200] The second site is in `DashboardPage` (line 746-) which already is a component; I can call the hook there too. Let me check it:
+[2026-05-06T15:54:15+0200] Now `src/app/create/page.tsx` — has 5 references. Let me find the surrounding component context:
+[2026-05-06T15:54:34+0200] Now Stage5Generate at line 2521:
+[2026-05-06T15:54:49+0200] Now write unit tests for the new module. Tests live in `src/**/*.test.ts`. Note the test environment is Node, no jsdom — so I'll write tests for the data shape, dictionaries, helpers, and use a mocked window for `readLocale`:
+[2026-05-06T15:55:51+0200] Typecheck clean. Run lint on the changed files:
+[2026-05-06T15:56:39+0200] Tests pass except the pre-existing flake `getActiveRunSummary > writes a .generating.json marker…` that's documented in US-118/US-120 progress as unrelated. New tests pass:
+[2026-05-06T15:56:52+0200] Now browser-verify with playwright. Start the dev server first:
+[2026-05-06T15:57:09+0200] Now write the playwright test:
+[2026-05-06T15:58:12+0200] All 16 checks pass. Now mark US-121 done in prd.json and append progress:
+[2026-05-06T15:58:44+0200] Now append progress.txt:
+[2026-05-06T15:59:48+0200] Now stage and commit:
+[2026-05-06T16:00:15+0200] US-121 done — committed as `763fbb3`.
+
+**Summary**
+- Extended `src/lib/i18n/strings.ts` with PL dictionary, `Locale` type, `WidenStringLeaves` helper, `useLocaleStrings()` hook, plus storage key + custom event.
+- Added Language group (English / Polski) to `SettingsMenu.tsx` — persists to `localStorage['aiLecturer.locale']` and dispatches a same-tab event so subscribers re-render live.
+- Layout boot script now reads + applies `<html data-locale>` before paint.
+- Swapped 4 call sites (dashboard, create wizard ResumeBanner + Stage5Generate, Sources panel) from the static `strings` import to the new hook.
+- New `strings.test.ts` (9 cases) checks dict shape parity, EN/PL distinctness, SSR fallback, error handling.
+- Browser-verified via playwright on a port-3021 dev server: 16/16 checks pass — chrome flips immediately, persists across reload, course content (Polish-authored lesson titles) untouched on flip.
+[2026-05-06T16:00:15+0200] [result success turns=84 cost=$5.65305875] US-121 done — committed as `763fbb3`.
+
+**Summary**
+- Extended `src/lib/i18n/strings.ts` with PL dictionary, `Locale` type, `WidenStringLeaves` helper, `useLocaleStrings()` hook, plus storage key + custom event.
+- Added Language group (English / Polski) to `SettingsMenu.tsx` — persists to `localStorage['aiLecturer.locale']` and dispatches a same-tab event so subscribers re-render live.
+- Layout boot script now reads + applies `<html data-locale>` before paint.
+- Swapped 4 call sites (dashboard, create wizard ResumeBanner + Stage5Generate, Sources panel) from the static `strings` import to the new hook.
+- New `strings.test.ts` (9 cases) checks dict shape parity, EN/PL distinctness, SSR fallback, error handling.
+- Browser-verified via playwright on a port-3021 dev server: 16/16 checks pass — chrome flips immediately, persists across reload, course content (Polish-authored lesson titles) untouched on flip.
