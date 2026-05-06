@@ -1,0 +1,39 @@
+[2026-05-06T13:56:15+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T13:58:13+0200] Now let me check tests that reference the current shortcut to see what needs updating:
+[2026-05-06T13:58:47+0200] I'll extend `useKeyboardShortcut` to support a Ctrl-only spec (since macOS Cmd+Q quits the browser, we can't use the existing `mod` flag which fires on either ⌘ or Ctrl).
+[2026-05-06T13:59:11+0200] Now update `LessonChat.tsx` to use Ctrl+Q:
+[2026-05-06T13:59:23+0200] Now update the toolbar button display label and the shortcuts modal:
+[2026-05-06T13:59:32+0200] Now I need to verify the imports include `keyLabel` and remove `modLabel` if it's no longer used:
+[2026-05-06T13:59:44+0200] Now update the ShortcutsModal — replace the stale `mod+.` entry with `Ctrl+Q`:
+[2026-05-06T13:59:56+0200] Good, no existing tests reference `key: 't'` for the Tutor. Now let me add tests for the new `ctrl` mode:
+[2026-05-06T14:00:25+0200] Typecheck clean. Now run tests:
+[2026-05-06T14:00:29+0200] 14 tests pass (9 original + 5 new). Now run full test suite:
+[2026-05-06T14:00:34+0200] All 615 tests pass. Now run lint:
+[2026-05-06T14:01:05+0200] Confirmed — that lint error is pre-existing on HEAD, not introduced by my changes. Now let me verify my changes only show 0 lint errors specifically on the files I touched (excluding the unrelated pre-existing ones):
+[2026-05-06T14:01:11+0200] Clean. Now browser-verify with Playwright. First start a dev server:
+[2026-05-06T14:02:43+0200] The substantive AC checks all passed (Ctrl+Q toggles, Ctrl+T no longer toggles, in-textarea is suppressed, typing 'q' works). The failure was on step 8 which had a flaky locator. Let me re-run just that final check with a more robust approach:
+[2026-05-06T14:03:12+0200] Browser verification complete. All AC are verified:
+- Ctrl+Q opens/closes Tutor ✅
+- Old Ctrl+T no longer fires ✅
+- Ctrl+Q in input/textarea is suppressed (typing 'q' works freely) ✅
+- Toolbar hint reads "Ctrl+Q" ✅
+- Shortcuts modal lists "Toggle AI tutor → Ctrl Q" ✅
+[2026-05-06T14:03:17+0200] Now flip US-117 passes:true and append progress:
+[2026-05-06T14:04:59+0200] Commit `e0e32ff` is in HEAD with `passes:true` for US-117. Done.
+
+**US-117 complete.** Summary of what shipped:
+- `useKeyboardShortcut` hook gained a `ctrl?: boolean` flag (require literal Ctrl, reject Cmd) — needed because macOS Cmd+Q quits the browser before the page sees it.
+- `LessonChat` toggle binding swapped from `mod+T` to `ctrl+Q`.
+- Toolbar glyph now reads `Ctrl+Q` (or `⌃Q` on mac) via `keyLabel('ctrl', isMac)`.
+- Shortcuts modal row updated from the stale `mod+.` to `Ctrl+Q`.
+- 5 new matcher tests cover the win/linux Ctrl, mac-Ctrl, mac-Cmd-rejected, no-mod-rejected, and Ctrl+Cmd-combo-rejected paths.
+- Typecheck clean, all 615 vitest tests pass, Playwright verified all AC against a live dev server.
+[2026-05-06T14:04:59+0200] [result success turns=68 cost=$4.30115575] Commit `e0e32ff` is in HEAD with `passes:true` for US-117. Done.
+
+**US-117 complete.** Summary of what shipped:
+- `useKeyboardShortcut` hook gained a `ctrl?: boolean` flag (require literal Ctrl, reject Cmd) — needed because macOS Cmd+Q quits the browser before the page sees it.
+- `LessonChat` toggle binding swapped from `mod+T` to `ctrl+Q`.
+- Toolbar glyph now reads `Ctrl+Q` (or `⌃Q` on mac) via `keyLabel('ctrl', isMac)`.
+- Shortcuts modal row updated from the stale `mod+.` to `Ctrl+Q`.
+- 5 new matcher tests cover the win/linux Ctrl, mac-Ctrl, mac-Cmd-rejected, no-mod-rejected, and Ctrl+Cmd-combo-rejected paths.
+- Typecheck clean, all 615 vitest tests pass, Playwright verified all AC against a live dev server.
