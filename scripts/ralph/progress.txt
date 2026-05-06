@@ -95,3 +95,27 @@ Previous log archived to: archive/progress-2026-05-05-2319.txt
   - **Forcing overflow in test.** GENERATION_MOCK=1 emits only ~3 log lines per stage — not enough to overflow a 320px-tall <pre>. To assert scrollability, inject a long string via `page.evaluate(sel => { document.querySelector(sel).textContent = lines.join('\n') })` after the panel is in the DOM, then check `scrollHeight > clientHeight` and that `scrollTop` actually changes after assignment.
   - **Resume banner needs an active mock run.** With the default 200ms `GENERATION_MOCK_INIT_DELAY_MS`, the run completes before playwright reaches /create and `GET /api/courses/active-run` returns `{active:false}` → no banner. Set `GENERATION_MOCK_INIT_DELAY_MS=30000` (or any value comfortably beyond the test's setup latency) so the init phase keeps the run alive while the browser navigates.
 ---
+
+## 2026-05-06 12:09 - US-111
+- Lesson generation log (Stage 5 of /create) now renders newest entries at the top.
+  - New `src/lib/lessons/genLog.ts` exports `reverseLogLines(text)` (for disk content) and `reverseLiveLogLines(lines)` (for the in-memory live SSE buffer). Both are pure helpers — storage stays chronological (oldest→newest as the SSE feed pushes); the panel reverses for display only.
+  - `StageLogSection`'s `bodyText` builder in `src/app/create/page.tsx` now passes `entry.liveLines` through `reverseLiveLogLines` and `entry.diskContent` through `reverseLogLines`. AC "consistent across live SSE stream and persisted/refreshed view" ✓.
+  - Auto-scroll effect in `Stage5Generate` flipped from `el.scrollTop = el.scrollHeight` (bottom) to `el.scrollTop = 0` (top) when liveLines grow. AC "initial scroll position at top, panel does not auto-scroll down" ✓.
+- Files changed:
+  - `src/lib/lessons/genLog.ts` (new) — pure helpers
+  - `src/lib/lessons/genLog.test.ts` (new) — 8 unit tests covering empty input, trailing newline trim, blank-line preservation, no-mutation guarantee
+  - `src/app/create/page.tsx` — import + reverse-display + scroll-to-top
+  - `scripts/ralph/prd.json` — passes=true for US-111
+- Quality gates: `npm run typecheck` clean. `npm test` 603/603 passing (added 8 tests).
+- Browser verification (`/tmp/playwright-test-US-111.js`, dev server `:3111` with `GENERATION_MOCK=1 GENERATION_MOCK_INIT_DELAY_MS=30000`):
+  - Live mock for init_course (3 lines emitted in chronological order "researching topic..." → "writing course.json" → "done"): rendered first DOM line = "[mock init_course] done"; rendered last DOM line = "[mock init_course] researching topic..." → confirms newest-first.
+  - Active stage `<pre>` `scrollTop = 0` after each new line — no auto-scroll-to-bottom.
+  - Overflow probe: 200 fake lines reversed and rendered; scrollHeight=3470 vs clientHeight=319 (overflowing). Forced `scrollTop=3151` then reset to 0 — first DOM line stays "fake line 199" (= last in input, newest). Confirms reverse + scroll-top reset both work.
+  - Cross-stage ordering invariant: "starting" line (oldest) never precedes "writing"/"done" lines (newer) in the rendered DOM.
+  - Screenshots: `/tmp/us111-stage5-page.png`, `/tmp/us111-log-pre.png`.
+- **Learnings for future iterations:**
+  - **Reverse-display doesn't have to mutate storage.** The cleanest pattern for "newest first" is: keep the underlying buffer (state, file, anything) chronological so SSE-style appends remain O(1) and the disk format stays human-readable, then call a tiny `reverse()` helper purely at render time inside the component. Bonus: pure helpers are trivially unit-testable in node, so the React component stays out of vitest.
+  - **Auto-scroll direction follows render direction.** When you flip a log panel from oldest-first to newest-first, also flip its auto-scroll from `scrollHeight` to `0`. Otherwise the panel will scroll past the freshly-rendered top entries on every new line and the user sees an empty bottom region. Browsers preserve `scrollTop` across content replacement, so a one-line `el.scrollTop = 0` keeps the user pinned to the newest entry without breaking manual scroll-up to read history (manual scroll only resets on the next live-line tick — fine for a generation log).
+  - **Trailing-newline edge case for disk-loaded logs.** `text.split('\n').reverse().join('\n')` yields a leading blank line when `text` ends with `\n` (typical for line-buffered file output). Strip a single trailing `\n` before splitting (`text.endsWith('\n') ? text.slice(0,-1) : text`) so the reversed output starts on the newest line, not on a blank.
+  - **Mock-runner emits stage names that change between probes.** GENERATION_MOCK runs init_course → generate_lesson back-to-back; my first playwright snapshot caught generate_lesson (only 2 mock lines), the second caught init_course (3 lines). Don't write tests that pin to a specific stage name — instead assert the ordering invariant ("starting" before "writing" before "done" in chronology, so "done" before "writing" before "starting" in DOM) which holds across stages.
+---
