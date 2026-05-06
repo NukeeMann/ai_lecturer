@@ -25,6 +25,8 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { SettingsMenu } from '@/components/SettingsMenu';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import Stage3Cascade, {
   type Draft,
   type Level,
@@ -352,11 +354,22 @@ export default function CreatePage() {
           onDismiss={() => setBannerDismissed(true)}
         />
       )}
-      {showStepper && (
-        <header style={headerStyle}>
-          <Stepper current={stage as number} onJump={handleStepperJump} staleStageIds={staleStageIds} />
-        </header>
-      )}
+      <header style={headerStyle}>
+        <div style={headerSlotStyle} />
+        <div style={headerCenterStyle}>
+          {showStepper ? (
+            <Stepper
+              current={stage as number}
+              onJump={handleStepperJump}
+              staleStageIds={staleStageIds}
+            />
+          ) : null}
+        </div>
+        <div style={headerRightStyle}>
+          <SettingsMenu />
+          <ThemeToggle />
+        </div>
+      </header>
       {showStepper && materials.length > 0 && (
         <MaterialsBanner materials={materials} onRemove={handleRemoveMaterial} />
       )}
@@ -3356,10 +3369,29 @@ const headerStyle: CSSProperties = {
   flexShrink: 0,
   borderBottom: '1px solid var(--border)',
   background: 'var(--bg-elevated)',
+  display: 'grid',
+  gridTemplateColumns: '1fr auto 1fr',
+  alignItems: 'center',
+  gap: 'var(--space-4)',
+  padding: '0 var(--space-6)',
+};
+
+const headerSlotStyle: CSSProperties = {
+  minWidth: 0,
+};
+
+const headerCenterStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  padding: '0 var(--space-6)',
+  minWidth: 0,
+};
+
+const headerRightStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  gap: 6,
 };
 
 const mainStyle: CSSProperties = {
