@@ -18,3 +18,19 @@ export function allCoursesComplete(
   }
   return true;
 }
+
+// US-118 — when the dashboard search bar yields no matches and the user
+// presses ENTER, jump them straight into the wizard with the query as the
+// pre-filled topic. Returns the target href, or null when the legacy no-op
+// (blur only) should be preserved (empty query / has matches / pre-load).
+export function searchEnterTarget(
+  query: string,
+  hasMatches: boolean,
+  coursesLoaded: boolean,
+): string | null {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return null;
+  if (!coursesLoaded) return null;
+  if (hasMatches) return null;
+  return `/create?topic=${encodeURIComponent(trimmed)}`;
+}

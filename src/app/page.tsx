@@ -18,7 +18,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
-import { allCoursesComplete } from '@/lib/dashboard';
+import { allCoursesComplete, searchEnterTarget } from '@/lib/dashboard';
 
 // ------- accent palette (per course.accentColor) ------------------------------
 // Keyed values come from src/styles/tokens.css. We intentionally hardcode hexes
@@ -742,6 +742,7 @@ function EmptyState() {
 // ------- main page ------------------------------------------------------------
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -827,6 +828,15 @@ export default function DashboardPage() {
           style={headerSearchWrapStyle}
           onSubmit={(e) => {
             e.preventDefault();
+            const target = searchEnterTarget(
+              searchQuery,
+              enriched.length > 0,
+              courses !== null,
+            );
+            if (target) {
+              router.push(target);
+              return;
+            }
             (e.currentTarget.querySelector('input') as HTMLInputElement | null)?.blur();
           }}
         >
