@@ -1,16 +1,10 @@
-[2026-05-04T20:04:47+0200] [rate_limit five_hour status=allowed]
-[2026-05-04T20:06:51+0200] Let me check the project's test setup to understand how to write a failing test first.
-[2026-05-04T20:08:46+0200] Let me check the rest of SectionRenderer and how WidgetProps is used elsewhere.
-[2026-05-04T20:08:54+0200] Now let me write the test, then implement.
-[2026-05-04T20:09:18+0200] Tests fail as expected — bug reproduction confirmed. Now I'll implement.
-[2026-05-04T20:09:38+0200] Now add the checkbox renderer + wire it into the header:
-[2026-05-04T20:09:54+0200] Now update the lesson page to use the new prop instead of inline checkbox:
-[2026-05-04T20:10:12+0200] Tests pass. Now run typecheck + full test suite + lint.
-[2026-05-04T20:10:30+0200] Typecheck passes. Run lint and full test suite.
-[2026-05-04T20:11:13+0200] Confirmed pre-existing — not from my changes. Run full test suite.
-[2026-05-04T20:11:24+0200] All 347 tests pass. Now browser verification with playwright. Let me find a lesson with a Quiz widget.
-[2026-05-04T20:12:11+0200] Now let me write a playwright test that verifies the Quiz auto-checks the wrapper checkbox.
-[2026-05-04T20:13:02+0200] All checks pass. Now update prd.json, append progress log, and commit.
-[2026-05-04T20:14:07+0200] Commit landed. Verify `passes==true` for US-080 in the committed prd.json, then stop the dev server.
-[2026-05-04T20:14:28+0200] US-080 done and committed (a5e9fb7). The shared `Widget.tsx` wrapper now owns the section completion checkbox via a new `checkbox` prop; it auto-checks when the widget reports Complete (`status==='done'`), and a manual user toggle wins until the next auto-state transition. Verified via 7 unit tests in `src/widgets/Widget.test.ts` (failed pre-fix, passing post-fix), full vitest suite (347 passing), `npm run typecheck`, and a playwright run against `quiz-test/single-select` confirming the wrapper checkbox auto-checks after a correct quiz answer and respects manual unchecks.
-[2026-05-04T20:14:28+0200] [result success turns=53 cost=$3.5883367499999994] US-080 done and committed (a5e9fb7). The shared `Widget.tsx` wrapper now owns the section completion checkbox via a new `checkbox` prop; it auto-checks when the widget reports Complete (`status==='done'`), and a manual user toggle wins until the next auto-state transition. Verified via 7 unit tests in `src/widgets/Widget.test.ts` (failed pre-fix, passing post-fix), full vitest suite (347 passing), `npm run typecheck`, and a playwright run against `quiz-test/single-select` confirming the wrapper checkbox auto-checks after a correct quiz answer and respects manual unchecks.
+[2026-05-06T22:04:14+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T22:05:48+0200] I found the prior implementation that was lost in the merge. Let me restore it now.
+[2026-05-06T22:05:59+0200] Verify test fails first.
+[2026-05-06T22:06:09+0200] Failing test confirmed. Now apply the Widget.tsx changes.
+[2026-05-06T22:06:38+0200] Now wire it into the lesson page (replace the inline `completionCheckbox` and pass `checkbox` prop on Widget).
+[2026-05-06T22:07:06+0200] Tests pass. Now typecheck + full test suite + lint.
+[2026-05-06T22:07:51+0200] My Widget.tsx is clean. Now move on to browser testing.
+[2026-05-06T22:11:45+0200] Browser verification passes. Now mark prd.json passes:true and commit.
+[2026-05-06T22:13:07+0200] US-080 done and committed (9b1e157). The shared `Widget.tsx` wrapper now owns the section completion checkbox via a new optional `checkbox` prop; it auto-checks when the widget reports `status==='done'`, and a manual user toggle overrides the auto-state until the auto-state next transitions (recency wins). Pure helpers `resolveCheckboxChecked` and `applyCompletedTransition` are unit-tested in `src/widgets/Widget.test.ts` (7 passing tests, failing-then-passing repro of the bug). Verified: `npm run typecheck` clean, full vitest 32 files / 637 tests passing, lint clean on touched files, and playwright against `quiz-test/single-select` confirmed (a) checkbox starts unchecked, (b) auto-checks after correct submit, (c) manual uncheck wins, (d) manual click on a no-auto-complete (theory) section still works. `passes=true` for US-080 confirmed in the committed prd.json.
+[2026-05-06T22:13:07+0200] [result success turns=72 cost=$4.101777500000001] US-080 done and committed (9b1e157). The shared `Widget.tsx` wrapper now owns the section completion checkbox via a new optional `checkbox` prop; it auto-checks when the widget reports `status==='done'`, and a manual user toggle overrides the auto-state until the auto-state next transitions (recency wins). Pure helpers `resolveCheckboxChecked` and `applyCompletedTransition` are unit-tested in `src/widgets/Widget.test.ts` (7 passing tests, failing-then-passing repro of the bug). Verified: `npm run typecheck` clean, full vitest 32 files / 637 tests passing, lint clean on touched files, and playwright against `quiz-test/single-select` confirmed (a) checkbox starts unchecked, (b) auto-checks after correct submit, (c) manual uncheck wins, (d) manual click on a no-auto-complete (theory) section still works. `passes=true` for US-080 confirmed in the committed prd.json.
