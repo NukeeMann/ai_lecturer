@@ -7,6 +7,7 @@ export interface WidgetProps {
   type: WidgetType;
   sectionNumber: number;
   title: string;
+  description?: string;
   status: WidgetStatus;
   children: ReactNode;
   footer?: ReactNode;
@@ -123,11 +124,14 @@ export function Widget({
   type,
   sectionNumber,
   title,
+  description,
   status,
   children,
   footer,
   headerActions,
 }: WidgetProps) {
+  const hasDescription =
+    typeof description === 'string' && description.trim().length > 0;
   const meta = widgetRegistry[type];
   const accent = `var(${meta.accentVar})`;
   const Icon = meta.icon;
@@ -162,6 +166,22 @@ export function Widget({
         )}
         <StatusBadge status={status} />
       </header>
+      {hasDescription && (
+        <p
+          data-widget-description
+          style={{
+            margin: 0,
+            padding: 'var(--space-3) var(--space-5)',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border)',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}
+        >
+          {description}
+        </p>
+      )}
       <div data-widget-body>{children}</div>
       {footer !== undefined && (
         <div

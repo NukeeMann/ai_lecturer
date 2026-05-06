@@ -2861,6 +2861,7 @@ function SectionRenderer({
         type={section.type as WidgetType}
         sectionNumber={sectionNumber}
         title={section.title}
+        description={section.description}
         status={status}
         headerActions={headerActions}
       >

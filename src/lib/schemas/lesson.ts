@@ -28,6 +28,7 @@ export type Source = z.infer<typeof SourceSchema>;
 const sectionBase = {
   id: z.string(),
   title: z.string(),
+  description: z.string().optional(),
   sources: z.array(SourceSchema).optional(),
 };
 
