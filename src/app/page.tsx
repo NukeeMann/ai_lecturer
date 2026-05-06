@@ -8,7 +8,6 @@ import {
   BookOpen,
   Plus,
   Search,
-  Settings,
   Sparkles,
 } from 'lucide-react';
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
@@ -16,7 +15,7 @@ import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { applyAccent } from '@/components/SettingsMenu';
+import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import { allCoursesComplete } from '@/lib/dashboard';
@@ -147,19 +146,6 @@ const headerRightStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'flex-end',
   gap: 6,
-};
-
-const headerIconBtnStyle: CSSProperties = {
-  width: 32,
-  height: 32,
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--text-tertiary)',
-  borderRadius: 'var(--radius-md)',
-  display: 'inline-flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  cursor: 'pointer',
 };
 
 const contentWrapStyle: CSSProperties = {
@@ -864,9 +850,7 @@ export default function DashboardPage() {
           />
         </form>
         <div style={headerRightStyle}>
-          <button type="button" aria-label="Settings" style={headerIconBtnStyle}>
-            <Settings size={16} strokeWidth={2} />
-          </button>
+          <SettingsMenu />
           <ThemeToggle />
           <AvatarMenu />
         </div>
