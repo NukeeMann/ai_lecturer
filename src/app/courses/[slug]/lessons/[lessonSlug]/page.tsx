@@ -1408,6 +1408,7 @@ function LessonSourcesBox({
           gap: 'var(--space-3)',
           padding: 'var(--space-3) var(--space-4)',
           borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
         }}
       >
         <span
@@ -1456,9 +1457,21 @@ function LessonSourcesBox({
       {editing ? (
         <div
           data-testid="lesson-sources-edit-body"
-          style={{ display: 'flex', flexDirection: 'column' }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
+          }}
         >
-          <div style={{ padding: 'var(--space-4)' }}>
+          <div
+            style={{
+              padding: 'var(--space-4)',
+              flex: 1,
+              minHeight: 0,
+              overflow: 'auto',
+            }}
+          >
             <SourcesField
               sources={draft}
               onChange={onDraftChange}
@@ -1471,6 +1484,7 @@ function LessonSourcesBox({
               data-testid="lesson-sources-save-error"
               style={{
                 padding: '0 var(--space-4) var(--space-3)',
+                flexShrink: 0,
               }}
             >
               <Callout tone="danger" title="Save failed">
@@ -1488,6 +1502,7 @@ function LessonSourcesBox({
               padding: 'var(--space-3) var(--space-4)',
               borderTop: '1px solid var(--border)',
               background: 'var(--bg-subtle)',
+              flexShrink: 0,
             }}
           >
             <button
@@ -1561,6 +1576,9 @@ function LessonSourcesBox({
             flexDirection: 'column',
             gap: 'var(--space-2)',
             padding: 'var(--space-3) var(--space-4) var(--space-4)',
+            flex: 1,
+            minHeight: 0,
+            overflow: 'auto',
           }}
         >
           {list.map((source, i) => (
