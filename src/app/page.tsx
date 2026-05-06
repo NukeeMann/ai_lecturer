@@ -19,7 +19,7 @@ import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import { allCoursesComplete, searchEnterTarget } from '@/lib/dashboard';
-import { strings } from '@/lib/i18n/strings';
+import { useLocaleStrings } from '@/lib/i18n/strings';
 
 // ------- accent palette (per course.accentColor) ------------------------------
 // Keyed values come from src/styles/tokens.css. We intentionally hardcode hexes
@@ -638,6 +638,7 @@ function CourseCard({
 }
 
 function EmptyState() {
+  const strings = useLocaleStrings();
   return (
     <div
       data-testid="dashboard-empty"
@@ -748,6 +749,7 @@ export default function DashboardPage() {
   const [progress, setProgress] = useState<Progress | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const strings = useLocaleStrings();
 
   const loadData = useCallback(async () => {
     try {
