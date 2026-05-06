@@ -162,6 +162,32 @@ describe('buildStructureUserMessage', () => {
     expect(baseline).not.toContain('Learner-uploaded source materials:');
   });
 
+  it('derives the heading format suffix from the extension of extractedFrom (US-128)', () => {
+    const sources: StagedSourceForPrompt[] = [
+      {
+        kind: 'text',
+        originalName: 'lecture.pdf',
+        extractedFrom: 'lecture.pdf',
+        content: 'PDF-EXTRACTED-BODY',
+      },
+      {
+        kind: 'text',
+        originalName: 'notes.docx',
+        extractedFrom: 'notes.docx',
+        content: 'DOCX-EXTRACTED-BODY',
+      },
+    ];
+    const msg = buildStructureUserMessage(
+      {
+        topic: 'X',
+        refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
+      },
+      sources,
+    );
+    expect(msg).toContain('=== lecture.pdf (extracted from pdf) ===');
+    expect(msg).toContain('=== notes.docx (extracted from docx) ===');
+  });
+
   it('appends a Learner-uploaded source materials block BEFORE the final Generate line (US-125)', () => {
     const sources: StagedSourceForPrompt[] = [
       { kind: 'text', originalName: 'a.txt', content: 'TXT-BODY-XYZ' },

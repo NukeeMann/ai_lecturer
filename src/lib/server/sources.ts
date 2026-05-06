@@ -280,16 +280,16 @@ export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath 
 }
 
 /**
- * Default token-budget caps for `loadStagedSourcesForPrompt` (US-125).
+ * Default token-budget caps for `loadStagedSourcesForPrompt` (US-125, bumped
+ * in US-128).
  *
- * 30k characters ≈ 7.5k tokens — leaves ample headroom in a 200k-context
- * Opus call alongside the system prompt, the existing draft spec, the
- * learner's clarification answers, and the model's reply. Per-file cap of
- * 12k characters ensures one runaway upload can't dominate the prompt
- * window even when a single file is well under the total budget.
+ * ~150k chars ≈ 55-60k tokens for Polish content; leaves ~140k tokens of the
+ * 200k Opus context window for the rest of the prompt + the model's reply.
+ * Assumes US-126 (mammoth without base64) and US-127 (PDF→text siblings) have
+ * landed — without them a single docx/pdf can blow this budget.
  */
-export const DEFAULT_TOTAL_CHAR_BUDGET = 30_000;
-export const DEFAULT_PER_FILE_CHAR_CAP = 12_000;
+export const DEFAULT_TOTAL_CHAR_BUDGET = 150_000;
+export const DEFAULT_PER_FILE_CHAR_CAP = 60_000;
 
 export type StagedSourceForPrompt =
   | {

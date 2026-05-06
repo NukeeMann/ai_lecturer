@@ -177,6 +177,25 @@ describe('buildClarifyUserMessage', () => {
     expect(zIdx).toBeGreaterThan(mIdx);
     expect(generateIdx).toBeGreaterThan(zIdx);
   });
+
+  it('derives the heading format suffix from the extension of extractedFrom (US-128)', () => {
+    const sources: StagedSourceForPrompt[] = [
+      {
+        kind: 'text',
+        originalName: 'lecture.pdf',
+        extractedFrom: 'lecture.pdf',
+        content: 'PDF-EXTRACTED-BODY',
+      },
+    ];
+    const msg = buildClarifyUserMessage(
+      {
+        topic: 'X',
+        refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
+      },
+      sources,
+    );
+    expect(msg).toContain('=== lecture.pdf (extracted from pdf) ===');
+  });
 });
 
 describe('extractJsonPayload', () => {

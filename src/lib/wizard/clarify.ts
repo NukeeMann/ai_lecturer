@@ -4,6 +4,8 @@
  * Prompt assembly + JSON-response parsing for the Claude-driven question
  * generator that runs between Refine (Stage 2) and Structure (Stage 3).
  */
+import path from 'node:path';
+
 import { z } from 'zod';
 
 import type { StagedSourceForPrompt } from '@/lib/server/sources';
@@ -109,7 +111,7 @@ export function buildClarifyUserMessage(
         );
       } else {
         const heading = s.extractedFrom
-          ? `=== ${s.originalName} (extracted from docx) ===`
+          ? `=== ${s.originalName} (extracted from ${path.extname(s.extractedFrom).slice(1).toLowerCase() || 'binary'}) ===`
           : `=== ${s.originalName} ===`;
         lines.push(heading, s.content);
       }
