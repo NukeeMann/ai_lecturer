@@ -294,6 +294,59 @@ describe('Per-widget data schemas', () => {
     ).toThrow();
   });
 
+  it('CodeData: parses inputs (image/video/file/text) and outputMedia (US-114)', () => {
+    const parsed = CodeDataSchema.parse({
+      taskMarkdown: 'm',
+      starterCode: '',
+      tests: [],
+      inputs: [
+        { kind: 'image', src: '/assets/i.png', alt: 'a', caption: 'c' },
+        { kind: 'video', src: '/assets/v.mp4' },
+        { kind: 'file', src: '/assets/f.csv', filename: 'data.csv' },
+        { kind: 'text', content: 'hello', label: 'L' },
+      ],
+      outputMedia: { kind: 'image', src: '/assets/o.png' },
+    });
+    expect(parsed.inputs).toHaveLength(4);
+    expect(parsed.inputs?.[0].kind).toBe('image');
+    expect(parsed.inputs?.[2].kind === 'file' && parsed.inputs?.[2].filename).toBe(
+      'data.csv',
+    );
+    expect(parsed.outputMedia?.kind).toBe('image');
+  });
+
+  it('CodeData: omits inputs/outputMedia when not provided (US-114)', () => {
+    const parsed = CodeDataSchema.parse({
+      taskMarkdown: 'm',
+      starterCode: '',
+      tests: [],
+    });
+    expect(parsed.inputs).toBeUndefined();
+    expect(parsed.outputMedia).toBeUndefined();
+  });
+
+  it('CodeData: rejects file input missing filename (US-114)', () => {
+    expect(() =>
+      CodeDataSchema.parse({
+        taskMarkdown: 'm',
+        starterCode: '',
+        tests: [],
+        inputs: [{ kind: 'file', src: '/x.csv' }],
+      }),
+    ).toThrow();
+  });
+
+  it('CodeData: rejects outputMedia kind other than image/video (US-114)', () => {
+    expect(() =>
+      CodeDataSchema.parse({
+        taskMarkdown: 'm',
+        starterCode: '',
+        tests: [],
+        outputMedia: { kind: 'file', src: '/x.csv' },
+      }),
+    ).toThrow();
+  });
+
   it('DemoData: parses minimal, rejects missing imageSrc', () => {
     const ok = {
       demoType: 'gauss',
