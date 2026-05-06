@@ -29,11 +29,7 @@ import {
 import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { Callout } from '@/components/Callout';
-import {
-  EditorFormFooter,
-  EditorFormSaveError,
-  formBodyStyle,
-} from '@/components/EditorForm';
+import { formBodyStyle } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { LessonChat } from '@/components/LessonChat';
 import { keyLabel } from '@/lib/platform/platform';
@@ -42,6 +38,7 @@ import { SidePanel } from '@/components/SidePanel';
 import {
   LessonSourcesPanel,
   SectionSourcesPopover,
+  SourceCard,
   SourcesField,
 } from '@/components/Sources';
 import {
@@ -881,7 +878,6 @@ export default function LessonShellPage({
       }
       const saved = await persistLesson(next);
       setLesson(saved);
-      setLessonSourcesPanelOpen(false);
     },
     [lesson, persistLesson],
   );
@@ -1285,6 +1281,7 @@ function LessonSourcesEditPanel({
     () => JSON.stringify(sources ?? null),
     [sources],
   );
+  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Source[] | undefined>(sources);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -1298,20 +1295,42 @@ function LessonSourcesEditPanel({
     }
   }, [initialKey, sources]);
 
+  // When the side panel closes, reset edit mode so the next open starts in
+  // readonly view (per AC: "opens the panel in readonly mode by default").
+  useEffect(() => {
+    if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setEditing(false);
+      setSaveError(null);
+    }
+  }, [open]);
+
   const dirty = JSON.stringify(draft ?? null) !== initialKey;
 
   const handleSave = useCallback(async () => {
-    if (!dirty || saving) return;
+    if (saving) return;
     setSaveError(null);
     setSaving(true);
     try {
       await onSave(draft);
       setSaving(false);
+      setEditing(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));
       setSaving(false);
     }
-  }, [dirty, draft, onSave, saving]);
+  }, [draft, onSave, saving]);
+
+  const handleCloseEdit = useCallback(() => {
+    setDraft(sources);
+    setSaveError(null);
+    setEditing(false);
+  }, [sources]);
+
+  const handleEnterEdit = useCallback(() => {
+    setSaveError(null);
+    setEditing(true);
+  }, []);
 
   return (
     <SidePanel
@@ -1322,27 +1341,238 @@ function LessonSourcesEditPanel({
     >
       <div
         data-testid="lesson-sources-editor"
+        data-mode={editing ? 'edit' : 'readonly'}
         style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}
       >
         <div style={formBodyStyle}>
-          <SourcesField
-            sources={draft}
-            onChange={setDraft}
-            label="Lesson-level sources"
-            testId="lesson-sources-field"
+          <LessonSourcesBox
+            sources={sources}
+            editing={editing}
+            draft={draft}
+            onDraftChange={setDraft}
+            saving={saving}
+            saveDisabled={!dirty}
+            saveError={saveError}
+            onEnterEdit={handleEnterEdit}
+            onSave={() => void handleSave()}
+            onCloseEdit={handleCloseEdit}
           />
         </div>
-        <EditorFormSaveError message={saveError} />
-        <EditorFormFooter
-          saving={saving}
-          saveDisabled={!dirty}
-          onCancel={onClose}
-          onSave={() => void handleSave()}
-          cancelTestId="lesson-sources-cancel"
-          saveTestId="lesson-sources-save"
-        />
       </div>
     </SidePanel>
+  );
+}
+
+interface LessonSourcesBoxProps {
+  sources: Source[] | undefined;
+  editing: boolean;
+  draft: Source[] | undefined;
+  onDraftChange: (next: Source[] | undefined) => void;
+  saving: boolean;
+  saveDisabled: boolean;
+  saveError: string | null;
+  onEnterEdit: () => void;
+  onSave: () => void;
+  onCloseEdit: () => void;
+}
+
+function LessonSourcesBox({
+  sources,
+  editing,
+  draft,
+  onDraftChange,
+  saving,
+  saveDisabled,
+  saveError,
+  onEnterEdit,
+  onSave,
+  onCloseEdit,
+}: LessonSourcesBoxProps) {
+  const list = sources ?? [];
+  return (
+    <section
+      data-testid="lesson-sources-box"
+      style={{
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+          padding: 'var(--space-3) var(--space-4)',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <span
+          style={{
+            flex: 1,
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 600,
+            color: 'var(--text)',
+          }}
+        >
+          Lesson sources
+        </span>
+        <span
+          style={{
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--text-tertiary)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {list.length}
+        </span>
+        {!editing && (
+          <button
+            type="button"
+            data-testid="lesson-sources-edit-toggle"
+            onClick={onEnterEdit}
+            aria-label="Edit lesson sources"
+            style={{
+              width: 28,
+              height: 28,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            <Pencil size={13} aria-hidden />
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <div
+          data-testid="lesson-sources-edit-body"
+          style={{ display: 'flex', flexDirection: 'column' }}
+        >
+          <div style={{ padding: 'var(--space-4)' }}>
+            <SourcesField
+              sources={draft}
+              onChange={onDraftChange}
+              label="Lesson-level sources"
+              testId="lesson-sources-field"
+            />
+          </div>
+          {saveError && (
+            <div
+              data-testid="lesson-sources-save-error"
+              style={{
+                padding: '0 var(--space-4) var(--space-3)',
+              }}
+            >
+              <Callout tone="danger" title="Save failed">
+                {saveError}
+              </Callout>
+            </div>
+          )}
+          <div
+            data-testid="lesson-sources-edit-footer"
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 'var(--space-3)',
+              padding: 'var(--space-3) var(--space-4)',
+              borderTop: '1px solid var(--border)',
+              background: 'var(--bg-subtle)',
+            }}
+          >
+            <button
+              type="button"
+              data-testid="lesson-sources-cancel"
+              onClick={onCloseEdit}
+              disabled={saving}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 32,
+                padding: '0 var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 500,
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: '1px solid transparent',
+                cursor: saving ? 'not-allowed' : 'pointer',
+                opacity: saving ? 0.7 : 1,
+              }}
+              aria-label="Close edit mode"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              data-testid="lesson-sources-save"
+              onClick={onSave}
+              disabled={saveDisabled || saving}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 32,
+                padding: '0 var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 500,
+                background:
+                  saveDisabled || saving ? 'var(--bg-active)' : 'var(--accent)',
+                color:
+                  saveDisabled || saving
+                    ? 'var(--text-tertiary)'
+                    : 'var(--text-on-accent)',
+                border: '1px solid transparent',
+                cursor: saveDisabled || saving ? 'not-allowed' : 'pointer',
+                opacity: saveDisabled || saving ? 0.7 : 1,
+              }}
+              aria-label="Save changes"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      ) : list.length === 0 ? (
+        <div
+          data-testid="lesson-sources-empty"
+          style={{
+            padding: 'var(--space-4)',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text-tertiary)',
+          }}
+        >
+          No sources yet.
+        </div>
+      ) : (
+        <div
+          data-testid="lesson-sources-readonly-list"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-2)',
+            padding: 'var(--space-3) var(--space-4) var(--space-4)',
+          }}
+        >
+          {list.map((source, i) => (
+            <SourceCard
+              key={`${source.url}-${i}`}
+              source={source}
+              testId="lesson-sources-readonly-card"
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
