@@ -38,6 +38,10 @@ import {
   snapshotUpstreamHashes,
   staleStages,
 } from '@/lib/wizard/dependencies';
+import {
+  visibleLessonSlots,
+  computeSliderEdges,
+} from '@/lib/lessons/lessonSlots';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -1945,6 +1949,12 @@ export function stageDiskName(sseName: string): string {
 // container is keyboard-focusable (tabIndex=0); ArrowLeft/ArrowRight scroll
 // by one slot at a time and Home/End jump to the ends. Pointer-drag scroll
 // is enabled so the slider also feels right on touch / trackpad.
+//
+// US-109 — pending slots are filtered out; the native scrollbar is hidden
+// behind the `lesson-slot-track` CSS class; the L/R arrow buttons disable
+// when scrolled to the corresponding edge; mouse-wheel events while
+// hovering the row scroll horizontally and stop the page from scrolling
+// vertically.
 function LessonSlotsSlider({
   lessons,
   statuses,
@@ -1956,6 +1966,17 @@ function LessonSlotsSlider({
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const slotRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const [edges, setEdges] = useState<{ atStart: boolean; atEnd: boolean }>({
+    atStart: true,
+    atEnd: true,
+  });
+
+  const total = lessons.length;
+  const visibleLessons = useMemo(
+    () => visibleLessonSlots(lessons, statuses),
+    [lessons, statuses],
+  );
+  const visibleCount = visibleLessons.length;
 
   // Keep the active slot in view as generation progresses. We watch the
   // active slug rather than the status map so the scroll only fires on
@@ -1967,7 +1988,35 @@ function LessonSlotsSlider({
     el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }, [activeSlug]);
 
-  const total = lessons.length;
+  // Track scroll position so the L/R arrow buttons can disable at the edges.
+  const recomputeEdges = useCallback(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    setEdges(
+      computeSliderEdges(track.scrollLeft, track.scrollWidth, track.clientWidth),
+    );
+  }, []);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    recomputeEdges();
+    track.addEventListener('scroll', recomputeEdges, { passive: true });
+    const ro = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(recomputeEdges)
+      : null;
+    ro?.observe(track);
+    return () => {
+      track.removeEventListener('scroll', recomputeEdges);
+      ro?.disconnect();
+    };
+  }, [recomputeEdges]);
+
+  // Recompute when the visible slot count changes — new started/done slots
+  // can shift scrollWidth and re-enable a previously-disabled arrow.
+  useEffect(() => {
+    recomputeEdges();
+  }, [visibleCount, recomputeEdges]);
 
   const scrollByOne = useCallback((direction: 1 | -1) => {
     const track = trackRef.current;
@@ -1976,6 +2025,27 @@ function LessonSlotsSlider({
     const firstSlot = track.querySelector('[data-lesson-slot]') as HTMLElement | null;
     const step = firstSlot ? firstSlot.getBoundingClientRect().width + 8 : 80;
     track.scrollBy({ left: direction * step, behavior: 'smooth' });
+  }, []);
+
+  // US-109 — wheel-on-hover scrolls the slider horizontally and stops the
+  // page from scrolling vertically. React's onWheel uses passive listeners
+  // by default so preventDefault() is silently ignored; attach manually.
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const onWheel = (e: WheelEvent) => {
+      // Whichever axis dominates becomes the horizontal scroll delta — this
+      // keeps regular vertical mouse wheels useful and lets actual
+      // horizontal trackpad gestures pass through unchanged.
+      const delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+      if (delta === 0) return;
+      e.preventDefault();
+      track.scrollBy({ left: delta, behavior: 'auto' });
+    };
+    track.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      track.removeEventListener('wheel', onWheel);
+    };
   }, []);
 
   const handleKeyDown = useCallback(
@@ -2060,6 +2130,7 @@ function LessonSlotsSlider({
     <div
       data-testid="stage5-lesson-slots"
       data-lesson-total={total}
+      data-lesson-visible={visibleCount}
       data-lesson-done={doneCount}
       data-lesson-started={startedCount}
       style={{ marginTop: 'var(--space-5)' }}
@@ -2096,7 +2167,8 @@ function LessonSlotsSlider({
           aria-label="Scroll lessons left"
           data-testid="stage5-lesson-slots-prev"
           onClick={() => scrollByOne(-1)}
-          style={sliderArrowStyle}
+          disabled={edges.atStart}
+          style={sliderArrowStyle(edges.atStart)}
         >
           <ArrowLeft size={14} strokeWidth={2} />
         </button>
@@ -2105,6 +2177,7 @@ function LessonSlotsSlider({
           tabIndex={0}
           role="listbox"
           aria-label="Lesson generation progress"
+          className="lesson-slot-track"
           onKeyDown={handleKeyDown}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -2118,7 +2191,6 @@ function LessonSlotsSlider({
             overflowY: 'hidden',
             scrollSnapType: 'x mandatory',
             scrollPaddingInline: 16,
-            scrollbarWidth: 'thin',
             outline: 'none',
             cursor: 'grab',
             // Fixed height regardless of lesson count — AC bullet 3.
@@ -2127,7 +2199,7 @@ function LessonSlotsSlider({
             paddingInline: 4,
           }}
         >
-          {lessons.map((l) => {
+          {visibleLessons.map((l) => {
             const status = statuses.get(l.slug) ?? 'pending';
             return (
               <LessonSlot
@@ -2148,7 +2220,8 @@ function LessonSlotsSlider({
           aria-label="Scroll lessons right"
           data-testid="stage5-lesson-slots-next"
           onClick={() => scrollByOne(1)}
-          style={sliderArrowStyle}
+          disabled={edges.atEnd}
+          style={sliderArrowStyle(edges.atEnd)}
         >
           <ArrowRight size={14} strokeWidth={2} />
         </button>
@@ -2157,18 +2230,20 @@ function LessonSlotsSlider({
   );
 }
 
-const sliderArrowStyle: CSSProperties = {
+const sliderArrowStyle = (disabled: boolean): CSSProperties => ({
   flexShrink: 0,
   width: 28,
   display: 'inline-flex',
   alignItems: 'center',
   justifyContent: 'center',
   background: 'transparent',
-  color: 'var(--text-secondary)',
+  color: disabled ? 'var(--text-tertiary)' : 'var(--text-secondary)',
   border: 'none',
   borderRadius: 'var(--radius-sm)',
-  cursor: 'pointer',
-};
+  cursor: disabled ? 'default' : 'pointer',
+  opacity: disabled ? 0.4 : 1,
+  transition: 'opacity var(--t-fast), color var(--t-fast)',
+});
 
 function LessonSlot({
   lesson,
