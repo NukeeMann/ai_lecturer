@@ -2516,7 +2516,6 @@ function MarkCompleteButton({
 function ContentSkeleton() {
   const bar: CSSProperties = {
     width: '100%',
-    maxWidth: 760,
     margin: '0 auto',
     borderRadius: 'var(--radius-md)',
     background: 'var(--bg-subtle)',
@@ -2598,8 +2597,11 @@ function LessonStream({
     <div
       data-testid="lesson-stream"
       style={{
-        maxWidth: 760,
+        width: '100%',
         margin: '0 auto',
+        paddingLeft: 'calc(var(--space-7) * 2)',
+        paddingRight: 'calc(var(--space-7) * 2)',
+        boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
         gap: 'var(--space-section)',
