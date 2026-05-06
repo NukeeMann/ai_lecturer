@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtry-rozmywajace-sredni-gaussa-medianowy",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Filtry rozmywające: średni, Gaussa, medianowy",
+  "eyebrow": "FILTRACJA",
+  "description": "Trzy klasyczne filtry rozmywające — uśredniający box, Gauss z wagami symetrycznymi w σ i medianowy zachowujący krawędzie — kiedy wybrać który i dlaczego.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "trzy-strategie",
+      "title": "Trzy strategie rozmywania — kiedy uśredniać, kiedy ważyć, kiedy filtrować medianą",
+      "type": "theory",
+      "data": {
+        "markdown": "Rozmycie obrazu rzadko jest celem samym w sobie — częściej jest narzędziem przygotowującym scenę pod kolejną operację: tłumi szum przed detekcją krawędzi, wygładza histogram przed progowaniem, redukuje aliasing przed downsamplingiem. W tej lekcji zestawiamy trzy filtry, które realizują tę samą funkcję na trzy różne sposoby.\n\n- **Filtr uśredniający (`cv2.blur`)** — każdy piksel zastąpiony średnią arytmetyczną z okna $k\\times k$. Najprostszy i najtańszy; w jądrze nie ma żadnej preferencji środka nad krawędzią okna, więc szczegóły płaskie i krawędziowe traktuje równie agresywnie.\n- **Filtr Gaussa (`cv2.GaussianBlur`)** — uśrednianie ważone, w którym wagi maleją gaussowsko od środka. Ma jasne uzasadnienie probabilistyczne (modeluje nieostrość układu optycznego) i jest *separowalny* — można go policzyć dwoma przejściami 1D zamiast jednego 2D.\n- **Filtr medianowy (`cv2.medianBlur`)** — operacja **nieliniowa**: każdy piksel zastąpiony medianą sąsiadów w oknie. Zaprojektowany pod jeden konkretny scenariusz: szum impulsowy typu *salt-and-pepper*, w którym mały odsetek pikseli ma skrajne wartości.\n\n![Fragment obrazu testowego z około 10% pikseli zaszumionych szumem typu salt-and-pepper — losowe punkty czarne i białe rozsiane po całym kadrze, oryginalny obraz pozostaje rozpoznawalny pod warstwą impulsowego szumu](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Noise_salt_and_pepper.png/480px-Noise_salt_and_pepper.png)\n\n*(Obraz: Wikimedia Commons, public domain)*\n\nFiltry uśredniający i Gaussa są **liniowe** (są to konwolucje z odpowiednim jądrem); filtr medianowy nie jest — nie da się go zapisać jednym jądrem, bo *medianę* uzyskujemy przez sortowanie, a nie sumę ważoną. To rozróżnienie wraca w kolejnych lekcjach: detektor Canny zaczyna od rozmycia Gaussa, a pipeline'y SAR zaczynają od *adaptacyjnych* filtrów statystycznych właśnie dlatego, że szum SAR ma swoją własną statystykę, której box-blur i Gauss nie znają."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html",
+          "title": "OpenCV Python tutorial — Smoothing images",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "jadro-gaussa-wzor",
+      "title": "Jądro Gaussa — wzór, rola σ i separowalność",
+      "type": "theory",
+      "data": {
+        "markdown": "Jądro Gaussa to dyskretyzacja dwuwymiarowej funkcji gęstości rozkładu normalnego o średniej zero:\n\n$$ G(x, y) \\;=\\; \\frac{1}{2\\pi\\sigma^{2}}\\, \\exp\\!\\left(-\\frac{x^{2} + y^{2}}{2\\sigma^{2}}\\right) $$\n\nAby uzyskać dyskretne jądro $k\\times k$, próbkujemy $G$ w punktach $(x, y) \\in \\{-r, \\dots, r\\}^{2}$, gdzie $r = (k - 1)/2$, a następnie **normalizujemy** tak, by suma wszystkich elementów wynosiła 1. Bez normalizacji rozmycie zaciemniłoby obraz proporcjonalnie do obciętej masy rozkładu — stała $1/(2\\pi\\sigma^{2})$ spod całki i tak znika po dzieleniu przez sumę.\n\nReguła kciuka łącząca $\\sigma$ z rozmiarem jądra:\n\n$$ k \\;\\approx\\; 6\\sigma + 1 $$\n\nTrzy odchylenia standardowe po każdej stronie pokrywają ponad 99% masy rozkładu — większe jądro nic nie wnosi, mniejsze obcina ogony i zniekształca kształt rozmycia. Jeśli zażądamy `cv2.GaussianBlur(img, (k, k), sigma)` ze zbyt małym $k$ przy dużym $\\sigma$, OpenCV bez ostrzeżenia *przytnie* jądro i zwróci coś pomiędzy Gaussem a box-blurem. To jedna z najczęstszych pułapek praktycznych.\n\n**Separowalność** to drugi powód, dla którego Gauss jest tańszy, niż wygląda. Funkcja $G$ rozkłada się na iloczyn dwóch jednowymiarowych Gaussów: $G(x, y) = G_{1}(x)\\cdot G_{1}(y)$. Dzięki temu konwolucję 2D jądrem $k\\times k$ można policzyć dwoma konwolucjami 1D (najpierw wzdłuż wierszy, potem wzdłuż kolumn). Koszt spada z $\\mathcal{O}(k^{2})$ do $\\mathcal{O}(k)$ na piksel — dla $k = 31$ to różnica między 961 a 62 mnożeniami. Dlatego $\\sigma = 5$ na obrazie $1080\\times 1920$ liczy się w pojedynczych milisekundach, a nie sekundach."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Gaussian_blur",
+          "title": "Gaussian blur — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "demo-sigma",
+      "title": "Pokrętło σ — jak rośnie rozmycie z odchyleniem standardowym",
+      "type": "demo",
+      "data": {
+        "demoType": "gauss",
+        "imageSrc": "/demo-images/cameraman.jpg",
+        "params": {
+          "sigmaMin": 0.0,
+          "sigmaMax": 6.0,
+          "sigmaDefault": 2.0
+        }
+      }
+    },
+    {
+      "id": "exercise-gaussian-kernel",
+      "title": "Zaimplementuj `gaussian_kernel(ksize, sigma)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `gaussian_kernel(ksize, sigma)`, która zwraca dwuwymiarowe jądro Gaussa o rozmiarze `ksize × ksize` (zakładamy nieparzysty `ksize`). Funkcja MUSI:\n\n1. Próbkować $G(x, y) = \\exp\\!\\left(-(x^{2} + y^{2})/(2\\sigma^{2})\\right)$ w punktach $(x, y) \\in \\{-r, \\dots, r\\}^{2}$, gdzie $r = (\\text{ksize} - 1)/2$.\n2. **Znormalizować** wynik tak, aby suma wszystkich elementów była dokładnie 1.0.\n3. Zwrócić `numpy.ndarray` typu `float64` o kształcie `(ksize, ksize)`.\n\nStałą $1/(2\\pi\\sigma^{2})$ z pełnej formuły możesz pominąć — i tak normalizujesz przez sumę. Liczy się **kształt** (gaussowski profil i symetria), nie absolutna wartość przed normalizacją.\n\n```\ngaussian_kernel(3, 1.0).sum()      # -> 1.0\ngaussian_kernel(5, 1.0)[2, 2]      # element maksymalny\n```\n\nNie używaj `cv2.getGaussianKernel` — celem jest samodzielnie wyprowadzić jądro z formuły.",
+        "starterCode": "import numpy as np\n\ndef gaussian_kernel(ksize, sigma):\n    # Krok po kroku:\n    #   1. r = (ksize - 1) // 2\n    #   2. siatka wspolrzednych x, y w zakresie [-r, r]\n    #   3. K[y, x] = exp(-(x^2 + y^2) / (2 * sigma^2))\n    #   4. K = K / K.sum()\n    #   5. zwroc K typu float64 o ksztalcie (ksize, ksize)\n    return np.zeros((ksize, ksize), dtype=np.float64)\n",
+        "tests": [
+          {
+            "name": "ksztalt_dtype_i_suma",
+            "body": "import numpy as np\nK = gaussian_kernel(5, 1.0)\nassert isinstance(K, np.ndarray), f'Oczekiwano numpy.ndarray, dostalismy {type(K).__name__}'\nassert K.shape == (5, 5), f'Oczekiwano ksztaltu (5, 5), dostalismy {K.shape}'\nassert K.dtype == np.float64, f'Oczekiwano dtype float64, dostalismy {K.dtype}'\nassert np.isclose(K.sum(), 1.0), f'Suma elementow powinna byc 1.0, jest {K.sum():.6f}'",
+            "hidden": false
+          },
+          {
+            "name": "maksimum_w_srodku",
+            "body": "import numpy as np\nK = gaussian_kernel(7, 1.5)\ncenter = K[3, 3]\nassert center == K.max(), f'Wartosc maksymalna powinna byc w srodku ({center}), jest {K.max()}'\nassert center > K[0, 0] and center > K[6, 6], 'Element srodkowy powinien byc wiekszy od narozych'"
+          },
+          {
+            "name": "symetria_w_obie_strony",
+            "body": "import numpy as np\nK = gaussian_kernel(5, 1.2)\nassert np.allclose(K, K[::-1, :]), 'Jadro powinno byc symetryczne wzgledem osi poziomej'\nassert np.allclose(K, K[:, ::-1]), 'Jadro powinno byc symetryczne wzgledem osi pionowej'\nassert np.allclose(K, K.T), 'Jadro powinno byc symetryczne wzgledem przekatnej (rozklad jest izotropowy)'"
+          },
+          {
+            "name": "wartosci_dla_3x3_sigma_1",
+            "body": "import numpy as np\nK = gaussian_kernel(3, 1.0)\n# Recznie policzone wagi przed normalizacja:\n#   exp(-1.0)  na rogach   (odleglosc^2 = 2 -> exp(-2/2))\n#   exp(-0.5)  na bokach   (odleglosc^2 = 1 -> exp(-1/2))\n#   1.0        w srodku    (odleglosc^2 = 0 -> exp(0))\nraw = np.array([\n    [np.exp(-1.0), np.exp(-0.5), np.exp(-1.0)],\n    [np.exp(-0.5), 1.0,           np.exp(-0.5)],\n    [np.exp(-1.0), np.exp(-0.5), np.exp(-1.0)],\n], dtype=np.float64)\nexpected = raw / raw.sum()\nassert np.allclose(K, expected, atol=1e-10), f'Wartosci jadra nie zgadzaja sie z formula. Oczekiwano:\\n{expected}\\nDostalismy:\\n{K}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef gaussian_kernel(ksize, sigma):\n    r = (ksize - 1) // 2\n    coords = np.arange(-r, r + 1, dtype=np.float64)\n    xx, yy = np.meshgrid(coords, coords)\n    K = np.exp(-(xx ** 2 + yy ** 2) / (2.0 * sigma ** 2))\n    K /= K.sum()\n    return K\n"
+      }
+    },
+    {
+      "id": "quiz-salt-and-pepper",
+      "title": "Sprawdź się: szum impulsowy",
+      "type": "quiz",
+      "data": {
+        "question": "Twój obraz ma kilka procent pikseli zepsutych szumem typu salt-and-pepper (skrajnie czarne i skrajnie białe punkty rozsiane losowo). Który z trzech filtrów rozmywających usunie szum, nie rozmazując pozostałych krawędzi?",
+        "options": [
+          "`cv2.blur` z jądrem 5×5 — uśrednianie po większym oknie zminimalizuje wpływ pojedynczych pikseli odstających.",
+          "`cv2.GaussianBlur` z σ = 2 — wagi gaussowskie ważą piksele odstające mniej niż box-blur, więc krawędzie pozostają ostre.",
+          "`cv2.medianBlur` z `ksize = 3` — mediana ignoruje skrajne wartości w oknie, dopóki są one mniejszością; odzyskuje wartość z otoczenia, a nie miesza ją z szumem.",
+          "Każdy z nich da podobny efekt — wszystkie trzy filtry rozmywające realizują uśrednianie z różną wagą, a różnica sprowadza się do kosztu obliczeniowego."
+        ],
+        "correct": [2],
+        "explanation": "`cv2.medianBlur` to *jedyny* z tej trójki filtr **nieliniowy**, i dokładnie ta nieliniowość ratuje krawędzie. Mediana z okna 3×3 bierze 9 wartości, sortuje je i zwraca piątą — jeden lub dwa skrajni outlierzy zostają odrzuceni, a krawędź (dla której większość okna leży po jednej stronie skoku) zostaje zachowana bez rozmazania. `cv2.blur` i `cv2.GaussianBlur` natomiast *uśredniają* outlierów z sąsiadami: wartość 255 (salt) zmieszana z dziewiątką sąsiadów o wartości 100 daje średnią ~117, czyli widoczną jasną „plamę”. Odpowiedź D jest klasycznym mitem powtarzanym w samouczkach — Gauss i box-blur są liniowe i traktują outliery liniowo, mediana realizuje zupełnie inny algorytm.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Median_filter",
+          "title": "Median filter — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-trzy-filtry",
+      "title": "Piaskownica: trzy filtry, jeden zaszumiony obraz",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Maly syntetyczny obraz: gradient poziomy + szum salt-and-pepper.\nrng = np.random.default_rng(0)\nH, W = 64, 64\nclean = np.tile(np.linspace(40, 200, W, dtype=np.uint8), (H, 1))\nnoisy = clean.copy()\nmask = rng.random((H, W))\nnoisy[mask < 0.05] = 0      # pepper (czarne piksele)\nnoisy[mask > 0.95] = 255    # salt   (biale piksele)\n\n# Trzy filtry, kazdy z innym ksztaltem statystyki:\nmean_3   = cv2.blur(noisy, (3, 3))\ngauss_5  = cv2.GaussianBlur(noisy, (5, 5), sigmaX=1.0)\nmedian_3 = cv2.medianBlur(noisy, 3)\n\n# Drukujemy ten sam fragment srodka kazdego wyniku, zeby porownac:\ndef patch(img):\n    return img[28:36, 28:36]\n\nprint('NOISY (kawalek z szumem):')\nprint(patch(noisy))\nprint('\\nMEAN 3x3:')\nprint(patch(mean_3))\nprint('\\nGAUSS 5x5 sigma=1:')\nprint(patch(gauss_5))\nprint('\\nMEDIAN 3:')\nprint(patch(median_3))\n\n# Pytania do siebie:\n#   * Ktory filtr najczysciej usuwa salt-and-pepper? Gdzie widzisz\n#     pozostalosci szumu w wynikach mean_3 i gauss_5?\n#   * Zwieksz ksize w cv2.medianBlur do 5, 7. Kiedy mediana zaczyna\n#     ucinac uzyteczne szczegoly, a nie tylko szum?\n#   * Zwieksz poziom szumu (np. 0.20 / 0.80) i zobacz, przy ktorym\n#     progu mediana sie poddaje — wlasnie tam zaczyna sie domena\n#     filtrow adaptacyjnych z modulu o SAR.\n",
+        "encouragement": "Zmieniaj rozmiary jąder i poziom szumu — zobaczysz, kiedy mediana wygrywa, a kiedy zaczyna sama tracić użyteczne szczegóły."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Gaussian_blur",
+      "title": "Gaussian blur — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Median_filter",
+      "title": "Median filter — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html",
+      "title": "OpenCV Python tutorial — Smoothing images",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3 (Image processing)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 3 (Spatial Filtering)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

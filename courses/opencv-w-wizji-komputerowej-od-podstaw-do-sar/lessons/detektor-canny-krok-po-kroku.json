@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "slug": "detektor-canny-krok-po-kroku",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Detektor Canny krok po kroku",
+  "eyebrow": "KRAWĘDZIE I KONTURY",
+  "description": "Czteroetapowy detektor Canny — od rozmycia Gaussem przez gradient Sobela i niemaksymalną supresję (NMS) po dwuprogowanie z histerezą. Dlaczego Canny używa dwóch progów (low, high), jak cv2.Canny wybiera krawędzie i jak dobrać parametry, żeby nie zgubić cienkich linii ani nie utopić obrazu w fałszywym szumie.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intuicja-trzy-kryteria",
+      "title": "Po co cały pipeline — trzy kryteria Canny'ego",
+      "type": "theory",
+      "data": {
+        "markdown": "Krawędź na obrazie to **skok jasności** — to widziałeś już w lekcjach o gradiencie Sobela i o Laplasjanie. Ale **samo wskazanie pikseli o wysokiej magnitudzie gradientu** nie wystarczy: krawędź wychodzi gruba na 2–3 piksele (zona reakcji jądra Sobela), pełna fragmentów (szum łapie się ponad próg), a wynik zależy od jednego, sztywnego progu — ustawisz go za nisko i utoniesz w fałszywym szumie, ustawisz za wysoko i zgubisz delikatne kontury.\n\n![Klasyczna scena testowa do detekcji krawędzi: czarno-biała fotografia dwóch rowerów opartych o ścianę — wyraźne pionowe i ukośne kontury ram, szprych i cieni są bogatym zestawem krawędzi do porównania detektora Canny z gradientem Sobela z poprzedniej lekcji](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons — kanoniczna ilustracja artykułów „Edge detection” i „Sobel operator”, domena publiczna.)*\n\nJohn Canny w 1986 r. sformułował detektor krawędzi jako **problem optymalizacyjny**: szukamy filtru, który minimalizuje **trzy kryteria** jednocześnie:\n\n1. **Dobra detekcja** — możliwie wszystkie prawdziwe krawędzie wykryte i jak najmniej fałszywych odpowiedzi na szum.\n2. **Dobra lokalizacja** — wykryta krawędź leży jak najbliżej rzeczywistej krawędzi w obrazie (nie przesunięta o 1–2 piksele).\n3. **Pojedyncza odpowiedź** — każda krawędź zaznaczona jest **jednym** pikselem na szerokość, a nie kilkoma sąsiadującymi.\n\nPipeline, który spełnia te trzy kryteria, składa się z **czterech kolejnych etapów**: rozmycie Gaussem → gradient (Sobel) → niemaksymalna supresja (NMS) → dwuprogowanie z histerezą. Każdy etap zaadresuje konkretną słabość naiwnego „gradient + jeden próg”, a w `cv2.Canny(img, threshold1, threshold2)` masz wszystkie cztery zaszyte za jednym wywołaniem."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1986.4767851",
+          "title": "Canny, J. — A Computational Approach to Edge Detection (IEEE TPAMI 1986)",
+          "kind": "paper",
+          "author": "John Canny",
+          "year": 1986
+        }
+      ]
+    },
+    {
+      "id": "cztery-etapy",
+      "title": "Cztery etapy: rozmycie → gradient → NMS → histereza",
+      "type": "theory",
+      "data": {
+        "markdown": "### Etap 1 — rozmycie Gaussem\n\nZanim policzymy gradient, **wygładzamy** obraz jądrem Gaussa o odchyleniu $\\sigma$. Pierwsza pochodna wzmacnia szum (każda różniczka mniej więcej dwukrotnie zwiększa amplitudę szumu) — bez wygładzenia drobne fluktuacje jasności nadałyby fałszywe maksima magnitudy, a histereza nie miałaby ich jak odróżnić od cienkich konturów. Małe $\\sigma$ (0.5–1.0) zachowuje cienkie kontury, większe $\\sigma$ (1.5–2.5) wycina drobne detale, ale zostawia tylko silne, długie krawędzie.\n\n### Etap 2 — gradient: magnituda i kierunek\n\nZ pierwszych pochodnych cząstkowych liczonych jądrami Sobela ($G_x$ i $G_y$, znanymi z poprzedniej lekcji) wyznaczamy w każdym pikselu:\n\n$$ M(x, y) \\;=\\; \\sqrt{G_x(x, y)^2 + G_y(x, y)^2} \\qquad \\theta(x, y) \\;=\\; \\operatorname{atan2}\\bigl(G_y(x, y),\\, G_x(x, y)\\bigr) $$\n\n$M$ to **siła krawędzi**, $\\theta$ to **kierunek prostopadły** do krawędzi (gradient wskazuje *w poprzek*, nie wzdłuż konturu — częsta pułapka). Magnituda zazwyczaj reaguje grubą zoną szerokości 2–3 pikseli; ten problem rozwiąże następny etap.\n\n### Etap 3 — niemaksymalna supresja (NMS)\n\nKwantyzujemy kąt $\\theta$ do **czterech kierunków**: 0° (gradient poziomy → krawędź pionowa), 45° (NE-SW), 90° (gradient pionowy → krawędź pozioma), 135° (NW-SE). Dla każdego piksela porównujemy jego magnitudę z **dwoma sąsiadami wzdłuż wykrytego kierunku**:\n\n$$ M_{\\mathrm{NMS}}(x, y) \\;=\\; \\begin{cases} M(x, y) & \\text{gdy } M(x, y) \\geq M_a \\;\\text{oraz}\\; M(x, y) \\geq M_b \\\\\\\\ 0 & \\text{w pozostałych przypadkach} \\end{cases} $$\n\ngdzie $M_a, M_b$ to magnitudy dwóch sąsiadów wzdłuż kierunku gradientu (np. dla $\\theta \\approx 0°$ — sąsiadów po lewej i po prawej). Po NMS gruba zona reakcji 2–3 pikseli zwęża się do **jednego piksela na szerokość krawędzi** — to spełnia trzecie kryterium Canny'ego (pojedyncza odpowiedź).\n\n### Etap 4 — dwuprogowanie z histerezą\n\nZamiast jednego progu używamy **dwóch**: niskiego $T_l$ i wysokiego $T_h$. Każdy piksel po NMS klasyfikujemy:\n\n- **silna krawędź**, gdy $M_{\\mathrm{NMS}} \\geq T_h$ — przyjmowana zawsze;\n- **słaba krawędź**, gdy $T_l \\leq M_{\\mathrm{NMS}} < T_h$ — przyjmowana **tylko**, gdy łączy się przez sąsiedztwo 8-spójne (bezpośrednio lub łańcuchowo) z jakąś silną krawędzią;\n- **odrzucona**, gdy $M_{\\mathrm{NMS}} < T_l$.\n\nHistereza eliminuje pojedynczy szum (słaba krawędź bez sąsiada-silnej odpada), ale zachowuje **długie cienkie kontury, których środek jest słabszy od krańców** — bez histerezy taki kontur rozpadłby się na fragmenty. Dokumentacja OpenCV zaleca stosunek $T_h / T_l$ w okolicy **2:1 lub 3:1**: ustaw najpierw `threshold2` (high), potem `threshold1` (low) jako 1/2 lub 1/3 high. Wywołanie: `cv2.Canny(img, threshold1=low, threshold2=high)`."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+          "title": "Canny edge detector — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+          "title": "OpenCV Python tutorial — Canny edge detection",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "explorer-canny-progi",
+      "title": "Pokrętła σ, T_l i T_h — co dzieje się z krawędziami",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import gaussian_filter, sobel, label\n\n# Syntetyczny obraz testowy: tlo + dwa prostokaty + okrag + szum gaussowski.\n# Stale uziarniony, zeby kazda wizyta dawala te same krawedzie.\nnp.random.seed(0)\nH, W = 100, 140\nimg = np.full((H, W), 80.0)\nimg[15:55, 25:75]   = 220.0\nimg[50:90, 70:130]  = 50.0\nimg[20:48, 90:118]  = 180.0\nyy, xx = np.mgrid[:H, :W]\nmask = (xx - 110) ** 2 + (yy - 75) ** 2 < 12 ** 2\nimg[mask] = 230.0\nimg = img + 10.0 * np.random.randn(H, W)\nimg = np.clip(img, 0.0, 255.0)\n\ndef canny_pipeline(image, sigma_v, low_v, high_v):\n    \"\"\"Pelny 4-etapowy Canny w numpy + scipy.ndimage.\n    Zwraca (edges_bool, M_after_nms).\n    \"\"\"\n    # Etap 1 — rozmycie Gaussem.\n    blurred = gaussian_filter(image, sigma=max(0.1, sigma_v))\n\n    # Etap 2 — gradient: magnituda + kierunek (Sobel z scipy.ndimage).\n    gx = sobel(blurred, axis=1)\n    gy = sobel(blurred, axis=0)\n    M = np.hypot(gx, gy)\n    theta_deg = (np.degrees(np.arctan2(gy, gx)) + 180.0) % 180.0\n\n    # Etap 3 — niemaksymalna supresja (wektoryzowana, 4 kwantyzowane kierunki).\n    pad = np.pad(M, 1, mode='constant')\n    Hh, Ww = M.shape\n    left  = pad[1:Hh+1, 0:Ww]\n    right = pad[1:Hh+1, 2:Ww+2]\n    up    = pad[0:Hh,   1:Ww+1]\n    down  = pad[2:Hh+2, 1:Ww+1]\n    ne    = pad[0:Hh,   2:Ww+2]\n    sw    = pad[2:Hh+2, 0:Ww]\n    nw    = pad[0:Hh,   0:Ww]\n    se    = pad[2:Hh+2, 2:Ww+2]\n    bin0   = (theta_deg <  22.5) | (theta_deg >= 157.5)\n    bin45  = (theta_deg >= 22.5) & (theta_deg <  67.5)\n    bin90  = (theta_deg >= 67.5) & (theta_deg < 112.5)\n    bin135 = (theta_deg >= 112.5) & (theta_deg < 157.5)\n    keep = np.zeros_like(M, dtype=bool)\n    keep |= bin0   & (M >= left) & (M >= right)\n    keep |= bin45  & (M >= sw)   & (M >= ne)\n    keep |= bin90  & (M >= up)   & (M >= down)\n    keep |= bin135 & (M >= nw)   & (M >= se)\n    nms = np.where(keep, M, 0.0)\n\n    # Etap 4 — histereza: 8-spojne komponenty pikseli >= low_v\n    # zatrzymane sa tylko, jesli zawieraja choc jeden piksel >= high_v.\n    if high_v < low_v:\n        low_v, high_v = high_v, low_v\n    above_low = nms >= low_v\n    strong = nms >= high_v\n    labeled, n = label(above_low, structure=np.ones((3, 3), dtype=int))\n    edges = np.zeros_like(nms, dtype=bool)\n    if n > 0 and strong.any():\n        keep_labels = np.unique(labeled[strong])\n        keep_labels = keep_labels[keep_labels > 0]\n        if keep_labels.size > 0:\n            edges = np.isin(labeled, keep_labels)\n    return edges, nms\n",
+        "renderCode": "edges, nms_mag = canny_pipeline(img, sigma, low, high)\n\nfig, axes = plt.subplots(1, 2, figsize=(8.6, 3.8))\naxes[0].imshow(img, cmap='gray', vmin=0, vmax=255)\naxes[0].set_title('Wejscie (z szumem gaussowskim)')\naxes[0].set_xlabel('x [piksel]')\naxes[0].set_ylabel('y [piksel]')\naxes[1].imshow(edges, cmap='gray')\naxes[1].set_title(f'Canny: sigma={sigma:.1f}, low={int(low)}, high={int(high)}')\naxes[1].set_xlabel('x [piksel]')\naxes[1].set_ylabel('y [piksel]')\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "sigma",
+            "label": "σ rozmycia Gaussa (etap 1)",
+            "type": "slider",
+            "min": 0.5,
+            "max": 3.0,
+            "step": 0.1,
+            "default": 1.0
+          },
+          {
+            "name": "low",
+            "label": "T_l — prog dolny histerezy",
+            "type": "slider",
+            "min": 5,
+            "max": 250,
+            "step": 5,
+            "default": 40
+          },
+          {
+            "name": "high",
+            "label": "T_h — prog gorny histerezy",
+            "type": "slider",
+            "min": 20,
+            "max": 500,
+            "step": 5,
+            "default": 120
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "exercise-hysteresis-1d",
+      "title": "Zaimplementuj `hysteresis_1d(magnitudes, low, high)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `hysteresis_1d(magnitudes, low, high)`, która realizuje **etap 4 detektora Canny w 1D**: dwuprogowanie z histerezą wzdłuż jednowymiarowej tablicy magnitud po NMS. Funkcja MUSI:\n\n1. Przyjąć `magnitudes` jako listę / sekwencję floatów dowolnej długości (w tym pustą), oraz dwa floaty `low`, `high`.\n2. Zwrócić **listę bool** tej samej długości co `magnitudes`, gdzie `True` oznacza piksel uznany za krawędź, a `False` — odrzucony.\n3. Reguły:\n   - `magnitudes[i] >= high` (silna krawędź) → `True` zawsze;\n   - `low <= magnitudes[i] < high` (kandydat słaby) → `True` **tylko**, gdy łączy się przez sąsiada o indeksie `i-1` lub `i+1` z jakąś silną krawędzią — bezpośrednio lub łańcuchowo (słaba może być sąsiadem słabej, która jest sąsiadem silnej);\n   - `magnitudes[i] < low` → `False` zawsze.\n\nNa brzegach (indeks 0 i `n-1`) sąsiad spoza zakresu nie istnieje — nie traktuj go jako krawędzi.\n\n```\n# Silna posrodku, slabe po obu stronach -> wszystkie zaakceptowane (lancuchowo).\nhysteresis_1d([0.1, 0.6, 0.8, 0.6, 0.6, 0.1], low=0.5, high=0.7)\n# -> [False, True, True, True, True, False]\n\n# Same slabe, bez ani jednego silnego sasiada -> wszystkie odrzucone.\nhysteresis_1d([0.6, 0.6, 0.6, 0.6], low=0.5, high=0.7)\n# -> [False, False, False, False]\n```",
+        "starterCode": "def hysteresis_1d(magnitudes, low, high):\n    # magnitudes: lista / sekwencja floatow; low, high: floaty; low <= high.\n    # Krok po kroku:\n    #   1. n = len(magnitudes); jesli n == 0 -> zwroc [].\n    #   2. Zbuduj liste 'strong' (m >= high) i 'weak' (low <= m < high).\n    #   3. Zainicjuj 'edges' kopia 'strong'.\n    #   4. Dopoki w iteracji nastepuje zmiana, dla kazdego i:\n    #        - jesli weak[i] i not edges[i],\n    #          sprawdz edges[i-1] (jesli i > 0) i edges[i+1] (jesli i+1 < n).\n    #          Jesli ktorykolwiek True -> ustaw edges[i] = True i zapisz changed.\n    #   5. Zwroc edges (lista bool).\n    n = len(magnitudes)\n    if n == 0:\n        return []\n    edges = [False] * n\n    return edges\n",
+        "tests": [
+          {
+            "name": "pusta_lista_zwraca_pusta_liste",
+            "body": "out = hysteresis_1d([], low=1.0, high=2.0)\nassert isinstance(out, list), f'oczekiwano list, dostalismy {type(out).__name__}'\nassert out == [], f'oczekiwano [], dostalismy {out}'",
+            "hidden": false
+          },
+          {
+            "name": "silne_zawsze_zaakceptowane_a_ponizej_low_zawsze_odrzucone",
+            "body": "out = hysteresis_1d([0.1, 5.0, 0.1], low=0.5, high=1.0)\nassert isinstance(out, list), f'oczekiwano list, dostalismy {type(out).__name__}'\nassert len(out) == 3, f'oczekiwano dlugosci 3, jest {len(out)}'\nassert out == [False, True, False], f'oczekiwano [False, True, False], jest {out}'"
+          },
+          {
+            "name": "slabe_lancuchowo_polaczone_z_silna_zostaja",
+            "body": "out = hysteresis_1d([0.1, 0.6, 0.8, 0.6, 0.6, 0.1], low=0.5, high=0.7)\n# Silna posrodku (indeks 2 = 0.8 >= 0.7); slabe na 1, 3, 4 (0.6 w [0.5, 0.7)).\n# 1 laczy sie ze 2 bezposrednio; 3 laczy sie ze 2; 4 laczy sie z 3 (juz uznana za krawedz).\n# Brzegi 0 i 5 sa ponizej low -> odrzucone.\nassert out == [False, True, True, True, True, False], f'oczekiwano [False, True, True, True, True, False], jest {out}'"
+          },
+          {
+            "name": "slabe_bez_silnego_sasiada_odrzucone",
+            "body": "out = hysteresis_1d([0.6, 0.6, 0.6, 0.6], low=0.5, high=0.7)\n# Wszystkie 0.6 w [0.5, 0.7) — slabe; ani jednej silnej -> wszystkie odrzucone.\nassert out == [False, False, False, False], f'oczekiwano [False, False, False, False], jest {out}'\n# Pojedynczy slaby na brzegu, bez silnego sasiada — tez odrzucony.\nout2 = hysteresis_1d([0.6], low=0.5, high=0.7)\nassert out2 == [False], f'pojedynczy slaby bez sasiadow powinien byc [False], jest {out2}'"
+          }
+        ],
+        "solution": "def hysteresis_1d(magnitudes, low, high):\n    n = len(magnitudes)\n    if n == 0:\n        return []\n    if high < low:\n        low, high = high, low\n    strong = [m >= high for m in magnitudes]\n    weak = [low <= m < high for m in magnitudes]\n    edges = list(strong)\n    changed = True\n    while changed:\n        changed = False\n        for i in range(n):\n            if weak[i] and not edges[i]:\n                left_edge = i > 0 and edges[i - 1]\n                right_edge = i + 1 < n and edges[i + 1]\n                if left_edge or right_edge:\n                    edges[i] = True\n                    changed = True\n    return edges\n"
+      }
+    },
+    {
+      "id": "quiz-dwa-progi",
+      "title": "Sprawdź się: dlaczego Canny używa dwóch progów",
+      "type": "quiz",
+      "data": {
+        "question": "W kodzie OpenCV widzisz wywołanie `cv2.Canny(img, threshold1=50, threshold2=150)`. Dlaczego Canny przyjmuje **dwa** progi, a nie jeden — i co stałoby się, gdybyś wywołał go z `threshold1 = threshold2`?",
+        "options": [
+          "Dwa progi służą do **dwuprogowania z histerezą**: piksele z magnitudą gradientu (po NMS) ≥ T_h są zawsze krawędziami, piksele z magnitudą T_l ≤ M < T_h — tylko, gdy łączą się 8-spójnie z jakąś silną krawędzią. Gdy `threshold1 == threshold2`, histereza redukuje się do zwykłego pojedynczego progu — tracimy ciągłość cienkich konturów, których środek bywa słabszy od krańców, i wracamy do problemu, który Canny chciał rozwiązać.",
+          "Pierwszy próg dotyczy magnitudy gradientu, drugi — kąta gradientu. Gdy są równe, Canny ignoruje krawędzie ukośne i zostawia tylko poziome i pionowe.",
+          "`threshold1` to próg dla `Gx`, a `threshold2` — dla `Gy`. Pojedynczy próg sprawiłby, że detektor przestałby reagować na krawędzie pod kątem 45°, gdzie obie składowe są niezerowe.",
+          "Dwa progi sterują niemaksymalną supresją (jeden dla pikseli centralnych, drugi dla sąsiadów). Gdy `threshold1 == threshold2`, NMS przestaje działać i krawędzie wychodzą grube na 2–3 piksele."
+        ],
+        "correct": [0],
+        "explanation": "Histereza, zaproponowana w 1986 r. przez Canny'ego, działa dokładnie tak: po niemaksymalnej supresji każdy piksel z magnitudą ≥ T_h przyjmujemy jako **silną** krawędź, każdy z magnitudą T_l ≤ M < T_h jako **kandydata słabego**, a kandydatów akceptujemy **tylko**, gdy łączą się przez sąsiedztwo 8-spójne z jakąś silną krawędzią — bezpośrednio lub łańcuchowo. Pozwala to zachować długie cienkie kontury, których środek bywa nieco słabszy od krańców (każdy fragment poniżej T_l przerwałby je) i jednocześnie odrzucić pojedyncze maksima szumu (te z magnitudą ≥ T_l, ale bez silnego sąsiada). Gdy `threshold1 == threshold2`, „okno słabej krawędzi” znika, mechanizm histerezy degeneruje się do zwykłego pojedynczego progu, a my wracamy do dokładnie tego samego problemu, który motywował cały pipeline. Odpowiedzi B–D mylą tematy: progi w `cv2.Canny` dotyczą **magnitudy** gradientu (nie kąta, nie poszczególnych składowych G_x/G_y, nie NMS), a wszystkie cztery etapy — rozmycie, gradient, NMS, histereza — są **niezależnymi krokami**: NMS działa zanim w ogóle zaczynamy progować.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-cv2-canny",
+      "title": "Piaskownica: `cv2.Canny`, sigma i stosunek T_h/T_l",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz testowy: dwa prostokaty + okrag, plus szum gaussowski.\n# Stale uziarnione, zeby kazde uruchomienie dawalo te same krawedzie.\nnp.random.seed(0)\nH, W = 160, 220\nimg = np.full((H, W), 80, dtype=np.uint8)\nimg[20:80, 30:120]    = 220   # jasny prostokat po lewej\nimg[60:130, 130:200]  = 50    # ciemny prostokat po prawej\nyy, xx = np.mgrid[:H, :W]\nmask = (xx - 80) ** 2 + (yy - 110) ** 2 < 22 ** 2\nimg[mask] = 240               # jasne kolo\nimg = np.clip(\n    img.astype(np.float64) + 12.0 * np.random.randn(H, W),\n    0, 255,\n).astype(np.uint8)\n\n# Etap 1 (rozmycie Gaussem) — dobierz sigma; ksize ~ 6*sigma + 1 (z lekcji o Sobelu).\nsigma = 1.0\nksize = max(3, int(2 * round(3 * sigma) + 1))\nblurred = cv2.GaussianBlur(img, (ksize, ksize), sigma)\n\n# Etapy 2-4 zalatwia cv2.Canny: liczy Sobela, NMS i histereze za jednym wywolaniem.\n# Pamietaj: threshold1 < threshold2; rekomendowany stosunek 1:2 lub 1:3.\nlow_thresh  = 50\nhigh_thresh = 150\nedges = cv2.Canny(blurred, threshold1=low_thresh, threshold2=high_thresh)\n\nprint(f'sigma = {sigma:.2f}, ksize = {ksize}, low = {low_thresh}, high = {high_thresh}')\nprint(f'piksele krawedzi: {int((edges > 0).sum())} '\n      f'({100.0 * (edges > 0).mean():.1f}% obrazu)')\n\n# Pytania do siebie:\n#   * Co dzieje sie, gdy ustawisz low_thresh = high_thresh? (histereza znika,\n#     wracasz do pojedynczego progu — sprobuj 100/100 i 50/50)\n#   * Co dzieje sie, gdy uruchomisz cv2.Canny bezposrednio na surowym img\n#     (bez wczesniejszego cv2.GaussianBlur)? Szum laczy sie w fragmenty.\n#   * Sprobuj L2gradient=True w cv2.Canny — uzywa true L2-magnitudy\n#     zamiast aproksymacji L1; jak zmieniaja sie ciensze kontury?\n#   * Zwieksz sigma do 2.5 — co znika z mapy krawedzi i dlaczego?\n",
+        "encouragement": "Pobaw się parametrami `sigma`, `low_thresh` i `high_thresh` — i sprawdź na własnym obrazie zalecenie z dokumentacji OpenCV: low jako 1/2 lub 1/3 high."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1986.4767851",
+      "title": "Canny, J. — A Computational Approach to Edge Detection (IEEE TPAMI 1986)",
+      "kind": "paper",
+      "author": "John Canny",
+      "year": 1986
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+      "title": "Canny edge detector — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+      "title": "OpenCV Python tutorial — Canny edge detection",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7.2 (Edge detection)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "slug": "mini-projekt-stitcher-panoramiczny",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Mini-projekt: stitcher panoramiczny",
+  "eyebrow": "MINI-PROJEKT",
+  "description": "Złóż wszystko z modułu 5 w jeden 3-zdjęciowy stitcher: SIFT + test Lowe'a + RANSAC, łańcuch sąsiednich homografii sprowadzony do układu obrazu 0, wspólna kanwa, naiwny blend i diagnostyka, gdy panorama wychodzi krzywa.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "pipeline-projektu",
+      "title": "Pipeline 3-zdjęciowej panoramy",
+      "type": "theory",
+      "data": {
+        "markdown": "W tym mini-projekcie składamy w jedno wszystko z modułu 5 i robimy to, czego nie pokazaliśmy w poprzedniej lekcji: panoramę z **trzech** ujęć — tak, jak telefon zszyłby zdjęcia z balkonu. `cv2.Stitcher_create(cv2.Stitcher.PANORAMA)` zrobiłby to jedną linijką, ale tutaj świadomie schodzimy o piętro niżej, by zobaczyć, gdzie pojawia się **łańcuch homografii**, jak liczyć **kanwę** dla więcej niż dwóch obrazów i co robić, kiedy panorama wychodzi krzywa.\n\n![Klasyczny przykład korekcji perspektywicznej: dokładnie ten sam rachunek macierzowy, którego użyjemy, by dwa boczne ujęcia wpasować w układ obrazu środkowego — odwrotny warp tworzy każdy piksel kanwy z (zwartego) sąsiedztwa źródłowego, więc nie powstają dziury](https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Perspective_correction.svg/640px-Perspective_correction.svg.png)\n\nPełen pipeline w sześciu krokach:\n\n1. **Detekcja cech** w każdym z trzech obrazów przez `cv2.SIFT_create()` — patent Lowe'a wygasł w marcu 2020, więc SIFT jest w głównym module OpenCV od 4.4.\n2. **Dopasowanie sąsiedztwami** dla każdej sąsiedniej pary $(I_0, I_1)$ i $(I_1, I_2)$ przez `BFMatcher.knnMatch(..., k=2)` z testem Lowe'a ($d_1 < 0{,}75 \\cdot d_2$).\n3. **Homografia z RANSAC**: `cv2.findHomography(..., cv2.RANSAC, 5.0)` daje $H_{1 \\to 0}$ i $H_{2 \\to 1}$.\n4. **Złożenie łańcucha**: $H_{2 \\to 0} = H_{1 \\to 0} \\cdot H_{2 \\to 1}$ — dokładnie ten sam wzór, którego użyjesz, by dorzucić czwarty i piąty obraz.\n5. **Wspólna kanwa + warp** wszystkich trzech obrazów: `cv2.warpPerspective(img_i, T @ H_chain, (W, H_out))`, gdzie $T$ to macierz translacji wyrównująca scenę do nieujemnych współrzędnych (znamy ją z poprzedniej lekcji).\n6. **Blending + crop**: średnia w obszarze nakładania, na końcu odcięcie czarnych marginesów.\n\nKażdy z tych etapów to maks 1–2 linie kodu, gdy narzędzia z poprzednich lekcji są już złożone w funkcje pomocnicze — co dokładnie zrobimy poniżej."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/s11263-006-0002-3",
+          "title": "Brown, M. and Lowe, D. G. — Automatic Panoramic Image Stitching using Invariant Features (IJCV 2007)",
+          "kind": "paper",
+          "author": "Matthew Brown and David G. Lowe",
+          "year": 2007
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d8d/classcv_1_1Stitcher.html",
+          "title": "cv::Stitcher — OpenCV API reference (PANORAMA mode, status codes)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "lancuch-homografii",
+      "title": "Łańcuch homografii: jak skleić więcej niż dwa obrazy",
+      "type": "theory",
+      "data": {
+        "markdown": "Macierz $H_{i \\to j}$ przekształca piksele obrazu $I_i$ na układ obrazu $I_j$. Sąsiednie homografie składamy w jeden łańcuch sprowadzający wszystko do układu obrazu 0:\n\n$$ H_{i \\to 0} \\;=\\; H_{1 \\to 0} \\cdot H_{2 \\to 1} \\cdot H_{3 \\to 2} \\cdot \\ldots \\cdot H_{i \\to i-1} $$\n\n**Kolejność iloczynu jest niezamienna** — $H_{2 \\to 0} = H_{1 \\to 0} \\cdot H_{2 \\to 1}$, a *nie* $H_{2 \\to 1} \\cdot H_{1 \\to 0}$. Pomyłka tutaj to klasyczny pierwszy bug ręcznego stitchera: panorama wychodzi przesunięta „o jeden obraz w bok\" i rozjeżdża się dokładnie liniowo z odległością od środka.\n\n**Drugi efekt łańcucha:** każde składanie *propaguje* błąd estymacji $H$. Dla trzech obrazów (dwa $H$) wystarczy naiwne mnożenie macierzy. Przy łańcuchu pięciu lub więcej ujęć `cv2.Stitcher` uruchamia *bundle adjustment* — wspólną optymalizację rotacji wszystkich kamer naraz — żeby zsumowane mikro-przesunięcia nie urosły do widocznego odchylenia końcówki. W tym mini-projekcie z $N = 3$ obejdziemy się bez bundle adjustment, ale pamiętaj o tej granicy."
+      }
+    },
+    {
+      "id": "exercise-chain",
+      "title": "Złóż łańcuch sąsiednich homografii",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `chain_homographies(neighbour_to_prev)`, która składa **listę N − 1 homografii sąsiadów** w listę N homografii względem obrazu 0.\n\n- Wejście: lista `[H10, H21, H32, ...]` macierzy `np.ndarray (3, 3)` typu float, gdzie element o indeksie $i$ to $H_{i+1 \\to i}$.\n- Wyjście: lista długości N w postaci `[I, H_{1->0}, H_{2->0}, H_{3->0}, ...]`. Pierwszy element to macierz jednostkowa (obraz 0 mapowany na samego siebie), a kolejne to homografie ustawione **względem obrazu 0**.\n\nPamiętaj o kolejności mnożenia: $H_{i \\to 0} = H_{1 \\to 0} \\cdot H_{2 \\to 1} \\cdot \\ldots \\cdot H_{i \\to i-1}$ — najpierw lewy czynnik, najnowszy sąsiad **po prawej**.\n\n```\nchain_homographies([])              -> [I]                       # jeden obraz\nchain_homographies([H10])           -> [I, H10]                   # dwa obrazy\nchain_homographies([H10, H21])      -> [I, H10, H10 @ H21]        # H_{2->0}\n```",
+        "starterCode": "import numpy as np\n\n\ndef chain_homographies(neighbour_to_prev):\n    \"\"\"Złóż łańcuch sąsiednich homografii do układu obrazu 0.\n\n    neighbour_to_prev : list[np.ndarray]\n        Lista N-1 macierzy 3x3, gdzie element i to H_{i+1 -> i}.\n\n    Zwraca\n    ------\n    list[np.ndarray]\n        Lista N macierzy 3x3 [H_{0->0}, H_{1->0}, ..., H_{N-1->0}],\n        gdzie pierwsza pozycja to macierz jednostkowa.\n    \"\"\"\n    # H_{0 -> 0} = I\n    # H_{i -> 0} = H_{1 -> 0} @ H_{2 -> 1} @ ... @ H_{i -> i-1}\n    raise NotImplementedError\n",
+        "tests": [
+          {
+            "name": "pojedynczy_obraz_zwraca_identycznosc",
+            "body": "result = chain_homographies([])\nassert len(result) == 1, f'oczekiwano listy dlugosci 1, jest {len(result)}'\nassert np.allclose(result[0], np.eye(3)), f'pierwszy element musi byc macierza jednostkowa, jest\\n{result[0]}'",
+            "hidden": false
+          },
+          {
+            "name": "dwa_obrazy_jedna_homografia",
+            "body": "H10 = np.array([[1.0, 0.0, 50.0],\n                [0.0, 1.0,  0.0],\n                [0.0, 0.0,  1.0]])\nresult = chain_homographies([H10])\nassert len(result) == 2, f'oczekiwano listy dlugosci 2, jest {len(result)}'\nassert np.allclose(result[0], np.eye(3)), 'pierwszy element musi byc I'\nassert np.allclose(result[1], H10), f'drugi element powinien byc rowny H10, jest\\n{result[1]}'"
+          },
+          {
+            "name": "trzy_obrazy_kolejnosc_lewy_do_prawego",
+            "body": "# H_{1->0} = translacja +50 px; H_{2->1} = translacja +30 px.\n# H_{2->0} = H10 @ H21 = translacja +80 px (skladanie translacji = suma).\nH10 = np.array([[1.0, 0.0, 50.0],\n                [0.0, 1.0,  0.0],\n                [0.0, 0.0,  1.0]])\nH21 = np.array([[1.0, 0.0, 30.0],\n                [0.0, 1.0,  0.0],\n                [0.0, 0.0,  1.0]])\nresult = chain_homographies([H10, H21])\nexpected = np.array([[1.0, 0.0, 80.0],\n                     [0.0, 1.0,  0.0],\n                     [0.0, 0.0,  1.0]])\nassert len(result) == 3, f'oczekiwano listy dlugosci 3, jest {len(result)}'\nassert np.allclose(result[2], expected), f'H_{{2->0}}: oczekiwano\\n{expected}\\njest\\n{result[2]}'"
+          },
+          {
+            "name": "cztery_obrazy_z_nietrywialna_skala",
+            "body": "# H10: translacja +10. H21: skala 2x. H32: translacja +5.\n# Sprawdzamy, ze chain[3] == H10 @ H21 @ H32 (a NIE odwrotna kolejnosc).\nH10 = np.eye(3); H10[0, 2] = 10.0\nH21 = np.array([[2.0, 0.0, 0.0],\n                [0.0, 2.0, 0.0],\n                [0.0, 0.0, 1.0]])\nH32 = np.eye(3); H32[0, 2] = 5.0\nresult = chain_homographies([H10, H21, H32])\nexpected_2 = H10 @ H21\nexpected_3 = H10 @ H21 @ H32\nassert len(result) == 4, f'oczekiwano listy dlugosci 4, jest {len(result)}'\nassert np.allclose(result[2], expected_2), f'H_{{2->0}}: oczekiwano\\n{expected_2}\\njest\\n{result[2]}'\nassert np.allclose(result[3], expected_3), f'H_{{3->0}}: oczekiwano\\n{expected_3}\\njest\\n{result[3]}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef chain_homographies(neighbour_to_prev):\n    chain = [np.eye(3, dtype=np.float64)]\n    for H in neighbour_to_prev:\n        chain.append(chain[-1] @ np.asarray(H, dtype=np.float64))\n    return chain\n"
+      }
+    },
+    {
+      "id": "cloze-find-homography",
+      "title": "Wpisz brakujące fragmenty pipeline'u dopasowywania cech",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Złóż produkcyjną wersję funkcji `find_homography_between(img_a, img_b)`, która z dwóch obrazów BGR zwraca homografię $H_{B \\to A}$ wraz z maską inlierów RANSAC. Wpisz pięć fragmentów:\n\n- **`detector_factory`** — fabryka detektora SIFT (od OpenCV 4.4 w głównym module).\n- **`sift_norm`** — norma odległości deskryptorów SIFT (są to wektory `float32`).\n- **`knn_k`** — liczba sąsiadów potrzebna testowi Lowe'a.\n- **`ransac_method`** — metoda outlier-robust w `findHomography`.\n- **`reproj_thresh`** — próg reprojekcji RANSAC w pikselach (typowo 3–5).",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n\ndef find_homography_between(img_a, img_b, ratio=0.75):\n    \"\"\"Wyznacz H_{B -> A}: piksele img_b -> uklad img_a.\"\"\"\n    gray_a = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY)\n    gray_b = cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY)\n\n    # 1. Detekcja cech (od OpenCV 4.4 SIFT jest w glownym module).\n    detector = cv2.{{detector_factory}}()\n    kp_a, des_a = detector.detectAndCompute(gray_a, None)\n    kp_b, des_b = detector.detectAndCompute(gray_b, None)\n\n    # 2. KNN matcher z norma L2 (deskryptory SIFT to wektory float).\n    bf = cv2.BFMatcher(cv2.{{sift_norm}})\n    knn = bf.knnMatch(des_b, des_a, k={{knn_k}})\n\n    # 3. Test Lowe'a odsiewa niejednoznaczne dopasowania.\n    good = [m1 for m1, m2 in knn if m1.distance < ratio * m2.distance]\n\n    # 4. Konwencja src=B, dst=A (zwrocone H mapuje img_b -> uklad img_a).\n    src_pts = np.float32([kp_b[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)\n    dst_pts = np.float32([kp_a[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)\n\n    # 5. Homografia z RANSAC.\n    H, mask = cv2.findHomography(src_pts, dst_pts, cv2.{{ransac_method}}, {{reproj_thresh}})\n    return H, mask\n",
+        "slots": [
+          {
+            "id": "detector_factory",
+            "hint": "Statyczna fabryka detektora SIFT — patent Lowe'a wygasł w 2020, więc działa w głównej gałęzi.",
+            "validation": { "kind": "exact", "value": "SIFT_create" }
+          },
+          {
+            "id": "sift_norm",
+            "hint": "Norma odległości deskryptorów SIFT (wektory float). Dla deskryptorów binarnych typu ORB użyłbyś NORM_HAMMING.",
+            "validation": { "kind": "oneOf", "values": ["NORM_L2", "NORM_L2SQR"] }
+          },
+          {
+            "id": "knn_k",
+            "hint": "Test Lowe'a porównuje pierwszego z drugim najbliższym sąsiadem — ile ich potrzeba?",
+            "validation": { "kind": "exact", "value": "2" }
+          },
+          {
+            "id": "ransac_method",
+            "hint": "Metoda outlier-robust dla findHomography — klasyk od 1981.",
+            "validation": { "kind": "oneOf", "values": ["RANSAC", "USAC_DEFAULT", "USAC_MAGSAC", "USAC_ACCURATE"] }
+          },
+          {
+            "id": "reproj_thresh",
+            "hint": "Maksymalny dopuszczalny błąd reprojekcji w pikselach (typowo 3–5).",
+            "validation": { "kind": "oneOf", "values": ["3", "4", "5", "3.0", "4.0", "5.0"] }
+          }
+        ]
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+          "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004) — wprowadza test ratio użyty w slocie 3.",
+          "kind": "paper",
+          "author": "David G. Lowe",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "quiz-diagnostyka",
+      "title": "Diagnostyka: panorama wychodzi krzywa",
+      "type": "quiz",
+      "data": {
+        "question": "Twój 3-zdjęciowy stitcher produkuje panoramę, w której prawa strona widocznie się rozjeżdża — pionowe linie krzywią się w łuk. RANSAC zwraca tylko 9 inlierów dla pary $(I_1, I_2)$. Co powinieneś zrobić w pierwszej kolejności?",
+        "options": [
+          "Podnieść próg reprojekcji w cv2.findHomography z 5 px do 50 px — większy próg = więcej inlierów = stabilniejsza homografia.",
+          "Rozluźnić próg testu Lowe'a z 0,75 do 0,9 — więcej dopasowań pójdzie do RANSAC, więc znajdzie więcej inlierów.",
+          "Dorobić zdjęcie pomostowe między I₁ a I₂ (lub przefotografować z większym overlapem rzędu 30%); 9 inlierów to za mało dla stabilnej homografii — typowy próg spokoju to ~ 15–20.",
+          "Wyłączyć RANSAC, podając 0 jako method w findHomography — wtedy estymator dostanie wszystkie dopasowania i sam zważy je metodą najmniejszych kwadratów."
+        ],
+        "correct": [2],
+        "explanation": "**A** to klasyczny anty-pattern: większy próg reprojekcji puszcza coraz gorsze dopasowania jako „zgodne z modelem\" — RANSAC liczy je jako inliery, ale homografia wpasowuje je kosztem geometrii i krzywizna prawej strony tylko rośnie. **B** ten sam mechanizm na poziomie wcześniejszym: rozluźnienie progu Lowe'a do 0,9 wpuszcza niejednoznaczne dopasowania (zwłaszcza groźne na obrazach z powtarzalną teksturą — okna, cegły), a RANSAC potrafi przy szczęściu uznać je za inliery i wybrać błędny model. **D** to mit: bez RANSAC `findHomography` zwraca rozwiązanie metodą najmniejszych kwadratów na *wszystkich* punktach łącznie z outlierami, a 8-stopniowa homografia jest bardzo wrażliwa — jeden zły match potrafi wywrócić cały model.\n\n**C** to jedyna naprawa idąca u źródła. 9 inlierów to liczba na granicy szumu: 8 stopni swobody $H$ jest praktycznie obsługiwane przez te kilka punktów, więc każde drobne odchylenie zostaje zapisane w macierzy i rozjeżdża resztę panoramy. Praktyczne progi z `Common misconceptions` modułu i z literatury Browna i Lowe'a: zdrowy stitch ma ≥ 15–20 inlierów, a overlap między ujęciami sięga ~ 30%. Naprawa nie polega na agresywniejszych parametrach algorytmu, lecz na lepszym wejściu — dodatkowe ujęcie pomostowe albo cofnięcie się o jeden „click\" obrotu kamery przy fotografowaniu zwykle rozwiązuje problem natychmiast.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-pelen-pipeline",
+      "title": "Piaskownica: pełen 3-zdjęciowy stitcher na obrazach syntetycznych",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n\n# --- 1. Trzy syntetyczne obrazy z wyrazna teksturka (SIFT potrzebuje krawedzi/punktow,\n#        sam gradient barwy mu nie wystarczy) ---\ndef synthetic_panel(canvas_size=(220, 320), seed=0):\n    h, w = canvas_size\n    rng = np.random.default_rng(seed)\n    img = np.full((h, w, 3), 235, dtype=np.uint8)\n    for _ in range(40):\n        x, y = int(rng.integers(0, w)), int(rng.integers(0, h))\n        r = int(rng.integers(5, 12))\n        col = tuple(int(c) for c in rng.integers(20, 220, size=3))\n        cv2.circle(img, (x, y), r, col, -1)\n    for _ in range(25):\n        x, y = int(rng.integers(0, w - 25)), int(rng.integers(0, h - 25))\n        s = int(rng.integers(10, 22))\n        col = tuple(int(c) for c in rng.integers(20, 220, size=3))\n        cv2.rectangle(img, (x, y), (x + s, y + s), col, -1)\n    cv2.putText(img, f'#{seed}', (10, 35), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (10, 10, 10), 2)\n    return img\n\n\n# --- 2. Wez jeden duzy 'swiat' i wytnij z niego trzy zachodzace na siebie kadry ---\nworld = synthetic_panel(canvas_size=(220, 720), seed=7)\nimg0 = world[:, 0:320].copy()        # lewy kadr\nimg1 = world[:, 200:520].copy()      # srodkowy (overlap z lewym i prawym)\nimg2 = world[:, 400:720].copy()      # prawy kadr\n\n\n# --- 3. Detektor + matcher + ratio test (jak w cwiczeniu codeCloze) ---\ndef find_homography_between(img_a, img_b, ratio=0.75):\n    gray_a = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY)\n    gray_b = cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY)\n    sift = cv2.SIFT_create()\n    kp_a, des_a = sift.detectAndCompute(gray_a, None)\n    kp_b, des_b = sift.detectAndCompute(gray_b, None)\n    bf = cv2.BFMatcher(cv2.NORM_L2)\n    knn = bf.knnMatch(des_b, des_a, k=2)\n    good = [m1 for m1, m2 in knn if m1.distance < ratio * m2.distance]\n    src = np.float32([kp_b[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)\n    dst = np.float32([kp_a[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)\n    H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)\n    inliers = int(mask.sum()) if mask is not None else 0\n    print(f'  good matches: {len(good)}, RANSAC inliers: {inliers}')\n    return H\n\n\n# --- 4. Lancuch homografii (jak w cwiczeniu code) ---\ndef chain_homographies(neighbour_to_prev):\n    chain = [np.eye(3, dtype=np.float64)]\n    for H in neighbour_to_prev:\n        chain.append(chain[-1] @ np.asarray(H, dtype=np.float64))\n    return chain\n\n\n# --- 5. Wspolna kanwa + offset translacji (jak w lekcji 'Stitching i panoramy') ---\ndef canvas_for_chain(images, chain):\n    all_x, all_y = [], []\n    for img, H in zip(images, chain):\n        h, w = img.shape[:2]\n        c = np.array([[0.0, float(w), float(w), 0.0],\n                      [0.0, 0.0,      float(h), float(h)],\n                      [1.0, 1.0,      1.0,      1.0]])\n        proj = np.asarray(H, dtype=np.float64) @ c\n        proj_xy = proj[:2] / proj[2:3]\n        all_x.extend(proj_xy[0].tolist())\n        all_y.extend(proj_xy[1].tolist())\n    x_min, x_max = float(min(all_x)), float(max(all_x))\n    y_min, y_max = float(min(all_y)), float(max(all_y))\n    W = int(np.ceil(x_max - x_min))\n    H_out = int(np.ceil(y_max - y_min))\n    T = np.array([[1.0, 0.0, -x_min],\n                  [0.0, 1.0, -y_min],\n                  [0.0, 0.0,  1.0]], dtype=np.float64)\n    return W, H_out, T\n\n\n# --- 6. Sklej trzy obrazy ---\nimages = [img0, img1, img2]\nprint('estymacja H_{1 -> 0}:')\nH_1to0 = find_homography_between(img0, img1)\nprint('estymacja H_{2 -> 1}:')\nH_2to1 = find_homography_between(img1, img2)\nif H_1to0 is None or H_2to1 is None:\n    raise RuntimeError('Estymacja sie nie powiodla - sprawdz overlap obrazow.')\n\nchain = chain_homographies([H_1to0, H_2to1])\nW, H_out, T = canvas_for_chain(images, chain)\nprint(f'kanwa panoramy: {W} x {H_out}')\n\nwarps = [cv2.warpPerspective(img, T @ H, (W, H_out)) for img, H in zip(images, chain)]\n\n# Naiwny blender: srednia po wszystkich obrazach, ktore pokrywaja dany piksel.\nmasks = [(w.sum(axis=2, keepdims=True) > 0).astype(np.float32) for w in warps]\nsum_img = np.zeros_like(warps[0], dtype=np.float32)\nsum_mask = np.zeros_like(masks[0], dtype=np.float32)\nfor w, m in zip(warps, masks):\n    sum_img += w.astype(np.float32)\n    sum_mask += m\nsum_mask[sum_mask == 0] = 1.0  # zapobiegnij dzieleniu przez zero w czarnym pasie\npanorama = (sum_img / sum_mask).clip(0, 255).astype(np.uint8)\nprint(f'panorama gotowa: shape = {panorama.shape}')\n\n# --- Pomysly do eksploracji ---\n# * Zmien ratio z 0.75 na 0.5 / 0.9 - co dzieje sie z liczba dobrych dopasowan i inlierow?\n# * Zmien w chain_homographies kolejnosc mnozenia (chain[-1] @ H -> H @ chain[-1]).\n#   Panorama powinna sie wyraznie rozjechac - to dokladnie ten 'pierwszy bug' z teorii.\n# * Zwieksz prog reprojekcji RANSAC w find_homography_between z 5.0 na 50.0.\n#   Inliery podskocza, ale czy panorama wciaz jest stabilna?\n# * Dorzuc czwarty kadr z 'world' (np. world[:, 100:420]) i przefilteruj go przez ten sam pipeline.\n# * Zaimplementuj crop czarnych marginesow: znajdz najwiekszy prostokat, gdzie sum_mask >= 1.\n",
+        "encouragement": "Zmieniaj jeden parametr naraz i obserwuj — w ten sposób dosłownie zobaczysz, że dobry stitcher to nie magia, tylko klasyczna estymacja z dyscypliną."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d8d/classcv_1_1Stitcher.html",
+      "title": "cv::Stitcher — OpenCV API reference (PANORAMA / SCANS, status codes)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1007/s11263-006-0002-3",
+      "title": "Brown, M. and Lowe, D. G. — Automatic Panoramic Image Stitching using Invariant Features (IJCV 2007)",
+      "kind": "paper",
+      "author": "Matthew Brown and David G. Lowe",
+      "year": 2007
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d8/d19/tutorial_stitcher.html",
+      "title": "OpenCV — Stitching detailed pipeline tutorial (matcher, warper, blender)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+      "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004)",
+      "kind": "paper",
+      "author": "David G. Lowe",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1145/358669.358692",
+      "title": "Fischler, M. A. and Bolles, R. C. — Random Sample Consensus: A Paradigm for Model Fitting (CACM 1981)",
+      "kind": "paper",
+      "author": "Martin A. Fischler and Robert C. Bolles",
+      "year": 1981
+    }
+  ]
+}

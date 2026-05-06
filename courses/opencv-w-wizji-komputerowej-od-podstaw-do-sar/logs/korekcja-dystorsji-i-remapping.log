@@ -1,0 +1,69 @@
+=== Attempt 1 — 2026-05-06T04:27:09.631Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+I'll read the course context files and the widget docs/schemas in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Found the lesson: m7 / "Korekcja dystorsji i remapping" / 12 min. Now reading research, sources, and schemas.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← course-spec.json
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← algorytm-watershed-i-markery.json
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← model-pinhole-i-kalibracja-szachownica.json
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-o…)
+←   190 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/research.md
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+→ Bash(command: grep -n "Korekcja dystorsji" /home/nukeemann/projects/ai_lecturer/courses/opencv…)
+← 311:## Korekcja dystorsji i remapping
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 300	
+Now let me look at the previous lesson (pinhole calibration) to understand the style and Polish-language conventions used by other lessons:
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Let me check key widget schemas for accuracy:
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/)
+← build.ts
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/)
+← Code
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code-cloze.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/sandbox.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/theory.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/drag-match.json)
+← 1	{
+Let me check pyodide setup to see if cv2 is available:
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/src)
+← No files found
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/src)
+← Found 10 files limit: 10
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/src/lib/pyodide)
+← No matches found
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/src/lib/pyodide/worker.ts)
+← 19-
+Now I have enough context. Let me write the lesson file.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/korekcja-dystorsji-i-remapping.json (file state is current in your cont…
+Now validating against the LessonSchema.
+→ Bash(command: npx tsx -e "
+import { readFileSync } from 'node:fs';
+import { LessonSchema } fro…)
+← OK: ./courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/korekcja-dystorsji-i-remapping.json
+Lesson validates against `LessonSchema`. Summary:
+- **Path**: `courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/korekcja-dystorsji-i-remapping.json`
+- **6 sections** (4–8 range): theory (Brown-Conrady model + radial/tangential formulas, with inline OpenCV-docs `calib_radial.jpg`) → theory (`undistort` vs `initUndistortRectifyMap`+`remap`, alpha + ROI, with inline `calibresult.jpg`) → quiz (`dist` vector ordering — distractor on the easy-to-miss `[k1, k2, p1, p2, k3]` packing) → codeCloze (3-step undistort pipeline for video, 4 slots) → code (forward Brown-Conrady, 4 tests, solution included) → sandbox (cv2-based exploration of k1/p1/alpha on a synthetic grid).
+- **4 lesson-level sources**: Brown 1966 paper (with author+year), Distortion (optics) Wikipedia, OpenCV calib3d API, OpenCV calibration tutorial. Section-level sources attached to both theory sections.
+- Polish content throughout; ASCII Polish in code (matching prior lesson convention); KaTeX for the Brown-Conrady formulas.
+- `course.json`, other lessons, and `scripts/ralph/` were not touched.
+[result success (480.9s)]

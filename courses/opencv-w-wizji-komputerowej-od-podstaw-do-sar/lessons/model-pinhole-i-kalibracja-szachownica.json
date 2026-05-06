@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "slug": "model-pinhole-i-kalibracja-szachownica",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Model pinhole i kalibracja szachownicą",
+  "eyebrow": "GEOMETRIA 3D",
+  "description": "Pinhole to najprostszy model formowania obrazu, ale jego macierz intrinsics K (fx, fy, cx, cy) leży pod każdym pomiarem 3D w pozostałych lekcjach modułu. Wyprowadzisz pełne równanie projekcji λ[u,v,1]ᵀ = K[R|t][X,Y,Z,1]ᵀ, zobaczysz, dlaczego płaska szachownica Zhanga (≥ 3 ujęcia) wystarczy, by K wyznaczyć jednoznacznie, i własnoręcznie zaimplementujesz projektor, którego cv2.calibrateCamera używa wewnątrz solvera Levenberga–Marquardta.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "model-pinhole",
+      "title": "Pinhole, ogniskowa i macierz intrinsics K",
+      "type": "theory",
+      "data": {
+        "markdown": "**Aparat dziurkowy** to najprostszy fizyczny model formowania obrazu: punkt sceny $(X, Y, Z)$ w układzie kamery (oś $Z$ wzdłuż osi optycznej do przodu) rzutuje się przez nieskończenie mały otwór na płaszczyznę obrazu odległą o ogniskową $f$. Z podobieństwa trójkątów wychodzą dwa równania o tej samej budowie:\n\n$$ x = f\\cdot\\frac{X}{Z}, \\qquad y = f\\cdot\\frac{Y}{Z} $$\n\n![Schemat aparatu dziurkowego: promień ze sceny przechodzi przez punktowy otwór i pada na płaszczyznę obrazu odległą o ogniskową f; oś Z biegnie wzdłuż osi optycznej, a obraz powstaje odwrócony „głową w dół”](https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Pinhole-camera.svg/640px-Pinhole-camera.svg.png)\n\nAby zamienić metryczne $(x, y)$ na **piksele** $(u, v)$, doliczamy gęstość pikseli na milimetr sensora (osobno wzdłuż osi $X$ i $Y$, bo piksele bywają nieidealnie kwadratowe — stąd dwie różne ogniskowe pikselowe $f_x, f_y$) oraz przesunięcie do **głównego punktu** $(c_x, c_y)$, czyli piksela, na który pada nieskręcona oś optyczna. Cztery te liczby plus *skew* $s$ tworzą **macierz intrinsics**:\n\n$$ K = \\begin{bmatrix} f_x & s & c_x \\\\\\\\ 0 & f_y & c_y \\\\\\\\ 0 & 0 & 1 \\end{bmatrix} $$\n\nSkew $s$ opisuje nieprostopadłość osi piksela — w nowoczesnych CMOS-ach jest praktycznie zerowy i `cv2.calibrateCamera` go nie estymuje (zostawia 0). Punkt świata $(X, Y, Z)$ przekształcamy najpierw do układu kamery przez **ekstrinsics** $[\\,R \\mid t\\,]$ (3 stopnie obrotu, 3 translacji) i dopiero potem rzutujemy. Cały model w jednej linii — dla każdego punktu sceny:\n\n$$ \\lambda\\begin{bmatrix} u \\\\\\\\ v \\\\\\\\ 1 \\end{bmatrix} = K\\,[\\,R \\mid t\\,]\\,\\begin{bmatrix} X \\\\\\\\ Y \\\\\\\\ Z \\\\\\\\ 1 \\end{bmatrix} $$\n\ngdzie $\\lambda = Z_\\mathrm{cam}$ to głębia w układzie kamery — dehomogenizacja przez nią zwraca dwie pikselowe współrzędne. To jest cały *idealny* pinhole: 4 parametry intrinsics + 6 parametrów pozy. Rzeczywiste obiektywy nakładają na to jeszcze **dystorsję radialną i tangencjalną**, ale o niej w następnej lekcji — tu skupiamy się na rdzeniu modelu, na którym wszystko inne się opiera (`solvePnP`, stereo, undistort).\n"
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Pinhole_camera_model",
+          "title": "Pinhole camera model — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+          "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 6 Camera Models",
+          "kind": "book",
+          "author": "Richard Hartley and Andrew Zisserman",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "kalibracja-zhanga",
+      "title": "Kalibracja Zhanga: dlaczego wystarczy płaska szachownica",
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro znamy model, jak właściwie *wyznaczyć* $K$? Klasyczny pomysł — sfotografować trójwymiarowy wzorzec z dokładnie znaną geometrią — wymaga drogiego, precyzyjnie wykonanego trójściennego obiektu. **Z. Zhang (2000)** pokazał, że wystarczy **płaska szachownica**, którą każdy może wydrukować, sfilmować z kilkunastu różnych ujęć i wykorzystać matematykę projektywną.\n\nKlucz jest taki: gdy wzorzec kalibracyjny leży w jednej płaszczyźnie ($Z_\\mathrm{wzorca} = 0$), pełna macierz $K\\,[\\,R \\mid t\\,]$ (rozmiar $3 \\times 4$) redukuje się do **homografii** $H = K\\,[\\,r_1 \\mid r_2 \\mid t\\,]$ rozmiaru $3 \\times 3$ — dokładnie tej samej, którą poznałeś w module o panoramach. Jedna szachownica = jedna $H$. Ortonormalność kolumn rotacji ($r_1 \\perp r_2$, $\\lVert r_1 \\rVert = \\lVert r_2 \\rVert$) daje **dwa równania liniowe** na elementy $K^{-\\top}\\,K^{-1}$ z każdego ujęcia. Macierz $K$ ma 5 parametrów (lub 4, gdy zakładamy $s = 0$), więc:\n\n- **1 ujęcie** — niedookreślone, rozwiązanie nie istnieje,\n- **2 ujęcia** — 4 równania na 5 niewiadomych, dalej za mało,\n- **≥ 3 ujęcia z różnych orientacji** — układ przestaje być osobliwy i $K$ wyjdzie jednoznacznie.\n\nW praktyce strzela się **10–20 ujęć** szachownicy z różnych kątów (przekrzywionej w obie strony, obróconej, przybliżonej i oddalonej), bo każde dodatkowe ujęcie redukuje wpływ szumu lokalizacji narożników na końcowy estymat $K$.\n\n![Szachownica kalibracyjna z wykrytymi narożnikami narysowanymi linią łączącą wewnętrzne skrzyżowania kratek — każdy punkt to obserwacja, którą cv2.findChessboardCorners zwraca z subpikselową dokładnością po cv2.cornerSubPix](https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Acircles_pattern.svg/480px-Acircles_pattern.svg.png)\n\nFunkcją celu solvera jest **błąd reprojekcji**: dla każdej obserwowanej pary „narożnik na obrazie ↔ jego znana pozycja na wzorcu” liczymy, gdzie *projektowałby się* ten narożnik przy aktualnych $K, R_i, t_i$, i podnosimy do kwadratu różnicę w pikselach. Suma po wszystkich narożnikach i wszystkich ujęciach jest tym, co minimalizuje wewnętrzny **Levenberg–Marquardt** OpenCV. Zwracana wartość `ret` to **RMS reprojekcji** w pikselach — i to ona jest jedyną wiarygodną miarą jakości kalibracji. Reguła kciuka:\n\n- $\\mathrm{RMS} < 0.5$ px — bardzo dobrze, taka kalibracja nadaje się do solvePnP i stereo,\n- $0.5\\text{–}1.0$ px — przyzwoicie dla zastosowań nieprecyzyjnych,\n- $> 1.0$ px — coś jest nie tak: obiektyw rybie oko bez `CALIB_RATIONAL_MODEL`, źle wykryte narożniki, za mało ujęć albo wszystkie ujęcia z tej samej orientacji (zdegenerowany układ — $K$ wychodzi „w dziurze”).\n"
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/34.888718",
+          "title": "Zhang, Z. — A Flexible New Technique for Camera Calibration (IEEE TPAMI 2000)",
+          "kind": "paper",
+          "author": "Zhengyou Zhang",
+          "year": 2000
+        }
+      ]
+    },
+    {
+      "id": "drag-skladowe-K",
+      "title": "Przeciągnij: składowe K i ich rola",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Macierz intrinsics ma postać K = [[fx, s, cx], [0, fy, cy], [0, 0, 1]]. Każdą z pięciu wartości przeciągnij na rolę, którą faktycznie pełni w równaniach pinhole.",
+        "items": [
+          {
+            "id": "i_fx",
+            "label": "fx"
+          },
+          {
+            "id": "i_fy",
+            "label": "fy"
+          },
+          {
+            "id": "i_cx",
+            "label": "cx"
+          },
+          {
+            "id": "i_cy",
+            "label": "cy"
+          },
+          {
+            "id": "i_s",
+            "label": "s"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z_focal_x",
+            "label": "Ogniskowa w pikselach wzdłuż osi X — mówi, ile pikseli przesunięcia daje przesunięcie sceny o 1 jednostkę X przy głębi Z = 1.",
+            "accepts": [
+              "i_fx"
+            ]
+          },
+          {
+            "id": "z_focal_y",
+            "label": "Ogniskowa w pikselach wzdłuż osi Y — analogiczna do osi X, ale dla wymiaru pionowego (różna, gdy piksel nie jest kwadratowy).",
+            "accepts": [
+              "i_fy"
+            ]
+          },
+          {
+            "id": "z_principal_x",
+            "label": "Współrzędna pikselowa głównego punktu w poziomie — piksel, w który trafia nieskręcona oś optyczna (≈ szerokość/2, ale nie dokładnie).",
+            "accepts": [
+              "i_cx"
+            ]
+          },
+          {
+            "id": "z_principal_y",
+            "label": "Współrzędna pikselowa głównego punktu w pionie — analogicznie do osi X, ale dla wymiaru pionowego (≈ wysokość/2).",
+            "accepts": [
+              "i_cy"
+            ]
+          },
+          {
+            "id": "z_skew",
+            "label": "Sprzężenie nieprostopadłości osi piksela — w nowoczesnych CMOS-ach jest praktycznie zerowe i cv2.calibrateCamera go nie estymuje.",
+            "accepts": [
+              "i_s"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Kanoniczna postać macierzy intrinsics to K = [[fx, s, cx], [0, fy, cy], [0, 0, 1]]. fx, fy — ogniskowe pikselowe osobno dla osi X i Y (różne, gdy piksele nie są idealnie kwadratowe). cx, cy — współrzędne głównego punktu, czyli piksela, w który pada nieskręcona oś optyczna; bardzo blisko środka obrazu, ale rzadko dokładnie tam. Skew s ≈ 0 dla nowoczesnych aparatów i OpenCV go nie estymuje. Pamiętaj: wszystkie te wartości są w pikselach, więc po downscale obrazu o czynnik k musisz przeskalować KAŻDĄ z pierwszych czterech (a nie tylko cx, cy)."
+      }
+    },
+    {
+      "id": "quiz-skala-K",
+      "title": "Sprawdź się: jak K reaguje na downscale obrazu",
+      "type": "quiz",
+      "data": {
+        "question": "Skalibrowałeś aparat w rozdzielczości 1920 × 1080 i zapisałeś macierz intrinsics K do pliku. Teraz wczytujesz ten sam aparat w pipeline'ie, który downscale'uje obrazy do 960 × 540 (czynnik 1/2 w obu osiach). Co należy zrobić z K, aby pinhole'owa projekcja dalej była poprawna?",
+        "options": [
+          "K można użyć bez modyfikacji — to fizyczna właściwość optyki aparatu, niezależna od rozdzielczości obrazu.",
+          "Przeskaluj tylko cx i cy o 1/2 — fx i fy odpowiadają fizycznej ogniskowej w mm i nie zależą od rozdzielczości.",
+          "Przeskaluj wszystkie cztery (fx, fy, cx, cy) o czynnik 1/2 — wszystkie są wyrażone w pikselach.",
+          "Przeskaluj tylko fx i fy o 1/2 — środek obrazu i tak pozostaje w tych samych pikselach po downscale."
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "Cała macierz K jest wyrażona w **pikselach**: fx, fy to liczba pikseli przesunięcia obrazu na jednostkę X/Y/Z sceny, a cx, cy to piksele głównego punktu. Po downscale o 1/2 ten sam fizyczny narożnik jest 2× bliżej każdej krawędzi mierząc w pikselach — co znaczy, że KAŻDA z czterech wartości musi przejść przez czynnik 1/2. Odpowiedź A jest klasycznym mitem („to fizyczne F”) — fizyczne F jest w mm, ale OpenCV-owe fx, fy = F · (px/mm sensora) i czynnik px/mm zmienia się po skali. Odpowiedź B miesza intuicję z dystorsji (gdzie współczynniki są bezwymiarowe) z intrinsics. Odpowiedź D zapomina, że (cx, cy) ≈ (960, 540) w 1920×1080 to NIE są te same piksele co (480, 270) w obrazie 960×540 — środek się przesuwa razem z resztą. Skrót: K_new = diag(s, s, 1) @ K dla skali s, lub po prostu zawsze kalibruj dokładnie w tej rozdzielczości, w której potem używasz.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "cloze-pipeline-kalibracji",
+      "title": "Wpisz brakujące fragmenty pipeline'u kalibracji",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Pipeline kalibracji w OpenCV ma trzy ruchome części: rozmiar wzorca, okno do subpikselowego doprecyzowania narożników i argument rozmiaru obrazu dla solvera. Wpisz wartości, które są kanonicznie wybierane w tutorialu OpenCV.\n\nWskazówki:\n- Wzorzec z `samples/data/left01.jpg` ma wewnętrzne narożniki ułożone w siatce 9 × 6 (kolumny × wiersze).\n- `cornerSubPix` przyjmuje *półrozmiar* okna jako krotkę `(half_w, half_h)`; rekomendowana wartość z tutoriala to 11 × 11.\n- `calibrateCamera` chce rozmiar obrazu jako `(width, height)` — ale `gray.shape` w NumPy zwraca `(height, width)`, więc trzeba odwrócić.",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\nimport glob\n\n# Wewnetrzne narozniki klasycznej szachownicy z tutoriala OpenCV: kolumny x wiersze.\npattern_size = ({{pattern}})\n\n# Pozycje 3D narozników na plaskim wzorcu (Z = 0, X i Y w jednostkach „pole szachownicy”).\nobjp = np.zeros((pattern_size[0] * pattern_size[1], 3), np.float32)\nobjp[:, :2] = np.mgrid[0:pattern_size[0], 0:pattern_size[1]].T.reshape(-1, 2)\n\nobj_points, img_points = [], []\ngray = None  # ostatni obraz – uzyjemy jego ksztaltu w calibrateCamera\n\nfor path in sorted(glob.glob('chessboard_*.jpg')):\n    img = cv2.imread(path)\n    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)\n    found, corners = cv2.findChessboardCorners(gray, pattern_size)\n    if not found:\n        continue\n    # Doprecyzuj narozniki subpikselowo - krytyczne dla niskiego RMS reprojekcji.\n    corners = cv2.cornerSubPix(\n        gray, corners, ({{win_size}}), (-1, -1),\n        (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 1e-3),\n    )\n    obj_points.append(objp)\n    img_points.append(corners)\n\n# Solver Zhanga: szuka K, dystorsji oraz [R|t]_i minimalizujac blad reprojekcji.\nret, K, dist, rvecs, tvecs = cv2.calibrateCamera(\n    obj_points, img_points, {{size_arg}}, None, None,\n)\n\nprint(f'RMS reprojection error: {ret:.3f} px')\nprint('K =', K)\nprint('Wspolczynniki dystorsji:', dist.ravel())\n",
+        "slots": [
+          {
+            "id": "pattern",
+            "hint": "Liczba wewnetrznych naroznikow szachownicy z tutoriala OpenCV — kolumny, wiersze. Jako dwa intygery oddzielone przecinkiem.",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "9, 6",
+                "9,6"
+              ]
+            }
+          },
+          {
+            "id": "win_size",
+            "hint": "Polrozmiar okna cornerSubPix — typowa kanoniczna wartosc z tutoriala OpenCV.",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "11, 11",
+                "11,11"
+              ]
+            }
+          },
+          {
+            "id": "size_arg",
+            "hint": "Rozmiar obrazu dla calibrateCamera jako (szerokosc, wysokosc). Pamietaj, ze NumPy podaje shape jako (h, w).",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "gray.shape[::-1]",
+                "(gray.shape[1], gray.shape[0])"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "kod-projekcja-pinhole",
+      "title": "Zaimplementuj rdzeń: projekcję pinhole",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `project_points(K, R, t, points3d)`, która jest **rdzeniem każdej kalibracji** — to dokładnie ten projektor, który OpenCV wywołuje wewnątrz `calibrateCamera`, żeby policzyć błąd reprojekcji.\n\nKonwencja:\n- `K`: ndarray (3, 3) — macierz intrinsics,\n- `R`: ndarray (3, 3) — macierz rotacji ze świata do układu kamery,\n- `t`: ndarray (3,) — translacja ze świata do układu kamery,\n- `points3d`: ndarray (N, 3) — punkty świata w XYZ.\n\nZwracaj `ndarray (N, 2)` z pikselowymi współrzędnymi `(u, v)`. Krok po kroku:\n\n1. **Ekstrinsics**: `pts_cam = points3d @ R.T + t` → kształt `(N, 3)` w układzie kamery.\n2. **Intrinsics**: `pts_img_h = pts_cam @ K.T` → wektory homogeniczne `(N, 3)`.\n3. **Dehomogenizacja**: podziel pierwsze dwie kolumny przez trzecią (broadcasting).\n\nZałóż, że wszystkie punkty leżą *przed* kamerą (Z_cam > 0); nie musisz obsługiwać punktów za kamerą ani dystorsji — to czysty pinhole.\n\n```\nK = np.eye(3)\nR = np.eye(3)\nt = np.zeros(3)\nproject_points(K, R, t, np.array([[0.0, 0.0, 1.0]]))  # -> [[0.0, 0.0]]\n```",
+        "starterCode": "import numpy as np\n\n\ndef project_points(K, R, t, points3d):\n    \"\"\"\n    Pinhole projection: world XYZ -> pixel (u, v).\n\n    K:        ndarray (3, 3) - intrinsics\n    R:        ndarray (3, 3) - rotacja swiat -> kamera\n    t:        ndarray (3,)   - translacja swiat -> kamera\n    points3d: ndarray (N, 3) - punkty swiata\n    Zwraca:   ndarray (N, 2) - pikselowe (u, v)\n    \"\"\"\n    pts = np.asarray(points3d, dtype=np.float64)\n    R = np.asarray(R, dtype=np.float64)\n    t = np.asarray(t, dtype=np.float64)\n    K = np.asarray(K, dtype=np.float64)\n    # TODO:\n    #   1. pts_cam = pts @ R.T + t                  -> (N, 3)\n    #   2. pts_img = pts_cam @ K.T                  -> (N, 3) (homogeniczne)\n    #   3. return pts_img[:, :2] / pts_img[:, 2:3]  -> (N, 2)\n    return np.zeros((pts.shape[0], 2), dtype=np.float64)\n",
+        "tests": [
+          {
+            "name": "identycznosc_dla_K_R_jednostkowych",
+            "body": "# K = R = I, t = 0, punkt na osi Z na glebi 1 -> (0, 0).\nK = np.eye(3); R = np.eye(3); t = np.zeros(3)\nout = project_points(K, R, t, np.array([[0.0, 0.0, 1.0]]))\nassert out.shape == (1, 2), f'oczekiwano (1, 2), jest {out.shape}'\nassert np.allclose(out, [[0.0, 0.0]], atol=1e-9), f'oczekiwano [[0,0]], jest {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "punkt_na_osi_optycznej_trafia_w_glowny_punkt",
+            "body": "# Punkt swiata na osi optycznej (X = Y = 0) musi trafic w piksel (cx, cy)\n# niezaleznie od fx, fy ani od glebokosci.\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.zeros(3)\nfor z in (0.5, 1.0, 5.0, 100.0):\n    out = project_points(K, R, t, np.array([[0.0, 0.0, z]]))\n    assert np.allclose(out, [[320.0, 240.0]], atol=1e-9), \\\n        f'glebia {z}: oczekiwano (cx, cy) = (320, 240), jest {out.tolist()}'"
+          },
+          {
+            "name": "boczne_przesuniecie_skaluje_sie_przez_fx_z",
+            "body": "# Przesuniecie X o 1 jednostke przy glebi Z = 5 i fx = 500 daje 100 px\n# (czyli fx / Z), niezaleznie od cy.\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.zeros(3)\nout = project_points(K, R, t, np.array([[1.0, 0.0, 5.0]]))\nassert np.allclose(out, [[420.0, 240.0]], atol=1e-9), \\\n    f'oczekiwano (320 + 100, 240) = (420, 240), jest {out.tolist()}'\nout2 = project_points(K, R, t, np.array([[0.0, 2.0, 5.0]]))\nassert np.allclose(out2, [[320.0, 440.0]], atol=1e-9), \\\n    f'oczekiwano (320, 240 + 200) = (320, 440), jest {out2.tolist()}'"
+          },
+          {
+            "name": "translacja_kamery_jest_uwzgledniana",
+            "body": "# Translacja t = (0, 0, 4) przesuwa punkt swiata (0, 0, 1) na glebokosc 5\n# w ukladzie kamery; przy fx = fy = 500 i (cx, cy) = (320, 240)\n# punkt po przesunieciu w X o 1 ma trafic w (320 + 500/5, 240) = (420, 240).\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.array([0.0, 0.0, 4.0])\nout = project_points(K, R, t, np.array([[1.0, 0.0, 1.0]]))\nassert np.allclose(out, [[420.0, 240.0]], atol=1e-9), \\\n    f'oczekiwano (420, 240) po translacji w glab, jest {out.tolist()}'\n# Bez uwzglednienia t wynik wyszedlby na innej glebokosci.\nwrong = project_points(K, R, np.zeros(3), np.array([[1.0, 0.0, 1.0]]))\nassert not np.allclose(wrong, [[420.0, 240.0]], atol=1.0), \\\n    'pominiecie translacji nie powinno dawac (420, 240)'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef project_points(K, R, t, points3d):\n    pts = np.asarray(points3d, dtype=np.float64)\n    R = np.asarray(R, dtype=np.float64)\n    t = np.asarray(t, dtype=np.float64)\n    K = np.asarray(K, dtype=np.float64)\n    pts_cam = pts @ R.T + t            # (N, 3) w ukladzie kamery\n    pts_img = pts_cam @ K.T            # (N, 3) homogeniczne piksele\n    return pts_img[:, :2] / pts_img[:, 2:3]\n"
+      }
+    },
+    {
+      "id": "sandbox-syntetyczna-kalibracja",
+      "title": "Piaskownica: jak liczba ujęć i szum wpływają na estymat K",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# --- Syntetyczna szachownica + symulacja N ujec z roznymi pozami ---\nrng = np.random.default_rng(0)\n\n# Geometria wzorca (kolumny x wiersze wewnetrznych naroznikow), 1 jednostka = 1 pole.\nPATTERN = (9, 6)\nN_VIEWS = 12       # liczba symulowanych ujec szachownicy\nNOISE_PX = 0.3     # szum subpikselowej lokalizacji naroznika - sprawdz 0.0, 0.3, 1.0, 3.0\nIMG_W, IMG_H = 1280, 720\n\n# Prawdziwa, \"ground truth\" intrinsics, ktora chcemy odzyskac z kalibracji.\nK_true = np.array([[800.0, 0.0,    640.0],\n                   [0.0,   800.0,  360.0],\n                   [0.0,   0.0,    1.0]], dtype=np.float64)\n\n# 3D pozycje wszystkich naroznikow szachownicy w ukladzie wzorca (Z = 0).\nobjp = np.zeros((PATTERN[0] * PATTERN[1], 3), np.float32)\nobjp[:, :2] = np.mgrid[0:PATTERN[0], 0:PATTERN[1]].T.reshape(-1, 2)\n\n\ndef random_pose():\n    # Losuj rotacje (~20 stopni w kazdej osi) i translacje przed kamera.\n    rvec = rng.uniform(-0.35, 0.35, size=3)\n    tvec = np.array([rng.uniform(-2, 2), rng.uniform(-1.5, 1.5), rng.uniform(8, 14)])\n    return rvec.astype(np.float64), tvec.astype(np.float64)\n\n\nobj_points, img_points = [], []\nfor _ in range(N_VIEWS):\n    rvec, tvec = random_pose()\n    # Projektuj 3D na piksele uzywajac prawdziwej K (i zerowej dystorsji).\n    pts2d, _ = cv2.projectPoints(objp, rvec, tvec, K_true, np.zeros(5))\n    # Dodaj szum subpikselowy do obserwacji - to symuluje cv2.cornerSubPix.\n    pts2d = pts2d + rng.normal(0, NOISE_PX, size=pts2d.shape).astype(np.float32)\n    obj_points.append(objp)\n    img_points.append(pts2d.astype(np.float32))\n\n# --- Solver Zhanga ---\nret, K_est, dist, rvecs, tvecs = cv2.calibrateCamera(\n    obj_points, img_points, (IMG_W, IMG_H), None, None,\n)\n\nprint(f'Liczba ujec:               {N_VIEWS}')\nprint(f'Szum subpikselowy:         {NOISE_PX:.2f} px')\nprint(f'RMS reprojekcji:           {ret:.4f} px')\nprint('Prawdziwa K:')\nprint(K_true)\nprint('Estymowana K:')\nprint(K_est)\nprint('Bezwzgledny blad fx:       ', abs(K_est[0, 0] - K_true[0, 0]))\nprint('Bezwzgledny blad fy:       ', abs(K_est[1, 1] - K_true[1, 1]))\nprint('Bezwzgledny blad (cx, cy): ', abs(K_est[0, 2] - K_true[0, 2]),\n      abs(K_est[1, 2] - K_true[1, 2]))\n\n# Pytania do siebie:\n#  * Spadnij z N_VIEWS = 12 do 3, potem do 2 - czy estymata K dalej trzyma?\n#  * Zwieksz NOISE_PX do 1.0, potem 3.0 - jak rosnie blad fx, a jak cx, cy?\n#  * Jezeli zostawisz NOISE_PX = 0.0 i N_VIEWS = 3 ale ze zlosliwie podobnymi\n#    rotacjami (np. zmniejsz zakres random_pose do 0.05) - co stanie sie z RMS?\n#  * Sprobuj pominac tcornerSubPix-owa korekcje (nie dodawaj szumu, ale tez\n#    ucnij subpikselowa precyzje przez np.round) - co odpowiada to RMS?\n",
+        "encouragement": "Zauważ, jak szybko rośnie błąd K, kiedy ujęć jest mało lub wszystkie są zbyt podobnie obrócone — to ten sam *zdegenerowany układ*, o którym mówiła teoria."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/34.888718",
+      "title": "Zhang, Z. — A Flexible New Technique for Camera Calibration (IEEE TPAMI 2000)",
+      "kind": "paper",
+      "author": "Zhengyou Zhang",
+      "year": 2000
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html",
+      "title": "OpenCV — Camera calibration tutorial (findChessboardCorners + calibrateCamera)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+      "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 6 Camera Models",
+      "kind": "book",
+      "author": "Richard Hartley and Andrew Zisserman",
+      "year": 2004
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Pinhole_camera_model",
+      "title": "Pinhole camera model — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Camera_resectioning",
+      "title": "Camera resectioning (camera calibration) — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

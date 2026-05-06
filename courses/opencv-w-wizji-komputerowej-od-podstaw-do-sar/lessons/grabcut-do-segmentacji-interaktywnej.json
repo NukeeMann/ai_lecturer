@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "slug": "grabcut-do-segmentacji-interaktywnej",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "GrabCut do segmentacji interaktywnej",
+  "eyebrow": "SEGMENTACJA",
+  "description": "GrabCut zaczyna od jednego prostokąta narysowanego myszką wokół obiektu i sam dopowiada resztę: modeluje kolory pierwszego planu i tła mieszankami Gaussa, buduje graf nad pikselami, znajduje minimalne cięcie i iteruje, aż maska przestanie się zmieniać. Zobaczysz, dlaczego rect-init nadpisuje maskę i co naprawdę zwraca `cv2.grabCut` (cztery etykiety, nie 0/1), zaimplementujesz binarizację 4-wartościowej maski (`np.where`-trick), zrozumiesz, po co `bgdModel`/`fgdModel` muszą przetrwać między iteracjami, a w piaskownicy wytniesz syntetyczny obiekt z tła i poprawisz wynik domalowanymi pociągnięciami sure-FG / sure-BG.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intuicja",
+      "title": "Od prostokąta do segmentu — po co GrabCut",
+      "type": "theory",
+      "data": {
+        "markdown": "Watershed potrzebuje markerów *wewnątrz* każdego obiektu — czyli dosyć dużo pracy z naszej strony, żeby algorytm wiedział, co jest czym. **GrabCut** (Rother, Kolmogorov i Blake, SIGGRAPH 2004) zaczyna od czegoś znacznie tańszego: **prostokąta zaznaczonego myszką wokół obiektu**. Wszystko *na zewnątrz* prostokąta uznaje się za pewne tło; wszystko *wewnątrz* — za \"prawdopodobnie pierwszy plan\". Algorytm bierze to wstępne, gruboziarniste przybliżenie i samodzielnie dopracowuje granicę.\n\n![Klasyczny przykład z dokumentacji OpenCV: zdjęcie piłkarza Lionela Messiego po segmentacji GrabCut — sylwetka zawodnika z piłką wycięta z tła stadionowego po jednym wstępnym prostokącie i kilku ręcznych pociągnięciach, czarne piksele oznaczają tło, w pełni odsłonięty pozostaje obiekt pierwszego planu](https://docs.opencv.org/4.x/grabcut_output1.jpg)\n\n*(Obraz: dokumentacja OpenCV, [tutorial Interactive Foreground Extraction using GrabCut](https://docs.opencv.org/4.x/d8/d83/tutorial_py_grabcut.html).)*\n\nPod spodem siedzi sprytna kombinacja czterech pomysłów:\n\n- modeluje kolory pierwszego planu i tła **mieszankami Gaussa** (GMM, po pięć komponent po stronie FG i BG, każda komponent w przestrzeni RGB) — uczy się ich z pikseli, które *właśnie* zaklasyfikowano jako FG / BG;\n- buduje **graf** nad pikselami, gdzie waga krawędzi do sąsiada to \"kara za przecięcie tu\" (małe gradienty barwy = małe wagi, duże gradienty = duże wagi), a krawędzie do węzłów źródłowych \"FG\"/\"BG\" to \"kara za błędne przypisanie do tej etykiety\" wynikająca z GMM;\n- znajduje **minimalne cięcie** grafu (algorytm max-flow Boykova-Kolmogorova), które dzieli piksele między FG a BG przy najmniejszym sumarycznym koszcie — to jedna iteracja;\n- powtarza powyższe (re-estymuje GMM ↔ ucina graf) tak długo, aż segmentacja przestanie się zmieniać.\n\nWynik: szczelna maska kontekstowo świadoma — wynikająca z **gradientów obrazu** *i* **modeli kolorów** naraz, a nie tylko z jasności jak w progowaniu czy z miejsc lokalnych minimów jak w naiwnym watershedzie.\n\nGrabCut świeci na zdjęciach z **wyraźnym kolorystycznie obiektem na różniącym się tle** (typowe ujęcie portretowe, produkt na białym tle, banan na drewnianej desce). Kuleje, gdy obiekt i tło współdzielą paletę (zielona koszulka na zielonej trawie) lub gdy granice są bardzo poszarpane / półprzezroczyste (włosy, piórka, dym) — wtedy potrzeba **dopracowania ręcznymi pociągnięciami** (sure-FG / sure-BG strokes), które wnoszą do GMM informację, której kolor sam z prostokąta nie dał. Te pociągnięcia są drugim trybem działania API, do którego dojdziemy w następnej sekcji."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1145/1015706.1015720",
+          "title": "Rother, C., Kolmogorov, V. and Blake, A. — \"GrabCut\": Interactive Foreground Extraction using Iterated Graph Cuts (SIGGRAPH 2004)",
+          "kind": "paper",
+          "author": "Carsten Rother, Vladimir Kolmogorov and Andrew Blake",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "pipeline",
+      "title": "Pipeline OpenCV: maska, GMM, graf, iteracja",
+      "type": "theory",
+      "data": {
+        "markdown": "Cały algorytm w OpenCV ukryty jest pod jednym wywołaniem:\n\n```python\ncv2.grabCut(img, mask, rect, bgdModel, fgdModel, iterCount, mode)\n```\n\nMa sześć argumentów i kilka pułapek konwencji.\n\n**Maska — cztery wartości.** `mask` to obraz `uint8` o wymiarach `H × W`. Każdy piksel ma jedną z czterech etykiet:\n\n| stała | wartość | znaczenie |\n|---|---|---|\n| `cv2.GC_BGD` | 0 | pewne tło |\n| `cv2.GC_FGD` | 1 | pewny pierwszy plan |\n| `cv2.GC_PR_BGD` | 2 | prawdopodobnie tło |\n| `cv2.GC_PR_FGD` | 3 | prawdopodobnie pierwszy plan |\n\n![Schemat algorytmu GrabCut z dokumentacji OpenCV: trzy panele pokazujące kolejne stany maski — wstępny prostokąt z prawdopodobnym pierwszym planem w środku, wynik pierwszej iteracji z odsłoniętą sylwetką po min-cut, oraz końcowa maska po doprecyzowaniu pociągnięciami sure-FG/sure-BG](https://docs.opencv.org/4.x/grabcut_scheme.jpg)\n\n*(Obraz: dokumentacja OpenCV, tutorial GrabCut.)*\n\nStandardowy idiom OpenCV — żeby zamienić tę 4-wartościową maskę na binarną maskę pierwszego planu (0/1, `uint8`) — to:\n\n```python\nmask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype(np.uint8)\n```\n\nCzyli: piksele \"tło\" (0) i \"prawdopodobnie tło\" (2) idą do `0`, piksele \"pierwszy plan\" (1) i \"prawdopodobnie pierwszy plan\" (3) — do `1`. Tę linię zaimplementujesz za chwilę w ćwiczeniu — i tak, ten jeden `np.where` to typowy *moment, w którym wreszcie zaczyna działać*.\n\n**Energia, którą GrabCut minimalizuje.** Dla całego grafu:\n\n$$ E(\\alpha) = \\sum_i U_i(\\alpha_i) \\;+\\; \\gamma \\sum_{(i, j) \\in N} V_{i, j}(\\alpha_i, \\alpha_j) $$\n\nGdzie $\\alpha_i \\in \\{0, 1\\}$ to przypisanie piksela $i$ do tła lub pierwszego planu, $U_i$ to *koszt jednostkowy* (z GMM — jak nieprawdopodobne jest, żeby kolor piksela $i$ pochodził z modelu o etykiecie $\\alpha_i$), a $V_{i, j}$ to *koszt par* (większa kara, gdy chce się przeciąć w miejscu o słabym gradiencie, mniejsza, gdy gradient jest silny). Min-cut znajduje takie $\\alpha$, które minimalizuje $E$.\n\n**Dwa tryby inicjalizacji.**\n\n```python\nimport cv2\nimport numpy as np\n\nimg = cv2.imread('messi.jpg')\nmask = np.zeros(img.shape[:2], dtype=np.uint8)\nbgd = np.zeros((1, 65), dtype=np.float64)\nfgd = np.zeros((1, 65), dtype=np.float64)\nrect = (50, 50, 450, 290)   # (x, y, w, h)\n\ncv2.grabCut(img, mask, rect, bgd, fgd, 5, cv2.GC_INIT_WITH_RECT)\n# mask jest teraz wypelniona wartosciami {0, 2, 3} (nigdy 1 -- 'pewny FG'\n# pojawia sie dopiero gdy MY o tym powiemy w trybie GC_INIT_WITH_MASK).\n```\n\nDwie pułapki, w które wpadają nawet doświadczeni:\n\n1. **`cv2.GC_INIT_WITH_RECT` nadpisuje maskę.** Cokolwiek włożyłeś do `mask` przed wywołaniem, zostanie zastąpione: poza prostokątem `cv2.GC_BGD`, wewnątrz `cv2.GC_PR_FGD`. Nie ma sensu jej wstępnie wypełniać — i tak zostanie wyzerowana.\n2. **`bgdModel` i `fgdModel` to STAN, nie wyjście.** Te dwie tablice `1 × 65` w `float64` przechowują parametry GMM (5 komponent × (3 średnie + 9 elementów kowariancji + 1 waga)). Nie wolno ich tworzyć od nowa między iteracjami — trzeba przekazywać tę samą parę przy kolejnych wywołaniach `grabCut`, żeby algorytm kontynuował uczenie GMM zamiast startować od zera.\n\nPo wywołaniu `GC_INIT_WITH_RECT` — jeśli wynik nie jest wystarczająco dokładny — można **domalować pewne piksele** w masce (`mask[y, x] = cv2.GC_FGD` na pociągnięciu pierwszego planu lub `mask[y, x] = cv2.GC_BGD` na pociągnięciu tła) i wywołać `cv2.grabCut` ponownie z `cv2.GC_INIT_WITH_MASK`. Tym razem maska zostaje *uszanowana*: algorytm aktualizuje GMM o nowo wskazane piksele i uruchamia kolejne iteracje min-cut. To jest ten \"interaktywny\" w nazwie GrabCut."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d8/d83/tutorial_py_grabcut.html",
+          "title": "OpenCV Python tutorial — Interactive foreground extraction using GrabCut",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1007/s11263-006-7934-5",
+          "title": "Boykov, Y. and Funka-Lea, G. — Graph Cuts and Efficient N-D Image Segmentation (IJCV 2006)",
+          "kind": "paper",
+          "author": "Yuri Boykov and Gareth Funka-Lea",
+          "year": 2006
+        }
+      ]
+    },
+    {
+      "id": "quiz-mask-values",
+      "title": "Sprawdź się: co naprawdę jest w masce po GrabCut?",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `cv2.grabCut(img, mask, rect, bgd, fgd, 5, cv2.GC_INIT_WITH_RECT)` i potem jako maskę pierwszego planu używasz wprost `mask` (np. `result = img * mask[..., None]`). Dostajesz prawie czarny obraz albo dziwne nasycone artefakty. Co jest źle?",
+        "options": [
+          "Maska zwracana przez `cv2.grabCut` zawiera cztery różne etykiety (`GC_BGD = 0`, `GC_FGD = 1`, `GC_PR_BGD = 2`, `GC_PR_FGD = 3`). Żeby otrzymać binarną maskę pierwszego planu, trzeba zmapować zarówno `1`, jak i `3` na `1`, a `0` i `2` na `0` — typowo przez `np.where((mask == 2) | (mask == 0), 0, 1).astype(np.uint8)`. Po `GC_INIT_WITH_RECT` w masce w ogóle nie pojawia się wartość `1`, więc bezpośrednie mnożenie `img * mask` mnoży piksele \"prawdopodobnie pierwszego planu\" przez `3`, co dla `uint8` daje nasycone, niepoprawne wartości — a piksele \"prawdopodobnie tła\" (`2`) wcale nie są zerowane.",
+          "`cv2.grabCut` zwraca maskę w `bool` — przed mnożeniem trzeba ją skonwertować przez `mask.astype(np.uint8)`, bo NumPy mnożąc `bool * uint8` rzutuje wynik z powrotem do `bool` i zostawia tylko piksele z wartością niezerową w przybliżeniu.",
+          "Trzeba zwiększyć `iterCount` z 5 do co najmniej 50. Przy 5 iteracjach maska jest jeszcze pusta (same zera), bo algorytm nie zdążył skonfigurować GMM — pierwsze wartości pojawiają się dopiero po kilkudziesięciu iteracjach.",
+          "`GC_INIT_WITH_RECT` wymaga, żeby najpierw ręcznie wypełnić `mask` wartościami `cv2.GC_PR_FGD` w obszarze prostokąta. Bez tego algorytm nie wie, gdzie szukać pierwszego planu, i zwraca same zera — stąd czarny obraz."
+        ],
+        "correct": [0],
+        "explanation": "**Odpowiedź A** trafia w sedno. `cv2.grabCut` zwraca maskę `uint8` o wartościach w zbiorze `{0, 1, 2, 3}` — to *cztery* etykiety, nie binarka. Standardowy idiom OpenCV-owej dokumentacji konwertuje ją tak: `mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype(np.uint8)`. Dodatkowo: po wywołaniu z `GC_INIT_WITH_RECT` etykieta `cv2.GC_FGD = 1` w wyniku w ogóle się nie pojawia — algorytm dopuszcza ją tylko, jeśli MY ręcznie wstawimy ją w masce w trybie `GC_INIT_WITH_MASK` (sure-FG stroke). Mnożąc `img * mask` traktujesz `2` jako \"częściowo widoczne tło\" i `3` jako trzykrotną jasność pierwszego planu (przepełnienie `uint8`) — stąd zarówno czarne, jak i nasycone artefakty.\n\n**B** to konfabulacja. `cv2.grabCut` zwraca `mask` jako `np.uint8`, nie `bool` — to zresztą jasno widać w dokumentacji typu (`OutputArray mask`, `CV_8UC1`). Próba \"naprawienia\" przez `astype(np.uint8)` nic nie zmienia (już jest `uint8`); prawdziwa naprawa to mapowanie czterech etykiet na 0/1.\n\n**C** też nie — pięć iteracji to wartość rekomendowana w samym tutorialu OpenCV i wystarcza dla typowego zdjęcia. \"Pusta\" maska po `GC_INIT_WITH_RECT` nie zdarza się: w najgorszym razie `cv2.grabCut` od razu wypełnia obszar prostokąta wartością `cv2.GC_PR_FGD = 3`, a wszystko poza nim — `cv2.GC_BGD = 0`. Stąd zresztą wartości `2` i `3` w wyniku, nawet gdy GMM nie zdążyło niczego nauczyć.\n\n**D** odwraca rzeczywistą konwencję. To algorytm — nie my — ma wypełnić maskę wartościami `cv2.GC_PR_FGD` wewnątrz prostokąta. Jeśli wstępnie sami wpiszemy tam jakąkolwiek wartość, `GC_INIT_WITH_RECT` i tak ją nadpisze. Bezpiecznie startuje się z `np.zeros((H, W), dtype=np.uint8)`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-extract-mask",
+      "title": "Zaimplementuj `extract_foreground_mask`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `extract_foreground_mask(grabcut_mask)` — jednolinijkową konwersję, bez której wynik `cv2.grabCut` jest bezużyteczny.\n\n**Sygnatura.**\n\n- `grabcut_mask` — `numpy.ndarray` typu `uint8` o wartościach z zbioru `{0, 1, 2, 3}` (etykiety `cv2.GC_BGD`, `cv2.GC_FGD`, `cv2.GC_PR_BGD`, `cv2.GC_PR_FGD`).\n- Zwróć **nową** `numpy.ndarray` o tym samym kształcie i `dtype=np.uint8`, w której:\n  - piksele z wartością `1` (`GC_FGD`) lub `3` (`GC_PR_FGD`) → `1`,\n  - piksele z wartością `0` (`GC_BGD`) lub `2` (`GC_PR_BGD`) → `0`.\n\n**Przykład.**\n\n```\ngrabcut_mask = [[0, 2, 3],     ->     [[0, 0, 1],\n                [3, 1, 2]]            [1, 1, 0]]\n```\n\n**Reguły.**\n\n1. Wynik musi mieć `dtype == np.uint8` (a nie `bool` ani `int64`) — taki obraz akceptuje większość operatorów OpenCV (np. `img * mask[..., None]`, `cv2.bitwise_and`).\n2. Nie modyfikuj wejścia — zwróć nową tablicę. Testy zweryfikują, że wejście zostało nietknięte.\n3. Funkcja powinna działać dla dowolnego kształtu (testy używają 2D, ale rozwiązanie nie powinno zakładać konkretnej liczby wymiarów).\n4. Wskazówka: idiom z dokumentacji OpenCV to `np.where((mask == 2) | (mask == 0), 0, 1).astype(np.uint8)`. Możesz go użyć wprost lub równoważnie wyrazić przez `((mask == 1) | (mask == 3)).astype(np.uint8)`.",
+        "starterCode": "import numpy as np\n\ndef extract_foreground_mask(grabcut_mask):\n    # grabcut_mask: tablica uint8 z wartosciami w {0, 1, 2, 3}.\n    # Zwroc: tablica tego samego ksztaltu, dtype=np.uint8, z wartosciami 0/1, gdzie\n    #   1 wszedzie tam, gdzie wejscie ma wartosc 1 (GC_FGD) lub 3 (GC_PR_FGD),\n    #   0 wszedzie indziej.\n    grabcut_mask = np.asarray(grabcut_mask)\n    # TODO: zaimplementuj zgodnie z opisem.\n    return np.zeros_like(grabcut_mask, dtype=np.uint8)\n",
+        "tests": [
+          {
+            "name": "podstawowy_przyklad_z_zadania",
+            "body": "import numpy as np\nm = np.array([[0, 2, 3], [3, 1, 2]], dtype=np.uint8)\nout = extract_foreground_mask(m)\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, dostalismy {out.dtype}'\nassert out.shape == (2, 3), f'oczekiwano shape (2, 3), dostalismy {out.shape}'\nassert out.tolist() == [[0, 0, 1], [1, 1, 0]], f'wartosci niepoprawne: {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "po_init_with_rect_brak_wartosci_1",
+            "body": "import numpy as np\n# Po GC_INIT_WITH_RECT maska zawiera tylko {0, 2, 3} -- 1 nie pojawia sie w ogole.\nm = np.array([[0, 0, 0, 0], [0, 3, 3, 0], [0, 3, 2, 0], [0, 0, 0, 0]], dtype=np.uint8)\nout = extract_foreground_mask(m)\nexpected = [[0, 0, 0, 0], [0, 1, 1, 0], [0, 1, 0, 0], [0, 0, 0, 0]]\nassert out.tolist() == expected, f'PR_FGD musi sie mapowac na 1, PR_BGD na 0: {out.tolist()}'\nassert out.dtype == np.uint8"
+          },
+          {
+            "name": "wszystkie_cztery_etykiety_naraz",
+            "body": "import numpy as np\nm = np.array([[0, 1, 2, 3]], dtype=np.uint8)\nout = extract_foreground_mask(m)\n# GC_BGD=0 -> 0, GC_FGD=1 -> 1, GC_PR_BGD=2 -> 0, GC_PR_FGD=3 -> 1\nassert out.tolist() == [[0, 1, 0, 1]], f'mapowanie czterech etykiet niepoprawne: {out.tolist()}'\nassert out.dtype == np.uint8"
+          },
+          {
+            "name": "wejscie_nie_jest_modyfikowane",
+            "body": "import numpy as np\nm = np.array([[0, 2, 3], [3, 1, 2]], dtype=np.uint8)\nm_copy = m.copy()\n_ = extract_foreground_mask(m)\nassert (m == m_copy).all(), 'extract_foreground_mask nie powinno modyfikowac wejscia'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef extract_foreground_mask(grabcut_mask):\n    grabcut_mask = np.asarray(grabcut_mask)\n    return np.where((grabcut_mask == 2) | (grabcut_mask == 0), 0, 1).astype(np.uint8)\n"
+      }
+    },
+    {
+      "id": "sandbox-grabcut",
+      "title": "Piaskownica: wytnij obiekt i dopracuj go pociągnięciami",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz: jasny obiekt (kolo + prostokat sklejone w jeden ksztalt)\n# na wzorzystym, kolorowym tle.\nH, W = 200, 320\nrng = np.random.RandomState(0)\n\n# Tlo: zielonkawy gradient + szum -- 'rozne' kolorystycznie od obiektu.\nbg = np.zeros((H, W, 3), dtype=np.uint8)\nbg[..., 1] = (np.linspace(40, 130, W).astype(np.uint8))[None, :]   # G ramie sie od lewej\nbg[..., 0] = 60                                                    # B niskie\nbg[..., 2] = 30                                                    # R niskie\nbg = np.clip(bg.astype(np.int32) + rng.randint(-12, 13, bg.shape), 0, 255).astype(np.uint8)\n\nimg = bg.copy()\n\n# Obiekt: cieply pomaranczowy ksztalt (kolo + prostokat).\ncv2.circle(img, (170, 100), 55, (40, 90, 220), -1)\ncv2.rectangle(img, (170, 60), (260, 140), (40, 90, 220), -1)\nimg = np.clip(img.astype(np.int32) + rng.randint(-8, 9, img.shape), 0, 255).astype(np.uint8)\n\n# 1. GrabCut z prostokatem inicjalizujacym -- otaczamy obiekt z marginesem.\nmask = np.zeros(img.shape[:2], dtype=np.uint8)\nbgd = np.zeros((1, 65), dtype=np.float64)\nfgd = np.zeros((1, 65), dtype=np.float64)\nrect = (105, 40, 165, 125)   # (x, y, w, h)\nITERS_RECT = 5\n\ncv2.grabCut(img, mask, rect, bgd, fgd, ITERS_RECT, cv2.GC_INIT_WITH_RECT)\n\n# 2. Idiom OpenCV: zamien {0, 2, 3} -> {0, 1}.\nfg_mask = np.where((mask == 2) | (mask == 0), 0, 1).astype(np.uint8)\n\nprint(f'Po GC_INIT_WITH_RECT (iters={ITERS_RECT}):')\nprint(f'  unikalne etykiety w masce: {sorted(np.unique(mask).tolist())}')\nprint(f'  pikseli pierwszego planu: {int(fg_mask.sum())} / {H * W}')\n\n# 3. Doprecyzowanie pociagnieciami (sure-FG / sure-BG).\n#    Domalujmy w masce 'pewny pierwszy plan' wewnatrz obiektu i 'pewne tlo' wokol.\nmask_refined = mask.copy()\n\n# Sure-FG: poziomy pociag w srodku obiektu.\ncv2.line(mask_refined, (175, 95), (240, 95), int(cv2.GC_FGD), 6)\n# Sure-BG: dwa pociagi po lewej stronie i nad obiektem (pewne tlo).\ncv2.line(mask_refined, (10, 10), (90, 10), int(cv2.GC_BGD), 6)\ncv2.line(mask_refined, (10, 100), (60, 180), int(cv2.GC_BGD), 6)\n\n# 4. Druga runda grabCut -- TYM RAZEM z GC_INIT_WITH_MASK.\n#    Uwaga: bgdModel/fgdModel SA TE SAME (przekazujemy stan, nie tworzymy od nowa).\nITERS_MASK = 3\ncv2.grabCut(img, mask_refined, None, bgd, fgd, ITERS_MASK, cv2.GC_INIT_WITH_MASK)\n\nfg_mask_refined = np.where((mask_refined == 2) | (mask_refined == 0), 0, 1).astype(np.uint8)\n\nprint(f'\\nPo GC_INIT_WITH_MASK (dodatkowe iters={ITERS_MASK}):')\nprint(f'  unikalne etykiety w masce: {sorted(np.unique(mask_refined).tolist())}')\nprint(f'  pikseli pierwszego planu: {int(fg_mask_refined.sum())} / {H * W}')\nprint(f'  zmiana: {int(fg_mask_refined.sum()) - int(fg_mask.sum()):+d} pikseli')\n\n# Eksperymenty:\n#  1) Zmniejsz prostokat 'rect' tak, zeby ucinal czesc obiektu (np. (140, 60, 100, 80)).\n#     Co dzieje sie z fg_mask? Ile pikseli obiektu zostalo zaklasyfikowane jako 'pewne tlo'?\n#  2) Zmien kolor obiektu na bardzo zblizony do tla (np. (50, 110, 60) -- ciemna ziel).\n#     GMM ma teraz duzo trudniej. Czy proste GC_INIT_WITH_RECT wystarczy, czy potrzeba pociagniec?\n#  3) Zwieksz/zmniejsz ITERS_RECT (np. 1, 3, 10). Kiedy zwracane piksele FG przestaja sie zmieniac?\n#  4) Zakomentuj linie 'sure-FG' i zostaw same 'sure-BG' -- jak wynik sie zmienia, gdy GMM dostaje tylko negatywne wskazowki?\n#  5) BLAD DO POPELNIENIA SWIADOMIE: stworz nowe bgd2 = np.zeros((1, 65)) i przekaz je do drugiego cv2.grabCut zamiast bgd.\n#     Czy wynik jest gorszy? GMM startuje od zera za kazdym razem, zamiast iterowac.\n",
+        "encouragement": "Pobaw się prostokątem i pociągnięciami — wyczuj, kiedy sam rect wystarcza, a kiedy GrabCut potrzebuje, żebyś \"poprowadził go za rękę\"."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1145/1015706.1015720",
+      "title": "Rother, C., Kolmogorov, V. and Blake, A. — \"GrabCut\": Interactive Foreground Extraction using Iterated Graph Cuts (SIGGRAPH 2004)",
+      "kind": "paper",
+      "author": "Carsten Rother, Vladimir Kolmogorov and Andrew Blake",
+      "year": 2004
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d8/d83/tutorial_py_grabcut.html",
+      "title": "OpenCV Python tutorial — Interactive foreground extraction using GrabCut",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1007/s11263-006-7934-5",
+      "title": "Boykov, Y. and Funka-Lea, G. — Graph Cuts and Efficient N-D Image Segmentation (IJCV 2006)",
+      "kind": "paper",
+      "author": "Yuri Boykov and Gareth Funka-Lea",
+      "year": 2006
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/GrabCut",
+      "title": "GrabCut — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

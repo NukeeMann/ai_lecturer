@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "slug": "znajdowanie-konturow-i-hierarchia",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Znajdowanie konturów i hierarchia",
+  "eyebrow": "KRAWĘDZIE I KONTURY",
+  "description": "Po Cannym lub progowaniu zostaje maska binarna — `cv2.findContours` zamienia ją na uporządkowaną listę brzegów spójnych regionów (algorytm Suzuki–Abego z 1985 r.) plus tablicę `hierarchy` o kształcie `(1, N, 4)` z czterema liczbami na kontur: `[Next, Previous, First_Child, Parent]`. W tej lekcji pokazuję, co dokładnie wraca z findContours, czym różnią się tryby `RETR_EXTERNAL` / `RETR_LIST` / `RETR_CCOMP` / `RETR_TREE` i jak z kolumny `Parent` wydobyć kontury zewnętrzne i dziury.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "od-maski-do-konturow",
+      "title": "Od maski binarnej do listy konturów",
+      "type": "theory",
+      "data": {
+        "markdown": "Po `cv2.Canny` lub progowaniu trzymasz w ręku **maskę binarną** — tablicę `True/False` na piksel. Z geometrycznego punktu widzenia to za mało: nie policzysz obiektów, nie zmierzysz ich pola, nie odróżnisz prostokąta od koła. Potrzebujesz **konturów** — uporządkowanych list punktów, które obrysowują brzegi spójnych regionów na tej masce.\n\n![Klasyczna czarno-biała fotografia dwóch rowerów opartych o ścianę — wyraźne pionowe i ukośne kontury ram, szprych i cieni są dobrym przykładem sceny, w której pipeline cv2.Canny → cv2.findContours znajduje wiele zagnieżdżonych konturów (rama, koła, szprychy)](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons — kanoniczny zestaw testowy dla detekcji krawędzi i konturów, domena publiczna.)*\n\nAlgorytm, którego używa OpenCV — Suzuki & Abe (1985) — **przebiega po brzegach** spójnych regionów (ang. *border following*) i dla każdego regionu zwraca uporządkowaną listę punktów `(x, y)`. Wywołanie wygląda tak:\n\n```python\ncontours, hierarchy = cv2.findContours(\n    binary,                          # maska binarna: 0 = tlo, != 0 = obiekt (tradycyjnie 255)\n    mode=cv2.RETR_TREE,              # ktore kontury zwrocic + jak je powiazac (patrz nizej)\n    method=cv2.CHAIN_APPROX_SIMPLE,  # jak gesto probkowac punkty na brzegu\n)\n```\n\nCzęsta pułapka: **`findContours` nie zwraca regionów** (zbiorów wszystkich pikseli wewnątrz figury), tylko **brzegi** — listy punktów na obrysie. Jeśli chcesz pole albo środek ciężkości, policzysz je *z* konturu (`cv2.contourArea`, `cv2.moments`), a nie z samej listy. I jeszcze jeden warunek wstępny: wejście musi być binarne (jeden kanał, najlepiej `uint8`); białe (≠ 0) to obiekt, czarne (== 0) to tło — odwrotna konwencja niż w SAR, gdzie tło bywa jaśniejsze, więc czasem trzeba zrobić `cv2.bitwise_not` przed wywołaniem."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1016/0734-189X(85)90016-7",
+          "title": "Suzuki, S. and Abe, K. — Topological structural analysis of digitized binary images by border following (CVGIP 1985)",
+          "kind": "paper",
+          "author": "Satoshi Suzuki and Keiichi Abe",
+          "year": 1985
+        }
+      ]
+    },
+    {
+      "id": "hierarchia-cztery-liczby",
+      "title": "Hierarchia: cztery liczby na kontur",
+      "type": "theory",
+      "data": {
+        "markdown": "Drugi zwrot z `findContours` — `hierarchy` — to tablica o kształcie `(1, N, 4)`, gdzie `N` to liczba znalezionych konturów. **Każdy wiersz** koduje cztery liczby:\n\n$$ \\bigl[\\, \\texttt{Next},\\ \\texttt{Previous},\\ \\texttt{First\\_Child},\\ \\texttt{Parent} \\,\\bigr] $$\n\nWartość **`-1`** oznacza „nie ma takiego sąsiada / dziecka / rodzica\". Pierwsze dwie liczby — `Next` i `Previous` — wskazują indeksy **konturów na tym samym poziomie zagnieżdżenia** (rodzeństwo); dwie ostatnie — `First_Child` i `Parent` — łączą poziomy. W ten sposób cztery liczby na kontur zwięźle kodują **drzewo** zagnieżdżeń: kontur zewnętrzny (rama) ma `Parent = -1`, jego dziecko (np. dziura w środku) ma `Parent = <indeks ramy>`, a wnuk (np. kropka wewnątrz dziury) — `Parent = <indeks dziury>`.\n\nDruga oś wyboru to **tryb wyodrębniania** (parametr `mode`): `RETR_EXTERNAL`, `RETR_LIST`, `RETR_CCOMP` i `RETR_TREE` różnią się tym, **które** kontury algorytm zwraca i **jak** zapełnia tablicę hierarchii — zestawia je porównanie poniżej. Niezależną kwestią jest **aproksymacja** brzegu (parametr `method`): `CHAIN_APPROX_NONE` zwraca każdy piksel obrysu, a `CHAIN_APPROX_SIMPLE` — tylko końce odcinków prostoliniowych (osiowo-równoległy prostokąt 100×50 wychodzi w 4 punktach zamiast ok. 300). W praktyce niemal zawsze chcesz `SIMPLE`."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d9/d8b/tutorial_py_contours_hierarchy.html",
+          "title": "OpenCV Python tutorial — Contour hierarchy",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tryby-wyodrebniania",
+      "title": "Cztery tryby `RETR_*` — co wraca i jaką ma hierarchię",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "mode", "label": "Tryb", "type": "string" },
+          { "key": "zwraca", "label": "Co zwraca" },
+          { "key": "hierarchia", "label": "Tablica hierarchii" },
+          { "key": "kiedy", "label": "Kiedy używać" }
+        ],
+        "rows": [
+          {
+            "mode": "RETR_EXTERNAL",
+            "zwraca": "Tylko najbardziej zewnętrzne kontury każdej spójnej figury — dziury i wnuki są pomijane.",
+            "hierarchia": "Same rodzeństwa: dla każdego konturu Parent = -1 i First_Child = -1; Next i Previous wiążą sąsiednie zewnętrzne.",
+            "kiedy": "Liczenie obiektów na masce binarnej, gdy wnętrze figury cię nie interesuje (np. zliczanie monet)."
+          },
+          {
+            "mode": "RETR_LIST",
+            "zwraca": "Wszystkie kontury (zewnętrzne + dziury + wnuki) jako płaską listę bez relacji między nimi.",
+            "hierarchia": "First_Child = Parent = -1 dla każdego wpisu; Next i Previous tworzą jeden łańcuch po wszystkich konturach.",
+            "kiedy": "Gdy chcesz po prostu wszystkie brzegi i wcale nie potrzebujesz wiedzy, kto jest dziurą w czym."
+          },
+          {
+            "mode": "RETR_CCOMP",
+            "zwraca": "Dwupoziomowa hierarchia: poziom 0 to zewnętrzne, poziom 1 to dziury w nich. Wnuki i głębsze zagnieżdżenia traktowane są jak nowe kontury poziomu 0.",
+            "hierarchia": "Tylko 2 poziomy: dziura ma Parent = <indeks zewnętrznej>, zewnętrzna ma Parent = -1.",
+            "kiedy": "Skanowanie dokumentów / OCR — litera (zewnętrzna) i dziura w niej (np. „o\", „p\") to dokładnie ten układ."
+          },
+          {
+            "mode": "RETR_TREE",
+            "zwraca": "Wszystkie kontury w pełnej hierarchii drzewa o dowolnej głębokości.",
+            "hierarchia": "Każdy kontur ma poprawne Parent / First_Child; rodzeństwa łączy Next/Previous.",
+            "kiedy": "Analiza zagnieżdżeń o głębokości > 2 (pączek z lukrem, banknot ze znakiem wodnym, mapa z wyspami w jeziorze na wyspie)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-summarize-hierarchy",
+      "title": "Zaimplementuj `summarize_hierarchy(hierarchy)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `summarize_hierarchy(hierarchy)`, która **streszcza** tablicę hierarchii zwracaną przez `cv2.findContours`. Funkcja MUSI:\n\n1. Przyjąć `hierarchy` jako **listę 4-elementowych list** w formacie `[[Next, Previous, First_Child, Parent], ...]` — dokładnie tak wygląda `hierarchy[0].tolist()` po wywołaniu `cv2.findContours`.\n2. Zwrócić **słownik** dokładnie z dwoma kluczami: `\"outer\"` (liczba konturów zewnętrznych, czyli tych z `Parent == -1`) oraz `\"holes\"` (liczba pozostałych, czyli tych z `Parent != -1`).\n3. Dla pustej listy zwrócić `{\"outer\": 0, \"holes\": 0}`.\n\nNie używaj wewnątrz `cv2` ani NumPy — funkcja powinna działać na czystej liście Pythona.\n\n```\n# Pojedynczy zewnetrzny kontur, bez dziur.\nsummarize_hierarchy([[-1, -1, -1, -1]])\n# -> {\"outer\": 1, \"holes\": 0}\n\n# Dwa zewnetrzne kontury + jedna dziura w pierwszym (parent = 0).\nsummarize_hierarchy([[1, -1, 2, -1], [-1, 0, -1, -1], [-1, -1, -1, 0]])\n# -> {\"outer\": 2, \"holes\": 1}\n```",
+        "starterCode": "def summarize_hierarchy(hierarchy):\n    # hierarchy: lista 4-elementowych list [[next, prev, first_child, parent], ...].\n    # Zwroc dict {\"outer\": int, \"holes\": int}.\n    # Wskazowki:\n    #   - kontur jest zewnetrzny  <=> entry[3] == -1\n    #   - kontur jest dziura     <=> entry[3] != -1\n    #   - pamietaj o pustej liscie -> {\"outer\": 0, \"holes\": 0}\n    return {\"outer\": 0, \"holes\": 0}\n",
+        "tests": [
+          {
+            "name": "pusta_hierarchia_zwraca_zera",
+            "body": "out = summarize_hierarchy([])\nassert isinstance(out, dict), f'oczekiwano dict, dostalismy {type(out).__name__}'\nassert out == {\"outer\": 0, \"holes\": 0}, f'oczekiwano zer dla pustej hierarchii, dostalismy {out}'",
+            "hidden": false
+          },
+          {
+            "name": "pojedynczy_zewnetrzny_kontur",
+            "body": "out = summarize_hierarchy([[-1, -1, -1, -1]])\nassert out == {\"outer\": 1, \"holes\": 0}, f'oczekiwano 1 zewn. + 0 dziur, dostalismy {out}'"
+          },
+          {
+            "name": "dwa_zewnetrzne_i_jedna_dziura",
+            "body": "# 2 zewnetrzne (idx 0 i 1, parent=-1) + 1 dziura (idx 2, parent=0).\nhier = [[1, -1, 2, -1], [-1, 0, -1, -1], [-1, -1, -1, 0]]\nout = summarize_hierarchy(hier)\nassert out == {\"outer\": 2, \"holes\": 1}, f'oczekiwano 2 zewn. + 1 dziura, dostalismy {out}'"
+          },
+          {
+            "name": "jeden_zewnetrzny_z_trzema_dziurami",
+            "body": "# 1 zewnetrzny (idx 0) + 3 dziury w nim (parent=0).\nhier = [\n    [-1, -1, 1, -1],\n    [2, -1, -1, 0],\n    [3, 1, -1, 0],\n    [-1, 2, -1, 0],\n]\nout = summarize_hierarchy(hier)\nassert out == {\"outer\": 1, \"holes\": 3}, f'oczekiwano 1 zewn. + 3 dziury, dostalismy {out}'"
+          }
+        ],
+        "solution": "def summarize_hierarchy(hierarchy):\n    outer = 0\n    holes = 0\n    for entry in hierarchy:\n        parent = entry[3]\n        if parent == -1:\n            outer += 1\n        else:\n            holes += 1\n    return {\"outer\": outer, \"holes\": holes}\n"
+      }
+    },
+    {
+      "id": "quiz-co-zwraca-findcontours",
+      "title": "Sprawdź się: co tak naprawdę zwraca `cv2.findContours`?",
+      "type": "quiz",
+      "data": {
+        "question": "Twoja koleżanka pisze, że `cv2.findContours` zwraca jej *„regiony\"* obiektów na masce binarnej — to znaczy listę dwuwymiarowych masek, gdzie wszystkie piksele wewnątrz każdej figury są zaznaczone. Co najlepiej opisuje, **co tak naprawdę** wraca z tego wywołania?",
+        "options": [
+          "Listę **konturów** (uporządkowanych ndarrayów punktów `(x, y)` na **brzegach** spójnych regionów) oraz tablicę `hierarchy` o kształcie `(1, N, 4)` z indeksami `[Next, Previous, First_Child, Parent]`. Pole, środek ciężkości albo maskę wnętrza trzeba *policzyć* z konturu (`cv2.contourArea`, `cv2.moments`, `cv2.drawContours(..., thickness=-1)` na pustym tle).",
+          "Listę dwuwymiarowych masek binarnych, po jednej na każdy spójny region — `contours[i]` to ndarray `uint8` o kształcie obrazu wejściowego, w którym `255` oznacza wnętrze i-tego obiektu; `hierarchy` mówi, który region jest dziurą w którym.",
+          "Tablicę z numerami spójnych komponentów (taki sam wynik jak `cv2.connectedComponents`) — `contours` to obraz, w którym każdy piksel ma indeks regionu, do którego należy.",
+          "Listę krotek `(x, y, w, h)` — bounding boxów spójnych regionów. `hierarchy` zawiera te same 4 liczby na region, kodując zagnieżdżenia ramek."
+        ],
+        "correct": [0],
+        "explanation": "`cv2.findContours` realizuje algorytm Suzuki–Abego z 1985 r., który *obchodzi* brzegi spójnych regionów na masce binarnej. Pierwszy zwracany element to **lista konturów**, gdzie każdy kontur to ndarray punktów na *obrysie* regionu, a nie pikseli wewnątrz — to dokładnie ta pomyłka, którą popełnia koleżanka i którą ostrzega dokumentacja OpenCV. Drugi element, `hierarchy`, to tablica `(1, N, 4)` z czterema liczbami na kontur — `[Next, Previous, First_Child, Parent]` — kodującymi drzewo zagnieżdżeń (`-1` = brak). Jeśli rzeczywiście chcesz wnętrze regionu, masz dwa wyjścia: policzyć potrzebne wielkości bezpośrednio z punktów konturu (`cv2.contourArea`, `cv2.moments`) albo „wypełnić\" kontur na pustej masce wywołaniem `cv2.drawContours(mask, contours, i, 255, thickness=-1)`. Pozostałe odpowiedzi mylą `findContours` z innymi narzędziami: lista masek per region nie istnieje (B), tablica numerów spójnych komponentów to wynik `cv2.connectedComponents`, a nie `findContours` (C), a same bounding boxy dostaniesz dopiero, jeżeli na każdym konturze osobno wywołasz `cv2.boundingRect` (D).",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d73/tutorial_py_contours_begin.html",
+          "title": "OpenCV Python tutorial — Contours: getting started (findContours)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-tryby-retr",
+      "title": "Piaskownica: cztery tryby `RETR_*` na tej samej masce",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna maska binarna: prostokat z dziura w srodku + osobny kwadrat.\n# Bialy (255) = obiekt, czarny (0) = tlo — taka konwencje ma cv2.findContours.\nimg = np.zeros((220, 320), dtype=np.uint8)\ncv2.rectangle(img, (20, 30), (170, 190), 255, thickness=-1)   # zewnetrzny prostokat\ncv2.circle(img, (95, 110), 32, 0, thickness=-1)               # dziura w srodku prostokata\ncv2.rectangle(img, (220, 70), (290, 160), 255, thickness=-1)  # osobny, niezalezny kwadrat\n\n# Porownaj 4 tryby wyodrebniania konturow — ta sama maska, cztery rozne\n# odpowiedzi „ile konturow\" i cztery rozne tablice hierarchii.\nfor mode_name, mode in [\n    ('RETR_EXTERNAL', cv2.RETR_EXTERNAL),\n    ('RETR_LIST',     cv2.RETR_LIST),\n    ('RETR_CCOMP',    cv2.RETR_CCOMP),\n    ('RETR_TREE',     cv2.RETR_TREE),\n]:\n    contours, hierarchy = cv2.findContours(img, mode, cv2.CHAIN_APPROX_SIMPLE)\n    n = len(contours)\n    print(f'{mode_name}: znaleziono {n} kontur(ow)')\n    if hierarchy is not None:\n        # hierarchy.shape == (1, N, 4); pole [3] kazdego wiersza to Parent.\n        for i, row in enumerate(hierarchy[0].tolist()):\n            parent = row[3]\n            kind = 'zewnetrzny' if parent == -1 else f'dziecko #{parent}'\n            print(f'  kontur {i}: {row}  -> {kind}')\n    print()\n\n# Pytania do siebie:\n#   * Przejdz z CHAIN_APPROX_SIMPLE na CHAIN_APPROX_NONE i zobacz, jak rosnie\n#     len(contours[0]) — z 4 punktow do kilkuset (caly obrys prostokata).\n#   * Dodaj druga, mniejsza dziure obok pierwszej w wewnatrz duzego prostokata.\n#     Jak teraz wyglada hierarchy w trybie RETR_TREE i RETR_CCOMP?\n#   * Spojrz na cv2.bitwise_not(img): co teraz jest „obiektem\", a co „tlem\"?\n#     Czy hierarchia odwraca sie tak, jak sie spodziewasz?\n",
+        "encouragement": "Pobaw się trybami i dodawaniem kolejnych dziur — ta sama maska binarna potrafi dać cztery zupełnie różne układy hierarchii."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d73/tutorial_py_contours_begin.html",
+      "title": "OpenCV Python tutorial — Contours: getting started (findContours)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d9/d8b/tutorial_py_contours_hierarchy.html",
+      "title": "OpenCV Python tutorial — Contour hierarchy",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1016/0734-189X(85)90016-7",
+      "title": "Suzuki, S. and Abe, K. — Topological structural analysis of digitized binary images by border following (CVGIP 1985)",
+      "kind": "paper",
+      "author": "Satoshi Suzuki and Keiichi Abe",
+      "year": 1985
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 11 (Image Representation and Description)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

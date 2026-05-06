@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtr-bilateralny-i-zachowanie-krawedzi",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Filtr bilateralny i zachowanie krawędzi",
+  "eyebrow": "FILTRACJA",
+  "description": "Filtr bilateralny — nieliniowe rozmycie ważone iloczynem dwóch gaussianów: geometrycznego i fotometrycznego — gładzi obszary płaskie, a krawędzie zostawia nietknięte.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "co-psuje-gauss",
+      "title": "Czego Gauss nie potrafi — krawędź jako problem",
+      "type": "theory",
+      "data": {
+        "markdown": "Filtr Gaussa z poprzedniej lekcji ma jedną wadę, która wraca w niemal każdym pipeline'ie wizyjnym: **rozmywa krawędzie razem z szumem**. Gauss nie wie, że konkretny piksel siedzi tuż obok skoku jasności — bierze go i miesza ze ważoną średnią sąsiadów po obu stronach krawędzi, więc po przejściu filtra ostry skok jasności zamienia się w delikatne zbocze. Median z poprzedniej lekcji ratuje tylko jeden konkretny scenariusz (szum impulsowy); dla szumu addytywno-gaussowskiego — najczęstszego w fotografii i obrazowaniu medycznym — mediana traci za dużo tekstury, a Gauss za dużo krawędzi.\n\n![Fragment obrazu testowego pokryty losowym szumem typu salt-and-pepper — około 10% pikseli skrajnie czarnych lub białych rozsianych po całej scenie; tło i kształty pozostają rozpoznawalne pod warstwą impulsowego szumu](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Noise_salt_and_pepper.png/480px-Noise_salt_and_pepper.png)\n\n*(Obraz: Wikimedia Commons, public domain — przykład sceny, którą chcielibyśmy odszumiać bez tracenia krawędzi obiektów.)*\n\nGdyby tylko filtr potrafił **odróżnić** sąsiadów, którzy są częścią tej samej powierzchni, od sąsiadów leżących po drugiej stronie krawędzi… Dokładnie ten pomysł Carlo Tomasi i Roberto Manduchi opisali w 1998 roku jako **filtr bilateralny**: do gaussowskiej wagi odległości dorzucamy drugą wagę, która maleje, gdy intensywności pikseli zaczynają się od siebie różnić. Sąsiad o podobnej jasności wnosi pełen wkład; sąsiad zza krawędzi — znikomy. Krawędź zostaje, a płaski obszar zostaje wygładzony. To coś, czego liniowa konwolucja Gaussa zrobić nie umie, bo waga $G_{\\sigma}(\\lVert q - p\\rVert)$ zależy wyłącznie od położenia, a nie od *treści* obrazu w danym punkcie."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICCV.1998.710815",
+          "title": "Tomasi, C. and Manduchi, R. — Bilateral Filtering for Gray and Color Images (ICCV 1998)",
+          "kind": "paper",
+          "author": "Carlo Tomasi and Roberto Manduchi",
+          "year": 1998
+        }
+      ]
+    },
+    {
+      "id": "wzor",
+      "title": "Wzór: geometria razy fotometria",
+      "type": "theory",
+      "data": {
+        "markdown": "Niech $I$ oznacza obraz, a $W$ okno wokół piksela $\\mathbf{p}$. Filtr bilateralny zwraca:\n\n$$ I_{\\text{bf}}(\\mathbf{p}) \\;=\\; \\frac{1}{Z(\\mathbf{p})} \\sum_{\\mathbf{q} \\in W} G_{\\sigma_{d}}\\!\\bigl(\\lVert \\mathbf{q} - \\mathbf{p} \\rVert\\bigr) \\, G_{\\sigma_{r}}\\!\\bigl(\\lvert I(\\mathbf{q}) - I(\\mathbf{p}) \\rvert\\bigr) \\, I(\\mathbf{q}) $$\n\ngdzie czynnik normalizujący\n\n$$ Z(\\mathbf{p}) \\;=\\; \\sum_{\\mathbf{q} \\in W} G_{\\sigma_{d}}\\!\\bigl(\\lVert \\mathbf{q} - \\mathbf{p} \\rVert\\bigr) \\, G_{\\sigma_{r}}\\!\\bigl(\\lvert I(\\mathbf{q}) - I(\\mathbf{p}) \\rvert\\bigr) $$\n\n**zależy od piksela** — i to ona psuje liniowość. Każdy piksel ma własny zestaw wag, więc filtru nie da się zapisać jednym jądrem konwolucyjnym; OpenCV liczy go pixel-by-pixel, dlatego `cv2.bilateralFilter` jest istotnie wolniejszy od `cv2.GaussianBlur` o porównywalnym oknie.\n\nDwa odchylenia kontrolują dwa zjawiska:\n\n- $\\sigma_{d}$ (w API OpenCV: *sigmaSpace*) — **rozmiar okna** w sensie geometrycznym. Im większe, tym dalsze sąsiedztwa wnoszą znaczący wkład i tym silniejsze rozmycie — rośnie też koszt obliczeniowy ($\\mathcal{O}(\\sigma_{d}^{2})$ na piksel).\n- $\\sigma_{r}$ (w API: *sigmaColor*) — **tolerancja na różnicę intensywności**. Małe $\\sigma_{r}$: filtr „widzi” każdy lekki skok jasności jako krawędź i prawie nic nie miesza. Duże $\\sigma_{r}$ (rzędu rozpiętości obrazu): waga fotometryczna spłaszcza się do jedynki i bilateralny **degeneruje się do zwykłego Gaussa**.\n\nDobra praktyka: $\\sigma_{r}$ ustawiaj rzędu **odchylenia szumu**, a nie skoku krawędzi. Wtedy bilateralny gładzi to, co chcesz wygładzić (szum), i zostawia to, czego chcesz nie ruszać (krawędź).\n\nWywołanie OpenCV: `cv2.bilateralFilter(img, d, sigmaColor, sigmaSpace)`, gdzie `d` to średnica okna w pikselach (`d = 0` pozwala bibliotece wyznaczyć ją z `sigmaSpace`)."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Bilateral_filter",
+          "title": "Bilateral filter — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#ga9d7064d478c95d60003cf839430737ed",
+          "title": "OpenCV — bilateralFilter API reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "explorer-sigma-d-sigma-r",
+      "title": "Pokrętła σd i σr — kiedy bilateralny zachowuje krawędź, a kiedy ją gubi",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Sygnal 1D: krawedz skokowa z poziomu 1.0 na poziom 6.0 + szum gaussowski.\nrng = np.random.default_rng(0)\nN = 100\nclean = np.where(np.arange(N) < 50, 1.0, 6.0)\nnoisy = clean + rng.normal(0, 0.3, size=N)\n\ndef bilateral_1d(signal, sigma_d, sigma_r):\n    \"\"\"1D bilateralny: waga geometryczna * waga fotometryczna, normalizowane na piksel.\"\"\"\n    n = len(signal)\n    out = np.empty(n)\n    radius = max(1, int(np.ceil(3.0 * sigma_d)))\n    for i in range(n):\n        lo = max(0, i - radius)\n        hi = min(n, i + radius + 1)\n        idx = np.arange(lo, hi)\n        w_geom = np.exp(-((idx - i) ** 2) / (2.0 * sigma_d ** 2))\n        w_phot = np.exp(-((signal[idx] - signal[i]) ** 2) / (2.0 * sigma_r ** 2))\n        w = w_geom * w_phot\n        out[i] = (w * signal[idx]).sum() / w.sum()\n    return out\n",
+        "renderCode": "filtered = bilateral_1d(noisy, sigma_d, sigma_r)\n\nplt.figure(figsize=(7.5, 3.6))\nplt.plot(noisy, color='#bbbbbb', lw=1.0, label='sygnal z szumem')\nplt.plot(clean, color='#555555', lw=1.0, ls='--', label='oryginal (krawedz skokowa)')\nplt.plot(filtered, color='#0d9474', lw=2.5,\n         label=f'bilateralny (sigma_d={sigma_d:.1f}, sigma_r={sigma_r:.2f})')\nplt.xlabel('indeks probki')\nplt.ylabel('intensywnosc')\nplt.title('Filtr bilateralny na 1D-krawedzi z szumem')\nplt.legend(loc='center right')\nplt.grid(True, alpha=0.3)\nplt.ylim(0.0, 7.5)\n",
+        "params": [
+          {
+            "name": "sigma_d",
+            "label": "σd (geometryczna, w probkach)",
+            "type": "slider",
+            "min": 0.5,
+            "max": 10.0,
+            "step": 0.5,
+            "default": 2.0
+          },
+          {
+            "name": "sigma_r",
+            "label": "σr (fotometryczna, w jednostkach intensywnosci)",
+            "type": "slider",
+            "min": 0.05,
+            "max": 5.0,
+            "step": 0.05,
+            "default": 0.5
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "exercise-bilateral-1d",
+      "title": "Zaimplementuj `bilateral_1d(signal, sigma_d, sigma_r)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `bilateral_1d(signal, sigma_d, sigma_r)`, która zwraca jednowymiarowy filtr bilateralny zaaplikowany do `signal` (1D `numpy.ndarray` typu `float`). Funkcja MUSI:\n\n1. Dla każdego indeksu `i` zbudować okno sąsiadów w promieniu `radius = max(1, ceil(3 * sigma_d))`, **przycięte do końców tablicy** (bez paddingu — okno może być asymetryczne na brzegach).\n2. Policzyć **wagę geometryczną** $G_{\\sigma_d}(j - i) = \\exp\\!\\bigl(-(j - i)^2 / (2\\sigma_d^2)\\bigr)$ dla każdego sąsiada $j$ w oknie.\n3. Policzyć **wagę fotometryczną** $G_{\\sigma_r}\\!\\bigl(\\text{signal}[j] - \\text{signal}[i]\\bigr) = \\exp\\!\\bigl(-(\\Delta I)^2 / (2\\sigma_r^2)\\bigr)$.\n4. Zwrócić ważoną średnią `signal[j]` z wagami $w_{\\text{geom}} \\cdot w_{\\text{phot}}$ **znormalizowanymi tak, aby ich suma w obrębie okna wynosiła 1**.\n\nZwracaj `numpy.ndarray` typu `float64` o tym samym kształcie co wejście.\n\n```\nbilateral_1d(np.array([2.0, 2.0, 2.0]), sigma_d=1.0, sigma_r=0.5)  # -> [2.0, 2.0, 2.0]\n```\n\nNie używaj `cv2.bilateralFilter` — celem jest samodzielnie zaimplementować formułę z poprzedniej sekcji w 1D.",
+        "starterCode": "import numpy as np\n\ndef bilateral_1d(signal, sigma_d, sigma_r):\n    # signal: numpy.ndarray (float), sigma_d > 0, sigma_r > 0\n    # Krok po kroku:\n    #   1. radius = max(1, ceil(3 * sigma_d))\n    #   2. dla kazdego i wybierz okno [max(0, i-radius), min(n, i+radius+1))\n    #   3. waga geometryczna: exp(-((idx - i)^2) / (2 * sigma_d^2))\n    #   4. waga fotometryczna: exp(-((signal[idx] - signal[i])^2) / (2 * sigma_r^2))\n    #   5. zsumuj signal[idx] * (w_geom * w_phot) i podziel przez sume wag\n    signal = np.asarray(signal, dtype=np.float64)\n    out = np.zeros_like(signal)\n    return out\n",
+        "tests": [
+          {
+            "name": "staly_sygnal_przechodzi_bez_zmian",
+            "body": "import numpy as np\ny = bilateral_1d(np.array([2.0, 2.0, 2.0, 2.0, 2.0]), sigma_d=1.0, sigma_r=0.5)\nassert isinstance(y, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(y).__name__}'\nassert y.shape == (5,), f'oczekiwano ksztaltu (5,), dostalismy {y.shape}'\nassert np.allclose(y, 2.0, atol=1e-9), f'staly sygnal powinien wrocic bez zmian, jest {y}'",
+            "hidden": false
+          },
+          {
+            "name": "krawedz_skokowa_pozostaje_ostra_dla_malego_sigma_r",
+            "body": "import numpy as np\nsig = np.array([1.0, 1.0, 1.0, 5.0, 5.0, 5.0])\ny = bilateral_1d(sig, sigma_d=2.0, sigma_r=0.3)\n# Dla malego sigma_r waga fotometryczna po przeciwnej stronie krawedzi jest znikoma,\n# wiec piksel tuz przed krawedzia (indeks 2) zostaje blisko 1.0,\n# a tuz po krawedzi (indeks 3) blisko 5.0 — krawedz nie rozmywa sie miedzy nimi.\nassert abs(y[2] - 1.0) < 0.1, f'punkt tuz przed krawedzia (idx 2) powinien byc bliski 1.0, jest {y[2]:.3f}'\nassert abs(y[3] - 5.0) < 0.1, f'punkt tuz po krawedzi (idx 3) powinien byc bliski 5.0, jest {y[3]:.3f}'"
+          },
+          {
+            "name": "duze_sigma_r_degeneruje_do_gaussa",
+            "body": "import numpy as np\nsig = np.array([0.0, 1.0, 2.0, 3.0, 4.0, 5.0])\nsigma_d = 1.0\ny = bilateral_1d(sig, sigma_d=sigma_d, sigma_r=1e6)\n# Dla bardzo duzego sigma_r waga fotometryczna ~ 1, wiec wynik powinien byc\n# zwyklym wazonym srednim Gaussem (tylko geometria).\nn = len(sig)\nradius = max(1, int(np.ceil(3.0 * sigma_d)))\nref = np.empty(n)\nfor i in range(n):\n    lo, hi = max(0, i - radius), min(n, i + radius + 1)\n    idx = np.arange(lo, hi)\n    w = np.exp(-((idx - i) ** 2) / (2.0 * sigma_d ** 2))\n    ref[i] = (w * sig[idx]).sum() / w.sum()\nassert np.allclose(y, ref, atol=1e-6), f'dla bardzo duzego sigma_r wynik powinien byc czystym Gaussem geometrycznym. Oczekiwano:\\n{ref}\\nDostalismy:\\n{y}'"
+          },
+          {
+            "name": "symetryczny_sygnal_daje_symetryczny_wynik",
+            "body": "import numpy as np\nsig = np.array([1.0, 2.0, 5.0, 5.0, 2.0, 1.0])\ny = bilateral_1d(sig, sigma_d=1.0, sigma_r=0.5)\nassert np.allclose(y, y[::-1], atol=1e-9), f'sygnal symetryczny powinien dac wynik symetryczny, jest: {y}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef bilateral_1d(signal, sigma_d, sigma_r):\n    signal = np.asarray(signal, dtype=np.float64)\n    n = len(signal)\n    out = np.empty(n, dtype=np.float64)\n    radius = max(1, int(np.ceil(3.0 * sigma_d)))\n    for i in range(n):\n        lo = max(0, i - radius)\n        hi = min(n, i + radius + 1)\n        idx = np.arange(lo, hi)\n        w_geom = np.exp(-((idx - i) ** 2) / (2.0 * sigma_d ** 2))\n        w_phot = np.exp(-((signal[idx] - signal[i]) ** 2) / (2.0 * sigma_r ** 2))\n        w = w_geom * w_phot\n        out[i] = (w * signal[idx]).sum() / w.sum()\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-sigma-r",
+      "title": "Sprawdź się: rola σr",
+      "type": "quiz",
+      "data": {
+        "question": "Co dzieje się z wynikiem `cv2.bilateralFilter`, gdy ustawisz bardzo duże `sigmaColor` (np. ≈ 100× rozpiętości intensywności obrazu) przy niezmienionym `sigmaSpace`?",
+        "options": [
+          "Krawędzie zostają jeszcze lepiej zachowane — duża sigmaColor oznacza, że nawet sąsiedzi zza krawędzi są „za mało różni”, by zostali odrzuceni.",
+          "Filtr zaczyna zachowywać się jak zwykły `cv2.GaussianBlur` z parametrem `sigmaSpace` — waga fotometryczna spłaszcza się do jedynki i ograniczenie krawędzi znika.",
+          "Filtr przestaje cokolwiek robić — wszystkie wagi spadają do zera, więc wynik jest identyczny z wejściem.",
+          "Zachowanie zależy od liczby kanałów: dla obrazów BGR pozostaje bilateralne, dla obrazów w skali szarości degeneruje się do progowania."
+        ],
+        "correct": [1],
+        "explanation": "Waga fotometryczna $G_{\\sigma_r}(\\lvert I(q) - I(p)\\rvert)$ to gaussian różnicy intensywności. Gdy $\\sigma_r$ rośnie, wykładnik $-(\\Delta I)^2 / (2\\sigma_r^2)$ zbliża się do zera dla *każdej* różnicy $\\Delta I$, więc waga fotometryczna staje się stałą jedynką — i wzór redukuje się do zwykłego Gaussa po geometrii. Praktyczny wniosek jest paradoksalny: aby filtr **zachowywał** krawędzie, $\\sigma_r$ musi być **małe** — rzędu odchylenia szumu, nie skoku krawędzi. Intuicja „im więcej, tym lepiej” tutaj zawodzi i dotyczy ona tylko $\\sigma_d$. Odpowiedź A myli rolę σr ze σd; C — wagi nie spadają do zera, lecz rosną do jedynki; D — wzór bilateralny nie zależy od liczby kanałów (w wersji kolorowej OpenCV liczy różnicę w przestrzeni BGR jako norma euklidesowa, ale mechanizm σr jest ten sam).",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Bilateral_filter",
+          "title": "Bilateral filter — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-cv2",
+      "title": "Piaskownica: `cv2.bilateralFilter` na zaszumionym obrazie testowym",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Maly obraz syntetyczny: dwa prostokaty (jasny i ciemny) z ostra krawedzia\n# pionowa po srodku + szum gaussowski (sigma=12 stopni szarosci).\nH, W = 96, 96\nclean = np.full((H, W), 60, dtype=np.uint8)\nclean[:, W // 2:] = 200          # ostra krawedz pionowa po srodku obrazu\nclean[20:50, 30:70] = 130        # mniejszy prostokat o posredniej jasnosci\n\nrng = np.random.default_rng(0)\nnoise = rng.normal(0, 12, (H, W))\nnoisy = np.clip(clean.astype(np.int16) + noise.astype(np.int16), 0, 255).astype(np.uint8)\n\n# Trzy ustawienia bilateralnego — zwroc uwage, jak roznia sie sigmaColor.\nb_small = cv2.bilateralFilter(noisy, d=9, sigmaColor=15,  sigmaSpace=5)\nb_balan = cv2.bilateralFilter(noisy, d=9, sigmaColor=40,  sigmaSpace=5)\nb_large = cv2.bilateralFilter(noisy, d=9, sigmaColor=200, sigmaSpace=5)\n\n# Dla porownania: zwykly Gauss z porownywalnym oknem.\ng_blur = cv2.GaussianBlur(noisy, (9, 9), sigmaX=2.0)\n\n# Drukujemy poziomy przekroj przez krawedz pionowa (wiersz 60, kolumny 44..56).\ndef cut(img):\n    return img[60, 44:56]\n\nprint('NOISY                              :', cut(noisy))\nprint('bilateralFilter sigmaColor=15      :', cut(b_small))   # zachowuje krawedz, malo gladzi\nprint('bilateralFilter sigmaColor=40      :', cut(b_balan))   # rozsadny kompromis\nprint('bilateralFilter sigmaColor=200     :', cut(b_large))   # zachowuje sie jak Gauss\nprint('GaussianBlur sigma=2 (porownanie)  :', cut(g_blur))\n\n# Pytania do siebie:\n#   * Przy ktorej sigmaColor wartosci po lewej (kol. 49) i prawej (kol. 50)\n#     stronie krawedzi przestaja byc rozdzielone, czyli zaczynaja sie mieszac?\n#   * Zwieksz sigmaSpace przy stalym sigmaColor — co rosnie? (rozmiar okna,\n#     nie tolerancja krawedzi).\n#   * Porownaj, jak GaussianBlur traktuje krawedz miedzy 49 a 50 — Gauss zawsze\n#     rozmazuje skok, niezaleznie od parametrow.\n",
+        "encouragement": "Zmieniaj obie sigmy niezależnie i obserwuj, kiedy filtr przestaje 'widzieć' krawędź — to ten moment, w którym σr przestaje pasować do skali szumu."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Bilateral_filter",
+      "title": "Bilateral filter — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/ICCV.1998.710815",
+      "title": "Tomasi, C. and Manduchi, R. — Bilateral Filtering for Gray and Color Images (ICCV 1998)",
+      "kind": "paper",
+      "author": "Carlo Tomasi and Roberto Manduchi",
+      "year": 1998
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#ga9d7064d478c95d60003cf839430737ed",
+      "title": "OpenCV — bilateralFilter API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3.3.1 (Non-linear filtering)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

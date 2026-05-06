@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtry-pasmowe-fft-i-dct",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Filtry pasmowe FFT i DCT",
+  "eyebrow": "FFT I DCT",
+  "description": "Mnożenie widma przez maskę H(u,v) to filtr pasmowy w domenie Fouriera — LPF, HPF, BPF, dzwonienie Gibbsa i miękkie maski Butterwortha, plus DCT jako realny kuzyn FFT, który stoi za JPEG.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "filtr-jako-maska-w-widmie",
+      "title": "Filtr jako maska w widmie",
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji nauczyłeś się oglądać widmo amplitudy obrazu. Teraz wykorzystamy je *aktywnie*: zmodyfikujemy współczynniki Fouriera, a potem odtworzymy obraz w dziedzinie przestrzennej. Tak właśnie działa filtr pasmowy w domenie częstotliwości:\n\n$$ G(u, v) \\;=\\; H(u, v) \\cdot F(u, v), \\qquad g(x, y) \\;=\\; \\mathcal{F}^{-1}\\{G(u, v)\\}. $$\n\nMaska $H(u, v)$ to po prostu macierz wag mnożona element po elemencie z widmem $F = \\mathcal{F}\\{f\\}$ — to ona decyduje, które częstotliwości przepuszczamy, a które tłumimy. Zaletą tej drogi jest **globalna kontrola**: pomysł \"zostaw tylko niskie częstotliwości i odetnij wszystko powyżej promienia $D_0$\" wyraża się tu jednym warunkiem na masce, podczas gdy odpowiednie jądro splotu w dziedzinie przestrzennej miałoby promień rzędu $D_0$ pikseli.\n\nTwierdzenie o splocie wiąże oba światy: mnożenie w częstotliwości to splot w dziedzinie przestrzennej, więc *każda* maska w widmie odpowiada *jakiemuś* jądru konwolucyjnemu. Dla dużych jąder droga przez FFT bywa znacznie szybsza — $\\mathcal{O}(N^2 \\log N)$ zamiast $\\mathcal{O}(N^2 k^2)$ dla jądra $k \\times k$.\n\nPraktyczny pipeline ma cztery kroki: `F = fft2(f)` → `F_shifted = fftshift(F)` (DC do środka) → `G_shifted = H * F_shifted` → `g = ifft2(ifftshift(G_shifted)).real`. **Pamiętaj o `ifftshift` przed `ifft2`** — bez niego dostaniesz obraz z naprzemiennie odwracającymi się znakami pikseli (kratownica modulacyjna), nie zaś prawidłowy filtrowany obraz."
+      }
+    },
+    {
+      "id": "klasyczne-maski-lpf-hpf-bpf",
+      "title": "LPF, HPF, BPF i miękkie zbocza Butterwortha",
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyczne maski definiuje się przez **odległość** od częstotliwości zerowej (DC) w środku widma — po `fftshift`:\n\n$$ D(u, v) \\;=\\; \\sqrt{(u - u_0)^2 + (v - v_0)^2}, $$\n\ngdzie $(u_0, v_0)$ to środek tablicy.\n\n- **Dolnoprzepustowa (LPF):** $H_{\\text{LP}}(u, v) = 1$ gdy $D \\le D_0$, w przeciwnym razie $0$. Tłumi wysokie częstotliwości — wygładza obraz i redukuje szum, ale rozmywa krawędzie.\n- **Górnoprzepustowa (HPF):** $H_{\\text{HP}} = 1 - H_{\\text{LP}}$. Tłumi DC i niskie częstotliwości — usuwa płaskie tło, wzmacnia krawędzie.\n- **Pasmowa (BPF):** dwa progi $D_1 < D_2$ wyznaczają pierścień: $H_{\\text{BP}}(u, v) = 1$ dla $D_1 \\le D \\le D_2$, $0$ poza pierścieniem. Zostawia szczegóły *o określonej skali* — np. tekstury rolnicze w SAR albo regularne kropkowanie ekranu drukarskiego.\n- **Notch:** zeruje wąską parę punktów (w widmie obrazu rzeczywistego zawsze symetrycznie, $H(u, v) = H(-u, -v)$). Stosowana do usuwania pojedynczego dominującego wzoru — np. paski siatki energetycznej $50\\,\\text{Hz}$ w starych nagraniach kamerą.\n\n**Uwaga praktyczna — dzwonienie Gibbsa.** Idealna binarna maska ma ostre, prostokątne zbocze. Po inwersji daje w dziedzinie przestrzennej jądro typu *sinc 2D*, które wokół każdej krawędzi obrazu generuje pierścieniowe oscylacje. Receptą są maski o **miękkim zboczu**:\n\n$$ H_{\\text{B}}(u, v) \\;=\\; \\frac{1}{1 + (D / D_0)^{2n}} \\quad \\text{(Butterworth rzędu } n\\text{)}, \\qquad H_{\\text{G}}(u, v) \\;=\\; \\exp\\!\\left(-\\frac{D^2}{2\\sigma^2}\\right) \\quad \\text{(Gaussa)}. $$\n\nIm większe $n$, tym Butterworth bardziej przypomina maskę idealną; $n = 1$–$2$ daje gładki kompromis bez widocznego dzwonienia. Maska Gaussa nigdy nie wprowadza pierścieni (bo jej transformata jest też gaussem — bez ogonów oscylacyjnych), ale ma łagodniejsze odcięcie."
+      },
+      "sources": [
+        {
+          "url": "https://www.imageprocessingplace.com/",
+          "title": "Digital Image Processing, 4th ed. — Chapter 4 (Filtering in the Frequency Domain)",
+          "kind": "book",
+          "author": "Rafael C. Gonzalez and Richard E. Woods",
+          "year": 2018
+        }
+      ]
+    },
+    {
+      "id": "exercise-ideal-lowpass",
+      "title": "Zaimplementuj `ideal_lowpass(image, D0)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `ideal_lowpass(image, D0)`, która wykonuje **idealne dolnoprzepustowe filtrowanie** obrazu w domenie FFT. Pipeline jest dokładnie taki, jak w teorii:\n\n1. Policz `F = np.fft.fft2(image)` i `F_shifted = np.fft.fftshift(F)` (DC do środka).\n2. Zbuduj maskę `H` o tym samym kształcie co `image`: `1` dla pikseli, dla których odległość od środka tablicy spełnia $D(u, v) \\le D_0$, `0` w przeciwnym razie.\n3. Pomnóż element po elemencie: `G_shifted = F_shifted * H`.\n4. Odwróć: `g = np.fft.ifft2(np.fft.ifftshift(G_shifted)).real`.\n5. Zwróć `g` jako tablicę `numpy.float64` o tym samym kształcie co `image`.\n\nDla parzystego $N$ środek tablicy po `fftshift` to indeks $\\big[\\,N/2,\\, N/2\\,\\big]$ — i to jest punkt, od którego liczysz odległość $D$.\n\n```\nimg = np.array([[1.0, 2.0], [3.0, 4.0]])\nideal_lowpass(img, 0.0)         # -> macierz stala rowna srednia(img) = 2.5\nideal_lowpass(img, 1000.0)      # -> ~ img (maska zostawia wszystko)\n```\n\nWskazówki: nie używaj OpenCV — `numpy.fft` w zupełności wystarczy. Funkcja musi działać dla obrazów rzeczywistych dowolnego rozmiaru.",
+        "starterCode": "import numpy as np\n\ndef ideal_lowpass(image, D0):\n    # image: 2D numpy array (rzeczywiste, dtype=np.float64)\n    # D0: promien odciecia w pikselach (float, >= 0)\n    # Zwroc 2D float64 tej samej wielkosci co image.\n    #\n    # Krok po kroku:\n    #   1. F          = np.fft.fft2(image)\n    #   2. F_shifted  = np.fft.fftshift(F)\n    #   3. zbuduj maske H: 1 gdy sqrt((u - cy)^2 + (v - cx)^2) <= D0, inaczej 0\n    #      (cy, cx) = (image.shape[0] // 2, image.shape[1] // 2)\n    #   4. G_shifted  = F_shifted * H\n    #   5. g          = np.fft.ifft2(np.fft.ifftshift(G_shifted)).real\n    #   6. return g.astype(np.float64)\n    return image.astype(np.float64)\n",
+        "tests": [
+          {
+            "name": "ksztalt_dtype_dla_obrazu_stalego",
+            "body": "import numpy as np\nimg = np.full((8, 8), 5.0, dtype=np.float64)\nout = ideal_lowpass(img, 3.0)\nassert isinstance(out, np.ndarray), f'Oczekiwano numpy.ndarray, dostalismy {type(out).__name__}'\nassert out.shape == (8, 8), f'Ksztalt powinien byc (8, 8), jest {out.shape}'\nassert out.dtype == np.float64, f'Dtype powinien byc float64, jest {out.dtype}'\nassert np.allclose(out, 5.0, atol=1e-6), f'Filtrowanie obrazu stalego powinno zwrocic ten sam stalo-wartosciowy obraz, max odchylenie: {np.max(np.abs(out - 5.0)):.2e}'",
+            "hidden": false
+          },
+          {
+            "name": "duze_d0_zostawia_obraz_bez_zmian",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.standard_normal((16, 16)).astype(np.float64)\nout = ideal_lowpass(img, 1000.0)\nassert np.allclose(out, img, atol=1e-6), f'Dla bardzo duzego D0 maska zostawia wszystkie czestotliwosci, wynik powinien byc identyczny z wejsciem; max odchylenie: {np.max(np.abs(out - img)):.2e}'"
+          },
+          {
+            "name": "d0_zero_zostawia_tylko_dc",
+            "body": "import numpy as np\nimg = np.array([[1.0, 2.0, 3.0, 4.0],\n                [4.0, 3.0, 2.0, 1.0],\n                [1.0, 4.0, 1.0, 4.0],\n                [4.0, 1.0, 4.0, 1.0]], dtype=np.float64)\nout = ideal_lowpass(img, 0.0)\nexpected = float(img.mean())\nassert np.allclose(out, expected, atol=1e-6), f'Dla D0=0 maska zostawia tylko DC, wynik powinien byc staly i rowny srednia(img) = {expected:.4f}, jest {out}'"
+          },
+          {
+            "name": "tlumi_szachownice_nyquista",
+            "body": "import numpy as np\nn = 32\nyy, xx = np.indices((n, n))\nchecker = (((yy + xx) % 2) - 0.5).astype(np.float64)  # plus/minus 0.5 na zmiane\nout = ideal_lowpass(checker, 2.0)\nassert np.std(out) < 0.05, f'Maly D0 powinien stlumic najwyzsza czestotliwosc szachownicy Nyquista, std wyjscia = {np.std(out):.4f} (oczekiwane < 0.05)'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef ideal_lowpass(image, D0):\n    H_, W_ = image.shape\n    F = np.fft.fft2(image)\n    F_shifted = np.fft.fftshift(F)\n    cy, cx = H_ // 2, W_ // 2\n    yy, xx = np.indices((H_, W_))\n    D = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)\n    mask = (D <= D0).astype(np.float64)\n    G_shifted = F_shifted * mask\n    g = np.fft.ifft2(np.fft.ifftshift(G_shifted)).real\n    return g.astype(np.float64)\n"
+      }
+    },
+    {
+      "id": "quiz-dzwonienie-gibbsa",
+      "title": "Sprawdź się: skąd biorą się pierścienie po idealnym LPF",
+      "type": "quiz",
+      "data": {
+        "question": "Po przefiltrowaniu zdjęcia idealnym filtrem dolnoprzepustowym o promieniu $D_0 = 20\\,\\text{px}$ widać charakterystyczne *pierścieniowe* artefakty wokół każdej ostrej krawędzi. Co je powoduje i jak najłatwiej je zminimalizować?",
+        "options": [
+          "Promień $D_0$ jest po prostu zbyt mały — wystarczy zwiększyć $D_0$ do 80–100 px, żeby przepuścić więcej szczegółów i pierścienie znikną.",
+          "Pominięto `np.fft.ifftshift` przed `np.fft.ifft2` — po dodaniu `ifftshift` artefakty znikną.",
+          "Maska binarna ma ostre, prostokątne zbocze i w dziedzinie przestrzennej zachowuje się jak jądro typu $\\operatorname{sinc} 2D$ (efekt Gibbsa); rozwiązaniem jest miękka maska — Butterwortha lub Gaussa.",
+          "`np.abs(F)` traci informację o fazie — obraz odtworzony bez fazy zawsze ma artefakty pierścieniowe; rozwiązaniem jest filtrowanie samej `np.real(F)`."
+        ],
+        "correct": [2],
+        "explanation": "Pierścienie biorą się z **nieciągłego zbocza** maski idealnej, nie z błędów implementacji. Odwrotna transformata Fouriera prostokątnej (binarnej) maski to jądro $\\operatorname{sinc} 2D$ z oscylującymi listkami bocznymi — splot z taką funkcją wokół każdej ostrej krawędzi obrazu daje pierścieniowe oscylacje (efekt Gibbsa). Receptą jest maska o **miękkim zboczu**: Butterworth $H_{\\text{B}}(u,v) = 1 / (1 + (D/D_0)^{2n})$ lub Gaussa $H_{\\text{G}}(u,v) = \\exp(-D^2/(2\\sigma^2))$ — ich odwrotne transformaty nie mają oscylujących ogonów. Zwiększanie $D_0$ (A) tylko przesuwa częstotliwość pierścieni, ale nie ich likwiduje. Pominięcie `ifftshift` (B) daje *zupełnie inny* artefakt — naprzemienne odwracanie znaków pikseli (kratownica modulacyjna), a nie pierścienie. Maska $H(u, v)$ jest w pipeline'ie filtra pasmowego stosowana do *zespolonego* widma $F$, a nie do `np.abs(F)` (D) — fazy nigdy nie tracimy.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://www.imageprocessingplace.com/",
+          "title": "Digital Image Processing, 4th ed. — Chapter 4 (Filtering in the Frequency Domain)",
+          "kind": "book",
+          "author": "Rafael C. Gonzalez and Richard E. Woods",
+          "year": 2018
+        }
+      ]
+    },
+    {
+      "id": "dct-i-jpeg",
+      "title": "DCT — realny kuzyn FFT, który stoi za JPEG",
+      "type": "theory",
+      "data": {
+        "markdown": "**Discrete Cosine Transform** (DCT) to bliski kuzyn FFT z dwiema kluczowymi różnicami: jest **realna** (brak osobnej fazy) i opiera się tylko na funkcjach kosinusowych. W wariancie typu II dla obrazu $N \\times N$:\n\n$$ C(u, v) \\;=\\; \\alpha(u)\\,\\alpha(v) \\sum_{x = 0}^{N - 1}\\sum_{y = 0}^{N - 1} f(x, y)\\,\\cos\\!\\left[\\frac{(2x + 1)\\,u\\,\\pi}{2N}\\right]\\cos\\!\\left[\\frac{(2y + 1)\\,v\\,\\pi}{2N}\\right]. $$\n\nDCT ma własność **kompakcji energii**: dla typowych obrazów ogromna większość energii skupia się w pierwszych kilku współczynnikach (lewy górny róg, niskie częstotliwości). To właśnie ta cecha sprawia, że odrzucenie wysokich współczynników daje skuteczną kompresję — i to dokładnie strategia **JPEG**: obraz dzielimy na bloki $8 \\times 8$, w każdym liczymy DCT, kwantyzujemy współczynniki według tablicy preferującej niskie częstotliwości (mocne tłumienie wysokich) i kodujemy entropijnie. W OpenCV DCT 2D jest dostępna jako `cv2.dct(img.astype(np.float32))`.\n\nW kontekście filtrów pasmowych DCT bywa wygodniejsza niż FFT, gdy nie zależy nam na fazie — np. przy denoisingu poprzez progowanie współczynników w bloku. Jest też tańsza obliczeniowo: brak liczb zespolonych o połowę skraca pamięć i mnożenia. Wadą jest **brak naturalnej interpretacji \"okręgu\"**: DCT mapuje obraz na *prostokątną* siatkę baz $\\cos$, więc maska pasmowa w DCT operuje na indeksach $(u, v)$, a nie na promieniu $\\sqrt{u^2 + v^2}$ — rozróżnienie LP/BP/HP wciąż jest naturalne (małe $(u, v)$ to niskie częstotliwości), ale nie jest *radialne*."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/T-C.1974.223784",
+          "title": "Ahmed, N., Natarajan, T. and Rao, K. R. — Discrete Cosine Transform (IEEE Transactions on Computers 1974)",
+          "kind": "paper",
+          "author": "Nasir Ahmed, T. Natarajan and K. R. Rao",
+          "year": 1974
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Discrete_cosine_transform",
+          "title": "Discrete cosine transform — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-pierscien-bpf",
+      "title": "Pierścień BPF — wytropić jedną częstotliwość",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Wygeneruj obraz: drobna kratka pod katem 30 stopni + szum gaussowski.\nH, W = 128, 128\ny, x = np.indices((H, W), dtype=np.float64)\nfreq = 0.18           # cykli na piksel: sprobuj 0.05, 0.18, 0.40\ntheta = np.deg2rad(30.0)\nfringes = np.sin(2.0 * np.pi * freq * (x * np.cos(theta) + y * np.sin(theta)))\nrng = np.random.default_rng(0)\nimg = fringes + 0.3 * rng.standard_normal((H, W))\n\ndef bandpass(img, D1, D2):\n    F = np.fft.fftshift(np.fft.fft2(img))\n    Hh, Ww = img.shape\n    cy, cx = Hh // 2, Ww // 2\n    yy, xx = np.indices((Hh, Ww))\n    D = np.sqrt((yy - cy) ** 2 + (xx - cx) ** 2)\n    mask = ((D >= D1) & (D <= D2)).astype(np.float64)\n    return np.fft.ifft2(np.fft.ifftshift(F * mask)).real\n\n# Pokrec D1 i D2 — pierscien dopasowany do czestotliwosci kratki ja podswietli,\n# a wszystko inne (DC + wysoki szum) zniknie.\nout = bandpass(img, 15, 30)\nprint('std oryginalu:', float(np.std(img)))\nprint('std po BPF:   ', float(np.std(out)))\nprint('max po BPF:   ', float(np.max(out)))\n\n# Eksperymenty:\n#   - zmien D1, D2: zbyt waski pierscien -> obraz prawie zerowy\n#   - zmien freq na 0.05 -> kratka idzie do mniejszego promienia (blizej DC)\n#   - zmien theta na 90 stopni -> para maksimow w widmie obraca sie pionowo\n#   - sprobuj `mask = 1.0 / (1.0 + ((D - (D1 + D2) / 2) / 5.0) ** 4)` -> miekki BPF Butterwortha\n",
+        "encouragement": "Pomyśl o pierścieniu jak o radio-strojeniu: zwężaj go, aż usłyszysz tylko jedną stację — czyli zostawisz tylko jedną częstotliwość obrazu."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Discrete_cosine_transform",
+      "title": "Discrete cosine transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/T-C.1974.223784",
+      "title": "Ahmed, N., Natarajan, T. and Rao, K. R. — Discrete Cosine Transform (IEEE Transactions on Computers 1974)",
+      "kind": "paper",
+      "author": "Nasir Ahmed, T. Natarajan and K. R. Rao",
+      "year": 1974
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/de8/group__core__array.html#gadd6cf9baf2b8b704a11b5f04aaf4f39d",
+      "title": "OpenCV — `dct` API reference (core.array)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 4 (Filtering in the Frequency Domain)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

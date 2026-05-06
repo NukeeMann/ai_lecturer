@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "slug": "progowanie-globalne-i-metoda-otsu",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Progowanie globalne i metoda Otsu",
+  "eyebrow": "FILTRACJA",
+  "description": "Globalne progowanie binaryzuje obraz w skali szarości jednym progiem T — od ręcznego wyboru pod każdą scenę po metodę Otsu, która sama dobiera próg maksymalizujący wariancję międzyklasową dla bimodalnych histogramów.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "po-co-prog-globalny",
+      "title": "Po co próg globalny i kiedy on wystarcza",
+      "type": "theory",
+      "data": {
+        "markdown": "Progowanie globalne to najprostszy sposób binaryzacji obrazu w skali szarości: dla zadanego progu $T$ piksele jaśniejsze niż $T$ trafiają do klasy „pierwszego planu\", ciemniejsze do klasy „tła\":\n\n$$ B(x, y) \\;=\\; \\begin{cases} 255 & \\text{jeśli } I(x, y) > T \\\\\\\\ 0 & \\text{w przeciwnym razie} \\end{cases} $$\n\nPróg jest **globalny**: ten sam $T$ używany jest dla całego obrazu. Działa to dobrze tylko wtedy, kiedy histogram obrazu jest **bimodalny** — ma dwa wyraźne piki rozdzielone głęboką doliną, np. ciemne litery na jasnej kartce papieru przy równym oświetleniu albo jasne komórki na ciemnym tle preparatu mikroskopowego.\n\n![Klasyczna scena testowa do progowania: czarno-białe zdjęcie dwóch rowerów opartych o jasną ścianę. Histogram tego zdjęcia ma dwa wyraźne piki — ciemne ramy i koła vs. jasne tło ściany — a głęboka dolina między nimi czyni go modelowym przykładem dla globalnego progowania.](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons, „Bikesgray\", domena publiczna.)*\n\nNaiwne podejście — zakodowanie $T = 127$ na sztywno — nie skaluje się. Każde zdjęcie ma inną ekspozycję, inną dynamikę i inny stosunek powierzchni „obiektu\" do „tła\". Wybór ręczny zmusza nas albo do strojenia $T$ pod każdą scenę z osobna, albo do akceptowania bardzo brudnego wyniku. Stąd potrzeba algorytmu, który **patrzy na histogram i sam dobiera $T$** — i tym właśnie jest metoda Otsu z 1979 r.\n\nWarto pamiętać o granicy stosowalności: jeśli oświetlenie jest silnie nierównomierne (jeden róg sceny ciemniejszy o 60 jednostek od drugiego), żaden **jeden** próg nie odda granicy obiekt/tło na całym obrazie — i wtedy idziemy po **progowanie adaptacyjne** (następna lekcja)."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Otsu%27s_method",
+          "title": "Otsu's method — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+          "title": "OpenCV Python tutorial — Image thresholding",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "metoda-otsu-wariancja-miedzyklasowa",
+      "title": "Metoda Otsu — maksymalizacja wariancji międzyklasowej",
+      "type": "theory",
+      "data": {
+        "markdown": "Nobuyuki Otsu w 1979 r. zaproponował kanoniczny sposób na automatyczny wybór $T$. Idea jest prosta: skoro chcemy podzielić piksele na **dwie klasy** (tło + obiekt), to dobry próg to taki, który **maksymalizuje rozdzielność tych dwóch klas** — innymi słowy, klasy mają być od siebie jak najdalej, a wewnętrznie jak najbardziej spójne.\n\nOznaczmy znormalizowany histogram jako $p(i)$, gdzie $i \\in \\{0, \\dots, 255\\}$ to poziom jasności. Dla kandydata $T$ definiujemy:\n\n- $w_0(T) \\;=\\; \\sum_{i=0}^{T} p(i)$ — udział pikseli klasy 0 (intensywność $\\leq T$),\n- $w_1(T) \\;=\\; 1 - w_0(T)$ — udział klasy 1,\n- $\\mu_0(T)$, $\\mu_1(T)$ — średnie intensywności w obu klasach.\n\nWariancja **międzyklasowa** to:\n\n$$ \\sigma_b^{2}(T) \\;=\\; w_0(T)\\, w_1(T)\\, \\bigl(\\mu_0(T) - \\mu_1(T)\\bigr)^{2} $$\n\nOtsu wybiera próg, który **maksymalizuje** $\\sigma_b^{2}(T)$:\n\n$$ T^{*} \\;=\\; \\underset{T \\,\\in\\, \\{0,\\dots,255\\}}{\\arg\\max}\\; \\sigma_b^{2}(T) $$\n\nKluczowa obserwacja Otsu: ponieważ wariancja całkowita histogramu $\\sigma^{2}_{\\text{tot}} = \\sigma_b^{2} + \\sigma_w^{2}$ **nie zależy od $T$**, **maksymalizacja** wariancji międzyklasowej $\\sigma_b^{2}$ jest **dokładnie równoważna minimalizacji** wariancji wewnątrzklasowej $\\sigma_w^{2}(T) = w_0\\sigma_0^{2} + w_1\\sigma_1^{2}$. Z punktu widzenia implementacji liczymy to, co jest tańsze — czyli $\\sigma_b^{2}$, bo wymaga tylko średnich, nie pełnych wariancji per klasa.\n\nAlgorytm sprowadza się do **256 iteracji**: dla każdego $T$ liczymy $w_0$, $\\mu_0$, $\\mu_1$ z prefiksowych sum histogramu (każde w czasie $O(1)$), aktualizujemy $\\sigma_b^{2}(T)$ i pamiętamy najlepszy $T$. Cała metoda jest błyskawiczna nawet dla obrazów wielomegapikselowych — koszt zdominowany jest przez budowę histogramu.\n\n**Wywołanie OpenCV** wygląda zaskakująco prosto:\n\n```python\nt_otsu, bin_img = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)\n```\n\nUwaga, dwie typowe pułapki: pierwszy argument progu (`0`) jest **ignorowany** — `THRESH_OTSU` sam wyznaczy $T$ z histogramu — a obliczony próg zwraca **pierwsza wartość krotki** (`t_otsu`). Łatwo go przegapić i potem niepotrzebnie szukać go gdzie indziej."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1979.4310076",
+          "title": "Otsu, N. — A Threshold Selection Method from Gray-Level Histograms (IEEE TSMC 1979)",
+          "kind": "paper",
+          "author": "Nobuyuki Otsu",
+          "year": 1979
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+          "title": "OpenCV Python tutorial — Image thresholding",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tryby-cv-threshold",
+      "title": "Tryby `cv2.threshold` w jednym miejscu",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "flag",
+            "label": "Flaga",
+            "type": "string"
+          },
+          {
+            "key": "rule",
+            "label": "Reguła binaryzacji",
+            "type": "string"
+          },
+          {
+            "key": "use",
+            "label": "Typowe zastosowanie"
+          }
+        ],
+        "rows": [
+          {
+            "flag": "cv2.THRESH_BINARY",
+            "rule": "I(x, y) > T  →  255, w przeciwnym razie 0",
+            "use": "Domyślny tryb. Maska binarna z jasnymi obiektami i czarnym tłem — punkt wyjścia większości pipeline'ów (kontury, morfologia)."
+          },
+          {
+            "flag": "cv2.THRESH_BINARY_INV",
+            "rule": "I(x, y) > T  →  0, w przeciwnym razie 255",
+            "use": "Odwrotność BINARY. Praktyczne, gdy obiekt jest ciemniejszy od tła (np. czarne litery na białej kartce — chcemy litery jako 255)."
+          },
+          {
+            "flag": "cv2.THRESH_TRUNC",
+            "rule": "I(x, y) > T  →  T, w przeciwnym razie I(x, y)",
+            "use": "Obcina jasne piki (highlight clipping). Wynik nie jest binarny — jasności powyżej T są spłaszczane do T, reszta bez zmian."
+          },
+          {
+            "flag": "cv2.THRESH_TOZERO",
+            "rule": "I(x, y) > T  →  I(x, y), w przeciwnym razie 0",
+            "use": "Wycisza ciemne tło, zachowując oryginalne wartości jasnych pikseli. Wynik nie jest binarny — przydatne jako wstępny etap przed dalszym filtrowaniem jasnych ROI."
+          },
+          {
+            "flag": "cv2.THRESH_TOZERO_INV",
+            "rule": "I(x, y) > T  →  0, w przeciwnym razie I(x, y)",
+            "use": "Lustrzane odbicie TOZERO — zeruje jasne piki, zachowuje ciemne. Stosowane w detekcji cieni i defektów ciemniejszych od otoczenia."
+          },
+          {
+            "flag": "cv2.THRESH_OTSU (modyfikator OR)",
+            "rule": "T wyznaczany automatycznie z histogramu; binaryzacja zgodnie z trybem podstawowym (BINARY / BINARY_INV / …)",
+            "use": "Łączysz przez |  z trybem podstawowym, np. THRESH_BINARY | THRESH_OTSU. Przekazana wartość T jest ignorowana; obliczony próg dostajesz w pierwszej wartości krotki. Działa najlepiej na bimodalnych histogramach."
+          },
+          {
+            "flag": "cv2.THRESH_TRIANGLE (modyfikator OR)",
+            "rule": "T wyznaczany metodą trójkąta (Zack 1977); binaryzacja zgodnie z trybem podstawowym",
+            "use": "Drugi automatyczny estymator progu w OpenCV. Lepszy od Otsu na **silnie unimodalnych** histogramach (np. sceny z dominującym tłem) — Otsu ma wtedy tendencję do schodzenia w stronę pojedynczego piku."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-otsu-from-scratch",
+      "title": "Zaimplementuj `otsu_threshold(image)` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `otsu_threshold(image)`, która policzy próg Otsu dla dwuwymiarowego obrazu `numpy.ndarray` typu `uint8` i zwróci go jako liczbę całkowitą `int` z zakresu `0..255`. Implementacja MUSI:\n\n1. Zbudować 256-koszowy histogram intensywności: `hist, _ = np.histogram(image, bins=256, range=(0, 256))`.\n2. Niech $N$ = sumaryczna liczba pikseli. Dla każdego kandydata $T \\in \\{0, \\dots, 255\\}$ policzyć:\n   - $w_0(T) = \\frac{1}{N}\\sum_{i=0}^{T} h(i)$,\n   - $w_1(T) = 1 - w_0(T)$,\n   - $\\mu_0(T) = \\frac{1}{w_0(T)\\,N}\\sum_{i=0}^{T} i\\, h(i)$ (gdy $w_0(T) > 0$),\n   - $\\mu_1(T) = \\frac{1}{w_1(T)\\,N}\\sum_{i=T+1}^{255} i\\, h(i)$ (gdy $w_1(T) > 0$),\n   - $\\sigma_b^{2}(T) = w_0(T)\\, w_1(T)\\, (\\mu_0(T) - \\mu_1(T))^{2}$.\n3. Zwrócić $T$ maksymalizujący $\\sigma_b^{2}(T)$ jako `int`. Jeśli histogram jest pusty lub jednorodny (wszystkie piksele tej samej wartości), zwróć `0`.\n\n**Nie używaj `cv2.threshold` ani `cv2.THRESH_OTSU`** — celem jest samodzielne zaimplementowanie tego, co OpenCV liczy pod spodem.\n\n```\nimg = np.zeros((10, 10), dtype=np.uint8)\nimg[:5, :] = 50\nimg[5:, :] = 200\notsu_threshold(img)   # ->  int w przedziale [50, 199] (klasy są idealnie rozdzielone w tym pasie)\n```",
+        "starterCode": "import numpy as np\n\ndef otsu_threshold(image):\n    # image: numpy.ndarray 2D, dtype uint8\n    # Krok po kroku:\n    #   1. hist, _ = np.histogram(image, bins=256, range=(0, 256))\n    #   2. total = hist.sum(); jesli total == 0 -> zwroc 0\n    #   3. Dla kazdego T w 0..255 policz w0, w1, mu0, mu1 i sigma_b^2(T).\n    #      Pomin T, dla ktorych w0 == 0 lub w1 == 0 (nie da sie policzyc sredniej).\n    #   4. Zwroc int(T) maksymalizujace sigma_b^2(T).\n    image = np.asarray(image)\n    return 0\n",
+        "tests": [
+          {
+            "name": "bimodalny_obraz_50_vs_200",
+            "body": "import numpy as np\nimg = np.zeros((10, 10), dtype=np.uint8)\nimg[:5, :] = 50\nimg[5:, :] = 200\nt = otsu_threshold(img)\nassert isinstance(t, (int, np.integer)), f'oczekiwano int, jest {type(t).__name__}'\nassert 50 <= t < 200, f'prog Otsu powinien lezec w [50, 200), jest {t}'",
+            "hidden": false
+          },
+          {
+            "name": "asymetryczne_klasy_60_40_procent",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\ndark = rng.integers(20, 60, size=600).astype(np.uint8)     # 60% pikseli ciemnych w paśmie [20, 60)\nbright = rng.integers(180, 220, size=400).astype(np.uint8) # 40% pikseli jasnych w paśmie [180, 220)\nimg = np.concatenate([dark, bright]).reshape(40, 25)\nt = otsu_threshold(img)\nassert isinstance(t, (int, np.integer))\n# Dolina histogramu jest bardzo szeroka (60..180); prog Otsu MUSI w nia trafic.\nassert 60 <= t <= 180, f'prog miedzy klasa [20,60) a [180,220) powinien byc w [60, 180], jest {t}'"
+          },
+          {
+            "name": "obraz_jednorodny_nie_wybucha",
+            "body": "import numpy as np\nimg = np.full((8, 8), 100, dtype=np.uint8)\nt = otsu_threshold(img)\nassert isinstance(t, (int, np.integer)), f'typ wyniku: {type(t).__name__}'\nassert 0 <= t <= 255, f'prog poza zakresem 0..255: {t}'"
+          },
+          {
+            "name": "skrajna_separacja_0_vs_255",
+            "body": "import numpy as np\nimg = np.zeros((6, 6), dtype=np.uint8)\nimg[3:, :] = 255\nt = otsu_threshold(img)\n# Klasy idealnie rozdzielone (0 i 255); sigma_b^2 jest stale dla T w [0, 254],\n# wiec implementacja moze zwrocic dowolne T z tego zakresu — ale NIE 255.\nassert 0 <= t <= 254, f'prog dla 0 vs 255 powinien byc w [0, 254], jest {t}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef otsu_threshold(image):\n    image = np.asarray(image)\n    hist, _ = np.histogram(image, bins=256, range=(0, 256))\n    total = int(hist.sum())\n    if total == 0:\n        return 0\n    intensities = np.arange(256, dtype=np.float64)\n    cum_w = np.cumsum(hist).astype(np.float64) / total      # w0(T) jako prefiks\n    cum_mu = np.cumsum(intensities * hist) / total          # czesciowy moment 1. rzedu\n    mu_total = cum_mu[-1]\n    best_t = 0\n    best_sigma_b2 = -1.0\n    for t in range(256):\n        w0 = cum_w[t]\n        w1 = 1.0 - w0\n        if w0 == 0.0 or w1 == 0.0:\n            continue\n        mu0 = cum_mu[t] / w0\n        mu1 = (mu_total - cum_mu[t]) / w1\n        sigma_b2 = w0 * w1 * (mu0 - mu1) ** 2\n        if sigma_b2 > best_sigma_b2:\n            best_sigma_b2 = sigma_b2\n            best_t = t\n    return int(best_t)\n"
+      }
+    },
+    {
+      "id": "quiz-otsu-misconceptions",
+      "title": "Sprawdź się: pułapki Otsu i `THRESH_OTSU`",
+      "type": "quiz",
+      "data": {
+        "question": "Pracujesz nad scenami laboratoryjnymi i sięgasz po `cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)`. Które stwierdzenia o tym wywołaniu i o samej metodzie Otsu są **prawdziwe**? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Pierwszy argument progowy (`0`) jest ignorowany — `THRESH_OTSU` sam wyznacza próg z histogramu, a obliczoną wartość zwraca **pierwsza** wartość krotki: `t, bin_img = cv2.threshold(...)`.",
+          "Otsu maksymalizuje wariancję **międzyklasową** $\\sigma_b^{2}(T)$, co jest matematycznie równoważne **minimalizacji** wariancji wewnątrzklasowej $\\sigma_w^{2}(T)$ — bo wariancja całkowita histogramu $\\sigma^{2} = \\sigma_b^{2} + \\sigma_w^{2}$ nie zależy od $T$.",
+          "Otsu zakłada **bimodalny histogram**; przy silnie unimodalnym lub wielomodalnym rozkładzie próg potrafi wylądować w miejscu, które nie odpowiada żadnej naturalnej granicy w obrazie.",
+          "Skoro próg jest globalny, `THRESH_OTSU` radzi sobie tak samo dobrze ze scenami **równomiernie oświetlonymi**, jak i z silnym gradientem oświetlenia (np. dokument w cieniu) — wystarczy raz uruchomić.",
+          "Flaga `THRESH_OTSU` jest **tylko trybem binaryzacji** — wartość progu wciąż trzeba dobrać ręcznie i przekazać w drugim argumencie, a OpenCV jedynie zmienia sposób renderowania wyniku."
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "**(0) PRAWDA.** Standardowa pułapka API: w wywołaniu `cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)` wartość `0` w drugim argumencie jest po prostu ignorowana — algorytm Otsu sam wyznacza próg z histogramu — a obliczony próg dostajesz w pierwszej pozycji krotki. Łatwo go przegapić i potem niepotrzebnie liczyć go ponownie. **(1) PRAWDA.** To kluczowa obserwacja Otsu (1979): rozkład wariancji $\\sigma^{2} = \\sigma_b^{2} + \\sigma_w^{2}$, gdzie $\\sigma^{2}$ nie zależy od $T$, więc maksymalizacja $\\sigma_b^{2}$ daje dokładnie ten sam $T^{*}$, co minimalizacja $\\sigma_w^{2}$. Implementacja idzie po $\\sigma_b^{2}$, bo jest tańsza obliczeniowo. **(2) PRAWDA.** Założenie bimodalności jest jawne w wyprowadzeniu — próg „dobrze rozdzielający dwie klasy\" ma sens tylko gdy te dwie klasy istnieją w histogramie. Na unimodalnych scenach (głównie tło, marginalna obecność obiektu) Otsu bywa zastępowany metodą trójkąta (`THRESH_TRIANGLE`). **(3) FAŁSZ.** To dokładnie sytuacja, w której globalny próg pęka — przy gradiencie oświetlenia obiekt po jasnej stronie ma jasność wyższą niż tło po ciemnej stronie, więc żaden **jeden** $T$ nie odda granicy. Dla tych scen używamy progowania adaptacyjnego (kolejna lekcja). **(4) FAŁSZ.** `THRESH_OTSU` to **modyfikator OR-owany** z trybem podstawowym (`THRESH_BINARY`, `THRESH_BINARY_INV`, …); jego rolą jest **automatyczne wyznaczenie progu**. Tryb podstawowy decyduje o regule binaryzacji, OTSU decyduje o wartości $T$.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-otsu-vs-manual",
+      "title": "Piaskownica: `cv2.threshold` z Otsu i bez",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Maly obraz syntetyczny: tlo z poziomym GRADIENTEM jasnosci od 40 do 160\n# + dwa jasne prostokaty (intensywnosc 240) — jeden po lewej (na ciemnym tle)\n# i jeden po prawej (na jasnym tle). To scena, na ktorej globalny prog\n# zaczyna sie nie skladac: zaden POJEDYNCZY T nie rozdzieli prostokatow\n# od tla po obu stronach gradientu.\nH, W = 96, 192\nxs, _ = np.meshgrid(np.linspace(40, 160, W), np.arange(H))\nimg = xs.astype(np.float64)\nimg[20:60, 30:60] = 240   # jasny obiekt po lewej (kontrast wzgledem tla bardzo wysoki)\nimg[20:60, 130:160] = 240 # jasny obiekt po prawej (kontrast wzgledem tla mniejszy)\nimg = np.clip(img, 0, 255).astype(np.uint8)\n\n# 1) Reczny prog 127 — najprostszy wybor, czesto pierwsza intuicja.\nt_manual = 127\n_, bin_manual = cv2.threshold(img, t_manual, 255, cv2.THRESH_BINARY)\n\n# 2) Otsu: pierwszy argument (0) jest IGNOROWANY — OpenCV sam wyznaczy prog,\n#    a wartosc znajdziesz w pierwszym elemencie krotki (t_otsu).\nt_otsu, bin_otsu = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)\n\n# 3) Otsu po wstepnym rozmyciu Gaussem — czesta porada na zaszumione histogramy.\nimg_blur = cv2.GaussianBlur(img, ksize=(0, 0), sigmaX=1.5)\nt_otsu_blur, bin_otsu_blur = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)\n\n# 4) Druga automatyczna metoda OpenCV — trojkat — dla porownania.\nt_triangle, bin_triangle = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_TRIANGLE)\n\nprint(f'Reczny T = {t_manual:>5}: pikseli > T = {int((img > t_manual).sum())}')\nprint(f'Otsu   T = {t_otsu:>5.1f}: pikseli > T = {int((img > t_otsu).sum())}')\nprint(f'Otsu po Gauss T = {t_otsu_blur:>5.1f}: pikseli > T = {int((img > t_otsu_blur).sum())}')\nprint(f'Triangle T = {t_triangle:>5.1f}: pikseli > T = {int((img > t_triangle).sum())}')\n\n# Pytania do siebie:\n#   * Zmien kontrast prostokatow (240 -> 200, 180, 150) i zakres tla (40..160 -> 20..220)\n#     i zobacz, jak wedruje prog Otsu. Kiedy obie kostki sa wykryte poprawnie, a kiedy\n#     prawa kostka „znika\" w binarnej masce?\n#   * Dolaczaj kolejne klasy intensywnosci (np. trzeci prostokat o jasnosci 100) —\n#     Otsu maksymalizuje rozdzielnosc DOKLADNIE DWOCH klas; co dzieje sie z trzema?\n#   * Skomentuj pre-blur i porownaj t_otsu vs t_otsu_blur na obrazie z domieszka\n#     szumu (np. + np.random.normal(0, 8, img.shape)). Kiedy Gauss przed Otsu pomaga,\n#     a kiedy juz nie zmienia praktycznie nic?\n#   * Wywolaj cv2.adaptiveThreshold(img, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY,\n#     blockSize=21, C=2) — to przedsmak nastepnej lekcji o progowaniu adaptacyjnym,\n#     ktore radzi sobie wlasnie z gradientem oswietlenia jak w tym obrazie.\n",
+        "encouragement": "Zmieniaj kontrast prostokątów i szerokość gradientu tła — zobacz dokładnie ten moment, w którym globalny próg Otsu pęka pod nierównym oświetleniem."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Otsu%27s_method",
+      "title": "Otsu's method — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/TSMC.1979.4310076",
+      "title": "Otsu, N. — A Threshold Selection Method from Gray-Level Histograms (IEEE TSMC 1979)",
+      "kind": "paper",
+      "author": "Nobuyuki Otsu",
+      "year": 1979
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+      "title": "OpenCV Python tutorial — Image thresholding",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 10 (Image Segmentation, global thresholding section)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+=== Attempt 1 — 2026-05-06T03:57:26.669Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← course-spec.json
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← algorytm-watershed-i-markery.json
+→ Bash(command: grep -n -i "tracker\|trackery\|KCF\|CSRT\|MOSSE" /home/nukeemann/projects/ai_lec…)
+← 42:- **Tracker** — stateful estimator that follows one bounding box across frames (KCF, CSRT, MOSSE) — often filtered with Kalman to smooth jitter.
+→ Bash(command: grep -n -i "tracker\|trackery\|KCF\|CSRT\|MOSSE" /home/nukeemann/projects/ai_lec…)
+← 293:## Trackery KCF, CSRT i MOSSE
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 280	
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/)
+← build.ts
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/data-table.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/sandbox.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/theory.json)
+← 1	{
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/)
+← Code
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/registry.ts)
+← 1	import type { ComponentType } from 'react';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+I have all the context I need. Now I'll author the lesson — 6 sections (2 theory + 1 dataTable + 1 quiz + 1 code + 1 sandbox), pulling sources from the bibliography block in `sources.md`.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/trackery-kcf-csrt-i-mosse.json (file state is current in your context —…
+Now let me validate against `LessonSchema`.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/opencv-w-wizji…)
+← Exit code 1
+→ Bash(command: cat > /tmp/validate-lesson.ts << 'EOF'
+import * as fs from 'node:fs';
+import { L…)
+← OK: courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/trackery-kcf-csrt-i-mosse.json
+The lesson validates against `LessonSchema`.
+Summary:
+- Wrote `/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/trackery-kcf-csrt-i-mosse.json`
+- 6 sections (within 4–8): theory → dataTable → theory → quiz → code → sandbox
+- 1 inline image (Wikimedia Commons cross-correlation diagram with detailed alt + attribution) in the long opening theory section; KaTeX for the MOSSE closed-form filter
+- DataTable compares MOSSE/KCF/CSRT on year, FPS, accuracy, scale handling, core idea, fit
+- Quiz scenario forces the choice based on scale-adaptation + offline budget; distractors drawn from the misconceptions list
+- Code exercise: `template_match_offset_1d` with 5 tests (one visible smoke test + 4 hidden), full reference solution
+- Sandbox runs `cv2.TrackerKCF_create` on a synthetic 60-frame clip with ground-truth error tracking + 5 experiment hooks
+- `sources` carries 4 entries (the 3 canonical papers from `sources.md` + the OpenCV tracker tutorial); section-level `sources` on the two relevant theory sections
+[result success (514.8s)]

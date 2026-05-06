@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "slug": "matchshapes-i-momenty-hu",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "matchShapes i momenty Hu",
+  "eyebrow": "KRAWĘDZIE I KONTURY",
+  "description": "Z wektora momentów znormalizowanych η_pq wyciskamy siedem liczb, które nie zmieniają się po przesunięciu, obrocie ani jednorodnym przeskalowaniu figury — niezmienniki Hu (M.-K. Hu, 1962). Pokażemy, jak są zbudowane, dlaczego h₇ zmienia znak pod wpływem odbicia lustrzanego oraz w jaki sposób `cv2.matchShapes` zamienia te siedmiowymiarowe wektory w jedną liczbę odległości za pomocą trzech metryk I1, I2, I3 — wszystkich operujących na log-przekształceniu m_i = sign(h_i) · log₁₀|h_i|.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "hu-niezmienniki",
+      "title": "Siedem niezmienników Hu",
+      "type": "theory",
+      "data": {
+        "markdown": "Z poprzedniej lekcji znamy momenty znormalizowane $\\eta_{pq}$ — bezwymiarowe kombinacje momentów centralnych $\\mu_{pq}$ i pola $m_{00}$, niezależne od położenia i skali figury. **Ming-Kuei Hu** zauważył w 1962 r., że można z nich algebraicznie skomponować siedem wielkości, które dodatkowo nie zmieniają się przy obrocie figury — niezmienniki Hu $h_1, \\ldots, h_7$.\n\n![Trójkąt z trzema medianami przecinającymi się w jednym wewnętrznym punkcie — centroidzie geometrycznej; ten sam punkt jest początkiem układu, względem którego liczone są momenty centralne μ_pq i znormalizowane η_pq, na których zbudowana jest cała siódemka niezmienników Hu](https://upload.wikimedia.org/wikipedia/commons/4/43/Centroid.svg)\n\n*(Diagram: Wikimedia Commons, domena publiczna.)*\n\nDwa pierwsze niezmienniki to czysta gra na momentach drugiego rzędu — kompaktowe wyrazy bezwładności figury:\n\n$$ h_1 \\;=\\; \\eta_{20} + \\eta_{02} $$\n\n$$ h_2 \\;=\\; (\\eta_{20} - \\eta_{02})^{2} + 4\\,\\eta_{11}^{2} $$\n\nKolejne pięć ($h_3, \\ldots, h_7$) korzysta z momentów trzeciego rzędu ($\\eta_{30}, \\eta_{21}, \\eta_{12}, \\eta_{03}$) i ma już bardziej rozbudowaną postać — można je znaleźć w oryginalnym artykule Hu lub w dokumentacji `cv::HuMoments`. Dla zapamiętania struktury wystarczy ważna obserwacja: każdy $h_i$ jest **wielomianem** od $\\eta_{pq}$ złożonym tak, by sumy par typu $(\\eta_{30} + \\eta_{12})$, $(\\eta_{21} + \\eta_{03})$ traktować jak współrzędne wektora 2D — operacje, które nie zmieniają długości takiego wektora pod obrotem (tj. $x^{2} + y^{2}$ czy $x \\cdot (x^{2} - 3y^{2})$), zachowują niezmienniczość obrotową.\n\n**Trzy poziomy niezmienniczości** uzyskiwane przy konstrukcji $h_i$:\n\n1. **Translacja** — usuwana już na poziomie $\\mu_{pq}$ (centrowanie względem $(c_x, c_y)$ → $\\mu_{10} = \\mu_{01} = 0$).\n2. **Skala jednorodna** — usuwana przez normalizację $\\eta_{pq} = \\mu_{pq} / m_{00}^{1+(p+q)/2}$.\n3. **Obrót** — usuwany dopiero przez algebraiczne kombinacje $\\eta_{pq}$ w $h_1, \\ldots, h_7$.\n\nSiódmy niezmiennik $h_7$ ma dodatkową, użyteczną własność: pod wpływem **odbicia lustrzanego** figury jego znak się zmienia ($h_7 \\to -h_7$), podczas gdy pozostałe sześć niezmienników pozostaje niezmienionych. Pozwala to odróżnić obiekt od jego lustrzanego odbicia — przydatne np. przy klasyfikacji liter (`p` vs `q`), znaków zodiaku albo logosów.\n\nWartości $h_i$ są zwykle bardzo małe: $h_1$ rzędu $10^{-1}$, $h_7$ często rzędu $10^{-15}$ lub mniej. To nie jest błąd — to konsekwencja silnej normalizacji. Z tego powodu `cv2.matchShapes` nie operuje na surowych $h_i$, tylko na ich logarytmach — temu poświęcona jest następna sekcja."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TIT.1962.1057692",
+          "title": "Hu, M.-K. — Visual pattern recognition by moment invariants (IRE Transactions on Information Theory, 1962)",
+          "kind": "paper",
+          "author": "Ming-Kuei Hu",
+          "year": 1962
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Image_moment#Rotation_invariants",
+          "title": "Image moment — Wikipedia (Hu invariants section)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "metryki-matchshapes",
+      "title": "Skala log i trzy metryki `matchShapes`",
+      "type": "theory",
+      "data": {
+        "markdown": "Mając dwa wektory niezmienników Hu — $\\mathbf{h}^{A} = (h_1^{A}, \\ldots, h_7^{A})$ i $\\mathbf{h}^{B} = (h_1^{B}, \\ldots, h_7^{B})$ — chcemy jedną liczbę mówiącą, *jak różne* są kształty $A$ i $B$. Zerowa odległość = identyczne (pomijając translację, obrót i skalę); duża odległość = różne kształty.\n\nNaiwna metryka $\\sum_i |h_i^{A} - h_i^{B}|$ ma poważną wadę: $|h_1| \\sim 10^{-1}$, ale $|h_7| \\sim 10^{-15}$ — w sumie różnica $h_1$ całkowicie zdominowałaby wynik, a $h_7$ nigdy nie miałby szansy zaważyć. Dlatego OpenCV (i Hu w oryginale) najpierw przekształca każdą składową logarytmicznie, zachowując znak:\n\n$$ m_i \\;=\\; \\operatorname{sign}(h_i) \\cdot \\log_{10}|h_i| \\qquad \\text{(jeżeli } |h_i| > \\varepsilon\\text{; w przeciwnym razie } m_i = 0\\text{)} $$\n\nPo tej transformacji wszystkie składowe są tej samej skali (kilka–kilkadziesiąt jednostek), a różnica między $h_i \\sim 10^{-3}$ i $h_i \\sim 10^{-4}$ wynosi dokładnie $1$ — niezależnie od tego, czy mówimy o $h_1$ czy o $h_7$.\n\nNa wektorach $\\mathbf{m}^{A}, \\mathbf{m}^{B}$ OpenCV oferuje **trzy metryki** wybierane flagą trzeciego argumentu `cv2.matchShapes(cntA, cntB, method, parameter=0)`:\n\n$$ I_1(A, B) \\;=\\; \\sum_{i=1}^{7} \\left| \\tfrac{1}{m_i^{A}} - \\tfrac{1}{m_i^{B}} \\right| \\quad \\text{(}\\texttt{cv2.CONTOURS\\_MATCH\\_I1}\\text{)} $$\n\n$$ I_2(A, B) \\;=\\; \\sum_{i=1}^{7} \\left| m_i^{A} - m_i^{B} \\right| \\quad \\text{(}\\texttt{cv2.CONTOURS\\_MATCH\\_I2}\\text{)} $$\n\n$$ I_3(A, B) \\;=\\; \\max_{i=1, \\ldots, 7} \\frac{\\left| m_i^{A} - m_i^{B} \\right|}{\\left| m_i^{A} \\right|} \\quad \\text{(}\\texttt{cv2.CONTOURS\\_MATCH\\_I3}\\text{)} $$\n\n**Praktyczna heurystyka:** $I_2$ to bezpieczny domyślny wybór — sumuje odległości $L_1$ na log-skali, jest symetryczna i numerycznie stabilna. $I_1$ jest również symetryczna, ale operuje na odwrotnościach $1/m_i$, więc gdy któreś $|m_i|$ wpada blisko zera (czyli $|h_i| \\approx 1$ — co zdarza się dla wyrazistych konturów), wartości $1/m_i$ wybuchają i metryka staje się hałaśliwa. $I_3$ z kolei jest **niesymetryczna** ($I_3(A, B) \\neq I_3(B, A)$ w ogólności) i zwraca największą *względną* rozbieżność — przydatna, gdy pojedyncze duże odstępstwo ma być traktowane surowiej niż wiele drobnych."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d8/d23/classcv_1_1Moments.html",
+          "title": "OpenCV — HuMoments and matchShapes API references",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "metryki-tabela",
+      "title": "Trzy metryki w jednym ujęciu",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "metryka", "label": "Metryka (flaga OpenCV)", "type": "string" },
+          { "key": "formula", "label": "Definicja na log-Hu", "type": "string" },
+          { "key": "symetryczna", "label": "Symetryczna?", "type": "string" },
+          { "key": "uwaga", "label": "Charakterystyka", "type": "string" }
+        ],
+        "rows": [
+          {
+            "metryka": "I1 (CONTOURS_MATCH_I1)",
+            "formula": "Σ_i | 1/m_i^A − 1/m_i^B |",
+            "symetryczna": "tak",
+            "uwaga": "Operuje na odwrotnościach m_i — gdy |m_i| ≈ 0 (a więc |h_i| ≈ 1), wartości 1/m_i wybuchają i metryka staje się hałaśliwa."
+          },
+          {
+            "metryka": "I2 (CONTOURS_MATCH_I2)",
+            "formula": "Σ_i | m_i^A − m_i^B |",
+            "symetryczna": "tak",
+            "uwaga": "Suma odległości L1 na log-skali. Numerycznie stabilna; bezpieczny domyślny wybór i punkt odniesienia w benchmarkach."
+          },
+          {
+            "metryka": "I3 (CONTOURS_MATCH_I3)",
+            "formula": "max_i | m_i^A − m_i^B | / |m_i^A|",
+            "symetryczna": "nie",
+            "uwaga": "Mianownik bierze m_i z pierwszego argumentu, więc I3(A,B) ≠ I3(B,A). Akcentuje pojedynczą największą rozbieżność, zamiast je uśredniać."
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-niezmiennice",
+      "title": "Sprawdź się: niezmienniczość momentów Hu",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o siedmiu niezmiennikach Hu (h₁, …, h₇) wyznaczonych dla zwartej figury 2D są PRAWDZIWE? Zaznacz wszystkie poprawne.",
+        "options": [
+          "Wartości h₁…h₇ nie zmieniają się po przesunięciu figury w obrazie — są niezmiennicze translacyjnie.",
+          "Wartości h₁…h₇ nie zmieniają się po obrocie figury wokół jej środka masy — są niezmiennicze obrotowo.",
+          "Wartości h₁…h₇ nie zmieniają się po jednorodnym przeskalowaniu figury (wszystkie współrzędne mnożone przez tę samą stałą k > 0) — są niezmiennicze skali.",
+          "h₇ zmienia znak pod wpływem odbicia lustrzanego figury, podczas gdy h₁…h₆ pozostają takie same — można dzięki temu odróżnić obiekt od jego lustrzanego obrazu.",
+          "h₁…h₇ są niezmiennicze również wobec dowolnych transformacji afinicznych, w tym ścinania (shear).",
+          "Niezmienniki Hu wylicza się bezpośrednio z momentów surowych m_pq, bez potrzeby liczenia momentów centralnych μ_pq ani znormalizowanych η_pq."
+        ],
+        "correct": [0, 1, 2, 3],
+        "explanation": "Konstrukcja Hu ma trzy etapy, z których każdy znosi jedną klasę przekształceń: (i) **centrowanie** m_pq → μ_pq usuwa zależność od translacji (μ₁₀ = μ₀₁ = 0 z definicji); (ii) **normalizacja** μ_pq → η_pq przez m₀₀^(1+(p+q)/2) usuwa zależność od skali jednorodnej; (iii) **algebraiczne kombinacje** η_pq, dobrane przez Hu (1962), eliminują zależność od kąta obrotu. Stąd wszystkie siedem niezmienników jest odporne na translację, obrót i jednorodne skalowanie. h₇ ma dodatkową, celową własność: został tak skomponowany, że odbicie lustrzane zmienia jego znak (h₇ → −h₇), podczas gdy h₁…h₆ tego znaku nie zmieniają — pozwala to odróżnić obiekt od lustrzanego odbicia. **Nie** są to jednak niezmienniki dowolnych transformacji afinicznych: ścinanie i niejednorodne skalowanie zmieniają kształt i wartości η_pq, więc rozjeżdżają wektor h. Wreszcie — siódemki Hu nie da się policzyć bez pośrednich kroków: bez μ_pq i η_pq odpada niezmienniczość względem translacji i skali.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "code-i2",
+      "title": "Implementacja: odległość I2 z dwóch wektorów Hu",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `match_shapes_i2(huA, huB)`, która dla dwóch sekwencji siedmiu niezmienników Hu zwraca odległość $I_2$ — dokładnie tak, jak `cv2.matchShapes(cntA, cntB, cv2.CONTOURS_MATCH_I2, 0)`.\n\nKroki:\n\n1. Każdą składową `h` przekształć w `m = sign(h) · log10(|h|)`. Jeżeli `|h| < 1e-30`, przyjmij `m = 0` (próg eps zgodny z OpenCV).\n2. Zwróć $\\sum_{i=1}^{7} |m_i^A - m_i^B|$ jako `float`.\n\nPrzykład:\n\n```\nmatch_shapes_i2([1e-3, 0, 0, 0, 0, 0, 0],\n                [1e-4, 0, 0, 0, 0, 0, 0])\n# log10(1e-3) = -3, log10(1e-4) = -4 -> |(-3) - (-4)| = 1.0\n# pozostale skladowe ponizej eps -> 0; suma = 1.0\n```",
+        "starterCode": "import math\n\ndef match_shapes_i2(huA, huB):\n    \"\"\"Zwraca odleglosc I2 = sum |m_i^A - m_i^B|, gdzie m_i = sign(h_i) * log10(|h_i|).\n\n    huA, huB: sekwencje siedmiu niezmiennikow Hu (lista lub krotka floatow).\n    Skladowe o |h| < 1e-30 traktuj jak 0.\n    \"\"\"\n    eps = 1e-30\n    # TODO: zaimplementuj transformacje sign-log10 i sume modulow roznic.\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "zero_distance_for_identical_vectors",
+            "body": "h = [1e-1, 1e-3, 1e-7, 1e-9, 1e-15, 1e-12, 1e-20]\nresult = match_shapes_i2(h, h)\nassert abs(result) < 1e-12, f'oczekiwano 0, otrzymano {result}'",
+            "hidden": false
+          },
+          {
+            "name": "single_decade_difference_gives_one",
+            "body": "huA = [1e-3, 0, 0, 0, 0, 0, 0]\nhuB = [1e-4, 0, 0, 0, 0, 0, 0]\nresult = match_shapes_i2(huA, huB)\nassert abs(result - 1.0) < 1e-9, f'oczekiwano 1.0, otrzymano {result}'"
+          },
+          {
+            "name": "below_eps_treated_as_zero",
+            "body": "huA = [1e-50, 1e-3, 0, 0, 0, 0, 0]\nhuB = [0.0,    1e-3, 0, 0, 0, 0, 0]\nresult = match_shapes_i2(huA, huB)\nassert abs(result) < 1e-9, f'oczekiwano 0, otrzymano {result}'"
+          },
+          {
+            "name": "sign_flip_doubles_log_distance",
+            "body": "# m(+1e-2) = +1 * log10(1e-2) = -2\n# m(-1e-2) = -1 * log10(1e-2) = +2\n# |(-2) - (+2)| = 4.\nhuA = [1e-2, 0, 0, 0, 0, 0, 0]\nhuB = [-1e-2, 0, 0, 0, 0, 0, 0]\nresult = match_shapes_i2(huA, huB)\nassert abs(result - 4.0) < 1e-9, f'oczekiwano 4.0, otrzymano {result}'"
+          }
+        ],
+        "solution": "import math\n\ndef match_shapes_i2(huA, huB):\n    eps = 1e-30\n    def to_log(h):\n        if abs(h) < eps:\n            return 0.0\n        return math.log10(abs(h)) if h > 0 else -math.log10(abs(h))\n    return float(sum(abs(to_log(a) - to_log(b)) for a, b in zip(huA, huB)))\n"
+      }
+    },
+    {
+      "id": "sandbox-hu-moments",
+      "title": "Eksperymentuj: niezmienniczość Hu na własnych kształtach",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport math\n\n# --- liczenie wektora h1...h7 z binarnej maski ---\n\ndef hu_moments(mask):\n    \"\"\"Zwraca liste [h1, ..., h7] dla maski 2D (uint8/bool, niezerowe = pixele figury).\"\"\"\n    ys, xs = np.nonzero(mask)\n    if xs.size == 0:\n        return [0.0] * 7\n    xs = xs.astype(np.float64)\n    ys = ys.astype(np.float64)\n    m00 = float(xs.size)\n    cx = xs.mean()\n    cy = ys.mean()\n    dx, dy = xs - cx, ys - cy\n    def mu(p, q):\n        return float((dx**p * dy**q).sum())\n    def eta(p, q):\n        return mu(p, q) / (m00 ** (1.0 + (p + q) / 2.0))\n    e20, e02, e11 = eta(2, 0), eta(0, 2), eta(1, 1)\n    e30, e03 = eta(3, 0), eta(0, 3)\n    e21, e12 = eta(2, 1), eta(1, 2)\n    h1 = e20 + e02\n    h2 = (e20 - e02)**2 + 4 * e11**2\n    h3 = (e30 - 3*e12)**2 + (3*e21 - e03)**2\n    h4 = (e30 + e12)**2 + (e21 + e03)**2\n    h5 = ((e30 - 3*e12) * (e30 + e12) * ((e30 + e12)**2 - 3*(e21 + e03)**2)\n          + (3*e21 - e03) * (e21 + e03) * (3*(e30 + e12)**2 - (e21 + e03)**2))\n    h6 = ((e20 - e02) * ((e30 + e12)**2 - (e21 + e03)**2)\n          + 4 * e11 * (e30 + e12) * (e21 + e03))\n    h7 = ((3*e21 - e03) * (e30 + e12) * ((e30 + e12)**2 - 3*(e21 + e03)**2)\n          - (e30 - 3*e12) * (e21 + e03) * (3*(e30 + e12)**2 - (e21 + e03)**2))\n    return [h1, h2, h3, h4, h5, h6, h7]\n\n# --- proste maski: kwadrat, kwadrat-obrocony-o-45 (diament), kwadrat 2x mniejszy ---\n\nN = 60\nyy, xx = np.indices((N, N))\n\n# 1) Kwadrat 20x20 wycentrowany w (30, 30).\nsquare = ((np.abs(xx - 30) <= 10) & (np.abs(yy - 30) <= 10)).astype(np.uint8)\n\n# 2) Diament — kwadrat obrocony o 45 stopni (suma odleglosci L1 od srodka <= 10).\ndiamond = ((np.abs(xx - 30) + np.abs(yy - 30)) <= 14).astype(np.uint8)\n\n# 3) Polowa kwadratu — figura przeskalowana 2x.\nbig_square = ((np.abs(xx - 30) <= 20) & (np.abs(yy - 30) <= 20)).astype(np.uint8)\n\n# 4) Kwadrat przesuniety w dol-prawo.\nshifted = ((np.abs(xx - 45) <= 10) & (np.abs(yy - 45) <= 10)).astype(np.uint8)\n\nfor name, mask in [('kwadrat       ', square),\n                   ('diament (rot)  ', diamond),\n                   ('kwadrat duzy   ', big_square),\n                   ('kwadrat przesun', shifted)]:\n    h = hu_moments(mask)\n    print(name, '->', [f'{v:+.4e}' for v in h])\n\n# --- log-transform (taki sam jak w cv2.matchShapes) ---\n\ndef to_log_hu(h, eps=1e-30):\n    out = []\n    for v in h:\n        if abs(v) < eps:\n            out.append(0.0)\n        else:\n            out.append(math.log10(abs(v)) if v > 0 else -math.log10(abs(v)))\n    return out\n\nprint()\nprint('I2(kwadrat, diament)        =',\n      sum(abs(a - b) for a, b in zip(to_log_hu(hu_moments(square)),\n                                     to_log_hu(hu_moments(diamond)))))\nprint('I2(kwadrat, kwadrat duzy)  =',\n      sum(abs(a - b) for a, b in zip(to_log_hu(hu_moments(square)),\n                                     to_log_hu(hu_moments(big_square)))))\nprint('I2(kwadrat, kwadrat przes) =',\n      sum(abs(a - b) for a, b in zip(to_log_hu(hu_moments(square)),\n                                     to_log_hu(hu_moments(shifted)))))\n\n# Sprobuj:\n# 1) Dodaj wlasna figure (np. trojkat, gwiazda, litera 'L') i policz jej h1...h7.\n# 2) Stworz figure i jej lustrzane odbicie (np. mask[:, ::-1]) — czy h7 zmienia znak?\n# 3) Zmien rozmiar maski N = 120 i przeskaluj figury proporcjonalnie — czy h1 jest stabilne?\n",
+        "encouragement": "Porównaj h₁…h₇ dla figury i jej obrotu, skali, odbicia — zobacz, które niezmienniki naprawdę nie drgają, a gdzie próbkowanie pikselowe wprowadza drobny szum."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TIT.1962.1057692",
+      "title": "Hu, M.-K. — Visual pattern recognition by moment invariants (IRE Transactions on Information Theory, 1962)",
+      "kind": "paper",
+      "author": "Ming-Kuei Hu",
+      "year": 1962
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d8/d23/classcv_1_1Moments.html",
+      "title": "OpenCV — HuMoments and matchShapes API references",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Image_moment#Rotation_invariants",
+      "title": "Image moment — Wikipedia (Hu invariants section)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d73/tutorial_py_contours_begin.html",
+      "title": "OpenCV Python tutorial — Contours: getting started (find / draw / hierarchy / matchShapes)",
+      "kind": "article"
+    }
+  ]
+}

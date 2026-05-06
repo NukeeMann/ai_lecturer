@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 1,
+  "slug": "akceleracja-gpu-cuda-i-t-api",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Akceleracja GPU: CUDA i T-API",
+  "eyebrow": "WYDAJNOŚĆ",
+  "description": "Dwie ścieżki przyspieszenia OpenCV na karcie graficznej — Transparent API z UMat i moduł cv2.cuda z GpuMat — oraz kiedy każda z nich realnie się opłaca, a kiedy lepiej zostać na CPU.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "wstep",
+      "title": "Trzy wcielenia obrazu: Mat, UMat, GpuMat",
+      "type": "theory",
+      "data": {
+        "markdown": "Do tej pory każdy `cv2.*` liczył się na CPU — obraz to `numpy.ndarray`, a operacja typu `cv2.GaussianBlur` przebiega wątkami procesora. Gdy obrazy rosną, a operacje robią się ciężkie (deep nets, duże konwolucje, batche wideo), warto sięgnąć po GPU. OpenCV daje dwie ścieżki: **T-API** z typem `UMat` oraz moduł **`cv2.cuda`** z typem `GpuMat`."
+      }
+    },
+    {
+      "id": "t-api",
+      "title": "Transparent API: ten sam kod, dwa urządzenia",
+      "type": "theory",
+      "data": {
+        "markdown": "**Transparent API (T-API)** to dyspozytor: gdy zamiast `numpy.ndarray` przekażesz `cv2.UMat`, runtime sam dobierze implementację — jądro **OpenCL** na GPU (NVIDIA, AMD, Intel iGPU) lub klasykę na CPU. Konwertujesz przez `cv2.UMat(arr)` i wracasz `u.get()`. Dopóki łańcuch operacji nie schodzi z `UMat`, piksele nie krążą między urządzeniami."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d4d/tutorial_how_to_use_OpenCL.html",
+          "title": "OpenCV — Transparent API (T-API) and UMat reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cuda",
+      "title": "Moduł cv2.cuda: jawny pipeline GPU",
+      "type": "theory",
+      "data": {
+        "markdown": "**Moduł `cv2.cuda`** to bezpośredni interfejs do CUDA: zamiast `Mat` operujesz na `cv2.cuda.GpuMat`, który mieszka w pamięci karty NVIDIA. Wywołania mają osobną przestrzeń nazw — `cv2.cuda.GaussianBlur`, `cv2.cuda.cvtColor`, `cv2.cuda.warpAffine` — i wymagają jawnego transferu: `gmat = cv2.cuda_GpuMat(); gmat.upload(arr)` oraz `arr = gmat.download()`. Plusem jest pełna kontrola: obiekt `cv2.cuda.Stream` pozwala nakładać transfer i obliczenia, dzięki czemu kolejne klatki wideo mogą się ładować w tle.\n\nMinusy są dwa i obydwa istotne. Po pierwsze, OpenCV **musi być zbudowane ze wsparciem CUDA** — paczka `opencv-python` z PyPI tego nie ma; potrzebujesz buildu z opcjami `WITH_CUDA=ON` i `OPENCV_DNN_CUDA=ON` albo gotowego obrazu Dockera. Po drugie, sprzęt to wyłącznie karty graficzne NVIDII; AMD i Apple Silicon zostają z T-API.\n\n![Schemat przetwarzania CUDA: dane są kopiowane z pamięci RAM do pamięci GPU, CPU wydaje GPU instrukcję uruchomienia jądra, rdzenie CUDA wykonują obliczenia równolegle, a wynik wraca z VRAM do RAM gospodarza](https://upload.wikimedia.org/wikipedia/commons/5/59/CUDA_processing_flow_%28En%29.PNG)\n*(Image: Wikimedia Commons, Tosaka, CC BY 3.0)*"
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d1/d1a/namespacecv_1_1cuda.html",
+          "title": "OpenCV — CUDA module overview",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.nvidia.com/cuda/",
+          "title": "NVIDIA CUDA Toolkit — official documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "kiedy-gpu",
+      "title": "Quiz: kiedy GPU faktycznie wygrywa?",
+      "type": "quiz",
+      "data": {
+        "question": "Małą ramkę 320×240 px chcesz przetworzyć prostym `cv2.GaussianBlur` z jądrem 5×5. Kolega proponuje: „przepiszmy to na `cv2.cuda` — GPU zawsze przyspiesza”. Co najczęściej stanie się po takiej zmianie?",
+        "options": [
+          "Pipeline przyspieszy proporcjonalnie do liczby rdzeni CUDA.",
+          "Pipeline może spowolnić, bo koszt transferu RAM ↔ VRAM oraz uruchomienia jądra przekroczy oszczędność na samym filtrowaniu.",
+          "Wynik będzie identyczny i o rząd wielkości szybszy, niezależnie od rozmiaru obrazu.",
+          "Trzeba najpierw skonwertować obraz do BGR, by GPU w ogóle zadziałało."
+        ],
+        "correct": [1],
+        "explanation": "Dla małych obrazów i taniej operacji koszt host↔device transfer oraz kernel-launch overhead często przewyższa zysk z równoległego liczenia. GPU realnie wygrywa na dużych obrazach, batchach klatek lub ciężkich operacjach (deep nets, duże konwolucje). To jedna z klasycznych pułapek z sekcji *Common misconceptions* — „GPU jest zawsze szybsze niż CPU” jest po prostu nieprawdą.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "zadanie-decyzja",
+      "title": "Implementacja: czy warto wysyłać obraz na GPU?",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję **`gpu_worth_it(pixels, cpu_ns_per_px, gpu_ns_per_px, transfer_ms)`**, która oszacuje, czy ścieżka GPU jest szybsza od CPU dla danej operacji.\n\n- `pixels` — liczba pikseli w obrazie (np. `1920*1080`).\n- `cpu_ns_per_px` — średni czas operacji na piksel na CPU (w nanosekundach).\n- `gpu_ns_per_px` — średni czas operacji na piksel na GPU (w nanosekundach).\n- `transfer_ms` — stały koszt transferu host ↔ device w **milisekundach** (zaokrąglony łącznie w obie strony).\n\nWzór:\n\n```\ncpu_total_ms = pixels * cpu_ns_per_px / 1e6\ngpu_total_ms = pixels * gpu_ns_per_px / 1e6 + transfer_ms\n```\n\nZwróć `True`, jeśli `gpu_total_ms < cpu_total_ms`, inaczej `False`.\n\nPrzykład:\n\n```\ngpu_worth_it(320*240,   2.0, 0.2, 1.5) == False\ngpu_worth_it(4000*3000, 2.0, 0.2, 1.5) == True\n```",
+        "starterCode": "def gpu_worth_it(pixels: int, cpu_ns_per_px: float, gpu_ns_per_px: float, transfer_ms: float) -> bool:\n    \"\"\"Oszacuj, czy ścieżka GPU pokona CPU.\n\n    pixels       - liczba pikseli w obrazie\n    cpu_ns_per_px - koszt operacji na piksel na CPU (ns)\n    gpu_ns_per_px - koszt operacji na piksel na GPU (ns)\n    transfer_ms  - staly koszt transferu host <-> device (ms)\n    \"\"\"\n    # TODO: policz cpu_total_ms i gpu_total_ms wg wzoru z briefu,\n    # zwroc True, jesli czas GPU jest mniejszy niz CPU.\n    return False\n",
+        "tests": [
+          {
+            "name": "small_frame_stays_on_cpu",
+            "body": "assert gpu_worth_it(320 * 240, 2.0, 0.2, 1.5) is False",
+            "hidden": false
+          },
+          {
+            "name": "large_image_picks_gpu",
+            "body": "assert gpu_worth_it(4000 * 3000, 2.0, 0.2, 1.5) is True"
+          },
+          {
+            "name": "cheap_op_loses_to_transfer_overhead",
+            "body": "assert gpu_worth_it(1920 * 1080, 0.05, 0.005, 5.0) is False"
+          },
+          {
+            "name": "zero_transfer_lets_faster_gpu_win",
+            "body": "assert gpu_worth_it(640 * 480, 1.0, 0.1, 0.0) is True"
+          }
+        ],
+        "solution": "def gpu_worth_it(pixels: int, cpu_ns_per_px: float, gpu_ns_per_px: float, transfer_ms: float) -> bool:\n    cpu_total_ms = pixels * cpu_ns_per_px / 1e6\n    gpu_total_ms = pixels * gpu_ns_per_px / 1e6 + transfer_ms\n    return gpu_total_ms < cpu_total_ms\n"
+      }
+    },
+    {
+      "id": "piaskownica",
+      "title": "Piaskownica: znajdź próg opłacalności GPU",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "def gpu_worth_it(pixels, cpu_ns_per_px, gpu_ns_per_px, transfer_ms):\n    cpu_total_ms = pixels * cpu_ns_per_px / 1e6\n    gpu_total_ms = pixels * gpu_ns_per_px / 1e6 + transfer_ms\n    return gpu_total_ms < cpu_total_ms\n\n# Pobaw sie scenariuszami: rozmiar obrazu, koszt operacji, transfer.\n# Zmieniaj liczby i obserwuj, kiedy decyzja przeskakuje z CPU na GPU.\nscenariusze = [\n    (\"Maly podglad 320x240, lekki blur\",       320*240,   1.0, 0.1, 1.5),\n    (\"Full HD, sredni filtr\",                  1920*1080, 1.0, 0.1, 1.5),\n    (\"4K wideo, ciezka konwolucja\",            3840*2160, 5.0, 0.3, 1.5),\n    (\"640x480, drogi transfer (slabe PCIe)\",   640*480,   1.0, 0.1, 5.0),\n]\n\nfor opis, px, cpu_ns, gpu_ns, t_ms in scenariusze:\n    cpu_ms = px * cpu_ns / 1e6\n    gpu_ms = px * gpu_ns / 1e6 + t_ms\n    decyzja = \"GPU\" if gpu_worth_it(px, cpu_ns, gpu_ns, t_ms) else \"CPU\"\n    print(f\"{opis:42s} CPU {cpu_ms:6.2f} ms | GPU {gpu_ms:6.2f} ms -> {decyzja}\")\n",
+        "encouragement": "Spróbuj znaleźć rozmiar obrazu, przy którym GPU zaczyna wygrywać dla Twojego transferu — granica między CPU a GPU rzadko leży tam, gdzie się jej spodziewasz."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d1/d1a/namespacecv_1_1cuda.html",
+      "title": "OpenCV — CUDA module overview",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d4d/tutorial_how_to_use_OpenCL.html",
+      "title": "OpenCV — Transparent API (T-API) and UMat reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.nvidia.com/cuda/",
+      "title": "NVIDIA CUDA Toolkit — official documentation",
+      "kind": "article"
+    }
+  ]
+}

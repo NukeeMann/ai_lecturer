@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "slug": "czym-sa-dane-sar-i-fizyka-radaru",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Czym są dane SAR i fizyka radaru",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Aktywny radar mikrofalowy zamiast pasywnej kamery: czym SAR różni się od zdjęcia optycznego, jak działa geometria patrzenia w bok i synteza apertury — fundament całego ósmego modułu.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "co-to-sar",
+      "title": "Aktywny radar zamiast pasywnej kamery",
+      "type": "theory",
+      "data": {
+        "markdown": "**SAR** (*Synthetic Aperture Radar*, radar z syntetyczną aperturą) to **aktywny** sensor mikrofalowy umieszczany na satelicie albo na samolocie. W odróżnieniu od kamery optycznej, która biernie zbiera światło słoneczne odbite od terenu, SAR sam wysyła krótkie impulsy o częstotliwości rzędu jednostek do kilkudziesięciu GHz i mierzy echo wracające z powierzchni Ziemi.\n\nKonsekwencje są praktyczne: SAR pracuje **w dzień i w nocy** (nie potrzebuje Słońca), **przez chmury, dym i lekki deszcz** (mikrofale tych pasm prawie nie są tłumione przez atmosferę) i nie mierzy luminancji ani koloru, tylko fizyczną wielkość — **współczynnik rozproszenia wstecznego** $\\sigma^0$ powierzchni. Ten sam port w obrazie SAR i na zdjęciu RGB wygląda więc inaczej: gładka woda jest *ciemna* (zwierciadlanie odbija falę dalej od anteny), wzburzone fale, mola i statki dają jasny ślad (rozpraszają z powrotem do satelity).\n\nPojedynczy piksel surowego produktu **SLC** (*Single Look Complex*) to **liczba zespolona** $z = a\\,e^{j\\varphi}$ — amplituda $a$ niesie informację o jasności echa, a faza $\\varphi$ — o odległości skośnej do celu z dokładnością do długości fali (to fundament technik interferometrycznych). W produktach **GRD** (*Ground Range Detected*), którymi zajmuje się ten kurs, faza jest już odrzucona i pracujemy z amplitudą lub jej kwadratem (intensywnością) jako liczbą rzeczywistą. Misja ESA **Sentinel-1** dostarcza takie dane otwarcie i bezpłatnie, z około 6-dniowym powtórzeniem dla większości globu — i właśnie ona jest robocza w tym module."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "geometria",
+      "title": "Patrzenie w bok i synteza apertury",
+      "type": "theory",
+      "data": {
+        "markdown": "SAR patrzy w **bok**, pod kątem padania $\\theta$ liczonym od normalnej do powierzchni (typowo 20°–45°), a nie w nadir. Odległość, jaką impuls przebywa w skos do celu i z powrotem, nazywa się **odległością skośną** $R$ (*slant range*); jej rzut na powierzchnię ziemi to **odległość na ziemi** $R_g$ (*ground range*). Ta sama geometria wpływa na rozdzielczość poprzeczną do toru lotu — w skos i na ziemi:\n\n$$ \\delta_r \\;=\\; \\frac{c}{2B}, \\qquad \\delta_g \\;=\\; \\frac{c}{2B\\,\\sin\\theta} $$\n\ngdzie $c$ to prędkość światła a $B$ — szerokość pasma nadawanego impulsu (chirpu). Im szersze pasmo, tym ostrzejsze rozróżnianie blisko siebie leżących celów. Sentinel-1 w trybie IW transmituje pasmo $B \\approx 56$ MHz, co daje $\\delta_r \\approx 2{,}7$ m.\n\nWzdłuż kierunku lotu (**azymut**) sztuczka jest sprytniejsza. Prawdziwa antena o długości $D$ rzuca na ziemię plamkę o długości około $L_{sa} = R\\,\\lambda / D$, gdzie $\\lambda = c/f_0$ jest długością fali nośnej. SAR rejestruje wszystkie impulsy, w których dany punkt mieści się w plamce, a następnie **koherentnie** je sumuje — *syntetyzując* wirtualną aperturę długości $L_{sa}$. Dla tak długiej apertury rozdzielczość azymutalna wynosi:\n\n$$ \\delta_a \\;=\\; \\frac{D}{2} $$\n\ni — co jest kontrintuicyjne — **nie zależy od wysokości orbity**. Sentinel-1 z anteną o długości 12,3 m osiąga teoretyczną rozdzielczość azymutalną około **6 m**, niezależnie od tego, że krąży 693 km nad Ziemią. To właśnie ta synteza apertury — tytułowe *S* w skrócie *SAR* — odróżnia obrazowanie satelitarne od zwykłego radaru meteorologicznego."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "Moreira et al. — A Tutorial on Synthetic Aperture Radar (IEEE GRSM 2013)",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek and Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ]
+    },
+    {
+      "id": "pasma-i-misje",
+      "title": "Pasma mikrofalowe i misje SAR",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "pasmo", "label": "Pasmo", "type": "string", "sortable": false },
+          { "key": "freq", "label": "Częstotliwość", "type": "string", "sortable": false },
+          { "key": "lambda", "label": "Długość fali", "type": "string", "sortable": false },
+          { "key": "zastosowanie", "label": "Typowe zastosowania", "type": "string", "sortable": false },
+          { "key": "misja", "label": "Przykładowa misja", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          { "pasmo": "X", "freq": "8–12 GHz", "lambda": "≈ 2,5–3,75 cm", "zastosowanie": "Wysokorozdzielcze zobrazowania miast, infrastruktura, pojazdy", "misja": "TerraSAR-X, COSMO-SkyMed" },
+          { "pasmo": "C", "freq": "4–8 GHz", "lambda": "≈ 3,75–7,5 cm", "zastosowanie": "Rolnictwo, lód morski, monitoring zalań i zmian — najbardziej uniwersalne", "misja": "Sentinel-1 (5,405 GHz), RADARSAT-2" },
+          { "pasmo": "L", "freq": "1–2 GHz", "lambda": "≈ 15–30 cm", "zastosowanie": "Biomasa lasu, penetracja koron drzew, wilgotność gleby", "misja": "ALOS-2 PALSAR, NISAR" },
+          { "pasmo": "P", "freq": "0,3–1 GHz", "lambda": "≈ 30–100 cm", "zastosowanie": "Bardzo głęboka penetracja roślinności, biomasa lasów tropikalnych", "misja": "BIOMASS (ESA, 2025+)" }
+        ]
+      }
+    },
+    {
+      "id": "rozdzielczosc",
+      "title": "Oblicz rozdzielczość zobrazowania SAR",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje, korzystając wprost ze wzorów z poprzedniej sekcji.\n\n1. `slant_resolution(bandwidth_hz)` — rozdzielczość skośna $\\delta_r = c/(2B)$, gdzie $c = 299\\,792\\,458$ m/s.\n2. `azimuth_resolution(antenna_length_m)` — rozdzielczość azymutalna **po syntezie apertury** $\\delta_a = D/2$.\n\nObie funkcje zwracają wartość w metrach, jako `float`. Zakładamy, że argumenty są dodatnie.\n\n```\nslant_resolution(56e6)        ->  ≈ 2,68 m   (Sentinel-1 IW)\nazimuth_resolution(12.3)     ->  6,15 m     (Sentinel-1)\n```",
+        "starterCode": "C = 299_792_458.0  # predkosc swiatla, m/s\n\ndef slant_resolution(bandwidth_hz):\n    # delta_r = c / (2 * B); zwroc wartosc w metrach.\n    pass\n\ndef azimuth_resolution(antenna_length_m):\n    # delta_a = D / 2 (po syntezie apertury); zwroc wartosc w metrach.\n    pass\n",
+        "tests": [
+          {
+            "name": "azimuth_resolution_sentinel1",
+            "body": "assert abs(azimuth_resolution(12.3) - 6.15) < 1e-9",
+            "hidden": false
+          },
+          {
+            "name": "azimuth_resolution_short_antenna",
+            "body": "assert abs(azimuth_resolution(0.6) - 0.3) < 1e-9"
+          },
+          {
+            "name": "slant_resolution_56MHz_matches_sentinel1",
+            "body": "assert abs(slant_resolution(56e6) - 299792458.0 / (2 * 56e6)) < 1e-9\nassert abs(slant_resolution(56e6) - 2.6767) < 1e-3"
+          },
+          {
+            "name": "slant_resolution_doubles_when_bandwidth_halves",
+            "body": "assert abs(slant_resolution(50e6) - 2.0 * slant_resolution(100e6)) < 1e-9"
+          }
+        ],
+        "solution": "C = 299_792_458.0  # predkosc swiatla, m/s\n\ndef slant_resolution(bandwidth_hz):\n    return C / (2.0 * bandwidth_hz)\n\ndef azimuth_resolution(antenna_length_m):\n    return antenna_length_m / 2.0\n"
+      }
+    },
+    {
+      "id": "check-fizyka",
+      "title": "Czym SAR różni się od kamery optycznej",
+      "type": "quiz",
+      "data": {
+        "question": "Który z poniższych opisów najlepiej oddaje, czym dane SAR różnią się od typowego zdjęcia satelitarnego z kamery optycznej?",
+        "options": [
+          "SAR rejestruje światło słoneczne odbite od ziemi w paśmie podczerwonym, więc dlatego potrafi pracować w nocy.",
+          "SAR jest aktywnym sensorem mikrofalowym — sam wysyła krótkie impulsy radarowe i mierzy ich echo, dlatego pracuje niezależnie od Słońca i przenika warstwę chmur.",
+          "SAR i kamera mierzą tę samą wielkość fizyczną (luminancję), tylko SAR ma dużo wyższą rozdzielczość przestrzenną.",
+          "SAR mierzy promieniowanie cieplne ziemi (jak kamera w dalekiej podczerwieni), dlatego dobrze widzi nocą rozgrzane obiekty."
+        ],
+        "correct": [1],
+        "explanation": "SAR jest sensorem **aktywnym** w paśmie mikrofalowym — sam emituje impulsy o częstotliwości rzędu kilku GHz i mierzy ich echo, czyli współczynnik rozproszenia wstecznego $\\sigma^0$ powierzchni. Dlatego nie potrzebuje Słońca (działa nocą), nie zależy od pogody w widzialnym (mikrofale przenikają chmury) i mierzy zupełnie inną wielkość fizyczną niż luminancja czy promieniowanie cieplne. Dystraktor o podczerwieni i dystraktor o promieniowaniu termicznym mylą SAR z biernym sensorem optycznym lub termowizyjnym.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-sentinel1",
+      "title": "Pobaw się geometrią Sentinel-1",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import math\n\nC = 299_792_458.0  # predkosc swiatla, m/s\n\n# Sentinel-1 IW (Interferometric Wide Swath) — typowe parametry:\nh = 693_000.0      # wysokosc orbity, m\ntheta_deg = 39.0   # kat padania w srodku swadu, stopnie\nD = 12.3           # dlugosc anteny azymutalnej, m\nB = 56e6           # szerokosc pasma chirpu, Hz\nf0 = 5.405e9       # czestotliwosc nosna, pasmo C, Hz\n\ntheta = math.radians(theta_deg)\nlam = C / f0                          # dlugosc fali, m\nslant_R = h / math.cos(theta)         # uproszczenie dla plaskiej Ziemi\nground_dist = h * math.tan(theta)\ndelta_r = C / (2 * B)                 # rozdzielczosc skosna\ndelta_g = C / (2 * B * math.sin(theta))  # rozdzielczosc na ziemi\ndelta_a = D / 2                       # rozdzielczosc azymutalna po syntezie\nL_sa = slant_R * lam / D              # plamka na ziemi -> wirtualna apertura\n\nprint(f'lambda  = {lam*100:6.2f} cm')\nprint(f'slant R = {slant_R/1000:6.1f} km')\nprint(f'ground  = {ground_dist/1000:6.1f} km')\nprint(f'delta_r = {delta_r:6.2f} m  (skosna)')\nprint(f'delta_g = {delta_g:6.2f} m  (na ziemi)')\nprint(f'delta_a = {delta_a:6.2f} m  (azymut, po syntezie)')\nprint(f'L_sa    = {L_sa/1000:6.2f} km (dlugosc syntezowanej apertury)')\n\n# Pomysly do eksperymentowania:\n# - Zmien h na 5_000 m (samolot zamiast satelity) i sprawdz, czy delta_a sie zmienia.\n# - Zmniejsz D do 0.6 m i zobacz, jak rosnie L_sa, ale delta_a maleje wprost proporcjonalnie.\n# - Zwieksz B do 100e6 Hz (wyzsza rozdzielczosc skosna) i porownaj delta_r.\n# - Pogon theta od 20 do 45 stopni i zaobserwuj, jak rozjezdzaja sie delta_r i delta_g.\n",
+        "encouragement": "Sprawdź sam, że $\\delta_a$ nie zmienia się, gdy zmieniasz wysokość orbity — to właśnie sedno syntezy apertury."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+      "title": "ESA Sentinel-1 SAR User Guide",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "Moreira et al. — A Tutorial on Synthetic Aperture Radar (IEEE Geoscience and Remote Sensing Magazine 2013)",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek and Konstantinos P. Papathanassiou",
+      "year": 2013
+    },
+    {
+      "url": "https://asf.alaska.edu/datasets/sar-data-sets/",
+      "title": "Alaska Satellite Facility — SAR data sets and tutorials",
+      "kind": "article"
+    }
+  ]
+}

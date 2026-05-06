@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "slug": "detektor-pieszych-hog-svm",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Detektor pieszych HOG + SVM",
+  "eyebrow": "DETEKCJA KLASYCZNA",
+  "description": "Klasyczny detektor Dalala i Triggsa (CVPR 2005), który zdefiniował praktyczną detekcję pieszych przed erą deep learningu — od gradientu pikseli, przez histogramy orientacji w komórkach 8×8 i normalizację w blokach 2×2, po liniowy SVM trenowany na INRIA Person. Zobaczysz, dlaczego HOG używa orientacji bez znaku i co tak naprawdę robi normalizacja blokowa, zaimplementujesz histogram orientacji jednej komórki, a na końcu odpalisz gotowy `cv2.HOGDescriptor` z `getDefaultPeopleDetector`.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "gradient-i-histogram-komorki",
+      "title": "Od gradientów do histogramu komórki",
+      "type": "theory",
+      "data": {
+        "markdown": "**HOG (Histogram of Oriented Gradients)** to klasyczny deskryptor obrazu zaproponowany przez Dalala i Triggsa (CVPR 2005) — pierwotnie pod konkretne zadanie: detekcję pieszych. Pomysł: zamiast patrzeć na surowe wartości pikseli, opisz każdy mały fragment okna **rozkładem orientacji jego gradientów**. Sylwetka stojącego człowieka jest dla algorytmu zlepkiem kierunkowych krawędzi — pionowe linie tułowia i nóg, ukośne kontury barków, krótkie poziome odcinki na wysokości ramion — a HOG koduje dokładnie ten profil.\n\nPełen pipeline w skrócie: **gradient** → **histogram orientacji w komórce 8×8** → **normalizacja w bloku 2×2 komórek** → **wektor cech dla okna detekcji** → **liniowy SVM** → **sliding window + piramida skali** → **NMS**. Tę lekcję rozłożymy na dwie połowy: w tej skupimy się na trzech pierwszych krokach (od pikseli do histogramu komórki), w następnej dokończymy klasyfikatorem i skanowaniem obrazu.\n\n![Czarno-biała fotografia ulicy z dwoma rowerami (Wikimedia Commons, plik Bikesgray.jpg) — obraz z silnymi pionowymi i ukośnymi krawędziami ram rowerów, ilustrujący typ struktury, na której HOG dobrze działa: lokalnie spójne pola orientacji gradientu](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons, plik Bikesgray.jpg, domena publiczna.)*\n\n**Krok 1 — gradient.** Dla każdego piksela $(x, y)$ liczymy pochodne kierunkowe $G_x$ i $G_y$ prostym filtrem $[-1,\\ 0,\\ 1]$ (Dalal i Triggs eksperymentalnie sprawdzili, że bardziej wymyślne jądra typu Sobel czy 3×3 Gaussian-derivative *pogarszają* wynik na zbiorze INRIA Person — cienki filtr $[-1,\\ 0,\\ 1]$ wygrał). Stąd magnituda i orientacja gradientu:\n\n$$ m(x, y) \\;=\\; \\sqrt{G_x^{2} + G_y^{2}}, \\qquad \\theta(x, y) \\;=\\; \\operatorname{atan2}\\bigl(G_y,\\ G_x\\bigr) $$\n\n**Krok 2 — orientacja bez znaku.** Pieszy może mieć ciemniejsze ubranie od tła albo jaśniejsze; w obu wypadkach krawędź jego sylwetki ma tę samą **geometryczną** orientację. HOG eksploatuje tę symetrię: zwija orientację do przedziału $[0,\\ 180^{\\circ})$ przez $\\theta \\bmod \\pi$ (orientacja **unsigned**) i dzieli ten zakres na $B = 9$ koszy o szerokości $20^{\\circ}$, z centrami w $10^{\\circ},\\ 30^{\\circ},\\ \\ldots,\\ 170^{\\circ}$.\n\n**Krok 3 — komórka 8×8.** Obraz dzielimy na rozłączne komórki $8 \\times 8$ pikseli. W każdej komórce liczymy **histogram dziewięciu koszy**: dla każdego z 64 pikseli wkładamy jego *magnitudę* (a nie 1!) do dwóch sąsiednich koszy proporcjonalnie do bliskości orientacji (interpolacja liniowa). Pixel z orientacją *dokładnie* w centrum kosza wkłada całą swoją magnitudę do tego jednego kosza; pixel leżący *idealnie pomiędzy* centrami koszy $b$ i $b{+}1$ rozdziela magnitudę 50/50.\n\nTo jest sedno HOG — komórka $8 \\times 8 = 64$ pikseli zostaje opisana **9 liczbami**, a każda z nich mówi „ile (ważone magnitudą) krawędzi tej komórki ma orientację w tym wąskim wycinku $20^{\\circ}$\". Ten 9-wymiarowy wektor jest atomem deskryptora — wszystko, co dzieje się dalej, to tylko ich składanie i normalizacja."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2005.177",
+          "title": "Dalal, N. and Triggs, B. — Histograms of Oriented Gradients for Human Detection (CVPR 2005)",
+          "kind": "paper",
+          "author": "Navneet Dalal and Bill Triggs",
+          "year": 2005
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Histogram_of_oriented_gradients",
+          "title": "Histogram of oriented gradients — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "bloki-svm-i-sliding-window",
+      "title": "Bloki, SVM i sliding window",
+      "type": "theory",
+      "data": {
+        "markdown": "**Krok 4 — blok 2×2 komórek i normalizacja.** Pojedyncza komórka jest niestabilna względem oświetlenia: globalne pociemnienie obrazu o czynnik $c$ skaluje *wszystkie* magnitudy gradientu o $c$ i fałszywie zmienia każdy histogram o ten sam czynnik. Dlatego HOG łączy każde **2×2 sąsiednie komórki** w **blok**, skleja ich histogramy w jeden wektor o długości $4 \\times 9 = 36$ i **normalizuje** ten wektor. Dalal i Triggs zalecają **L2-Hys** — normalizacja L2, klipowanie wartości > 0.2, ponowna normalizacja L2:\n\n$$ \\mathbf{v}' \\;=\\; \\frac{\\mathbf{v}}{\\sqrt{\\lVert \\mathbf{v} \\rVert_{2}^{2} + \\varepsilon^{2}}}, \\qquad \\mathbf{v}'' \\;=\\; \\mathrm{clip}(\\mathbf{v}',\\ 0,\\ 0.2),\\ \\text{a potem znowu L2.} $$\n\nBloki **nakładają się** (przesuwają się o jedną komórkę w obu osiach), więc każda komórka trafia do nawet 4 różnych bloków, każdy z własną normalizacją. To redundancja, ale właśnie ona daje odporność na lokalne zmiany kontrastu — zysk wart wzrostu wymiaru.\n\n**Krok 5 — okno detekcji.** Standardowe okno detektora pieszych Dalala-Triggsa to $64 \\times 128$ pikseli (proporcja sylwetki człowieka stojącego). Mieści się w nim $8 \\times 16 = 128$ komórek, czyli $7 \\times 15$ pozycji bloków $2 \\times 2$. Pełen deskryptor okna ma więc\n\n$$ 7 \\;\\cdot\\; 15 \\;\\cdot\\; 36 \\;=\\; 3780 $$\n\ncech — to jest wektor $\\mathbf{x} \\in \\mathbb{R}^{3780}$, który dostaje klasyfikator.\n\n**Krok 6 — liniowy SVM.** Dalal i Triggs trenują **liniową** maszynę wektorów nośnych na zbiorze INRIA Person (pozytywne — wycinki pieszych, negatywne — losowe wycinki tła i tzw. *hard negatives* zebrane w drugiej rundzie szkolenia). Decyzja to po prostu\n\n$$ f(\\mathbf{x}) \\;=\\; \\mathbf{w}^{\\top} \\mathbf{x} + b, \\qquad \\text{piesi} \\;\\Leftrightarrow\\; f(\\mathbf{x}) > 0 $$\n\nLiniowość ma kluczową zaletę: $\\mathbf{w}$ ma tę samą strukturę co $\\mathbf{x}$ (siatka bloków × siatka komórek × kosze orientacji), więc klasyfikację okna można potraktować jak konwolucję $\\mathbf{w}$ z całym obrazem — sliding window robi się prawie za darmo. To jest powód, dla którego HOG+SVM był praktyczny w 2005 r. na zwykłym CPU.\n\n**Krok 7 — piramida skali i NMS.** Pieszy może być na obrazie 30 px wysoki albo 600 px wysoki. Aby okno $64 \\times 128$ go „zobaczyło\", obraz jest skalowany w dół z czynnikiem `scale` (typowo 1.05 — 1.2) tworząc **piramidę**. Sliding window przeskanuje każdy poziom piramidy, każda detekcja jest mapowana z powrotem na bounding box w oryginalnym obrazie, a na końcu **non-maximum suppression** łączy nakładające się wykrycia w jedno.\n\nW OpenCV cała maszyneria kryje się za dwiema linijkami:\n\n```python\nhog = cv2.HOGDescriptor()\nhog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())\nboxes, weights = hog.detectMultiScale(\n    img_bgr,\n    winStride=(8, 8),    # krok przesuwania okna w pikselach\n    padding=(8, 8),      # padding wokol obrazu, by lapac pieszych przy brzegu\n    scale=1.05,          # czynnik piramidy skali\n)\n```\n\n`cv2.HOGDescriptor_getDefaultPeopleDetector()` zwraca dokładnie wektor $\\mathbf{w}$ (plus $b$) wytrenowany przez ekipę OpenCV na rozszerzonym INRIA Person — to gotowiec, którego nie musimy szkolić sami. Z tym samym `HOGDescriptor` możesz też podać **własny** detector przez `hog.setSVMDetector(my_w)`, jeżeli wytrenujesz SVM na własnych danych (np. detektor *plecaków* zamiast ludzi) — pipeline jest ten sam, zmienia się tylko klasyfikator na końcu."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2005.177",
+          "title": "Dalal, N. and Triggs, B. — Histograms of Oriented Gradients for Human Detection (CVPR 2005)",
+          "kind": "paper",
+          "author": "Navneet Dalal and Bill Triggs",
+          "year": 2005
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d5/d33/structcv_1_1HOGDescriptor.html",
+          "title": "OpenCV — cv::HOGDescriptor reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-normalizacja-bloku",
+      "title": "Sprawdź się: po co normalizacja w bloku 2×2?",
+      "type": "quiz",
+      "data": {
+        "question": "Po wyliczeniu lokalnych histogramów orientacji w komórkach 8×8 pikseli HOG łączy 2×2 sąsiednie komórki w **blok**, skleja ich histogramy w wektor 36 wartości i **normalizuje** ten wektor (np. L2-Hys), zanim wektory bloków zostaną doklejone do pełnego deskryptora okna. Co dokładnie ten krok normalizacji bloku osiąga?",
+        "options": [
+          "Sprawia, że deskryptor jest odporny na lokalne zmiany kontrastu i jasności — globalne pociemnienie obrazu skaluje wszystkie magnitudy gradientu o ten sam czynnik, a normalizacja blokowa ten czynnik dzieli z powrotem.",
+          "Konwertuje orientacje gradientu z signed $[0^{\\circ},\\ 360^{\\circ})$ na unsigned $[0^{\\circ},\\ 180^{\\circ})$.",
+          "Eliminuje potrzebę interpolacji liniowej między koszami w kroku histogramowania komórki.",
+          "Skraca długość deskryptora — 4 komórki × 9 koszy = 36 wartości zostają zastąpione 1 liczbą na blok."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "**Odpowiedź A** ujmuje sedno: pełen blok $2 \\times 2$ komórek ma 36 cech, a po normalizacji wszystkie one są dzielone przez tę samą normę $\\lVert \\mathbf{v} \\rVert_{2}$. Jeśli oświetlenie globalnie skaluje magnitudy gradientu o czynnik $c$, to całe $\\mathbf{v}$ zamienia się w $c \\cdot \\mathbf{v}$, jego norma w $c \\cdot \\lVert \\mathbf{v} \\rVert$, a po podzieleniu czynnik $c$ wypada — wektor po normalizacji jest niezmiennikiem skali magnitudy. Dokładnie tę własność Dalal i Triggs wymieniają jako kluczową dla działania HOG na obrazach z nierównomiernym oświetleniem.\n\n**B** myli kroki: konwersję orientacji do unsigned $[0,\\ 180^{\\circ})$ robimy *przed* histogramowaniem (krok 2), a nie podczas normalizacji bloku. Normalizacja operuje już na gotowych liczbach z histogramów, niezależnie od tego, jak orientacja została zwinięta.\n\n**C** to zwykła nieprawda — interpolacja w kosze histogramu (krok 3) i normalizacja bloku (krok 4) to dwie ortogonalne sprawy. Bez interpolacji tracimy precyzję kątową niezależnie od normalizacji.\n\n**D** odwraca prawdę — normalizacja **nie** redukuje wymiarów. Wektor wchodzący do bloku ma 36 wartości i wektor wychodzący też ma 36 wartości; zmieniają się tylko ich skale, nie ich liczba. To dlatego końcowy deskryptor okna $64 \\times 128$ ma 3780 cech, a nie 105 (= $7 \\cdot 15$).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-cell-histogram",
+      "title": "Zaimplementuj `compute_cell_histogram`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `compute_cell_histogram(mag, ori, n_bins=9)`, która liczy **histogram orientacji dla pojedynczej komórki HOG**.\n\n**Sygnatura.** `mag` i `ori` to dwuwymiarowe tablice NumPy tego samego kształtu (typowo $8 \\times 8$). `mag` zawiera magnitudy gradientu, `ori` — orientacje **w stopniach** w przedziale $[0,\\ 180)$. Zwróć tablicę 1D o długości `n_bins` i `dtype=np.float64`.\n\n**Reguły.**\n\n1. Środki koszy są równo rozłożone w $[0,\\ 180)$: dla `bin_width = 180.0 / n_bins` środki to $\\tfrac{bw}{2},\\ \\tfrac{3bw}{2},\\ \\ldots$. Dla domyślnego `n_bins=9` daje to centra $10^{\\circ},\\ 30^{\\circ},\\ \\ldots,\\ 170^{\\circ}$.\n2. Pixel z orientacją *dokładnie* w centrum kosza $b$ wkłada całą swoją magnitudę do kosza $b$.\n3. Pixel z orientacją *między* centrami koszy $b$ i $b{+}1$ rozdziela magnitudę liniowo proporcjonalnie do bliskości — np. orientacja $20^{\\circ}$ leży w połowie drogi między $10^{\\circ}$ (kosz 0) a $30^{\\circ}$ (kosz 1) i dzieli magnitudę 50/50 między te dwa kosze.\n4. Granice są **cykliczne**: orientacja $0^{\\circ}$ leży między centrami $170^{\\circ}$ (kosz 8) i $10^{\\circ}$ (kosz 0), dlatego rozdziela magnitudę 50/50 między kosz $n\\_bins{-}1$ a kosz $0$.\n\n```\nmag = [[1]],  ori = [[30]]   ->  [0, 1, 0, 0, 0, 0, 0, 0, 0]   # dokladnie w centrum kosza 1\nmag = [[1]],  ori = [[20]]   ->  [0.5, 0.5, 0, 0, 0, 0, 0, 0, 0]   # 50/50 miedzy 0 i 1\nmag = [[1]],  ori = [[0]]    ->  [0.5, 0, 0, 0, 0, 0, 0, 0, 0.5]   # 50/50 miedzy 8 i 0 (zawijanie)\n```\n\n*Wskazówka:* przesuń orientację o $-bw/2$, podziel przez `bin_width` — dostaniesz „współrzędną kosza\", której część całkowita to lewy kosz, a część ułamkowa — waga prawego kosza. Modulo `n_bins` zajmie się zawijaniem na granicy. `np.add.at` zaakumuluje wagi po zduplikowanych indeksach bez pętli Pythonowej.",
+        "starterCode": "import numpy as np\n\ndef compute_cell_histogram(mag, ori, n_bins=9):\n    # mag, ori: 2D numpy arrays tego samego ksztaltu (typowo 8x8).\n    # ori: orientacje w stopniach, w przedziale [0, 180).\n    # Zwroc 1D numpy array dlugosci n_bins, dtype=np.float64.\n    bin_width = 180.0 / n_bins\n    hist = np.zeros(n_bins, dtype=np.float64)\n    mag = np.asarray(mag, dtype=np.float64)\n    ori = np.asarray(ori, dtype=np.float64) % 180.0\n    # TODO: dla kazdego piksela rozdziel mag[y, x] miedzy dwa najblizsze kosze\n    # proporcjonalnie do odleglosci od ich centrow, z zawijaniem modulo n_bins.\n    return hist\n",
+        "tests": [
+          {
+            "name": "zerowe_wejscie_daje_zerowy_histogram",
+            "body": "import numpy as np\nmag = np.zeros((8, 8), dtype=np.float64)\nori = np.zeros((8, 8), dtype=np.float64)\nh = compute_cell_histogram(mag, ori)\nassert h.shape == (9,), f'oczekiwano shape (9,), dostalismy {h.shape}'\nassert np.allclose(h, np.zeros(9)), f'zerowe wejscie powinno dac zerowy histogram, dostalismy {h.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "pixel_w_centrum_kosza_1_idzie_caly_do_kosza_1",
+            "body": "import numpy as np\nmag = np.zeros((4, 4), dtype=np.float64); mag[1, 1] = 2.0\nori = np.zeros((4, 4), dtype=np.float64); ori[1, 1] = 30.0  # centrum kosza 1\nh = compute_cell_histogram(mag, ori)\nexpected = np.zeros(9); expected[1] = 2.0\nassert np.allclose(h, expected), f'orient=30 (centrum kosza 1) powinno dac caly weight w koszu 1, dostalismy {h.tolist()}'"
+          },
+          {
+            "name": "pixel_miedzy_bin_0_a_bin_1_dzieli_5050",
+            "body": "import numpy as np\nmag = np.zeros((4, 4), dtype=np.float64); mag[2, 2] = 1.0\nori = np.zeros((4, 4), dtype=np.float64); ori[2, 2] = 20.0  # polowa drogi miedzy 10 i 30\nh = compute_cell_histogram(mag, ori)\nexpected = np.zeros(9); expected[0] = 0.5; expected[1] = 0.5\nassert np.allclose(h, expected), f'orient=20 powinno dac 0.5 w 0 i 0.5 w 1, dostalismy {h.tolist()}'"
+          },
+          {
+            "name": "orient_0_dzieli_sie_miedzy_ostatni_i_pierwszy_kosz",
+            "body": "import numpy as np\nmag = np.zeros((4, 4), dtype=np.float64); mag[0, 0] = 1.0\nori = np.zeros((4, 4), dtype=np.float64); ori[0, 0] = 0.0\nh = compute_cell_histogram(mag, ori)\nexpected = np.zeros(9); expected[0] = 0.5; expected[8] = 0.5\nassert np.allclose(h, expected), f'orient=0 powinno zawijac sie 50/50 miedzy kosz 8 i 0, dostalismy {h.tolist()}'"
+          },
+          {
+            "name": "suma_histogramu_rowna_sumie_magnitud",
+            "body": "import numpy as np\nrng = np.random.RandomState(0)\nmag = rng.rand(8, 8) * 10.0\nori = rng.rand(8, 8) * 180.0\nh = compute_cell_histogram(mag, ori)\nassert h.shape == (9,), f'oczekiwano shape (9,), dostalismy {h.shape}'\nassert abs(float(h.sum()) - float(mag.sum())) < 1e-9, f'suma histogramu ({h.sum()}) musi rownac sie sumie magnitud ({mag.sum()})'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef compute_cell_histogram(mag, ori, n_bins=9):\n    bin_width = 180.0 / n_bins\n    hist = np.zeros(n_bins, dtype=np.float64)\n    mag = np.asarray(mag, dtype=np.float64)\n    ori = np.asarray(ori, dtype=np.float64) % 180.0\n    pos = (ori - bin_width / 2.0) / bin_width\n    low = np.floor(pos).astype(int) % n_bins\n    high = (low + 1) % n_bins\n    frac = pos - np.floor(pos)\n    np.add.at(hist, low.ravel(), (mag * (1.0 - frac)).ravel())\n    np.add.at(hist, high.ravel(), (mag * frac).ravel())\n    return hist\n"
+      }
+    },
+    {
+      "id": "sandbox-orientacje-na-syntetyku",
+      "title": "Piaskownica: globalny histogram orientacji na syntetycznej sylwetce",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna sylwetka: pionowa ciemna kolumna na jasnym tle udajaca tulow,\n# z dolozona poprzeczna belka udajaca ramiona.\nnp.random.seed(0)\nimg = np.full((180, 120), 200, dtype=np.uint8)\nimg[20:160, 50:70] = 60         # pionowy \"tulow\"\nimg[60:72,  25:95] = 60         # pozioma \"belka ramion\"\n# Lekki szum, zeby gradient nie byl zerowy w tle.\nnoise = (5.0 * np.random.randn(*img.shape)).astype(np.int16)\nimg = np.clip(img.astype(np.int16) + noise, 0, 255).astype(np.uint8)\n\n# Krok 1 pipelinu HOG — gradient prostym filtrem [-1, 0, 1].\ngx = cv2.Sobel(img, cv2.CV_32F, 1, 0, ksize=1)\ngy = cv2.Sobel(img, cv2.CV_32F, 0, 1, ksize=1)\nmag = cv2.magnitude(gx, gy)\nori = np.rad2deg(np.arctan2(gy, gx)) % 180.0\n\nprint('mag.shape:', mag.shape)\nprint('srednia magnituda na obrazie:', round(float(mag.mean()), 2))\nprint('zakres orientacji (st):', round(float(ori.min()), 1), '..', round(float(ori.max()), 1))\n\n# Histogram orientacji wazony magnituda dla calego obrazu (a nie pojedynczej komorki) —\n# pokaze nam, ze syntetyczna sylwetka jest dominowana przez pionowe i poziome krawedzie.\nedges = np.linspace(0, 180, 10)\nhist, _ = np.histogram(ori, bins=edges, weights=mag)\nhist = hist / max(hist.sum(), 1e-9)\nprint()\nprint('Globalny histogram orientacji (9 koszy x 20 st):')\nfor i, h in enumerate(hist):\n    bar = '#' * int(round(h * 80))\n    lo, hi = int(edges[i]), int(edges[i + 1])\n    print(f'  [{lo:3d}-{hi:3d} st]  {h:.3f}  {bar}')\n\n# W pelnym OpenCV-owym detektorze pieszych:\n#   hog = cv2.HOGDescriptor()\n#   hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())\n#   img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)\n#   boxes, weights = hog.detectMultiScale(img_bgr, winStride=(8, 8), padding=(8, 8), scale=1.05)\n#\n# Eksperymenty:\n#  1) Zmien szerokosc tulowia (img[20:160, X1:X2]) — przy 5 px gradient w x bedzie cienki,\n#     przy 40 px szeroki. Jak zmienia sie udzial koszy 80-100 st (krawedzie pionowe)\n#     w globalnym histogramie?\n#  2) Wycisnij belke ramion (zakomentuj img[60:72, 25:95] = 60). Czy kosze 0-20 i 160-180 st\n#     (krawedzie poziome) wyraznie spadaja?\n#  3) Zwroc gradient zwyklym Sobelem ksize=3 zamiast filtra [-1, 0, 1] (ksize=1).\n#     W oryginalnej pracy Dalala-Triggsa cieniutki [-1, 0, 1] *wygral*. Zobacz, czy globalna\n#     dominacja koszy nadal jest taka sama przy ksize=3 — nie powinna sie wyraznie zmienic.\n",
+        "encouragement": "Pokombinuj z proporcjami sylwetki i rodzajem filtru gradientowego — i przekonaj się, dlaczego HOG jest tak czuły na pionowe krawędzie, jakie pieszy zostawia w obrazie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/CVPR.2005.177",
+      "title": "Dalal, N. and Triggs, B. — Histograms of Oriented Gradients for Human Detection (CVPR 2005)",
+      "kind": "paper",
+      "author": "Navneet Dalal and Bill Triggs",
+      "year": 2005
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d5/d33/structcv_1_1HOGDescriptor.html",
+      "title": "OpenCV — cv::HOGDescriptor reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Histogram_of_oriented_gradients",
+      "title": "Histogram of oriented gradients — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 6 Recognition (Pedestrian detection / HOG)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

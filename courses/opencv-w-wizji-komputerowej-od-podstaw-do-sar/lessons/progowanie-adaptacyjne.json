@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "slug": "progowanie-adaptacyjne",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Progowanie adaptacyjne",
+  "eyebrow": "FILTRACJA",
+  "description": "Lokalny próg dla każdego piksela liczony ze średniej (lub średniej ważonej Gaussem) z otoczenia blockSize × blockSize — tarcza ratunkowa, gdy nierównomierne oświetlenie sprawia, że żaden globalny próg Otsu nie oddaje granicy obiekt/tło na całym obrazie.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "kiedy-globalny-prog-peka",
+      "title": "Gdy globalny próg pęka",
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji metoda Otsu sama dobierała próg $T$ na podstawie histogramu — i działała znakomicie tam, gdzie scena była **równomiernie oświetlona**, a histogram był **bimodalny** (dwa wyraźne piki rozdzielone głęboką doliną), np. ramy rowerów na jasnej ścianie:\n\n![Klasyczna scena testowa do progowania bimodalnego: czarno-białe zdjęcie dwóch rowerów opartych o jasną ścianę. Histogram tego obrazu ma dwa wyraźne piki — ciemne ramy i koła vs. jasne tło ściany — rozdzielone głęboką doliną; modelowy przypadek dla globalnego progu Otsu.](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons, „Bikesgray\", domena publiczna — ta sama scena, której Otsu użył jako modelu w poprzedniej lekcji.)*\n\nProblem zaczyna się, gdy oświetlenie jest **nierównomierne**: kartka dokumentu trzymana w dłoni pod lampą biurową, sufit z reflektorem w jednym rogu, zdjęcie tablicy ze słońcem wpadającym z boku, kostka kalibracyjna oświetlona z jednej strony. W takich scenach jasność „tła\" w jasnym fragmencie obrazu może być **wyższa** niż jasność „obiektu\" w ciemnym fragmencie — i żaden **jeden** próg $T$ nie odda granicy obiekt/tło na całym obrazie. Otsu generuje wtedy plamy: część obrazu binaryzuje poprawnie, część zalewa tłem, część wyrzuca jako pierwszy plan.\n\nRozwiązanie jest naturalne: zamiast jednego globalnego $T$, **policz osobny próg dla każdego piksela** na podstawie jego *lokalnego* sąsiedztwa. Jasna część kartki dostanie wyższy próg, ciemna — niższy, a granica obiekt/tło zostanie zachowana wszędzie tam, gdzie pomiędzy piksele tła a piksele obiektu da się włożyć rozsądne okno sąsiedztwa. To właśnie **progowanie adaptacyjne**, dostępne w OpenCV jako `cv2.adaptiveThreshold`."
+      }
+    },
+    {
+      "id": "mean-vs-gaussian-i-api",
+      "title": "Próg adaptacyjny: średnia kontra Gauss + API OpenCV",
+      "type": "theory",
+      "data": {
+        "markdown": "Lokalny próg liczymy jako **statystykę z okna** o boku `blockSize` (zawsze nieparzysty: 3, 5, 7, …, 21, 51 — środek okna trafia w aktualny piksel). Kanoniczny wzór, którym OpenCV i Bradley & Roth (2007) parametryzują rodzinę progów adaptacyjnych, to:\n\n$$ T(x, y) \\;=\\; \\mu_{N(x, y)} \\;-\\; C $$\n\ngdzie $N(x, y)$ to okno `blockSize × blockSize` wokół piksela $(x, y)$, $\\mu$ to średnia jasności w tym oknie, a $C$ to mała stała (zwykle $2$–$10$) odejmowana po, by lekko *przesunąć* próg w stronę tła i wytłumić szum w jednorodnych obszarach.\n\nOpenCV oferuje **dwie wersje** średniej $\\mu$:\n\n- `cv2.ADAPTIVE_THRESH_MEAN_C` — prosta średnia arytmetyczna (każdy sąsiad waży tyle samo).\n- `cv2.ADAPTIVE_THRESH_GAUSSIAN_C` — średnia ważona jądrem Gaussa: środek okna ma wagę najwyższą, krawędzie okna — pomijalną. Daje **gładsze, mniej „pikselastyczne\" maski**, kosztem nieznacznie większego kosztu obliczeniowego.\n\nPełna sygnatura wywołania:\n\n```python\nbin_img = cv2.adaptiveThreshold(\n    src=gray,                       # uint8, jednokanałowy\n    maxValue=255,                   # wartość zwracana dla pikseli > T(x, y)\n    adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\n    thresholdType=cv2.THRESH_BINARY,  # albo THRESH_BINARY_INV\n    blockSize=21,                   # NIEPARZYSTY rozmiar okna (3, 5, ..., 51, ...)\n    C=5,                            # stała odejmowana od średniej\n)\n```\n\nDwie najczęstsze pułapki: `blockSize` **musi być nieparzysty** (OpenCV rzuci wyjątek dla 4, 8, …), a `thresholdType` przyjmuje **tylko** `THRESH_BINARY` lub `THRESH_BINARY_INV` — modyfikator `THRESH_OTSU` z poprzedniej lekcji **nie ma sensu** w trybie adaptacyjnym i nie jest tu akceptowany. `blockSize` steruje **skalą** progu: małe okna (5–11) reagują na drobne detale i grawerunek, ale są wrażliwe na szum; duże (31–101) są stabilniejsze, ale tępią cienkie krawędzie i znikają detale mniejsze od okna."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+          "title": "OpenCV Python tutorial — Image thresholding (sekcja Adaptive Thresholding)",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1080/2151237X.2007.10129236",
+          "title": "Bradley, D. & Roth, G. — Adaptive Thresholding using the Integral Image (Journal of Graphics Tools, 2007)",
+          "kind": "paper",
+          "author": "Derek Bradley and Gerhard Roth",
+          "year": 2007
+        }
+      ]
+    },
+    {
+      "id": "parametry-cv-adaptivethreshold",
+      "title": "Parametry `cv2.adaptiveThreshold` w jednym miejscu",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "param", "label": "Parametr", "type": "string" },
+          { "key": "meaning", "label": "Znaczenie", "type": "string" },
+          { "key": "values", "label": "Typowe wartości / pułapki" }
+        ],
+        "rows": [
+          {
+            "param": "maxValue",
+            "meaning": "Wartość zwracana dla pikseli, które przekraczają lokalny próg (`I(x, y) > T(x, y)`).",
+            "values": "Niemal zawsze 255 — daje klasyczną binarną maskę uint8. Inne wartości mają sens tylko, gdy chcesz zachować skalę obrazu (np. mnożenie maski z oryginałem)."
+          },
+          {
+            "param": "adaptiveMethod",
+            "meaning": "Sposób liczenia statystyki lokalnej w oknie blockSize × blockSize.",
+            "values": "ADAPTIVE_THRESH_MEAN_C — średnia arytmetyczna (najszybsza). ADAPTIVE_THRESH_GAUSSIAN_C — średnia ważona Gaussem, gładsza maska, nieco wolniejsza. Innych metod tu nie ma — to jedyne dwie zarejestrowane flagi."
+          },
+          {
+            "param": "thresholdType",
+            "meaning": "Reguła binaryzacji po wyznaczeniu progu lokalnego T(x, y).",
+            "values": "Akceptowane TYLKO THRESH_BINARY i THRESH_BINARY_INV. Modyfikator THRESH_OTSU oraz tryby TRUNC / TOZERO / TOZERO_INV nie są tu obsługiwane — OpenCV rzuci błąd."
+          },
+          {
+            "param": "blockSize",
+            "meaning": "Bok okna sąsiedztwa (środek okna trafia w aktualny piksel).",
+            "values": "MUSI być NIEPARZYSTY i ≥ 3 (3, 5, 7, …, 21, 51, 101). Małe (5–11) reagują na drobne detale, ale są wrażliwe na szum. Duże (31–101) odporne na szum, ale tępią cienkie struktury. Dobry punkt startu: ~1/30 mniejszego boku obrazu, zaokrąglony do nieparzystej."
+          },
+          {
+            "param": "C",
+            "meaning": "Stała odejmowana od lokalnej średniej: T(x, y) = µ − C.",
+            "values": "Typowo 2–10. Dodatnia stała PRZESUWA próg w dół względem średniej, więc do pierwszego planu trafia więcej pikseli; gdy C = 0, jednorodne obszary degenerują się do szumu (próg ≈ wartość piksela). Wartości ujemne są legalne, lecz rzadko sensowne."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-adaptive-mean-from-scratch",
+      "title": "Zaimplementuj `adaptive_mean_threshold` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `adaptive_mean_threshold(image, block_size, C)`, która zwróci binarną maskę `uint8` (wartości 0 lub 255) tej samej rozdzielczości co `image`. Wymagania:\n\n1. `image` to dwuwymiarowy `numpy.ndarray` typu `uint8` (obraz w skali szarości).\n2. `block_size` MUSI być **nieparzystą** liczbą całkowitą $\\geq 3$. Dla parzystego lub mniejszego od 3 podnieś `ValueError`.\n3. Dla każdego piksela $(x, y)$ policz **średnią arytmetyczną** intensywności w oknie `block_size × block_size` wokół niego. Obsłuż brzegi przez **replikację krawędzi** (`np.pad(..., mode='edge')`) — okno zawsze ma `block_size × block_size` pikseli, nawet w rogach.\n4. Wynik dla piksela $(x, y)$:\n   - `255` jeśli $\\;I(x, y) > \\mu_{N(x, y)} - C\\;$,\n   - `0` w przeciwnym razie.\n5. Zwróć tablicę `uint8` o tym samym kształcie co `image`.\n\n**Nie używaj `cv2.adaptiveThreshold` ani `scipy.ndimage.uniform_filter`** — celem jest zaimplementowanie tego, co OpenCV liczy pod spodem (wyłączając trick z obrazem całkowym).\n\n```\nimg = np.tile([0, 0, 255, 255, 0, 0], (4, 1)).astype(np.uint8)\nadaptive_mean_threshold(img, block_size=3, C=0)\n# -> macierz 4×6 z dwoma środkowymi kolumnami = 255, resztą = 0\n```",
+        "starterCode": "import numpy as np\n\ndef adaptive_mean_threshold(image, block_size, C):\n    # image: numpy.ndarray 2D, dtype uint8\n    # block_size: nieparzysty int >= 3 (rzuc ValueError jesli nie)\n    # C: int / float, stala odejmowana od sredniej\n    #\n    # Krok po kroku:\n    #   1. Sprawdz block_size; jesli parzyste lub < 3 -> raise ValueError(...)\n    #   2. half = block_size // 2\n    #   3. Wypelnij brzegi przez replikacje:\n    #      padded = np.pad(image.astype(np.float64), half, mode='edge')\n    #   4. Dla kazdego (i, j) policz mean = padded[i:i+block_size, j:j+block_size].mean()\n    #   5. T = mean - C; out[i, j] = 255 jesli image[i, j] > T, w przeciwnym razie 0\n    #   6. Zwroc out jako numpy.ndarray dtype=uint8 o ksztalcie image.shape\n    image = np.asarray(image)\n    return np.zeros_like(image, dtype=np.uint8)\n",
+        "tests": [
+          {
+            "name": "ksztalt_i_dtype_zgadzaja_sie_z_wejsciem",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.integers(0, 256, size=(10, 14)).astype(np.uint8)\nout = adaptive_mean_threshold(img, block_size=3, C=2)\nassert isinstance(out, np.ndarray), f'oczekiwano numpy.ndarray, jest {type(out).__name__}'\nassert out.shape == (10, 14), f'ksztalt {out.shape} != (10, 14)'\nassert out.dtype == np.uint8, f'dtype {out.dtype} != uint8'\nassert set(np.unique(out).tolist()).issubset({0, 255}), f'wynik zawiera wartosci spoza zbioru {{0, 255}}: {sorted(np.unique(out).tolist())}'",
+            "hidden": false
+          },
+          {
+            "name": "uniform_obraz_C_zero_zwraca_zera",
+            "body": "import numpy as np\nimg = np.full((6, 6), 120, dtype=np.uint8)\nout = adaptive_mean_threshold(img, block_size=3, C=0)\nassert (out == 0).all(), 'Dla obrazu jednorodnego z C=0 oczekujemy samych zer (kazdy piksel jest rowny lokalnej sredniej, wiec warunek I > T jest falszywy).'"
+          },
+          {
+            "name": "stripe_pattern_jest_wykrywany_z_block3_C0",
+            "body": "import numpy as np\nrow = [0, 0, 255, 255, 0, 0]\nimg = np.tile(row, (4, 1)).astype(np.uint8)\nout = adaptive_mean_threshold(img, block_size=3, C=0)\nexpected = np.tile(row, (4, 1)).astype(np.uint8)\nassert out.shape == expected.shape, f'ksztalt {out.shape} != {expected.shape}'\nassert (out == expected).all(), f'oczekiwana maska:\\n{expected}\\nzwrocono:\\n{out}'"
+          },
+          {
+            "name": "wzrost_C_nie_zmniejsza_liczby_bialych_pikseli",
+            "body": "import numpy as np\nrng = np.random.default_rng(42)\nimg = rng.integers(0, 256, size=(20, 20)).astype(np.uint8)\nout_low = adaptive_mean_threshold(img, block_size=5, C=0)\nout_high = adaptive_mean_threshold(img, block_size=5, C=20)\nassert (out_high == 255).sum() >= (out_low == 255).sum(), 'Wieksze C obniza prog lokalny T = mean - C, wiec liczba bialych pikseli powinna byc niemalejaca; jest odwrotnie.'"
+          },
+          {
+            "name": "block_size_parzysty_rzuca_value_error",
+            "body": "import numpy as np\nimg = np.zeros((6, 6), dtype=np.uint8)\ntry:\n    adaptive_mean_threshold(img, block_size=4, C=2)\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError('Oczekiwano ValueError dla block_size=4 (musi byc nieparzysty).')"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef adaptive_mean_threshold(image, block_size, C):\n    image = np.asarray(image)\n    if not isinstance(block_size, (int, np.integer)) or block_size < 3 or block_size % 2 == 0:\n        raise ValueError(f'block_size musi byc nieparzystym int >= 3, jest {block_size!r}')\n    half = int(block_size) // 2\n    padded = np.pad(image.astype(np.float64), half, mode='edge')\n    h, w = image.shape\n    out = np.zeros_like(image, dtype=np.uint8)\n    for i in range(h):\n        for j in range(w):\n            window = padded[i:i + block_size, j:j + block_size]\n            mean = window.mean()\n            T = mean - C\n            out[i, j] = 255 if image[i, j] > T else 0\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-adaptive-pulapki",
+      "title": "Sprawdź się: pułapki progowania adaptacyjnego",
+      "type": "quiz",
+      "data": {
+        "question": "Sięgasz po `cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, blockSize=21, C=5)`. Które stwierdzenia o tym wywołaniu i o samej metodzie progowania adaptacyjnego są **prawdziwe**? (zaznacz wszystkie pasujące)",
+        "options": [
+          "`blockSize` MUSI być nieparzysty i $\\geq 3$ — dla `blockSize=4` (lub innego parzystego) OpenCV rzuca wyjątek.",
+          "Stała `C` jest **odejmowana** od lokalnej średniej: $T(x, y) = \\mu_{N(x, y)} - C$, więc większe `C` obniża próg i powoduje, że więcej pikseli klasyfikowanych jest jako pierwszy plan.",
+          "Różnica między `ADAPTIVE_THRESH_GAUSSIAN_C` a `ADAPTIVE_THRESH_MEAN_C` to **sposób ważenia sąsiadów** w oknie: Gaussian daje większą wagę środkowi okna i gładsze maski, MEAN waży wszystkich sąsiadów równo i jest nieco szybszy.",
+          "Próg adaptacyjny stosuje metodę Otsu **osobno w każdym oknie** `blockSize × blockSize`, dlatego radzi sobie z gradientem oświetlenia.",
+          "Gdy ustawimy `blockSize` równy szerokości obrazu, próg adaptacyjny degeneruje się do **dokładnie tego samego** progu, który zwróciłby `cv2.threshold(..., THRESH_OTSU)`."
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "**(0) PRAWDA.** Wymóg nieparzystego `blockSize` jest twardo egzekwowany — środek okna ma trafić w *konkretny* piksel, a parzysty rozmiar okna nie ma jednoznacznego środka. OpenCV rzuca dla `blockSize ∈ {2, 4, 6, …}`. **(1) PRAWDA.** Wzór $T(x, y) = \\mu_{N(x, y)} - C$ pokazuje to wprost: rosnące `C` obniża próg lokalny względem średniej, więc piksele, które wcześniej były „tuż pod\" średnią, lądują nad progiem i trafiają do pierwszego planu. To jest narzędzie do *przesuwania czułości* progu, nie do zmiany jego skali. **(2) PRAWDA.** `ADAPTIVE_THRESH_MEAN_C` liczy zwykłą średnią arytmetyczną (jednolite wagi w oknie), a `ADAPTIVE_THRESH_GAUSSIAN_C` waży sąsiadów jądrem Gaussa — środek okna dominuje, krawędzie wnoszą znikomy wkład. Gaussian daje gładsze maski (mniej „schodkowych\" granic), kosztem trochę większego kosztu obliczeniowego. **(3) FAŁSZ.** Pod spodem **nie ma** Otsu — to po prostu lokalna **średnia** (zwykła lub ważona Gaussem) minus `C`. Gdyby algorytm liczył pełną metodę Otsu w każdym oknie, koszt eksplodowałby zupełnie niepotrzebnie; wystarcza tania średnia plus stała korekta. **(4) FAŁSZ.** Nawet gdy `blockSize` obejmie cały obraz, wynikiem jest *globalna średnia* minus `C` — a to **nie** jest to samo, co próg Otsu (który maksymalizuje wariancję międzyklasową). Otsu może wskazać próg daleki od średniej, jeśli histogram jest mocno asymetryczny. Z `blockSize` rozmiaru obrazu progowanie adaptacyjne degeneruje się więc do *globalnego progu = średnia − C*, nie do Otsu.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-otsu-vs-adaptive",
+      "title": "Piaskownica: Otsu vs adaptive na obrazie z gradientem oświetlenia",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna scena z silnym GRADIENTEM oswietlenia po szerokosci.\n# Tlo ma jasnosc rosnaca od 30 do 200 (ciemny lewy bok, jasny prawy),\n# a NA tym tle lezy trzy jasne prostokaty (240) — po lewej (kontrast 240 vs ~50),\n# w srodku (240 vs ~110) i po prawej (240 vs ~170). To dokladnie scenariusz,\n# w ktorym GLOBALNY prog Otsu peka: zaden POJEDYNCZY T nie odda granicy\n# obiekt/tlo po obu stronach gradientu.\nH, W = 96, 240\nxs, _ = np.meshgrid(np.linspace(30, 200, W), np.arange(H))\nimg = xs.astype(np.float64)\nimg[20:60,  30:60]  = 240  # jasny obiekt po lewej\nimg[20:60, 100:130] = 240  # jasny obiekt w srodku\nimg[20:60, 170:200] = 240  # jasny obiekt po prawej\nimg = np.clip(img, 0, 255).astype(np.uint8)\n\n# 1) Globalny prog Otsu z poprzedniej lekcji — punkt odniesienia.\nt_otsu, bin_otsu = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)\n\n# 2) Adaptacyjny ze srednia ARYTMETYCZNA (MEAN_C).\nbin_mean = cv2.adaptiveThreshold(\n    img, 255, cv2.ADAPTIVE_THRESH_MEAN_C,\n    cv2.THRESH_BINARY, blockSize=21, C=5,\n)\n\n# 3) Adaptacyjny ze srednia WAZONA Gaussa (GAUSSIAN_C).\nbin_gauss = cv2.adaptiveThreshold(\n    img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\n    cv2.THRESH_BINARY, blockSize=21, C=5,\n)\n\nprint(f'Otsu T = {t_otsu:>5.1f}: bialych pikseli = {int((bin_otsu == 255).sum()):>5}')\nprint(f'MEAN_C  blockSize=21 C=5: bialych pikseli = {int((bin_mean  == 255).sum()):>5}')\nprint(f'GAUSS_C blockSize=21 C=5: bialych pikseli = {int((bin_gauss == 255).sum()):>5}')\n\n# Ile prostokatow Otsu wykrywa poprawnie? Sprawdz osobno trzy regiony:\nfor name, x0, x1 in [('lewy', 30, 60), ('srodkowy', 100, 130), ('prawy', 170, 200)]:\n    roi_otsu  = bin_otsu [20:60, x0:x1]\n    roi_mean  = bin_mean [20:60, x0:x1]\n    roi_gauss = bin_gauss[20:60, x0:x1]\n    print(\n        f'  {name:8s} prostokat: Otsu = {int((roi_otsu == 255).mean() * 100):3d}%  '\n        f'MEAN = {int((roi_mean == 255).mean() * 100):3d}%  '\n        f'GAUSS = {int((roi_gauss == 255).mean() * 100):3d}%'\n    )\n\n# Pytania do siebie:\n#   * Zwieksz blockSize z 21 do 51, 91, 151 i 201. W ktorym momencie maska\n#     przestaje rozrozniac trzy prostokaty i zaczyna „klasyfikowac\" globalnie?\n#   * Zmien C z 5 na 0 i -3. Czemu C = -3 sprawia, ze maska traci prostokaty?\n#     (Wskazowka: T = mean - C; ujemne C podnosi prog ponad srednia.)\n#   * Porownaj MEAN_C i GAUSSIAN_C dla tego samego (blockSize, C). Ktory daje\n#     mniej „schodkowych\" granic prostokatow? Czemu (rozklad wag w oknie)?\n#   * Dodaj cv2.GaussianBlur(img, (0, 0), sigmaX=1.0) PRZED adaptiveThreshold.\n#     Co dzieje sie z artefaktami w plaskich fragmentach tla?\n#   * Sproboj cv2.adaptiveThreshold z THRESH_BINARY_INV — kiedy odwrotna polaryzacja\n#     ma sens (np. ciemne litery na jasnym papierze, gdy wynikiem ma byc maska liter)?\n",
+        "encouragement": "Pokręć blockSize i C dla obu trybów — wyłap dokładnie ten moment, w którym Otsu pęka pod gradientem, a próg adaptacyjny zaczyna być już zbyt miejscowy."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+      "title": "OpenCV Python tutorial — Image thresholding (sekcja Adaptive Thresholding)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1080/2151237X.2007.10129236",
+      "title": "Bradley, D. & Roth, G. — Adaptive Thresholding using the Integral Image (Journal of Graphics Tools, 2007)",
+      "kind": "paper",
+      "author": "Derek Bradley and Gerhard Roth",
+      "year": 2007
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.threshold_local",
+      "title": "scikit-image — threshold_local reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 10 (Image Segmentation, local / variable thresholding section)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

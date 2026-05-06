@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "slug": "wczytywanie-wyswietlanie-i-zapis-obrazow",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Wczytywanie, wyświetlanie i zapis obrazów",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "Trzy funkcje, na których wyrasta każdy pipeline OpenCV: cv2.imread, cv2.imshow i cv2.imwrite — z pułapkami, których nie ma w dokumentacji.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "trzy-funkcje-io",
+      "title": "imread, imshow, imwrite — trzy filary I/O",
+      "type": "theory",
+      "data": {
+        "markdown": "Obrazy w OpenCV przepływają przez trzy podstawowe funkcje, które warto opanować jako jeden pakiet:\n\n- **`cv2.imread(path, flag)`** — wczytuje plik (`.png`, `.jpg`, `.tif`, `.bmp`, ...) i zwraca obraz jako `numpy.ndarray` w **BGR**. Flaga `cv2.IMREAD_COLOR` (domyślna) wymusza 3 kanały, `cv2.IMREAD_GRAYSCALE` daje obraz w skali szarości (shape `(H, W)`), a `cv2.IMREAD_UNCHANGED` zachowuje kanał alfa, jeśli jest w pliku.\n- **`cv2.imshow(window_name, img)`** — otwiera natywne okno systemowe i wyświetla obraz. Działa na desktopie z biblioteką GUI (Linux: GTK/Qt, macOS: Cocoa, Windows: WinAPI), **ale nie w Jupyter Notebook** ani w środowiskach bezgłowych (Docker, serwery zdalne). Zawsze parujemy z `cv2.waitKey(0)` i `cv2.destroyAllWindows()`, inaczej okno się zacina.\n- **`cv2.imwrite(path, img)`** — zapisuje tablicę do pliku. Format wybierany jest po **rozszerzeniu**: `out.png` → bezstratny PNG, `out.jpg` → stratny JPEG, `out.tif` → TIFF. Można doprecyzować jakość trzecim argumentem: `[cv2.IMWRITE_JPEG_QUALITY, 90]` (skala 0–100) lub `[cv2.IMWRITE_PNG_COMPRESSION, 6]` (skala 0–9, gdzie 9 to najsilniejsza, ale najwolniejsza kompresja).\n\n![Powiększenie tej samej fotografii dzikiego kota zapisane jako JPEG z malejącą jakością — od stopniowej utraty drobnych detali sierści po widoczne kwadratowe artefakty bloków DCT w prawej kolumnie](https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png/512px-Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png)\n\n*(Obraz: Wikimedia Commons, Michael Gäbler, CC BY 3.0 — pokazuje, dlaczego `IMWRITE_JPEG_QUALITY` ma znaczenie.)*\n\nTypowy szkielet skryptu wygląda tak:\n\n```python\nimport cv2\n\nimg = cv2.imread(\"input.jpg\", cv2.IMREAD_COLOR)\nif img is None:\n    raise FileNotFoundError(\"Nie udało się wczytać input.jpg\")\n\n# ... obróbka: zmiana rozmiaru, filtry, progowanie ...\n\ncv2.imwrite(\"output.png\", img)                              # bezstratnie\ncv2.imwrite(\"thumb.jpg\", img, [cv2.IMWRITE_JPEG_QUALITY, 80])  # stratnie\n```"
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/db/deb/tutorial_display_image.html",
+          "title": "OpenCV Python tutorial — Getting started with images (imread / imshow / imwrite)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "pulapki-io",
+      "title": "Pułapki: None zamiast wyjątku, imshow w notebooku, BGR przy zapisie",
+      "type": "theory",
+      "data": {
+        "markdown": "Dwa najczęstsze błędy początkujących nie dotyczą algorytmów — to nieczytelne zachowanie API.\n\n**`imread` nie rzuca wyjątku, gdy plik nie istnieje.** Zamiast tego po cichu zwraca `None`. Następna linia, `img.shape`, daje wtedy `AttributeError: 'NoneType' object has no attribute 'shape'`, co maskuje prawdziwą przyczynę (zła ścieżka, brak uprawnień, nieobsługiwany format). **Zawsze** waliduj wynik:\n\n```python\nimg = cv2.imread(path)\nif img is None:\n    raise FileNotFoundError(path)\n```\n\n**`imshow` wisi w Jupyter Notebook.** Wewnątrz notebooka nie ma natywnego okna; `cv2.imshow` próbuje je otworzyć i albo nic nie pokazuje, albo zawiesza kernel. W notebookach (i w skryptach uruchamianych zdalnie) używamy `matplotlib.pyplot.imshow` — pamiętając, że matplotlib oczekuje **RGB**, więc przed pokazaniem trzeba zamienić kanały:\n\n```python\nimport matplotlib.pyplot as plt\nplt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))\nplt.axis(\"off\"); plt.show()\n```\n\n**`imwrite` zapisuje to, co dostanie — bajt w bajt.** Jeśli wcześniej skonwertowałeś obraz do RGB pod matplotlib, a potem zapomniałeś wrócić do BGR przed `cv2.imwrite`, plik na dysku ma zamienione kanały. Zasada: trzymaj obraz w BGR przez całą obróbkę i konwertuj **tylko do wyświetlenia** lub na wejście modelu DL — od razu po skopiowaniu przez `.copy()`, żeby oryginał pozostał nietknięty."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html#ga288b8b3da0892bd651fce07b3bbd3a56",
+          "title": "cv2.imread — OpenCV API reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-safe-imread",
+      "title": "Zadanie: defensywny wrapper na imread",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Skoro `cv2.imread` zwraca `None` zamiast rzucać wyjątek, opłaca się napisać małą warstwę, która zamienia tę cichą porażkę w czytelny błąd. Zaimplementuj funkcję `assert_image_loaded(img, path)`, która:\n\n- jeśli `img is None`, rzuca `FileNotFoundError` z komunikatem zawierającym tekst `path` (np. `f'Nie udało się wczytać obrazu: {path}'`),\n- w przeciwnym razie zwraca `img` bez zmian (żeby dało się użyć w łańcuchu: `img = assert_image_loaded(cv2.imread(p), p)`).\n\nDzięki temu jednolinijkowiec na początku każdego skryptu chroni cię przed kaskadą tajemniczych `AttributeError` parę linii dalej.\n\n```python\nimg = assert_image_loaded(reader('foto.jpg'), 'foto.jpg')   # ok, zwraca obraz\nassert_image_loaded(reader('brak.jpg'), 'brak.jpg')         # FileNotFoundError\n```",
+        "starterCode": "import numpy as np\n\ndef assert_image_loaded(img, path):\n    \"\"\"Zwróć img albo rzuć FileNotFoundError, jeśli imread zwróciło None.\n\n    img:  ndarray albo None (typowy wynik cv2.imread)\n    path: ścieżka do pliku — używana w treści wyjątku, żeby było wiadomo,\n          czego brakuje\n    return: ndarray, jeśli img nie jest None\n    raises: FileNotFoundError z path w wiadomości, jeśli img is None\n    \"\"\"\n    # TODO:\n    #   1. jeśli img is None -> rzuć FileNotFoundError z path w komunikacie\n    #   2. w przeciwnym razie zwróć img bez modyfikacji (ten sam obiekt!)\n    return img\n",
+        "tests": [
+          {
+            "name": "passes_through_valid_array",
+            "body": "import numpy as np\nimg = np.zeros((4, 5, 3), dtype=np.uint8)\nout = assert_image_loaded(img, 'foto.jpg')\nassert out is img, 'Dla prawidłowego ndarray funkcja powinna zwrócić ten sam obiekt — bez kopiowania, bez modyfikacji.'",
+            "hidden": false
+          },
+          {
+            "name": "raises_filenotfound_when_none",
+            "body": "raised = False\ntry:\n    assert_image_loaded(None, 'brak.jpg')\nexcept FileNotFoundError:\n    raised = True\nassert raised, 'Dla img is None oczekiwany był FileNotFoundError, a nic nie zostało rzucone.'"
+          },
+          {
+            "name": "exception_message_contains_path",
+            "body": "try:\n    assert_image_loaded(None, '/tmp/nieistnieje.png')\nexcept FileNotFoundError as e:\n    assert '/tmp/nieistnieje.png' in str(e), f'Wiadomość wyjątku powinna zawierać ścieżkę, dostałem: {e!r}'\nelse:\n    raise AssertionError('FileNotFoundError nie został rzucony')"
+          },
+          {
+            "name": "does_not_swallow_other_falsy_arrays",
+            "body": "import numpy as np\nempty = np.zeros((0, 0, 3), dtype=np.uint8)  # pusta tablica, ale NIE None\nout = assert_image_loaded(empty, 'pusty.png')\nassert out is empty, 'Pusty ndarray (shape (0, 0, 3)) to nie None — funkcja powinna go przepuścić, a nie traktować jak błąd.'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef assert_image_loaded(img, path):\n    if img is None:\n        raise FileNotFoundError(f'Nie udało się wczytać obrazu: {path}')\n    return img\n"
+      }
+    },
+    {
+      "id": "quiz-imread-failure",
+      "title": "Sprawdź się: co zwróci imread, gdy plik nie istnieje?",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `img = cv2.imread('brak_pliku.jpg')`, ale w bieżącym katalogu naprawdę nie ma takiego pliku. Co dostajesz w `img` i co stanie się w następnej linii `print(img.shape)`?",
+        "options": [
+          "`img` jest pustym ndarray o shape `(0, 0, 0)`, a `img.shape` wypisze `(0, 0, 0)`",
+          "`img` jest `None`, więc `img.shape` rzuci `AttributeError: 'NoneType' object has no attribute 'shape'`",
+          "`cv2.imread` od razu rzuci `FileNotFoundError`, do `print` w ogóle nie dojdziemy",
+          "OpenCV zwraca obraz placeholder (czarny prostokąt 1×1), a `img.shape` wypisze `(1, 1, 3)`"
+        ],
+        "correct": [1],
+        "explanation": "`cv2.imread` celowo **nie rzuca** wyjątku, gdy plik jest niedostępny — po cichu zwraca `None`. Konsekwencją jest `AttributeError` w pierwszej linii, która próbuje cokolwiek z tym `None` zrobić (`img.shape`, `img.copy()`, `cv2.cvtColor(img, ...)`). Komunikat błędu mówi wtedy o `NoneType`, co maskuje prawdziwą przyczynę (zła ścieżka, brak uprawnień, nieobsługiwany format pliku). Dlatego po każdym `imread` warto napisać jednolinijkowiec `if img is None: raise FileNotFoundError(path)` — z taką walidacją błąd jest natychmiast czytelny i wskazuje konkretną ścieżkę, która zawiodła.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-jakosc-zapisu",
+      "title": "Eksperymentuj: rozszerzenie wybiera kodek",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# W tym sandboksie cv2 nie jest dostępne — zamiast tego symulujemy wybór\n# kodeka kompresji na podstawie rozszerzenia pliku, dokładnie tak jak\n# wewnętrznie robi to cv2.imwrite.\n\nimport numpy as np\n\ndef pick_codec(path):\n    \"\"\"Mapowanie rozszerzeń, którego cv2.imwrite używa pod maską.\"\"\"\n    ext = path.rsplit('.', 1)[-1].lower()\n    return {\n        'png':  ('PNG',  'bezstratny',              'IMWRITE_PNG_COMPRESSION 0..9'),\n        'jpg':  ('JPEG', 'stratny',                  'IMWRITE_JPEG_QUALITY 0..100'),\n        'jpeg': ('JPEG', 'stratny',                  'IMWRITE_JPEG_QUALITY 0..100'),\n        'tif':  ('TIFF', 'bezstratny',               'IMWRITE_TIFF_COMPRESSION'),\n        'bmp':  ('BMP',  'bezstratny',               '(brak parametru)'),\n        'webp': ('WebP', 'stratny lub bezstratny',   'IMWRITE_WEBP_QUALITY 0..100'),\n    }.get(ext, ('???', 'nieobsługiwany', 'cv2.imwrite zwróci False'))\n\nfor name in ['skan.png', 'thumb.jpg', 'archiwum.tif', 'logo.bmp', 'hero.webp', 'foto.heic']:\n    fmt, kind, param = pick_codec(name)\n    print(f'{name:14s} -> {fmt:5s}  [{kind}]  parametr: {param}')\n\n# Spróbuj:\n#  - dodaj rozszerzenie '.exr' albo '.pgm' i zobacz, czy mapowanie je zna\n#  - zsymuluj, że zapisujesz dwa różne obrazy do PNG: jeden szumowy\n#    (np. losowy uint8) i jeden jednolity (sama czerń) — który skompresuje\n#    się lepiej? Podpowiedź: bezstratny kodek opiera się o entropię\n#  - dla JPEG zauważ, że quality=100 nadal jest stratne — DCT zaokrągla\n",
+        "encouragement": "Pamiętaj, że samo rozszerzenie wybiera kodek — literówka w nazwie pliku to literówka w kompresji."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/db/deb/tutorial_display_image.html",
+      "title": "OpenCV Python tutorial — Getting started with images (imread / imshow / imwrite)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/da8/group__imgcodecs.html#ga288b8b3da0892bd651fce07b3bbd3a56",
+      "title": "cv2.imread — OpenCV API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html",
+      "title": "OpenCV Python tutorial — Changing colorspaces (BGR vs RGB)",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed.",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

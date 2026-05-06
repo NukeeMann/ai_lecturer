@@ -1,0 +1,278 @@
+{
+  "schemaVersion": 1,
+  "slug": "szybkie-deskryptory-orb-brisk-akaze",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Szybkie deskryptory: ORB, BRISK, AKAZE",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Trójka deskryptorów binarnych — ORB (FAST + zorientowany BRIEF), BRISK (próbki na okręgach koncentrycznych) i AKAZE (przestrzeń skali z dyfuzją nieliniową) — która zastąpiła SIFT i SURF tam, gdzie liczy się ms na klatkę: wektory uint8, dopasowanie odległością Hamminga, brak patentów.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "po-co-binarne-deskryptory",
+      "title": "Dlaczego potrzebujemy szybkich, binarnych deskryptorów",
+      "type": "theory",
+      "data": {
+        "markdown": "SIFT (128 floatów) i SURF (64 floaty) są jakościowo świetne, ale obciążają pamięć i CPU: jeden keypoint to **512 lub 256 bajtów**, a dopasowanie wymaga pełnej odległości euklidesowej. Kiedy lecisz z dronem, sklejasz panoramę na telefonie albo budujesz SLAM na 30 FPS, musisz to ciąć o rząd wielkości.\n\nOdpowiedzią z lat 2010–2013 są **deskryptory binarne**: zamiast wektora floatów zapisujemy ciąg bitów (typowo 256 lub 512), w którym każdy bit to wynik *jednego* prostego porównania jasności pomiędzy parą pikseli wokół keypointu. Konsekwencje są dramatyczne:\n\n- **Pamięć:** 256 bitów = 32 bajty na keypoint — 16× mniej niż SIFT.\n- **Dopasowanie:** zamiast pierwiastka z sumy kwadratów liczysz **odległość Hamminga** — XOR + popcount. Na nowoczesnych CPU to jedna instrukcja na 64 bity (`POPCNT`), więc dopasowanie 1 000 × 1 000 deskryptorów schodzi z setek ms do kilku ms.\n- **Patenty:** ORB, BRISK i AKAZE są **wolne od opłat licencyjnych** (BSD-friendly), w przeciwieństwie do SURF.\n\n![Wizualizacja keypointów ORB w obrazie: zielone okręgi z liniami orientacji rozsiane po całej scenie, szczególnie gęsto na narożnikach budynku — typowy wzorzec FAST + Harris-rerank, który stanowi rdzeń detektora ORB.](https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/FAST_Corner_Detector.svg/640px-FAST_Corner_Detector.svg.png)\n\n*(Obraz: Wikimedia Commons, ilustracja schematu testu FAST — okrąg 16 pikseli wokół kandydata p; ten sam test stoi u podstaw detektora ORB.)*\n\nW tej lekcji poznasz całą trójkę:\n\n- **ORB** (Rublee i in., 2011) — *Oriented FAST and Rotated BRIEF*, dziecko OpenCV; szybki i konkretny.\n- **BRISK** (Leutenegger i in., 2011) — *Binary Robust Invariant Scalable Keypoints*; własny wzorzec próbkowania na okręgach koncentrycznych.\n- **AKAZE** (Alcantarilla i in., 2013) — *Accelerated KAZE*; budowany na **nieliniowej** przestrzeni skali (dyfuzja brzegowo-zachowawcza), nie na rozmywaniu Gaussem."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Oriented_FAST_and_rotated_BRIEF",
+          "title": "Oriented FAST and rotated BRIEF — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "orb-anatomia",
+      "title": "ORB krok po kroku: zorientowany FAST + sterowany BRIEF",
+      "type": "theory",
+      "data": {
+        "markdown": "**ORB** składa się z dwóch klocków: detektora keypointów i deskryptora.\n\n**1. Detekcja: oFAST.** Bazuje na detektorze **FAST-9** — piksel $p$ jest narożnikiem, jeśli na okręgu Bresenhama o promieniu 3 (16 pikseli wokół $p$) istnieje **9 sąsiadujących** pikseli wszystkich jaśniejszych lub wszystkich ciemniejszych od $p$ o pewien próg $t$:\n\n$$ \\#\\{\\, x_i : I(x_i) > I(p) + t \\,\\} \\geq 9 \\quad \\text{lub} \\quad \\#\\{\\, x_i : I(x_i) < I(p) - t \\,\\} \\geq 9 $$\n\nTo daje *gdzie* są keypointy, ale FAST nie ma orientacji ani skali. ORB dodaje:\n\n- **Wielo-skalowość** — buduje piramidę obrazów (`nlevels=8`, `scaleFactor=1.2`) i wykonuje FAST na każdym poziomie.\n- **Rerank Harrisem** — keypointy FAST są rerankowane miarą Harrisa $R = \\det M - k\\,(\\mathrm{tr}\\, M)^2$, by zachować *N* najsilniejszych.\n- **Orientacja przez moment intensywności** (*intensity centroid*). Wokół keypointu liczymy moment\n\n$$ m_{pq} \\;=\\; \\sum_{(x, y)} x^p\\, y^q\\, I(x, y), \\qquad C \\;=\\; \\bigl(m_{10}/m_{00},\\; m_{01}/m_{00}\\bigr) $$\n\norientacja $\\theta = \\operatorname{atan2}(m_{01}, m_{10})$ to kierunek od piksela centralnego do *centroidu* jasności w łacie. Tani trik — i działa.\n\n**2. Deskryptor: rBRIEF.** Klasyczny **BRIEF** (Calonder 2010) bierze 256 wcześniej wylosowanych par pikseli $(p_i, q_i)$ wokół keypointu i tworzy 256-bitowy ciąg, w którym bit $i$ to:\n\n$$ \\tau(p_i, q_i) \\;=\\; \\begin{cases} 1 & \\text{jeśli } I(p_i) < I(q_i)\\\\ 0 & \\text{w przeciwnym razie} \\end{cases} $$\n\nProblem: BRIEF nie jest obrotowo-niezmienniczy — obrót łaty zmienia bity. ORB to naprawia przez **rotację par o orientację $\\theta$ keypointu** przed porównaniem (*steered BRIEF*). Dodatkowo wybór par nie jest losowy: ORB greedy-uczy 256 par o **niskiej wzajemnej korelacji i wariancji ≈ 0,5** (chcemy bity informacyjne, nie skorelowane).\n\nW OpenCV: `cv2.ORB_create(nfeatures=500)` zwraca deskryptor `(N, 32) uint8` — to 32 bajty × 8 bitów = **256 bitów na keypoint**."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICCV.2011.6126544",
+          "title": "Rublee, E., Rabaud, V., Konolige, K. and Bradski, G. — ORB: An efficient alternative to SIFT or SURF (ICCV 2011)",
+          "kind": "paper",
+          "author": "Ethan Rublee, Vincent Rabaud, Kurt Konolige and Gary Bradski",
+          "year": 2011
+        }
+      ]
+    },
+    {
+      "id": "brisk-i-akaze",
+      "title": "BRISK i AKAZE — co je odróżnia od ORB",
+      "type": "theory",
+      "data": {
+        "markdown": "**BRISK** (*Binary Robust Invariant Scalable Keypoints*, Leutenegger i in., 2011) zachowuje filozofię „binarny deskryptor + Hamming\", ale projektuje *wzorzec próbkowania* od podstaw zamiast losować pary jak BRIEF.\n\n- Wzorzec to **60 punktów na czterech koncentrycznych okręgach** wokół keypointu. Każdy punkt jest dodatkowo wygładzany Gaussem o promieniu proporcjonalnym do odległości od środka, co eliminuje aliasing.\n- Pary próbek dzielone są na *short pairs* (krótkie, do liczenia bitów deskryptora) i *long pairs* (długie, do estymacji orientacji z gradientów lokalnych). Dzięki temu BRISK ma deterministyczny, wbudowany sposób liczenia kąta — bez potrzeby intensity centroid jak w ORB.\n- Detektor to **AGAST** (zoptymalizowany krewny FAST) na piramidzie skali z interpolacją sub-pikselową w skali — keypointy lokalizowane są dokładniej niż w ORB.\n- Deskryptor: **512 bitów** (64 bajty) — dwa razy dłuższy niż ORB, ale wciąż 8× krótszy niż SIFT.\n\nW OpenCV: `cv2.BRISK_create()` zwraca deskryptor `(N, 64) uint8`.\n\n**AKAZE** (*Accelerated KAZE*, Alcantarilla i in., 2013) jest najmłodszą i koncepcyjnie najciekawszą trójką — zrywa z ideą piramidy gaussowskiej.\n\n- **Nieliniowa przestrzeń skali.** Zamiast rozmywać obraz Gaussem (który traktuje krawędzie i tekstury jednakowo), AKAZE rozwiązuje równanie dyfuzji z funkcją przewodnictwa $g(\\nabla I)$, która **wygasza dyfuzję wzdłuż krawędzi**. W praktyce krawędzie pozostają ostre w głębszych skalach. Numerycznie używa schematu **FED** (*Fast Explicit Diffusion*) — stąd „Accelerated\".\n- **Detektor:** wyznacznik macierzy Hessianu obliczanego w nieliniowej przestrzeni skali.\n- **Deskryptor: M-LDB** (*Modified Local Difference Binary*) — porównuje **średnie** intensywności w podblokach łaty (a nie pojedyncze piksele), dlatego jest mniej wrażliwy na szum. Domyślnie 486 bitów (61 bajtów; OpenCV pakuje to jako `(N, 61) uint8`), wariant z mniejszą rozdzielczością daje 256 bitów.\n\nW OpenCV: `cv2.AKAZE_create()` — domyślnie `descriptor_type = DESCRIPTOR_MLDB`, `descriptor_size = 0` (= maksymalny, 486 bitów).\n\nKonsekwencja praktyczna: dla *gładkich* scen z miękkimi tonalnymi przejściami (skanowane dokumenty, medyczne zdjęcia) AKAZE bije ORB na łeb, bo nieliniowa dyfuzja nie myli „blob-ów\" tekstury z krawędziami obiektów. Dla scen *wyraziście narożnikowych* (architektura, zabudowa miejska) ORB nadąża i jest 3–5× szybszy."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.5244/C.27.13",
+          "title": "Alcantarilla, P. F., Nuevo, J. and Bartoli, A. — Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces (BMVC 2013)",
+          "kind": "paper",
+          "author": "Pablo F. Alcantarilla, Jesús Nuevo and Adrien Bartoli",
+          "year": 2013
+        }
+      ]
+    },
+    {
+      "id": "porownanie-tabelaryczne",
+      "title": "ORB vs BRISK vs AKAZE — szybka ściąga",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "wymiar", "label": "Wymiar", "type": "string" },
+          { "key": "orb", "label": "ORB", "type": "string" },
+          { "key": "brisk", "label": "BRISK", "type": "string" },
+          { "key": "akaze", "label": "AKAZE", "type": "string" }
+        ],
+        "rows": [
+          {
+            "wymiar": "Detektor keypointów",
+            "orb": "FAST-9 + rerank Harrisa, na piramidzie gaussowskiej",
+            "brisk": "AGAST + interpolacja sub-pikselowa w skali",
+            "akaze": "Wyznacznik Hessianu w nieliniowej przestrzeni skali (FED)"
+          },
+          {
+            "wymiar": "Estymacja orientacji",
+            "orb": "Moment intensywności (intensity centroid)",
+            "brisk": "Gradienty z par dłuższych (long pairs) wzorca",
+            "akaze": "Histogram orientacji w łacie (jak SIFT)"
+          },
+          {
+            "wymiar": "Typ deskryptora",
+            "orb": "Binarny — rBRIEF (zorientowany)",
+            "brisk": "Binarny — testy par we wzorcu okręgowym",
+            "akaze": "Binarny — M-LDB (Modified LDB)"
+          },
+          {
+            "wymiar": "Długość deskryptora",
+            "orb": "256 bitów (32 bajty)",
+            "brisk": "512 bitów (64 bajty)",
+            "akaze": "486 bitów domyślnie (61 bajtów)"
+          },
+          {
+            "wymiar": "Dtype w OpenCV",
+            "orb": "uint8, kształt (N, 32)",
+            "brisk": "uint8, kształt (N, 64)",
+            "akaze": "uint8, kształt (N, 61)"
+          },
+          {
+            "wymiar": "Norma matchera",
+            "orb": "cv2.NORM_HAMMING",
+            "brisk": "cv2.NORM_HAMMING",
+            "akaze": "cv2.NORM_HAMMING"
+          },
+          {
+            "wymiar": "Szybkość względna (1× = SIFT)",
+            "orb": "≈ 10–20× szybszy niż SIFT",
+            "brisk": "≈ 5–10× szybszy niż SIFT",
+            "akaze": "≈ 3–5× szybszy niż SIFT (dyfuzja kosztuje)"
+          },
+          {
+            "wymiar": "Najmocniejsza strona",
+            "orb": "Bezkonkurencyjna szybkość, super w SLAM/AR",
+            "brisk": "Dobry kompromis dokładność/szybkość, świetna lokalizacja sub-pikselowa",
+            "akaze": "Najwyższa jakość dopasowań — krawędzie, gładkie tonacje, fotografia"
+          },
+          {
+            "wymiar": "Gdzie się sypie",
+            "orb": "Gładkie tonacje, brak wyraźnych narożników (np. skany)",
+            "brisk": "Sceny silnie obrócone — wzorzec próbkowania nieco mniej elastyczny niż AKAZE",
+            "akaze": "Bardzo szybkie strumienie wideo — wolniejszy od ORB i BRISK"
+          },
+          {
+            "wymiar": "Status patentowy / licencja",
+            "orb": "Wolny — BSD; ORB stworzony przez OpenCV jako antidotum na SIFT/SURF",
+            "brisk": "Wolny — autorzy zwolnili z opłat licencyjnych",
+            "akaze": "Wolny — BSD"
+          },
+          {
+            "wymiar": "Konstruktor OpenCV",
+            "orb": "cv2.ORB_create(nfeatures=500)",
+            "brisk": "cv2.BRISK_create()",
+            "akaze": "cv2.AKAZE_create()"
+          }
+        ]
+      }
+    },
+    {
+      "id": "drag-match-norma",
+      "title": "Dopasuj deskryptor do właściwej normy odległości",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każdy z poniższych deskryptorów wymaga konkretnej normy w `cv2.BFMatcher` lub w `cv2.FlannBasedMatcher`. Przeciągnij deskryptor do strefy z poprawną normą.",
+        "items": [
+          { "id": "sift", "label": "SIFT (float32, 128-D)" },
+          { "id": "surf", "label": "SURF (float32, 64-D)" },
+          { "id": "orb", "label": "ORB (uint8, 32 bajty)" },
+          { "id": "brisk", "label": "BRISK (uint8, 64 bajty)" },
+          { "id": "akaze", "label": "AKAZE (uint8, 61 bajtów)" }
+        ],
+        "zones": [
+          {
+            "id": "l2",
+            "label": "cv2.NORM_L2 — pierwiastek z sumy kwadratów (float)",
+            "accepts": ["sift", "surf"]
+          },
+          {
+            "id": "hamming",
+            "label": "cv2.NORM_HAMMING — XOR + popcount (binarne)",
+            "accepts": ["orb", "brisk", "akaze"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "requireAll": true,
+        "explanation": "Deskryptory **floatowe** (SIFT, SURF) traktujemy jako wektory w przestrzeni euklidesowej i mierzymy `NORM_L2` (lub szybsze przybliżenie KD-tree w FLANN). Deskryptory **binarne** (ORB, BRISK, AKAZE) to ciągi bitów — odległość liczymy jako `NORM_HAMMING` (liczba różniących się bitów = `popcount(a XOR b)`). Pomylenie norm to klasyczny pierwszy błąd: `BFMatcher(cv2.NORM_L2)` na ORB-ie da matche, ale jakościowo bezsensowne — bo `np.linalg.norm` na 32-bajtowych uintach nie odzwierciedla podobieństwa kodów Hamminga. Wariant `cv2.NORM_HAMMING2` używamy tylko dla ORB-a z `WTA_K=3` lub `WTA_K=4` (gdzie bity są grupowane — ORB domyślnie ma `WTA_K=2` i wtedy `NORM_HAMMING` jest właściwa)."
+      }
+    },
+    {
+      "id": "quiz-kiedy-co-wybrac",
+      "title": "Sprawdź się: który deskryptor wybierzesz do tego zadania?",
+      "type": "quiz",
+      "data": {
+        "question": "Budujesz mobilny SLAM na smartfonie: kamera 30 FPS, sceny miejskie (zabudowa, znaki drogowe, narożniki), wymóg działania w czasie rzeczywistym na CPU, brak dostępu do GPU, aplikacja sprzedawana komercyjnie. Który deskryptor jest najlepszym domyślnym wyborem?",
+        "options": [
+          "SIFT — to złoty standard, więc da najlepszą dokładność i resztą się zajmiemy później.",
+          "SURF — jest 2–3× szybszy niż SIFT, a obraz całkowy działa świetnie na ARM.",
+          "ORB — szybki, binarny (32 bajty na keypoint, dopasowanie Hammingiem), wolny od patentów; ten profil sceny ma wyraźne narożniki, czyli to terytorium FAST.",
+          "AKAZE — jest najnowszy z trójki binarnej, więc na pewno jest najszybszy."
+        ],
+        "correct": [2],
+        "explanation": "ORB został zaprojektowany dokładnie do tego scenariusza: **szybkość** (FAST + binarny BRIEF + Hamming dają rzędy wielkości przyspieszenia w stosunku do SIFT/SURF), **ślad pamięciowy** (32 bajty/keypoint vs 512 dla SIFT to istotna różnica, gdy trzymasz mapę punktów charakterystycznych w RAM smartfona), oraz **brak patentów** — kluczowe dla zamkniętego, sprzedawanego produktu. Sceny miejskie mają mnóstwo narożników, więc detektor FAST gęsto je pokrywa.\n\nOdpowiedź A myli „złoty standard\" z „najlepszym wyborem produkcyjnym\" — SIFT na 30 FPS na CPU smartfona po prostu nie zdąży. Odpowiedź B ignoruje **patent SURF**, który wciąż obowiązuje (nie da się go legalnie użyć w zamkniętym produkcie bez licencji); poza tym SURF jest *szybszy od SIFT*, ale wciąż wolniejszy niż ORB. Odpowiedź D zakłada, że „najnowszy = najszybszy\" — w rzeczywistości AKAZE jest **wolniejszy** od ORB i BRISK (nieliniowa dyfuzja kosztuje), za to dokładniejszy na gładkich tonacjach; do SLAM-u w mieście nie potrzebujesz tej zalety.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-hamming-distance",
+      "title": "Zaimplementuj odległość Hamminga dla deskryptora binarnego",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Deskryptor binarny w OpenCV jest tablicą `uint8` o kształcie `(32,)` (ORB), `(64,)` (BRISK) lub `(61,)` (AKAZE). Każdy bajt to 8 bitów deskryptora. **Odległość Hamminga** między dwoma deskryptorami to liczba bitów, na których się różnią:\n\n$$ d_H(a, b) \\;=\\; \\sum_{i = 1}^{8 N} \\bigl[\\, a_i \\neq b_i \\,\\bigr] \\;=\\; \\operatorname{popcount}(a \\oplus b) $$\n\nNa CPU robi się to dwoma instrukcjami: `XOR` na poziomie bajtów, potem `POPCNT` (lub `bin(...).count('1')` w czystym Pythonie).\n\nNapisz funkcję `hamming_distance(a, b)`, która:\n\n1. Bierze dwa obiekty, które można zinterpretować jako sekwencje bajtów: `bytes`, `bytearray`, lista intów `0–255`, lub jednowymiarowa tablica NumPy `uint8`.\n2. Zwraca `int` — sumę bitów różniących się między `a` i `b`.\n3. Rzuca `ValueError`, jeśli `a` i `b` mają różną długość.\n\n```\nhamming_distance(b'\\xFF\\x00', b'\\x00\\xFF')  # -> 16 (kazdy z 16 bitow sie rozni)\nhamming_distance([0, 0, 0], [0, 0, 0])      # -> 0\nhamming_distance([0b10101010], [0b11110000])# -> 4\n```\n\nNie używaj `numpy` — celem jest, żeby zobaczyć mechanikę XOR + popcount w czystym Pythonie. (Wewnątrz `cv2.BFMatcher(cv2.NORM_HAMMING)` to się i tak liczy w SIMD.)",
+        "starterCode": "def hamming_distance(a, b):\n    # a, b: bytes | bytearray | list[int] | dowolna iterowalna sekwencja bajtow 0..255.\n    # Zwroc liczbe bitow, na ktorych a i b sie roznia.\n    # Rzuc ValueError, jesli len(a) != len(b).\n    a = list(a)\n    b = list(b)\n    if len(a) != len(b):\n        raise ValueError('a and b must have equal length')\n    total = 0\n    for x, y in zip(a, b):\n        # TODO: XOR bajtow x i y, policz ustawione bity, dodaj do total.\n        pass\n    return total\n",
+        "tests": [
+          {
+            "name": "wszystkie_bity_rozne_w_dwoch_bajtach",
+            "body": "# 0xFF XOR 0x00 = 0xFF (8 bitow) -> 2 bajty * 8 = 16.\nassert hamming_distance(b'\\xFF\\x00', b'\\x00\\xFF') == 16",
+            "hidden": false
+          },
+          {
+            "name": "identyczne_deskryptory_zero",
+            "body": "import os\nrandom_bytes = os.urandom(32)\nassert hamming_distance(random_bytes, random_bytes) == 0\nassert hamming_distance([0, 0, 0], [0, 0, 0]) == 0\nassert hamming_distance([255, 255, 255], [255, 255, 255]) == 0"
+          },
+          {
+            "name": "pojedynczy_bajt_cztery_bity_rozne",
+            "body": "# 0b10101010 XOR 0b11110000 = 0b01011010 -> 4 ustawione bity.\nassert hamming_distance([0b10101010], [0b11110000]) == 4\n# 0b00000001 XOR 0b10000000 = 0b10000001 -> 2 bity.\nassert hamming_distance([1], [128]) == 2"
+          },
+          {
+            "name": "rozna_dlugosc_rzuca_value_error",
+            "body": "raised = False\ntry:\n    hamming_distance(b'\\xFF\\x00\\xFF', b'\\x00\\xFF')\nexcept ValueError:\n    raised = True\nassert raised, 'powinno byc rzucone ValueError dla roznych dlugosci'"
+          },
+          {
+            "name": "max_dla_orb_to_256",
+            "body": "# Pelna 32-bajtowa rozbieznosc to 256 bitow - maksymalna odleglosc Hamminga dla ORB.\na = bytes([0xFF] * 32)\nb = bytes([0x00] * 32)\nassert hamming_distance(a, b) == 256\n# Polowiczna roznica: kazdy bajt 0xAA XOR 0x55 = 0xFF -> 8 bitow * 32 bajty = 256.\na2 = bytes([0xAA] * 32)\nb2 = bytes([0x55] * 32)\nassert hamming_distance(a2, b2) == 256\n# Identyczne polowy: 0xAA XOR 0xAA = 0 -> 0.\nassert hamming_distance(bytes([0xAA] * 32), bytes([0xAA] * 32)) == 0"
+          }
+        ],
+        "solution": "def hamming_distance(a, b):\n    a = list(a)\n    b = list(b)\n    if len(a) != len(b):\n        raise ValueError('a and b must have equal length')\n    total = 0\n    for x, y in zip(a, b):\n        total += bin(x ^ y).count('1')\n    return total\n"
+      }
+    },
+    {
+      "id": "sandbox-orb-vs-akaze",
+      "title": "Piaskownica: porównaj ORB, BRISK i AKAZE na tej samej scenie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna scena: kilka ksztaltow o roznej skali plus delikatne tonacje.\n# Cel: zobaczyc jak ORB / BRISK / AKAZE rozkladaja keypointy na tej samej scenie\n# i jak wygladaja ich deskryptory w pamieci.\nH, W = 320, 480\nimg = np.full((H, W), 60, dtype=np.uint8)\ncv2.circle(img, ( 80,  80), 30, 220, thickness=-1)\ncv2.circle(img, (240, 130), 50, 180, thickness=-1)\ncv2.circle(img, (380, 220), 18, 240, thickness=-1)\ncv2.rectangle(img, ( 60, 200), (180, 280), 200, thickness=-1)\ncv2.rectangle(img, (300,  40), (440, 100), 150, thickness=-1)\n# Lekka tekstura tla, zeby AKAZE mial co znalezc na 'gladkich' obszarach.\nrng = np.random.default_rng(0)\nimg = cv2.add(img, (rng.standard_normal((H, W)) * 6).astype(np.int8).astype(np.uint8), dtype=cv2.CV_8U)\nimg = cv2.GaussianBlur(img, (3, 3), 0.8)\n\nfor name, factory in [\n    ('ORB',   lambda: cv2.ORB_create(nfeatures=500)),\n    ('BRISK', lambda: cv2.BRISK_create()),\n    ('AKAZE', lambda: cv2.AKAZE_create()),\n]:\n    detector = factory()\n    kps, desc = detector.detectAndCompute(img, mask=None)\n    n = len(kps)\n    if desc is not None:\n        shape = desc.shape\n        bits_per = desc.shape[1] * 8\n        bytes_total = desc.nbytes\n    else:\n        shape, bits_per, bytes_total = (0, 0), 0, 0\n    print(f'{name:5s} -> keypointow: {n:4d}, deskryptor: shape={shape}, '\n          f'bitow/keypoint: {bits_per}, calkowity rozmiar: {bytes_total} bajtow')\n\n# Pytania do siebie:\n#   * Ktory detektor znalazl najwiecej keypointow? Czy to skaluje sie z czasem detekcji?\n#     (Mozesz dodac import time; t0 = time.perf_counter(); ...; t = time.perf_counter() - t0)\n#   * Zmien nfeatures w cv2.ORB_create na 1500. Czy znajduje wiecej? Czy spadla jakosc\n#     (response) najslabszych?\n#   * cv2.AKAZE_create(threshold=0.001) - co dzieje sie z liczba keypointow gdy\n#     prog jest mniejszy?\n#   * Sprawdz desc.dtype dla kazdego z trojki - powinno byc np.uint8 wszedzie\n#     (to jest definicja deskryptora binarnego: ciagi bitow upakowane w bajty).\n#   * Zbuduj cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) i zrob match na dwoch\n#     wersjach obrazu (oryginal vs cv2.warpAffine z lekkim obrotem) dla ORB-a.\n",
+        "encouragement": "Trzymaj otwarte oko na `desc.shape[1] * 8` — to liczba bitów na keypoint i zarazem maksymalna odległość Hamminga, którą zobaczysz w matcherze."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d1/d89/tutorial_py_orb.html",
+          "title": "OpenCV Python tutorial — ORB (Oriented FAST and Rotated BRIEF)",
+          "kind": "article"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/ICCV.2011.6126544",
+      "title": "Rublee, E., Rabaud, V., Konolige, K. and Bradski, G. — ORB: An efficient alternative to SIFT or SURF (ICCV 2011)",
+      "kind": "paper",
+      "author": "Ethan Rublee, Vincent Rabaud, Kurt Konolige and Gary Bradski",
+      "year": 2011
+    },
+    {
+      "url": "https://doi.org/10.1109/ICCV.2011.6126542",
+      "title": "Leutenegger, S., Chli, M. and Siegwart, R. Y. — BRISK: Binary Robust Invariant Scalable Keypoints (ICCV 2011)",
+      "kind": "paper",
+      "author": "Stefan Leutenegger, Margarita Chli and Roland Y. Siegwart",
+      "year": 2011
+    },
+    {
+      "url": "https://doi.org/10.5244/C.27.13",
+      "title": "Alcantarilla, P. F., Nuevo, J. and Bartoli, A. — Fast Explicit Diffusion for Accelerated Features in Nonlinear Scale Spaces (BMVC 2013)",
+      "kind": "paper",
+      "author": "Pablo F. Alcantarilla, Jesús Nuevo and Adrien Bartoli",
+      "year": 2013
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d1/d89/tutorial_py_orb.html",
+      "title": "OpenCV Python tutorial — ORB (Oriented FAST and Rotated BRIEF)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Oriented_FAST_and_rotated_BRIEF",
+      "title": "Oriented FAST and rotated BRIEF — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7.1 (Points and patches)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

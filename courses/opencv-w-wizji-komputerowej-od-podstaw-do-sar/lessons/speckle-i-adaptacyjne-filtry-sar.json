@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "slug": "speckle-i-adaptacyjne-filtry-sar",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Speckle i adaptacyjne filtry SAR",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Speckle to nie zwykły szum: w każdej komórce rozdzielczości fale od mikro-rozpraszaczy interferują koherentnie i tworzą multiplikatywny wzór ziarnisty. Lekcja wyprowadza model statystyczny i implementuje filtr Lee na 2D-tablicy intensywności SAR.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "skad-sie-bierze-speckle",
+      "title": "Speckle: koherentna interferencja, nie addytywny szum",
+      "type": "theory",
+      "data": {
+        "markdown": "Otwórz dowolną scenę Sentinel-1 GRD nad jednorodnym terenem — łąką, polem, spokojnym morzem — i zauważysz coś dziwnego: piksele wcale nie są stałe, lecz **iskrzą**. Ta charakterystyczna ziarnistość to **speckle** i nie jest błędem sensora. Każda komórka rozdzielczości SAR (rzędu 5–20 m × 20 m dla Sentinel-1 IW) zawiera **wiele mikro-rozpraszaczy** (źdźbła trawy, fale, kamienie). Sygnały odbite od każdego z nich docierają do anteny z **różnymi fazami**; satelita rejestruje ich **koherentną sumę zespoloną**, czyli wektorową — interferencja konstruktywna i destruktywna są jednakowo prawdopodobne, więc amplituda echa wachluje się losowo, **nawet gdy fizyczna powierzchnia jest idealnie jednorodna**.\n\n![Fragment obrazu z gęstym, losowym wzorem czarno-białych pikseli — szum impulsowy salt-and-pepper rozsiany po scenie; pojedyncze piksele są skrajnie czarne lub skrajnie białe, a tło i kontury obiektów pozostają rozpoznawalne pod tą warstwą](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Noise_salt_and_pepper.png/480px-Noise_salt_and_pepper.png)\n\n*(Obraz: Wikimedia Commons, public domain — *to* jest szum impulsowy salt-and-pepper. Speckle wygląda **inaczej**: nie ma pojedynczych skrajnych pikseli; cały jednorodny obszar pulsuje proporcjonalnie do swojej średniej jasności.)*\n\nKluczowa różnica formalna: speckle jest **multiplikatywny**, nie addytywny. Przy modelu jednolookowym piszemy:\n\n$$ I(p) \\;=\\; R(p) \\cdot n(p), \\qquad \\mathbb{E}[n] = 1, \\quad \\operatorname{Var}(n) = 1 $$\n\ngdzie $R(p)$ to fizyczne (deterministyczne) backscatter sceny, a $n(p)$ to multiplikatywny czynnik szumowy o jednostkowej średniej. Po **L-look uśrednieniu** (typowo $L = 4$ dla Sentinel-1 GRD-H) wariancja maleje do $\\operatorname{Var}(n) = 1/L$, ale nadal jest **proporcjonalna do kwadratu lokalnej średniej** — czyli odchylenie standardowe rośnie razem z jasnością. Dlatego zwykły `cv2.GaussianBlur` (zaprojektowany dla szumu addytywnego) i `cv2.medianBlur` (zaprojektowany dla outliera) **nie są tu właściwymi narzędziami**: pierwszy rozmazuje krawędzie i nie respektuje skali wariancji, drugi zakłada, że szum jest impulsowy. Adaptacyjne filtry SAR — Lee, Frost, Kuan, Refined-Lee — są zbudowane wprost wokół multiplikatywnego modelu i **lokalnej statystyki** wariancja-vs-średnia."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Speckle_(interference)",
+          "title": "Speckle (interference) — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "filtr-lee-wzor",
+      "title": "Filtr Lee: liniowy MMSE na lokalnym współczynniku zmienności",
+      "type": "theory",
+      "data": {
+        "markdown": "Jong-Sen Lee w 1980 r. zauważył, że jeśli rozpisać multiplikatywny model w okolicy piksela $p$ i poprosić o **liniową** estymatę $R(p)$, która **minimalizuje błąd średniokwadratowy** względem obserwowanego $I(p)$, to optymalna postać jest zaskakująco prosta:\n\n$$ \\hat R(p) \\;=\\; \\bar I_W \\;+\\; k(p)\\,\\bigl(I(p) - \\bar I_W\\bigr) $$\n\nczyli **wartość lokalna jest mieszanką lokalnej średniej i piksela obserwowanego**, sterowaną wagą $k(p) \\in [0, 1]$. Cała magia siedzi w wadze:\n\n$$ k(p) \\;=\\; \\max\\!\\left(0,\\; \\frac{C_I^{2}(p) - C_n^{2}}{C_I^{2}(p)\\,\\bigl(1 + C_n^{2}\\bigr)}\\right) $$\n\ngdzie $C_I(p) = \\sigma_W / \\bar I_W$ to **lokalny współczynnik zmienności** (standard deviation / mean) liczony w oknie $W$ wokół $p$, a $C_n = 1/\\sqrt{L}$ to **stała szumu multiplikatywnego** wynikająca z liczby looków $L$ (równoważnie: equivalent number of looks, ENL).\n\nIntuicja jest dokładnie tym, czego oczekujemy:\n\n- **Obszar jednorodny** (łąka, woda) — lokalna wariancja pochodzi *wyłącznie* od speckle, więc $C_I \\approx C_n$ → licznik bliski zeru → $k \\approx 0$ → wynik = lokalna **średnia**. Filtr wygładza.\n- **Krawędź lub punktowy cel** (statek, narożnik budynku) — lokalna wariancja dominowana przez prawdziwy skok jasności, więc $C_I \\gg C_n$ → $k \\approx 1$ → wynik = piksel **obserwowany**. Filtr nie rusza krawędzi.\n- **Stan pośredni** — interpolacja między tymi dwoma trybami.\n\nDla porównania: **Frost** zastępuje pojedynczą wagę $k$ rodziną wag eksponencjalnych $w(d) \\propto \\exp(-K\\, C_I^{2}\\, d)$ malejących z odległością $d$ od piksela centralnego — daje płynniejsze przejścia. **Kuan** wyprowadza praktycznie ten sam wzór co Lee, ale bez `max(0, …)`, dla uogólnionego sygnał-zależnego modelu szumu. **Refined-Lee** dorzuca 8 kierunkowych pod-okien 7×7 i wybiera to, którego oś jest najbliższa lokalnej krawędzi, by uniknąć rozmywania w poprzek.\n\nW kodzie implementuje się dokładnie powyższy wzór: dwie pętle po pikselach, w każdej `mean`/`var` w oknie `win × win` plus skok do $\\bar I_W + k\\,(I - \\bar I_W)$. To właśnie zrobimy w sekcji ćwiczeniowej."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Lee, J.-S. — Digital image enhancement and noise filtering by use of local statistics (IEEE TPAMI 1980)",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ]
+    },
+    {
+      "id": "porownanie-filtrow",
+      "title": "Lee, Frost, Kuan, Refined-Lee — co je różni",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "filtr", "label": "Filtr (rok)", "type": "string", "sortable": false },
+          { "key": "model", "label": "Założenie modelu szumu", "type": "string", "sortable": false },
+          { "key": "wagi", "label": "Postać wag w oknie", "type": "string", "sortable": false },
+          { "key": "krawedz", "label": "Zachowanie krawędzi", "type": "string", "sortable": false },
+          { "key": "params", "label": "Parametry strojenia", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "filtr": "Lee (1980)",
+            "model": "Multiplikatywny, jednorodny w oknie, znana liczba looków L",
+            "wagi": "Pojedyncza waga liniowa $k \\in [0,1]$ z lokalnego $C_I$ i stałego $C_n = 1/\\sqrt{L}$",
+            "krawedz": "Dobre — przy silnym skoku $k \\to 1$ i piksel zostaje nietknięty",
+            "params": "rozmiar okna `win`, liczba looków $L$ (lub ENL)"
+          },
+          {
+            "filtr": "Frost (1982)",
+            "model": "Multiplikatywny, lokalnie stacjonarny; tłumienie zależne od jasności",
+            "wagi": "Eksponencjalne $w(d) \\propto \\exp(-K\\, C_I^{2}\\, d)$ malejące z odległością $d$ od piksela centralnego",
+            "krawedz": "Bardzo dobre — silne tłumienie sąsiadów dla wysokiego $C_I$ daje płynne przejścia bez halo",
+            "params": "rozmiar okna `win`, $L$, współczynnik tłumienia $K$ (`damping_factor`, typowo 1–2)"
+          },
+          {
+            "filtr": "Kuan (1985)",
+            "model": "Uogólniony sygnał-zależny szum (multiplikatywny jako przypadek szczególny)",
+            "wagi": "Liniowa MMSE bardzo podobna do Lee, **bez** clip $\\max(0,\\cdot)$",
+            "krawedz": "Dobre — bardzo zbliżone do Lee dla typowych parametrów Sentinel-1",
+            "params": "rozmiar okna `win`, $L$"
+          },
+          {
+            "filtr": "Refined-Lee (Lee 1981)",
+            "model": "Multiplikatywny + lokalny gradient krawędzi",
+            "wagi": "Lee aplikowane w jednym z 8 **kierunkowych** pod-okien 7×7; oś okna dopasowana do lokalnej orientacji krawędzi",
+            "krawedz": "Najlepsze z czwórki — krawędzie nie rozmywają się w poprzek nawet przy dużym oknie",
+            "params": "okno stałe 7×7, $L$; brak innych nastaw"
+          }
+        ]
+      }
+    },
+    {
+      "id": "explorer-win-i-l",
+      "title": "Pokrętła `win` i `L` — kiedy Lee gładzi, a kiedy odpuszcza",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# 1D 'scena SAR': krawedz skokowa intensywnosci od 1.0 do 6.0\n# zaszumiona multiplikatywnym speckle 4-look (rozklad gamma o\n# srednim = clean i wariancji = clean^2 / 4).\nrng = np.random.default_rng(0)\nN = 200\nclean = np.where(np.arange(N) < 100, 1.0, 6.0)\nL_DATA = 4\nnoisy = rng.gamma(shape=L_DATA, scale=clean / L_DATA)\n\ndef lee_1d(signal, win, L_filter):\n    \"\"\"Lee filter MMSE w 1D, wprost ze wzoru z poprzedniej sekcji.\"\"\"\n    n = len(signal)\n    pad = win // 2\n    padded = np.pad(signal, pad, mode='edge')\n    Cn2 = 1.0 / float(L_filter)\n    out = np.empty(n)\n    for i in range(n):\n        w = padded[i:i + win]\n        m = w.mean()\n        v = w.var()\n        CI2 = v / max(m * m, 1e-12)\n        k = max(0.0, (CI2 - Cn2) / (CI2 * (1.0 + Cn2)))\n        out[i] = m + k * (signal[i] - m)\n    return out\n",
+        "renderCode": "filtered = lee_1d(noisy, int(win), float(L_filter))\n\nplt.figure(figsize=(7.6, 3.7))\nplt.plot(noisy, color='#bbbbbb', lw=1.0, label='zaszumiony (4-look gamma)')\nplt.plot(clean, color='#555555', lw=1.0, ls='--', label='oryginal (krawedz skokowa)')\nplt.plot(filtered, color='#0d9474', lw=2.2,\n         label=f'Lee (win={int(win)}, L={float(L_filter):.0f})')\nplt.xlabel('indeks probki')\nplt.ylabel('intensywnosc liniowa')\nplt.title('Filtr Lee 1D na sygnale ze szumem multiplikatywnym')\nplt.legend(loc='upper left')\nplt.grid(True, alpha=0.3)\nplt.ylim(0.0, 11.0)\n",
+        "params": [
+          {
+            "name": "win",
+            "label": "win (rozmiar okna, probek)",
+            "type": "slider",
+            "min": 3,
+            "max": 21,
+            "step": 2,
+            "default": 7
+          },
+          {
+            "name": "L_filter",
+            "label": "L (liczba looków zakladana przez filtr)",
+            "type": "slider",
+            "min": 1,
+            "max": 16,
+            "step": 1,
+            "default": 4
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "exercise-lee-2d",
+      "title": "Zaimplementuj `lee_filter_2d(img, win, num_looks)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `lee_filter_2d(img, win, num_looks)`, która aplikuje 2D filtr Lee do tablicy intensywności SAR. Wymagania:\n\n1. `img` to `numpy.ndarray` o kształcie `(H, W)` typu `float`. Zwróć tablicę o **tym samym** kształcie i typu `float64`.\n2. `win` to nieparzysta liczba całkowita ≥ 3 — bok kwadratowego okna w pikselach.\n3. `num_looks` (≥ 1) to zakładana liczba looków $L$; ze wzoru $C_n^2 = 1/L$.\n4. Padding na brzegach: replikacja krawędzi (`np.pad(..., mode='edge')`).\n5. Dla każdego piksela $p$ liczysz w oknie:\n   - $\\bar I_W$ = lokalna średnia,\n   - $\\sigma_W^2$ = lokalna **wariancja** populacyjna (`numpy.var` z domyślnym `ddof=0`),\n   - $C_I^2 = \\sigma_W^2 / \\max(\\bar I_W^{\\,2},\\, 10^{-12})$ — chroni przed dzieleniem przez zero,\n   - $k = \\max\\!\\bigl(0,\\, (C_I^2 - C_n^2) / (C_I^2\\,(1 + C_n^2))\\bigr)$,\n   - $\\hat R(p) = \\bar I_W + k\\,(I(p) - \\bar I_W)$.\n\nNie używaj `cv2.boxFilter`, `scipy.ndimage` ani biblioteki SAR — celem jest spisać wzór wprost.\n\n```\nlee_filter_2d(np.full((10, 10), 5.0), win=3, num_looks=4)  # -> tablica samych 5.0\n```",
+        "starterCode": "import numpy as np\n\ndef lee_filter_2d(img, win, num_looks):\n    # img: np.ndarray (H, W) float; win: nieparzyste >= 3; num_looks: >= 1\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    out = np.zeros_like(img)\n    pad = win // 2\n    padded = np.pad(img, pad, mode='edge')\n    Cn2 = 1.0 / float(num_looks)\n    # TODO: dwie petle po H i W; w kazdym kroku\n    #  - wytnij okno padded[i:i+win, j:j+win]\n    #  - policz mean i var (ddof=0)\n    #  - CI2 = var / max(mean*mean, 1e-12)\n    #  - k = max(0.0, (CI2 - Cn2) / (CI2 * (1.0 + Cn2)))\n    #  - out[i, j] = mean + k * (img[i, j] - mean)\n    return out\n",
+        "tests": [
+          {
+            "name": "stala_tablica_pozostaje_stala",
+            "body": "import numpy as np\narr = np.full((10, 10), 5.0, dtype=np.float64)\nout = lee_filter_2d(arr, win=3, num_looks=4)\nassert isinstance(out, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(out).__name__}'\nassert out.shape == (10, 10), f'oczekiwano ksztaltu (10, 10), dostalismy {out.shape}'\nassert np.allclose(out, 5.0, atol=1e-9), f'stala scena powinna wrocic bez zmian, jest {out}'",
+            "hidden": false
+          },
+          {
+            "name": "ksztalt_zachowany_dla_2d",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\narr = rng.gamma(shape=4.0, scale=0.5, size=(8, 12)).astype(np.float64)\nout = lee_filter_2d(arr, win=5, num_looks=4)\nassert out.shape == (8, 12), f'wynik musi miec ten sam ksztalt co wejscie, ma {out.shape}'\nassert out.dtype == np.float64, f'oczekiwano float64, dostalismy {out.dtype}'"
+          },
+          {
+            "name": "obszar_jednorodny_jest_silnie_wygladzony",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nL = 4\nclean = 4.0\narr = rng.gamma(shape=L, scale=clean / L, size=(64, 64)).astype(np.float64)\nout = lee_filter_2d(arr, win=7, num_looks=L)\n# Dla obszaru jednorodnego CI ≈ Cn, wiec k ≈ 0 i wynik zbiega do lokalnej sredniej.\n# Wariancja po filtracji powinna byc zauwazalnie mniejsza niz wariancja wejsciowa.\nassert out.var() < 0.5 * arr.var(), f'wariancja po Lee powinna byc < 0.5 * wariancji wejscia (in={arr.var():.4f}, out={out.var():.4f})'\nassert abs(out.mean() - arr.mean()) < 0.05 * arr.mean(), f'srednia powinna byc zachowana (in={arr.mean():.3f}, out={out.mean():.3f})'"
+          },
+          {
+            "name": "krawedz_skokowa_jest_zachowana",
+            "body": "import numpy as np\narr = np.ones((11, 11), dtype=np.float64) * 1.0\narr[:, 6:] = 10.0  # ostra pionowa krawedz skokowa\nout = lee_filter_2d(arr, win=3, num_looks=4)\n# Daleko od krawedzi (kolumna 0): okno calkowicie w obszarze 1.0 -> wynik = 1.0\nassert abs(float(out[5, 0]) - 1.0) < 1e-6, f'lewy brzeg z dala od krawedzi powinien zostac 1.0, jest {float(out[5, 0]):.4f}'\n# Daleko od krawedzi po prawej (kolumna 10): okno calkowicie w obszarze 10.0 -> wynik = 10.0\nassert abs(float(out[5, 10]) - 10.0) < 1e-6, f'prawy brzeg z dala od krawedzi powinien zostac 10.0, jest {float(out[5, 10]):.4f}'\n# Tuz po stronie 'wysokiej' krawedzi (kolumna 7): k bliskie 1 -> wynik blisko 10.0, nie blisko sredniej okna ~ 6.\nassert float(out[5, 7]) > 8.0, f'piksel tuz po krawedzi powinien byc zachowany blisko 10.0 (bo k ~ 1), jest {float(out[5, 7]):.4f}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef lee_filter_2d(img, win, num_looks):\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    out = np.empty_like(img)\n    pad = win // 2\n    padded = np.pad(img, pad, mode='edge')\n    Cn2 = 1.0 / float(num_looks)\n    for i in range(H):\n        for j in range(W):\n            window = padded[i:i + win, j:j + win]\n            mean = window.mean()\n            var = window.var()\n            CI2 = var / max(mean * mean, 1e-12)\n            k = max(0.0, (CI2 - Cn2) / (CI2 * (1.0 + Cn2)))\n            out[i, j] = mean + k * (img[i, j] - mean)\n    return out\n"
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Lee, J.-S. — Digital image enhancement and noise filtering by use of local statistics (IEEE TPAMI 1980)",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ]
+    },
+    {
+      "id": "quiz-misconceptions",
+      "title": "Sprawdź się: dlaczego nie po prostu Gauss albo mediana?",
+      "type": "quiz",
+      "data": {
+        "question": "Dostajesz nową scenę Sentinel-1 GRD-H pokrytą równomiernym lasem. Histogram jasności jest skośny, a obszar lasu nie jest gładki — pulsuje pikselami. Które stwierdzenia o speckle i jego usuwaniu są **poprawne**?",
+        "options": [
+          "Speckle jest **multiplikatywny** ($I = R \\cdot n$), więc jego odchylenie standardowe rośnie razem z lokalną średnią — jednorodny jasny las ma większy bezwzględny rozrzut pikseli niż jednorodne ciemne morze.",
+          "`cv2.medianBlur` jest właściwym narzędziem, bo speckle to po prostu szum impulsowy — pojedyncze piksele skrajnie czarne lub białe na jednorodnym tle.",
+          "Filtr Lee w obszarze jednorodnym daje wagę $k \\approx 0$, więc wynik to po prostu **lokalna średnia** — i tylko dlatego speckle znika tam, gdzie powinien.",
+          "Im więcej iteracji `cv2.GaussianBlur`, tym lepsze odszumienie speckle bez utraty krawędzi — to monotoniczna poprawa."
+        ],
+        "correct": [0, 2],
+        "explanation": "Stwierdzenie 1 jest **poprawne**: w modelu multiplikatywnym $\\sigma(I) = \\bar I \\cdot C_n$, więc jasne obszary mają większy bezwzględny rozrzut — to jest sygnatura speckle, której addytywny szum gaussowski nie ma. Stwierdzenie 3 jest **poprawne**: w obszarze jednorodnym $C_I \\approx C_n$, licznik wagi Lee bliski zera, $k \\approx 0$, więc $\\hat R = \\bar I_W$ — czyli filtr daje lokalną średnią, dokładnie to, czego oczekujemy od denoisingu w gładkim obszarze. Stwierdzenie 2 jest **błędne** — speckle to **nie** salt-and-pepper. S&P ma pojedyncze skrajne piksele (mediana je rzeczywiście usuwa); speckle pulsuje proporcjonalnie do lokalnej średniej i ma rozkład gamma, nie impulsowy. `medianBlur` nie respektuje tego modelu i traci szczegóły. Stwierdzenie 4 jest **błędne** podwójnie: po pierwsze, `cv2.GaussianBlur` rozmywa krawędzie razem ze szumem (nie ma wagi fotometrycznej jak bilateralny ani statystycznej jak Lee); po drugie, każda iteracja dalej zaciera krawędzie, więc \"więcej = lepiej\" prowadzi do papki bez kontur.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-vs-gauss-median",
+      "title": "Piaskownica: Lee vs `cv2.GaussianBlur` vs `cv2.medianBlur`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport cv2\n\n# Syntetyczna scena SAR-podobna 96x96 z trzema regionami:\n#  - lewa polowa: ciemna 'woda' o sredniej R = 1.0\n#  - prawa polowa: jasniejszy 'ladowy' obszar o sredniej R = 6.0\n#  - jasny prostokat 'statek' wewnatrz wody (R = 25.0) - mocny punktowy cel\nrng = np.random.default_rng(0)\nH, W = 96, 96\nL = 4\nclean = np.full((H, W), 1.0, dtype=np.float64)\nclean[:, W // 2:] = 6.0\nclean[40:46, 18:24] = 25.0\n\n# Multiplikatywny speckle: gamma o sredniej = clean i wariancji = clean^2 / L\nspeckled = rng.gamma(shape=L, scale=clean / L).astype(np.float64)\n\ndef lee_filter_2d(img, win, num_looks):\n    img = np.asarray(img, dtype=np.float64)\n    Hh, Ww = img.shape\n    out = np.empty_like(img)\n    pad = win // 2\n    padded = np.pad(img, pad, mode='edge')\n    Cn2 = 1.0 / float(num_looks)\n    for i in range(Hh):\n        for j in range(Ww):\n            w = padded[i:i + win, j:j + win]\n            m = w.mean(); v = w.var()\n            CI2 = v / max(m * m, 1e-12)\n            k = max(0.0, (CI2 - Cn2) / (CI2 * (1.0 + Cn2)))\n            out[i, j] = m + k * (img[i, j] - m)\n    return out\n\nlee = lee_filter_2d(speckled, win=7, num_looks=L)\n\n# OpenCV oczekuje float32 dla GaussianBlur na typach zmiennoprzecinkowych\ngauss  = cv2.GaussianBlur(speckled.astype(np.float32), (7, 7), sigmaX=1.5).astype(np.float64)\n# medianBlur na 8U lub 32F; rzucamy do float32 i z powrotem\nmedian = cv2.medianBlur(speckled.astype(np.float32), 5).astype(np.float64)\n\ndef stats(name, img, mask):\n    region = img[mask]\n    print(f'{name:>10s}  mean={region.mean():6.3f}  std={region.std():6.3f}  min={region.min():6.3f}  max={region.max():6.3f}')\n\n# Maska 'spokojna woda' z dala od krawedzi i statku\nwater_mask = np.zeros_like(clean, dtype=bool)\nwater_mask[5:35, 5:40] = True\n\nprint('-- jednorodna woda (powinno: srednia ~ 1.0, std jak najmniejszy) --')\nfor name, im in (('orig', speckled), ('Gauss', gauss), ('median', median), ('Lee', lee)):\n    stats(name, im, water_mask)\n\n# Sprawdz, jak kazdy filtr potraktowal punktowy cel (statek): chcemy zachowany pik\nprint()\nprint('-- pik statku (piksel (43, 21)) --')\nprint(f'  orig   = {speckled[43, 21]:6.2f}')\nprint(f'  Gauss  = {gauss   [43, 21]:6.2f}   <-- rozmazany razem ze swoim otoczeniem')\nprint(f'  median = {median  [43, 21]:6.2f}   <-- traktuje go jak outliera, czesto wycina')\nprint(f'  Lee    = {lee     [43, 21]:6.2f}   <-- duze CI -> k ~ 1 -> zachowany')\n",
+        "encouragement": "Zmieniaj `num_looks` w wywołaniu Lee i obserwuj, kiedy filtr zaczyna nadmiernie wygładzać krawędź woda↔ląd — to ten moment, w którym zakładasz mniej speckle'u, niż w danych faktycznie jest."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+      "title": "Lee, J.-S. — Digital image enhancement and noise filtering by use of local statistics (IEEE TPAMI 1980)",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+      "title": "Frost, V. S., Stiles, J. A., Shanmugan, K. S. and Holtzman, J. C. — A Model for Radar Images and Its Application to Adaptive Digital Filtering of Multiplicative Noise (IEEE TPAMI 1982)",
+      "kind": "paper",
+      "author": "Victor S. Frost, Josephine A. Stiles, K. Sam Shanmugan and Julian C. Holtzman",
+      "year": 1982
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1985.4767641",
+      "title": "Kuan, D. T., Sawchuk, A. A., Strand, T. C. and Chavel, P. — Adaptive Noise Smoothing Filter for Images with Signal-Dependent Noise (IEEE TPAMI 1985)",
+      "kind": "paper",
+      "author": "Darwin T. Kuan, Alexander A. Sawchuk, Timothy C. Strand and Pierre Chavel",
+      "year": 1985
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Speckle_(interference)",
+      "title": "Speckle (interference) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/applications/speckle-filtering",
+      "title": "Sentinel-1 — Speckle filtering (ESA User Guide)",
+      "kind": "article"
+    }
+  ]
+}

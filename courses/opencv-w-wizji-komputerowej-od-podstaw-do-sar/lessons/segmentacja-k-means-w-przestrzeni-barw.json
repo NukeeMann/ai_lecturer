@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "slug": "segmentacja-k-means-w-przestrzeni-barw",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Segmentacja k-means w przestrzeni barw",
+  "eyebrow": "SEGMENTACJA",
+  "description": "Klasyczna nienadzorowana segmentacja: każdy piksel to punkt w 3-wymiarowej przestrzeni barw, a k-means dzieli te punkty na K klastrów minimalizując sumę kwadratów odległości od centroidów. Zobaczysz heurystykę Lloyda, krytyczność wyboru K i przestrzeni barw (BGR vs HSV vs LAB), zaimplementujesz krok przypisania pikseli do najbliższego centroidu, a w piaskownicy odpalisz `cv2.kmeans` na syntetycznym obrazie z gradientem jasności i porównasz wyniki w BGR i LAB.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "piksele-jako-punkty-i-cel-k-means",
+      "title": "Piksele jako punkty, cel k-means i pętla Lloyda",
+      "type": "theory",
+      "data": {
+        "markdown": "**Segmentacja przez k-means w przestrzeni barw** to klasyczna metoda nienadzorowana. Pomysł jest prostszy, niż brzmi nazwa: każdy piksel obrazu zapominamy o jego pozycji $(x, y)$ i traktujemy *tylko* jako 3-wymiarowy wektor barwy — w BGR, HSV, LAB, jak nam wygodnie. Algorytm dzieli te punkty na **K klastrów** wokół K centroidów. Piksele w tym samym klastrze są wizualnie podobne i — bo obraz naturalny ma lokalnie spójne kolory — leżą zwykle w tych samych obszarach obrazu. To nasza segmentacja. Najprostszym wariantem jest **kwantyzacja barw**: zastępujemy każdy piksel kolorem jego centroidu i dostajemy oryginalny obraz odrysowany na K kolorach.\n\nFormalnie k-means minimalizuje sumę kwadratów odległości pikseli od centroidów ich klastrów (tzw. *within-cluster sum of squares*, w OpenCV zwracaną jako `compactness`):\n\n$$ J(\\mathbf{C},\\ \\boldsymbol{\\mu}) \\;=\\; \\sum_{k=1}^{K}\\ \\sum_{\\mathbf{x}_i \\,\\in\\, C_k}\\ \\lVert \\mathbf{x}_i - \\boldsymbol{\\mu}_k \\rVert^{2} $$\n\ngdzie $\\mathbf{x}_i \\in \\mathbb{R}^{D}$ to piksel jako wektor (zwykle $D = 3$), a $\\boldsymbol{\\mu}_k \\in \\mathbb{R}^{D}$ to centroid klastra $C_k$. Funkcja $J$ jest niewypukła i ma wiele minimów lokalnych — znalezienie globalnego minimum dla ogólnego K i N jest NP-trudne. Dlatego w praktyce używa się **heurystyki Lloyda** (czasem zwanej *naive k-means*):\n\n1. **Inicjalizacja:** wybierz $K$ początkowych centroidów. Losowy wybór działa, ale **k-means++** rozkłada centroidy tak, by były od siebie *daleko* w przestrzeni cech — w praktyce daje lepsze, bardziej stabilne wyniki w mniejszej liczbie iteracji.\n2. **Krok przypisania:** każdy punkt $\\mathbf{x}_i$ trafia do klastra najbliższego centroidu, $C_k = \\{\\,\\mathbf{x}_i : k = \\arg\\min_{j} \\lVert \\mathbf{x}_i - \\boldsymbol{\\mu}_j \\rVert\\,\\}$.\n3. **Krok aktualizacji:** każdy centroid jest średnią pikseli swojego klastra, $\\boldsymbol{\\mu}_k = \\tfrac{1}{|C_k|} \\sum_{\\mathbf{x}_i \\,\\in\\, C_k} \\mathbf{x}_i$.\n4. Powtarzaj kroki 2–3, aż przypisania przestaną się zmieniać (lub spadek $J$ jest mniejszy niż $\\varepsilon$).\n\n![Animacja k-means na syntetycznych danych 2-D z trzema klastrami: początkowe centroidy są losowe, a w kolejnych iteracjach każdy punkt jest kolorowany na podstawie najbliższego centroidu (krok przypisania), centroidy przesuwają się do średniej swojego klastra (krok aktualizacji), aż konfiguracja się stabilizuje](https://upload.wikimedia.org/wikipedia/commons/e/ea/K-means_convergence.gif)\n\n*(Animacja: Wikimedia Commons, użytkownik Chire, public domain.)*\n\nKażda iteracja **gwarantowanie** zmniejsza $J$: krok przypisania nie zwiększy żadnego ze składników (każdy punkt idzie do najbliższego centroidu), a średnia jest tym punktem $\\mathbf{m}$, który minimalizuje $\\sum_{\\mathbf{x}_i \\,\\in\\, C_k} \\lVert \\mathbf{x}_i - \\mathbf{m} \\rVert^{2}$. Algorytm zbiega więc do **minimum lokalnego** w skończonej liczbie iteracji, ale *nie* gwarantuje globalnego — stąd kilka losowych restartów (`attempts`) i wybór wyniku z najmniejszym $J$."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TIT.1982.1056489",
+          "title": "Lloyd, S. P. — Least squares quantization in PCM (IEEE Trans. Information Theory, 1982)",
+          "kind": "paper",
+          "author": "Stuart P. Lloyd",
+          "year": 1982
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/K-means_clustering",
+          "title": "k-means clustering — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "K-przestrzen-barw-i-cv2-kmeans",
+      "title": "Dobór K, przestrzeni barw i wywołanie cv2.kmeans",
+      "type": "theory",
+      "data": {
+        "markdown": "Dwa parametry decydują o tym, czy k-means da sensowną segmentację: **K** (ile klastrów) i **przestrzeń barw**, w której liczymy odległości.\n\n**Dobór K** to problem otwarty — k-means *wymaga* podania $K$ z góry. W praktyce:\n\n- Wiedza dziedzinowa: jeśli wiesz, że obraz ma trzy wyraźnie różne regiony (niebo, las, woda), zacznij od $K = 3$.\n- **Metoda łokcia:** policz $J(K)$ dla $K = 2, 3, 4, \\ldots$ i wybierz K, po którym dalsze zwiększanie daje już tylko marginalny spadek $J$ (\"łokieć\" wykresu). $J(K)$ to dokładnie to, co `cv2.kmeans` zwraca jako `compactness`.\n- Bardziej formalne kryteria — *silhouette score*, *gap statistic* — w OpenCV trzeba je policzyć ręcznie.\n\n**Wybór przestrzeni barw** to drugi pół-bilet do dobrego wyniku. Powód: euklidesowa odległość pomiędzy pikselami $\\lVert \\mathbf{x}_i - \\mathbf{x}_j \\rVert$ *nie znaczy tego samego* w każdej przestrzeni:\n\n| Przestrzeń | Odległość euklidesowa odpowiada... | Kiedy jej używać |\n| --- | --- | --- |\n| BGR / RGB | mieszance barwy, nasycenia i jasności | szybka pierwsza próba, równomiernie oświetlone obrazy |\n| HSV | barwie + nasyceniu + jasności rozsprzęgniętym | gdy chcesz oddzielić *kolor* od *oświetlenia* |\n| LAB / Lab | postrzeganej różnicy barw $\\Delta E$ | gdy odległość ma korelować z ludzką percepcją koloru |\n\nLAB jest **percepcyjnie jednorodny** — dwa piksele w odległości $\\Delta E = 5$ wyglądają mniej więcej tak samo \"daleko od siebie\" niezależnie od tego, czy są ciemne, jasne, czerwone czy zielone. W BGR ta sama odległość liczbowa może oznaczać dużą różnicę barwy w jasnych obszarach i niezauważalną różnicę w ciemnych, a k-means \"marnuje\" wtedy klastry na cienie zamiast na realne kolory obiektów. Dlatego *przy segmentacji barwnej zwykle pierwszą rzeczą do spróbowania jest LAB* (albo HSV, jeżeli zależy ci akurat na kanale Hue).\n\n![Cylindryczny model HSL i stożkowy model HSV: oś pionowa to jasność/wartość, kąt to barwa (hue), promień to nasycenie — oba modele rozsprzęgają barwę od jasności, czego BGR nie robi](https://upload.wikimedia.org/wikipedia/commons/a/a0/Hsl-hsv_models.svg)\n\n*(Diagram: Wikimedia Commons, autor SharkD, CC BY-SA 3.0.)*\n\n**Wywołanie OpenCV.** `cv2.kmeans` oczekuje danych jako tablicy `float32` o kształcie $(N, D)$ — każdy wiersz to jeden punkt. Dla obrazu $H \\times W \\times C$ zwijasz piksele do $(H \\cdot W, C)$ przez `reshape(-1, C)`:\n\n```python\nimport cv2, numpy as np\n\nimg = cv2.imread('flower.jpg')                       # H x W x 3 (BGR, uint8)\nlab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)           # H x W x 3 (LAB, uint8)\ndata = lab.reshape(-1, 3).astype(np.float32)         # N x 3, float32 — wymagane przez kmeans\n\nK = 4\ncriteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)\ncompactness, labels, centers = cv2.kmeans(\n    data, K, None, criteria,\n    attempts=5,\n    flags=cv2.KMEANS_PP_CENTERS,                     # k-means++ — zwykle lepiej niz losowo\n)\n\ncenters = centers.astype(np.uint8)                   # K x 3\nquantized = centers[labels.flatten()].reshape(lab.shape)\nout = cv2.cvtColor(quantized, cv2.COLOR_LAB2BGR)     # z powrotem do BGR do wyswietlenia\n```\n\n`compactness` to wartość $J$ na końcu — porównuj ją między uruchomieniami z różnym $K$, gdy stosujesz heurystykę łokcia. `attempts=5` mówi OpenCV, żeby ten sam k-means uruchomił z 5 różnych losowych inicjalizacji i zwrócił najlepszy wynik (to jest właśnie obejście problemu lokalnych minimów). `cv2.KMEANS_PP_CENTERS` wybiera k-means++ — w praktyce niemal zawsze lepsze niż czysto losowe `cv2.KMEANS_RANDOM_CENTERS`."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d1/d5c/tutorial_py_kmeans_opencv.html",
+          "title": "OpenCV Python tutorial — K-Means clustering for color quantization",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/CIELAB_color_space",
+          "title": "CIELAB color space — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-bgr-vs-lab",
+      "title": "Sprawdź się: dlaczego LAB zamiast BGR?",
+      "type": "quiz",
+      "data": {
+        "question": "Próbujesz odsegmentować zdjęcie czerwonego kwiatu na trawie używając `cv2.kmeans` z `K=2`. W BGR algorytm myli ciemne fragmenty trawy z cieniem pod kwiatem, a jasne i ciemne płatki rozdziela na dwa różne klastry — kompletnie nie tak, jak chciałeś. Co najprostszego można zrobić, żeby k-means częściej grupował piksele **po faktycznym kolorze, a nie po jasności**?",
+        "options": [
+          "Skonwertować obraz do LAB lub HSV przed `cv2.kmeans` — odległość euklidesowa w tych przestrzeniach lepiej odpowiada postrzeganej różnicy barw, więc cienie tej samej rzeczy nie odsuwają się od niej tak bardzo jak w BGR.",
+          "Zwiększyć `K` — k-means *zawsze* znajduje lepszą semantyczną segmentację z większą liczbą klastrów, więc problem rozwiąże się sam.",
+          "Dodać współrzędne piksela `(x, y)` do wektora cech — k-means zacznie wtedy używać informacji przestrzennej i dwa fragmenty trawy w różnych miejscach obrazu trafią do tego samego klastra po kolorze.",
+          "Zmienić `flags` z `cv2.KMEANS_PP_CENTERS` na `cv2.KMEANS_RANDOM_CENTERS` — losowa inicjalizacja jest mniej obciążona w stronę jasnych pikseli."
+        ],
+        "correct": [0],
+        "explanation": "**Odpowiedź A** trafia w sedno. BGR/RGB to przestrzeń liniowo-elektroniczna, *nie* percepcyjna. W BGR ciemna trawa $(20, 60, 20)$ leży euklidesowo blisko ciemnego cienia $(15, 15, 15)$, a jasne czerwone płatki $(60, 60, 220)$ daleko od ciemnych $(30, 30, 110)$ tej samej barwy — k-means rozetnie kwiat na klaster \"jasny\" i klaster \"ciemny\" zamiast na klaster \"kwiat\" i klaster \"tło\". Konwersja do LAB lub HSV rozsprzęga **barwę** od **jasności**: w LAB kanały $a^{*}$ i $b^{*}$ kodują kolor, a $L^{*}$ — jasność; w HSV oddzielamy $H$ (barwa) od $V$ (wartość). Dystans w tych przestrzeniach lepiej odpowiada temu, co człowiek nazywa \"tym samym kolorem mimo cienia\".\n\n**B** to half-truth. Większe $K$ daje *zawsze* mniejszą $J$ (więcej klastrów to krótsze odległości — w skrajności $K = N$ daje $J = 0$ i zero pożytku), ale *nie* lepszą segmentację semantyczną. Tu, gdy problem brzmi \"jasność dominuje nad kolorem\", zwiększanie $K$ tylko porozdziela tę samą barwę na warianty \"ciemny\" i \"jasny\", dalej ignorując kolor.\n\n**C** brzmi pomysłowo, ale dodanie $(x, y)$ do wektora cech zwykle *pogarsza* segmentację barwną: trawa w lewym i prawym dolnym rogu odsuwa się od siebie w 5-D, choć ma identyczny kolor. Tę technikę (k-means w 5-D: BGR + xy) używa się wtedy, gdy chcesz **superpiksele** — małe spójne plamki obrazu — a nie gdy chcesz globalnej semantycznej segmentacji barwnej.\n\n**D** nie zmienia istoty problemu. `KMEANS_PP_CENTERS` (k-means++) i `KMEANS_RANDOM_CENTERS` różnią się tylko **inicjalizacją**; na końcu Lloyd zbiega do (lokalnego) minimum tej samej $J$, a $J$ jest liczone w tej samej przestrzeni BGR. Inicjalizacja zmienia, *które* lokalne minimum trafisz, nie geometrię problemu.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-assign-to-nearest-centroid",
+      "title": "Zaimplementuj `assign_to_nearest_centroid`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `assign_to_nearest_centroid(pixels, centroids)` — **krok przypisania** w pętli Lloyda dla k-means. To 90% praktycznej roboty algorytmu; aktualizacja centroidów to potem trywialne `mean` po grupach.\n\n**Sygnatura.** `pixels` to dwuwymiarowa tablica NumPy o kształcie $(N, D)$ (np. piksele obrazu zwinięte do listy 3-elementowych wektorów BGR). `centroids` to tablica $(K, D)$ z aktualnymi centroidami. Zwróć tablicę 1D o kształcie $(N,)$ z `dtype=np.int64`, gdzie pozycja $i$ to indeks centroidu *najbliższego* punktowi `pixels[i]` w sensie euklidesowym.\n\n**Reguły.**\n\n1. Odległość euklidesowa: $d(\\mathbf{x},\\ \\boldsymbol{\\mu}) = \\sqrt{\\sum_{j=1}^{D}(x_j - \\mu_j)^{2}}$. **Pierwiastka liczyć nie musisz** — $\\arg\\min$ kwadratu odległości i $\\arg\\min$ samej odległości to ten sam indeks (a kwadrat jest szybszy i numerycznie stabilniejszy).\n2. W razie remisu zwróć indeks **najmniejszego** centroidu — odpowiednik domyślnego zachowania `np.argmin`.\n3. Niech działa dla dowolnego $D$: $D = 3$ dla obrazów BGR, ale testy używają też $D = 2$ dla czytelności.\n4. Zachowaj się sensownie dla $K \\geq 1$ (przy $K = 1$ wszystko trafia do klastra 0).\n\n```\npixels    = [[0, 0],     centroids = [[0, 0],     ->  [0, 1]\n             [10, 10]]                  [10, 10]]\n```\n\n*Wskazówka:* `pixels[:, None, :] - centroids[None, :, :]` daje tablicę różnic o kształcie $(N, K, D)$. Po podniesieniu do kwadratu i zsumowaniu po `axis=2` masz $(N, K)$ kwadratów odległości; `np.argmin(..., axis=1)` zwraca wektor $N$ indeksów. Cały krok przypisania mieści się w 3 linijkach, bez pętli pythonowej.",
+        "starterCode": "import numpy as np\n\ndef assign_to_nearest_centroid(pixels, centroids):\n    # pixels: 2D numpy array (N, D), zwykle float32 lub float64\n    # centroids: 2D numpy array (K, D), tego samego D co pixels\n    # zwroc: 1D numpy array (N,) z dtype=np.int64,\n    # gdzie out[i] = indeks najblizszego centroidu pixels[i].\n    pixels = np.asarray(pixels, dtype=np.float64)\n    centroids = np.asarray(centroids, dtype=np.float64)\n    # TODO: dla kazdego punktu znajdz argmin po kwadracie odleglosci do centroidow.\n    # Wskazowka: broadcast (N,1,D) - (1,K,D) -> (N,K,D), suma kwadratow po axis=2,\n    # potem np.argmin po axis=1.\n    return np.zeros(pixels.shape[0], dtype=np.int64)\n",
+        "tests": [
+          {
+            "name": "dwa_punkty_dwa_centroidy_identycznosc",
+            "body": "import numpy as np\npixels = np.array([[0.0, 0.0], [10.0, 10.0]])\ncentroids = np.array([[0.0, 0.0], [10.0, 10.0]])\nout = assign_to_nearest_centroid(pixels, centroids)\nassert out.shape == (2,), f'oczekiwano shape (2,), dostalismy {out.shape}'\nassert out.dtype == np.int64, f'oczekiwano dtype int64, dostalismy {out.dtype}'\nassert out.tolist() == [0, 1], f'oczekiwano [0, 1], dostalismy {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "trojwymiarowe_piksele_jak_BGR",
+            "body": "import numpy as np\npixels = np.array([\n    [10.0, 10.0, 10.0],\n    [200.0, 200.0, 200.0],\n    [50.0, 50.0, 200.0],\n])\ncentroids = np.array([\n    [0.0, 0.0, 0.0],\n    [255.0, 255.0, 255.0],\n    [0.0, 0.0, 200.0],\n])\nout = assign_to_nearest_centroid(pixels, centroids)\nassert out.tolist() == [0, 1, 2], f'spodziewane [0, 1, 2], dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "remis_idzie_do_mniejszego_indeksu",
+            "body": "import numpy as np\npixels = np.array([[5.0, 0.0]])\ncentroids = np.array([[0.0, 0.0], [10.0, 0.0]])\nout = assign_to_nearest_centroid(pixels, centroids)\nassert out.tolist() == [0], f'remis powinien rozwiazywac sie do mniejszego indeksu (0), dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "trzy_klastry_z_szumem_wracaja_do_etykiet",
+            "body": "import numpy as np\nrng = np.random.RandomState(0)\ntrue_centers = np.array([[1.0, 1.0], [10.0, 10.0], [1.0, 10.0]])\nlabels_true = rng.randint(0, 3, size=200)\npixels = true_centers[labels_true] + 0.2 * rng.randn(200, 2)\nout = assign_to_nearest_centroid(pixels, true_centers)\nassert out.shape == (200,), f'oczekiwano (200,), dostalismy {out.shape}'\nacc = float((out == labels_true).mean())\nassert acc > 0.99, f'przy szumie sigma=0.2 powinnismy odzyskac >99% etykiet, dostalismy {acc:.3f}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef assign_to_nearest_centroid(pixels, centroids):\n    pixels = np.asarray(pixels, dtype=np.float64)\n    centroids = np.asarray(centroids, dtype=np.float64)\n    diffs = pixels[:, None, :] - centroids[None, :, :]\n    sq = np.sum(diffs * diffs, axis=2)\n    return np.argmin(sq, axis=1).astype(np.int64)\n"
+      }
+    },
+    {
+      "id": "sandbox-cv2-kmeans-na-syntetyku",
+      "title": "Piaskownica: cv2.kmeans w BGR vs LAB na cieniowanym obrazie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz z trzema kolorowymi regionami plus realistyczne nierownomierne oswietlenie:\n# pasek po lewej, pasek w srodku, pasek po prawej + pionowy gradient jasnosci po przekatnej.\nnp.random.seed(0)\nH, W = 120, 180\nimg = np.zeros((H, W, 3), dtype=np.uint8)\nimg[:,            : W // 3]      = (60, 30, 30)     # ciemny niebieski (BGR!)\nimg[:, W // 3   : 2 * W // 3]    = (40, 180, 40)    # zielony\nimg[:, 2 * W // 3 :]             = (30, 30, 200)    # czerwony\n# Symulacja cieniowania — gradient od 40% jasnosci po lewej do 100% po prawej.\nshading = np.linspace(0.4, 1.0, W)[None, :, None]\nimg = np.clip(img.astype(np.float32) * shading + 8.0 * np.random.randn(H, W, 3), 0, 255).astype(np.uint8)\n\n# Wybierz przestrzen barw: 'BGR' albo 'LAB' (sprobuj obu i porownaj!).\nCOLOR_SPACE = 'LAB'\nif COLOR_SPACE == 'LAB':\n    space = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)\nelse:\n    space = img.copy()\n\nK = 3\ndata = space.reshape(-1, 3).astype(np.float32)\ncriteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 20, 1.0)\ncompactness, labels, centers = cv2.kmeans(\n    data, K, None, criteria,\n    attempts=5,\n    flags=cv2.KMEANS_PP_CENTERS,\n)\n\ncenters_u8 = centers.astype(np.uint8)\nquantized = centers_u8[labels.flatten()].reshape(space.shape)\nif COLOR_SPACE == 'LAB':\n    quantized = cv2.cvtColor(quantized, cv2.COLOR_LAB2BGR)\n\nprint(f'COLOR_SPACE = {COLOR_SPACE}, K = {K}, compactness = {compactness:.1f}')\nprint('centroidy (w przestrzeni roboczej):')\nfor i, c in enumerate(centers_u8):\n    print(f'  klaster {i}: {c.tolist()}')\n\n# Liczebnosc klastrow — przy K=3 i trzech rownych pasach powinny byc zblizone.\ncounts = np.bincount(labels.flatten(), minlength=K)\nprint('liczebnosc klastrow:', counts.tolist())\n\n# Czy granica miedzy lewym (niebieskim) a srodkowym (zielonym) pasem jest na wlasciwej kolumnie?\nlabel_img = labels.reshape(H, W)\nrow = label_img[H // 2]\nprint('etykiety w srodkowym wierszu (probkowane co 30 px):', row[::30].tolist())\n\n# Eksperymenty:\n#  1) Ustaw COLOR_SPACE = 'BGR' i porownaj 'compactness' oraz liczebnosc klastrow z LAB-em.\n#     Ktora przestrzen daje czystsza segmentacje na cieniowanym obrazie? Zerknij na 'liczebnosc klastrow'\n#     i 'etykiety w srodkowym wierszu'.\n#  2) Zmien K na 2 i 5. Co kompresuje sie razem przy K=2? Co rozcina sie przy K=5 — kolory czy odcienie?\n#  3) Zwieksz cieniowanie do np. shading = np.linspace(0.15, 1.0, W)[None, :, None]. W BGR k-means\n#     zacznie myslic, ze cien po lewej to inny kolor. W LAB — duzo mniej.\n#  4) Zamien shading na pionowy: shading = np.linspace(0.4, 1.0, H)[:, None, None]. Czy zachowanie BGR vs LAB\n#     jest takie samo, co przy cieniowaniu poziomym?\n",
+        "encouragement": "Pokombinuj z `K`, przestrzenią barw i siłą cieniowania — i przekonaj się, dlaczego LAB wygrywa z BGR, gdy obraz nie jest oświetlony równomiernie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TIT.1982.1056489",
+      "title": "Lloyd, S. P. — Least squares quantization in PCM (IEEE Trans. Information Theory, 1982)",
+      "kind": "paper",
+      "author": "Stuart P. Lloyd",
+      "year": 1982
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d1/d5c/tutorial_py_kmeans_opencv.html",
+      "title": "OpenCV Python tutorial — K-Means clustering for color quantization",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/K-means_clustering",
+      "title": "k-means clustering — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/CIELAB_color_space",
+      "title": "CIELAB color space — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7 Segmentation (k-means and clustering)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

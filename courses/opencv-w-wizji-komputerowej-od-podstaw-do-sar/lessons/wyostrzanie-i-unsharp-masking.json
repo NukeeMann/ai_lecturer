@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "slug": "wyostrzanie-i-unsharp-masking",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Wyostrzanie i unsharp masking",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Klasyczny przepis wyostrzania: obraz + α · (obraz − rozmyty obraz). Skąd dziwna nazwa, jak działa i dlaczego zbyt agresywne nastawy tworzą halo wokół krawędzi.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "skad-unsharp-w-wyostrzaniu",
+      "title": "Dlaczego „unsharp” znaczy „wyostrzaj”",
+      "type": "theory",
+      "data": {
+        "markdown": "Nazwa wzięła się z ciemni fotograficznej: żeby wyostrzyć odbitkę, kopiowano negatyw przez **rozmytą maskę** (ang. *unsharp mask*) — kontaktowy negatyw przepuszczony przez warstwę dyfuzyjną. Rozmycie wycinało drobne szczegóły, więc gdy mocniejszą maskę odjęto od oryginału, *zostawały tylko detale* — i to one wzmacniały lokalny kontrast w finalnej odbitce. Cyfrowe wyostrzanie nazywa się tak samo, bo arytmetyka jest dokładnie taka sama.\n\nFormalnie: niech $I$ to obraz wejściowy, a $G_\\sigma(I)$ — ten sam obraz po rozmyciu Gaussa o odchyleniu $\\sigma$. Mapę detali (high-pass) liczymy jako różnicę:\n\n$$ D = I - G_\\sigma(I) $$\n\nWyostrzony obraz powstaje przez **dodanie** tej różnicy z wagą $\\alpha$ (zwaną *amount*) z powrotem do oryginału:\n\n$$ I_{\\text{sharp}} = I + \\alpha \\cdot D = (1 + \\alpha)\\, I - \\alpha\\, G_\\sigma(I) $$\n\nDwa parametry sterują efektem niezależnie:\n\n- **$\\sigma$** w `GaussianBlur` decyduje, jakiej **skali** detale są wzmacniane. Małe $\\sigma$ ($\\approx 0{,}5$–$1$) wyciąga teksturę i drobne krawędzie; duże $\\sigma$ ($\\approx 3$–$5$) podkręca duże, tłuste krawędzie i kontrasty regionalne.\n- **$\\alpha$** decyduje, **jak mocno** mapa detali jest dodana. $\\alpha = 0$ to brak zmian, $\\alpha \\approx 0{,}5$–$1{,}5$ daje rozsądne wyostrzenie, $\\alpha > 2$ tworzy widoczne *halo* (jasna obwódka po jasnej stronie krawędzi i ciemna po ciemnej) oraz wzmacnia szum w jednolitych obszarach.\n\nWyostrzanie nie zwiększa rozdzielczości — nie tworzy informacji, której w obrazie nie było. Po prostu zwiększa **kontrast lokalny** wokół już istniejących krawędzi, więc oko interpretuje obraz jako ostrzejszy."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Unsharp_masking",
+          "title": "Unsharp masking — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.imageprocessingplace.com/",
+          "title": "Digital Image Processing, 4th ed. — Chapter 3 (Intensity Transformations and Spatial Filtering)",
+          "kind": "book",
+          "author": "Rafael C. Gonzalez and Richard E. Woods",
+          "year": 2018
+        }
+      ]
+    },
+    {
+      "id": "recepta-opencv",
+      "title": "Recepta w OpenCV — `GaussianBlur` + `addWeighted`",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV nie ma jednej funkcji `unsharpMask`, ale wzór składa się z dwóch wywołań, które już znasz:\n\n```python\nimport cv2\n\nblurred = cv2.GaussianBlur(img, ksize=(0, 0), sigmaX=sigma)        # rozmycie referencyjne\nsharp   = cv2.addWeighted(img, 1.0 + amount, blurred, -amount, 0)  # (1+a)*I - a*G_sigma(I)\n```\n\n`ksize=(0, 0)` mówi OpenCV, żeby rozmiar jądra wyliczył automatycznie z $\\sigma$ (ok. $6\\sigma + 1$ — patrz lekcja o filtrach rozmywających). `cv2.addWeighted` saturuje wynik do `uint8` (wartości > 255 przycina do 255, < 0 do 0), więc nie musisz samodzielnie wołać `np.clip`.\n\n| Parametr OpenCV          | Co kontroluje                                     | Typowy zakres            |\n|--------------------------|---------------------------------------------------|--------------------------|\n| `sigmaX` w `GaussianBlur` | Skalę detali wzmacnianych (małe $\\sigma$ = drobna tekstura) | $0{,}5$ – $5$            |\n| Waga oryginału `1+amount` | Łączna siła wyostrzenia                           | $1{,}5$ – $2{,}5$        |\n| Waga rozmycia `−amount`   | Ile detali odejmujemy z rozmytej kopii            | dopełnia się do `1+amount` |\n\nDwie pułapki, na które warto uważać:\n\n1. **Halo / ringing** — przy zbyt dużym `amount` (powyżej $\\sim 2$) na krawędziach pojawia się jasna obwódka po jasnej stronie i ciemna po ciemnej. To nie jest błąd implementacji, tylko nieuniknione zachowanie dodawania wzmocnionej różnicy do oryginału. W `skimage.filters.unsharp_mask` jest dodatkowy parametr `threshold`, który omija piksele o zbyt małym detalu — przydatny przy wyostrzaniu portretów, gdzie nie chcesz wzmacniać szumu w gładkiej skórze.\n2. **`uint8` saturuje, `float` nie** — jeśli pracujesz nad łańcuchem dalszych filtrów po wyostrzaniu, lepiej najpierw przejść na `float32` (`img.astype(np.float32)`), policzyć całość w pełnym zakresie i dopiero na końcu jednorazowo `np.clip(out, 0, 255).astype(np.uint8)`. Inaczej saturacja w `cv2.addWeighted` cicho przekłamie jasne piksele jeszcze przed kolejnym krokiem."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/de8/group__core__array.html#gafafb2513349db3bcff51f54ee5592a19",
+          "title": "OpenCV — `cv2.addWeighted` API reference",
+          "kind": "article"
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.unsharp_mask",
+          "title": "scikit-image — `unsharp_mask` reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-sigma-vs-amount",
+      "title": "Sprawdź się: $\\sigma$ kontra `amount`",
+      "type": "quiz",
+      "data": {
+        "question": "W przepisie `cv2.addWeighted(img, 1+a, cv2.GaussianBlur(img, (0,0), s), -a, 0)` chcesz wyciągnąć **drobną teksturę skóry** w portrecie, nie wzmacniając globalnego kontrastu między policzkiem a tłem. Jak ustawić $s$ (`sigmaX`) i $a$ (`amount`)?",
+        "options": [
+          "Duże $s$ (np. 5) i duże $a$ (np. 2{,}5) — większe wartości zawsze dają ostrzejszy efekt.",
+          "Małe $s$ (ok. 0{,}8) i umiarkowane $a$ (ok. 1{,}0) — małe $\\sigma$ wybiera skalę drobnych detali, umiarkowane `amount` nie wzmacnia szumu nadmiernie.",
+          "Małe $s$ (ok. 0{,}5) i bardzo duże $a$ (np. 4{,}0) — drobna skala wymaga rekompensaty bardzo dużą wagą wyostrzenia.",
+          "Wartości $s$ i $a$ są wymienne — wystarczy ustawić jedno z nich na coś sensownego."
+        ],
+        "correct": [1],
+        "explanation": "Te dwa parametry kontrolują **różne** rzeczy. **$\\sigma$** rozmycia decyduje, jakiej *skali* detale trafiają do mapy $D = I - G_\\sigma(I)$: małe $\\sigma$ ($\\approx$ 1) zatrzymuje tylko drobne krawędzie i teksturę (skóra, tkanina), duże $\\sigma$ ($\\approx$ 5) wyciąga całe regiony i wzmacnia globalny kontrast — dokładnie to, czego *nie* chcesz w portrecie. **`amount`** to liniowy mnożnik tej mapy: powyżej $\\sim 2$ pojawia się halo na krawędziach i wzmocnienie szumu w jednolitych obszarach (czyli w gładkiej skórze). Stąd właściwa nastawa to **małe $\\sigma$** (drobna skala) + **umiarkowane $a$** (bez halo). Odpowiedź A wzmocni globalne kontrasty i halo; C zabije skórę szumem; D ignoruje, że skala i siła to dwa niezależne stopnie swobody.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-unsharp-mask",
+      "title": "Implementacja: `unsharp_mask(image, blurred, amount)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `unsharp_mask(image, blurred, amount)`, która stosuje przepis unsharp masking w czystym NumPy — bez `cv2`. Rozmycie referencyjne (`blurred`) dostajesz **gotowe** na wejściu, dzięki czemu skupiasz się na samej formule wyostrzania.\n\nKroki:\n\n1. Rzutuj oba obrazy na `float64` (`image.astype(np.float64)`, `blurred.astype(np.float64)`) — żeby uniknąć przepełnienia `uint8` w odejmowaniu i mnożeniu.\n2. Policz mapę detali: `detail = image - blurred`.\n3. Złóż wyostrzony obraz: `sharpened = image + amount * detail`.\n4. Przytnij do prawidłowego zakresu i wróć do `uint8`: `np.clip(sharpened, 0, 255).astype(np.uint8)`.\n\nNa wejściu: `image` i `blurred` o **takim samym kształcie** i `dtype=np.uint8`; `amount` to liczba zmiennoprzecinkowa (np. $0{,}5$, $1{,}0$, $2{,}0$). Na wyjściu: tablica `np.uint8` o tym samym kształcie co wejście.\n\nPrzykład numeryczny:\n\n```\nimage   = [[100, 100, 100], [100, 200, 100], [100, 100, 100]]\nblurred = [[110, 120, 110], [120, 160, 120], [110, 120, 110]]\namount  = 1.0\n# detail = image - blurred =\n#   [[-10, -20, -10], [-20,  40, -20], [-10, -20, -10]]\n# sharpened = image + 1.0 * detail =\n#   [[ 90,  80,  90], [ 80, 240,  80], [ 90,  80,  90]]\n```\n\nDla `amount = 0.0` funkcja musi zwrócić **kopię oryginału** (bez zmian).",
+        "starterCode": "import numpy as np\n\ndef unsharp_mask(image, blurred, amount):\n    \"\"\"Wyostrzanie metoda unsharp masking w czystym NumPy.\n\n    Krok po kroku:\n      1. img_f = image.astype(np.float64)\n         blr_f = blurred.astype(np.float64)\n      2. detail = img_f - blr_f\n      3. sharpened = img_f + amount * detail\n      4. return np.clip(sharpened, 0, 255).astype(np.uint8)\n    \"\"\"\n    image = np.asarray(image, dtype=np.uint8)\n    blurred = np.asarray(blurred, dtype=np.uint8)\n    # TODO: zaimplementuj wzor unsharp masking i zwroc obraz uint8 tej samej wielkosci.\n    return image\n",
+        "tests": [
+          {
+            "name": "zachowuje_ksztalt_i_dtype",
+            "body": "import numpy as np\nimage = np.array([[100, 110], [120, 130]], dtype=np.uint8)\nblurred = np.array([[105, 110], [115, 125]], dtype=np.uint8)\nout = unsharp_mask(image, blurred, 1.0)\nassert isinstance(out, np.ndarray), f'Wynik powinien byc np.ndarray, jest {type(out).__name__}'\nassert out.shape == (2, 2), f'Ksztalt powinien byc (2, 2), jest {out.shape}'\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "amount_zero_zwraca_oryginal",
+            "body": "import numpy as np\nimage = np.array([[10, 200], [50, 240]], dtype=np.uint8)\nblurred = np.array([[100, 100], [100, 100]], dtype=np.uint8)\nout = unsharp_mask(image, blurred, 0.0)\nassert np.array_equal(out, image), f'Dla amount=0.0 wynik powinien byc rowny oryginalowi, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "zgadza_sie_z_recznym_przykladem",
+            "body": "import numpy as np\nimage = np.array([\n    [100, 100, 100],\n    [100, 200, 100],\n    [100, 100, 100],\n], dtype=np.uint8)\nblurred = np.array([\n    [110, 120, 110],\n    [120, 160, 120],\n    [110, 120, 110],\n], dtype=np.uint8)\nexpected = np.array([\n    [ 90,  80,  90],\n    [ 80, 240,  80],\n    [ 90,  80,  90],\n], dtype=np.uint8)\nout = unsharp_mask(image, blurred, 1.0)\nassert np.array_equal(out, expected), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "saturuje_do_zakresu_uint8",
+            "body": "import numpy as np\n# Bardzo duze amount: bez przyciecia wynik wyszedlby > 255 i < 0; uint8 musi byc w [0,255].\nimage = np.array([[200, 50]], dtype=np.uint8)\nblurred = np.array([[100, 200]], dtype=np.uint8)\nout = unsharp_mask(image, blurred, 5.0)\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'\nassert int(out.min()) >= 0 and int(out.max()) <= 255, f'Wartosci poza zakresem uint8: min={int(out.min())}, max={int(out.max())}'\n# Sprawdzenie konkretnych wartosci po saturacji:\n#   piksel 0: 200 + 5 * (200 - 100) = 700 -> 255\n#   piksel 1: 50  + 5 * (50  - 200) = -700 -> 0\nassert int(out[0, 0]) == 255 and int(out[0, 1]) == 0, f'Po saturacji oczekiwano [255, 0], dostalismy {out.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef unsharp_mask(image, blurred, amount):\n    image = np.asarray(image, dtype=np.uint8)\n    blurred = np.asarray(blurred, dtype=np.uint8)\n    img_f = image.astype(np.float64)\n    blr_f = blurred.astype(np.float64)\n    detail = img_f - blr_f\n    sharpened = img_f + amount * detail\n    return np.clip(sharpened, 0, 255).astype(np.uint8)\n"
+      }
+    },
+    {
+      "id": "sandbox-explore",
+      "title": "Piaskownica: krawędź typu schodek pod różnymi `amount`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Syntetyczna krawedz typu schodek (1D): plaski region 50 -> plaski region 200,\n# z lekkim splywem na granicy (rozmycie referencyjne).\nimage = np.array([50, 50, 50, 50, 50, 200, 200, 200, 200, 200], dtype=np.uint8)\n\n# Recznie zrobione 'rozmycie' — srednia z 3 sasiadow (replikacja na brzegach).\ndef box_blur_3(arr):\n    arr = np.asarray(arr, dtype=np.float64)\n    n = arr.shape[0]\n    pad = np.concatenate([[arr[0]], arr, [arr[-1]]])\n    out = (pad[:-2] + pad[1:-1] + pad[2:]) / 3.0\n    return np.clip(out, 0, 255).astype(np.uint8)\n\nblurred = box_blur_3(image)\n\n# Twoja funkcja z poprzedniej sekcji:\ndef unsharp_mask(image, blurred, amount):\n    img_f = image.astype(np.float64)\n    blr_f = blurred.astype(np.float64)\n    sharpened = img_f + amount * (img_f - blr_f)\n    return np.clip(sharpened, 0, 255).astype(np.uint8)\n\nprint('image   :', image.tolist())\nprint('blurred :', blurred.tolist())\nprint()\nfor amount in [0.0, 0.5, 1.0, 2.0, 4.0]:\n    out = unsharp_mask(image, blurred, amount)\n    print(f'amount={amount:>4.1f} -> {out.tolist()}')\n\n# Pytania do siebie:\n#   * Przy ktorej wartosci 'amount' po stronie ciemnej (50) pojawia sie wartosc < 50,\n#     a po jasnej (200) wartosc > 200? To wlasnie jest halo / ringing.\n#   * Dla amount = 4.0 ile pikseli zsaturowalo do 0 lub 255? Co to mowi o fotografii\n#     zdjecia, ktora zostala zbyt mocno wyostrzona?\n#   * Zamien box_blur_3 na uzycie wiekszego okna (5 lub 7) i zobacz, jak zmienia sie\n#     'siegnijszosc' halo.\n",
+          "encouragement": "Zwiększ `amount` do 4 albo 6 i policz, ile pikseli zsaturowało do 0 lub 255 — w tym momencie zaczyna się halo, którego nie da się odwrócić."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Unsharp_masking",
+      "title": "Unsharp masking — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.unsharp_mask",
+      "title": "scikit-image — `unsharp_mask` reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 3 (Intensity Transformations and Spatial Filtering)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/de8/group__core__array.html#gafafb2513349db3bcff51f54ee5592a19",
+      "title": "OpenCV — `cv2.addWeighted` API reference",
+      "kind": "article"
+    }
+  ]
+}

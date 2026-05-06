@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "slug": "arytmetyka-obrazow-i-alpha-blending",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Arytmetyka obrazów i alpha blending",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Dodawanie i ważone mieszanie pikseli — saturacja kontra przepełnienie uint8 oraz formuła liniowej interpolacji za każdym cross-fade'em.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "saturacja-vs-przepelnienie",
+      "title": "Saturacja kontra przepełnienie — `cv2.add` vs `+`",
+      "type": "theory",
+      "data": {
+        "markdown": "Trzy funkcje OpenCV — `cv2.add`, `cv2.subtract` i `cv2.addWeighted` — operują z **saturacją** typu `uint8`: wartości > 255 są przycinane do 255, a < 0 do 0. Zwykłe operatory NumPy `+`/`-` na `uint8` zachowują się **inaczej** — zawijają wynik **modulo 256**.\n\nDla dwóch pikseli $a = 200$ i $b = 100$:\n\n- `cv2.add(a, b)` → **255** (saturacja w górę).\n- `a + b` na tablicy `np.uint8` → **44**, bo $300 \\bmod 256 = 44$.\n\nW praktyce: na obrazie z dużymi jasnymi obszarami zwykły `+` w NumPy wytwarza **czarne plamy** dokładnie tam, gdzie powinno być po prostu jasno (200 + 100 'przeskakuje' przez 0). Dlatego pierwsza zasada arytmetyki obrazów 8-bitowych brzmi: **`cv2.add`, nie `+`**.\n\nGdy chcesz świadomie pracować z dokładną sumą (np. liczyć średnią dwóch obrazów bez utraty jasnych pikseli), przejdź na `float32`, policz, a dopiero na końcu `np.clip(..., 0, 255).astype(np.uint8)`. Funkcje OpenCV robią to za ciebie."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d0/d86/tutorial_py_image_arithmetics.html",
+          "title": "OpenCV Python tutorial — Arithmetic operations on images",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "alpha-blending-teoria",
+      "title": "Alpha blending — liniowa interpolacja obrazów",
+      "type": "theory",
+      "data": {
+        "markdown": "**Alpha blending** to liniowa interpolacja dwóch obrazów piksel po pikselu:\n\n$$\\text{out}(x, y) = \\alpha \\cdot A(x, y) + (1 - \\alpha) \\cdot B(x, y) + \\gamma$$\n\nParametr $\\alpha \\in [0, 1]$ kontroluje wagę pierwszego obrazu, $\\gamma$ to opcjonalne globalne przesunięcie jasności (najczęściej 0). Dla $\\alpha = 0$ widać tylko $B$, dla $\\alpha = 1$ tylko $A$; pomiędzy — gładkie *cross-fade*.\n\n![Wykres liniowej interpolacji pomiędzy dwoma punktami końcowymi v0 i v1 — prosta łącząca te punkty z zaznaczonym punktem pośrednim w pozycji (1−α)·v0 + α·v1; ten sam wzór cv2.addWeighted stosuje niezależnie do każdego piksela obrazu](https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Linear_interpolation.svg/480px-Linear_interpolation.svg.png)\n\n*(Obraz: Wikimedia Commons, Public domain.)*\n\nW OpenCV jedna linijka:\n\n```python\nout = cv2.addWeighted(A, alpha, B, 1 - alpha, 0)\n```\n\nFunkcja sama saturuje wynik do `uint8`. W NumPy `alpha * A + (1 - alpha) * B` zwraca `float` i trzeba samodzielnie wykonać `np.clip(out, 0, 255).astype(np.uint8)`, inaczej `imshow`/`imwrite` zinterpretują wartości jako jaskrawe artefakty.\n\nWzór ten Porter i Duff (1984) opisali jako *operator over* — fundament całej współczesnej arytmetyki obrazów z kanałem przezroczystości. Dziś tkwi w każdym **cross-fade** w wideo, **watermarku** PNG z kanałem alfa i **nakładce** maski na zdjęcie satelitarne."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Alpha_compositing",
+          "title": "Alpha compositing — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1145/964965.808606",
+          "title": "Compositing Digital Images (SIGGRAPH 1984)",
+          "kind": "paper",
+          "author": "Thomas Porter and Tom Duff",
+          "year": 1984
+        }
+      ]
+    },
+    {
+      "id": "quiz-cv2add-vs-numpy",
+      "title": "Sprawdź się: `cv2.add` kontra `+` w NumPy",
+      "type": "quiz",
+      "data": {
+        "question": "Masz dwa obrazy `uint8`: w pewnym pikselu $a = 200$ i $b = 100$. Wykonujesz dwie operacje: `cv2.add(a, b)` oraz `a + b` (zwykłe `+` na tablicach NumPy). Jakie wartości otrzymasz?",
+        "options": [
+          "Obie zwrócą 300 — Python liczy w dowolnej precyzji.",
+          "Obie zwrócą 255 — wynik zawsze jest przycinany do zakresu uint8.",
+          "`cv2.add` zwróci 255 (saturacja), a `a + b` w NumPy zwróci 44 (przepełnienie modulo 256).",
+          "`cv2.add` zwróci 0 (błąd przepełnienia), a `a + b` w NumPy zwróci 300."
+        ],
+        "correct": [2],
+        "explanation": "Funkcje arytmetyczne OpenCV (`cv2.add`, `cv2.subtract`) operują z **saturacją**: wartości > 255 przycinają do 255. Operatory NumPy `+`/`-` na `uint8` natomiast **zawijają modulo 256**, więc $200 + 100 = 300$, a $300 \\bmod 256 = 44$. To ta sama klasa pomyłki, która produkuje 'czarne plamy' w jasnych obszarach obrazu, gdy ktoś nieświadomie sumuje dwa zdjęcia operatorem `+`. Dla obrazów 8-bitowych: zawsze `cv2.add`. Jeśli chcesz świadomie pracować na pełnym zakresie, przejdź wcześniej na `float32`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-alpha-blend",
+      "title": "Implementacja: `alpha_blend` z saturacją",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `alpha_blend(a, b, alpha)`, które zwraca liniową kombinację dwóch obrazów `uint8` jako tablicę `np.uint8` z **saturacją** do $[0, 255]$:\n\n$$\\text{out} = \\alpha \\cdot A + (1 - \\alpha) \\cdot B$$\n\n- `a` i `b` to tablice `np.uint8` o tym samym kształcie.\n- `alpha` to liczba zmiennoprzecinkowa.\n- Wynik MUSI mieć `dtype == np.uint8`, a wartości spoza $[0, 255]$ MUSZĄ być **przycięte** (saturacja, nie przepełnienie).\n\n**Uwaga:** jeśli policzysz `alpha * a + (1 - alpha) * b` bezpośrednio na `uint8`, NumPy popełni przepełnienie modulo 256. Najprostsze obejście: chwilowo przejść przez `float32`, dopiero po `np.clip` wrócić na `uint8`.\n\n```\na = np.array([[100]], dtype=np.uint8)\nb = np.array([[200]], dtype=np.uint8)\nalpha_blend(a, b, 0.25)  ->  array([[175]], dtype=uint8)   # 0.25*100 + 0.75*200 = 175\n```",
+        "starterCode": "import numpy as np\n\ndef alpha_blend(a, b, alpha):\n    \"\"\"Zwróć alpha*a + (1-alpha)*b jako np.uint8 z saturacją.\n\n    Krok po kroku:\n      1. Skonwertuj a i b do float32 (np. a.astype(np.float32)),\n         żeby uniknąć przepełnienia uint8.\n      2. Policz wynik = alpha * a_f + (1 - alpha) * b_f.\n      3. Przytnij wynik do [0, 255] (np.clip) i przekonwertuj z powrotem\n         na uint8 (.astype(np.uint8)).\n    \"\"\"\n    # TODO: zaimplementuj zgodnie z opisem powyżej\n    return a\n",
+        "tests": [
+          {
+            "name": "alpha_zero_returns_b",
+            "body": "import numpy as np\na = np.array([[100, 200], [50, 250]], dtype=np.uint8)\nb = np.array([[10, 20], [30, 40]], dtype=np.uint8)\nout = alpha_blend(a, b, 0.0)\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'\nassert (out == b).all(), f'Dla alpha=0 oczekiwano b={b.tolist()}, dostalismy {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "alpha_one_returns_a",
+            "body": "import numpy as np\na = np.array([[100, 200], [50, 250]], dtype=np.uint8)\nb = np.array([[10, 20], [30, 40]], dtype=np.uint8)\nout = alpha_blend(a, b, 1.0)\nassert (out == a).all(), f'Dla alpha=1 oczekiwano a={a.tolist()}, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "interpolates_correctly_at_quarter_alpha",
+            "body": "import numpy as np\na = np.array([[100]], dtype=np.uint8)\nb = np.array([[200]], dtype=np.uint8)\nout = alpha_blend(a, b, 0.25)\nexpected = 0.25 * 100 + 0.75 * 200\nassert out[0, 0] == int(round(expected)), f'Oczekiwano {int(round(expected))}, dostalismy {out[0, 0]}'"
+          },
+          {
+            "name": "saturates_instead_of_wrapping",
+            "body": "import numpy as np\na = np.full((2, 2), 250, dtype=np.uint8)\nb = np.full((2, 2), 250, dtype=np.uint8)\nout = alpha_blend(a, b, 0.5)\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'\nassert (out == 250).all(), f'Mieszanka 250 z 250 z alpha=0.5 powinna dac 250, dostalismy {out.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef alpha_blend(a, b, alpha):\n    a_f = a.astype(np.float32)\n    b_f = b.astype(np.float32)\n    out = alpha * a_f + (1.0 - alpha) * b_f\n    return np.clip(out, 0, 255).astype(np.uint8)\n"
+      }
+    },
+    {
+      "id": "sandbox-alpha",
+      "title": "Piaskownica: poczuj geometrię cross-fade'u",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\ndef alpha_blend(a, b, alpha):\n    a_f = a.astype(np.float32)\n    b_f = b.astype(np.float32)\n    out = alpha * a_f + (1.0 - alpha) * b_f\n    return np.clip(out, 0, 255).astype(np.uint8)\n\n# Dwie 'miniaturki' 4x4 — ciemna B i jasna A.\nA = np.full((4, 4), 220, dtype=np.uint8)   # jasna plansza\nB = np.full((4, 4), 40,  dtype=np.uint8)   # ciemna plansza\n\n# Cross-fade: jak zmienia sie srednia jasnosc miedzy A i B?\nprint('alpha  srednia_jasnosc')\nfor alpha in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]:\n    out = alpha_blend(A, B, alpha)\n    print(f'{alpha:5.2f}  {out.mean():.1f}')\n\n# Co jesli wyjdziemy poza [0, 1]?\nprint()\nprint('Probujemy alpha poza zakresem [0, 1]:')\nfor alpha in [-0.2, 1.5]:\n    out = alpha_blend(A, B, alpha)\n    print(f'alpha={alpha:.2f} -> srednia={out.mean():.1f}, min={out.min()}, max={out.max()}')\n\n# Pytania do siebie:\n#   * Czy srednia jasnosc rosnie liniowo z alpha? Wynik powinien byc prosty.\n#   * Co dzieje sie dla alpha < 0 lub alpha > 1 — czy np.clip 'lapie' przepelnienia?\n#   * Sprobuj zamienic miejscami A i B w wywolaniu — co sie zmieni, a co zostanie identyczne?\n",
+        "encouragement": "Zmieniaj alpha i jasności A/B i sprawdź, czy potrafisz przewidzieć średnią jasność wyniku, zanim Python ją wypisze."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d0/d86/tutorial_py_image_arithmetics.html",
+      "title": "OpenCV Python tutorial — Arithmetic operations on images",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Alpha_compositing",
+      "title": "Alpha compositing — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1145/964965.808606",
+      "title": "Compositing Digital Images (SIGGRAPH 1984)",
+      "kind": "paper",
+      "author": "Thomas Porter and Tom Duff",
+      "year": 1984
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 2 (Digital Image Fundamentals: Arithmetic Operations)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

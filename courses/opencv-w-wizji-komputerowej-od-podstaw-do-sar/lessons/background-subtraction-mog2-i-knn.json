@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "slug": "background-subtraction-mog2-i-knn",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Background subtraction MOG2 i KNN",
+  "eyebrow": "TRACKING",
+  "description": "Background subtraction to klasyczny pre-processing dla wszystkich pipeline'ów ruchu z nieruchomej kamery — od liczników aut na skrzyżowaniu po MOT na przemysłowym CCTV. Idea jest prosta i radykalna: zamiast modelować obiekt, modelujemy **tło** i wszystko, czego ten model nie wyjaśnia, traktujemy jako pierwszy plan. W tej lekcji wyprowadzimy intuicję per-pikselowego modelu mieszaniny gaussianów, zobaczymy, jak `cv2.createBackgroundSubtractorMOG2` (Zivkovic 2004) i `cv2.createBackgroundSubtractorKNN` (Zivkovic 2006) realizują ten pomysł w jednym wywołaniu, zaimplementujemy minimalny model running-average od zera i uruchomimy MOG2 na syntetycznej sekwencji, żeby na własnej skórze poczuć wpływ `history`, `varThreshold` i learning rate.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "po-co-tlo-i-pierwszy-plan",
+      "title": "Statyczna kamera i per-pikselowy model tła",
+      "type": "theory",
+      "data": {
+        "markdown": "Kiedy kamera **stoi w miejscu** — przemysłowy CCTV, kamera ruchu drogowego, monitor magazynu — to każdy piksel obrazu *przez większość czasu* obserwuje **ten sam fragment sceny**. Asfalt, ściana, niebo. Co jakiś czas przechodzi przez ten piksel coś *innego* — pieszy, samochód, paczka — i właśnie te krótkie odstępstwa od „normalności\" chcemy znaleźć.\n\nNajprostsze podejście — *odejmowanie sąsiednich klatek* (`cv2.absdiff(frame_t, frame_t-1)` + próg) — działa fatalnie z trzech powodów: zatrzymujący się obiekt znika z maski (różnica między klatkami spada do zera), poruszające się tło (liście, fale, flagi) generuje fałszywe alarmy, a powolny ruch oświetlenia chmurami przesuwa cały obraz. Potrzebujemy modelu **stabilnego w czasie** i **zlokalizowanego w pikselu**.\n\n![Schemat klasycznego pipeline'u background subtraction z dokumentacji OpenCV: po lewej kolejne klatki wideo wpadają do bloku „background model\", po prawej wynikiem jest binarna maska pierwszego planu (białe piksele tam, gdzie nowa klatka odbiega od modelu); strzałka aktualizacji wraca do bloku modelu, podkreślając, że tło uczy się on-line z każdej klatki](https://docs.opencv.org/4.x/Background_Subtraction_Tutorial_Scheme.png)\n\n*(Obraz: dokumentacja OpenCV, [tutorial Background Subtraction](https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html).)*\n\nKlasyczny pomysł Stauffera i Grimsona (1999), rozwinięty przez Zivkovicia w MOG2 (2004), brzmi tak: dla **każdego piksela osobno** trzymaj **mieszaninę kilku rozkładów gaussowskich** opisujących, jakie wartości jasności ten piksel zwykle przyjmuje. Liść drzewa, który raz pokazuje światło nieba, raz cień gałęzi, ma dwa „mody\" w swoim rozkładzie — i oba są częścią tła.\n\nFormalnie, prawdopodobieństwo, że piksel o wartości $I_t$ należy do tła w chwili $t$, to ważona suma $K$ gaussianów:\n\n$$ p(I_t \\mid bg) = \\sum_{k=1}^{K} w_k \\cdot \\mathcal{N}\\bigl(I_t \\,;\\, \\mu_k,\\, \\sigma_k^2\\bigr) $$\n\nz parametrami uczonymi on-line. Każda kolejna klatka aktualizuje wagi $w_k$, średnie $\\mu_k$ i wariancje $\\sigma_k^2$ przez ruchomą średnią z **learning rate** $\\alpha \\in [0, 1]$:\n\n$$ \\mu_k \\leftarrow (1 - \\alpha)\\,\\mu_k + \\alpha\\,I_t $$\n\nPiksel jest klasyfikowany jako **pierwszy plan**, jeśli żaden z gaussianów go nie pokrywa — formalnie: jeśli odległość Mahalanobisa $|I_t - \\mu_k|/\\sigma_k$ przekracza próg dla wszystkich $k$ jednocześnie. To jest sedno tego, co robią `cv2.createBackgroundSubtractorMOG2` (gaussiany jawnie, $K \\le 5$) i `cv2.createBackgroundSubtractorKNN` (parzysta historia próbek + zliczanie sąsiadów w promieniu, ale ta sama filozofia: model lokalny, on-line, statystyczny)."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICPR.2004.1333992",
+          "title": "Zivkovic, Z. — Improved Adaptive Gaussian Mixture Model for Background Subtraction (ICPR 2004)",
+          "kind": "paper",
+          "author": "Zoran Zivkovic",
+          "year": 2004
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html",
+          "title": "OpenCV Python tutorial — Background subtraction",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "mog2-i-knn-pod-cv2",
+      "title": "MOG2 i KNN w OpenCV — jeden konstruktor, jedno `apply`",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV pakuje cały model w obiekt z dwiema metodami: konstruktor (`cv2.createBackgroundSubtractor*`) i `subtractor.apply(frame[, mask, learningRate])`, które na każdej klatce zwraca maskę pierwszego planu (`uint8`, wartości `0` / `255`, opcjonalnie `127` dla cieni) i **w środku** aktualizuje swój model.\n\n**MOG2 — `cv2.createBackgroundSubtractorMOG2`.**\n\n```python\nimport cv2\n\nsub = cv2.createBackgroundSubtractorMOG2(\n    history=500,         # ile ostatnich klatek wplywa na model (im wiecej, tym wolniej zapomina)\n    varThreshold=16,     # prog Mahalanobisa^2 -- piksel jest fg, jesli zaden gauss go nie pokrywa\n    detectShadows=True,  # dodatkowo wykrywaj cienie i znacz je wartoscia 127\n)\n\ncap = cv2.VideoCapture('parking.mp4')\nwhile True:\n    ok, frame = cap.read()\n    if not ok:\n        break\n    fg = sub.apply(frame)            # uint8 (H, W); 0=tlo, 127=cien (jesli detectShadows), 255=fg\n    fg_clean = cv2.medianBlur(fg, 5) # jednolinijkowe odszumianie maski\n```\n\nKluczowe parametry:\n\n- `history` — domyślnie `500`. Liczbowy odpowiednik *learning rate* domyślnego ($\\alpha = 1/\\text{history}$, bo `apply()` wywołane bez `learningRate=` używa właśnie tej wartości). Krótkie `history` szybciej adaptuje się do zmian oświetlenia, ale wciąga zatrzymujące się obiekty do tła w sekundy.\n- `varThreshold` — domyślnie `16`. Im większe, tym mniej fałszywych alarmów (i tym łatwiej przeoczyć obiekt o jasności podobnej do tła). Realne stojące pipeline'y ustawiają go w `9 .. 36`.\n- `detectShadows` — domyślnie `True`. Cień to piksel ciemniejszy od tła w tej samej barwie — algorytm rozpoznaje to i zwraca w masce wartość `127`. **W kolejnych krokach pipeline'u prawie zawsze chcesz `cv2.threshold(fg, 200, 255, cv2.THRESH_BINARY)`**, żeby usunąć cienie z maski przed analizą konturów.\n- `learningRate` (parametr `apply`) — `-1` (domyślne) używa $1/\\text{history}$; `0` *zamraża* model (przydatne, gdy chcesz odpytać model nauczony na pierwszych $N$ klatkach na końcu sekwencji); wartość $> 0$ wymusza ten konkretny $\\alpha$.\n\n**KNN — `cv2.createBackgroundSubtractorKNN`.** Ten sam interfejs, inny silnik. Zamiast jawnej mieszaniny gaussianów trzyma per-piksel listę ostatnich $N$ próbek i pyta: *ilu sąsiadów (w sensie odległości intensywności) bieżącej wartości należy do tła?*. Nadaje się lepiej do scen z **niewielkimi liczbami pikseli pierwszego planu** i **silnym multimodalnym tłem** (drgająca trawa, cienie chmur).\n\n```python\nsub = cv2.createBackgroundSubtractorKNN(\n    history=500,\n    dist2Threshold=400.0,  # prog **kwadratu** odleglosci do uznania probki za 'tlo';\n                           # ostroznie -- jest w kwadratach, dlatego 400 = ok 20-pikselowa odleglosc.\n    detectShadows=True,\n)\nfg = sub.apply(frame)\n```\n\n**Kiedy co.** MOG2 jest szybszy i ma niższy ślad pamięciowy — dobry domyślny wybór dla CPU. KNN bywa bardziej stabilny przy bardzo aktywnym tle (trawa, fale, flagi), kosztem ~2× wolniejszego `apply()`. Oba modele wymagają **statycznej kamery** — w momencie, gdy kamera zaczyna się ruszać, *cały* obraz staje się pierwszym planem. Dla kamery ruchomej najpierw stabilizuj wideo (homografia z poprzedniej lekcji o feature matching) i dopiero wtedy odejmuj tło."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html",
+          "title": "OpenCV Python tutorial — Background subtraction",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1016/j.patrec.2005.11.005",
+          "title": "Zivkovic, Z. and van der Heijden, F. — Efficient adaptive density estimation per image pixel for the task of background subtraction (Pattern Recognition Letters 2006)",
+          "kind": "paper",
+          "author": "Zoran Zivkovic and Ferdinand van der Heijden",
+          "year": 2006
+        }
+      ]
+    },
+    {
+      "id": "quiz-history-i-cienie",
+      "title": "Sprawdź się: pułapki MOG2",
+      "type": "quiz",
+      "data": {
+        "question": "Trenujesz MOG2 na nagraniu z 25 fps z kamery monitoringu parkingu. Auto wjeżdża, parkuje i stoi przez minutę, po czym odjeżdża. W zerowych ustawieniach (`history=500`, `detectShadows=True`) zauważasz dwa problemy: (1) podczas postoju samochód po ~20 sekundach **przestaje być widoczny w masce pierwszego planu**, a (2) długie cienie po południu generują fałszywe kontury w pipeline'ie zliczania aut. Które dwa pojedyncze kroki najlepiej, **jednocześnie**, adresują oba problemy?",
+        "options": [
+          "Zwiększyć `history` do `5000` i zostawić `detectShadows=True` — dłuższa pamięć modelu zatrzyma proces wciągania samochodu w tło i automatycznie wytłumi cienie.",
+          "Zwiększyć `history` do `5000` i progować maskę po `apply()`: `_, fg = cv2.threshold(fg, 200, 255, cv2.THRESH_BINARY)` — pierwsze utrzymuje samochód w pierwszym planie znacznie dłużej (proporcjonalnie do $1/\\text{history}$), drugie usuwa cienie znaczone wartością `127` z maski przed analizą konturów.",
+          "Ustawić `detectShadows=False` i zmniejszyć `varThreshold` do `4` — wyłączenie detekcji cieni rozwiąże problem 2, niski próg „przykuje\" auto do pierwszego planu.",
+          "Wywołać `sub.apply(frame, learningRate=0.5)` na każdej klatce — to wymusi szybkie uczenie i model zauważy stojący samochód jako anomalię.",
+          "Zwiększyć `varThreshold` do `100`, by odrzucić cienie, i zostawić `history` na domyślnej wartości — wysoki próg sam z siebie nie pozwoli cieniom przejść do maski."
+        ],
+        "correct": [1],
+        "explanation": "**Odpowiedź B** trafia oba problemy w jednym ruchu. Wciąganie stojącego auta w tło wynika **bezpośrednio** z learning rate $\\alpha = 1/\\text{history}$: dla `history=500` przy 25 fps mamy $\\alpha = 1/500 = 0{,}002$ na klatkę, czyli $\\approx 0{,}05$ na sekundę — po 20 s średnia gaussianu auta przesuwa się o znaczną część jego jasności i `varThreshold` przestaje być przekroczony. Podniesienie `history` do `5000` ($\\alpha = 0{,}0002$/klatkę) rozciąga ten proces ~10×, więc auto pozostaje w pierwszym planie przez pełny czas postoju. Drugi problem — cienie — to *cecha, nie usterka*: przy `detectShadows=True` MOG2 znaczy cień wartością `127`, a nie `255`. Pipeline analizy konturów woła `findContours` na surowej masce i bierze cień jako prawdziwy obiekt. Próg `cv2.threshold(fg, 200, 255, cv2.THRESH_BINARY)` zostawia tylko \"twardy\" pierwszy plan i odcina cienie — to **standardowy** krok po `apply()` w każdym pipeline'ie produkcyjnym z MOG2.\n\n**A** rozwiązuje problem 1, ale **nie problem 2**: `detectShadows=True` *nadal* znaczy cienie wartością `127`. Bez progowania trafiają one do `findContours` i generują fałszywe kontury — `history` nie wpływa na detekcję cieni.\n\n**C** to klasyczna pułapka. `detectShadows=False` wcale nie sprawia, że cienie znikają — wręcz przeciwnie, **zlewają się z pierwszym planem**, bo MOG2 traktuje je jako odstępstwo od modelu. Wartość `127` znika z maski, a cień staje się normalnym `255`. Niski `varThreshold=4` dodatkowo zwiększa czułość, więc pojawiają się jeszcze większe fałszywe kontury.\n\n**D** jest dramatycznie odwrotne. `learningRate=0.5` znaczy, że model w każdej klatce **przypisuje pół wagi** bieżącej jasności — auto stałoby się tłem w **dwóch klatkach**, nie w 20 sekundach. To ustawienie jest sensowne wyłącznie do *wyzerowania* modelu na nową scenę, nie jako tryb pracy.\n\n**E** jest też pułapką pojęciową. `varThreshold` wpływa na to, ile odchyleń standardowych od średniej gaussianu trzeba mieć, by zostać oznaczonym jako pierwszy plan — **dotyczy obu**: prawdziwego ruchu i cieni. Wysoki próg odrzuca *jedno i drugie*, więc traci się też ledwie widoczne obiekty (ciemne ubranie pieszego na ciemnym asfalcie). Detekcja cieni jest **osobnym etapem** w MOG2 i nie zależy od `varThreshold`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-running-average",
+      "title": "Zaimplementuj `running_avg_foreground`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Najprostszy sensowny model tła — *jeden gaussian na piksel z rosnącą średnią* — wystarczy, żeby zrozumieć, jak działa learning rate w MOG2/KNN. Dziś zaimplementujesz ten model na surowym NumPy i wygenerujesz maskę pierwszego planu dla **ostatniej** klatki sekwencji.\n\nZaimplementuj funkcję:\n\n```python\nrunning_avg_foreground(frames, alpha, threshold) -> mask\n```\n\n**Sygnatura.**\n\n- `frames` — lista (lub krotka) `numpy.ndarray` `uint8` o tym samym kształcie `(H, W)`, każda reprezentuje pojedynczą klatkę grayscale. **Co najmniej 2 klatki.**\n- `alpha` — `float` w przedziale `(0, 1]`. Learning rate ruchomej średniej (jak `1/history` w MOG2).\n- `threshold` — `float`. Próg bezwzględnej różnicy jasności, powyżej którego piksel jest oznaczany jako pierwszy plan.\n- Zwróć: `numpy.ndarray` `uint8` o kształcie `(H, W)`, z wartościami `0` (tło) i `1` (pierwszy plan), wyznaczone dla **ostatniej** klatki w `frames`.\n\n**Reguły.**\n\n1. Zainicjalizuj model tła `bg = frames[0].astype(np.float32)`.\n2. Dla każdej klatki **z wyjątkiem ostatniej** (czyli `frames[1:-1]`, w kolejności) zaktualizuj model: `bg = (1 - alpha) * bg + alpha * frame.astype(np.float32)`. Klatka pierwsza już zainicjalizowała `bg`, więc kolejne aktualizacje zaczynają się od `frames[1]`.\n3. Dla **ostatniej** klatki nie aktualizuj modelu — policz `diff = abs(last - bg)` i zwróć `(diff > threshold).astype(np.uint8)`.\n4. **Nie modyfikuj** `frames` ani żadnego z elementów listy. Działanie ma być czysto funkcyjne (testy zweryfikują, że oryginalne tablice nie zostały zmodyfikowane).\n5. **Nie używaj `cv2`** — celem ćwiczenia jest pokazanie, że cały MOG2-light to ~5 linii NumPy.\n\n**Przykład.**\n\n```\nframes = [zera(2x2), zera(2x2), zera(2x2) z piksel(0,0)=200]\nalpha = 0.1\nthreshold = 50\n# bg po 2 klatkach = wciaz 0.0 wszedzie (zera + zera);\n# diff dla klatki 3 = [[200, 0], [0, 0]];\n# mask = [[1, 0], [0, 0]] -- pojedynczy piksel pierwszego planu.\n```",
+        "starterCode": "import numpy as np\n\ndef running_avg_foreground(frames, alpha, threshold):\n    # frames: lista ndarray uint8 (H, W); >= 2 klatek.\n    # alpha: float w (0, 1] -- learning rate ruchomej sredniej.\n    # threshold: float -- prog absolutnej roznicy jasnosci.\n    # Zwroc: ndarray uint8 (H, W) z wartosciami {0, 1} dla OSTATNIEJ klatki.\n    bg = frames[0].astype(np.float32)\n    # TODO: dla kazdej klatki z frames[1:-1] zaktualizuj bg = (1 - alpha) * bg + alpha * klatka.\n    # TODO: policz diff dla frames[-1] i zwroc maske (diff > threshold).astype(np.uint8).\n    H, W = frames[0].shape\n    return np.zeros((H, W), dtype=np.uint8)\n",
+        "tests": [
+          {
+            "name": "stale_tlo_brak_pierwszego_planu",
+            "body": "import numpy as np\nframes = [np.full((4, 4), 100, dtype=np.uint8) for _ in range(5)]\nmask = running_avg_foreground(frames, alpha=0.1, threshold=10)\nassert mask.shape == (4, 4), f'zly ksztalt: {mask.shape}'\nassert mask.dtype == np.uint8, f'zly dtype: {mask.dtype}'\nassert np.all(mask == 0), f'maska powinna byc zerowa, dostalismy:\\n{mask}'",
+            "hidden": false
+          },
+          {
+            "name": "pojedynczy_pixel_w_ostatniej_klatce",
+            "body": "import numpy as np\nf0 = np.zeros((3, 3), dtype=np.uint8)\nf1 = np.zeros((3, 3), dtype=np.uint8)\nf2 = np.zeros((3, 3), dtype=np.uint8)\nf2[1, 1] = 200\nmask = running_avg_foreground([f0, f1, f2], alpha=0.1, threshold=50)\nexpected = np.zeros((3, 3), dtype=np.uint8)\nexpected[1, 1] = 1\nassert np.array_equal(mask, expected), f'oczekiwano jednego piksela fg w (1,1), dostalismy:\\n{mask}'"
+          },
+          {
+            "name": "uczenie_wciaga_powolny_sygnal_w_tlo",
+            "body": "import numpy as np\n# Powolnie rosnace tlo (chmury). Po 50 klatkach z alpha=0.5 model nadazyl;\n# jezeli ostatnia klatka jest 'normalna' dla aktualnego tla, fg jest pusty.\nframes = [np.full((2, 2), 100 + i * 2, dtype=np.uint8) for i in range(50)]\nmask = running_avg_foreground(frames, alpha=0.5, threshold=10)\n# Z alpha=0.5 model praktycznie sledzi tlo klatka-po-klatce; ostatnia klatka rowna 198 a model bardzo blisko 198.\nassert np.all(mask == 0), f'Model z alpha=0.5 powinien nadazyc za powolnym sygnalem, fg = {mask.sum()} pikseli'"
+          },
+          {
+            "name": "alpha_male_nie_nadaza_za_zmianami",
+            "body": "import numpy as np\n# Te same 50 klatek, ale alpha=0.001 (bardzo dluga pamiec) -- bg wciaz blisko 100,\n# a ostatnia klatka ma jasnosc 198 -- WSZYSTKIE piksele powinny byc fg.\nframes = [np.full((2, 2), 100 + i * 2, dtype=np.uint8) for i in range(50)]\nmask = running_avg_foreground(frames, alpha=0.001, threshold=10)\nassert mask.shape == (2, 2)\nassert np.all(mask == 1), f'Z alpha=0.001 model nie nadazy, oczekuje wszystkich pikseli fg, dostalismy:\\n{mask}'"
+          },
+          {
+            "name": "wejscie_pozostaje_nietkniete",
+            "body": "import numpy as np\nframes = [np.array([[10, 20], [30, 40]], dtype=np.uint8) for _ in range(3)]\nfingerprints = [f.copy() for f in frames]\n_ = running_avg_foreground(frames, alpha=0.2, threshold=5)\nfor original, current in zip(fingerprints, frames):\n    assert np.array_equal(original, current), 'running_avg_foreground nie powinno modyfikowac wejscia'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef running_avg_foreground(frames, alpha, threshold):\n    bg = frames[0].astype(np.float32)\n    for frame in frames[1:-1]:\n        bg = (1.0 - alpha) * bg + alpha * frame.astype(np.float32)\n    last = frames[-1].astype(np.float32)\n    diff = np.abs(last - bg)\n    return (diff > threshold).astype(np.uint8)\n"
+      }
+    },
+    {
+      "id": "sandbox-mog2-syntetyczna",
+      "title": "Piaskownica: MOG2 na syntetycznej sekwencji",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\nrng = np.random.RandomState(0)\nH, W = 96, 160\nN_FRAMES = 60\n\n# 1. Generujemy syntetyczne wideo: tlo z lekkim szumem + bialy prostokat,\n#    ktory przesuwa sie w prawo. To dokladnie zadanie, w ktorym BG subtraction blyszczy.\nframes = []\nfor t in range(N_FRAMES):\n    bg = rng.randint(80, 105, size=(H, W), dtype=np.uint8)  # 'asfalt' z szumem\n    # Prostokat 12x20 px, przesuwa sie z predkoscia 2 px / klatke.\n    x = 5 + 2 * t\n    if x + 20 < W:\n        bg[H // 2 - 6 : H // 2 + 6, x : x + 20] = 240        # 'auto'\n    frames.append(bg)\n\n# 2. Standardowy konstruktor + petla apply().\nsub = cv2.createBackgroundSubtractorMOG2(\n    history=200,\n    varThreshold=16,\n    detectShadows=True,\n)\n\n# Pierwsze ~30 klatek tylko 'rozgrzewaja' model -- nie patrzymy jeszcze na maske.\nWARMUP = 30\nfor frame in frames[:WARMUP]:\n    sub.apply(frame)\n\n# 3. Po rozgrzewce model 'wie', co jest tlem. Liczymy maski dla pozostalych klatek.\nstats = []\nfor frame in frames[WARMUP:]:\n    fg_raw = sub.apply(frame)\n    # Twardy prog -- usun cienie (127 -> 0).\n    _, fg = cv2.threshold(fg_raw, 200, 255, cv2.THRESH_BINARY)\n    fg_pixels = int((fg == 255).sum())\n    stats.append(fg_pixels)\n\nexpected = 12 * 20  # rozmiar prostokata\nprint(f'Rozmiar prostokata (ground truth): {expected} px')\nprint(f'Sredni rozmiar maski po rozgrzewce: {np.mean(stats):.0f} px')\nprint(f'Maks/min: {max(stats)} / {min(stats)} px')\nprint(f'Pierwsze 5 klatek po rozgrzewce: {stats[:5]}')\n\n# Eksperymenty -- zmien jeden parametr i zobacz, ktora czesc statystyk sie psuje:\n#  1) history=20 zamiast 200. Kiedy model zaczyna 'wciagac' prostokat w tlo,\n#     gdy ten zatrzyma sie na chwile? (Dorzuc petle, ktora trzyma prostokat na tej samej pozycji przez 20 klatek.)\n#  2) varThreshold=64 zamiast 16. Czy maska kurczy sie poniżej rozmiaru prostokata?\n#  3) Wymien MOG2 na cv2.createBackgroundSubtractorKNN(dist2Threshold=400.0). Ktora wersja ma stabilniejsza maske\n#     na szumie tla, a ktora reaguje szybciej?\n#  4) Usun progowanie (zostaw fg = fg_raw). Policz osobno piksele 127 (cienie) i 255 (twardy fg).\n#     Dla syntetycznego prostokata cieni byc nie powinno -- ale mocno aktywne tlo czasem trafia w 127.\n#  5) Wywoluj sub.apply(frame, learningRate=0.0) po rozgrzewce -- co sie dzieje, gdy zamrazasz model?\n#     (Stojacy prostokat juz nie zniknie, ale kazda zmiana oswietlenia to teraz fala falszywego fg.)\n",
+        "encouragement": "Pokręć `history` i `varThreshold` osobno — pierwszy decyduje, jak długo zatrzymane auto żyje w masce, drugi rządzi czułością na szum tła."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/ICPR.2004.1333992",
+      "title": "Zivkovic, Z. — Improved Adaptive Gaussian Mixture Model for Background Subtraction (ICPR 2004)",
+      "kind": "paper",
+      "author": "Zoran Zivkovic",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1016/j.patrec.2005.11.005",
+      "title": "Zivkovic, Z. and van der Heijden, F. — Efficient adaptive density estimation per image pixel for the task of background subtraction (Pattern Recognition Letters 2006)",
+      "kind": "paper",
+      "author": "Zoran Zivkovic and Ferdinand van der Heijden",
+      "year": 2006
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html",
+      "title": "OpenCV Python tutorial — Background subtraction (MOG2 i KNN)",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — rozdział o estymacji ruchu i background modeling",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

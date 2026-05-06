@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "slug": "praca-z-wideo-i-strumieniami",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Praca z wideo i strumieniami",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "VideoCapture i VideoWriter w jednej pętli: pliki, kamery USB i strumienie RTSP, FOURCC oraz pułapki ret/FPS, których nie znajdziesz w docstringu.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "trzy-zrodla-jeden-interfejs",
+      "title": "VideoCapture: jeden interfejs, trzy światy",
+      "type": "theory",
+      "data": {
+        "markdown": "Wideo to po prostu sekwencja klatek wyświetlanych z określoną częstotliwością — i właśnie tak OpenCV je traktuje. Klasa **`cv2.VideoCapture`** abstrahuje trzy zupełnie różne źródła pod jednym API:\n\n- **plik** (`.mp4`, `.avi`, `.mov`, `.mkv`) — `cv2.VideoCapture(\"clip.mp4\")`. OpenCV deleguje dekodowanie do FFmpeg (Linux/macOS) lub Media Foundation (Windows). Liczba klatek i FPS są deklarowane w nagłówku, więc dostajesz je natychmiast.\n- **kamera lokalna** — `cv2.VideoCapture(0)` dla pierwszego urządzenia, `1` dla drugiego itd. (Linux: `/dev/video0`, Windows: indeks DirectShow). FPS i `FRAME_COUNT` są często **zerowe lub niewiarygodne** — strumień jest \"live\", więc dekoder nie wie, ile mu jeszcze zostało.\n- **strumień sieciowy** — `cv2.VideoCapture(\"rtsp://192.168.1.10/stream\")` albo HTTP/MJPEG: `cv2.VideoCapture(\"http://192.168.1.10:8080/video\")`. To samo API, inny backend pod spodem; zgubione pakiety i opóźnienia to norma, nie wyjątek.\n\n![24-klatkowa sekwencja galopującego konia z 1878 r. autorstwa Eadwearda Muybridge'a — historyczny dowód, że wideo to po prostu sekwencja statycznych klatek pokazywanych z dużą częstotliwością](https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/The_Horse_in_Motion.jpg/640px-The_Horse_in_Motion.jpg)\n\n*(Obraz: Wikimedia Commons, Eadweard Muybridge, public domain — pierwowzór pojęcia \"klatka wideo\".)*\n\nWyjście pipeline'u to `cv2.VideoWriter`, którego konstruktor wymaga **czterech** rzeczy naraz: ścieżki, czteroznakowego identyfikatora kodeka **FOURCC** (`cv2.VideoWriter_fourcc(*\"mp4v\")`, `*\"XVID\"`, `*\"avc1\"`), docelowego FPS oraz krotki `(width, height)`. Każda niezgodność między `frameSize` a rzeczywistym `frame.shape` powoduje, że plik wynikowy ma 0 bajtów — bez wyjątku, bez ostrzeżenia."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/dd/d43/tutorial_py_video_display.html",
+          "title": "OpenCV Python tutorial — Video I/O (VideoCapture / VideoWriter)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "petla-read-i-properties",
+      "title": "Pętla read() i właściwości CAP_PROP_*",
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy program przetwarzający wideo sprowadza się do tej samej pętli:\n\n```python\nimport cv2\n\ncap = cv2.VideoCapture(\"clip.mp4\")\nif not cap.isOpened():\n    raise RuntimeError(\"Nie udało się otworzyć źródła wideo\")\n\nwhile True:\n    ret, frame = cap.read()\n    if not ret:                # koniec pliku albo błąd dekodowania\n        break\n    # ... przetwarzanie klatki w numpy: filtry, detekcja, zapis ...\n\ncap.release()\n```\n\n**`ret` to nie \"czy `frame` jest niepusta\"**, tylko sygnał z dekodera. Dla pliku `False` znaczy zwykle \"koniec strumienia\"; dla kamery USB — \"chwilowy timeout\" (urządzenie nie zdążyło z klatką) albo \"odpięte\". Nie używaj `while frame is not None` — po nieudanym `read()` `frame` bywa nadal poprzednią klatką lub pustym `ndarray`.\n\nMetadane wyciągasz przez `cap.get(propId)`:\n\n| Property | Co zwraca | Typowa pułapka |\n| --- | --- | --- |\n| `CAP_PROP_FPS` | klatek/s zadeklarowane w pliku | `0.0` dla webcamów i wielu RTSP-ów |\n| `CAP_PROP_FRAME_COUNT` | liczba klatek | `-1` (lub `0`) dla strumieni live |\n| `CAP_PROP_FRAME_WIDTH/HEIGHT` | rozmiar klatki | sterownik kamery zaokrągla do najbliższego trybu |\n| `CAP_PROP_FOURCC` | `int` z 4 zakodowanymi bajtami | rozkoduj na napis, żeby przeczytać `\"avc1\"`, `\"mp4v\"` itd. |\n\nGdy backend nie zna własności, OpenCV zwraca **`0.0`** zamiast rzucać wyjątek. Liczenie czasu trwania jako `frame_count / fps` bez walidacji `fps > 0` to klasyk dzielenia przez zero — tym razem nie cichego, tylko z `ZeroDivisionError` w produkcji. Zawsze sprawdź `fps` *przed* dzieleniem albo podstaw rozsądny fallback (np. 25 lub 30)."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html",
+          "title": "cv2.VideoCapture — OpenCV API reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-iter-frames",
+      "title": "Zadanie: zamień pętlę read() na generator",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Pętla `while True: ret, frame = cap.read(); if not ret: break — proces(frame)` powtarza się w każdym skrypcie wideo. Wyciągnij ją do generatora `iter_frames(reader)`, który:\n\n- woła `reader()` (callable bez argumentów, zwracający krotkę `(ret, frame)`),\n- **yielduje wyłącznie `frame`** dla wywołań, które zwróciły `ret == True`,\n- **kończy iterację przy pierwszym `ret == False`** — nawet jeśli reader później znów zwróciłby coś prawdziwego (taki kontrakt: `False` to koniec).\n\nDzięki temu zamiast strażników i `break`-ów piszesz po prostu:\n\n```python\nfor frame in iter_frames(cap.read):\n    proces(frame)\n```\n\nFunkcja **musi zostać generatorem** (zawierać `yield`), a nie zwracać listę.",
+        "starterCode": "def iter_frames(reader):\n    \"\"\"Generator wokół pętli VideoCapture.read().\n\n    reader: callable bez argumentów, zwracający (ret: bool, frame).\n    yields: kolejne frame dla wywołań z ret == True, do pierwszego ret == False.\n    \"\"\"\n    # TODO:\n    #   1. wywołuj reader() w nieskończonej pętli\n    #   2. rozpakuj wynik na (ret, frame)\n    #   3. jeśli ret -> yield frame, w przeciwnym razie return (koniec generatora)\n    return\n    yield  # placeholder, żeby funkcja pozostała generatorem\n",
+        "tests": [
+          {
+            "name": "is_a_generator_not_a_list",
+            "body": "import types\ngen = iter_frames(lambda: (False, None))\nassert isinstance(gen, types.GeneratorType), 'iter_frames powinien być generatorem (zawierać yield), a nie zwracać listę albo None.'",
+            "hidden": false
+          },
+          {
+            "name": "yields_three_frames_then_stops",
+            "body": "calls = iter([(True, 'a'), (True, 'b'), (True, 'c'), (False, None)])\nout = list(iter_frames(lambda: next(calls)))\nassert out == ['a', 'b', 'c'], f'Dla 3 klatek + ret=False oczekiwano [\"a\",\"b\",\"c\"], dostałem: {out}'"
+          },
+          {
+            "name": "stops_at_first_false_immediately",
+            "body": "calls = iter([(False, None)])\nout = list(iter_frames(lambda: next(calls)))\nassert out == [], f'Pierwszy ret=False powinien dać 0 yieldów, dostałem: {out}'"
+          },
+          {
+            "name": "stops_even_when_reader_revives",
+            "body": "calls = iter([(True, 'x'), (False, None), (True, 'ghost')])\nout = list(iter_frames(lambda: next(calls)))\nassert out == ['x'], f'Po pierwszym ret=False generator musi się zakończyć — \"ghost\" nie powinien się pojawić; dostałem: {out}'"
+          }
+        ],
+        "solution": "def iter_frames(reader):\n    while True:\n        ret, frame = reader()\n        if not ret:\n            return\n        yield frame\n"
+      }
+    },
+    {
+      "id": "quiz-fps-zero-pulapka",
+      "title": "Sprawdź się: FPS = 0.0 z kamery USB",
+      "type": "quiz",
+      "data": {
+        "question": "Twój skrypt wczytuje strumień z kamery USB: `cap = cv2.VideoCapture(0)`, a potem chce zalogować długość filmu wzorem `duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS)`. Backend webcamy zwraca jednak `FPS = 0.0` (nie zna deklarowanej częstotliwości). Co najczęściej dzieje się w tej linii?",
+        "options": [
+          "OpenCV podstawia domyślne 30 FPS i `duration` jest sensowne — biblioteka chroni przed dzieleniem przez zero.",
+          "`cap.get(...)` rzuca wyjątek wcześniej, do dzielenia w ogóle nie dochodzi.",
+          "Linia rzuca `ZeroDivisionError: float division by zero` — `cap.get` zwraca standardowego pythonowego `float`, a `1500.0 / 0.0` w CPythonie nie zwraca `inf`, tylko wyjątek.",
+          "Wynikiem jest `inf` (lub `nan` dla `frame_count == 0`) — bo pythonowe dzielenie pływające zawsze daje wartość specjalną zamiast wyjątku."
+        ],
+        "correct": [2],
+        "explanation": "`cap.get(...)` to czysto pythonowy `float` (nie `numpy.float64`), więc obowiązują reguły CPythona: `1500.0 / 0.0` rzuca **`ZeroDivisionError: float division by zero`** — bez wcześniejszego ostrzeżenia, z pełnym tracebackiem. `OpenCV` nigdy nie podstawia magicznego \"domyślnego FPS-u\" za ciebie; dla kamer i strumieni live wartości metadanych po prostu są zerowe lub ujemne. Dlatego po każdym `cap.get(CAP_PROP_FPS)` walidujesz wynik (`if fps <= 0: fps = 30.0`) albo unikasz wzoru opartego o `frame_count` i mierzysz czas zegarem (`time.time()`) między pierwszą a ostatnią klatką. Wariant z `inf`/`nan` (D) byłby prawdziwy dla `numpy.float64`, ale nie dla pythonowego `float`, który zwraca `cap.get`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-fourcc",
+      "title": "Eksperymentuj: FOURCC w obie strony",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# cv2.VideoWriter_fourcc(*\"mp4v\") koduje 4 znaki ASCII w int32 (little-endian).\n# cv2.VideoCapture.get(CAP_PROP_FOURCC) zwraca taki kod, ale jako float —\n# żeby przeczytać go po ludzku, trzeba zrzutować na int i rozpakować bajty.\n# Sandbox nie ma cv2; symulujemy obie strony funkcjami w czystym Pythonie.\n\ndef encode_fourcc(s):\n    \"\"\"4-znakowy napis -> int (jak cv2.VideoWriter_fourcc).\"\"\"\n    assert len(s) == 4, 'FOURCC ma dokładnie 4 znaki'\n    return sum(ord(c) << (8 * i) for i, c in enumerate(s))\n\ndef decode_fourcc(code):\n    \"\"\"int -> 4-znakowy napis (rewers encode_fourcc).\"\"\"\n    return ''.join(chr((int(code) >> (8 * i)) & 0xFF) for i in range(4))\n\nfor tag in ['mp4v', 'avc1', 'XVID', 'MJPG', 'H264']:\n    code = encode_fourcc(tag)\n    print(f\"{tag:5s} -> int {code:>11d} ({hex(code)}) -> {decode_fourcc(code)!r}\")\n\n# Backend, który nie zna własności, zwraca po prostu 0.0:\nprint('cap.get(...) == 0.0 ->', repr(decode_fourcc(0)))\n\n# Spróbuj:\n#  - encode_fourcc('mp4v') vs encode_fourcc('MP4V') — to dwa różne kody!\n#    OpenCV bierze FOURCC dosłownie, więc literówka kończy się cichym\n#    fallbackiem na MJPG albo plikiem o zerowej długości.\n#  - dla pliku .mp4 najpierw spróbuj 'mp4v', potem 'avc1', potem 'H264' —\n#    który zadziała, zależy od wariantu FFmpega skompilowanego z OpenCV.\n#  - dla pliku .avi sprawdź 'XVID' i 'MJPG' i porównaj rozmiar wynikowego\n#    pliku w dokumentacji kodeków: MJPEG koduje każdą klatkę jako osobne\n#    JPEG-i (duże, ale łatwo edytowalne), XVID stosuje predykcję między\n#    klatkami (małe, ale wrażliwe na cięcia).\n",
+        "encouragement": "Dobierz FOURCC do rozszerzenia pliku — literówka w czteroznakowym kodzie psuje wynik po cichu, bez wyjątku."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/dd/d43/tutorial_py_video_display.html",
+      "title": "OpenCV Python tutorial — Video I/O (VideoCapture / VideoWriter)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d8/dfe/classcv_1_1VideoCapture.html",
+      "title": "cv2.VideoCapture — OpenCV API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://ffmpeg.org/documentation.html",
+      "title": "FFmpeg documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/FourCC",
+      "title": "FourCC — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

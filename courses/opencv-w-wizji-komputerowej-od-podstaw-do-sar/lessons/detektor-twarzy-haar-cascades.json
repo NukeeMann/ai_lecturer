@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "slug": "detektor-twarzy-haar-cascades",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Detektor twarzy Haar Cascades",
+  "eyebrow": "DETEKCJA KLASYCZNA",
+  "description": "Klasyczny detektor Viola-Jones z 2001 r. — kaskada słabych klasyfikatorów na cechach Haara, ewaluowana w O(1) dzięki obrazowi całkowemu (*integral image*), która pozwoliła na detekcję twarzy w czasie rzeczywistym na zwykłym CPU. Zobaczysz, jak liczy się cecha Haara, dlaczego integral image redukuje sumę dowolnego prostokąta do 4 odczytów pamięci, jak AdaBoost wybiera najmocniejsze cechy i co kaskada zyskuje przy skanowaniu okna po obrazie. Na koniec uruchomisz `cv2.CascadeClassifier` z gotowych plików `haarcascade_*.xml` dostępnych w `cv2.data.haarcascades`.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "haar-features-i-integral-image",
+      "title": "Cechy Haara i obraz całkowy",
+      "type": "theory",
+      "data": {
+        "markdown": "**Detektor Viola-Jones** (CVPR 2001) zapoczątkował praktyczną erę detekcji twarzy w czasie rzeczywistym na zwykłym CPU. Trzy pomysły, które złożyły się na jego sukces:\n\n1. **Cechy Haara** — proste szablony prostokątne, których odpowiedź to *różnica* sum jasności pomiędzy „białymi” a „czarnymi” prostokątami szablonu.\n2. **Obraz całkowy** (*integral image*) — preprocessing pozwalający policzyć sumę pikseli w **dowolnym** prostokącie w **stałym** czasie.\n3. **Kaskada słabych klasyfikatorów** trenowanych przez AdaBoost — większość okien tła odrzuca pierwszy etap kaskady, jeszcze zanim odpalą się drogie klasyfikatory.\n\n![Szare zdjęcie kotka domowego pokazane wielokrotnie z malejącą jakością — od ostrego po mocno rozmyte. OpenCV udostępnia gotowe pliki XML kaskad nie tylko dla twarzy ludzkich (haarcascade_frontalface_default.xml), ale też dla pysków kotów (haarcascade_frontalcatface.xml)](https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png/512px-Felis_silvestris_silvestris_small_gradual_decrease_of_quality.png)\n\n**Cecha Haara w jednym wzorze.** Dla 2-prostokątnej cechy „horyzontalnej” (górna połowa biała, dolna czarna) odpowiedź dla okna $W$ obrazu $I$ to:\n\n$$ f_{\\mathrm{Haar}}(W) \\;=\\; \\sum_{(x,\\ y) \\in R_{\\mathrm{biały}}} I(x, y) \\;-\\; \\sum_{(x,\\ y) \\in R_{\\mathrm{czarny}}} I(x, y) $$\n\nIntuicyjnie: ta cecha „świeci” tam, gdzie pod jasną poziomą połówką leży ciemna — np. cień oczodołów pod jasnym czołem. Gdyby liczyć każdą sumę pikseli naiwną pętlą po prostokącie, koszt jednej cechy wynosiłby $\\mathcal{O}(w \\cdot h)$ pikseli; dla okna $24 \\times 24$ skanowanego po obrazie $640 \\times 480$ z setkami cech robi się z tego miliardy operacji na klatkę.\n\n**Obraz całkowy** (*Crow 1984*, w detekcji twarzy spopularyzowany przez Violę i Jonesa) to tablica tej samej wielkości co $I$:\n\n$$ \\mathrm{II}(x, y) \\;=\\; \\sum_{x' \\le x,\\; y' \\le y} I(x', y') $$\n\nDla **dowolnego** prostokąta o lewym-górnym rogu $(x_0,\\ y_0)$ i prawym-dolnym rogu $(x_1,\\ y_1)$ suma pikseli sprowadza się do **4 odczytów** $\\mathrm{II}$ — niezależnie od pola prostokąta:\n\n$$ S \\;=\\; \\mathrm{II}(x_1,\\ y_1) \\;-\\; \\mathrm{II}(x_0-1,\\ y_1) \\;-\\; \\mathrm{II}(x_1,\\ y_0-1) \\;+\\; \\mathrm{II}(x_0-1,\\ y_0-1) $$\n\nTo jest **klasyczna inkluzja-ekskluzja**: odejmujemy dwa „nadmiarowe” pasy lewy i górny, ale lewy-górny róg odjęliśmy dwa razy — trzeba go więc raz dodać z powrotem.\n\nW OpenCV obraz całkowy liczymy jednym wywołaniem `cv2.integral(img)`. Zwracana tablica ma kształt $(H+1) \\times (W+1)$ — pierwszy wiersz i pierwsza kolumna to zera, dzięki czemu wzór działa na brzegach bez specjalnego traktowania $-1$. To dokładnie ta tabela, którą trener kaskady czyta dla każdej z ~180 000 cech rozważanych na każdym oknie."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2001.990517",
+          "title": "Viola, P. and Jones, M. — Rapid Object Detection using a Boosted Cascade of Simple Features (CVPR 2001)",
+          "kind": "paper",
+          "author": "Paul Viola and Michael Jones",
+          "year": 2001
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Haar-like_feature",
+          "title": "Haar-like feature — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "adaboost-i-kaskada",
+      "title": "AdaBoost i kaskada — gdzie naprawdę kryje się szybkość",
+      "type": "theory",
+      "data": {
+        "markdown": "**Słaby klasyfikator z jednej cechy.** Pojedyncza cecha Haara nie wystarczy, żeby orzec „twarz / nie twarz”. Dostarcza tylko sygnału typu „pod jasnym czołem leżą ciemniejsze oczodoły”. Słaby klasyfikator binarny ma więc postać progu na wartości cechy:\n\n$$ h_j(x) \\;=\\; \\begin{cases} 1 & \\text{jeśli } p_j \\cdot f_j(x) < p_j \\cdot \\theta_j \\\\ 0 & \\text{w p.p.} \\end{cases} $$\n\ngdzie $f_j$ to wartość $j$-tej cechy Haara w oknie, $\\theta_j$ — wyuczony próg, a $p_j \\in \\{-1,\\ +1\\}$ — kierunek nierówności (czy „>” oznacza twarz, czy „<”).\n\n**AdaBoost** (Freund i Schapire 1997) iteracyjnie wybiera $T$ najsilniejszych słabych klasyfikatorów: po każdej rundzie podbija wagę przykładów źle sklasyfikowanych w poprzedniej i przeszukuje wszystkie ~180 000 cech, by znaleźć najlepszą na nowych wagach. Klasyfikator silny to ważona suma $H(x) = \\mathrm{sign}\\bigl(\\sum_{t=1}^{T} \\alpha_t h_t(x) - \\tfrac{1}{2}\\sum_{t=1}^{T} \\alpha_t\\bigr)$.\n\n**Kaskada** to klucz do praktycznej szybkości. Zamiast jednego silnego klasyfikatora używanego dla *każdego* okna, ustawiamy **sekwencję** klasyfikatorów coraz mocniejszych. Pierwszy etap to ~2 cechy, ostatni — kilkaset. **Każde** przesunięte okno wpada do etapu 1; jeśli odpadnie, **żaden** kolejny etap nie jest już dla niego liczony. Pierwszy etap przepuszcza ~50 % okien (i odrzuca prawie wszystkie nie-twarze); do ostatniego etapu dociera <0.01 % okien. Suma: **średni koszt jednej pozycji to garść cech Haara, nie cała kaskada**. Stąd „twarz w czasie rzeczywistym na CPU”.\n\nW OpenCV nie trenujemy kaskady samodzielnie — ładujemy gotowy XML i wywołujemy detekcję wieloskalową:\n\n```python\nimport cv2\npath = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'\nface_cascade = cv2.CascadeClassifier(path)\ngray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)\nfaces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)\n# faces: tablica [N, 4] z (x, y, w, h) bounding boxow.\n```\n\n**`scaleFactor`** (typowo 1.05–1.4) to krok piramidy skali — okno $24 \\times 24$ jest skanowane, potem powiększane o ten czynnik i skanowane znowu. **`minNeighbors`** (typowo 3–8) to minimalna liczba sąsiadujących detekcji potrzebna, by uznać miejsce za prawdziwą twarz — filtruje pojedyncze, niepewne strzały. W folderze `cv2.data.haarcascades` znajdziesz też `haarcascade_eye.xml`, `haarcascade_smile.xml`, `haarcascade_frontalcatface.xml` i kilkanaście innych — wszystkie używają dokładnie tej samej maszynerii."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2001.990517",
+          "title": "Viola, P. and Jones, M. — Rapid Object Detection using a Boosted Cascade of Simple Features (CVPR 2001)",
+          "kind": "paper",
+          "author": "Paul Viola and Michael Jones",
+          "year": 2001
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d99/tutorial_js_face_detection.html",
+          "title": "OpenCV tutorial — Face detection using Haar cascades",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-rect-sum-z-integral",
+      "title": "Sprawdź się: suma prostokąta z obrazu całkowego",
+      "type": "quiz",
+      "data": {
+        "question": "Pracujesz na obrazie szarym $I$ i jego obrazie całkowym $\\mathrm{II}(x, y) = \\sum_{x' \\le x,\\; y' \\le y} I(x', y')$. Chcesz odczytać sumę pikseli w prostokącie o lewym-górnym rogu $(x_0,\\ y_0)$ i prawym-dolnym rogu $(x_1,\\ y_1)$, gdzie $x_0 > 0$ i $y_0 > 0$. Które z poniższych wyrażeń **poprawnie** liczy tę sumę w 4 odczytach z $\\mathrm{II}$?",
+        "options": [
+          "$S = \\mathrm{II}(x_1,\\ y_1) - \\mathrm{II}(x_0-1,\\ y_1) - \\mathrm{II}(x_1,\\ y_0-1) + \\mathrm{II}(x_0-1,\\ y_0-1)$",
+          "$S = \\mathrm{II}(x_1,\\ y_1) - \\mathrm{II}(x_0-1,\\ y_1) - \\mathrm{II}(x_1,\\ y_0-1) - \\mathrm{II}(x_0-1,\\ y_0-1)$",
+          "$S = \\mathrm{II}(x_1,\\ y_1) + \\mathrm{II}(x_0-1,\\ y_1) + \\mathrm{II}(x_1,\\ y_0-1) + \\mathrm{II}(x_0-1,\\ y_0-1)$",
+          "$S = \\mathrm{II}(x_1,\\ y_1) - \\mathrm{II}(x_0,\\ y_0)$"
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "To klasyczna **inkluzja-ekskluzja** dla prostokąta. $\\mathrm{II}(x_1, y_1)$ to suma wszystkich pikseli w prostokącie z lewym-górnym rogiem w $(0, 0)$ i prawym-dolnym rogiem w $(x_1, y_1)$ — czyli interesujący prostokąt **plus** pasy nad nim i na lewo od niego. Odejmujemy więc $\\mathrm{II}(x_0-1,\\ y_1)$ (lewy pas) i $\\mathrm{II}(x_1,\\ y_0-1)$ (górny pas). Ale lewy-górny róg odjęliśmy w obu pasach — czyli **dwa razy** — i dlatego musimy go raz **dodać z powrotem**: $+\\mathrm{II}(x_0-1,\\ y_0-1)$. Stąd końcowy znak `+` w odpowiedzi A. Odpowiedź B ma znak `-` zamiast `+` przy ostatnim członie, więc *odejmuje* lewy-górny róg drugi raz — to najczęstszy błąd w pierwszej implementacji integral image. Odpowiedź C wszystko sumuje (ignoruje znak inkluzji-ekskluzji), więc liczy zupełnie inną wielkość. Odpowiedź D to tylko 2 odczyty zamiast 4 — taki wzór zadziałałby dla *odcinka* na osi 1D, ale w 2D nie odpowiada żadnej rozsądnej geometrii.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-integral-image",
+      "title": "Zaimplementuj `integral_image`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `integral_image(img)`, która zwróci obraz całkowy o **tej samej wielkości co `img`**, gdzie\n\n$$ \\mathrm{II}[y, x] \\;=\\; \\sum_{y' \\le y,\\; x' \\le x} \\mathrm{img}[y', x'] $$\n\n**Reguły:**\n\n1. `img` to dwuwymiarowa tablica NumPy (kształt `(H, W)`), dowolnego dtype.\n2. Wynik powinien być tablicą NumPy o kształcie `(H, W)` i `dtype=np.float64` (żeby uniknąć przepełnień przy sumowaniu `uint8`).\n3. Możesz to napisać w jednej linijce z `np.cumsum` (najpierw po jednej osi, potem po drugiej) albo rekursywnie — obie ścieżki są w porządku.\n\n```\nimg = [[1, 2], [3, 4]]\nintegral_image(img) -> [[1, 3], [4, 10]]\n# bo II[1, 1] = 1 + 2 + 3 + 4 = 10.\n```\n\n*Uwaga*: w OpenCV gotowiec to `cv2.integral(img)` — zwraca jednak tablicę o kształcie `(H+1, W+1)` z dodaną zerową ramką. W tym ćwiczeniu trzymamy się czystej definicji matematycznej (rozmiar wynikowy taki jak wejściowy).",
+        "starterCode": "import numpy as np\n\ndef integral_image(img):\n    # img: 2D numpy array shape (H, W).\n    # Zwroc obraz calkowy II ksztaltu (H, W), dtype=np.float64,\n    # taki ze II[y, x] = sum_{y' <= y, x' <= x} img[y', x'].\n    img = np.asarray(img, dtype=np.float64)\n    # TODO: skorzystaj z np.cumsum(axis=0) i nastepnie np.cumsum(axis=1),\n    # albo zaimplementuj rekursje:\n    #   II[y, x] = img[y, x] + II[y-1, x] + II[y, x-1] - II[y-1, x-1]\n    return img\n",
+        "tests": [
+          {
+            "name": "prosty_obraz_2x2",
+            "body": "import numpy as np\nimg = np.array([[1, 2], [3, 4]], dtype=np.float64)\nII = integral_image(img)\nexpected = np.array([[1, 3], [4, 10]], dtype=np.float64)\nassert II.shape == (2, 2), f'oczekiwano kształtu (2, 2), dostalismy {II.shape}'\nassert np.allclose(II, expected), f'oczekiwano {expected.tolist()}, dostalismy {II.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "obraz_zer_pozostaje_zerowy",
+            "body": "import numpy as np\nimg = np.zeros((5, 7), dtype=np.float64)\nII = integral_image(img)\nassert II.shape == (5, 7)\nassert np.allclose(II, np.zeros((5, 7))), 'II z samych zer powinno byc zerowe'"
+          },
+          {
+            "name": "obraz_jedynek_daje_iloczyn_indeksow",
+            "body": "import numpy as np\nimg = np.ones((4, 6), dtype=np.float64)\nII = integral_image(img)\n# Dla obrazu samych jedynek II[y, x] musi byc rowne (y+1)*(x+1).\nexpected = np.outer(np.arange(1, 5), np.arange(1, 7)).astype(np.float64)\nassert np.allclose(II, expected), f'dla obrazu jedynek II[y, x] = (y+1)*(x+1); dostalismy {II.tolist()}'"
+          },
+          {
+            "name": "z_integrala_da_sie_odzyskac_sume_prostokata",
+            "body": "import numpy as np\nrng = np.random.RandomState(0)\nimg = rng.randint(0, 100, size=(10, 12)).astype(np.float64)\nII = integral_image(img)\ny0, y1, x0, x1 = 2, 7, 3, 9\ndirect = float(img[y0:y1 + 1, x0:x1 + 1].sum())\nA = float(II[y1, x1])\nB = float(II[y0 - 1, x1]) if y0 > 0 else 0.0\nC = float(II[y1, x0 - 1]) if x0 > 0 else 0.0\nD = float(II[y0 - 1, x0 - 1]) if (y0 > 0 and x0 > 0) else 0.0\nfrom_ii = A - B - C + D\nassert abs(direct - from_ii) < 1e-9, f'sumy nie zgadzaja sie: direct={direct}, from_ii={from_ii}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef integral_image(img):\n    img = np.asarray(img, dtype=np.float64)\n    return img.cumsum(axis=0).cumsum(axis=1)\n"
+      }
+    },
+    {
+      "id": "sandbox-haar-feature-na-syntetyku",
+      "title": "Piaskownica: cecha Haara z `cv2.integral`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz: jasna gorna polowa (analog czola), ciemna dolna polowa\n# (analog oczodolow). Dolozymy jeszcze odrobine szumu, zeby nie bylo zbyt idealnie.\nnp.random.seed(0)\nH, W = 80, 120\nimg = np.empty((H, W), dtype=np.float32)\nimg[:H // 2, :] = 200.0  # jasna gora\nimg[H // 2:, :] = 60.0   # ciemny dol\nimg += 4.0 * np.random.randn(H, W)\nimg = np.clip(img, 0, 255).astype(np.uint8)\n\n# Obraz calkowy w jednym wywolaniu OpenCV.\n# Uwaga: cv2.integral zwraca tablice o ksztalcie (H+1, W+1) — pierwszy wiersz/kolumna to zera.\nII = cv2.integral(img)\n\ndef rect_sum(II, x0, y0, x1, y1):\n    # OpenCV-owy integral: indeksy musza byc przesuniete o +1, bo II ma dolozona zerowa ramke.\n    return int(II[y1 + 1, x1 + 1] - II[y0, x1 + 1] - II[y1 + 1, x0] + II[y0, x0])\n\n# 2-prostokątna cecha Haara typu \"horyzontalnego podzialu\":\n# gorna polowa szablonu - dolna polowa szablonu.\nFW, FH = 32, 32          # szerokosc i wysokosc szablonu\nHALF = FH // 2\n\nprint('Haar-feature response (gorna jasna minus dolna ciemna polowa):')\nfor y in range(0, H - FH + 1, 8):\n    row = []\n    for x in range(0, W - FW + 1, 16):\n        s_top = rect_sum(II, x, y,        x + FW - 1, y + HALF - 1)\n        s_bot = rect_sum(II, x, y + HALF, x + FW - 1, y + FH - 1)\n        row.append(f'(x={x:3d},y={y:3d}): f={s_top - s_bot:7d}')\n    print('  ' + '  '.join(row))\n\n# Najmocniejsza odpowiedz powinna byc dla y ~= H/2 - HALF, czyli kiedy\n# linia podzialu szablonu pokrywa sie z faktyczna granica jasnosci w obrazie.\n\n# W praktyce gotowy detektor twarzy:\n#   path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'\n#   face_cascade = cv2.CascadeClassifier(path)\n#   faces = face_cascade.detectMultiScale(gray_img, scaleFactor=1.1, minNeighbors=5)\n#\n# Eksperymenty:\n#   1) Zamien skok jasnosci na lagodny gradient (np. img[i, :] = 200 - i * 1.7) — co stanie sie\n#      z wartoscia cechy w okolicy srodka? Czy szczyt nadal istnieje, czy rozmywa sie po Y?\n#   2) Przerzuc orientacje cechy z poziomej (gorna - dolna) na pionowa (lewa - prawa). Kiedy\n#      uzyskasz silny szczyt? Pomysl, gdzie taka cecha 'zapaliladaby sie' na prawdziwej twarzy.\n#   3) Wczytaj wlasna fotografie przez cv2.imread + cv2.cvtColor(..., cv2.COLOR_BGR2GRAY)\n#      i sprawdz cv2.CascadeClassifier(...).detectMultiScale(...). Potem pokrec scaleFactor\n#      (1.05–1.4) i minNeighbors (3–8) — pierwszy zmienia rozdzielczosc skali, drugi balansuje\n#      recall vs liczbe falszywych wykryc.\n",
+        "encouragement": "Spróbuj zamienić skok jasnosci na łagodny gradient albo przerzucić orientację cechy — i przekonaj się, dlaczego kaskada Haara wciąż żyje w OpenCV jako szybkie face detection na CPU."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/CVPR.2001.990517",
+      "title": "Viola, P. and Jones, M. — Rapid Object Detection using a Boosted Cascade of Simple Features (CVPR 2001)",
+      "kind": "paper",
+      "author": "Paul Viola and Michael Jones",
+      "year": 2001
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d99/tutorial_js_face_detection.html",
+      "title": "OpenCV tutorial — Face detection using Haar cascades",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Haar-like_feature",
+      "title": "Haar-like feature — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 6 Recognition (Face detection / Viola-Jones)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

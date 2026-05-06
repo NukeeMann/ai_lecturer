@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "slug": "transformacje-geometryczne-skalowanie-i-obrot",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Transformacje geometryczne: skalowanie i obrót",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Skaluj obraz `cv2.resize` z właściwą interpolacją oraz obracaj go za pomocą `cv2.getRotationMatrix2D` i `cv2.warpAffine` — i zrozum, dlaczego INTER_AREA i INTER_CUBIC nie są wymienne.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "skalowanie-i-interpolacja",
+      "title": "Skalowanie obrazu — interpolacja decyduje o jakości",
+      "type": "theory",
+      "data": {
+        "markdown": "Powiększenie albo zmniejszenie obrazu nigdy nie jest \"skopiowaniem\" pikseli — *piksele wynikowe leżą zwykle pomiędzy* pikselami wejściowymi. Pytanie \"jaka jest jasność w punkcie $(0.7,\\, 1.3)$ obrazu, który zna jasności tylko w pełnych pozycjach $(0, 1, 2, \\dots)$?\" rozstrzyga **interpolacja**.\n\nNajpopularniejsza w `cv2.resize` (i jednocześnie domyślna) jest interpolacja **dwuliniowa** (`INTER_LINEAR`): liczy ważoną średnią z czterech sąsiadów. Niech $(x, y)$ wskazuje punkt w obrazie wejściowym, a $a = x - \\lfloor x \\rfloor$, $b = y - \\lfloor y \\rfloor$ to odległości frakcyjne od lewego-górnego sąsiada. Wartość interpolowana to:\n\n$$ I(x, y) = (1-a)(1-b)\\,I_{00} + a\\,(1-b)\\,I_{10} + (1-a)\\,b\\,I_{01} + a\\,b\\,I_{11} $$\n\ngdzie $I_{ij}$ to cztery sąsiednie piksele całkowitoliczbowe. Wagi sumują się do jedności — to czysta interpolacja liniowa zastosowana najpierw poziomo, potem pionowo.\n\n![Schemat interpolacji liniowej między dwoma punktami v0 i v1 — wartość pośrednia w pozycji α ∈ [0, 1] jest sumą ważoną (1−α)·v0 + α·v1; w interpolacji dwuliniowej powtarzamy tę formułę raz w osi x, raz w osi y, otrzymując ważoną średnią czterech najbliższych pikseli](https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Linear_interpolation.svg/480px-Linear_interpolation.svg.png)\n\n*(Obraz: Wikimedia Commons, public domain.)*\n\nW OpenCV wystarczy jedna linia:\n\n```python\nsmall = cv2.resize(img, dsize=None,        fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)\nbig   = cv2.resize(img, dsize=(640, 480),                  interpolation=cv2.INTER_CUBIC)\n```\n\nUwaga na **kolejność osi**: `dsize` to krotka `(width, height)`, ale `img.shape` to `(H, W)` — to jeden z najczęstszych powodów odwróconych albo zniekształconych obrazów. Argument `dsize` ma pierwszeństwo nad parą `fx`/`fy`. Jeśli `dsize=None`, OpenCV wylicza wymiary wyjścia z `fx`, `fy` przemnożonych przez wymiary wejścia."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Bilinear_interpolation",
+          "title": "Bilinear interpolation — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "metody-interpolacji",
+      "title": "Metody interpolacji w `cv2.resize` — porównanie",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "flaga", "label": "Flaga (cv2.*)", "type": "string" },
+          { "key": "nazwa", "label": "Metoda", "type": "string" },
+          { "key": "szybkosc", "label": "Szybkość", "type": "string" },
+          { "key": "jakosc", "label": "Jakość", "type": "string" },
+          { "key": "zastosowanie", "label": "Najlepsze zastosowanie", "type": "string" }
+        ],
+        "rows": [
+          {
+            "flaga": "INTER_NEAREST",
+            "nazwa": "Najbliższy sąsiad",
+            "szybkosc": "bardzo szybko",
+            "jakosc": "niska — widoczne \"schody\" na krawędziach",
+            "zastosowanie": "maski binarne i etykiety klas, gdzie wartości muszą pozostać oryginalne (0/1, ID kategorii)"
+          },
+          {
+            "flaga": "INTER_LINEAR",
+            "nazwa": "Dwuliniowa (4 sąsiadów)",
+            "szybkosc": "szybko",
+            "jakosc": "dobra",
+            "zastosowanie": "domyślna; powiększanie obrazu i ogólne zastosowania"
+          },
+          {
+            "flaga": "INTER_CUBIC",
+            "nazwa": "Bicubic (16 sąsiadów)",
+            "szybkosc": "wolniej, ~1.5–2× INTER_LINEAR",
+            "jakosc": "bardzo dobra, ostrzejsze krawędzie",
+            "zastosowanie": "jakościowe powiększenie zdjęć (skalowanie ↑)"
+          },
+          {
+            "flaga": "INTER_AREA",
+            "nazwa": "Średnia po obszarze pikseli",
+            "szybkosc": "szybko przy zmniejszaniu",
+            "jakosc": "bez aliasów i moiré",
+            "zastosowanie": "zmniejszanie obrazu (skalowanie ↓) — wbudowany antyaliasing"
+          },
+          {
+            "flaga": "INTER_LANCZOS4",
+            "nazwa": "Lanczos (8×8 sąsiadów)",
+            "szybkosc": "najwolniejsza",
+            "jakosc": "najwyższa; możliwy ringing przy ostrych krawędziach",
+            "zastosowanie": "grafika produkcyjna, gdzie liczy się maksymalna ostrość"
+          }
+        ]
+      }
+    },
+    {
+      "id": "kiedy-area-vs-cubic",
+      "title": "Sprawdź się: która interpolacja przy zmniejszaniu?",
+      "type": "quiz",
+      "data": {
+        "question": "Zmniejszasz fotografię 4000 × 3000 do podglądu 800 × 600 (skala ≈ 0.2). Która flaga w `cv2.resize` da najczystszy wynik bez aliasów i wzorów moiré?",
+        "options": [
+          "`cv2.INTER_NEAREST` — najszybsza, więc do podglądu w sam raz.",
+          "`cv2.INTER_LINEAR` — domyślna i uniwersalna; działa równie dobrze w obie strony.",
+          "`cv2.INTER_AREA` — dedykowana do zmniejszania; uśrednia zawartość obszaru źródłowego, eliminując aliasy.",
+          "`cv2.INTER_CUBIC` — najlepsza, bo wyższy stopień wielomianu zawsze daje lepszy wynik."
+        ],
+        "correct": [2],
+        "explanation": "`INTER_AREA` jest zaprojektowana specjalnie do **zmniejszania**: każdy piksel wyjściowy jest średnią ważoną wszystkich pikseli wejściowych, które wpadają w jego \"komórkę\" — to wbudowany antyaliasing, który eliminuje moiré (regularne wzory powstające, gdy kratka próbkowania koliduje z kratką oryginalnego obrazu). `INTER_NEAREST` zachowuje pojedyncze piksele, więc wprowadza aliasy zamiast je usuwać. `INTER_LINEAR` próbkuje tylko 4 sąsiadów, niezależnie od skali — przy silnym pomniejszeniu (0.2×) dużo informacji w ogóle nie trafia do pomiaru. `INTER_CUBIC` jest świetna **przy powiększaniu**, ale przy zmniejszaniu wnosi zbyt mało wygładzania w stosunku do AREA i daje gorszy efekt. Reguła kciuka: `fx, fy < 1` → `INTER_AREA`, `fx, fy > 1` → `INTER_LINEAR` lub `INTER_CUBIC`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-scale-nearest",
+      "title": "Implementacja: `scale_nearest(image, fx, fy)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `scale_nearest(image, fx, fy)`, która skaluje 2D obraz `uint8` w skali szarości metodą **najbliższego sąsiada** — w czystym NumPy, bez `cv2`.\n\nKroki algorytmu:\n\n1. Pobierz wymiary wejścia: `H, W = image.shape[:2]`.\n2. Policz wymiary wyjścia: `new_h = max(1, round(H * fy))`, `new_w = max(1, round(W * fx))`.\n3. Wyznacz indeksy źródłowe wektorowo (bez pętli `for`):\n\n   ```\n   src_rows = floor(arange(new_h) / fy)   # przycięte do [0, H-1]\n   src_cols = floor(arange(new_w) / fx)   # przycięte do [0, W-1]\n   ```\n4. Złóż wynik **fancy-indeksowaniem** NumPy:\n\n   ```\n   return image[src_rows[:, None], src_cols[None, :]]\n   ```\n\nDla `image = [[1, 2], [3, 4]]`, `fx = fy = 2` oczekiwany wynik to:\n\n```\n[[1, 1, 2, 2],\n [1, 1, 2, 2],\n [3, 3, 4, 4],\n [3, 3, 4, 4]]\n```\n\nDla `fx = fy = 1` funkcja zwraca obraz identyczny z wejściem (z dokładnością do `np.array_equal`).",
+        "starterCode": "import numpy as np\n\ndef scale_nearest(image, fx, fy):\n    \"\"\"Skalowanie metodą najbliższego sąsiada w czystym NumPy.\n\n    Krok po kroku:\n      1. H, W = image.shape[:2]\n      2. new_h = max(1, int(round(H * fy)))\n         new_w = max(1, int(round(W * fx)))\n      3. src_rows = np.floor(np.arange(new_h) / fy).astype(int)\n         src_cols = np.floor(np.arange(new_w) / fx).astype(int)\n         (przytnij do [0, H-1] i [0, W-1] przez np.minimum)\n      4. return image[src_rows[:, None], src_cols[None, :]]\n    \"\"\"\n    image = np.asarray(image)\n    # TODO: zaimplementuj zgodnie z opisem powyżej\n    return image\n",
+        "tests": [
+          {
+            "name": "dwukrotne_skalowanie_zwieksza_wymiary",
+            "body": "import numpy as np\nimg = np.array([[10, 20], [30, 40]], dtype=np.uint8)\nout = scale_nearest(img, fx=2, fy=2)\nassert isinstance(out, np.ndarray), f'Wynik powinien byc np.ndarray, jest {type(out).__name__}'\nassert out.shape == (4, 4), f'Ksztalt powinien byc (4, 4) dla fx=fy=2 i wejscia (2, 2), jest {out.shape}'\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "dwukrotne_skalowanie_powiela_piksele",
+            "body": "import numpy as np\nimg = np.array([[1, 2], [3, 4]], dtype=np.uint8)\nexpected = np.array([\n    [1, 1, 2, 2],\n    [1, 1, 2, 2],\n    [3, 3, 4, 4],\n    [3, 3, 4, 4],\n], dtype=np.uint8)\nout = scale_nearest(img, fx=2, fy=2)\nassert np.array_equal(out, expected), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "skalowanie_jeden_jest_tozsamoscia",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.integers(0, 256, size=(5, 7), dtype=np.uint8)\nout = scale_nearest(img, fx=1, fy=1)\nassert np.array_equal(out, img), f'Skalowanie 1x powinno dac obraz identyczny z wejsciem'"
+          },
+          {
+            "name": "polowicowe_zmniejszanie_w_jednej_osi",
+            "body": "import numpy as np\nimg = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=np.uint8)\nout = scale_nearest(img, fx=0.5, fy=1)\nassert out.shape == (2, 2), f'Dla fx=0.5, fy=1 ksztalt powinien byc (2, 2), jest {out.shape}'\nexpected = np.array([[1, 3], [5, 7]], dtype=np.uint8)\nassert np.array_equal(out, expected), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef scale_nearest(image, fx, fy):\n    image = np.asarray(image)\n    H, W = image.shape[:2]\n    new_h = max(1, int(round(H * fy)))\n    new_w = max(1, int(round(W * fx)))\n    src_rows = np.minimum(np.floor(np.arange(new_h) / fy).astype(int), H - 1)\n    src_cols = np.minimum(np.floor(np.arange(new_w) / fx).astype(int), W - 1)\n    return image[src_rows[:, None], src_cols[None, :]]\n"
+      }
+    },
+    {
+      "id": "obrot-i-macierz-afiniczna",
+      "title": "Obrót — macierz transformacji afinicznej 2 × 3",
+      "type": "theory",
+      "data": {
+        "markdown": "Skalowanie zmienia rozdzielczość obrazu, ale zostawia jego *kierunek* nietknięty. Druga podstawowa transformacja, **obrót**, działa odwrotnie — nie zmienia liczby pikseli, tylko obraca ich położenia wokół wybranego środka.\n\nKażda transformacja **afiniczna** w 2D — translacja, skalowanie, obrót, ścinanie albo ich dowolna kompozycja — może zostać zapisana jako mnożenie macierzy $2 \\times 3$ przez współrzędne jednorodne $(x, y, 1)^\\top$:\n\n$$ \\begin{bmatrix} x' \\\\\\\\ y' \\end{bmatrix} = \\begin{bmatrix} a_{11} & a_{12} & b_1 \\\\\\\\ a_{21} & a_{22} & b_2 \\end{bmatrix} \\begin{bmatrix} x \\\\\\\\ y \\\\\\\\ 1 \\end{bmatrix} $$\n\nLewa kwadratowa część macierzy ($a_{ij}$) odpowiada za **liniową** część — obrót, skalowanie, ścinanie. Trzecia kolumna ($b_i$) to **translacja**. Dla obrotu o kąt $\\theta$ wokół środka $(c_x, c_y)$, ewentualnie połączonego ze skalą $s$, OpenCV liczy:\n\n$$ M = \\begin{bmatrix} s\\cos\\theta & s\\sin\\theta & (1 - s\\cos\\theta)\\,c_x - s\\sin\\theta\\,c_y \\\\\\\\ -s\\sin\\theta & s\\cos\\theta & s\\sin\\theta\\,c_x + (1 - s\\cos\\theta)\\,c_y \\end{bmatrix} $$\n\nSkładniki w trzeciej kolumnie zapewniają, że punkt $(c_x, c_y)$ pozostaje w miejscu — bez nich obraz \"uciekałby\" z ramki przy obrocie wokół środka.\n\nW Pythonie ten rachunek zamknięto w jednej funkcji:\n\n```python\nh, w = img.shape[:2]\nM = cv2.getRotationMatrix2D(center=(w / 2, h / 2), angle=30, scale=1.0)\nout = cv2.warpAffine(img, M, dsize=(w, h),\n                     flags=cv2.INTER_LINEAR,\n                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)\n```\n\n**Trzy częste pułapki**:\n\n1. `angle` jest w **stopniach** (nie radianach), liczone **przeciwnie do ruchu wskazówek zegara**.\n2. `dsize=(w, h)` zachowuje rozmiar ramki — obrócone narożniki **wyjdą poza ramkę** i zostaną przycięte. Aby zatrzymać cały obraz, oblicz nową ramkę otaczającą obrócone rogi i dodaj odpowiednie translacje do trzeciej kolumny `M`.\n3. `flags` w `warpAffine` to ta sama interpolacja co w `resize` — `INTER_LINEAR` jest sensownym domyślnym dla obrotu (rzadko ktoś obraca o kąty powodujące moiré)."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+          "title": "OpenCV Python tutorial — Geometric transformations of images",
+          "kind": "article"
+        },
+        {
+          "url": "https://szeliski.org/Book/",
+          "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3.6 (Geometric transformations)",
+          "kind": "book",
+          "author": "Richard Szeliski",
+          "year": 2022
+        }
+      ]
+    },
+    {
+      "id": "sandbox-warpaffine",
+      "title": "Piaskownica: macierz obrotu od podstaw",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Buduj macierz 2x3 obrotu z definicji — to to samo, co zwraca cv2.getRotationMatrix2D.\ndef rotation_matrix_2d(center, angle_deg, scale=1.0):\n    cx, cy = center\n    theta = np.deg2rad(angle_deg)\n    a = scale * np.cos(theta)\n    b = scale * np.sin(theta)\n    M = np.array([\n        [ a,  b, (1.0 - a) * cx - b * cy],\n        [-b,  a,  b * cx + (1.0 - a) * cy],\n    ], dtype=np.float64)\n    return M\n\n\n# Pomocnik: zastosuj macierz 2x3 do punktu (x, y).\ndef apply_M(M, x, y):\n    xp = M[0, 0] * x + M[0, 1] * y + M[0, 2]\n    yp = M[1, 0] * x + M[1, 1] * y + M[1, 2]\n    return float(xp), float(yp)\n\n\n# Maly obraz 5x5 — same wspolrzedne pikseli, ramka 0..4 w x i 0..4 w y.\nW, H = 5, 5\ncenter = (W / 2, H / 2)   # (2.5, 2.5)\n\nM = rotation_matrix_2d(center, angle_deg=90, scale=1.0)\nprint('Macierz obrotu o 90 stopni wokol srodka (2.5, 2.5):')\nprint(M)\nprint()\n\nprint('Mapowanie naroznikow oraz srodka:')\nfor (x, y) in [(0, 0), (W - 1, 0), (0, H - 1), (W - 1, H - 1), center]:\n    xp, yp = apply_M(M, x, y)\n    print(f'  ({x:>4.1f}, {y:>4.1f}) -> ({xp:>5.2f}, {yp:>5.2f})')\n\nprint()\nprint('Obrot o 180 stopni z dodatkowa skala 0.5:')\nM2 = rotation_matrix_2d(center, angle_deg=180, scale=0.5)\nprint(M2)\nfor (x, y) in [(0, 0), (W - 1, H - 1), center]:\n    xp, yp = apply_M(M2, x, y)\n    print(f'  ({x:>4.1f}, {y:>4.1f}) -> ({xp:>5.2f}, {yp:>5.2f})')\n\n# Pytania do siebie:\n#   * Sprawdz, czy srodek (2.5, 2.5) faktycznie zostaje w miejscu — niezaleznie od kata.\n#   * Zmien angle_deg na 30 i policz, gdzie ladujace narozniki wykraczaja poza ramke 0..4.\n#   * Zloz dwa obroty po 30 stopni (przemnoz odpowiadajace im macierze 3x3 jednorodne) i porownaj z M(60).\n#   * Co stanie sie, jesli ustawisz scale=2.0 — gdzie pojda narozniki obrazu?\n",
+        "encouragement": "Złóż dwa obroty po 30° i sprawdź, czy wynik mapuje narożniki tak samo jak pojedynczy obrót o 60°."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+      "title": "OpenCV Python tutorial — Geometric transformations of images",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Image_scaling",
+      "title": "Image scaling — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Bilinear_interpolation",
+      "title": "Bilinear interpolation — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3.6 (Geometric transformations)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

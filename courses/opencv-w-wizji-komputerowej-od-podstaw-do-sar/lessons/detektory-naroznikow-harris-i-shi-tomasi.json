@@ -1,0 +1,164 @@
+{
+  "schemaVersion": 1,
+  "slug": "detektory-naroznikow-harris-i-shi-tomasi",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Detektory narożników: Harris i Shi-Tomasi",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Od intuicji „narożnika dwukierunkowego” przez macierz strukturalną i odpowiedź R Harrisa po kryterium minimalnej wartości własnej Shi-Tomasi — pierwszy krok każdego pipeline'u feature-matching, na którym opiera się reszta tego modułu.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "czym-jest-naroznik",
+      "title": "Krawędź lokalizuje w jednym kierunku, narożnik w dwóch",
+      "type": "theory",
+      "data": {
+        "markdown": "Krawędź lokalizuje obraz w **jednym** kierunku — wzdłuż gradientu wiesz, gdzie jesteś, ale wzdłuż samej krawędzi możesz przesunąć okno o wiele pikseli i nic się nie zmieni. **Narożnik** to punkt, w którym jasność zmienia się w **dwóch** niezależnych kierunkach jednocześnie — czyli mała ramka wokół niego ma unikalny „podpis\" intensywności, którego nie da się powtórzyć w sąsiedztwie.\n\nTo czyni narożniki świetnymi *cechami lokalnymi*: są stabilne pod małym przesunięciem (dwa razy widzisz ten sam wzorzec), powtarzalne między kadrami i wyraźnie odróżnialne od ich otoczenia. Dlatego algorytmy śledzenia (Lucas-Kanade w module 6), dopasowywania (SIFT/ORB w kolejnych lekcjach) i rejestracji obrazów (homografia + RANSAC) zaczynają się **właśnie** od detekcji narożników.\n\n![Klasyczny wynik detektora Harrisa z tutorialu OpenCV: zdjęcie szachownicy z czerwonymi punktami zaznaczonymi w narożach pól — każdy róg jest wykryty raz, krawędzie i jednolite obszary pól pozostają puste](https://docs.opencv.org/4.x/harris_result.jpg)\n\n*(Obraz: tutorial OpenCV „Harris corner detection\" — kanoniczna ilustracja efektu detektora.)*\n\nPotrzebujemy formuły, która powie *„tu jest narożnik z siłą 0.42, a tam zaledwie 0.03\"* — żeby móc je posortować, wybrać $N$ najsilniejszych i odrzucić odpowiedzi w jednolitych regionach. Tym zajmiemy się w następnej sekcji: **macierz strukturalna** wyciska tę dwuwymiarową własność z gradientu obrazu w jedną liczbę."
+      }
+    },
+    {
+      "id": "macierz-strukturalna-i-odpowiedzi",
+      "title": "Macierz strukturalna, odpowiedź Harrisa i kryterium Shi-Tomasi",
+      "type": "theory",
+      "data": {
+        "markdown": "Dla okna $W$ wokół piksela $(x, y)$ definiujemy **macierz strukturalną** (ang. *structure tensor*, też *second-moment matrix*) z gradientów $I_x = \\partial I / \\partial x$, $I_y = \\partial I / \\partial y$:\n\n$$ M(x, y) \\;=\\; \\sum_{(u, v) \\in W} w(u, v) \\, \\begin{bmatrix} I_x^2 & I_x I_y \\\\\\\\ I_x I_y & I_y^2 \\end{bmatrix} $$\n\nWaga $w(u, v)$ to zwykle Gauss (`blockSize` w OpenCV ustala rozmiar okna). $M$ jest symetryczna i dodatnio półokreślona, więc ma dwie nieujemne wartości własne $\\lambda_1 \\geq \\lambda_2 \\geq 0$. Geometrycznie $\\sqrt{\\lambda_1}$ i $\\sqrt{\\lambda_2}$ to półosie elipsy *„o ile pikseli muszę przesunąć okno, żeby suma kwadratów różnic urosła o stałą\"*. Stąd trzy reżimy:\n\n- $\\lambda_1 \\approx \\lambda_2 \\approx 0$ — okno **płaskie**, można je przesunąć w dowolną stronę bez zmian.\n- $\\lambda_1 \\gg \\lambda_2 \\approx 0$ — **krawędź**, można ją przesunąć wzdłuż własnego kierunku bez zmian.\n- $\\lambda_1 \\geq \\lambda_2 \\gg 0$ — **narożnik**, każde przesunięcie zmienia jasność.\n\n**Harris i Stephens (1988)** zauważyli, że samo liczenie wartości własnych w każdym pikselu jest drogie. Wprowadzili skalarną **odpowiedź** $R$, którą da się policzyć z samego wyznacznika i śladu macierzy:\n\n$$ R \\;=\\; \\det(M) - k \\cdot \\operatorname{trace}(M)^2 \\;=\\; \\lambda_1 \\lambda_2 - k\\,(\\lambda_1 + \\lambda_2)^2, \\qquad k \\in [0{,}04,\\, 0{,}06] $$\n\nZnak $R$ kwalifikuje piksel: $R > 0$ → narożnik, $R \\approx 0$ → płaski, $R < 0$ → krawędź. Tunable $k$ to czuły parametr — większe $k$ silniej karze duże $\\lambda_i$ i zmniejsza liczbę „false positives\" na krawędziach, ale gubi też słabsze narożniki.\n\n**Shi i Tomasi (1994)** pokazali w pracy *„Good Features to Track\"*, że dla zastosowań śledzących (Lucas-Kanade w następnym module 6) wystarczy wziąć po prostu **mniejszą wartość własną**:\n\n$$ R_{\\text{ST}} \\;=\\; \\min(\\lambda_1,\\, \\lambda_2) $$\n\nNie ma parametru $k$, formuła jest bezpośrednio interpretowalna („jak słabo okno daje się przesunąć w *najgorszym* kierunku\") i empirycznie daje stabilniejsze keypointy między kadrami. To kryterium implementuje `cv2.goodFeaturesToTrack` — domyślny detektor narożników w OpenCV od czasu, gdy patent Shi-Tomasiego stał się nieistotny."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.5244/C.2.23",
+          "title": "Harris, C. and Stephens, M. — A Combined Corner and Edge Detector (Alvey Vision Conference 1988)",
+          "kind": "paper",
+          "author": "Chris Harris and Mike Stephens",
+          "year": 1988
+        },
+        {
+          "url": "https://doi.org/10.1109/CVPR.1994.323794",
+          "title": "Shi, J. and Tomasi, C. — Good Features to Track (CVPR 1994)",
+          "kind": "paper",
+          "author": "Jianbo Shi and Carlo Tomasi",
+          "year": 1994
+        }
+      ]
+    },
+    {
+      "id": "porownanie-tabelaryczne",
+      "title": "Harris vs Shi-Tomasi — porównanie kryterium i API",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "detektor", "label": "Detektor", "type": "string" },
+          { "key": "kryterium", "label": "Kryterium odpowiedzi", "type": "string" },
+          { "key": "parametr", "label": "Tunable parametr", "type": "string" },
+          { "key": "api", "label": "OpenCV API", "type": "string" },
+          { "key": "uwagi", "label": "Uwagi praktyczne" }
+        ],
+        "rows": [
+          {
+            "detektor": "Harris (1988)",
+            "kryterium": "R = det(M) − k · trace(M)² = λ₁λ₂ − k(λ₁+λ₂)²",
+            "parametr": "k ∈ [0.04, 0.06] oraz blockSize (okno) i ksize (Sobel)",
+            "api": "cv2.cornerHarris(gray, blockSize, ksize, k)",
+            "uwagi": "Zwraca mapę odpowiedzi tej samej wielkości co obraz (typ float32). Sam musisz progować (np. R > 0.01 · R.max()) i zrobić NMS, żeby dostać listę współrzędnych."
+          },
+          {
+            "detektor": "Shi-Tomasi (1994)",
+            "kryterium": "R = min(λ₁, λ₂)",
+            "parametr": "qualityLevel (próg na min eigenvalue jako ułamek max R), minDistance (NMS), maxCorners",
+            "api": "cv2.goodFeaturesToTrack(gray, maxCorners, qualityLevel, minDistance)",
+            "uwagi": "Zwraca już listę keypointów (N × 1 × 2, float32). Sam dobiera próg, robi NMS i sortuje malejąco po sile odpowiedzi — domyślny detektor pod Lucas-Kanade."
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-eigenvalues",
+      "title": "Sprawdź się: co opisują wartości własne macierzy strukturalnej?",
+      "type": "quiz",
+      "data": {
+        "question": "Po policzeniu macierzy strukturalnej $M$ w pewnym oknie okazuje się, że jej dwie wartości własne to $\\lambda_1 = 12{,}4$ oraz $\\lambda_2 = 0{,}03$. Jaki rodzaj struktury obrazu obejmuje to okno?",
+        "options": [
+          "Jednolity, płaski obszar — obie wartości własne są bliskie zeru, więc okno można przesunąć w dowolną stronę bez zmian sumy kwadratów różnic.",
+          "Krawędź — okno można przesunąć wzdłuż jednego kierunku (tego, dla którego $\\lambda_2 \\approx 0$) bez zmian, ale w prostopadłym kierunku ($\\lambda_1$ duże) jasność szybko się zmienia.",
+          "Narożnik — obie wartości własne są wyraźnie większe od zera, więc każde przesunięcie okna zmienia jego zawartość.",
+          "Nieosiągalny stan — dla rzeczywistego obrazu macierz $M$ jest dodatnio półokreślona, więc obie wartości własne muszą być w tym samym rzędzie wielkości."
+        ],
+        "correct": [1],
+        "explanation": "Dla okna o wartościach własnych $(\\lambda_1, \\lambda_2) = (12{,}4,\\, 0{,}03)$ jedna jest duża, druga praktycznie zerowa — to **krawędź**. Geometrycznie: $\\sqrt{\\lambda_2}$ to półoś elipsy w kierunku, w którym okno daje się przesuwać niemal swobodnie (czyli wzdłuż krawędzi); $\\sqrt{\\lambda_1}$ to półoś w kierunku prostopadłym, w którym jasność szybko się zmienia. Odpowiedź A wymagałaby $\\lambda_1 \\approx \\lambda_2 \\approx 0$ (płaski obszar). Odpowiedź C — narożnik — wymagałaby **obu** dużych wartości własnych. Odpowiedź D jest fałszywa: $M$ jest dodatnio półokreślona, więc $\\lambda_i \\geq 0$, ale ich rzędy wielkości mogą się dowolnie różnić — dokładnie ta różnica klasyfikuje strukturę. Kryterium Shi-Tomasi $R = \\min(\\lambda_1, \\lambda_2) = 0{,}03$ poprawnie odrzuciłoby ten piksel jako kandydata na narożnik; Harris z $k = 0{,}05$ dałby $R = 12{,}4 \\cdot 0{,}03 - 0{,}05 \\cdot 12{,}43^2 \\approx -7{,}3 < 0$ — czyli też zaklasyfikuje piksel jako krawędź.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-harris-response",
+      "title": "Zaimplementuj `harris_response(Ixx, Iyy, Ixy, k)` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `harris_response(Ixx, Iyy, Ixy, k)`, która liczy mapę odpowiedzi Harrisa z trzech tablic NumPy reprezentujących elementy macierzy strukturalnej w każdym pikselu (po wcześniejszym uśrednieniu okienkiem Gaussa).\n\nDla pojedynczego piksela:\n\n$$ M = \\begin{bmatrix} I_{xx} & I_{xy} \\\\\\\\ I_{xy} & I_{yy} \\end{bmatrix}, \\qquad R = \\det(M) - k \\cdot \\operatorname{trace}(M)^2 $$\n\nFunkcja MUSI:\n\n1. Skonwertować każdą z trzech tablic wejściowych na `numpy.ndarray` typu `float64`.\n2. Policzyć **per-piksel** wyznacznik $\\det(M) = I_{xx} \\cdot I_{yy} - I_{xy}^2$ i ślad $\\operatorname{trace}(M) = I_{xx} + I_{yy}$.\n3. Zwrócić tablicę `float64` o tym samym kształcie co wejście, równą $\\det - k \\cdot \\operatorname{trace}^2$.\n\n**Nie używaj** `cv2.cornerHarris` ani `np.linalg.eig` — chodzi o ręczne policzenie z formuły.\n\n```\nharris_response(np.array([[2.0]]), np.array([[2.0]]), np.array([[0.0]]), 0.05)  # -> [[3.2]]   (narożnik: R > 0)\nharris_response(np.array([[5.0]]), np.array([[0.0]]), np.array([[0.0]]), 0.05)  # -> [[-1.25]] (krawędź: R < 0)\nharris_response(np.array([[0.0]]), np.array([[0.0]]), np.array([[0.0]]), 0.05)  # -> [[0.0]]   (płasko: R = 0)\n```",
+        "starterCode": "import numpy as np\n\ndef harris_response(Ixx, Iyy, Ixy, k):\n    # Ixx, Iyy, Ixy: numpy.ndarray tego samego ksztaltu (np. po cv2.GaussianBlur(Ix*Ix, ...))\n    # k: float, typowo 0.04..0.06\n    #\n    # Krok po kroku:\n    #   1. Konwersja kazdej tablicy na float64 przez np.asarray(..., dtype=np.float64).\n    #   2. det = Ixx * Iyy - Ixy ** 2\n    #   3. trace = Ixx + Iyy\n    #   4. Zwroc det - k * trace ** 2\n    Ixx = np.asarray(Ixx, dtype=np.float64)\n    Iyy = np.asarray(Iyy, dtype=np.float64)\n    Ixy = np.asarray(Ixy, dtype=np.float64)\n    return np.zeros_like(Ixx)\n",
+        "tests": [
+          {
+            "name": "plaski_obszar_daje_zero",
+            "body": "import numpy as np\nIxx = np.zeros((3, 4), dtype=np.float64)\nIyy = np.zeros((3, 4), dtype=np.float64)\nIxy = np.zeros((3, 4), dtype=np.float64)\nR = harris_response(Ixx, Iyy, Ixy, 0.04)\nassert isinstance(R, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(R).__name__}'\nassert R.shape == (3, 4), f'ksztalt: {R.shape}'\nassert np.allclose(R, 0.0, atol=1e-12), f'plaski obszar powinien dac wszedzie 0, jest {R}'",
+            "hidden": false
+          },
+          {
+            "name": "krawedz_daje_wartosc_ujemna",
+            "body": "import numpy as np\n# Krawedz pionowa: tylko Ixx > 0, Iyy = 0, Ixy = 0.\nIxx = np.array([[5.0]])\nIyy = np.array([[0.0]])\nIxy = np.array([[0.0]])\nk = 0.05\nR = harris_response(Ixx, Iyy, Ixy, k)\n# det = 0, trace = 5, R = 0 - 0.05 * 25 = -1.25\nassert abs(R[0, 0] - (-1.25)) < 1e-9, f'oczekiwano R = -1.25, jest {R[0, 0]}'\nassert R[0, 0] < 0, 'krawedz powinna dac R < 0'"
+          },
+          {
+            "name": "naroznik_daje_wartosc_dodatnia",
+            "body": "import numpy as np\n# Idealny naroznik: Ixx = Iyy = 2, Ixy = 0  =>  lambda1 = lambda2 = 2.\nIxx = np.array([[2.0]])\nIyy = np.array([[2.0]])\nIxy = np.array([[0.0]])\nk = 0.05\nR = harris_response(Ixx, Iyy, Ixy, k)\n# det = 4, trace = 4, R = 4 - 0.05 * 16 = 3.2\nassert abs(R[0, 0] - 3.2) < 1e-9, f'oczekiwano R = 3.2, jest {R[0, 0]}'\nassert R[0, 0] > 0, 'naroznik powinien dac R > 0'"
+          },
+          {
+            "name": "ksztalt_zachowany_i_zgodnosc_z_lambdami",
+            "body": "import numpy as np\nrng = np.random.default_rng(42)\n# Tworzymy losowa, dodatnio polokreslona macierz M w kazdym pikselu.\nH, W = 5, 7\nIxx = rng.uniform(0.0, 3.0, size=(H, W)).astype(np.float64)\nIyy = rng.uniform(0.0, 3.0, size=(H, W)).astype(np.float64)\n# |Ixy| <= sqrt(Ixx * Iyy) gwarantuje dodatnia polokreslonosc.\nIxy = (rng.uniform(-1.0, 1.0, size=(H, W)) * np.sqrt(Ixx * Iyy)).astype(np.float64)\nk = 0.04\nR = harris_response(Ixx, Iyy, Ixy, k)\nassert R.shape == (H, W), f'ksztalt: {R.shape}'\n# Niezalezne sprawdzenie przez wartosci wlasne.\nfor i in range(H):\n    for j in range(W):\n        M = np.array([[Ixx[i, j], Ixy[i, j]], [Ixy[i, j], Iyy[i, j]]])\n        l1, l2 = np.linalg.eigvalsh(M)\n        expected = l1 * l2 - k * (l1 + l2) ** 2\n        assert abs(R[i, j] - expected) < 1e-9, f'rozjazd w ({i},{j}): {R[i, j]} vs {expected}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef harris_response(Ixx, Iyy, Ixy, k):\n    Ixx = np.asarray(Ixx, dtype=np.float64)\n    Iyy = np.asarray(Iyy, dtype=np.float64)\n    Ixy = np.asarray(Ixy, dtype=np.float64)\n    det = Ixx * Iyy - Ixy ** 2\n    trace = Ixx + Iyy\n    return det - k * trace ** 2\n"
+      }
+    },
+    {
+      "id": "sandbox-cv2-corners",
+      "title": "Piaskownica: `cv2.cornerHarris` i `cv2.goodFeaturesToTrack` na syntetycznych kształtach",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz: trzy biale prostokaty na czarnym tle.\n# Spodziewamy sie 4 narozy na kazdy prostokat = 12 narozy razem.\nH, W = 200, 320\nimg = np.zeros((H, W), dtype=np.uint8)\ncv2.rectangle(img, ( 30,  40), (110, 120), 255, thickness=-1)\ncv2.rectangle(img, (140,  30), (240,  90), 255, thickness=-1)\ncv2.rectangle(img, (180, 130), (290, 180), 255, thickness=-1)\nimg = cv2.GaussianBlur(img, (3, 3), 0.8)   # lekkie wygladzenie, zeby gradient byl rozsadny\n\n# --- Detektor Harrisa ---\n# Wymaga float32 i blockSize=2, ksize=3, k=0.04 to typowy zestaw startowy.\ngray = img.astype(np.float32)\nR_harris = cv2.cornerHarris(gray, blockSize=2, ksize=3, k=0.04)\n# Mapa odpowiedzi -> binarny wybor narozy (prog 1% z maksimum).\nharris_mask = R_harris > 0.01 * R_harris.max()\n\n# --- Detektor Shi-Tomasi (good features to track) ---\ncorners_st = cv2.goodFeaturesToTrack(\n    img, maxCorners=50, qualityLevel=0.01, minDistance=8\n)\n# corners_st: numpy.ndarray ksztaltu (N, 1, 2), wspolrzedne (x, y) jako float32.\n\nprint('Harris   : zaznaczono', int(np.count_nonzero(harris_mask)), 'pikseli (przed NMS).')\nprint('ShiTomasi: znaleziono', 0 if corners_st is None else len(corners_st), 'narozy (po wbudowanym NMS).')\n\n# Pierwsze 6 narozy z Shi-Tomasi (najsilniejsze):\nif corners_st is not None:\n    for (x, y) in corners_st[:6, 0]:\n        print(f'  ({x:6.1f}, {y:6.1f})')\n\n# Pytania do siebie:\n#   * Zmien k Harrisa na 0.06 — ile pikseli dalej przekracza prog?\n#     (im wieksze k, tym surowsze kryterium narozu).\n#   * Zmniejsz qualityLevel goodFeaturesToTrack do 0.001 — czy pojawiaja sie\n#     fantazyjne narozy w sasiedztwie krawedzi?\n#   * Wymien syntetyczny obraz na cv2.imread('cameraman.png', 0) (jesli dostepny w piaskownicy)\n#     i porownaj liczbe narozy zwracanych przez oba detektory.\n#   * Zwieksz blockSize Harrisa do 5 — co dzieje sie z lokalizacja narozy?\n#     (wieksze okno = silniejsze odpowiedzi, ale gorsza precyzja punktu).\n",
+        "encouragement": "Pobaw się parametrami `k`, `blockSize` i `qualityLevel` na różnych kształtach — i zauważ, jak Shi-Tomasi sam dba o NMS, a Harris zostawia ten krok tobie."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/dc/d0d/tutorial_py_features_harris.html",
+          "title": "OpenCV Python tutorial — Harris corner detection",
+          "kind": "article"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.5244/C.2.23",
+      "title": "Harris, C. and Stephens, M. — A Combined Corner and Edge Detector (Alvey Vision Conference 1988)",
+      "kind": "paper",
+      "author": "Chris Harris and Mike Stephens",
+      "year": 1988
+    },
+    {
+      "url": "https://doi.org/10.1109/CVPR.1994.323794",
+      "title": "Shi, J. and Tomasi, C. — Good Features to Track (CVPR 1994)",
+      "kind": "paper",
+      "author": "Jianbo Shi and Carlo Tomasi",
+      "year": 1994
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/dc/d0d/tutorial_py_features_harris.html",
+      "title": "OpenCV Python tutorial — Harris corner detection",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7.1 (Points and patches)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

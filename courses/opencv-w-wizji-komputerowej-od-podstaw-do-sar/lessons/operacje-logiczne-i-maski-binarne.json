@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "slug": "operacje-logiczne-i-maski-binarne",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Operacje logiczne i maski binarne",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Maski binarne i cztery bitowe operatory OpenCV — AND, OR, NOT, XOR — które wycinają, łączą i odwracają zbiory pikseli.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "maska-binarna",
+      "title": "Maska binarna i cztery operatory logiczne",
+      "type": "theory",
+      "data": {
+        "markdown": "W OpenCV **maska binarna** to jednokanałowy obraz `uint8` z wartościami **0** (odrzuć piksel) i **255** (zachowaj piksel). Operatory `cv2.bitwise_and / or / not / xor` działają **bitowo**, niezależnie na każdym pikselu: AND zachowuje przecięcie pól białych, OR — sumę, NOT — dopełnienie, XOR — różnicę symetryczną."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Bit_manipulation",
+          "title": "Bit manipulation — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "idiom-roi",
+      "title": "Idiom: `cv2.bitwise_and(img, img, mask=...)`",
+      "type": "theory",
+      "data": {
+        "markdown": "Najczęstszy idiom — wytnij ROI z obrazu BGR jednokanałową maską:\n\n```python\nroi = cv2.bitwise_and(img, img, mask=maska)\n```\n\nArgument `mask=` jest opcjonalny we wszystkich `cv2.bitwise_*`. Wymaga `uint8` o kształcie $(H, W)$ wejściowego obrazu i jest niezależnie nakładany na każdy kanał BGR — piksele tła (gdzie maska == 0) wyzerowuje."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d0/d86/tutorial_py_image_arithmetics.html",
+          "title": "OpenCV Python tutorial — Arithmetic operations on images (bitwise section)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "check-mask-format",
+      "title": "Sprawdź się: format maski",
+      "type": "quiz",
+      "data": {
+        "question": "Maska, którą przekazujesz jako `mask=` do `cv2.bitwise_and(img, img, mask=...)`, gdzie `img` jest obrazem BGR `(H, W, 3)` w `uint8`, MUSI być:",
+        "options": [
+          "Tablicą `bool` o kształcie `(H, W)` — OpenCV automatycznie konwertuje typy.",
+          "Tablicą `uint8` o kształcie `(H, W)` — 0 oznacza piksel do pominięcia, dowolna wartość niezerowa — zachowaj.",
+          "Tablicą `uint8` o kształcie `(H, W, 3)` — musi mieć tyle samo kanałów co obraz, by mnożenie zadziałało.",
+          "Tablicą `float32` o wartościach z przedziału [0, 1] — OpenCV traktuje je jako wagi mieszania."
+        ],
+        "correct": [1],
+        "explanation": "OpenCV oczekuje **jednokanałowej** maski `uint8` o kształcie `(H, W)` (typ `CV_8UC1`). Wartość 0 oznacza 'pomiń ten piksel', a **dowolna wartość niezerowa** (najczęściej 255) — 'zachowaj'. Tablica `bool` zostaje odrzucona z błędem typu, bo OpenCV nie zna `CV_8UC1` o boolowskiej semantyce. Maska 3-kanałowa też się nie skompiluje — argument `mask=` jest zawsze pojedynczym kanałem, broadcastowanym przez bibliotekę na każdy kanał obrazu. `float32` z przedziału [0, 1] to nie maskowanie, lecz alpha blending — tam służy `cv2.addWeighted`, a nie `bitwise_*`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-apply-mask",
+      "title": "Implementacja: `apply_mask(img, mask)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `apply_mask(img, mask)`, które zachowuje piksele obrazu kolorowego tam, gdzie maska jest niezerowa, a w pozostałych miejscach wstawia zera (czarne tło). To dokładnie ten sam efekt, który daje `cv2.bitwise_and(img, img, mask=mask)` — tutaj zaimplementuj go w czystym NumPy.\n\n- `img`: tablica `np.uint8` o kształcie `(H, W, 3)` (obraz BGR).\n- `mask`: tablica `np.uint8` o kształcie `(H, W)` z wartościami 0 lub 255.\n- Zwróć tablicę `np.uint8` o kształcie `(H, W, 3)`: tam, gdzie `mask == 0` — piksel `[0, 0, 0]`; w pozostałych miejscach — piksel oryginalny. Funkcja **nie może** modyfikować `img` w miejscu.\n\n**Wskazówka:** boolowska tablica `mask == 0` o kształcie `(H, W)` zaindeksowana w 3-wymiarową tablicę `(H, W, 3)` wybiera wybrane piksele wzdłuż osi (H, W); przypisanie `0` ustawia od razu wszystkie 3 kanały tych pikseli na zero.\n\n```\nimg  = np.array([[[10, 20, 30], [40, 50, 60]]], dtype=np.uint8)   # (1, 2, 3)\nmask = np.array([[255, 0]], dtype=np.uint8)                       # (1, 2)\napply_mask(img, mask)\n#  -> array([[[10, 20, 30], [ 0,  0,  0]]], dtype=uint8)\n```",
+        "starterCode": "import numpy as np\n\ndef apply_mask(img, mask):\n    \"\"\"Zachowaj piksele img tam, gdzie mask != 0; resztę wyzeruj.\n\n    Krok po kroku:\n      1. Skopiuj img (img.copy()), zeby nie modyfikowac wejscia w miejscu.\n      2. Zbuduj boolowska maske tla: mask == 0 (ksztalt (H, W)).\n      3. Zaindeksuj kopie ta maska i przypisz 0 — NumPy ustawi wszystkie\n         3 kanaly tych pikseli jednoczesnie.\n      4. Zwroc kopie.\n    \"\"\"\n    # TODO: zaimplementuj zgodnie z opisem powyzej\n    return img\n",
+        "tests": [
+          {
+            "name": "zerowa_maska_zwraca_czarny_obraz",
+            "body": "import numpy as np\nimg  = np.array([[[10, 20, 30], [40, 50, 60]], [[70, 80, 90], [100, 110, 120]]], dtype=np.uint8)\nmask = np.zeros((2, 2), dtype=np.uint8)\nout  = apply_mask(img, mask)\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'\nassert out.shape == img.shape, f'shape powinien byc {img.shape}, jest {out.shape}'\nassert (out == 0).all(), f'Caly obraz powinien byc czarny, dostalismy {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "pelna_maska_zwraca_obraz_bez_zmian",
+            "body": "import numpy as np\nimg  = np.array([[[10, 20, 30], [40, 50, 60]], [[70, 80, 90], [100, 110, 120]]], dtype=np.uint8)\nmask = np.full((2, 2), 255, dtype=np.uint8)\nout  = apply_mask(img, mask)\nassert (out == img).all(), f'Dla maski 255 oczekiwano img bez zmian, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "czesciowa_maska_zeruje_tylko_tlo",
+            "body": "import numpy as np\nimg  = np.array([[[10, 20, 30], [40, 50, 60]]], dtype=np.uint8)\nmask = np.array([[255, 0]], dtype=np.uint8)\nout  = apply_mask(img, mask)\nexpected = np.array([[[10, 20, 30], [0, 0, 0]]], dtype=np.uint8)\nassert (out == expected).all(), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "obraz_wejsciowy_pozostaje_nietkniety",
+            "body": "import numpy as np\nimg  = np.array([[[10, 20, 30], [40, 50, 60]]], dtype=np.uint8)\nmask = np.array([[0, 0]], dtype=np.uint8)\nimg_before = img.copy()\n_ = apply_mask(img, mask)\nassert (img == img_before).all(), 'apply_mask nie powinno modyfikowac img w miejscu'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef apply_mask(img, mask):\n    out = img.copy()\n    out[mask == 0] = 0\n    return out\n"
+      },
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/user/basics.indexing.html#boolean-array-indexing",
+          "title": "NumPy — Boolean array indexing",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-combine-masks",
+      "title": "Piaskownica: łącz maski operatorami logicznymi",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Syntetyczny gradient 8 x 16 (wartosci od 0 do 240 z krokiem 16):\nimg = np.tile(np.arange(16, dtype=np.uint8) * 16, (8, 1))\n\n# Dwie maski binarne z dwoch progowan:\nmask_jasne   = (img > 128).astype(np.uint8) * 255             # piksele bardzo jasne\nmask_srednie = ((img > 64) & (img < 192)).astype(np.uint8) * 255  # srodkowy zakres\n\n# Lacz operatorami bitowymi NumPy: &, |, ^, ~ — te same maski 0/255 co cv2.bitwise_*.\nmask_and = mask_jasne & mask_srednie\nmask_or  = mask_jasne | mask_srednie\nmask_xor = mask_jasne ^ mask_srednie\nmask_not = ~mask_jasne   # uwaga: ~ na uint8 zamienia 0 <-> 255\n\nfor name, m in [('JASNE',     mask_jasne),\n                ('SREDNIE',   mask_srednie),\n                ('AND',       mask_and),\n                ('OR',        mask_or),\n                ('XOR',       mask_xor),\n                ('NOT_jasne', mask_not)]:\n    n_bialych = int((m == 255).sum())\n    print(f'{name:>10}: {n_bialych:3d} bialych pikseli ze 128')\n\n# Pytania do siebie:\n#   * Czy AND ma zawsze nie wiecej bialych pikseli niz min(jasne, srednie)?\n#   * Co dokladnie zaznacza XOR — gdzie maski sie roznia?\n#   * Sprobuj zmienic progi i sprawdz, kiedy AND staje sie pusta (zero bialych pikseli).\n",
+        "encouragement": "Zmieniaj progi i przyjrzyj się, jak AND, OR i XOR opisują różne relacje pomiędzy dwoma zbiorami pikseli."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d0/d86/tutorial_py_image_arithmetics.html",
+      "title": "OpenCV Python tutorial — Arithmetic operations on images (bitwise section)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Bit_manipulation",
+      "title": "Bit manipulation — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/basics.indexing.html#boolean-array-indexing",
+      "title": "NumPy — Boolean array indexing",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 2 (Logical Operations)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

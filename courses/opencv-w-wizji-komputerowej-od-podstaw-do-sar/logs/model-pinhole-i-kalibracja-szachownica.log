@@ -1,0 +1,85 @@
+=== Attempt 1 — 2026-05-06T04:18:59.927Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← 1	---
+I'll ignore the ralph CLAUDE.md system reminder — the user told me explicitly not to touch `scripts/ralph/`, and this skill runs decoupled from the ralph orchestrator (per SKILL.md step 9).
+Let me read the course context now.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Sources: OpenCV w wizji komputerowej: od podstaw do SAR
+Let me check existing lessons in this course and the widget schemas to understand conventions and available types.
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← algorytm-watershed-i-markery.json
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/)
+← build.ts
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← 47
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← estymacja-homografii-i-ransac.json
+Let me peek at a math-heavy/geometry lesson to absorb conventions used in this course.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Let me check the relevant widget schemas to ensure my data shapes will validate.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code-cloze.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/drag-match.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/sandbox.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/theory.json)
+← 1	{
+Let me check a couple more existing lessons to confirm image URL patterns and ensure I'm consistent.
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/convex-hull-i-defekty.json:16:[Omitted long matching line]
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← No matches found
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 16:[Omitted long matching line]
+Verifying the lesson file doesn't exist yet:
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← exit=2
+I'll build the lesson via a Python script in `/tmp` so JSON escaping is handled automatically — that's much safer than hand-escaping KaTeX backslashes and quotes.
+→ Write(file_path: /tmp/build_pinhole_lesson.py)
+← File created successfully at: /tmp/build_pinhole_lesson.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/build_pinhole_lesson.py)
+← Wrote /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/model-pinhole-i-kalibracja-szachownica.json
+Now validate against `LessonSchema`.
+→ Bash(command: npx tsx -e "
+import('node:fs').then(fs => {
+  const path = './courses/opencv-w-w…)
+← Exit code 1
+→ Bash(command: npx tsx -e "
+import * as fs from 'node:fs';
+import { LessonSchema } from './src/…)
+← OK: ./courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/model-pinhole-i-kalibracja-szachownica.json
+Validation passed. Let me run a typecheck to confirm nothing else broke and verify I didn't touch ralph/.
+→ Bash(command: git status --short scripts/ralph/ 2>&1; echo "---"; git status --short courses/o…)
+← ---
+→ Bash(command: npm run typecheck 2>&1 | tail -20)
+← > ai-lecturer@0.1.0 typecheck
+Lesson written and validated. Summary:
+**Output:** `/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/model-pinhole-i-kalibracja-szachownica.json`
+**Structure (7 sections, 18 min, theory/practice ≈ 0.5):**
+1. `theory` — Pinhole, ogniskowa, macierz K (z KaTeX dla rzutu i intrinsics + inline image z Wikimedia Commons)
+2. `theory` — Kalibracja Zhanga, dlaczego płaska szachownica i ≥3 ujęcia (+ inline image)
+3. `dragMatch` — komponenty K (fx, fy, cx, cy, s) ↔ ich rola
+4. `quiz` — typowy mit: jak K reaguje na downscale obrazu (dystraktory z `research.md → Common misconceptions`)
+5. `codeCloze` — pipeline `findChessboardCorners → cornerSubPix → calibrateCamera`, 3 sloty z `oneOf`
+6. `code` — implementacja `project_points(K, R, t, points3d)` + 4 testy + solution
+7. `sandbox` — syntetyczna szachownica + cv2.calibrateCamera, sterowane N_VIEWS i NOISE_PX
+**Sources:** 5 lesson-level (paper Zhang 2000, OpenCV docs, Hartley–Zisserman § 6, Wikipedia × 2) + section-level sources on both theory blocks.
+**Verifications:**
+- `LessonSchema.safeParse` → `success: true`
+- `npm run typecheck` → clean
+- `git status` → only the new lesson file is added; `scripts/ralph/`, `course.json`, and other lessons are untouched.
+[result success (488.0s)]

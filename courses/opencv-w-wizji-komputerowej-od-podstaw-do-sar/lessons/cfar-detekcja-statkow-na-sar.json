@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "slug": "cfar-detekcja-statkow-na-sar",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "CFAR — detekcja statków na SAR",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Globalny próg na obrazie SAR jest bezużyteczny: spokojna zatoka wymaga niższego cięcia niż wzburzone morze. CFAR rozwiązuje to lokalnie — wyprowadzamy mnożnik α dla rozkładu wykładniczego clutteru i implementujemy klasyczny detektor CA-CFAR.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "po-co-cfar",
+      "title": "Czym jest CFAR i dlaczego stały próg nie wystarczy",
+      "type": "theory",
+      "data": {
+        "markdown": "Z poprzednich lekcji wiemy dwie rzeczy o obrazie SAR: (1) intensywność jest skażona **multiplikatywnym specklem**, więc lokalne odchylenie standardowe rośnie razem z lokalną średnią backscatter, i (2) ta sama scena może obejmować spokojne wody śródlądowe i wzburzony otwarty ocean — wartości tła różnią się o rzędy wielkości. Dla **detekcji statków** ten heteroskedastyczny clutter ma jedną brutalną konsekwencję: globalny próg `cv2.threshold(..., T_FIXED)` jest bezużyteczny. Próg, który zadziała w pełnym sztormie, **zaleje fałszywymi alarmami spokojną zatokę portową** — i odwrotnie.\n\n**CFAR** (Constant False-Alarm Rate) rozwiązuje ten problem inaczej: zamiast jednego progu na cały obraz wybiera **lokalny próg** $T(p)$, który gwarantuje, że prawdopodobieństwo fałszywego alarmu w *każdym* punkcie sceny utrzymuje się na ustalonym poziomie $P_{\\text{fa}}$ (typowo $10^{-4}$ do $10^{-7}$). Algorytm sweepuje przez obraz **trzykołowym oknem**:\n\n- **CUT** (Cell Under Test) — pojedynczy piksel, dla którego wyznaczamy decyzję detekcji.\n- **Guard cells** — wąski pierścień wokół CUT, który **nie wlicza się** do estymacji tła; chroni statystyki przed wyciekiem energii samego celu (rozszerzającego się statku, listków bocznych echa).\n- **Training cells** — zewnętrzny pierścień, z którego estymujemy lokalne tło: dla wariantu **CA-CFAR** (Cell Averaging) jest to średnia $\\hat\\mu(p)$, dla **OS-CFAR** $k$-ta wartość uporządkowana z $N$ próbek.\n\n![Diagram okna kroczącego: kwadratowa maska przesuwana po sygnale, z wyróżnionym pikselem centralnym (CUT) i pierścieniem otaczających komórek — w CFAR ten pierścień dzieli się dodatkowo na wąski wewnętrzny pas komórek strażniczych i szerszy zewnętrzny pas komórek treningowych dostarczających lokalnej statystyki tła](https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Comparison_convolution_correlation.svg/640px-Comparison_convolution_correlation.svg.png)\n\nPróg w punkcie $p$ ma uniwersalną postać $T(p) = \\alpha \\cdot \\hat\\mu(p)$ — czyli skalowaną estymatę lokalnego tła. Skalar $\\alpha$ (CFAR multiplier) wyprowadza się z założonego rozkładu clutteru i wymaganego $P_{\\text{fa}}$ — to robimy w następnej sekcji. Cała magia siedzi w słowie *adaptive*: gdy okno wjedzie nad wzburzone morze, $\\hat\\mu$ rośnie razem z falami, próg rośnie i fałszywe alarmy zostają ucięte; gdy wjedzie nad lustro zatoki, $\\hat\\mu$ maleje, próg spada i nawet słaby kuter zaświeci nad nim. Ten sam algorytm, ten sam $\\alpha$, dwa skrajnie różne progi numeryczne — utrzymane na **stałej stopie fałszywego alarmu**, stąd nazwa."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "wyprowadzenie-alpha",
+      "title": "Wyprowadzenie progu CA-CFAR dla rozkładu wykładniczego",
+      "type": "theory",
+      "data": {
+        "markdown": "W obrazie SAR z **pojedynczego looka** intensywność (kwadrat amplitudy) ma rozkład **wykładniczy**:\n\n$$ p_{H_0}(I) \\;=\\; \\frac{1}{\\mu_c}\\,\\exp\\!\\left(-\\frac{I}{\\mu_c}\\right), \\qquad I \\ge 0, $$\n\ngdzie $\\mu_c = \\mathbb{E}[I \\mid H_0]$ to średnia intensywność tła (clutter). Rozkład Rayleigha amplitudy ($A = \\sqrt{I}$) i rozkład wykładniczy intensywności są tym samym modelem zapisanym w dwóch dziedzinach.\n\n**Krok 1 — idealny próg dla znanej $\\mu_c$.** Gdyby $\\mu_c$ była znana, wystarczyłby próg stały. Liczymy prawdopodobieństwo, że pusta komórka tła przypadkowo przekroczy próg $T$:\n\n$$ P_{\\text{fa}} \\;=\\; \\Pr(I > T \\mid H_0) \\;=\\; \\int_T^{\\infty} \\frac{1}{\\mu_c}\\,e^{-I/\\mu_c}\\,dI \\;=\\; e^{-T/\\mu_c}. $$\n\nStąd $T = -\\mu_c \\ln P_{\\text{fa}}$, czyli próg jest **liniowy w $\\mu_c$** — to klucz do całej konstrukcji CFAR.\n\n**Krok 2 — estymacja $\\mu_c$ z $N$ komórek treningowych.** Lokalnie nie znamy $\\mu_c$, więc szacujemy ją z $N$ pikseli z pierścienia treningowego: $\\hat\\mu = \\tfrac{1}{N}\\sum_{i=1}^{N} I_i$. Każdy $I_i$ jest niezależną próbką z $\\mathrm{Exp}(\\mu_c)$, więc $\\sum_i I_i \\sim \\mathrm{Gamma}(N,\\,\\mu_c)$, a po standardowej zmianie zmiennych $2N\\hat\\mu / \\mu_c \\sim \\chi^2_{2N}$.\n\n**Krok 3 — warunek constant false alarm rate.** Detekcja zachodzi, gdy $I_{\\text{CUT}} > \\alpha\\,\\hat\\mu$. Pomocnicza zmienna $Z = I_{\\text{CUT}} / \\hat\\mu$ jest ilorazem dwóch niezależnych zmiennych: licznik $\\sim \\mathrm{Exp}(\\mu_c)$, mianownik $\\sim \\mathrm{Gamma}(N,\\,\\mu_c)/N$. Jej rozkład pod $H_0$ **nie zależy od $\\mu_c$** (skala się skraca!) i można pokazać, że\n\n$$ \\Pr(Z > \\alpha \\mid H_0) \\;=\\; \\left(1 + \\frac{\\alpha}{N}\\right)^{-N}. $$\n\nNiezależność od $\\mu_c$ jest właśnie tym, co daje CFAR jego nazwę — stopa fałszywego alarmu pozostaje stała niezależnie od poziomu tła. Z warunku $P_{\\text{fa}} = (1 + \\alpha/N)^{-N}$ rozwiązujemy względem $\\alpha$ i otrzymujemy **mnożnik CA-CFAR**:\n\n$$ \\boxed{\\;\\alpha \\;=\\; N\\bigl(P_{\\text{fa}}^{-1/N} - 1\\bigr).\\;} $$\n\nSanity check: dla $N \\to \\infty$ (nieskończenie dużo komórek treningowych) $\\alpha \\to -\\ln P_{\\text{fa}}$, co odtwarza idealny próg z kroku 1. Cena: szersze okno wymaga jednorodności clutteru w większym otoczeniu — w gęstym ruchu portowym **inny statek wlatuje w pierścień treningowy**, $\\hat\\mu$ skacze, próg zostaje sztucznie zawyżony i zgłaszamy *miss* na pobliskim celu (efekt nazywany *target masking*). Stąd warianty **OS-CFAR** (zamienia średnią na $k$-tą statystykę porządkową — odporne na zanieczyszczenie pierścienia) oraz **GO/SO-CFAR** (osobno liczą $\\hat\\mu$ z lewego i prawego pierścienia, biorą `max` lub `min`) — porównanie w następnej sekcji."
+      },
+      "sources": [
+        {
+          "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+          "title": "Crisp, D. J. — The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery (DSTO-RR-0272, 2004)",
+          "kind": "paper",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "warianty-cfar",
+      "title": "CA-CFAR, OS-CFAR, GO-CFAR, SO-CFAR — kiedy który",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "wariant", "label": "Wariant", "type": "string", "sortable": false },
+          { "key": "estymator", "label": "Estymator tła $\\hat\\mu$", "type": "string", "sortable": false },
+          { "key": "alpha", "label": "Wzór mnożnika $\\alpha$ (zamknięty)", "type": "string", "sortable": false },
+          { "key": "mocne", "label": "Gdzie świeci", "type": "string", "sortable": false },
+          { "key": "slabe", "label": "Gdzie pęka", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "wariant": "CA-CFAR (Cell Averaging)",
+            "estymator": "Średnia z $N = 2\\cdot\\texttt{num\\_train}$ komórek treningowych z obu pierścieni",
+            "alpha": "$\\alpha = N\\bigl(P_{\\text{fa}}^{-1/N} - 1\\bigr)$",
+            "mocne": "Najprostszy, statystycznie optymalny dla **jednorodnego** clutteru wykładniczego",
+            "slabe": "Target masking — pojedynczy sąsiedni jasny piksel zawyża $\\hat\\mu$ i ucina detekcję na prawdziwym celu"
+          },
+          {
+            "wariant": "OS-CFAR (Order Statistic)",
+            "estymator": "$k$-ta wartość uporządkowana spośród $N$ komórek treningowych ($k$ zwykle $\\approx 0{,}75\\,N$)",
+            "alpha": "Wyznaczany numerycznie z dystrybuanty statystyki porządkowej; brak zwartego wzoru",
+            "mocne": "Odporny na **zanieczyszczenie** pierścienia treningowego pojedynczymi celami — porty z gęstym ruchem statków",
+            "slabe": "Droższy obliczeniowo (sortowanie w każdym oknie) i wymaga doboru $k$; tracy ok. 1–2 dB w czystym jednorodnym tle"
+          },
+          {
+            "wariant": "GO-CFAR (Greatest Of)",
+            "estymator": "$\\hat\\mu = \\max(\\hat\\mu_{\\text{lewy}},\\,\\hat\\mu_{\\text{prawy}})$ — średnie liczone osobno z dwóch półpierścieni",
+            "alpha": "Z postaci CA-CFAR, ale z $N \\to N/2$ w mianowniku statystyki",
+            "mocne": "Stabilny przy **przejściach clutteru** (krawędź ląd/morze) — bierze stronę z silniejszym tłem, więc nie pluje fałszywymi alarmami na granicy",
+            "slabe": "Tracy czułość na słabe cele; przy obecności drugiego celu w jednym z półpierścieni również podnosi próg"
+          },
+          {
+            "wariant": "SO-CFAR (Smallest Of)",
+            "estymator": "$\\hat\\mu = \\min(\\hat\\mu_{\\text{lewy}},\\,\\hat\\mu_{\\text{prawy}})$",
+            "alpha": "Analogicznie do GO-CFAR, ale z `min` zamiast `max`",
+            "mocne": "Lepiej rozróżnia **bliskie cele** (gdy tylko jeden półpierścień jest zanieczyszczony, bierzemy ten czystszy)",
+            "slabe": "Stopa fałszywego alarmu na krawędziach clutteru wybucha — `min` woli słabszą stronę i przepuszcza wszystko po silniejszej"
+          }
+        ]
+      }
+    },
+    {
+      "id": "implementacja-1d",
+      "title": "Zaimplementuj CA-CFAR w 1D",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `ca_cfar_1d(intensity, num_train, num_guard, pfa)`, która zwraca tablicę `bool` długości `len(intensity)` z `True` w pikselach, gdzie CUT przekroczyło próg CA-CFAR.\n\nUżyj wzoru z poprzedniej sekcji:\n\n- $N = 2\\cdot\\texttt{num\\_train}$ (liczba komórek treningowych z obu stron),\n- $\\alpha = N\\bigl(P_{\\text{fa}}^{-1/N} - 1\\bigr)$,\n- dla każdego $i$ w pełnym oknie: pomiń `num_guard` komórek po obu stronach CUT, weź średnią $\\hat\\mu$ z pozostałych $N$ komórek treningowych, zwróć `True`, jeżeli `intensity[i] > alpha * mu_hat`.\n\nNa brzegach (gdzie pełne okno nie mieści się w sygnale) zostaw `False`.\n\n```\nintensity = np.ones(50)\nintensity[25] = 100.0\nca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-3)[25]  # → True\n```",
+        "starterCode": "import numpy as np\n\n\ndef ca_cfar_1d(intensity, num_train, num_guard, pfa):\n    \"\"\"\n    1-D detektor CA-CFAR.\n\n    intensity   — 1-D array intensywności (>= 0)\n    num_train   — liczba komórek treningowych po KAŻDEJ stronie CUT\n    num_guard   — liczba komórek strażniczych po KAŻDEJ stronie CUT\n    pfa         — zakładana stopa falszywego alarmu, np. 1e-4\n\n    Zwraca: np.ndarray dtype=bool, shape=(len(intensity),).\n    \"\"\"\n    intensity = np.asarray(intensity, dtype=float)\n    n = len(intensity)\n    detections = np.zeros(n, dtype=bool)\n    # TODO 1: oblicz N i alpha ze wzoru CA-CFAR.\n    # TODO 2: dla i w pelnym oknie wytnij lewy + prawy pierscien treningowy\n    #          (z pominieciem num_guard komorek strazniczych i samego CUT),\n    #          policz mu_hat = mean(...) i porownaj intensity[i] z alpha * mu_hat.\n    return detections\n",
+        "tests": [
+          {
+            "name": "wykrywa_silny_pik_w_jednorodnym_tle",
+            "body": "import numpy as np\nintensity = np.ones(50)\nintensity[25] = 100.0\nresult = ca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-3)\nassert isinstance(result, np.ndarray)\nassert result.dtype == bool\nassert result.shape == (50,)\nassert bool(result[25]) is True",
+            "hidden": false
+          },
+          {
+            "name": "brak_falszywych_alarmow_w_stalym_tle",
+            "body": "import numpy as np\nintensity = np.ones(50)\nresult = ca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-3)\nassert not bool(result.any())"
+          },
+          {
+            "name": "pfa_kontroluje_czulosc",
+            "body": "import numpy as np\nintensity = np.ones(50)\nintensity[25] = 5.0\nstrict = ca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-6)\nloose = ca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-1)\nassert bool(strict[25]) is False\nassert bool(loose[25]) is True"
+          },
+          {
+            "name": "brzegi_pozostaja_false",
+            "body": "import numpy as np\nintensity = np.ones(40)\nintensity[0] = 1000.0\nintensity[-1] = 1000.0\nresult = ca_cfar_1d(intensity, num_train=8, num_guard=2, pfa=1e-3)\nassert bool(result[0]) is False\nassert bool(result[-1]) is False"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef ca_cfar_1d(intensity, num_train, num_guard, pfa):\n    intensity = np.asarray(intensity, dtype=float)\n    n = len(intensity)\n    detections = np.zeros(n, dtype=bool)\n    half = num_train + num_guard\n    N = 2 * num_train\n    alpha = N * (pfa ** (-1.0 / N) - 1.0)\n    for i in range(half, n - half):\n        left = intensity[i - half:i - num_guard]\n        right = intensity[i + num_guard + 1:i + half + 1]\n        train = np.concatenate([left, right])\n        mu_hat = float(train.mean())\n        if intensity[i] > alpha * mu_hat:\n            detections[i] = True\n    return detections\n"
+      }
+    },
+    {
+      "id": "quiz-cfar",
+      "title": "Sprawdź się: jak działa CFAR",
+      "type": "quiz",
+      "data": {
+        "question": "Statek kotwiczy w spokojnej zatoce, drugi sunie przez wzburzone otwarte morze. Mikrofalowa intensywność (sigma0 w skali liniowej) tła w zatoce wynosi 0,02, a na otwartym morzu 0,2. Jaką decyzję progową podejmie CA-CFAR z tym samym ustawieniem (`num_train=16`, `num_guard=2`, `pfa=1e-4`) w obu miejscach?",
+        "options": [
+          "Ten sam próg numeryczny 0,1 w obu miejscach — w zatoce wykryje statek, na morzu nie.",
+          "Próg ok. 0,02·α w zatoce i ok. 0,2·α na morzu, zachowując ustaloną stopę fałszywego alarmu w obu reżimach.",
+          "Próg będzie zawsze równy maksimum całego obrazu pomnożonemu przez α — CFAR liczy statystyki globalnie.",
+          "Próg zostanie ustalony przez fazę treningu na zaetykietowanym zbiorze i będzie taki sam dla obu scen."
+        ],
+        "correct": [1],
+        "explanation": "Cała idea CFAR-u to **adaptacyjny lokalny próg** $T(p) = \\alpha \\cdot \\hat\\mu(p)$, gdzie $\\hat\\mu(p)$ jest estymowane z pierścienia treningowego *w pobliżu pikselu $p$*. W zatoce $\\hat\\mu \\approx 0{,}02$, więc próg jest niski; na otwartym morzu $\\hat\\mu \\approx 0{,}2$, więc próg jest dziesięciokrotnie wyższy — i w obu miejscach prawdopodobieństwo fałszywego alarmu pozostaje równe ustalonemu $P_{\\text{fa}}$. Odpowiedzi 1 i 3 pomijają lokalność estymatora; odpowiedź 4 myli CFAR z trenowanym klasyfikatorem (CFAR jest analitycznym detektorem statystycznym, nie modelem ML).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-syntetyczny-transekt",
+      "title": "Trzy statki na transekcie — pobaw się parametrami",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# --------------------------------------------------------------------\n# Syntetyczny 1-D \"transekt\" obrazu SAR: tlo o wykladniczym specklu\n# (mu_c = 1.0, jeden look) plus trzy statki o roznej jasnosci.\n# Pobaw sie 'num_train', 'num_guard' i 'pfa' i obserwuj, ktore\n# statki znikna pierwsze, gdy zaostrzysz prog (mniejsze pfa).\n# --------------------------------------------------------------------\nrng = np.random.default_rng(42)\nn = 200\nmu_clutter = 1.0\nintensity = rng.exponential(scale=mu_clutter, size=n)\n\nships = [(60, 35.0), (110, 12.0), (150, 60.0)]  # (pozycja, jasnosc)\nfor pos, amp in ships:\n    intensity[pos] = amp\n\n\ndef ca_cfar_1d(intensity, num_train, num_guard, pfa):\n    intensity = np.asarray(intensity, dtype=float)\n    n = len(intensity)\n    detections = np.zeros(n, dtype=bool)\n    half = num_train + num_guard\n    N = 2 * num_train\n    alpha = N * (pfa ** (-1.0 / N) - 1.0)\n    for i in range(half, n - half):\n        left = intensity[i - half:i - num_guard]\n        right = intensity[i + num_guard + 1:i + half + 1]\n        train = np.concatenate([left, right])\n        mu_hat = float(train.mean())\n        if intensity[i] > alpha * mu_hat:\n            detections[i] = True\n    return detections\n\n\nnum_train = 12\nnum_guard = 3\npfa = 1e-4\n\ndet = ca_cfar_1d(intensity, num_train=num_train, num_guard=num_guard, pfa=pfa)\nprawdziwe = {pos for pos, _ in ships}\nwykryte = set(np.where(det)[0].tolist())\nprint(f\"alpha = {2 * num_train * (pfa ** (-1.0 / (2 * num_train)) - 1.0):.3f}\")\nprint(f\"wykryte pozycje: {sorted(wykryte)}\")\nprint(f\"prawdziwe pozycje: {sorted(prawdziwe)}\")\nprint(f\"trafienia: {sorted(prawdziwe & wykryte)}\")\nprint(f\"falszywe alarmy: {sorted(wykryte - prawdziwe)}\")\nprint(f\"przegapione: {sorted(prawdziwe - wykryte)}\")\n",
+        "encouragement": "Zmniejsz `pfa` do `1e-7` i zobacz, który statek zniknie pierwszy — a potem zobacz, co stanie się z liczbą fałszywych alarmów, gdy podniesiesz `pfa` do `1e-2`."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+      "title": "Crisp, D. J. — The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery (DSTO-RR-0272, 2004)",
+      "kind": "paper",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.3390/rs9030246",
+      "title": "Greidanus et al. — The SUMO Ship Detector Algorithm for Satellite Radar Images (Remote Sensing 2017)",
+      "kind": "paper",
+      "author": "Harm Greidanus, Marlene Alvarez, Carlos Santamaria, François-Xavier Thoorens, Naouma Kourti and Pietro Argentieri",
+      "year": 2017
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "Moreira et al. — A Tutorial on Synthetic Aperture Radar (IEEE GRSM 2013)",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek and Konstantinos P. Papathanassiou",
+      "year": 2013
+    }
+  ]
+}

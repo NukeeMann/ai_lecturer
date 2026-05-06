@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "slug": "korekcja-dystorsji-i-remapping",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Korekcja dystorsji i remapping",
+  "eyebrow": "GEOMETRIA 3D",
+  "description": "Idealny pinhole z poprzedniej lekcji nie istnieje w naturze — każdy obiektyw zagina linie obrazu w 'beczkę' lub 'poduszkę'. Poznasz model Browna-Conrady'ego (k1..k3, p1, p2) zaszyty w wektorze dist z calibrateCamera, dwie ścieżki jego wyzerowania (jednorazowy cv2.undistort dla pojedynczej klatki vs pre-kompilowane mapy z initUndistortRectifyMap + remap dla wideo) oraz rolę alpha i ROI w cv2.getOptimalNewCameraMatrix.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "model-dystorsji",
+      "title": "Brown-Conrady: skąd się bierze beczka i poduszka",
+      "type": "theory",
+      "data": {
+        "markdown": "**Idealny pinhole** z poprzedniej lekcji nie istnieje w naturze — każda soczewka zakrzywia obraz. Dominującym efektem jest **dystorsja radialna**: punkty są przesuwane *wzdłuż promienia* od głównego punktu, a wielkość przesunięcia rośnie z odległością od osi optycznej.\n\n- $k_1 < 0$ — *beczka* (barrel): rogi pakują się do środka, kratka wybrzusza się na zewnątrz; typowe dla obiektywów krótkoogniskowych i fish-eye.\n- $k_1 > 0$ — *poduszka* (pincushion): rogi rozjeżdżają się na zewnątrz, kratka wciąga się do środka; typowe dla teleobiektywów.\n\nDrugim, dużo słabszym efektem jest **dystorsja tangencjalna** ($p_1, p_2$), powstająca, gdy soczewka nie jest idealnie równoległa do sensora — krzywizny robią się asymetryczne.\n\n![Klasyczna ilustracja z dokumentacji OpenCV: ta sama prosta kratka widziana przez obiektyw z dystorsją radialną — linie, które fizycznie są proste, w obrazie wyginają się w łuki, a charakterystyczny wzór jest rozpoznawalny jako 'beczka' przy ujemnym k1](https://docs.opencv.org/4.x/calib_radial.jpg)\n\nOpenCV używa **modelu Browna-Conrady'ego** w znormalizowanych współrzędnych kamery — czyli po cofnięciu działania $K$:\n\n$$ x_n = \\frac{u - c_x}{f_x}, \\qquad y_n = \\frac{v - c_y}{f_y}, \\qquad r^2 = x_n^2 + y_n^2 $$\n\n$$ x_d = x_n\\,(1 + k_1 r^2 + k_2 r^4 + k_3 r^6) + 2 p_1 x_n y_n + p_2 (r^2 + 2 x_n^2) $$\n\n$$ y_d = y_n\\,(1 + k_1 r^2 + k_2 r^4 + k_3 r^6) + p_1 (r^2 + 2 y_n^2) + 2 p_2 x_n y_n $$\n\na potem z powrotem do pikseli przez $u_d = f_x x_d + c_x,\\ v_d = f_y y_d + c_y$. **Pułapka kolejności**: wektor `dist` zwracany przez `cv2.calibrateCamera` jest pakowany jako `[k1, k2, p1, p2, k3]` — tak, $k_3$ jest *na końcu*, **nie** razem z $k_1, k_2$. To jeden z najczęstszych źródeł cichego błędu przy ładowaniu współczynników z innego frameworka. Model 8-elementowy `[k1, k2, p1, p2, k3, k4, k5, k6]` (CALIB_RATIONAL_MODEL) trzymaj w odwodzie do obiektywów rybie oko."
+      },
+      "sources": [
+        {
+          "url": "https://www.asprs.org/wp-content/uploads/pers/1966journal/may/1966_may_444-462.pdf",
+          "title": "Brown, D. C. — Decentering Distortion of Lenses (Photogrammetric Engineering, 1966)",
+          "kind": "paper",
+          "author": "Duane C. Brown",
+          "year": 1966
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Distortion_(optics)",
+          "title": "Distortion (optics) — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "pipeline-undistort",
+      "title": "undistort vs initUndistortRectifyMap + remap, oraz alpha",
+      "type": "theory",
+      "data": {
+        "markdown": "Mając $K$ i `dist`, OpenCV daje dwie ścieżki ich wyzerowania — i wybór między nimi nie jest tylko kosmetyczny.\n\n- `cv2.undistort(img, K, dist, None, K_new)` — wygodny one-liner, ale **wewnątrz każdorazowo przelicza per-pikselowe mapy** od zera. Dla pojedynczego zdjęcia to OK; dla strumienia 30 fps marnujesz cykle CPU na liczenie tej samej mapy 30 razy na sekundę.\n- `cv2.initUndistortRectifyMap(K, dist, R, K_new, size, cv2.CV_16SC2)` zwraca parę gotowych map `(map1, map2)` — liczysz je *raz* dla danej rozdzielczości i pary $(K, \\mathrm{dist})$. Potem każda klatka idzie przez `cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)`, który tylko interpoluje — bez powrotu do pinhole'a. Format `CV_16SC2` daje **fixed-point** mapy z drugą tablicą frakcji — szybciej niż `CV_32FC1` i wystarczająco dokładnie dla wideo.\n\n![Przykład rezultatu z tutoriala OpenCV: ta sama szachownica przed (lewo, widoczna beczka) i po (prawo, linie znów proste) korekcji dystorsji — wokół skorygowanej szachownicy widać charakterystyczne czarne marginesy, które właśnie kontroluje parametr alpha](https://docs.opencv.org/4.x/calibresult.jpg)\n\nDrugi, niezależny problem to **co zrobić z brzegami**. Po skorygowaniu beczki rogi obrazu „rozjeżdżają się” i wokół wyniku pojawiają się czarne piksele. `cv2.getOptimalNewCameraMatrix(K, dist, size, alpha, size)` zwraca parę `(K_new, ROI)` zależną od $\\alpha \\in [0, 1]$:\n\n- $\\alpha = 0$ — przeskaluj $K_\\mathrm{new}$ tak, żeby **żaden czarny piksel** nie pojawił się w ROI; obraz jest mniejszy, część krawędzi sceny zostaje obcięta.\n- $\\alpha = 1$ — zachowaj **wszystkie ważne piksele** oryginału; w wyniku pojawią się czarne narożniki, ale nic z geometrii się nie traci.\n- $\\alpha = 0.5$ — kompromis (typowy domyślny wybór do pomiarów wizyjnych).\n\nROI to prostokąt $(x, y, w, h)$ ważnych pikseli, którym potem wycinasz wynik (`undistorted[y:y+h, x:x+w]`)."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d",
+          "title": "OpenCV — undistort i initUndistortRectifyMap (calib3d module)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-dist-vector",
+      "title": "Sprawdź się: kolejność elementów wektora dist",
+      "type": "quiz",
+      "data": {
+        "question": "Skalibrowałeś aparat funkcją cv2.calibrateCamera i dostałeś 5-elementowy wektor dist. Jaka jest kanoniczna kolejność współczynników, której OpenCV oczekuje w każdej kolejnej funkcji (undistort, initUndistortRectifyMap, projectPoints)?",
+        "options": [
+          "[k1, k2, k3, p1, p2] — najpierw wszystkie radialne, potem tangencjalne.",
+          "[k1, k2, p1, p2, k3] — k1 i k2 razem, między nimi a k3 wciśnięte p1 i p2.",
+          "[p1, p2, k1, k2, k3] — najpierw tangencjalne, potem radialne, bo p_i są mniejsze.",
+          "Kolejność jest dowolna — każda funkcja OpenCV przyjmuje współczynniki przez nazwane argumenty."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Wektor dist z OpenCV jest pakowany jako [k1, k2, p1, p2, k3] — k_3 trafia NA KONIEC, mimo że jest dalszym wyrazem szeregu radialnego. Ta nieintuicyjna kolejność pochodzi z czasów modelu 4-parametrowego (k1, k2, p1, p2): k_3 dodano później, żeby nie zepsuć kompatybilności wstecz, wpychając go za p1, p2. Odpowiedź A i C to klasyczne błędy przy ręcznym ładowaniu współczynników z innego frameworka (np. ROS, Kalibr). Odpowiedź D mija się z prawdą — OpenCV-owe API jest pozycyjne, nie nazwane, i zła kolejność cicho zwraca obrazy ze złym przesunięciem zamiast rzucić wyjątek. Modele rozszerzone (CALIB_RATIONAL_MODEL: 8 elementów, CALIB_THIN_PRISM_MODEL: 12, fisheye: 4) mają własne układy — zawsze sprawdzaj dokumentację, której funkcji rozszerzającej używasz.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "cloze-pipeline",
+      "title": "Wpisz brakujące wywołania pipeline'u undistort dla wideo",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Masz zapisaną kalibrację (`K`, `dist`) i strumień klatek 30 fps z tej samej kamery. Uzupełnij pipeline w taki sposób, żeby kosztowne mapy policzyć **raz**, a każda klatka przechodziła już tylko przez tani `remap`.\n\nWskazówki:\n- `cv2.getOptimalNewCameraMatrix` chce rozmiaru obrazu jako `(w, h)` — uważaj, że NumPy podaje `shape` jako `(h, w)`.\n- `cv2.initUndistortRectifyMap` w trybie `CV_16SC2` zwraca **fixed-point** mapy — szybsze i wystarczająco dokładne dla wideo. Tryb `CV_32FC1` użyłbyś tylko gdy potrzebujesz dwóch float-owych map osobno.\n- `cv2.remap` zwykle leci z `cv2.INTER_LINEAR`; `cv2.INTER_NEAREST` rezerwuj do masek etykiet, gdzie nie chcesz mieszania klas.",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n# Kalibracja zapisana z poprzedniej lekcji.\ndata = np.load('calib.npz')\nK = data['K']\ndist = data['dist']  # [k1, k2, p1, p2, k3]\n\ncap = cv2.VideoCapture(0)\nok, frame = cap.read()\nh, w = frame.shape[:2]\n\n# Krok 1: wybierz K_new dla docelowej rozdzielczosci.\n# alpha = 0  -> bez czarnych obramowan, kosztem obciecia,\n# alpha = 1  -> wszystkie wazne piksele, kosztem czarnych ramek.\nK_new, roi = cv2.{{api1}}(K, dist, (w, h), 0.0, (w, h))\n\n# Krok 2: pre-kompiluj mapy RAZ - dla calej dlugosci sekwencji.\nmap1, map2 = cv2.{{api2}}(K, dist, None, K_new, (w, h), cv2.{{maptype}})\n\n# Krok 3: dla kazdej klatki wystarczy juz tylko remap.\nwhile ok:\n    undistorted = cv2.{{api3}}(frame, map1, map2, cv2.INTER_LINEAR)\n    x, y, rw, rh = roi\n    cropped = undistorted[y:y + rh, x:x + rw]\n    cv2.imshow('undist', cropped)\n    if cv2.waitKey(1) == 27:\n        break\n    ok, frame = cap.read()\n\ncap.release()\ncv2.destroyAllWindows()\n",
+        "slots": [
+          {
+            "id": "api1",
+            "hint": "Funkcja calib3d, ktora zwraca pare (K_new, ROI) zalezna od alpha.",
+            "validation": {
+              "kind": "exact",
+              "value": "getOptimalNewCameraMatrix"
+            }
+          },
+          {
+            "id": "api2",
+            "hint": "Funkcja, ktora liczy mapy per-pixel raz na cala sekwencje. Nazwa zaczyna sie od 'init...'.",
+            "validation": {
+              "kind": "exact",
+              "value": "initUndistortRectifyMap"
+            }
+          },
+          {
+            "id": "maptype",
+            "hint": "Stala typu mapy, ktora wynikiem jest fixed-point - szybsza dla wideo niz CV_32FC1.",
+            "validation": {
+              "kind": "exact",
+              "value": "CV_16SC2"
+            }
+          },
+          {
+            "id": "api3",
+            "hint": "Funkcja, ktora bierze pojedyncza klatke i pare gotowych map - to wlasnie ona odpalana jest 30 razy na sekunde.",
+            "validation": {
+              "kind": "exact",
+              "value": "remap"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "kod-brown-conrady",
+      "title": "Zaimplementuj rdzeń: forward Brown-Conrady",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `distort_normalized(xn, yn, k1, k2, p1, p2, k3=0.0)`, która jest **rdzeniem każdej procedury undistort/initUndistortRectifyMap** — to dokładnie ten model, który OpenCV oblicza w pętli per-pixel.\n\nFormuła Browna-Conrady'ego (znormalizowane współrzędne kamery, czyli już bez K):\n\n```\nr2 = xn**2 + yn**2\nradial = 1 + k1*r2 + k2*r2**2 + k3*r2**3\nx_d = xn * radial + 2*p1*xn*yn + p2*(r2 + 2*xn**2)\ny_d = yn * radial + p1*(r2 + 2*yn**2) + 2*p2*xn*yn\n```\n\nZwróć krotkę `(x_d, y_d)` — *float, float*. Funkcja musi działać dla pojedynczych skalarów i ma być tania (kilkanaście mnożeń, bez wywołań do `numpy`). Pomocnik testowy wywołuje ją po jednym punkcie naraz.\n\n```\ndistort_normalized(0.0, 0.0, 0, 0, 0, 0)         # -> (0.0, 0.0)\ndistort_normalized(1.0, 0.0, -0.1, 0, 0, 0)      # -> (0.9, 0.0)\n```",
+        "starterCode": "def distort_normalized(xn, yn, k1, k2, p1, p2, k3=0.0):\n    \"\"\"\n    Brown-Conrady: znormalizowane (xn, yn) -> zdystortowane (x_d, y_d).\n\n    xn, yn : float - wspolrzedne kamery po cofnieciu K\n    k1, k2, k3 : wspolczynniki dystorsji radialnej\n    p1, p2     : wspolczynniki dystorsji tangencjalnej\n    Zwraca: (x_d, y_d) jako para floatow.\n    \"\"\"\n    # TODO:\n    #   1. r2 = xn**2 + yn**2\n    #   2. radial = 1 + k1*r2 + k2*r2**2 + k3*r2**3\n    #   3. x_d = xn * radial + 2*p1*xn*yn + p2*(r2 + 2*xn**2)\n    #   4. y_d = yn * radial + p1*(r2 + 2*yn**2) + 2*p2*xn*yn\n    return float(xn), float(yn)\n",
+        "tests": [
+          {
+            "name": "zerowe_wspolczynniki_to_identycznosc",
+            "body": "# Bez dystorsji formula musi zwrocic dokladnie wejscie.\nfor xn, yn in [(0.0, 0.0), (0.5, -0.3), (-0.2, 0.7), (1.0, 1.0)]:\n    xd, yd = distort_normalized(xn, yn, 0.0, 0.0, 0.0, 0.0, 0.0)\n    assert abs(xd - xn) < 1e-12 and abs(yd - yn) < 1e-12, \\\n        f'(xn, yn)=({xn}, {yn}) -> ({xd}, {yd}), oczekiwano ({xn}, {yn})'",
+            "hidden": false
+          },
+          {
+            "name": "radial_k1_ujemny_sciaga_punkt_do_srodka",
+            "body": "# (1, 0), k1 = -0.1, reszta 0: r2 = 1, radial = 0.9.\n# Wynik: x_d = 0.9, y_d = 0 (sciagniecie do srodka, czyli efekt 'beczki').\nxd, yd = distort_normalized(1.0, 0.0, -0.1, 0.0, 0.0, 0.0)\nassert abs(xd - 0.9) < 1e-12, f'oczekiwano x_d = 0.9, jest {xd}'\nassert abs(yd - 0.0) < 1e-12, f'oczekiwano y_d = 0.0, jest {yd}'\n# Symetrycznie wzdluz osi Y.\nxd2, yd2 = distort_normalized(0.0, 1.0, -0.1, 0.0, 0.0, 0.0)\nassert abs(xd2 - 0.0) < 1e-12 and abs(yd2 - 0.9) < 1e-12, \\\n    f'(0,1) -> ({xd2}, {yd2}), oczekiwano (0, 0.9)'"
+          },
+          {
+            "name": "tangencjalna_p1_dziala_nawet_na_osi_y",
+            "body": "# (0, 1), p1 = 0.05, reszta 0:\n# r2 = 1, radial = 1\n# x_d = 0 + 2*p1*0*1 + p2*(r2 + 2*0**2) = 0\n# y_d = 1*1 + p1*(r2 + 2*1) + 2*p2*0*1 = 1 + 0.05*3 = 1.15\nxd, yd = distort_normalized(0.0, 1.0, 0.0, 0.0, 0.05, 0.0)\nassert abs(xd - 0.0) < 1e-12, f'oczekiwano x_d = 0, jest {xd}'\nassert abs(yd - 1.15) < 1e-12, f'oczekiwano y_d = 1.15, jest {yd}'"
+          },
+          {
+            "name": "pelna_kombinacja_radial_i_tangencjalna",
+            "body": "# (1, 1), k1 = 0.1, p1 = 0.02, p2 = 0.01, k2 = k3 = 0:\n# r2 = 2, radial = 1 + 0.1*2 = 1.2\n# x_d = 1*1.2 + 2*0.02*1*1 + 0.01*(2 + 2*1) = 1.2 + 0.04 + 0.04 = 1.28\n# y_d = 1*1.2 + 0.02*(2 + 2*1) + 2*0.01*1*1 = 1.2 + 0.08 + 0.02 = 1.30\nxd, yd = distort_normalized(1.0, 1.0, 0.1, 0.0, 0.02, 0.01)\nassert abs(xd - 1.28) < 1e-12, f'oczekiwano x_d = 1.28, jest {xd}'\nassert abs(yd - 1.30) < 1e-12, f'oczekiwano y_d = 1.30, jest {yd}'"
+          }
+        ],
+        "solution": "def distort_normalized(xn, yn, k1, k2, p1, p2, k3=0.0):\n    r2 = xn * xn + yn * yn\n    r4 = r2 * r2\n    r6 = r4 * r2\n    radial = 1.0 + k1 * r2 + k2 * r4 + k3 * r6\n    x_d = xn * radial + 2.0 * p1 * xn * yn + p2 * (r2 + 2.0 * xn * xn)\n    y_d = yn * radial + p1 * (r2 + 2.0 * yn * yn) + 2.0 * p2 * xn * yn\n    return x_d, y_d\n"
+      }
+    },
+    {
+      "id": "sandbox-coefs",
+      "title": "Piaskownica: jak k1, p1, alpha zmieniają widok",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# --- Syntetyczna kratka i znana macierz K ---\nW, H = 600, 400\nK = np.array([[400.0, 0.0,    W / 2],\n              [0.0,   400.0,  H / 2],\n              [0.0,   0.0,    1.0]], dtype=np.float64)\n\n# Pobaw sie wspolczynnikami dystorsji - to jest sedno tej piaskownicy.\nk1, k2 = -0.30, 0.05      # k1 < 0 -> beczka, k1 > 0 -> poduszka\np1, p2 = 0.0,  0.0         # tangencjalne; rzadko |p_i| > 0.005 w realnych aparatach\nk3     = 0.0\nALPHA  = 0.0               # 0 -> bez czarnych ramek, 1 -> bez obciecia\ndist = np.array([k1, k2, p1, p2, k3], dtype=np.float64)\n\n# Generuj idealna kratke 40 px.\nimg = np.full((H, W, 3), 255, dtype=np.uint8)\nfor x in range(0, W, 40):\n    img[:, x:x + 2] = (40, 40, 40)\nfor y in range(0, H, 40):\n    img[y:y + 2, :] = (40, 40, 40)\n\n# --- Symuluj kamere z dystorsja: forward map i remap ---\n# (Identycznie jak w funkcji z poprzedniego cwiczenia, ale wektorowo na siatce.)\nxs, ys = np.meshgrid(np.arange(W, dtype=np.float32),\n                     np.arange(H, dtype=np.float32))\nxn = (xs - K[0, 2]) / K[0, 0]\nyn = (ys - K[1, 2]) / K[1, 1]\nr2 = xn * xn + yn * yn\nradial = 1.0 + k1 * r2 + k2 * r2 * r2 + k3 * r2 * r2 * r2\nxd = xn * radial + 2.0 * p1 * xn * yn + p2 * (r2 + 2.0 * xn * xn)\nyd = yn * radial + p1 * (r2 + 2.0 * yn * yn) + 2.0 * p2 * xn * yn\nmap_x = (xd * K[0, 0] + K[0, 2]).astype(np.float32)\nmap_y = (yd * K[1, 1] + K[1, 2]).astype(np.float32)\ndistorted = cv2.remap(img, map_x, map_y, cv2.INTER_LINEAR,\n                      borderValue=(0, 0, 0))\n\n# --- Prostuj z powrotem przez OpenCV ---\nK_new, roi = cv2.getOptimalNewCameraMatrix(K, dist, (W, H), ALPHA, (W, H))\nundistorted = cv2.undistort(distorted, K, dist, None, K_new)\nx, y, rw, rh = roi\ncropped = undistorted[y:y + rh, x:x + rw] if rw > 0 and rh > 0 else undistorted\n\nprint('K_new =\\n', K_new)\nprint('ROI (x, y, w, h):', roi)\nprint('Rozmiar po obcieciu:', cropped.shape)\nprint('Srednia oryginalu:    ', img.mean().round(2))\nprint('Srednia po dystorsji: ', distorted.mean().round(2))\nprint('Srednia po naprawie:  ', undistorted.mean().round(2))\n\n# Pytania:\n#  * Ustaw k1 = -0.5, alpha = 0 vs alpha = 1 - czy ROI sie zmienia? jak?\n#  * Daj k1 = +0.3 (poduszka) - co teraz robia rogi obrazu po naprawie?\n#  * Wlacz p1 = 0.02 - czy linie wyginaja sie symetrycznie wzgledem srodka?\n#  * Dla |k1| = 0.05 (mala dystorsja) - czy K_new w ogole rozni sie od K?\n",
+        "encouragement": "Zauważ, że alpha to nie jest 'silnik korekcji' — to wybór między obcięciem rogów a czarnymi marginesami; sama korekcja siedzi w (K, dist)."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.asprs.org/wp-content/uploads/pers/1966journal/may/1966_may_444-462.pdf",
+      "title": "Brown, D. C. — Decentering Distortion of Lenses (Photogrammetric Engineering, 1966)",
+      "kind": "paper",
+      "author": "Duane C. Brown",
+      "year": 1966
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d",
+      "title": "OpenCV — undistort i initUndistortRectifyMap (calib3d API)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html",
+      "title": "OpenCV — Camera calibration tutorial (cz. o undistort i getOptimalNewCameraMatrix)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Distortion_(optics)",
+      "title": "Distortion (optics) — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

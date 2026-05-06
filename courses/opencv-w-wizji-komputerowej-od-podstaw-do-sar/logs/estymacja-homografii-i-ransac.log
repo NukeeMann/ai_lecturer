@@ -1,0 +1,97 @@
+=== Attempt 1 — 2026-05-06T02:27:14.476Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+I'll ignore the ralph CLAUDE.md context—the user explicitly said not to touch scripts/ralph/ and to author exactly one lesson. Let me read the course context.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← aproksymacja-konturow-i-momenty.json
+Lesson confirmed in module m5 with 15 minutes. Now let me grab the research and sources contexts and look at an existing lesson to match style.
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-o…)
+←   190 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/research.md
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 36:- **RANSAC + homography** — outlier-robust fitting that yields the 3×3 projective transform between two views.
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 9:## Course-wide references
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Sources: OpenCV w wizji komputerowej: od podstaw do SAR
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 227	## Estymacja homografii i RANSAC
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+Let me look at the most-relevant predecessor lesson and one nearby lesson to align style.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/ /home/nukeemann/pro…)
+← /home/nukeemann/projects/ai_lecturer/src/widgets/:
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/CodeCloze/schema.ts)
+← 1	import { z } from 'zod';
+Let me confirm what stable image URLs sibling lessons use, so I can pick known-good references.
+→ Bash(command: grep -hoE 'https://upload\.wikimedia\.org/[^)" ]+' /home/nukeemann/projects/ai_l…)
+← https://upload.wikimedia.org/wikipedia/commons/3/30/Douglas-Peucker_animated.gif
+→ Bash(command: grep -hoE 'https://[^)" ]*commons\.wikimedia\.org[^)" ]+' /home/nukeemann/projec…)
+← (Bash completed with no output)
+→ Bash(command: grep -l "Perspective_correction\|RANSAC\|Homography\|Random_sample_consensus" /h…)
+← /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/detektory-naroznikow-harris-i-shi-tomasi.json
+→ Bash(command: grep -l 'plotImage' /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-…)
+← (Bash completed with no output)
+Let me confirm Quiz and Sandbox schemas before drafting.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+I have everything I need. Now writing the lesson file.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/estymacja-homografii-i-ransac.json (file state is current in your conte…
+Now I'll validate the file against `LessonSchema`.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/opencv-w-wizji…)
+← Exit code 1
+→ Bash(command: cat /home/nukeemann/projects/ai_lecturer/tsconfig.json | head -30)
+← {
+→ Bash(command: cat > /tmp/validate-lesson.ts << 'EOF'
+import { readFileSync } from 'node:fs';
+i…)
+← Exit code 1
+→ Bash(command: cat > /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts << '…)
+← Exit code 1
+→ Bash(command: npx tsx --tsconfig ./tsconfig.json scripts/_validate-one-lesson.mts 2>&1 | head …)
+← /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts:2
+→ Bash(command: cat > /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts << '…)
+← /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts:2
+→ Bash(command: find /home/nukeemann/projects/ai_lecturer/scripts -maxdepth 2 -name '*.ts' -o -n…)
+← /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts
+→ Bash(command: grep -r 'LessonSchema' /home/nukeemann/projects/ai_lecturer/scripts /home/nukeem…)
+← /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/build.ts)
+← 1	import { writeFileSync, mkdirSync } from 'node:fs';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/schemas.test.ts)
+← 1	import { describe, expect, it } from 'vitest';
+→ Bash(command: rm /home/nukeemann/projects/ai_lecturer/scripts/_validate-one-lesson.mts
+cat > /…)
+← OK: courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/estymacja-homografii-i-ransac.json
+Validation passed. Cleaning up the temp script.
+→ Bash(command: rm /home/nukeemann/projects/ai_lecturer/src/_validate-one-lesson.ts
+ls /home/nuk…)
+← /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/estymacja-homografii-i-ransac.json
+Lesson written and validated. Summary:
+`courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/estymacja-homografii-i-ransac.json` — 6 sections in module `m5`, 15 minutes, Polish content matching the course's voice:
+1. **theory** `macierz-homografii` — derives the 3×3 H, the 8 DoF, the "magic 4 pairs" via DLT/SVD; carries an inline Wikimedia `Perspective_correction.svg` figure (already used in this course) with detailed Polish alt text + brief credit; section-level source = Hartley & Zisserman ch. 4.
+2. **theory** `ransac-pieciokrok` — five-step RANSAC algorithm + iteration formula `K ≥ log(1−p)/log(1−(1−ε)^s)`; section-level source = Fischler & Bolles 1981.
+3. **codeCloze** `fillblanks-findhomography` — three slots: `method` (`cv2.RANSAC`), `threshold` (3/5 px family, oneOf), `aggregator` (`sum` / `ravel().sum`).
+4. **quiz** `quiz-ransac-vs-lsq` — single-answer with four distractors drawn straight from research's "Common misconceptions": getPerspectiveTransform on first 4, pure DLT, RANSAC with proper 5 px, and the trap of an over-tight 0.3 px threshold; explanation justifies each rejection. Section-level source = OpenCV `findHomography` API.
+5. **code** `exercise-inlier-mask` — implement `compute_inlier_mask` (homogenize → project via H → dehomogenize → L2 error → boolean mask). 4 tests (1 visible smoke + 3 hidden) covering identity, single outlier, threshold respect, and translation H + sanity-check that wrong H rejects all. Solution populated.
+6. **sandbox** `sandbox-prog-ransac` — synthetic 70 inliers + 30 outliers, true H with non-zero perspective; sweeps `ransacReprojThreshold` 0.5–30 px and compares with pure LSQ to show how the threshold band collapses too tight / too loose.
+Lesson-level `sources` has 5 entries (paper, 2 articles, 2 books) — all stable hosts (DOI, OpenCV docs, Cambridge, Wikipedia, szeliski.org), `author`+`year` populated for paper and books. Validates against `LessonSchema.safeParse` → `OK`.
+[result success (551.5s)]

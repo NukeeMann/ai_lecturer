@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "slug": "trackery-kcf-csrt-i-mosse",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Trackery KCF, CSRT i MOSSE",
+  "eyebrow": "TRACKING",
+  "description": "Background subtraction wskazuje, *gdzie* coś się rusza — tracker odpowiada za *tożsamość*: dostaje jeden bounding box w klatce początkowej i ma obowiązek zwracać go (zaktualizowanego) w każdej kolejnej. W tej lekcji rozłożymy na czynniki pierwsze trzy klasyczne trackery z OpenCV — **MOSSE** (Bolme 2010, rekordowo szybki filtr korelacyjny), **KCF** (Henriques 2015, jądro RBF + cykliczne przesunięcia) i **CSRT** (Lukežič 2018, mapy wiarygodności kanałowej i przestrzennej). Pokażemy, że wszystkie trzy bazują na tym samym pomyśle wytrenowania filtra korelacyjnego dającego ostry pik na obiekcie, porównamy je w tabeli FPS-vs-dokładność, prześledzimy `init` / `update` na syntetycznym klipie, a w ćwiczeniu zaimplementujesz krok template-matching — operację, która tkwi w sercu każdego z tych algorytmów.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "tracker-vs-detektor",
+      "title": "Tracker to nie detektor — i czemu korelacja wystarczy",
+      "type": "theory",
+      "data": {
+        "markdown": "**Detektor** — Haar Cascades z lekcji 2 albo HOG+SVM z lekcji 3 — *nie wie nic o czasie*. Pyta tę samą klatkę „gdzie tu jest twarz/pieszy?\" i nie obchodzi go, że ten sam obiekt widział już 30 razy w ostatnich sekundach. Działa od zera na każdej klatce, jest drogi, gubi tożsamość („ten *konkretny* pieszy zniknął i pojawił się — ten sam czy nie?\") i przestaje znajdować obiekt w okluzji.\n\n**Tracker** to coś radykalnie innego: stanowy estymator. Dostaje **jeden** bounding box w klatce początkowej (od użytkownika lub z detektora) i zobowiązuje się go zwracać — jako ten sam obiekt — w każdej kolejnej klatce. Jest tani (kilkadziesiąt do kilkuset FPS na CPU), zachowuje tożsamość, radzi sobie z krótką okluzją. Ale nie umie zainicjować się sam i potrafi „odjechać\" (drift), gdy obiekt zmieni wygląd zbyt mocno.\n\n![Schemat porównania konwolucji i korelacji z Wikipedii: górny panel pokazuje, że splot $f * g$ odwraca kernel $f$ przed nasunięciem na sygnał $g$, dolny panel pokazuje korelację krzyżową $f \\star g$, która kernela nie odwraca — w pozycji $t$ zwraca dosłownie $\\sum_k f[k] \\cdot g[t+k]$, czyli „jak bardzo $g$ przesunięte o $t$ pasuje do wzorca $f$\"](https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Comparison_convolution_correlation.svg/640px-Comparison_convolution_correlation.svg.png)\n\n*(Obraz: Wikimedia Commons, User:Cmglee, [File:Comparison_convolution_correlation.svg](https://commons.wikimedia.org/wiki/File:Comparison_convolution_correlation.svg).)*\n\nJak tracker decyduje, *dokąd* obiekt się przesunął? Najtańsza odpowiedź — i sedno KCF / CSRT / MOSSE — brzmi: **przez korelację**. Wytrenuj na pierwszej klatce filtr $h$ taki, że jego korelacja z patcha obiektu daje wysoką, ostrą odpowiedź dokładnie w środku, a w tle blisko zera. W kolejnej klatce skoreluj ten filtr z fragmentem klatki centrowanym na poprzedniej pozycji obiektu — **nowe maksimum odpowiedzi to nowa pozycja obiektu**.\n\nFormalnie: szukamy $h$, dla którego odpowiedź $g(\\mathbf{x}) = (h \\star f)(\\mathbf{x})$ jest gaussianem 2D centrowanym na środku patcha:\n\n$$ h^{*} = \\arg\\min_{h} \\sum_{i} \\bigl\\| h \\star f_i - g_i \\bigr\\|^{2} $$\n\nTo problem najmniejszych kwadratów z **analitycznym rozwiązaniem w dziedzinie częstotliwościowej** (mnożenie zamiast splotu, korzystając z twierdzenia o splocie):\n\n$$ \\hat H = \\frac{\\sum_i \\hat G_i \\odot \\overline{\\hat F_i}}{\\sum_i \\hat F_i \\odot \\overline{\\hat F_i} + \\lambda} $$\n\ngdzie $\\hat F_i, \\hat G_i$ to FFT patcha i pożądanej odpowiedzi, $\\overline{\\,\\cdot\\,}$ to sprzężenie zespolone, a $\\lambda$ to mała regularyzacja. Z tego wzoru bierze się legendarne 600 FPS MOSSE: dwa FFT, kilka mnożeń, jedno IFFT na klatkę — *to wszystko*.\n\nKCF dorzuca **kernel RBF** (filtr w przestrzeni cech, nie pikseli) i wykorzystuje strukturę cyklicznych przesunięć, by wytrenować się na *wszystkich* możliwych przesunięciach patcha bez kosztu liniowego w liczbie próbek. CSRT dokłada **wagę kanałową** (każdy kanał HOG / Color Names dostaje własną pewność) i **maskę przestrzennej wiarygodności** (uczy się, które piksele patcha to tło, a które obiekt). Ale szkielet — *wytrenuj filtr korelacyjny → skoreluj → znajdź pik* — jest u wszystkich trzech identyczny."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2010.5539960",
+          "title": "Bolme, D. S. et al. — Visual Object Tracking using Adaptive Correlation Filters (CVPR 2010)",
+          "kind": "paper",
+          "author": "David S. Bolme, J. Ross Beveridge, Bruce A. Draper and Yui Man Lui",
+          "year": 2010
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Cross-correlation",
+          "title": "Cross-correlation — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "porownanie-trackerow",
+      "title": "KCF, CSRT, MOSSE — szybkość vs dokładność",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "name", "label": "Tracker", "type": "string", "sortable": true, "filterable": false },
+          { "key": "year", "label": "Rok", "type": "number", "sortable": true, "filterable": false },
+          { "key": "fpsCpu", "label": "FPS na CPU (rząd wielkości)", "type": "number", "sortable": true, "filterable": false },
+          { "key": "accuracy", "label": "Dokładność (OTB-100)", "type": "string", "sortable": true, "filterable": false },
+          { "key": "scale", "label": "Adaptacja skali", "type": "string", "sortable": true, "filterable": false },
+          { "key": "coreIdea", "label": "Sedno algorytmu", "type": "string", "sortable": false, "filterable": false },
+          { "key": "whenToUse", "label": "Kiedy wybrać", "type": "string", "sortable": false, "filterable": false }
+        ],
+        "rows": [
+          {
+            "name": "MOSSE",
+            "year": 2010,
+            "fpsCpu": 600,
+            "accuracy": "niska",
+            "scale": "nie",
+            "coreIdea": "Filtr korelacyjny w dziedzinie FFT trenowany online metodą najmniejszych kwadratów (Bolme 2010); zero kerneli, zero cech HOG.",
+            "whenToUse": "Embedded / drone / live preview, gdzie liczy się milisekundowy budżet na klatkę i tolerujemy gorszy IoU."
+          },
+          {
+            "name": "KCF",
+            "year": 2015,
+            "fpsCpu": 170,
+            "accuracy": "średnia",
+            "scale": "częściowa (zależy od implementacji)",
+            "coreIdea": "Kernelized Correlation Filter (Henriques 2015) — filtr w przestrzeni cech HOG / RGB z jądrem RBF, struktura cyklicznych przesunięć daje trening na wszystkich shiftach w O(n log n).",
+            "whenToUse": "Domyślny wybór dla scen, gdzie obiekt nie zmienia mocno rozmiaru i potrzeba ~100+ FPS na CPU."
+          },
+          {
+            "name": "CSRT",
+            "year": 2018,
+            "fpsCpu": 25,
+            "accuracy": "wysoka",
+            "scale": "tak (multi-scale + spatial reliability)",
+            "coreIdea": "Discriminative Correlation Filter with Channel & Spatial Reliability (Lukežič 2018) — wagi per-kanał + maska przestrzennej wiarygodności + dopasowania w wielu skalach.",
+            "whenToUse": "Gdy obiekt zmienia rozmiar (perspektywa, zoom) lub kształt jest niekwadratowy (długi pojazd, pieszy), a budżet FPS na to pozwala."
+          }
+        ],
+        "initialSort": { "key": "year", "dir": "asc" }
+      }
+    },
+    {
+      "id": "api-trackerow-w-cv2",
+      "title": "API trackerów w cv2 — `init`, `update`, granica między main a contrib",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV pakuje wszystkie trzy trackery za **identyczny interfejs trzech operacji**: konstruktor (`cv2.<...>Tracker*_create()`), `tracker.init(frame, bbox)` raz na sekwencję i `ok, bbox = tracker.update(frame)` dla każdej kolejnej klatki. Bbox to zawsze krotka `(x, y, w, h)` w pikselach — *bez* środka, *bez* znormalizowanych współrzędnych.\n\n```python\nimport cv2\n\ncap = cv2.VideoCapture('clip.mp4')\nok, frame = cap.read()\n\n# ROI: (x, y, w, h) -- wskaz obiekt myszka albo przepisz z detektora.\nbbox = (220, 140, 64, 96)\n\n# KCF i CSRT siedza w glownym module opencv-python.\ntracker = cv2.TrackerKCF_create()\n# CSRT:  cv2.TrackerCSRT_create()\n# MOSSE:  cv2.legacy.TrackerMOSSE_create()  -- tylko w opencv-contrib.\n\ntracker.init(frame, bbox)\n\nlost_streak = 0\nwhile True:\n    ok, frame = cap.read()\n    if not ok:\n        break\n    found, bbox = tracker.update(frame)\n    if not found:\n        lost_streak += 1\n        if lost_streak >= 5:\n            # Po 5 z rzedu klatkach 'zgubiony' uruchamiamy detektor i re-init.\n            break\n        continue\n    lost_streak = 0\n    x, y, w, h = [int(v) for v in bbox]\n    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)\n```\n\nTrzy uwagi praktyczne, na które każdy pierwszy raz wpada:\n\n- **Granica main vs contrib.** Pakiet `opencv-python` zawiera `cv2.TrackerKCF_create` i `cv2.TrackerCSRT_create`. **MOSSE** (oraz Boosting / MIL / MedianFlow / TLD) jest tylko w `opencv-contrib-python` i **wyłącznie** pod prefiksem `cv2.legacy.Tracker*_create`. Jeśli `cv2.TrackerMOSSE_create()` rzuca `AttributeError`, to brakuje contrib — a nie tym, że tracker zniknął z OpenCV.\n- **`update()` zwraca `(ok, bbox)` — `ok=False` to *zgubiłem*, nie *nie ma*.** Tracker mówi „nie znalazłem dobrego dopasowania w sąsiedztwie poprzedniego bboxa\" — obiekt może wciąż być na obrazie, tylko ucieka mu z ROI. Standardowy pipeline produkcyjny: zlicz $k$ kolejnych klatek z `ok=False` (np. 5 — 200 ms przy 25 FPS), dopiero wtedy wywołaj detektor i re-inicjalizuj nowy tracker. Sam tracker **nie odzyska się** po dryfie.\n- **Adaptacja skali to sprawa wyboru trackera, nie parametrów `update()`.** MOSSE i klasyczny KCF utrzymują **stałą szerokość bboxa**: jeśli pieszy zbliża się do kamery, prawdziwy obiekt rośnie, a ROI trackera zostaje za małe i zaczyna obcinać kontury. CSRT ma wbudowany loop multi-scale (typowo $\\{0.95, 1.00, 1.05\\}$) i automatycznie poprawia szerokość — dlatego jest kilkukrotnie wolniejszy, ale w scenach z perspektywą jest po prostu jedyną sensowną opcją z tej trójki.\n\nKomentarz historyczny dla porządku — pre-OpenCV-3.4 było jeszcze API `cv2.MultiTracker_create()` do śledzenia $N$ obiektów jedną instancją; w 4.x **zostało usunięte** z głównego modułu i jeśli go potrzebujesz, własna pętla `[tracker.update(frame) for tracker in trackers]` jest dziś standardem."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d0a/tutorial_introduction_to_tracker.html",
+          "title": "OpenCV — Introduction to Tracker (tutorial)",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TPAMI.2014.2345390",
+          "title": "Henriques, J. F. et al. — High-Speed Tracking with Kernelized Correlation Filters (TPAMI 2015)",
+          "kind": "paper",
+          "author": "João F. Henriques, Rui Caseiro, Pedro Martins and Jorge Batista",
+          "year": 2015
+        }
+      ]
+    },
+    {
+      "id": "quiz-wybor-trackera",
+      "title": "Sprawdź się: który tracker do jakiego problemu",
+      "type": "quiz",
+      "data": {
+        "question": "Twoja aplikacja śledzi *jednego* gracza w meczu siatkówki na nagraniu 60 FPS w 1080p. Gracz oddala się i zbliża do kamery (prawdziwy rozmiar obiektu zmienia się o ~30% między fragmentami akcji). Sprzęt to zwykły laptop — masz CPU, brak GPU, *nie* musisz przetwarzać on-line (analiza nagrania może trwać dłużej niż samo wideo). Który z trzech klasycznych trackerów wybierzesz?",
+        "options": [
+          "MOSSE — daje rekordowe ~600 FPS na CPU, więc spokojnie wyrobi się w 60 FPS, nawet z dużym zapasem.",
+          "KCF — klasyczny domyślny wybór i kompromis między FPS a dokładnością; CSRT rezerwujemy dopiero na wąskie gardło wydajności.",
+          "CSRT — ma wbudowaną adaptację skali z multi-scale + mapy wiarygodności; rzędu 25 FPS na CPU jest wystarczające, bo analiza jest off-line.",
+          "Wszystkie trzy zwrócą porównywalny wynik — wystarczy uruchomić ten, który już mam zainstalowany.",
+          "Zamiast trackera użyj `cv2.createBackgroundSubtractorMOG2` z ostrym progiem — to jest tańsze i już samo wskazuje pierwszy plan."
+        ],
+        "correct": [2],
+        "explanation": "**Odpowiedź C** to jedyna, która obsługuje *jednocześnie* wszystkie trzy ograniczenia.\n\n- **Skala obiektu zmienia się o ~30%** — to dyskwalifikuje MOSSE i klasyczny KCF, które utrzymują **stałą szerokość bboxa**. Gdy gracz zbliża się do kamery, prawdziwy obiekt rośnie, a ROI trackera zostaje za małe; tracker zaczyna mylić środek ciała z tłem i dryfuje. CSRT ma wbudowaną pętlę multi-scale (najczęściej $\\{0{,}95,\\,1{,}00,\\,1{,}05\\}$ na każdym kroku `update()`) i automatycznie poprawia rozmiar bboxa — to *jest* jego znak rozpoznawczy.\n- **Budżet FPS** — analiza jest off-line, więc 25 FPS CSRT na 1080p (orientacyjnie z OTB-100) to *pełna swoboda*. Nawet gdyby spadło do 5 FPS, godzinne nagranie obrobiłoby się w niecałe 12 godzin — akceptowalne dla preprodukcji wideo. Wymóg „60 FPS\" pochodził z framerate'u nagrania, a nie z wymagania real-time.\n\n**Dlaczego pozostałe nie:**\n\n- **A (MOSSE)** — szybkość jest tu zaletą *bezprzedmiotową*. MOSSE nie modeluje skali, dryf na zmieniającym rozmiar obiekcie pojawi się po kilku sekundach.\n- **B (KCF)** — domyślny wybór, owszem, *gdy obiekt nie zmienia rozmiaru*. Tu zmienia. KCF ma w niektórych implementacjach prosty estymator skali (DSST), ale wbudowane w opencv `TrackerKCF_create` go nie zawiera; mocna zmiana skali kończy się dryfem.\n- **D** — fałszywe założenie. Trackery dają mocno różne wyniki. MOSSE jest dwa rzędy wielkości szybszy od CSRT, ale na OTB-100 ma istotnie niższe średnie IoU. \"Już zainstalowany\" to nigdy nie jest dobry argument inżynierski.\n- **E** — `BackgroundSubtractorMOG2` zwraca *maskę pierwszego planu* dla **statycznej kamery**. Nie identyfikuje *jednego* gracza spośród wielu poruszających się postaci, nie utrzymuje tożsamości („to wciąż ten sam obiekt z poprzedniej klatki?\") i kompletnie się wykłada przy ruchomej kamerze (kamera transmisji siatkówki *zawsze* się rusza). To inny krok pipeline'u — nie zastępuje trackera.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-template-match-1d",
+      "title": "Zaimplementuj `template_match_offset_1d`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Każdy z trzech trackerów MOSSE/KCF/CSRT, gdy odrzemy go z FFT i jąder, robi w środku **template matching**: znajdź offset, na którym fragment nowej klatki *najlepiej* pasuje do wzorca obiektu z klatki poprzedniej. Dziś zaimplementujesz tę operację w 1-D, na czystym NumPy, bez żadnych wywołań cv2 — żeby zobaczyć, że to po prostu pętla obliczająca błąd kwadratowy.\n\nZaimplementuj funkcję:\n\n```python\ntemplate_match_offset_1d(signal, template) -> int\n```\n\n**Sygnatura.**\n\n- `signal` — `numpy.ndarray` 1-D (długość $N$).\n- `template` — `numpy.ndarray` 1-D (długość $T$, $1 \\le T \\le N$).\n- Zwróć: liczba całkowita `i` $\\in [0,\\, N - T]$ — offset, dla którego kwadratowy błąd $\\sum_{k=0}^{T-1}(\\text{signal}[i+k] - \\text{template}[k])^2$ jest **minimalny**. Jeśli kilka offsetów daje to samo minimum, zwróć **najmniejszy** z nich.\n\n**Reguły.**\n\n1. Pracuj w `float64` (`signal.astype(np.float64)`, `template.astype(np.float64)`) — `uint8` przepełniłby się przy odejmowaniu.\n2. Obliczaj błąd kwadratowy (sum of squared differences, SSD) — *nie* MSE, *nie* znormalizowaną korelację. Tu wystarczy SSD.\n3. **Nie modyfikuj** `signal` ani `template`. Tworzenie kopii (np. `astype`) jest OK; mutowanie wejścia nie.\n4. **Nie używaj** `cv2`, `scipy`, `np.correlate`, `np.convolve`. Cała pętla powinna zmieścić się w 5 linijkach NumPy/Python.\n\n**Przykład.**\n\n```\nsignal   = [0, 0, 1, 2, 3, 0, 0]\ntemplate = [1, 2, 3]\n# SSD przy offsecie 0: 1+4+9 = 14\n# SSD przy offsecie 1: 0+1+4 = 5\n# SSD przy offsecie 2: 0+0+0 = 0   <-- minimum\n# SSD przy offsecie 3: 1+4+9 = 14\n# SSD przy offsecie 4: 4+9+9 = 22\n# zwroc 2\n```",
+        "starterCode": "import numpy as np\n\ndef template_match_offset_1d(signal, template):\n    # signal: 1D ndarray, dlugosc N.\n    # template: 1D ndarray, dlugosc T (1 <= T <= N).\n    # Zwroc int -- offset i w [0, N-T], dla ktorego SSD jest minimalna.\n    # Przy remisach -- najmniejszy offset.\n    s = np.asarray(signal, dtype=np.float64)\n    t = np.asarray(template, dtype=np.float64)\n    # TODO: dla kazdego offsetu i = 0 .. N - T policz ssd = np.sum((s[i:i+T] - t) ** 2)\n    # TODO: zwroc offset, dla ktorego ssd jest minimalna (przy remisach -- pierwszy).\n    return 0\n",
+        "tests": [
+          {
+            "name": "exact_match_w_srodku",
+            "body": "import numpy as np\nsignal = np.array([0, 0, 1, 2, 3, 0, 0], dtype=np.float64)\ntemplate = np.array([1, 2, 3], dtype=np.float64)\nassert template_match_offset_1d(signal, template) == 2",
+            "hidden": false
+          },
+          {
+            "name": "exact_match_na_poczatku",
+            "body": "import numpy as np\nsignal = np.array([1, 2, 3, 5, 5, 5], dtype=np.float64)\ntemplate = np.array([1, 2, 3], dtype=np.float64)\nassert template_match_offset_1d(signal, template) == 0"
+          },
+          {
+            "name": "exact_match_na_koncu",
+            "body": "import numpy as np\nsignal = np.array([5, 5, 5, 1, 2, 3], dtype=np.float64)\ntemplate = np.array([1, 2, 3], dtype=np.float64)\nassert template_match_offset_1d(signal, template) == 3"
+          },
+          {
+            "name": "remisy_zwracaj_najmniejszy_offset",
+            "body": "import numpy as np\n# Powtorzony wzor -- 3 offsety daja SSD = 0; oczekujemy najmniejszego.\nsignal = np.array([7, 7, 7, 7, 7], dtype=np.float64)\ntemplate = np.array([7, 7], dtype=np.float64)\nassert template_match_offset_1d(signal, template) == 0"
+          },
+          {
+            "name": "noisy_match_z_uint8",
+            "body": "import numpy as np\n# Wejscie uint8 -- bez astype(float64) odejmowanie sie przepelni\n# i wyniki SSD beda nieprawdziwe.\nsignal = np.array([10, 11, 200, 201, 199, 12, 11], dtype=np.uint8)\ntemplate = np.array([200, 200, 200], dtype=np.uint8)\nbefore_signal = signal.copy()\nbefore_template = template.copy()\noff = template_match_offset_1d(signal, template)\nassert off == 2, f'spodziewany offset 2, dostalismy {off}'\nassert np.array_equal(signal, before_signal), 'signal zmodyfikowany!'\nassert np.array_equal(template, before_template), 'template zmodyfikowany!'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef template_match_offset_1d(signal, template):\n    s = np.asarray(signal, dtype=np.float64)\n    t = np.asarray(template, dtype=np.float64)\n    N = s.shape[0]\n    T = t.shape[0]\n    best_i = 0\n    best_err = np.inf\n    for i in range(N - T + 1):\n        err = float(np.sum((s[i:i + T] - t) ** 2))\n        if err < best_err:\n            best_err = err\n            best_i = i\n    return best_i\n"
+      }
+    },
+    {
+      "id": "sandbox-kcf-na-syntetycznym-klipie",
+      "title": "Piaskownica: KCF na syntetycznym klipie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\nrng = np.random.RandomState(0)\n\n# 1. Generujemy syntetyczne wideo (60 klatek, 240 x 120 BGR):\n#    biały prostokat 24x28 px na szarym tle z lekkim szumem,\n#    przesuwa sie w prawo z lekka oscylacja w pionie -- klasyczny 'latwy'\n#    benchmark dla trackera korelacyjnego.\nH, W = 120, 240\nN_FRAMES = 60\nTW, TH = 24, 28\n\nframes = []\ngt_boxes = []  # ground-truth (x, y, w, h) -- zebysmy mogli policzyc blad\nfor t in range(N_FRAMES):\n    img = (np.full((H, W, 3), 80, dtype=np.uint8)\n           + rng.randint(-5, 6, size=(H, W, 3), dtype=np.int16).astype(np.int16)).clip(0, 255).astype(np.uint8)\n    cx = 30 + 3 * t\n    cy = H // 2 + int(8 * np.sin(t * 0.2))\n    x = cx - TW // 2\n    y = cy - TH // 2\n    img[y:y + TH, x:x + TW] = (240, 240, 240)  # 'obiekt'\n    frames.append(img)\n    gt_boxes.append((x, y, TW, TH))\n\n# 2. Wybor trackera -- KCF i CSRT zwykle sa w glownym opencv-python,\n#    MOSSE wymaga opencv-contrib-python (legacy.TrackerMOSSE_create).\ndef make_tracker(name):\n    if name == 'KCF' and hasattr(cv2, 'TrackerKCF_create'):\n        return cv2.TrackerKCF_create()\n    if name == 'CSRT' and hasattr(cv2, 'TrackerCSRT_create'):\n        return cv2.TrackerCSRT_create()\n    if name == 'MOSSE' and hasattr(cv2, 'legacy') and hasattr(cv2.legacy, 'TrackerMOSSE_create'):\n        return cv2.legacy.TrackerMOSSE_create()\n    return None\n\ntracker = make_tracker('KCF')\nif tracker is None:\n    print(\"KCF niedostepny w tym buildzie cv2 -- sprobuj 'CSRT', a dla MOSSE doinstaluj opencv-contrib-python.\")\nelse:\n    # 3. init() raz, na pierwszej klatce + ground-truth bbox.\n    tracker.init(frames[0], gt_boxes[0])\n\n    # 4. update() w petli; mierzymy blad srodka bboxa wzgledem ground-truth.\n    errors_px = []\n    lost = 0\n    for t in range(1, N_FRAMES):\n        ok, box = tracker.update(frames[t])\n        if not ok:\n            lost += 1\n            errors_px.append(np.nan)\n            continue\n        gx, gy, _, _ = gt_boxes[t]\n        bx, by, _, _ = [int(v) for v in box]\n        # blad polozenia lewego-gornego rogu (px)\n        errors_px.append(float(np.hypot(bx - gx, by - gy)))\n\n    arr = np.array(errors_px)\n    valid = arr[~np.isnan(arr)]\n    print(f'KCF: sledzilo {len(valid)} z {N_FRAMES - 1} klatek (zgubione: {lost})')\n    print(f'Sredni blad srodka: {valid.mean():.2f} px')\n    print(f'Max blad srodka:    {valid.max():.2f} px')\n    print(f'Pierwsze 5 bledow:  {valid[:5].round(2).tolist()}')\n\n# Eksperymenty -- po jednym, zeby widziec efekt:\n#  1) Zamien 'KCF' na 'CSRT'. Sredni blad powinien spasc, ale czas wzrosnie kilkukrotnie\n#     (uruchom z time.perf_counter, zeby porownac).\n#  2) Skaluj prostokat z czasem: TW = 24 + t // 6, TH = 28 + t // 5. KCF zacznie 'gubic'\n#     obiekt -- CSRT z multi-scale powinien sobie poradzic. Pamietaj zaktualizowac gt_boxes.\n#  3) Dorzuc krotka okluzje: dla t in range(20, 25) zostaw img bez bialego prostokata.\n#     Czy KCF wraca do obiektu po 5 klatkach? Co zwraca update() w trakcie?\n#  4) Inicjalizuj bbox 5 px za maly: tracker.init(frames[0], (gt_boxes[0][0]+5, gt_boxes[0][1]+3, TW-10, TH-6)).\n#     Czy tracker dryfuje natychmiast, czy podciaga sie do obiektu?\n#  5) Zwieksz amplitude oscylacji pionowej (8 -> 30). Kiedy KCF (winsize ~ rozmiar bboxa)\n#     przegapia skok i traci obiekt?\n",
+        "encouragement": "Pokręć rozmiarem `init_box` i tłem — KCF radzi sobie z drobnym dryfem, dopóki obiekt nie zmienia rozmiaru ani nie wyskakuje poza okno wyszukiwania."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.2014.2345390",
+      "title": "Henriques, J. F., Caseiro, R., Martins, P. and Batista, J. — High-Speed Tracking with Kernelized Correlation Filters (IEEE TPAMI 2015)",
+      "kind": "paper",
+      "author": "João F. Henriques, Rui Caseiro, Pedro Martins and Jorge Batista",
+      "year": 2015
+    },
+    {
+      "url": "https://doi.org/10.1007/s11263-017-1061-3",
+      "title": "Lukežič, A., Vojíř, T., Čehovin Zajc, L., Matas, J. and Kristan, M. — Discriminative Correlation Filter Tracker with Channel and Spatial Reliability (IJCV 2018)",
+      "kind": "paper",
+      "author": "Alan Lukežič, Tomáš Vojíř, Luka Čehovin Zajc, Jiří Matas and Matej Kristan",
+      "year": 2018
+    },
+    {
+      "url": "https://doi.org/10.1109/CVPR.2010.5539960",
+      "title": "Bolme, D. S., Beveridge, J. R., Draper, B. A. and Lui, Y. M. — Visual Object Tracking using Adaptive Correlation Filters (CVPR 2010)",
+      "kind": "paper",
+      "author": "David S. Bolme, J. Ross Beveridge, Bruce A. Draper and Yui Man Lui",
+      "year": 2010
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d0a/tutorial_introduction_to_tracker.html",
+      "title": "OpenCV — Introduction to Tracker (tutorial)",
+      "kind": "article"
+    }
+  ]
+}

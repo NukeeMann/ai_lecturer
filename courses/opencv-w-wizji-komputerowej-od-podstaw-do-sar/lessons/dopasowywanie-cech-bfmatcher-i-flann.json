@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "slug": "dopasowywanie-cech-bfmatcher-i-flann",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Dopasowywanie cech: BFMatcher i FLANN",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Mając keypointy i deskryptory z dwóch obrazów potrzebujemy pary: który deskryptor zapytania (query) odpowiada któremu deskryptorowi treningu (train). BFMatcher liczy odległość każdy z każdym, FLANN robi to przybliżenie z indeksem KD-tree lub LSH; test Lowe'a (ratio test) i crossCheck odsiewają fałszywe pary, zanim trafią do RANSAC-u.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "co-robi-macher",
+      "title": "Co dokładnie robi macher i jaką normę wybrać",
+      "type": "theory",
+      "data": {
+        "markdown": "Po poprzednich dwóch lekcjach masz w ręku dwa obrazy z setkami keypointów, a do każdego dołączony deskryptor — wektor $\\mathbb{R}^{128}$ (SIFT), $\\mathbb{R}^{64}$ (SURF) lub ciąg bitów upakowany w `uint8` (ORB / BRISK / AKAZE). **Macher** to algorytm, który z dwóch zbiorów deskryptorów — $D_q$ (query, zazwyczaj pierwszy obraz) i $D_t$ (train, drugi obraz) — produkuje listę par `(i, j)`: deskryptor $i$ z $D_q$ pasuje do deskryptora $j$ z $D_t$.\n\n![Przykład setek żółtych okręgów keypointów SIFT na zdjęciu samochodu — każdy okrąg ma swoją skalę i orientację. Zadaniem machera jest skojarzyć takie keypointy z drugim ujęciem tej samej sceny po jednym z dwóch deskryptorów na keypoint, parami 1:1.](https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Sift_keypoints_filtering.jpg/640px-Sift_keypoints_filtering.jpg)\n\n*(Obraz: Wikimedia Commons, plik `Sift_keypoints_filtering.jpg` — kanoniczna ilustracja keypointów z artykułu Wikipedii o SIFT; w tej lekcji szukamy odpowiedników takich keypointów w drugim ujęciu.)*\n\nNajprostsza strategia to **brute force** — `cv2.BFMatcher`. Dla każdego $d_i \\in D_q$ liczy odległość do **każdego** $d_j \\in D_t$ i wybiera najbliższy — koszt $\\mathcal{O}(|D_q| \\cdot |D_t| \\cdot d)$. Wybór odległości zależy od *typu* deskryptora i jest pierwszą decyzją, którą musisz podjąć:\n\n- **`cv2.NORM_L2`** — euklidesowa, dla deskryptorów floatowych (SIFT, SURF, KAZE). Zaszyte też pod nazwą `NORM_L2SQR` (kwadrat — szybciej, bez `sqrt`).\n- **`cv2.NORM_HAMMING`** — XOR + popcount, dla deskryptorów binarnych (ORB z `WTA_K=2`, BRISK, AKAZE).\n- **`cv2.NORM_HAMMING2`** — wariant dla ORB-a z `WTA_K=3` lub `WTA_K=4`, gdzie bity grupowane są po 2.\n\nTworzymy macher i prosimy o pary:\n\n```python\nbf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)\nmatches = bf.match(desc_query, desc_train)        # lista cv2.DMatch\nmatches = sorted(matches, key=lambda m: m.distance)\n```\n\nKażdy `cv2.DMatch` ma trzy pola: `queryIdx` (indeks w `desc_query`), `trainIdx` (indeks w `desc_train`) i `distance` (mniej = lepiej).\n\n**`crossCheck=True`** to pierwszy filtr jakości: macher zwraca **tylko te pary**, w których $j$ jest najbliższym sąsiadem $i$ z $D_t$ **i jednocześnie** $i$ jest najbliższym sąsiadem $j$ z $D_q$. Jednostronnego dopasowania nie ma — tak odsiewamy keypointy z $D_q$, które nie mają faktycznego odpowiednika w drugim obrazie. To jest dobre na start, ale potrafi być nadgorliwe — w następnej sekcji zobaczysz lepszy filtr."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html",
+          "title": "OpenCV Python tutorial — Feature Matching",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "test-lowe-a",
+      "title": "knnMatch i test Lowe'a — odsianie wątpliwych par",
+      "type": "theory",
+      "data": {
+        "markdown": "**Problem z `crossCheck`:** wystarczy, że dwa keypointy z drugiego obrazu są niemal identycznie podobne do keypointu z pierwszego (powtarzający się wzorzec — okno, cegła, liść), a macher i tak zwróci jeden z nich jako „pewną\" parę. Tymczasem para **niejednoznaczna** to taka, którą bezpieczniej odrzucić.\n\nDavid Lowe zaproponował w 2004 r. (artykuł SIFT, IJCV) elegancki test, który *mierzy* tę niejednoznaczność. Zamiast `match` wywołujemy **`knnMatch(..., k=2)`** — dla każdego deskryptora $d_i \\in D_q$ dostajemy **dwóch** najbliższych sąsiadów w $D_t$:\n\n- $m$ — najbliższy, o odległości $d_m$,\n- $n$ — drugi w kolejności, o odległości $d_n \\geq d_m$.\n\nJeśli najbliższy jest *zdecydowanie* bliżej niż drugi, to dopasowanie jest jednoznaczne. Jeśli oba są blisko siebie, dopasowanie jest *podejrzanie symetryczne* — i prawdopodobnie któryś z nich (albo oba) to outlier. Test Lowe'a formalizuje to ilorazem:\n\n$$ \\frac{d_m}{d_n} \\;<\\; \\rho $$\n\ndla progu $\\rho \\in (0, 1]$. Lowe rekomenduje $\\rho = 0{,}75$ — wartość ustaloną empirycznie na zbiorze ze swojego artykułu jako kompromis: odrzuca ok. **90% błędnych dopasowań** kosztem **ok. 5% poprawnych**. Mniejsze $\\rho$ (np. 0,6) ⇒ jeszcze mniej fałszywych alarmów, ale tracisz dużo poprawnych par; większe $\\rho$ (0,8–0,9) ⇒ więcej kandydatów dla RANSAC-u, ale i więcej outlierów.\n\n```python\nbf = cv2.BFMatcher(cv2.NORM_L2)        # bez crossCheck — test Lowe'a sam filtruje\npairs = bf.knnMatch(desc_query, desc_train, k=2)\ngood = [m for (m, n) in pairs if m.distance < 0.75 * n.distance]\n```\n\nDwa szczegóły praktyczne:\n\n1. **Nie łącz `crossCheck=True` z `knnMatch`.** `crossCheck` filtruje wewnętrznie, a `knnMatch` potrzebuje zwracać $k$ kandydatów na zapytanie — dlatego macher z `crossCheck=True` z `knnMatch` zwróci puste listy. Dla testu Lowe'a używamy `BFMatcher` *bez* `crossCheck`.\n2. **`pairs` może mieć krócej niż 2 elementy.** Jeśli $|D_t| < 2$ albo macher nie znalazł drugiego sąsiada (rzadkie, ale możliwe w FLANN-ie z bardzo małym `checks`), trzeba taką parę **pominąć**, a nie distrupcyjnie indeksować `pair[1]`.\n\nTen test pojawi się jako standardowy filtr **przed RANSAC-iem** w następnej lekcji o homografii — RANSAC i tak odsieje pozostałe outliery, ale im czystszy jego wsad, tym mniej iteracji potrzebuje, by trafić w dobry model."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+          "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004)",
+          "kind": "paper",
+          "author": "David G. Lowe",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "bfmatcher-vs-flann",
+      "title": "BFMatcher vs FLANN — kiedy każdy z nich",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "wymiar", "label": "Wymiar", "type": "string" },
+          { "key": "bf", "label": "BFMatcher", "type": "string" },
+          { "key": "flann", "label": "FlannBasedMatcher", "type": "string" }
+        ],
+        "rows": [
+          {
+            "wymiar": "Strategia",
+            "bf": "Brute force — każdy z każdym, dokładnie",
+            "flann": "Indeks (KD-tree dla L2 lub LSH dla Hamminga) — przybliżenie"
+          },
+          {
+            "wymiar": "Złożoność dopasowania",
+            "bf": "O(|D_q| · |D_t| · d) — liniowa w iloczynie liczności",
+            "flann": "≈ O(|D_q| · log|D_t| · d · t) dla KD-tree z t drzewami"
+          },
+          {
+            "wymiar": "Dokładność",
+            "bf": "Dokładny najbliższy sąsiad (zawsze)",
+            "flann": "Przybliżony (ANN) — sterowany parametrem checks"
+          },
+          {
+            "wymiar": "Sweet spot",
+            "bf": "Małe i średnie zbiory (≲ 1–5 tys. deskryptorów / obraz)",
+            "flann": "Duże zbiory, pary obrazów wysokiej rozdzielczości, wsadowy benchmark"
+          },
+          {
+            "wymiar": "Akceptowane normy",
+            "bf": "L2, L2SQR, L1, HAMMING, HAMMING2 — pełen wybór",
+            "flann": "L2 przez KD-tree; HAMMING przez LSH (uint8) — wymaga osobnych index_params"
+          },
+          {
+            "wymiar": "crossCheck",
+            "bf": "Wbudowane — flaga konstruktora",
+            "flann": "Brak — użyj knnMatch + ratio test"
+          },
+          {
+            "wymiar": "knnMatch (k=2)",
+            "bf": "Tak — działa z testem Lowe'a",
+            "flann": "Tak — kanoniczne użycie z testem Lowe'a"
+          },
+          {
+            "wymiar": "Determinizm",
+            "bf": "Pełny — ten sam wynik przy tych samych danych",
+            "flann": "Pseudolosowy (drzewa są budowane losowo) — ustaw cv2.setRNGSeed(...) jeśli chcesz powtarzalność"
+          },
+          {
+            "wymiar": "Konstruktor (deskryptory float, np. SIFT)",
+            "bf": "cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)",
+            "flann": "cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50))"
+          },
+          {
+            "wymiar": "Konstruktor (deskryptory binarne, np. ORB)",
+            "bf": "cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)",
+            "flann": "cv2.FlannBasedMatcher(dict(algorithm=6, table_number=12, key_size=20, multi_probe_level=2), dict(checks=50))"
+          },
+          {
+            "wymiar": "Pierwsze podejście",
+            "bf": "Domyślny wybór — prostota i pewność wyniku",
+            "flann": "Sięgaj po nie, gdy BFMatcher robi się zauważalnie wolny"
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-ratio-test",
+      "title": "Sprawdź się: który zestaw machera + filtra jest właściwy",
+      "type": "quiz",
+      "data": {
+        "question": "Dopasowujesz deskryptory ORB między dwoma obrazami panoramy o ~3000 keypointach każdy. Chcesz najlepszych kandydatów dla RANSAC-a w dalszej lekcji o homografii. Który wariant jest poprawnym, kanonicznym wyborem?",
+        "options": [
+          "cv2.BFMatcher(cv2.NORM_L2, crossCheck=True) + .match() — L2 jest standardową normą i crossCheck wystarczy.",
+          "cv2.BFMatcher(cv2.NORM_HAMMING) (bez crossCheck) + .knnMatch(k=2) + test Lowe'a (ratio < 0,75).",
+          "cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True) + .knnMatch(k=2) + test Lowe'a — łączymy oba filtry, żeby było jeszcze pewniej.",
+          "cv2.FlannBasedMatcher(dict(algorithm=1, trees=5), dict(checks=50)) + .knnMatch(k=2) + test Lowe'a — KD-tree zawsze najszybciej."
+        ],
+        "correct": [1],
+        "explanation": "ORB to deskryptor **binarny** (uint8, kształt `(N, 32)`), więc właściwą normą jest `cv2.NORM_HAMMING`. Odpowiedź **A** jest pierwszą pułapką — `NORM_L2` na uint8-ach formalnie się policzy, ale nie odzwierciedla podobieństwa kodów Hamminga, więc dopasowania będą losowe. Odpowiedź **C** wygląda zachowawczo, ale `crossCheck=True` w połączeniu z `knnMatch` daje **puste listy** — `crossCheck` jest implementowane tak, że zwraca pojedynczą najlepszą parę i nie współpracuje z trybem k-najbliższych; trzeba wybrać jeden filtr (albo `crossCheck`, albo test Lowe'a — Lowe jest pedagogicznie i empirycznie mocniejszy). Odpowiedź **D** używa **KDTree** (`algorithm=1`), które jest indeksem dla deskryptorów *floatowych* z metryką L2 — dla deskryptorów binarnych FLANN wymaga **LSH** (`algorithm=6`) z innymi parametrami (`table_number`, `key_size`, `multi_probe_level`). Odpowiedź **B** poprawnie używa `NORM_HAMMING`, pomija `crossCheck`, robi `knnMatch(k=2)` i odsiewa testem Lowe'a — to jest dokładnie pipeline, który użyjesz w następnej lekcji o homografii.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-lowe-ratio",
+      "title": "Zaimplementuj test Lowe'a od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `lowes_ratio_test(knn_matches, ratio=0.75)`, która odtwarza pętlę:\n\n```python\ngood = [m for (m, n) in pairs if m.distance < ratio * n.distance]\n```\n\nale **odporną na sytuację brzegową**, w której para ma mniej niż dwa elementy (zdarza się przy bardzo małych zbiorach treningowych albo agresywnym FLANN-ie).\n\nFunkcja dostaje listę list — `knn_matches[i]` to sortowana w kolejności rosnącej `distance` lista `k` (typowo dwóch) sąsiadów dla *jednego* deskryptora zapytania. Każdy element ma pole `.distance` (float, mniej = bliżej).\n\nReguły:\n\n1. Dla każdej pary `pair` z `knn_matches`:\n   - jeśli `len(pair) < 2` ⇒ pomiń (nie da się policzyć ilorazu),\n   - inaczej weź `m = pair[0]` (najbliższy) i `n = pair[1]` (drugi sąsiad),\n   - jeśli `m.distance < ratio * n.distance` ⇒ dopisz `m` do listy `good`.\n2. Zwróć `good` (lista najlepszych dopasowań, *nie* par — RANSAC w następnej lekcji oczekuje listy `cv2.DMatch`, nie par).\n3. **Domyślne `ratio` to 0,75** (rekomendacja Lowe'a 2004).\n\nNie używaj `numpy` ani `cv2` — celem jest zobaczyć logikę testu na czystym Pythonie. W teście `Match` to `namedtuple` udający `cv2.DMatch`.\n\n```\nlowes_ratio_test([[Match(0,1,0.30), Match(0,2,0.90)]])  # -> [Match(0,1,0.30)]   (0.30/0.90 < 0.75)\nlowes_ratio_test([[Match(0,5,0.40), Match(0,6,0.45)]])  # -> []                  (0.40/0.45 > 0.75)\n```",
+        "starterCode": "from collections import namedtuple\n\n# Mini-replika cv2.DMatch — w testach uzywamy tego namedtupla zamiast prawdziwego\n# obiektu OpenCV, zeby logike testu mozna bylo sprawdzic w czystym Pythonie.\nMatch = namedtuple('Match', ['queryIdx', 'trainIdx', 'distance'])\n\n\ndef lowes_ratio_test(knn_matches, ratio=0.75):\n    # knn_matches: list[list[Match]] - kazda lista wewnetrzna to k najblizszych\n    #              sasiadow JEDNEGO deskryptora zapytania, posortowani rosnaco\n    #              po distance. Typowo k = 2.\n    # ratio:       prog Lowe'a, domyslnie 0.75.\n    # Zwraca:      list[Match] - same NAJLEPSZE dopasowania m, ktore przeszly test.\n    good = []\n    for pair in knn_matches:\n        # TODO:\n        #   1. Jesli len(pair) < 2 -> continue.\n        #   2. m, n = pair[0], pair[1].\n        #   3. Jesli m.distance < ratio * n.distance -> good.append(m).\n        pass\n    return good\n",
+        "tests": [
+          {
+            "name": "para_przechodzi_test",
+            "body": "# m=0.30, n=0.90 -> 0.30/0.90 = 0.333... < 0.75 -> przechodzi.\nresult = lowes_ratio_test([[Match(0, 1, 0.30), Match(0, 2, 0.90)]])\nassert len(result) == 1, f'oczekiwano 1 dopasowanie, jest {len(result)}'\nassert result[0].queryIdx == 0 and result[0].trainIdx == 1, 'powinien wrocic m (lepszy z pary), nie n'\nassert result[0].distance == 0.30",
+            "hidden": false
+          },
+          {
+            "name": "para_odrzucona_gdy_dystanse_zblizone",
+            "body": "# 0.40/0.45 = 0.888... > 0.75 -> niejednoznaczne, odrzucone.\nresult = lowes_ratio_test([[Match(0, 5, 0.40), Match(0, 6, 0.45)]])\nassert result == [], f'oczekiwano pustej listy (para niejednoznaczna), jest {result}'"
+          },
+          {
+            "name": "wlasne_ratio",
+            "body": "# m=0.50, n=0.70 -> 0.50/0.70 = 0.714.\n# Z domyslnym ratio=0.75 przechodzi; z surowszym ratio=0.6 nie przechodzi.\npairs = [[Match(0, 1, 0.50), Match(0, 2, 0.70)]]\nassert len(lowes_ratio_test(pairs)) == 1, 'powinno przejsc dla domyslnego ratio=0.75'\nassert len(lowes_ratio_test(pairs, ratio=0.6)) == 0, 'nie powinno przejsc dla ratio=0.6'\nassert len(lowes_ratio_test(pairs, ratio=0.9)) == 1, 'powinno przejsc dla ratio=0.9'"
+          },
+          {
+            "name": "para_z_jednym_sasiadem_pominieta",
+            "body": "# Jeden sasiad - nie da sie policzyc ilorazu, taka para musi byc pominieta\n# (a nie wybuchnac IndexError-em).\npairs = [\n    [Match(0, 1, 0.30), Match(0, 2, 0.90)],   # przechodzi\n    [Match(1, 5, 0.10)],                       # tylko jeden sasiad - pominiete\n    [],                                        # zero sasiadow - pominiete\n]\nresult = lowes_ratio_test(pairs)\nassert len(result) == 1\nassert result[0].queryIdx == 0 and result[0].trainIdx == 1"
+          },
+          {
+            "name": "wsadowo_wiele_par",
+            "body": "pairs = [\n    [Match(0, 10, 0.10), Match(0, 11, 0.50)],   # 0.20 < 0.75 -> przechodzi\n    [Match(1, 20, 0.40), Match(1, 21, 0.42)],   # 0.952 > 0.75 -> odrzucone\n    [Match(2, 30, 0.05), Match(2, 31, 0.10)],   # 0.5  < 0.75 -> przechodzi\n    [Match(3, 40, 0.60), Match(3, 41, 0.70)],   # 0.857 > 0.75 -> odrzucone\n]\nresult = lowes_ratio_test(pairs)\nassert len(result) == 2, f'oczekiwano 2, jest {len(result)}'\nquery_indices = sorted(m.queryIdx for m in result)\nassert query_indices == [0, 2], f'oczekiwano queryIdx [0, 2], jest {query_indices}'\n# Funkcja powinna zwracac NAJLEPSZE z pary (m), nie drugich (n).\ntrain_indices = sorted(m.trainIdx for m in result)\nassert train_indices == [10, 30]"
+          }
+        ],
+        "solution": "from collections import namedtuple\n\nMatch = namedtuple('Match', ['queryIdx', 'trainIdx', 'distance'])\n\n\ndef lowes_ratio_test(knn_matches, ratio=0.75):\n    good = []\n    for pair in knn_matches:\n        if len(pair) < 2:\n            continue\n        m, n = pair[0], pair[1]\n        if m.distance < ratio * n.distance:\n            good.append(m)\n    return good\n"
+      }
+    },
+    {
+      "id": "sandbox-bf-vs-flann",
+      "title": "Piaskownica: porównaj trzy strategie na syntetycznych deskryptorach",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna scena 'SIFT-podobna': 80 deskryptorow treningowych (train) i 50\n# deskryptorow zapytania (query). 30 z 50 zapytan to PRAWDZIWE odpowiedniki\n# wybranych deskryptorow treningu (z dodanym szumem); pozostale 20 to\n# losowe deskryptory bez partnera (outliery), ktore powinien odsiac dobry filtr.\nrng = np.random.default_rng(42)\nN_TRAIN, N_QUERY_TRUE, N_QUERY_FAKE = 80, 30, 20\nDIM = 128                                          # tak jak SIFT\n\ndesc_train = rng.standard_normal((N_TRAIN, DIM)).astype(np.float32)\n\ntrue_indices = rng.choice(N_TRAIN, size=N_QUERY_TRUE, replace=False)\nnoise = 0.30 * rng.standard_normal((N_QUERY_TRUE, DIM)).astype(np.float32)\ndesc_q_true = desc_train[true_indices] + noise\ndesc_q_fake = rng.standard_normal((N_QUERY_FAKE, DIM)).astype(np.float32)\ndesc_query = np.vstack([desc_q_true, desc_q_fake])  # pierwsze 30 - true, ostatnie 20 - fake\n\nN_QUERY = desc_query.shape[0]\ntrue_query_set = set(range(N_QUERY_TRUE))           # ktore queryIdx maja prawdziwego partnera\n\n\ndef stats(label, matches):\n    n = len(matches)\n    correct = sum(\n        1 for m in matches\n        if m.queryIdx in true_query_set and m.trainIdx == int(true_indices[m.queryIdx])\n    )\n    precision = (correct / n) if n else 0.0\n    recall = correct / N_QUERY_TRUE\n    print(f'{label:36s} | matches: {n:3d} | correct: {correct:3d} '\n          f'| precision: {precision:.2f} | recall: {recall:.2f}')\n\n\n# --- Strategia 1: BFMatcher z crossCheck ---\nbf_cross = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)\nstats('BFMatcher(L2) + crossCheck', bf_cross.match(desc_query, desc_train))\n\n# --- Strategia 2: BFMatcher + knnMatch + Lowe ratio test ---\nbf_knn = cv2.BFMatcher(cv2.NORM_L2)                 # bez crossCheck!\nratio = 0.75\nknn_pairs = bf_knn.knnMatch(desc_query, desc_train, k=2)\ngood_bf = [m for (m, n) in knn_pairs if m.distance < ratio * n.distance]\nstats(f'BFMatcher(L2) + knn + ratio={ratio}', good_bf)\n\n# --- Strategia 3: FLANN (KDTree) + Lowe ratio test ---\nFLANN_INDEX_KDTREE = 1\nindex_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)\nsearch_params = dict(checks=50)\nflann = cv2.FlannBasedMatcher(index_params, search_params)\nflann_pairs = flann.knnMatch(desc_query, desc_train, k=2)\ngood_flann = [m for (m, n) in flann_pairs if m.distance < ratio * n.distance]\nstats(f'FLANN(KDTree) + knn + ratio={ratio}', good_flann)\n\n# Pytania do siebie:\n#   * Zmien ratio na 0.6, 0.8, 0.9 - jak skaluja sie precision i recall?\n#     (oczekiwanie: rosnace ratio -> rosnacy recall, malejaca precision).\n#   * Zwieksz szum z 0.30 do 0.80 i obserwuj recall - przy ktorym progu\n#     ratio zaczynaja zachowywac sie tak samo, jak przy nizszym szumie?\n#   * Zwieksz N_TRAIN do 5000 i porownaj czas BFMatcher vs FLANN:\n#       import time\n#       t0 = time.perf_counter(); bf_knn.knnMatch(desc_query, desc_train, k=2)\n#       print('BF', time.perf_counter() - t0)\n#   * Zamien NORM_L2 na NORM_HAMMING - dostaniesz blad o niezgodnosci typow.\n#     To jest projektowy szczegol matcherow w OpenCV: norma musi pasowac do dtype.\n",
+        "encouragement": "Eksperymentuj z `ratio` i poziomem szumu — zobaczysz, że zaledwie zmiana 0,75 → 0,80 rusza recall i precision o kilkanaście punktów procentowych."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.5220/0001787803310340",
+          "title": "Muja, M. and Lowe, D. G. — Fast Approximate Nearest Neighbors with Automatic Algorithm Configuration (VISAPP 2009)",
+          "kind": "paper",
+          "author": "Marius Muja and David G. Lowe",
+          "year": 2009
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html",
+      "title": "OpenCV Python tutorial — Feature Matching",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.5220/0001787803310340",
+      "title": "Muja, M. and Lowe, D. G. — Fast Approximate Nearest Neighbors with Automatic Algorithm Configuration (VISAPP 2009)",
+      "kind": "paper",
+      "author": "Marius Muja and David G. Lowe",
+      "year": 2009
+    },
+    {
+      "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+      "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004)",
+      "kind": "paper",
+      "author": "David G. Lowe",
+      "year": 2004
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/db/d39/classcv_1_1DescriptorMatcher.html",
+      "title": "cv::DescriptorMatcher — OpenCV API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7.1 (Feature detection and matching)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

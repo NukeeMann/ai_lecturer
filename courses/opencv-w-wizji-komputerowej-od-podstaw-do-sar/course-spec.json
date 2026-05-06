@@ -1,0 +1,565 @@
+{
+  "topic": "OpenCV in computer vision (Polish)",
+  "level": "intermediate",
+  "durationTarget": "comprehensive",
+  "theoryPracticeRatio": 0.5,
+  "clarification": {
+    "q1: Jakie są Twoje główne cele po ukończeniu kursu — praca komercyjna, projekt badawczy, hobby, czy przygotowanie do konkretnego stanowiska?": "Nauka, podszkolenie się z umiejętności i możliwości OpenCV oraz jak można niektóre modele zrobić lepiej za pomocą opencv niż deep learningu",
+    "q2: Jakie masz dotychczasowe doświadczenie z OpenCV i w jakim języku preferujesz pracować — Python, C++, czy oba?": "python - srednie",
+    "q3: Które obszary computer vision interesują Cię najbardziej — detekcja obiektów, segmentacja, śledzenie, OCR, rekonstrukcja 3D, kalibracja kamer?": "Wszystkie",
+    "q4: Czy chcesz, aby kurs obejmował integrację OpenCV z deep learningiem (np. moduł DNN, PyTorch, TensorFlow), czy skupić się na klasycznych metodach?": "jakies porównania moga być ale nie wiecej jak kilka lekcji",
+    "q5: Na jakim sprzęcie planujesz pracować — zwykły laptop CPU, GPU, Raspberry Pi, kamera przemysłowa, urządzenie mobilne?": "CPU GPU",
+    "q6: Czy interesuje Cię przetwarzanie wideo i strumieni w czasie rzeczywistym, czy raczej analiza pojedynczych obrazów?": "Średnio, 1-2 lekcje max",
+    "q7: Ile matematyki (algebra liniowa, geometria rzutowa, statystyka) chcesz mieć w kursie — minimum potrzebne do zrozumienia, czy solidne podstawy teoretyczne?": "Tam gdzie konieczne",
+    "q8: Czy chciałbyś realizować jeden duży projekt końcowy przewijający się przez kurs, czy wiele mniejszych projektów dopasowanych do każdego modułu?": "wiele mniejszych i średniej wielkości na koniec moduły",
+    "q9: Jakie konkretne zastosowania lub branże najbardziej Cię interesują — medycyna, motoryzacja, robotyka, bezpieczeństwo, AR, kontrola jakości?": "Sateliatrna SAR image processing",
+    "q10: Czy chcesz, aby kurs obejmował wdrażanie modeli i optymalizację wydajności (np. eksport do ONNX, akceleracja GPU, deployment), czy skupić się głównie na prototypowaniu?": "moduł o technikach różnych krok po kroku"
+  },
+  "draftStructure": {
+    "courseTitle": "OpenCV w wizji komputerowej: od podstaw do SAR",
+    "courseDescription": "Kompleksowy kurs OpenCV w Pythonie dla średniozaawansowanych — od fundamentów obrazu i technik klasycznych, przez detekcję, segmentację i tracking, po przetwarzanie obrazów satelitarnych SAR i porównania z deep learningiem.",
+    "modules": [
+      {
+        "title": "Wprowadzenie i fundamenty OpenCV",
+        "lessons": [
+          {
+            "title": "Czym jest OpenCV i kiedy go używać",
+            "summary": "Poznasz historię, ekosystem i mocne strony OpenCV oraz scenariusze, w których bije deep learning.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Instalacja i konfiguracja środowiska",
+            "summary": "Zainstalujesz OpenCV (pip, conda) z obsługą CPU i przygotujesz projekt Pythona z venv.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Reprezentacja obrazu jako tablicy NumPy",
+            "summary": "Zrozumiesz, jak piksele, kanały i typy danych mapują się na ndarray w NumPy.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Wczytywanie, wyświetlanie i zapis obrazów",
+            "summary": "Użyjesz cv2.imread, imshow i imwrite oraz poznasz różnice między BGR a RGB.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Praca z wideo i strumieniami",
+            "summary": "Odczytasz klatki z plików i kamery przez VideoCapture oraz zapiszesz wynik z VideoWriter.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Przestrzenie barw: BGR, HSV, LAB, Gray",
+            "summary": "Przekonwertujesz obrazy między przestrzeniami i wybierzesz odpowiednią dla danego zadania.",
+            "estimatedMinutes": 12
+          }
+        ]
+      },
+      {
+        "title": "Operacje punktowe i geometryczne",
+        "lessons": [
+          {
+            "title": "Arytmetyka obrazów i mieszanie",
+            "summary": "Wykonasz dodawanie, odejmowanie i alpha blending dwóch obrazów z kontrolą saturacji.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Operacje logiczne i maski binarne",
+            "summary": "Wykorzystasz AND, OR, NOT do izolowania regionów zainteresowania za pomocą masek.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Histogramy i ich interpretacja",
+            "summary": "Wyliczysz i zwizualizujesz histogramy oraz nauczysz się czytać charakterystykę obrazu.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Wyrównanie histogramu i CLAHE",
+            "summary": "Poprawisz kontrast obrazów medycznych i satelitarnych klasycznym wyrównaniem i CLAHE.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Transformacje geometryczne: skalowanie i obrót",
+            "summary": "Zastosujesz resize, warpAffine i rotacje z różnymi metodami interpolacji.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Transformacje afiniczne i perspektywiczne",
+            "summary": "Wyznaczysz macierze przekształceń z punktów odpowiadających i wyprostujesz dokumenty.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Filtracja i przetwarzanie w dziedzinie przestrzennej",
+        "lessons": [
+          {
+            "title": "Konwolucja i jądra filtrów",
+            "summary": "Zrozumiesz matematykę konwolucji 2D i zaprojektujesz własne jądra w filter2D.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Filtry rozmywające: średni, Gaussa, medianowy",
+            "summary": "Porównasz blur, GaussianBlur i medianBlur pod kątem szumu i zachowania krawędzi.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Filtr bilateralny i zachowanie krawędzi",
+            "summary": "Wygładzisz obraz zachowując ostre krawędzie dzięki bilateralFilter i poznasz koszt obliczeniowy.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Wyostrzanie i unsharp masking",
+            "summary": "Zwiększysz ostrość detali techniką unsharp mask z kontrolowaną siłą.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Filtry gradientowe: Sobel i Scharr",
+            "summary": "Wyznaczysz pochodne kierunkowe i zwizualizujesz mapy gradientu.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Laplasjan i wykrywanie zer przejść",
+            "summary": "Zastosujesz operator Laplace'a do wykrywania krawędzi i blob detection.",
+            "estimatedMinutes": 12
+          }
+        ]
+      },
+      {
+        "title": "Progowanie i operacje morfologiczne",
+        "lessons": [
+          {
+            "title": "Progowanie globalne i metoda Otsu",
+            "summary": "Wybierzesz próg ręcznie i automatycznie metodą Otsu do binaryzacji obrazu.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Progowanie adaptacyjne",
+            "summary": "Zsegmentujesz obrazy o nierównomiernym oświetleniu adaptiveThreshold.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Erozja i dylacja",
+            "summary": "Zastosujesz podstawowe operacje morfologiczne do oczyszczania masek binarnych.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Otwarcie, zamknięcie i top-hat",
+            "summary": "Usuniesz drobne artefakty i wyodrębnisz jasne struktury operacjami złożonymi.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Szkieletyzacja i transformata odległości",
+            "summary": "Wyliczysz szkielet obiektu i mapę dystansu distanceTransform do segmentacji.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Detekcja krawędzi i konturów",
+        "lessons": [
+          {
+            "title": "Detektor Canny krok po kroku",
+            "summary": "Prześledzisz wszystkie etapy Canny'ego i dobierzesz progi histerezy.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Znajdowanie konturów",
+            "summary": "Wyodrębnisz kontury z obrazu binarnego z findContours i hierarchią RETR_TREE.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Aproksymacja i własności konturów",
+            "summary": "Obliczysz pole, obwód, środek ciężkości i aproksymujesz wielokątem approxPolyDP.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Otoczki wypukłe i defekty wypukłości",
+            "summary": "Wyznaczysz convex hull oraz defekty do analizy kształtów dłoni i obiektów.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Dopasowanie kształtów: matchShapes i momenty Hu",
+            "summary": "Porównasz kształty niezmiennikami Hu i zbudujesz prosty klasyfikator szablonowy.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Transformacja Hougha i wykrywanie kształtów",
+        "lessons": [
+          {
+            "title": "Transformata Hougha dla linii",
+            "summary": "Wykryjesz proste w obrazie metodą HoughLines i porównasz z wariantem probabilistycznym.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Wykrywanie okręgów HoughCircles",
+            "summary": "Wykryjesz monety i tarcze stosując akumulator Hougha dla okręgów.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Generalizowana transformata Hougha",
+            "summary": "Zrozumiesz GeneralizedHoughBallard do wykrywania dowolnych szablonów kształtu.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Cechy lokalne i dopasowanie obrazów",
+        "lessons": [
+          {
+            "title": "Detektory narożników: Harris i Shi-Tomasi",
+            "summary": "Znajdziesz silne narożniki i porównasz cornerHarris z goodFeaturesToTrack.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Deskryptory SIFT i SURF",
+            "summary": "Wyliczysz deskryptory niezmiennicze na skalę i obrót oraz omówisz kwestie licencyjne.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Szybkie deskryptory: ORB, BRISK, AKAZE",
+            "summary": "Porównasz darmowe alternatywy SIFT pod kątem szybkości i jakości.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Dopasowywanie cech: BFMatcher i FLANN",
+            "summary": "Dopasujesz pary punktów kluczowych i odfiltrujesz złe match'e testem Lowe'a.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Estymacja homografii i RANSAC",
+            "summary": "Wyznaczysz homografię findHomography z RANSAC odpornym na outliery.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Stitching i panoramy",
+            "summary": "Połączysz kilka zdjęć w panoramę używając cech i wbudowanego Stitcher API.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "Detekcja obiektów metodami klasycznymi",
+        "lessons": [
+          {
+            "title": "Template matching i jego ograniczenia",
+            "summary": "Zlokalizujesz wzorzec metodą matchTemplate i poznasz wpływ skali oraz obrotu.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Detektor twarzy Haar Cascades",
+            "summary": "Wykryjesz twarze klasycznym CascadeClassifier i zrozumiesz cechy Haar.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Detektor pieszych HOG + SVM",
+            "summary": "Użyjesz HOGDescriptor do wykrywania ludzi i porównasz z nowoczesnymi modelami.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Selektywne wyszukiwanie i propozycje regionów",
+            "summary": "Wygenerujesz region proposals klasycznym selective search jako wstęp do R-CNN.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Segmentacja obrazu",
+        "lessons": [
+          {
+            "title": "Segmentacja przez K-means w przestrzeni barw",
+            "summary": "Pogrupujesz piksele klastrowaniem k-means i zredukujesz paletę barw.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Algorytm Watershed",
+            "summary": "Rozdzielisz stykające się obiekty algorytmem działów wodnych z markerami.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "GrabCut do segmentacji interaktywnej",
+            "summary": "Wytniesz obiekt z tła zaznaczając prostokąt i iteracyjnie poprawiając maskę.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Segmentacja oparta na superpikselach SLIC",
+            "summary": "Wygenerujesz superpiksele jako wstępną reprezentację dla dalszej analizy.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Mean Shift i filtrowanie pyrMeanShift",
+            "summary": "Wygładzisz obraz zachowując krawędzie i wstępnie zsegmentujesz sceny.",
+            "estimatedMinutes": 12
+          }
+        ]
+      },
+      {
+        "title": "Tracking obiektów w wideo",
+        "lessons": [
+          {
+            "title": "Optical flow Lucas-Kanade",
+            "summary": "Wyznaczysz przepływ rzadki dla wybranych punktów w sekwencji wideo.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Gęsty optical flow Farnebäcka",
+            "summary": "Wyliczysz pełne pole ruchu i zwizualizujesz je jako mapę HSV.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Background subtraction: MOG2 i KNN",
+            "summary": "Oddzielisz ruchome obiekty od tła w monitoringu klasycznymi modelami GMM.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Trackery OpenCV: KCF, CSRT, MOSSE",
+            "summary": "Zainicjalizujesz tracker z bbox i porównasz dokładność oraz prędkość algorytmów.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Filtr Kalmana w trackingu",
+            "summary": "Wygładzisz trajektorię obiektu predykcją Kalmana w obecności szumu pomiarowego.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Geometria kamery i kalibracja",
+        "lessons": [
+          {
+            "title": "Model kamery pinhole i parametry wewnętrzne",
+            "summary": "Zrozumiesz macierz K, dystorsje i układy współrzędnych w wizji 3D.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Kalibracja kamery z wzorcem szachownicy",
+            "summary": "Wyznaczysz parametry kamery calibrateCamera i ocenisz błąd reprojekcji.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Korekcja dystorsji i remapowanie",
+            "summary": "Usuniesz zniekształcenia obiektywu funkcją undistort i przygotujesz mapy remap.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Stereo wizja i mapa głębi",
+            "summary": "Wyliczysz disparity dwóch obrazów StereoBM/StereoSGBM i zrekonstruujesz głębię.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Estymacja pozy obiektu solvePnP",
+            "summary": "Wyznaczysz pozycję 3D obiektu z punktów 2D-3D dla AR i robotyki.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Częstotliwości, falki i transformaty",
+        "lessons": [
+          {
+            "title": "FFT 2D w OpenCV",
+            "summary": "Przejdziesz do dziedziny częstotliwości funkcją dft i odczytasz widmo amplitudy.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Filtry dolno- i górnoprzepustowe w FFT",
+            "summary": "Wytniesz wybrane częstotliwości i odtworzysz obraz idft do redukcji szumu.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Transformata kosinusowa DCT",
+            "summary": "Zastosujesz DCT do kompresji i analizy strukturalnej obrazu.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Wprowadzenie do falek 2D",
+            "summary": "Zrozumiesz dekompozycję wielorozdzielczą i jej zastosowanie w denoisingu i SAR.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Wydajność: CPU vs GPU i optymalizacja",
+        "lessons": [
+          {
+            "title": "Profilowanie kodu OpenCV w Pythonie",
+            "summary": "Zmierzysz czas funkcjami getTickCount oraz cProfile i znajdziesz wąskie gardła.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Wektoryzacja NumPy i unikanie pętli Python",
+            "summary": "Zastąpisz pętle operacjami wektorowymi i zobaczysz różnicę o rzędy wielkości.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "OpenCV z modułem CUDA",
+            "summary": "Zbudujesz OpenCV z CUDA i przeniesiesz operacje na GPU przez cv2.cuda.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "OpenCL i T-API jako alternatywa GPU",
+            "summary": "Wykorzystasz UMat i Transparent API by przyspieszyć kod bez przepisywania.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Wielowątkowość i parallel_for_",
+            "summary": "Zrównoleglisz przetwarzanie batchy obrazów wątkami i procesami w Pythonie.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "OpenCV vs deep learning — kiedy co wybrać",
+        "lessons": [
+          {
+            "title": "Granice metod klasycznych i sieci CNN",
+            "summary": "Porównasz koszt, dane i interpretowalność klasyki kontra deep learning.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Moduł cv2.dnn — uruchamianie modeli",
+            "summary": "Wczytasz YOLO/MobileNet w cv2.dnn i porównasz z czystym pipeline'em OpenCV.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Hybrydy: klasyka jako pre/postprocessing dla DL",
+            "summary": "Zaprojektujesz pipeline gdzie OpenCV przygotowuje dane, a sieć kończy zadanie.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Wprowadzenie do obrazów satelitarnych SAR",
+        "lessons": [
+          {
+            "title": "Czym są dane SAR i jak powstają",
+            "summary": "Zrozumiesz fizykę radaru z syntetyczną aperturą i różnice względem optyki.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Polaryzacje, pasma i formaty danych SAR",
+            "summary": "Poznasz HH/HV/VV/VH, pasma C/L/X i formaty Sentinel-1, ICEYE, Capella.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Wczytywanie SAR w Pythonie z OpenCV i rasterio",
+            "summary": "Otworzysz produkt GRD/SLC i przygotujesz tablicę pikseli do dalszego przetwarzania.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Konwersja amplitudy do dB i normalizacja",
+            "summary": "Przekształcisz wartości liniowe do skali decybeli i znormalizujesz do wizualizacji.",
+            "estimatedMinutes": 12
+          }
+        ]
+      },
+      {
+        "title": "Przetwarzanie SAR krok po kroku",
+        "lessons": [
+          {
+            "title": "Speckle noise — natura i modele",
+            "summary": "Zrozumiesz multiplikatywny szum plamkowy i jego statystyki Rayleigha/Gamma.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Filtracja speckle: Lee i Frost",
+            "summary": "Zaimplementujesz adaptacyjne filtry Lee i Frost na obrazie SAR w OpenCV.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Filtr Kuan i Refined Lee",
+            "summary": "Porównasz odmiany filtrów speckle pod kątem zachowania krawędzi i tekstury.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Filtracja medianowa i bilateralna na SAR",
+            "summary": "Zastosujesz klasyczne filtry OpenCV do SAR i ocenisz ich ograniczenia.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Korekcja geometryczna i ortorektyfikacja",
+            "summary": "Wyrównasz obraz SAR do układu mapy z użyciem DEM i przekształceń OpenCV.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Kalibracja radiometryczna do sigma0",
+            "summary": "Przeliczysz wartości DN do sigma0/gamma0 jako wstęp do analiz ilościowych.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Analiza i detekcja w obrazach SAR",
+        "lessons": [
+          {
+            "title": "Detekcja krawędzi w SAR — Canny vs ratio edge",
+            "summary": "Porównasz klasyczny Canny z detektorami opartymi na stosunku średnich dla SAR.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Segmentacja terenu i klasyfikacja tekstur",
+            "summary": "Wyliczysz cechy GLCM/Haralick i zsegmentujesz typy pokrycia terenu.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Detekcja statków metodą CFAR",
+            "summary": "Zaimplementujesz CFAR z adaptacyjnym progiem do detekcji jasnych obiektów na wodzie.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Detekcja zmian: log-ratio i mean-ratio",
+            "summary": "Wyznaczysz mapy zmian z dwóch akwizycji SAR i wyodrębnisz obszary różnic.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Co-rejestracja obrazów SAR z różnych dat",
+            "summary": "Dopasujesz dwie sceny SAR cechami i homografią do analizy multitemporalnej.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Maskowanie wody i lądu na SAR",
+            "summary": "Zbudujesz binarną maskę wody progowaniem dB i operacjami morfologicznymi.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Mini-projekty końcowe",
+        "lessons": [
+          {
+            "title": "Projekt 1: licznik obiektów na taśmie produkcyjnej",
+            "summary": "Zbudujesz pipeline detekcji i zliczania obiektów z wideo z kamery przemysłowej.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Projekt 2: skaner dokumentów",
+            "summary": "Wykryjesz krawędzie kartki, wyprostujesz perspektywę i zbinaryzujesz tekst.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Projekt 3: tracking wielu obiektów w monitoringu",
+            "summary": "Połączysz background subtraction, trackery i Kalmana w prostym systemie MOT.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Projekt 4: detekcja statków na Sentinel-1",
+            "summary": "Zaimplementujesz pełny pipeline od GRD przez filtrację speckle do CFAR.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Projekt 5: mapa zmian po powodzi z dwóch scen SAR",
+            "summary": "Zbudujesz pipeline log-ratio z maskowaniem wody do detekcji obszarów zalanych.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Projekt 6: hybryda OpenCV + cv2.dnn na zdjęciach lotniczych",
+            "summary": "Połączysz preprocessing klasyczny z modelem DL i ocenisz zysk względem czystego DL.",
+            "estimatedMinutes": 20
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-05-05T21:45:09.883Z"
+}

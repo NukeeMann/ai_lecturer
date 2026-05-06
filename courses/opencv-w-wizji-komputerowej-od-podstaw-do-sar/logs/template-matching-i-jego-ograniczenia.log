@@ -1,0 +1,89 @@
+=== Attempt 1 — 2026-05-06T02:55:26.919Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+I'll ignore the ralph CLAUDE.md (the user explicitly said not to touch scripts/ralph/). Reading the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Found the lesson: m6, "Template matching i jego ograniczenia", 12 minutes. Reading research and sources.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Sources: OpenCV w wizji komputerowej: od podstaw do SAR
+Now reading research.md to find lesson-specific notes.
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-o…)
+← 190 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/research.md
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+Now reading the schemas to ensure compliance.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/)
+← Code
+No Image widget — I'll rely on inline markdown images. Let me check key widget schemas.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← aproksymacja-konturow-i-momenty.json
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← 37
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← aproksymacja-konturow-i-momenty.json
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Let me check one more lesson to confirm conventions, then write the file.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← Exit code 2
+→ Bash(command: grep -h "https://upload.wikimedia.org" /home/nukeemann/projects/ai_lecturer/cour…)
+← <persisted-output>
+→ Bash(command: grep -ohE 'https://upload\.wikimedia\.org/[^"]+' /home/nukeemann/projects/ai_lec…)
+← https://upload.wikimedia.org/wikipedia/commons/3/30/Douglas-Peucker_animated.gif)\n\n*(Animacja: Wikimedia Commons, domena publiczna.)*\n\nAlgorytm działa rekurencyjnie: dla bieżącego fragmentu liczy …
+I'll author the lesson by writing a Python builder script — safer than hand-escaping KaTeX in raw JSON.
+→ Write(file_path: /tmp/build_lesson_template_matching.py)
+← File created successfully at: /tmp/build_lesson_template_matching.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/build_lesson_template_matching.py)
+← Exit code 1
+→ Bash(command: sed -n '55,65p' /tmp/build_lesson_template_matching.py | cat -A | head -20)
+← $
+The Python string was terminated early by mismatched quotes. Let me fix by escaping inner ASCII quotes.
+→ Edit(file_path: /tmp/build_lesson_template_matching.py)
+← <tool_use_error>String to replace not found in file.
+→ Read(file_path: /tmp/build_lesson_template_matching.py)
+← 59	
+Let me rewrite the file with consistent Polish typographic quotes that don't conflict with Python string delimiters.
+→ Write(file_path: /tmp/build_lesson_template_matching.py)
+← The file /tmp/build_lesson_template_matching.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/build_lesson_template_matching.py)
+← Wrote /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/template-matching-i-jego-ograniczenia.json
+Now let me validate against LessonSchema.
+→ Bash(command: npx tsx -e "
+import { readFileSync } from 'node:fs';
+import { LessonSchema } fro…)
+← OK: template-matching-i-jego-ograniczenia (5 sections)
+Validates against `LessonSchema`. Let me confirm the file is in place and review the final shape.
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-…)
+← -rw-r--r-- 1 nukeemann nukeemann 17027 May  6 05:04 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/template-matching-i-jego-ograniczenia.json
+Lesson written and validated. Summary:
+- **Path**: `courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/template-matching-i-jego-ograniczenia.json` (17 KB, 131 lines)
+- **Module**: `m6` · 12 minutes (matches `course.json`)
+- **5 sections** in display order:
+  1. `theory` — sliding window intuition + the six `TM_*` flags with KaTeX formulas for SSD/CCORR/CCOEFF; inline Wikimedia Commons image (Bikesgray.jpg)
+  2. `theory` — the four limitations (rotation, scale, occlusion, O(W·H·w·h) cost) and when to use template matching vs. when to reach for the upcoming Haar/HOG/SIFT lessons
+  3. `quiz` — single-select on which `TM_*` survives a linear lighting change ($I' = 0{,}5\,I + 20$); distractors drawn from `Common misconceptions`
+  4. `code` — implement `template_match_ssd(image, template)` with 4 tests (1 visible smoke test, 3 hidden) plus a runnable `solution`
+  5. `sandbox` — `cv2.matchTemplate` driven through all six flags with `cv2.minMaxLoc`, plus self-check prompts about rotation, scale, and lighting changes
+- **4 lesson-level sources** (Wikipedia, OpenCV tutorial, Brunelli book with author+year, Szeliski book with author+year); two theory sections also carry section-level `sources` pointing at the specific references they lean on
+- All Polish content; only Python identifiers / OpenCV API names in English
+- No files touched outside the target lesson; nothing under `scripts/ralph/` modified
+[result success (592.9s)]

@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "slug": "stitching-i-panoramy",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Stitching i panoramy",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Mając już cechy, dopasowania i homografię z RANSAC, zostają trzy ostatnie etapy panoramy: warpowanie obrazów na wspólną kanwę, wyznaczenie jej rozmiaru i offsetu translacji oraz blending. Lekcja pokazuje, dlaczego cv2.warpPerspective używa odwrotnego warpu, jak ręcznie policzyć kanwę z rzutowanych rogów i jak złożyć kompletny pipeline pod jednym wywołaniem cv2.Stitcher_create — z pełną świadomością, kiedy ten high-level zwraca STATUS_ERR_NEED_MORE_IMGS i co z tym zrobić.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "pipeline-panoramy",
+      "title": "Pipeline panoramy: od cech do bezszwowego mozaikowania",
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji wyznaczyliśmy macierz **homografii** $H$ wiążącą dwa zdjęcia tej samej (płaskiej lub odległej) sceny. Stitching panoramy to najsłynniejsze zastosowanie tego wyniku — i jednocześnie najlepszy test jakości całego dotychczasowego pipeline'u: jeden źle wyestymowany model $H$ produkuje krzywe linie horyzontu i widoczne szwy, których żaden blender już nie zatuszuje.\n\nPełny pipeline panoramy w `cv2.Stitcher` (i w klasycznym artykule Browna i Lowe'a, *Automatic Panoramic Image Stitching using Invariant Features*, IJCV 2007) składa się z **sześciu etapów**:\n\n1. **Detekcja cech** — SIFT / ORB / BRISK / AKAZE generują pary `(keypoint, deskryptor)` dla każdego obrazu wejściowego.\n2. **Dopasowanie cech** — `BFMatcher` lub FLANN znajduje pary najbliższych deskryptorów; test Lowe'a (`ratio = 0,7–0,75`) odsiewa niejednoznaczne dopasowania.\n3. **Estymacja homografii (RANSAC)** — `cv2.findHomography(..., cv2.RANSAC, 5.0)` wyznacza $H_{ij}$ dla każdej pary obrazów z dostatecznym nakładaniem.\n4. **Bundle adjustment** — łączna optymalizacja wszystkich pól widzenia kamer kompensuje propagację błędu w łańcuchu transformacji $H_{12}, H_{23}, \\ldots$; bez niej długie panoramy „rozjeżdżałyby się\" geometrycznie do końcówki.\n5. **Warping na wspólną kanwę** — `cv2.warpPerspective` przerzuca każdy obraz do globalnego układu odniesienia (zwykle płaszczyzny pierwszego obrazu, albo powierzchni cylindra/sfery dla panoram > 90°).\n6. **Blending** — multi-band blending (piramida Laplace'a) lub seam-aware feathering wymazuje widoczne złącza spowodowane różną ekspozycją i drobnymi niedokładnościami warpu.\n\n![Schemat pipeline'u stitchingu w cv2.Stitcher: obrazy wejściowe → finder cech → matcher → estymator parametrów kamery + bundle adjustment → warper na wspólną powierzchnię → kompensator ekspozycji → seam finder → blender → panorama wyjściowa](https://docs.opencv.org/4.x/StitchingPipeline.jpg)\n\n*(Obraz: dokumentacja OpenCV, moduł `stitching`.)*\n\nOpenCV udostępnia całą tę maszynerię pod pojedynczym wywołaniem **`cv2.Stitcher_create(mode)`** + `stitcher.stitch([img1, img2, ...])`. Pod spodem działa modułowy framework, w którym możesz podmienić każdy z etapów — feature finder, matcher, warper (`PlanarWarper`, `SphericalWarper`, `CylindricalWarper`), exposure compensator, seam finder, blender — kiedy domyślne ustawienia zawodzą. W tej lekcji najpierw zrozumiemy etap warpu (najczęściej zaskakujący przy ręcznej implementacji), potem złożymy kompletne wywołanie wysokiego poziomu, a na końcu nazwiemy konkretne tryby błędów, jakie zwraca `Stitcher`."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/s11263-006-0002-3",
+          "title": "Brown, M. and Lowe, D. G. — Automatic Panoramic Image Stitching using Invariant Features (IJCV 2007)",
+          "kind": "paper",
+          "author": "Matthew Brown and David G. Lowe",
+          "year": 2007
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d1/d46/group__stitching.html",
+          "title": "OpenCV — Stitching pipeline overview",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "warping-i-kanwa",
+      "title": "Warping i kanwa: jak `cv2.warpPerspective` rozkłada piksele",
+      "type": "theory",
+      "data": {
+        "markdown": "`cv2.warpPerspective(src, H, (W, H_out))` aplikuje **odwrotny warp** (*inverse warping*) — dla każdego piksela $(u, v)$ w obrazie wyjściowym zamienia rolami źródło i cel:\n\n$$ \\begin{bmatrix} x \\\\ y \\\\ w \\end{bmatrix} = H^{-1} \\begin{bmatrix} u \\\\ v \\\\ 1 \\end{bmatrix}, \\qquad p_\\text{out}(u, v) = \\text{interp}\\bigl(p_\\text{src}\\bigl(\\tfrac{x}{w}, \\tfrac{y}{w}\\bigr)\\bigr) $$\n\nDlaczego *odwrotny*, a nie przedni? Forward warping ($p_\\text{out}(H \\cdot (x, y, 1)^\\top) \\leftarrow p_\\text{src}(x, y)$) zostawia w wyniku **dziury i wielokrotne trafienia w tę samą kratkę pikseli** — kilka źródłowych pikseli lądowałoby w jednej komórce, a inne komórki zostałyby puste, bo siatka źródła rozciąga lub ściska się względem kratki celu. Odwrotny warp pyta dla każdej komórki celu osobno: „skąd ja pochodzę w obrazie źródłowym?\" — i interpoluje (biliniowo lub bikubicznie) wartość z (zwartego) sąsiedztwa źródłowego. Dzięki temu **każdy piksel wyniku ma dokładnie jedną dobrze określoną wartość**.\n\n![Korekcja perspektywy odpowiada odwrotnej homografii: zniekształcony rzut ukośny → wyprostowany prostokąt; w stitchingu robimy to w drugą stronę dla obrazu drugiego, by wpasować go w układ odniesienia obrazu pierwszego](https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Perspective_correction.svg/640px-Perspective_correction.svg.png)\n\n*(Obraz: Wikimedia Commons, plik `Perspective_correction.svg`.)*\n\n**Drugi praktyczny problem: rozmiar kanwy i offset translacji.** Po sklejeniu dwóch zdjęć wynik bywa szerszy *i* przesunięty względem każdego z nich z osobna — rzutowane rogi obrazu drugiego mogą trafić w ujemne $x$ albo daleko za prawą krawędź pierwszego. Pominięcie tego kroku to klasyczny pierwszy bug ręcznego stitchingu: połowa panoramy znika za canvasem o rozmiarze pierwszego obrazu. Standardowy przepis:\n\n1. **Zaprojektuj cztery rogi** drugiego obrazu macierzą $H_{2 \\to 1}$ na układ pierwszego: $(0, 0), (w_2, 0), (w_2, h_2), (0, h_2)$ → $H \\cdot (\\cdot, \\cdot, 1)^\\top$ → dehomogenizacja przez podzielenie przez trzecią współrzędną.\n2. **Połącz** te cztery punkty z czterema rogami pierwszego obrazu — daje to **8 punktów w jednym układzie**.\n3. **Wyznacz prostokąt opisujący**: $x_\\min = \\min_i x_i$, $x_\\max = \\max_i x_i$, analogicznie $y$. Rozmiar kanwy: $W = \\lceil x_\\max - x_\\min \\rceil$, $H_\\text{out} = \\lceil y_\\max - y_\\min \\rceil$.\n4. **Skomponuj macierz translacji** $T$:\n\n$$ T = \\begin{bmatrix} 1 & 0 & -x_\\min \\\\ 0 & 1 & -y_\\min \\\\ 0 & 0 & 1 \\end{bmatrix} $$\n\nprzesuwającą całą scenę tak, by wszystkie współrzędne stały się nieujemne i mieściły się w nowym prostokącie $[0, W) \\times [0, H_\\text{out})$.\n\n5. **Wywołaj** `cv2.warpPerspective(img2, T @ H, (W, H_out))` dla obrazu drugiego oraz `cv2.warpPerspective(img1, T, (W, H_out))` dla pierwszego — tak by oba trafiły do tego samego docelowego prostokąta. Na koniec nakładasz oba wyniki (np. maską + alpha 0,5 w obszarze nakładającym się), a w wersji „produkcyjnej\" zastępujesz ten naiwny mix na multi-band blender."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1561/0600000009",
+          "title": "Szeliski, R. — Image Alignment and Stitching: A Tutorial (Foundations and Trends in CGV, 2006)",
+          "kind": "paper",
+          "author": "Richard Szeliski",
+          "year": 2006
+        }
+      ]
+    },
+    {
+      "id": "exercise-canvas",
+      "title": "Zaimplementuj rozmiar kanwy i offset translacji dla pary obrazów",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `compute_canvas_for_pair(H, w1, h1, w2, h2)` realizującą **kroki 1–4** z poprzedniej teorii. Funkcja dostaje:\n\n- `H` — `np.ndarray` rozmiaru `(3, 3)` mapujące współrzędne **drugiego** obrazu na układ pierwszego,\n- `w1`, `h1` — wymiary obrazu pierwszego (w pikselach),\n- `w2`, `h2` — wymiary obrazu drugiego.\n\nZwróć **krotkę** `(W, H_out, T)`:\n\n- `W`, `H_out` — szerokość i wysokość kanwy w pikselach (typ `int`, użyj `np.ceil` przed konwersją),\n- `T` — `np.ndarray` rozmiaru `(3, 3)` typu `float64`: macierz translacji o $(-x_\\min, -y_\\min)$, gotowa do użycia jako `T @ H` w `cv2.warpPerspective`.\n\nKrok po kroku:\n\n1. Złóż rogi obrazu 2 w jego własnym układzie homogenicznym jako macierz `(3, 4)`.\n2. Wymnóż przez `H` i zdehomogenizuj (podziel pierwsze dwa wiersze przez trzeci).\n3. Połącz x-y rogów obu obrazów i wyznacz `x_min, x_max, y_min, y_max`.\n4. `W = ceil(x_max - x_min)`, `H_out = ceil(y_max - y_min)`, `T` jak w teorii.\n\n```\nH = np.eye(3)\nW, H_out, T = compute_canvas_for_pair(H, 100, 100, 100, 100)\n# W == 100, H_out == 100, T == identity (oba obrazy pokrywaja sie idealnie)\n```",
+        "starterCode": "import numpy as np\n\n\ndef compute_canvas_for_pair(H, w1, h1, w2, h2):\n    # H:        ndarray (3, 3) - homografia mapujaca obraz 2 -> uklad obrazu 1\n    # w1, h1:   wymiary obrazu 1 (piksele)\n    # w2, h2:   wymiary obrazu 2 (piksele)\n    # Zwraca:   (W, H_out, T) - rozmiar kanwy (int, int) i macierz translacji (3, 3) float64.\n    H = np.asarray(H, dtype=np.float64)\n    # TODO:\n    #   1. corners2 = np.array([[0, w2, w2, 0],\n    #                           [0, 0,  h2, h2],\n    #                           [1, 1,  1,  1]], dtype=np.float64)   -> (3, 4)\n    #   2. proj    = H @ corners2                                    -> (3, 4)\n    #      proj_xy = proj[:2] / proj[2:3]                             -> (2, 4)  (dehomogenizacja)\n    #   3. xs1 = [0, w1, w1, 0], ys1 = [0, 0, h1, h1]\n    #      all_x = np.concatenate([xs1, proj_xy[0]])\n    #      all_y = np.concatenate([ys1, proj_xy[1]])\n    #   4. x_min/x_max/y_min/y_max -> W, H_out, T.\n    raise NotImplementedError\n",
+        "tests": [
+          {
+            "name": "identycznosc_jednakowych_obrazow",
+            "body": "# H = I, oba obrazy 100x100 -> kanwa 100x100, T = I.\nH = np.eye(3)\nW, H_out, T = compute_canvas_for_pair(H, 100, 100, 100, 100)\nassert W == 100, f'W: oczekiwano 100, jest {W}'\nassert H_out == 100, f'H_out: oczekiwano 100, jest {H_out}'\nassert T.shape == (3, 3), f'T.shape: oczekiwano (3, 3), jest {T.shape}'\nassert np.allclose(T, np.eye(3)), f'T powinno byc macierza jednostkowa, jest\\n{T}'",
+            "hidden": false
+          },
+          {
+            "name": "czysta_translacja_powieksza_kanwe",
+            "body": "# H = translacja o +50 px w x; oba obrazy 100x100.\n# Rogi obrazu 2 projektowane na (50,150) w x; kanwa: x in [0,150], y in [0,100].\nH = np.array([[1.0, 0.0, 50.0],\n              [0.0, 1.0,  0.0],\n              [0.0, 0.0,  1.0]])\nW, H_out, T = compute_canvas_for_pair(H, 100, 100, 100, 100)\nassert W == 150, f'W: oczekiwano 150, jest {W}'\nassert H_out == 100, f'H_out: oczekiwano 100, jest {H_out}'\nassert np.allclose(T, np.eye(3)), f'translacja dodatnia nie powinna wymagac offsetu, T:\\n{T}'"
+          },
+          {
+            "name": "ujemna_translacja_wymusza_offset",
+            "body": "# H = translacja o (-30, -20); rogi obrazu 2 lecą w ujemne wspolrzedne.\nH = np.array([[1.0, 0.0, -30.0],\n              [0.0, 1.0, -20.0],\n              [0.0, 0.0,   1.0]])\nW, H_out, T = compute_canvas_for_pair(H, 100, 100, 100, 100)\n# x in [-30, 100] -> 130; y in [-20, 100] -> 120; T przesuwa o (30, 20).\nassert W == 130, f'W: oczekiwano 130, jest {W}'\nassert H_out == 120, f'H_out: oczekiwano 120, jest {H_out}'\nT_expected = np.array([[1.0, 0.0, 30.0],\n                       [0.0, 1.0, 20.0],\n                       [0.0, 0.0,  1.0]])\nassert np.allclose(T, T_expected), f'T: oczekiwano\\n{T_expected}\\njest\\n{T}'"
+          },
+          {
+            "name": "T_jest_czysta_translacja",
+            "body": "# Sprawdz, ze T to macierz translacji (rotation/scale = I, perspective = 0).\nH = np.array([[1.0, 0.0, -7.0],\n              [0.0, 1.0,  3.0],\n              [0.0, 0.0,  1.0]])\nW, H_out, T = compute_canvas_for_pair(H, 50, 40, 50, 40)\nassert T[0, 0] == 1.0 and T[1, 1] == 1.0 and T[2, 2] == 1.0, f'diagonala T: {T.diagonal()}'\nassert T[0, 1] == 0.0 and T[1, 0] == 0.0, f'rotacja w T powinna byc zero, T:\\n{T}'\nassert T[2, 0] == 0.0 and T[2, 1] == 0.0, f'wiersz perspektywy T powinien byc [0, 0, 1], jest {T[2]}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef compute_canvas_for_pair(H, w1, h1, w2, h2):\n    H = np.asarray(H, dtype=np.float64)\n    corners2 = np.array([[0.0, float(w2), float(w2), 0.0],\n                         [0.0, 0.0,       float(h2), float(h2)],\n                         [1.0, 1.0,       1.0,       1.0]])\n    proj = H @ corners2                                  # (3, 4)\n    proj_xy = proj[:2] / proj[2:3]                       # (2, 4) - dehomogenizacja\n    xs1 = np.array([0.0, float(w1), float(w1), 0.0])\n    ys1 = np.array([0.0, 0.0,       float(h1), float(h1)])\n    all_x = np.concatenate([xs1, proj_xy[0]])\n    all_y = np.concatenate([ys1, proj_xy[1]])\n    x_min, x_max = float(all_x.min()), float(all_x.max())\n    y_min, y_max = float(all_y.min()), float(all_y.max())\n    W = int(np.ceil(x_max - x_min))\n    H_out = int(np.ceil(y_max - y_min))\n    T = np.array([[1.0, 0.0, -x_min],\n                  [0.0, 1.0, -y_min],\n                  [0.0, 0.0, 1.0]], dtype=np.float64)\n    return W, H_out, T\n"
+      }
+    },
+    {
+      "id": "cloze-stitcher-create",
+      "title": "Wpisz brakujące argumenty cv2.Stitcher_create i sprawdź status",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Złóż minimalny ale kompletny pipeline panoramy oparty na **wysokopoziomowym** `cv2.Stitcher`. Wpisz trzy fragmenty:\n\n- **`mode`** — stała trybu dla zdjęć krajobrazowych z obrotem kamery (a nie skanowanych dokumentów).\n- **`ok_status`** — wartość zwracana przez `stitch(...)` w przypadku sukcesu.\n- **`err_need_more`** — stała oznaczająca błąd „za mało zdjęć / nie udało się znaleźć dostatecznych dopasowań w grafie obrazów\".\n\nWskazówka: w nowoczesnym OpenCV wszystkie trzy są dostępne pod nazwami `cv2.Stitcher.<NAME>` (i równoważnie `cv2.STITCHER_<NAME>` w wariancie z prefiksem modułu).",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n# images: lista np.ndarray (BGR) zaladowana wczesniej cv2.imread, np. 4 zdjecia widoku z balkonu.\n\n# 1. Wybierz tryb panoramy (NIE skanu dokumentu).\nstitcher = cv2.Stitcher_create({{mode}})\n\n# 2. stitch zwraca (status, panorama). Status to int z cv2.Stitcher_STATUS_*.\nstatus, panorama = stitcher.stitch(images)\n\n# 3. Sprawdz status zanim zapiszesz wynik.\nif status == {{ok_status}}:\n    cv2.imwrite('panorama.jpg', panorama)\nelif status == {{err_need_more}}:\n    raise RuntimeError('Stitcher: graf obrazow rozspojnil sie - sprawdz overlap miedzy ujeciami.')\nelse:\n    raise RuntimeError(f'Stitcher zwrocil nieoczekiwany status: {status}')\n",
+        "slots": [
+          {
+            "id": "mode",
+            "hint": "Stała cv2.Stitcher.* wybierająca tryb panoram krajobrazowych (kamera obracana dookoła punktu).",
+            "validation": { "kind": "oneOf", "values": ["cv2.Stitcher.PANORAMA", "cv2.STITCHER_PANORAMA", "cv2.Stitcher_PANORAMA"] }
+          },
+          {
+            "id": "ok_status",
+            "hint": "Stała oznaczająca sukces (numerycznie 0).",
+            "validation": { "kind": "oneOf", "values": ["cv2.Stitcher.OK", "cv2.STITCHER_OK", "cv2.Stitcher_OK", "0"] }
+          },
+          {
+            "id": "err_need_more",
+            "hint": "Stała oznaczająca brak wystarczających dopasowań / niespójny graf obrazów (numerycznie 1).",
+            "validation": { "kind": "oneOf", "values": ["cv2.Stitcher.ERR_NEED_MORE_IMGS", "cv2.STITCHER_ERR_NEED_MORE_IMGS", "cv2.Stitcher_ERR_NEED_MORE_IMGS", "1"] }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-need-more-imgs",
+      "title": "Sprawdź się: dlaczego `Stitcher` zwraca STATUS_ERR_NEED_MORE_IMGS",
+      "type": "quiz",
+      "data": {
+        "question": "Twój skrypt wywołuje `cv2.Stitcher_create(cv2.Stitcher.PANORAMA).stitch(images)` na **pięciu** zdjęciach z balkonu, ale otrzymujesz `cv2.Stitcher.ERR_NEED_MORE_IMGS` mimo że wszystkie pliki wczytały się poprawnie. Co najczęściej oznacza ten błąd?",
+        "options": [
+          "Pipeline wymaga przynajmniej 5 obrazów; gdyby były tylko 4, stitcher zadziałałby — zatem problemem jest jakaś flaga konfiguracyjna, a nie obrazy.",
+          "SIFT jest opatentowany i nie znajduje cech — od OpenCV 4.4 trzeba ręcznie podstawić `cv2.ORB.create()` przez `setFeaturesFinder(...)`.",
+          "Po dopasowaniu cech graf obrazów rozpadł się na izolowane wyspy — co najmniej dwa zdjęcia nie miały wystarczającego nakładania (typowo < ~25% pola widzenia) lub liczby inlierów po RANSAC, więc bundle adjustment nie miał czego optymalizować.",
+          "`cv2.Stitcher` wymaga znanej macierzy intrinsics K — bez wcześniejszej kalibracji szachownicą zawsze zwraca ten błąd."
+        ],
+        "correct": [2],
+        "explanation": "Odpowiedź **A** jest myląca: `Stitcher` w trybie `PANORAMA` działa już od **dwóch** obrazów; liczba ≥ 5 nie jest progiem. Odpowiedź **B** to mit z `Common misconceptions` w `research.md` — patent Lowe'a na SIFT **wygasł w marcu 2020**, a `cv2.SIFT_create()` jest w głównej gałęzi OpenCV od 4.4.0. Odpowiedź **D** myli `Stitcher` z `cv2.calibrateCamera` — `Stitcher` **estymuje** ogniskową sam, na podstawie homografii między parami i rotacji wyznaczonej przez bundle adjustment; nie potrzebuje zewnętrznej macierzy K. Odpowiedź **C** opisuje to, co naprawdę dzieje się w środku: `Stitcher` buduje **graf nakładania**, w którym wierzchołkami są obrazy a krawędziami pary z dostatecznym nakładaniem (zwykle wymaga ≥ ~6 inlierów po RANSAC i overlapu rzędu 25%). Jeżeli graf nie jest spójny — np. zdjęcia 1–3 nakładają się, ale zdjęcie 4 i 5 są z innego rogu balkonu i nie mają wspólnych cech z resztą — pipeline rezygnuje i zwraca dokładnie `ERR_NEED_MORE_IMGS`. Naprawa: dodać klatkę pomostową albo zmniejszyć obrót między ujęciami; obniżenie progów wewnątrz `Stitcher` (np. `setPanoConfidenceThresh(0.6)`) daje czasem efekt przy delikatnie ubogich nakładaniach.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d8d/classcv_1_1Stitcher.html",
+          "title": "cv::Stitcher — OpenCV API reference (status codes i tryby PANORAMA/SCANS)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-manual-stitch",
+      "title": "Piaskownica: ręczny stitch dwóch syntetycznych obrazów",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# --- Wygeneruj dwa syntetyczne obrazy z czytelna siatka ---\ndef make_grid_image(color_bgr, label):\n    img = np.full((200, 300, 3), color_bgr, dtype=np.uint8)\n    for x in range(0, 300, 50):\n        cv2.line(img, (x, 0), (x, 199), (255, 255, 255), 1)\n    for y in range(0, 200, 50):\n        cv2.line(img, (0, y), (299, y), (255, 255, 255), 1)\n    cv2.putText(img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)\n    return img\n\nimg1 = make_grid_image((40, 40, 200), '1')   # czerwone tlo\nimg2 = make_grid_image((200, 80, 40), '2')   # niebieskie tlo\n\n# --- Zalozmy 'znana' homografie miedzy nimi ---\n# Wariant A: czysta translacja w prawo o 200 px (wlasciwie afiniczna).\nH_2to1 = np.array([[1.0, 0.0, 200.0],\n                   [0.0, 1.0,   0.0],\n                   [0.0, 0.0,   1.0]], dtype=np.float64)\n\n# --- Krok 1: rozmiar kanwy + offset translacji (jak w cwiczeniu) ---\ndef compute_canvas_for_pair(H, w1, h1, w2, h2):\n    H = np.asarray(H, dtype=np.float64)\n    c2 = np.array([[0.0, float(w2), float(w2), 0.0],\n                   [0.0, 0.0,       float(h2), float(h2)],\n                   [1.0, 1.0,       1.0,       1.0]])\n    proj = H @ c2\n    pxy = proj[:2] / proj[2:3]\n    xs = np.concatenate([np.array([0.0, float(w1), float(w1), 0.0]), pxy[0]])\n    ys = np.concatenate([np.array([0.0, 0.0,       float(h1), float(h1)]), pxy[1]])\n    x_min, x_max = float(xs.min()), float(xs.max())\n    y_min, y_max = float(ys.min()), float(ys.max())\n    W = int(np.ceil(x_max - x_min))\n    H_out = int(np.ceil(y_max - y_min))\n    T = np.array([[1.0, 0.0, -x_min],\n                  [0.0, 1.0, -y_min],\n                  [0.0, 0.0,  1.0]], dtype=np.float64)\n    return W, H_out, T\n\nh1_, w1_ = img1.shape[:2]\nh2_, w2_ = img2.shape[:2]\nW, H_out, T = compute_canvas_for_pair(H_2to1, w1_, h1_, w2_, h2_)\nprint(f'Kanwa: {W} x {H_out}')\nprint(f'T =\\n{T}')\n\n# --- Krok 2: warpuj oba obrazy do tej samej kanwy ---\nwarp1 = cv2.warpPerspective(img1, T,             (W, H_out))\nwarp2 = cv2.warpPerspective(img2, T @ H_2to1,    (W, H_out))\n\n# --- Krok 3: naiwny blender - srednia w obszarze nakladajacym sie ---\nmask1 = (warp1.sum(axis=2, keepdims=True) > 0).astype(np.float32)\nmask2 = (warp2.sum(axis=2, keepdims=True) > 0).astype(np.float32)\noverlap = ((mask1 * mask2) > 0).squeeze(-1)\npano = warp1.astype(np.float32) + warp2.astype(np.float32)\npano[overlap] *= 0.5\npano = np.clip(pano, 0, 255).astype(np.uint8)\nprint(f'panorama.shape = {pano.shape}, piksele nakladania: {int(overlap.sum())}')\n\n# Zabaw sie:\n#   * Zmien H_2to1[0, 2] na 150, 250, 350. Co dzieje sie z W i z liczba pikseli nakladania?\n#   * Wprowadz ujemny offset H_2to1[0, 2] = -80. Czy T zaczyna miec niezerowy element [0, 2]?\n#   * Wprowadz skos H_2to1[0, 1] = 0.1 - czy kanwa rosnie tez w pionie?\n#   * Zaszum H_2to1[2, 0] = 0.0008 (perspektywa) i obejrzyj proj_xy.\n",
+        "encouragement": "Sprawdź, jak rozmiar kanwy reaguje na translację, skos i wreszcie pełną perspektywę — to jest dokładnie ten sam rachunek, który `cv2.Stitcher` wykonuje wewnątrz dla każdego obrazu z kolekcji."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1007/s11263-006-0002-3",
+      "title": "Brown, M. and Lowe, D. G. — Automatic Panoramic Image Stitching using Invariant Features (IJCV 2007)",
+      "kind": "paper",
+      "author": "Matthew Brown and David G. Lowe",
+      "year": 2007
+    },
+    {
+      "url": "https://doi.org/10.1561/0600000009",
+      "title": "Szeliski, R. — Image Alignment and Stitching: A Tutorial (Foundations and Trends in CGV, 2006)",
+      "kind": "paper",
+      "author": "Richard Szeliski",
+      "year": 2006
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d1/d46/group__stitching.html",
+      "title": "OpenCV — Stitching pipeline overview",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d8d/classcv_1_1Stitcher.html",
+      "title": "cv::Stitcher — OpenCV API reference (PANORAMA/SCANS, status codes)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Image_stitching",
+      "title": "Image stitching — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

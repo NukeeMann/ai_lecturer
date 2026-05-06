@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "slug": "przestrzenie-barw-bgr-hsv-lab-gray",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Przestrzenie barw: BGR, HSV, LAB, Gray",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "Cztery układy współrzędnych dla tego samego piksela — i czemu wybór jednego z nich często decyduje o tym, czy maska, próg albo CLAHE w ogóle zadziałają.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "bgr-i-gray",
+      "title": "BGR i skala szarości — domyślne ustawienia OpenCV",
+      "type": "theory",
+      "data": {
+        "markdown": "Ten sam piksel można zapisać w wielu układach współrzędnych — a wybór układu często decyduje o tym, czy filtr w ogóle zadziała. Zacznijmy od dwóch najprostszych.\n\n**BGR** to domyślny porządek kanałów dla każdej tablicy zwracanej przez `cv2.imread`: pierwsza warstwa to *blue*, druga *green*, trzecia *red*. Jest to dziedzictwo bibliotek z lat 90. (DirectShow, BMP), które zachowano dla zgodności wstecznej. **Wszystkie** funkcje OpenCV (`split`, `merge`, `cvtColor`, `inRange`, `imwrite`) zakładają tę kolejność. Konwersja na RGB pod `matplotlib.pyplot.imshow` to jedna linijka:\n\n```python\nimg_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)\n```\n\n![Sześcian kolorów RGB — trójwymiarowa kostka, w której każda oś (czerwony, zielony, niebieski) reprezentuje natężenie jednego kanału w zakresie 0–1; pozycja BGR vs RGB to po prostu inna kolejność tych samych trzech osi przy zapisie do tablicy](https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/RGB_color_solid_cube.png/480px-RGB_color_solid_cube.png)\n\n*(Obraz: Wikimedia Commons, User:SharkD, CC BY-SA 3.0.)*\n\n**Skala szarości** redukuje 3 kanały do jednego, ważąc je zgodnie z czułością ludzkiego oka (formuła ITU-R BT.601):\n\n$$ Y = 0.299 \\cdot R + 0.587 \\cdot G + 0.114 \\cdot B $$\n\nZielony dominuje, bo nasza siatkówka ma najwięcej czopków typu M wrażliwych na ten zakres. W OpenCV: `gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)` (a **nie** `cv2.COLOR_RGB2GRAY` — bo dane są w BGR!). Większość algorytmów krawędzi (Canny, Sobel) i progowania (Otsu, adaptive) operuje właśnie na obrazie szarym — jeden kanał wystarczy, gdy szukamy struktury, a nie barwy."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html",
+          "title": "OpenCV Python tutorial — Changing colorspaces",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "hsv-i-lab",
+      "title": "HSV i LAB — kiedy BGR i Gray to za mało",
+      "type": "theory",
+      "data": {
+        "markdown": "**HSV** rozkłada kolor na trzy intuicyjne osie — *Hue* (odcień), *Saturation* (nasycenie), *Value* (jasność). *Hue* to kąt wokół osi (0° = czerwony, 120° = zielony, 240° = niebieski; **uwaga**: w OpenCV przy `uint8` kąt jest skalowany do 0–179, żeby zmieścił się w jednym bajcie!), *Saturation* mówi, jak \"czysty\" jest kolor (0 = szary, 1 = pełne nasycenie), *Value* — jak jasny (0 = czarny, 1 = biały).\n\nDla wartości w $[0, 1]$ konwersja BGR → HSV ma postać:\n\n$$ V = \\max(R, G, B), \\qquad S = \\begin{cases} (V - m) / V & V > 0 \\\\ 0 & V = 0 \\end{cases} $$\n\ngdzie $m = \\min(R, G, B)$, a $H$ wyznaczamy z różnic kanałów względem tego, który osiągnął maksimum.\n\n![Cylinder HSV — bryła, której oś pionowa to V (od czarnego u dołu do białego u góry), promień to S (od szarego w środku do nasyconego na obwodzie), a kąt to H (czerwony 0°, żółty 60°, zielony 120°, cyjan 180°, niebieski 240°, magenta 300°)](https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/HSV_color_solid_cylinder.png/480px-HSV_color_solid_cylinder.png)\n\n*(Obraz: Wikimedia Commons, User:SharkD, CC BY-SA 3.0.)*\n\nHSV króluje przy **segmentacji po kolorze**: maska \"wszystko, co czerwone\" w BGR oznaczałaby skomplikowaną nierówność trzech kanałów, a w HSV wystarczy `cv2.inRange(hsv, (0, 100, 50), (10, 255, 255))` — plus drugi przedział (170°–179°), bo czerwień przeskakuje przez 0°/360°.\n\n**LAB** (właściwie CIE L\\*a\\*b\\*) to przestrzeń **percepcyjnie jednolita**: różnica euklidesowa $\\Delta E = \\sqrt{\\Delta L^2 + \\Delta a^2 + \\Delta b^2}$ odpowiada w przybliżeniu różnicy, jaką zobaczy oko. *L\\** to jasność (0–100), *a\\** — oś zielony↔czerwony, *b\\** — oś niebieski↔żółty. Stosujemy ją tam, gdzie liczy się porównanie kolorów: kalibracja monitorów, druk, oraz w OpenCV przy CLAHE w kanale `L` (poprawia kontrast bez przesuwania barwy — czego globalne `equalizeHist` na BGR nie potrafi)."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/HSL_and_HSV",
+          "title": "HSL and HSV — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/CIELAB_color_space",
+          "title": "CIELAB color space — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "match-przestrzen-do-zadania",
+      "title": "Dopasuj przestrzeń barw do zadania",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każda z czterech przestrzeni barw ma swoją niszę. Dopasuj nazwę do zadania, do którego nadaje się najlepiej.",
+        "items": [
+          { "id": "i-bgr", "label": "BGR" },
+          { "id": "i-gray", "label": "Skala szarości" },
+          { "id": "i-hsv", "label": "HSV" },
+          { "id": "i-lab", "label": "LAB" }
+        ],
+        "zones": [
+          { "id": "z-input", "label": "Domyślny format wyjściowy cv2.imread; każda funkcja OpenCV (split, merge, inRange, imwrite) zakłada właśnie tę kolejność kanałów.", "accepts": ["i-bgr"] },
+          { "id": "z-edges", "label": "Detekcja krawędzi (Canny, Sobel) i globalne progowanie (Otsu) — wystarczy jeden kanał luminancji, kolor tylko by zaszumiał.", "accepts": ["i-gray"] },
+          { "id": "z-color-mask", "label": "Segmentacja obiektu po kolorze (maska piłki, znaku drogowego, skóry) — chcemy oddzielić odcień od jasności.", "accepts": ["i-hsv"] },
+          { "id": "z-perceptual", "label": "Pomiar percepcyjnej różnicy kolorów ΔE oraz CLAHE bez przesuwania barwy — operujemy na kanale jasności L i nie ruszamy a/b.", "accepts": ["i-lab"] }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "BGR jest tylko 'kontenerem' wymuszonym przez API — w nim niczego nie segmentujemy ani nie liczymy odległości percepcyjnych. Skala szarości ścina kolor, ale daje czysty kanał jasności pod krawędzie i progowanie. HSV oddziela odcień od jasności, więc jedna nierówność na H wystarcza pod maskę koloru (z drobnym haczykiem przy czerwieni, która przeskakuje przez 0°). LAB jest 'matematycznie zgodne' z postrzeganiem — dlatego trafia do kalibracji druku, monitorów i do CLAHE w kanale L."
+      }
+    },
+    {
+      "id": "exercise-rgb-to-hsv",
+      "title": "Implementacja: RGB → HSV bez cv2",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `rgb_to_hsv(r, g, b)` przyjmującą trzy wartości w $[0, 1]$ i zwracającą krotkę `(h, s, v)`, gdzie wszystkie trzy są w $[0, 1]$. Skala odcienia jest tu znormalizowana do $[0, 1]$ (a nie do $[0°, 360°]$ ani do $[0, 180]$ z OpenCV) — żebyś musiał/a dotknąć samej geometrii konwersji, a nie konwencji jednostek.\n\nFormuła:\n\n- $V = \\max(R, G, B)$\n- $S = (V - m) / V$ jeśli $V > 0$, w przeciwnym razie $S = 0$, gdzie $m = \\min(R, G, B)$\n- $H$ zależy od tego, który kanał osiąga maksimum (zob. komentarze w starterze).\n\nPrzykład:\n\n```\nrgb_to_hsv(1.0, 0.0, 0.0)  ->  (0.0, 1.0, 1.0)        # czerwony\nrgb_to_hsv(0.0, 1.0, 0.0)  ->  (1/3, 1.0, 1.0)        # zielony\nrgb_to_hsv(0.5, 0.5, 0.5)  ->  (0.0, 0.0, 0.5)        # szary\n```\n\nNie używaj `cv2` — wystarczą zwykłe operatory pythonowe.",
+        "starterCode": "def rgb_to_hsv(r, g, b):\n    \"\"\"Zamień (r, g, b) z [0, 1] na (h, s, v) z [0, 1].\n\n    Krok po kroku:\n      1. v = max(r, g, b)\n      2. delta = v - min(r, g, b)\n      3. s = delta / v jeśli v > 0, w przeciwnym razie 0\n      4. h zależy od tego, który kanał jest maksymalny:\n           - jeśli max == r:  h = ((g - b) / delta) % 6\n           - jeśli max == g:  h = (b - r) / delta + 2\n           - jeśli max == b:  h = (r - g) / delta + 4\n         Wynik dzielimy przez 6, żeby h trafiło do [0, 1].\n         Dla obrazu szarego (delta == 0) przyjmujemy h = 0.\n\n    Zwróć krotkę (h, s, v).\n    \"\"\"\n    # TODO: oblicz v, s, h zgodnie z opisem powyżej i zwróć (h, s, v)\n    return (0.0, 0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "red_is_pure_hue_zero",
+            "body": "import math\nh, s, v = rgb_to_hsv(1.0, 0.0, 0.0)\nassert math.isclose(h, 0.0, abs_tol=1e-9), f'h={h}, oczekiwano 0.0 dla czystej czerwieni'\nassert math.isclose(s, 1.0, abs_tol=1e-9), f's={s}, oczekiwano 1.0'\nassert math.isclose(v, 1.0, abs_tol=1e-9), f'v={v}, oczekiwano 1.0'",
+            "hidden": false
+          },
+          {
+            "name": "green_hue_is_one_third",
+            "body": "import math\nh, s, v = rgb_to_hsv(0.0, 1.0, 0.0)\nassert math.isclose(h, 1.0 / 3.0, abs_tol=1e-9), f'h={h}, oczekiwano 1/3 (zielony)'\nassert math.isclose(s, 1.0, abs_tol=1e-9)\nassert math.isclose(v, 1.0, abs_tol=1e-9)"
+          },
+          {
+            "name": "gray_has_zero_saturation",
+            "body": "h, s, v = rgb_to_hsv(0.5, 0.5, 0.5)\nassert s == 0.0, f's={s}, dla szarego oczekiwano 0 (brak nasycenia)'\nassert v == 0.5, f'v={v}, oczekiwano 0.5'"
+          },
+          {
+            "name": "black_has_zero_value_and_saturation",
+            "body": "h, s, v = rgb_to_hsv(0.0, 0.0, 0.0)\nassert v == 0.0, f'v={v}, dla czerni oczekiwano 0'\nassert s == 0.0, f's={s}, dla czerni saturation jest niezdefiniowane — przyjmujemy 0'"
+          }
+        ],
+        "solution": "def rgb_to_hsv(r, g, b):\n    mx = max(r, g, b)\n    mn = min(r, g, b)\n    v = mx\n    delta = mx - mn\n    s = 0.0 if v == 0 else delta / v\n    if delta == 0:\n        h = 0.0\n    elif mx == r:\n        h = ((g - b) / delta) % 6\n    elif mx == g:\n        h = (b - r) / delta + 2\n    else:\n        h = (r - g) / delta + 4\n    h /= 6.0\n    if h < 0:\n        h += 1.0\n    return (h, s, v)\n"
+      }
+    },
+    {
+      "id": "quiz-bgr-vs-rgb",
+      "title": "Sprawdź się: imread + plt.imshow bez konwersji",
+      "type": "quiz",
+      "data": {
+        "question": "Wczytujesz obraz: `img = cv2.imread('foto.jpg')` i wyświetlasz go bez żadnej konwersji przez `plt.imshow(img); plt.show()`. Co zobaczysz?",
+        "options": [
+          "Idealnie te same kolory co oryginał — OpenCV i matplotlib trzymają piksele w tej samej konwencji RGB.",
+          "Sino-niebieskie skóry, czerwone niebo i zielonkawą zieleń przesuniętą w stronę purpury — bo `imread` zwraca BGR, a matplotlib oczekuje RGB; trzeba poprzedzić `cv2.cvtColor(img, cv2.COLOR_BGR2RGB)`.",
+          "Czarny ekran — `plt.imshow` w ogóle nie obsługuje 3-kanałowych tablic z OpenCV.",
+          "Negatyw oryginału — jeden z kanałów został odjęty od 255."
+        ],
+        "correct": [1],
+        "explanation": "Pierwsza warstwa tablicy zwróconej przez `cv2.imread` to *blue*, ostatnia to *red*. Matplotlib (i prawie cały świat poza OpenCV) zakłada porządek RGB, więc bez konwersji `COLOR_BGR2RGB` (albo prostej zamiany `img[..., ::-1]`) kanały R i B trafiają na nieswoje miejsca. Wszystko, co miało dominującą czerwień (skóra, ceglane mury, znaki STOP), wygląda na sino-niebieskie, a co miało niebieski (niebo, woda, dżinsy) — na czerwone. To jest klasyczna pułapka 'BGR vs RGB' — najczęstsza przyczyna 'dlaczego mój obraz wygląda dziwnie' u nowych użytkowników OpenCV.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-eksperyment-hsv",
+      "title": "Piaskownica: poczuj geometrię HSV",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Mała piaskownica do oswojenia HSV bez wczytywania prawdziwego obrazu.\n# Konwertujemy kilka wzorcowych kolorów RGB i drukujemy ich (h, s, v).\n# Kanał H jest tu w [0, 1] (a nie w stopniach ani w 0-179) — zob. zadanie powyżej.\n\ndef to_hsv(rgb):\n    r, g, b = rgb\n    mx, mn = max(r, g, b), min(r, g, b)\n    v = mx\n    delta = mx - mn\n    s = 0.0 if v == 0 else delta / v\n    if delta == 0:\n        h = 0.0\n    elif mx == r:\n        h = ((g - b) / delta) % 6\n    elif mx == g:\n        h = (b - r) / delta + 2\n    else:\n        h = (r - g) / delta + 4\n    return (h / 6, s, v)\n\nsamples = [\n    ('czerwony',     (1.0, 0.0, 0.0)),\n    ('zielony',      (0.0, 1.0, 0.0)),\n    ('niebieski',    (0.0, 0.0, 1.0)),\n    ('zolty',        (1.0, 1.0, 0.0)),\n    ('cyjan',        (0.0, 1.0, 1.0)),\n    ('szary 50%',    (0.5, 0.5, 0.5)),\n    ('mocno czerwonawy', (0.7, 0.2, 0.2)),\n    ('blady rozowy', (1.0, 0.85, 0.85)),\n]\n\nfor name, rgb in samples:\n    h, s, v = to_hsv(rgb)\n    print(f'{name:20s} RGB={rgb}  ->  H={h:.3f}  S={s:.3f}  V={v:.3f}')\n\n# Pytania do siebie:\n#   * Jak zmienia się H, gdy idziesz po kolorach tęczy (czerwony -> zolty -> zielony -> cyjan -> niebieski)?\n#   * Co dzieje się z S, gdy kolor 'blednie' w stronę szarości (porownaj 'czerwony' i 'blady rozowy')?\n#   * Jaką wartość ma H dla pikseli neutralnych (szarych)? Czemu tak jest?\n",
+        "encouragement": "Modyfikuj wartości RGB i sprawdź, czy potrafisz przewidzieć H, zanim Python ci je wyświetli."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/HSL_and_HSV",
+      "title": "HSL and HSV — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/CIELAB_color_space",
+      "title": "CIELAB color space — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html",
+      "title": "OpenCV Python tutorial — Changing colorspaces",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 2.3 The digital camera (color and color spaces)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 6 (Color Image Processing)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

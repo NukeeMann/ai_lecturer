@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "slug": "convex-hull-i-defekty",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Convex hull i defekty",
+  "eyebrow": "KRAWĘDZIE I KONTURY",
+  "description": "Otoczka wypukła konturu jako gumka recepturka naciągnięta wokół wszystkich punktów, dwie role flagi `returnPoints` w `cv2.convexHull` oraz czwórka `(s, e, f, d)` zwracana przez `cv2.convexityDefects` z głębokością `d` zapisaną w stałej arytmetyce `d / 256` piksela. Pokazujemy, jak filtrowanie defektów po progu głębokości daje stabilną cechę kształtu — od *solidity* do liczby palców na sylwetce dłoni.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "definicja-otoczki",
+      "title": "Otoczka wypukła — definicja i intuicja",
+      "type": "theory",
+      "data": {
+        "markdown": "**Otoczka wypukła** zbioru punktów to najmniejszy zbiór wypukły, który zawiera wszystkie te punkty. Najczystsza intuicja: wbij rozsypane pinezki w deskę, naciągnij dookoła gumkę recepturkę i puść — gumka obejmie wszystkie pinezki i przylgnie do tych, które leżą najbardziej zewnętrznie.\n\n![Animacja: kropki rozsypane na płaszczyźnie zostają obciągnięte przez kurczącą się gumkę recepturkę, która ostatecznie układa się wzdłuż wielokąta opisującego skrajne punkty zbioru — to właśnie jego otoczka wypukła](https://upload.wikimedia.org/wikipedia/commons/d/de/Convex_hull_of_a_bounded_planar_set.gif)\n\n*(Animacja: Wikimedia Commons, domena publiczna.)*\n\nDla **konturu** obiektu zwróconego przez `cv2.findContours` otoczka pokrywa się z konturem dla figur wypukłych (koło, kwadrat, wypukły wielokąt) i odbiega od niego dla wklęsłych (dłoń z rozłożonymi palcami, gwiazda, litera „C\"). Stosunek pól\n\n$$ \\sigma \\;=\\; \\frac{A_{\\text{contour}}}{A_{\\text{hull}}} $$\n\nnazywamy *solidity* — dla figur wypukłych $\\sigma = 1$, dla rozgałęzionych $\\sigma \\to 0$. Solidity razem z **liczbą i głębokością defektów wypukłości** (różnic między konturem a otoczką) to kanoniczne cechy do odróżniania kształtów „gładkich\" od „rozczepionych\" — i właśnie z tej idei korzysta klasyczna detekcja gestów dłoni."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Convex_hull",
+          "title": "Convex hull — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "convexhull-api",
+      "title": "`cv2.convexHull` i algorytm Sklansky'ego",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV liczy otoczkę algorytmem **Sklansky'ego (1982)**, zoptymalizowanym dla *prostych wielokątów* — czyli zamkniętych konturów bez samoprzecięć, dokładnie tych, które zwraca `findContours`. Złożoność jest liniowa względem liczby punktów wejścia.\n\nWywołanie ma dwa istotne tryby sterowane flagą `returnPoints`:\n\n```python\nhull_pts = cv2.convexHull(contour)                       # domyślnie returnPoints=True\nhull_idx = cv2.convexHull(contour, returnPoints=False)   # tylko indeksy do contour\n```\n\nW pierwszym trybie `hull_pts` jest gotową, krótszą listą wierzchołków otoczki — można ją od razu narysować przez `cv2.drawContours(img, [hull_pts], -1, (0, 255, 0), 2)`. W drugim trybie zwracane są **indeksy** punktów wejściowego konturu: `contour[hull_idx[i, 0]]` to i-ty wierzchołek otoczki. Ten drugi format jest **wymagany** przez `cv2.convexityDefects`, które musi wiedzieć, z których fragmentów oryginalnego konturu pochodzą końce krawędzi otoczki — bez tego nie potrafiłoby zlokalizować defektu pomiędzy nimi."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1016/0167-8655(82)90016-2",
+          "title": "Sklansky, J. — Finding the convex hull of a simple polygon (Pattern Recognition Letters, 1982)",
+          "kind": "paper",
+          "author": "Jack Sklansky",
+          "year": 1982
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d5/d45/tutorial_py_contours_more_functions.html",
+          "title": "OpenCV Python tutorial — More functions on contours (convex hull, defects)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "convexity-defects",
+      "title": "Defekty wypukłości i `cv2.convexityDefects`",
+      "type": "theory",
+      "data": {
+        "markdown": "Każdej krawędzi otoczki odpowiada **fragment oryginalnego konturu**: para wierzchołków otoczki na końcach plus wszystkie punkty konturu pomiędzy nimi. Jeżeli ten fragment odchyla się **do wewnątrz** otoczki, powstaje **defekt wypukłości** — trójkąt rozpięty między cięciwą otoczki a najgłębszym punktem konturu na tym odcinku.\n\n`cv2.convexityDefects(contour, hull_idx)` zwraca tablicę kształtu $(N, 1, 4)$, w której każdy wiersz to czwórka $(s,\\, e,\\, f,\\, d)$:\n\n- $s$ — indeks **początku** krawędzi otoczki w `contour`,\n- $e$ — indeks **końca** krawędzi otoczki w `contour`,\n- $f$ — indeks **najgłębszego** (najbardziej oddalonego od cięciwy) punktu konturu na tym odcinku,\n- $d$ — głębokość zapisana w **stałej arytmetyce**: rzeczywista głębokość w pikselach to $d / 256$.\n\nFiltrowanie defektów po progu (np. $d/256 > 15$ pikseli) jest standardowym krokiem detekcji liczby palców na sylwetce dłoni: rozłożone palce dają zwykle 4 głębokie defekty pomiędzy 5 paliczkami. Płytkie, kilkupikselowe defekty są efektem zaszumionej maski binarnej i powinny zostać odrzucone — inaczej każda mikroskopijna nierówność konturu wygenerowałaby fałszywy „palec\"."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d5/d45/tutorial_py_contours_more_functions.html",
+          "title": "OpenCV Python tutorial — More functions on contours (convex hull, defects)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "filter-defects",
+      "title": "Implementacja: filtrowanie istotnych defektów",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `count_significant_defects(defects, depth_threshold)`, która zlicza defekty wypukłości o **rzeczywistej** głębokości większej niż próg.\n\n- `defects` jest listą krotek `(s, e, f, d)` — dokładnie tym, co zwraca `cv2.convexityDefects` po spłaszczeniu osi 1 (`for s, e, f, d in defects[:, 0]`).\n- Pole `d` jest zapisane w **stałej arytmetyce**: rzeczywista głębokość w pikselach to `d / 256`.\n- `depth_threshold` jest progiem w **pikselach** (już w jednostkach rzeczywistych — bez mnożenia przez 256).\n\nFunkcja zwraca liczbę defektów spełniających warunek `d / 256 > depth_threshold` (ostra nierówność).\n\nPrzykład:\n\n```\ncount_significant_defects([(0, 5, 3, 4096), (5, 10, 7, 1024)], depth_threshold=10)\n# -> 1   bo 4096/256 = 16 > 10, a 1024/256 = 4, czyli nie\n```",
+        "starterCode": "def count_significant_defects(defects, depth_threshold):\n    \"\"\"Zlicza defekty wypuklosci o rzeczywistej glebokosci d/256 > depth_threshold.\n\n    defects: lista krotek (s, e, f, d) — taka, jaka zwraca cv2.convexityDefects\n        po splaszczeniu osi 1. d jest w stalej arytmetyce: rzeczywista\n        glebokosc w pikselach = d / 256.\n    depth_threshold: prog w pikselach (w jednostkach rzeczywistych).\n    \"\"\"\n    # TODO: zaimplementuj zliczanie. Pamietaj, ze d trzeba przeskalowac przez 256.\n    return 0\n",
+        "tests": [
+          {
+            "name": "fingertip_example_returns_1",
+            "body": "result = count_significant_defects([(0, 5, 3, 4096), (5, 10, 7, 1024)], depth_threshold=10)\nassert result == 1, f'oczekiwano 1, otrzymano {result}'",
+            "hidden": false
+          },
+          {
+            "name": "empty_list_returns_0",
+            "body": "assert count_significant_defects([], depth_threshold=5) == 0"
+          },
+          {
+            "name": "all_below_threshold_returns_0",
+            "body": "defects = [(0, 1, 2, 100), (1, 2, 3, 200), (2, 3, 4, 50)]\nassert count_significant_defects(defects, depth_threshold=2) == 0"
+          },
+          {
+            "name": "uses_strict_greater_not_equal",
+            "body": "assert count_significant_defects([(0, 1, 2, 256)], depth_threshold=1) == 0\nassert count_significant_defects([(0, 1, 2, 257)], depth_threshold=1) == 1"
+          },
+          {
+            "name": "counts_multiple_above_threshold",
+            "body": "defects = [(0, 1, 2, 5120), (1, 2, 3, 2560), (2, 3, 4, 100), (3, 4, 5, 7680)]\nassert count_significant_defects(defects, depth_threshold=8) == 3"
+          }
+        ],
+        "solution": "def count_significant_defects(defects, depth_threshold):\n    count = 0\n    for s, e, f, d in defects:\n        if d / 256 > depth_threshold:\n            count += 1\n    return count\n"
+      }
+    },
+    {
+      "id": "quiz-defects-format",
+      "title": "Sprawdź się: format wyniku `convexityDefects`",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `defects = cv2.convexityDefects(contour, hull_idx)` i bierzesz pojedynczą czwórkę `(s, e, f, d)` z wyniku. Co opisuje pole `d` i w jakich jednostkach jest wyrażone?",
+        "options": [
+          "Liczba punktów konturu pomiędzy `s` a `e` — czyli ile próbek konturu „odpada\" od cięciwy otoczki na tym fragmencie.",
+          "Bezwzględna głębokość w pikselach (typu `float`) — odległość prostopadła punktu `contour[f]` od cięciwy łączącej `contour[s]` i `contour[e]`.",
+          "Głębokość w **stałej arytmetyce**: rzeczywista głębokość w pikselach to `d / 256`. Cięciwą jest krawędź otoczki od `contour[s]` do `contour[e]`, a najgłębszym punktem konturu jest `contour[f]`.",
+          "Iloczyn wektorowy boków otoczki — jego znak mówi, czy defekt znajduje się po wewnętrznej, czy zewnętrznej stronie otoczki."
+        ],
+        "correct": [2],
+        "explanation": "OpenCV zwraca głębokość defektu w stałej arytmetyce, mnożąc rzeczywistą wartość w pikselach przez 256 i zaokrąglając do `int`. Stąd typowe progi w kodzie wyglądają tak: `if d / 256.0 > 10.0:` — pominięcie skali 256 daje wartości 256× za duże i odrzucenie wszystkich defektów. Pola `s` i `e` to indeksy końców krawędzi otoczki w `contour`, a `f` to indeks najgłębszego punktu konturu między nimi (nie liczba punktów). Iloczyn wektorowy w wyniku nie występuje — `convexityDefects` nie zwraca informacji o orientacji.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d5/d45/tutorial_py_contours_more_functions.html",
+          "title": "OpenCV Python tutorial — More functions on contours (convex hull, defects)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-hull",
+      "title": "Eksperymentuj: otoczka wypukła wielokąta",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Otoczka wypukla wielokata — algorytm Andrew's monotone chain.\n# Ten sam wynik (z dokladnoscia do orientacji) zwraca cv2.convexHull dla zamknietego konturu.\n\ndef convex_hull(points):\n    pts = sorted(set(points))\n    if len(pts) <= 1:\n        return list(pts)\n\n    def cross(o, a, b):\n        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])\n\n    lower = []\n    for p in pts:\n        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:\n            lower.pop()\n        lower.append(p)\n\n    upper = []\n    for p in reversed(pts):\n        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:\n            upper.pop()\n        upper.append(p)\n\n    return lower[:-1] + upper[:-1]\n\n\ndef polygon_area(poly):\n    n = len(poly)\n    a = 0.0\n    for i in range(n):\n        x1, y1 = poly[i]\n        x2, y2 = poly[(i + 1) % n]\n        a += x1 * y2 - x2 * y1\n    return abs(a) / 2.0\n\n\n# Sztuczna 'gwiazda' — pieciu palcom konturu odpowiadaja cztery defekty wypuklosci\n# (5 wierzcholkow zewnetrznych otoczki, 5 wciec konturu w srodku).\nstar = [\n    (0, 5), (1, 1), (5, 1), (2, -1), (3, -5),\n    (0, -2), (-3, -5), (-2, -1), (-5, 1), (-1, 1),\n]\n\nhull = convex_hull(star)\nA_contour = polygon_area(star)\nA_hull = polygon_area(hull)\n\nprint('liczba wierzcholkow konturu:', len(star))\nprint('liczba wierzcholkow otoczki:', len(hull))\nprint('pole konturu (gwiazda):', round(A_contour, 2))\nprint('pole otoczki:           ', round(A_hull, 2))\nprint('solidity (A_contour / A_hull):', round(A_contour / A_hull, 3))\n\n# Sprobuj:\n# 1) Zamien 'star' na zwykly kwadrat: [(0, 0), (4, 0), (4, 4), (0, 4)] — ile wynosi solidity?\n# 2) Skalowanie nie zmienia solidity; przemnoz wszystkie wspolrzedne przez 10 i sprawdz.\n# 3) 'Wciagnij' jeden palec gwiazdy blizej srodka — zobacz, jak rosnie solidity\n#    i jak zmienialaby sie liczba defektow zwracana przez cv2.convexityDefects.\n",
+        "encouragement": "Pobaw się kształtami — od kwadratu po dłoń z palcami — i zobacz, jak solidity oraz liczba defektów reagują na każde wcięcie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Convex_hull",
+      "title": "Convex hull — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d5/d45/tutorial_py_contours_more_functions.html",
+      "title": "OpenCV Python tutorial — More functions on contours (convex hull, defects)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1016/0167-8655(82)90016-2",
+      "title": "Sklansky, J. — Finding the convex hull of a simple polygon (Pattern Recognition Letters, 1982)",
+      "kind": "paper",
+      "author": "Jack Sklansky",
+      "year": 1982
+    }
+  ]
+}

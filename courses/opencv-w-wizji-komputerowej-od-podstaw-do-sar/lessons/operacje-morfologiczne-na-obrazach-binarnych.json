@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "slug": "operacje-morfologiczne-na-obrazach-binarnych",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Operacje morfologiczne na obrazach binarnych",
+  "eyebrow": "FILTRACJA",
+  "description": "Erozja, dylacja, otwarcie i zamknięcie — cztery operacje teorio-mnogościowe na masce binarnej, sterowane jednym strukturalnym elementem, które czyszczą szum, zatykają dziury i regulują rozmiar obiektów po progowaniu.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "intuicja-i-strukturalny-element",
+      "title": "Po co morfologia: SE i lokalne pytanie zbiorowe",
+      "type": "theory",
+      "data": {
+        "markdown": "Po Otsu i progowaniu adaptacyjnym mamy gotową maskę binarną — prostokąty, kontury, plamy. Rzadko jest ona „idealna”: pojedyncze białe punkty z szumu siedzą poza obiektami (*salt*), drobne dziury 2×2 piksele dziurawią środek litery, a krawędzie postrzępione przez progowanie wyglądają jak schody. Klasyczne filtry liniowe (Gauss, średni) tu nie pomagają — uśredniają one **intensywności**, a po ponownym progowaniu znów dostajemy 0 lub 255 i ten sam problem wraca.\n\n**Morfologia matematyczna** (Matheron 1975, Serra 1982) pracuje inaczej: traktuje białą część maski jako *zbiór punktów* w 2D i przekształca go za pomocą drugiego, znacznie mniejszego zbioru — **strukturalnego elementu (SE)**. SE to mała matryca (3×3, 5×5, czasem krzyż albo dysk) opisująca *kształt sąsiedztwa*, którym „przesuwamy się” po masce, zadając w każdym pikselu lokalne pytanie zbiorowe: *czy cały SE mieści się w białej części?* (erozja), *czy chociaż jeden punkt SE trafia w biel?* (dylacja).\n\n![Schematyczna ilustracja erozji z oficjalnej dokumentacji OpenCV: czarno-biała maska binarna z literą „J” przed (po lewej) i po (po prawej) erozji prostokątnym strukturalnym elementem 3×3. Po erozji litera jest cieńsza we wszystkich kierunkach o jeden piksel, drobne wystające elementy znikają, a izolowane „salt” piksele tła zostały zlikwidowane.](https://docs.opencv.org/4.x/Morphology_1_Tutorial_Theory_Erosion.png)\n\n*(Źródło: dokumentacja OpenCV — tutorial *Eroding and Dilating*.)*\n\nCztery podstawowe operacje, z których pierwsze dwie są atomami, a kolejne dwie złożeniem: **erozja** kurczy biel i niszczy cienkie struktury, **dylacja** rozszerza biel i zalewa drobne wnęki, **otwarcie** (erozja → dylacja) usuwa drobne wystające elementy bez zmiany rozmiaru dużych obiektów, a **zamknięcie** (dylacja → erozja) zatyka małe dziury wewnątrz obiektów. Wszystkie cztery są w OpenCV jednym wywołaniem `cv2.morphologyEx` — z jednym SE jako jedyną pokrętką."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+          "title": "Mathematical morphology — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "definicje-i-api-opencv",
+      "title": "Cztery definicje, trzy własności, jedno API",
+      "type": "theory",
+      "data": {
+        "markdown": "Niech $A \\subseteq \\mathbb{Z}^2$ to zbiór białych pikseli maski (umawiamy się, że 255 oznacza „należy do $A$”, a 0 — „nie należy”), a $B \\subseteq \\mathbb{Z}^2$ to strukturalny element zdefiniowany jako zbiór offsetów względem swojego środka. **Erozja** $A$ przez $B$:\n\n$$ A \\ominus B \\;=\\; \\{\\, z \\in \\mathbb{Z}^2 \\;\\mid\\; B_z \\subseteq A \\,\\} $$\n\ngdzie $B_z = \\{\\, b + z \\mid b \\in B \\,\\}$ to SE przesunięty tak, by jego środek trafił w piksel $z$. Innymi słowy: $z$ pozostaje biały dopiero wtedy, gdy *cały* SE wpisany w $z$ mieści się w masce. **Dylacja** to operacja dualna:\n\n$$ A \\oplus B \\;=\\; \\{\\, z \\in \\mathbb{Z}^2 \\;\\mid\\; (\\hat B)_z \\cap A \\neq \\emptyset \\,\\} $$\n\ngdzie $\\hat B$ to odbicie SE; $z$ staje się biały, gdy *przynajmniej jeden* punkt SE trafia w maskę. **Otwarcie** i **zamknięcie** to złożenia:\n\n$$ A \\circ B \\;=\\; (A \\ominus B) \\oplus B \\qquad A \\bullet B \\;=\\; (A \\oplus B) \\ominus B $$\n\n![Schematyczna ilustracja dylacji z dokumentacji OpenCV: ta sama litera „J” przed (po lewej) i po (po prawej) dylacji prostokątnym strukturalnym elementem 3×3. Po dylacji kontur litery jest grubszy we wszystkich kierunkach o jeden piksel, a wąskie wnęki w jej wnętrzu zostały zalane bielą.](https://docs.opencv.org/4.x/Morphology_1_Tutorial_Theory_Dilation.png)\n\nTrzy własności warto zapamiętać. **Erozja i dylacja są dualne** względem dopełnienia: $\\overline{A \\ominus B} = \\overline A \\oplus \\hat B$ — erozja maski odpowiada dylacji jej tła. **Otwarcie i zamknięcie są idempotentne** — drugie wywołanie z tym samym SE niczego już nie zmienia, bo wynik jest już *strukturalnie wygładzony* przez SE. **Otwarcie i zamknięcie nie są wzajemnie odwrotne** — `open(close(A, B), B)` to *nie* to samo co $A$, a stosując po sobie różne SE buduje się tzw. filtr alternujący sekwencyjny.\n\nW OpenCV cztery linie wystarczą, by mieć całą rodzinę:\n\n```python\nkernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))\neroded  = cv2.erode(mask,  kernel, iterations=1)\ndilated = cv2.dilate(mask, kernel, iterations=1)\nopened  = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)\nclosed  = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)\n```\n\nTrzy najczęściej używane SE z `getStructuringElement`: `MORPH_RECT` (kwadrat — agresywne, równomierne), `MORPH_ELLIPSE` (dysk — łagodniejsze rogi, mniej „kanciaste” obrysy) i `MORPH_CROSS` (krzyż — preferuje pionowo-poziome struktury kosztem przekątnych). Uwaga na pułapkę: `cv2.erode(mask, kernel_3x3, iterations=2)` daje *inny* wynik niż jedna erozja kernelem 5×5 — dwukrotne SE 3×3 odpowiada efektywnie kernelowi 5×5 tylko w geometrii prostokąta, dla krzyża czy elipsy odbicie po rogach jest inne."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html",
+          "title": "OpenCV Python tutorial — Morphological transformations",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-operacji",
+      "title": "Sześć operacji `cv2.morphologyEx` w jednym miejscu",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "operacja", "label": "Operacja", "type": "string" },
+          { "key": "definicja", "label": "Definicja (po polsku)", "type": "string" },
+          { "key": "efekt", "label": "Co robi z maską binarną", "type": "string" },
+          { "key": "kiedy", "label": "Kiedy sięgnąć", "type": "string" }
+        ],
+        "rows": [
+          {
+            "operacja": "Erozja (cv2.erode lub MORPH_ERODE)",
+            "definicja": "Zachowaj biały piksel, gdy CAŁY strukturalny element leży w białym regionie.",
+            "efekt": "Kurczy białe regiony o ok. połowę boku SE; rozdziela słabo połączone obiekty; zabija pojedyncze „salt” piksele i pasma węższe niż SE.",
+            "kiedy": "Czyszczenie szumu salt, rozdzielanie sklejających się obiektów przed findContours, wyznaczanie pewnego pierwszego planu w Watershed."
+          },
+          {
+            "operacja": "Dylacja (cv2.dilate lub MORPH_DILATE)",
+            "definicja": "Zaznacz biały piksel, gdy CHOCIAŻ JEDEN punkt SE trafia w biel.",
+            "efekt": "Rozszerza białe regiony o ok. połowę boku SE; zalewa drobne dziury i wnęki; może zlać dwa pobliskie obiekty w jeden.",
+            "kiedy": "Zaznaczenie pewnego tła w Watershed, łączenie rozdzielonych fragmentów po Canny, „pogrubianie” cienkich konturów do wizualizacji."
+          },
+          {
+            "operacja": "Otwarcie (MORPH_OPEN)",
+            "definicja": "Erozja, a po niej dylacja tym samym SE.",
+            "efekt": "Usuwa drobne wystające elementy i izolowane białe punkty bez zmiany rozmiaru większych obiektów; jest idempotentne.",
+            "kiedy": "Kanoniczny pierwszy ruch po cv2.threshold — usuwa salt z maski binarnej, nie zniekształcając właściwych obiektów."
+          },
+          {
+            "operacja": "Zamknięcie (MORPH_CLOSE)",
+            "definicja": "Dylacja, a po niej erozja tym samym SE.",
+            "efekt": "Zatyka małe dziury i wąskie przerwy wewnątrz białych obiektów; zachowuje ich obrys; jest idempotentne.",
+            "kiedy": "Spinanie rozdzielonych fragmentów konturu po Canny, zamykanie dziur w masce dokumentu, rekonstrukcja brakujących pikseli wewnątrz obiektu."
+          },
+          {
+            "operacja": "Gradient (MORPH_GRADIENT)",
+            "definicja": "Różnica dylacji i erozji oryginału.",
+            "efekt": "Zwraca cienki obrys (krawędź) białych obiektów; szerokość obrysu odpowiada w przybliżeniu grubości SE.",
+            "kiedy": "Bardzo szybki ekstraktor konturów, gdy nie potrzebujesz pełnego Canny — wystarcza zarys białej regii."
+          },
+          {
+            "operacja": "Top-hat (MORPH_TOPHAT)",
+            "definicja": "Różnica oryginału i jego otwarcia: A − (A ∘ B).",
+            "efekt": "Wyciąga JASNE drobiny, które otwarcie usunęłoby: wszystko, co jest mniejsze od SE i jaśniejsze od lokalnego tła.",
+            "kiedy": "Detekcja drobnych jasnych obiektów na nierównomiernie oświetlonym tle — kropki/wady na płycie, gwiazdy, drobne refleksy."
+          },
+          {
+            "operacja": "Black-hat (MORPH_BLACKHAT)",
+            "definicja": "Różnica zamknięcia i oryginału: (A • B) − A.",
+            "efekt": "Wyciąga CIEMNE drobiny: wszystko mniejsze od SE i ciemniejsze od lokalnego tła.",
+            "kiedy": "Detekcja drobnych ciemnych obiektów na jasnym tle — rysy, dziurki w obudowie, drobny druk na opakowaniu."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-erozja-binarna-od-zera",
+      "title": "Zaimplementuj `erode_binary` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `erode_binary(mask, kernel)`, która zwróci **binarnie zerodowaną** maskę (`uint8`, wartości 0 lub 255) tej samej rozdzielczości co `mask`. Wymagania:\n\n1. `mask` to dwuwymiarowy `numpy.ndarray` typu `uint8` z wartościami 0 lub 255.\n2. `kernel` to dwuwymiarowy `numpy.ndarray` o nieparzystych bokach z wartościami 0 lub 1 — strukturalny element. Pozycje równe `1` definiują, które piksele sąsiedztwa muszą być białe; pozycje `0` są **ignorowane** (jak w `cv2.getStructuringElement(MORPH_CROSS, ...)`, gdzie rogi są zerami).\n3. Środek SE trafia w aktualny piksel: dla `kernel` o kształcie `(kh, kw)` środek to `(kh // 2, kw // 2)`.\n4. Brzegi obrazu obsłuż przez **dopełnienie zerami** (`np.pad(..., mode='constant', constant_values=0)`) — tak działa `cv2.erode` z domyślnym `BORDER_CONSTANT`.\n5. Reguła erozji: `out[i, j] = 255` wtedy i tylko wtedy, gdy dla **każdej** pozycji `(p, q)` w SE z `kernel[p, q] == 1` odpowiadający piksel oryginału (po dopełnieniu) ma wartość `255`. W przeciwnym razie `out[i, j] = 0`.\n\n**Nie używaj `cv2.erode`, `scipy.ndimage.binary_erosion` ani `skimage.morphology.erosion`** — celem jest zaimplementowanie definicji ręcznie, by zobaczyć, jak działa w środku.\n\n```\nmask = np.zeros((5, 5), dtype=np.uint8)\nmask[1:4, 1:4] = 255          # 3x3 biały kwadrat w środku\nkernel = np.ones((3, 3), dtype=np.uint8)\nerode_binary(mask, kernel)\n# -> macierz 5x5 zer, oprócz [2, 2] = 255\n```",
+        "starterCode": "import numpy as np\n\ndef erode_binary(mask, kernel):\n    # mask: numpy.ndarray 2D, dtype uint8, wartosci 0 lub 255\n    # kernel: numpy.ndarray 2D, wartosci 0 lub 1 (strukturalny element)\n    #\n    # Krok po kroku:\n    #   1. mask = np.asarray(mask); kernel = np.asarray(kernel)\n    #   2. kh, kw = kernel.shape; pad_h = kh // 2; pad_w = kw // 2\n    #   3. padded = np.pad(mask, ((pad_h, pad_h), (pad_w, pad_w)),\n    #                       mode='constant', constant_values=0)\n    #   4. Dla kazdego (i, j) w mask:\n    #        window = padded[i:i + kh, j:j + kw]\n    #        if (window[kernel != 0] == 255).all():\n    #            out[i, j] = 255\n    #        else:\n    #            out[i, j] = 0\n    #   5. Zwroc out jako numpy.ndarray dtype=uint8 o ksztalcie mask.shape.\n    mask = np.asarray(mask)\n    return np.zeros_like(mask, dtype=np.uint8)\n",
+        "tests": [
+          {
+            "name": "ksztalt_dtype_i_zbior_wartosci",
+            "body": "import numpy as np\nrng = np.random.default_rng(7)\nmask = (rng.integers(0, 2, size=(8, 12)) * 255).astype(np.uint8)\nkernel = np.ones((3, 3), dtype=np.uint8)\nout = erode_binary(mask, kernel)\nassert isinstance(out, np.ndarray), f'oczekiwano numpy.ndarray, jest {type(out).__name__}'\nassert out.shape == (8, 12), f'ksztalt {out.shape} != (8, 12)'\nassert out.dtype == np.uint8, f'dtype {out.dtype} != uint8'\nassert set(np.unique(out).tolist()).issubset({0, 255}), f'wynik zawiera wartosci spoza {{0, 255}}: {sorted(np.unique(out).tolist())}'",
+            "hidden": false
+          },
+          {
+            "name": "kwadrat_5x5_kernelem_3x3_kurczy_sie_do_3x3",
+            "body": "import numpy as np\nmask = np.zeros((7, 7), dtype=np.uint8)\nmask[1:6, 1:6] = 255\nkernel = np.ones((3, 3), dtype=np.uint8)\nout = erode_binary(mask, kernel)\nexpected = np.zeros((7, 7), dtype=np.uint8)\nexpected[2:5, 2:5] = 255\nassert (out == expected).all(), f'erozja 5x5 kwadratu kernelem 3x3 powinna dac 3x3 srodek; jest:\\n{out}'"
+          },
+          {
+            "name": "kernel_krzyz_ignoruje_pozycje_zerowe",
+            "body": "import numpy as np\nmask = np.array([\n    [0,   0,   0,   0,   0],\n    [0, 255,   0, 255,   0],\n    [0, 255, 255, 255,   0],\n    [0, 255,   0, 255,   0],\n    [0,   0,   0,   0,   0],\n], dtype=np.uint8)\nkernel = np.array([[0, 1, 0], [1, 1, 1], [0, 1, 0]], dtype=np.uint8)\nout = erode_binary(mask, kernel)\nassert out[2, 2] == 255, f'srodek (2,2) ma wszystkich 4 sasiadow + center = 255, kernel zeruje rogi -> oczekiwano 255, jest {out[2, 2]}'\nassert out[1, 1] == 0, f'(1,1) ma sasiada (1,2)=0 lezacego w pozycji kernel=1 -> oczekiwano 0, jest {out[1, 1]}'"
+          },
+          {
+            "name": "wiekszy_kernel_eroduje_silniej",
+            "body": "import numpy as np\nmask = np.zeros((11, 11), dtype=np.uint8)\nmask[2:9, 2:9] = 255\nout3 = erode_binary(mask, np.ones((3, 3), dtype=np.uint8))\nout5 = erode_binary(mask, np.ones((5, 5), dtype=np.uint8))\nassert int((out3 == 255).sum()) == 25, f'erozja 7x7 kernelem 3x3 -> 5x5=25 bialych; jest {(out3 == 255).sum()}'\nassert int((out5 == 255).sum()) == 9,  f'erozja 7x7 kernelem 5x5 -> 3x3=9 bialych; jest {(out5 == 255).sum()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef erode_binary(mask, kernel):\n    mask = np.asarray(mask)\n    kernel = np.asarray(kernel)\n    kh, kw = kernel.shape\n    h, w = mask.shape\n    pad_h, pad_w = kh // 2, kw // 2\n    padded = np.pad(mask, ((pad_h, pad_h), (pad_w, pad_w)), mode='constant', constant_values=0)\n    out = np.zeros_like(mask, dtype=np.uint8)\n    kernel_mask = kernel != 0\n    for i in range(h):\n        for j in range(w):\n            window = padded[i:i + kh, j:j + kw]\n            if (window[kernel_mask] == 255).all():\n                out[i, j] = 255\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-pulapki-morfologii",
+      "title": "Sprawdź się: co naprawdę robią operacje morfologiczne",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o erozji, dylacji, otwarciu i zamknięciu **na obrazach binarnych** są **prawdziwe**? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Erozja zmniejsza białe regiony i zabija pojedyncze „salt” piksele oraz pasma cieńsze niż SE; dylacja je rozszerza i może zlać dwa pobliskie obiekty w jeden.",
+          "Otwarcie (`MORPH_OPEN` = erozja → dylacja) usuwa drobne wystające elementy i izolowane białe punkty, **zachowując rozmiar** dużych obiektów, które przeżyły fazę erozji.",
+          "Zamknięcie (`MORPH_CLOSE` = dylacja → erozja) zatyka małe dziury i wąskie przerwy wewnątrz białych obiektów, zachowując ich obrys.",
+          "Operacje morfologiczne są zdefiniowane wyłącznie dla obrazów binarnych — `cv2.erode` na obrazie w skali szarości rzuci wyjątek.",
+          "Otwarcie i zamknięcie dają identyczny wynik, bo erozja i dylacja są przemienne."
+        ],
+        "correct": [0, 1, 2],
+        "explanation": "**(0) PRAWDA.** Erozja z definicji wymaga, by *cały* SE mieścił się w białym regionie (`AND` po pozycjach kernel=1) — najmniejsza wnęka wystarczy, by piksel uległ erozji, a izolowany „salt” piksel zawsze ginie już dla SE 3×3. Dylacja odwraca regułę (`OR`): każdy biały punkt w polu widzenia SE rekrutuje sąsiada, więc dwa białe obiekty oddalone o mniej niż średnica SE zlewają się w jeden — to klasyczne ryzyko, jeśli weźmiemy zbyt duży kernel. **(1) PRAWDA.** Otwarcie najpierw eroduje (zabija salt i cienkie wystające elementy), potem dylacja tym samym SE przywraca rozmiar tym obiektom, które *przeżyły* erozję. Stąd „usuń salt, ale nie zniekształć dużego obiektu” jest jednoliniowym przepisem na otwarcie. **(2) PRAWDA.** Zamknięcie analogicznie po stronie dziur: dylacja zatyka drobne dziury i przerwy mniejsze niż SE, a erozja przywraca obrys. Idealne do łączenia rozspójnionych fragmentów linii (np. zerwanego konturu po Canny) i zatykania mikro-dziur w masce dokumentu. **(3) FAŁSZ.** OpenCV definiuje morfologię też dla **obrazów w skali szarości** — `cv2.erode` na grayscale to lokalne **min**, a `cv2.dilate` — lokalne **max**. Otwarcie/zamknięcie grayscale-owe to klasyczna technika wyrównania nierównomiernego tła i baza dla operatorów `top-hat` / `black-hat`. W tej lekcji skupiamy się na binarnym przypadku, ale operatory są zdefiniowane szerzej. **(4) FAŁSZ.** Erozja i dylacja są **dualne**, ale **nie przemienne**: $(A \\ominus B) \\oplus B \\neq (A \\oplus B) \\ominus B$ w ogólności. Otwarcie usuwa „wystające” drobiny po stronie tła, zamknięcie zatyka „dziury” po stronie obiektu — to dwa dualne, ale przeciwstawne narzędzia. Łatwo to sprawdzić na masce z jedną dziurą i jednym salt-pikselem: tylko otwarcie usunie salt, tylko zamknięcie zatka dziurę.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-cv2-morphologyex",
+      "title": "Piaskownica: czyszczenie maski w `cv2.morphologyEx`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna maska binarna z trzema typami artefaktow:\n#   1) duzy kwadrat 30x30 z DZIURAMI w srodku (chcemy go ZAMKNAC),\n#   2) pojedyncze \"salt\" piksele rozsiane po prawej polowie obrazu (chcemy je OTWORZYC),\n#   3) cienka litera T (zeby zobaczyc, co morfologia robi z waskimi strukturami).\nH, W = 60, 100\nmask = np.zeros((H, W), dtype=np.uint8)\nmask[10:40, 10:40] = 255          # kwadrat\nmask[18:21, 18:21] = 0            # dziura 3x3\nmask[28:31, 25:28] = 0            # dziura 3x3\nrng = np.random.default_rng(0)\nfor _ in range(30):\n    y, x = rng.integers(0, H), rng.integers(50, W)\n    mask[y, x] = 255              # 30 losowych \"salt\" pikseli\nmask[10:13, 60:90] = 255          # gorna belka litery T\nmask[13:35, 73:77] = 255          # noga litery T (4 px szerokosci)\n\n# Trzy strukturalne elementy do porownania:\nkernel_rect_3 = cv2.getStructuringElement(cv2.MORPH_RECT,    (3, 3))\nkernel_rect_5 = cv2.getStructuringElement(cv2.MORPH_RECT,    (5, 5))\nkernel_ell_5  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))\nkernel_cross  = cv2.getStructuringElement(cv2.MORPH_CROSS,   (3, 3))\n\neroded  = cv2.erode (mask, kernel_rect_3, iterations=1)\ndilated = cv2.dilate(mask, kernel_rect_3, iterations=1)\nopened  = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel_rect_3)\nclosed  = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_rect_3)\n\nprint(f'biale piksele ORIG    = {int((mask    == 255).sum()):>4}')\nprint(f'biale piksele EROZJA  = {int((eroded  == 255).sum()):>4}  (mniej, bo zjedlismy krawedzie)')\nprint(f'biale piksele DYLACJA = {int((dilated == 255).sum()):>4}  (wiecej, bo rozszerzylismy obrysy)')\nprint(f'biale piksele OTW     = {int((opened  == 255).sum()):>4}  (oryginal bez salt-pikseli)')\nprint(f'biale piksele DOM     = {int((closed  == 255).sum()):>4}  (oryginal bez wewnetrznych dziur)')\n\n# Pytania do siebie:\n#   * Zwieksz kernel_rect_3 -> kernel_rect_5 -> 7. Po jakim rozmiarze otwarcie\n#     zaczyna zjadac NOGE litery T (ma 4 piksele szerokosci)?\n#   * Co dzieje sie, gdy wykonasz erozje 3 razy (iterations=3) zamiast jeden raz\n#     z kernelem 7x7? Porownaj wynik na masce kwadratu — czy sa identyczne?\n#   * Zamien kernel_rect na kernel_ell. Czemu elipsa daje mniej kanciastych\n#     krawedzi po dylacji? (Wskazowka: zerowe naroza SE.)\n#   * Sproboj cv2.MORPH_GRADIENT, MORPH_TOPHAT, MORPH_BLACKHAT — co kazda\n#     z nich wyciaga z naszej maski?\n#   * Polacz dwa wywolania: najpierw OPEN (czysci salt), potem CLOSE (zatyka\n#     dziury). To kanoniczny pipeline po cv2.threshold.\n",
+        "encouragement": "Pokręć rozmiarem SE i zestawami operacji — odszukaj próg, przy którym otwarcie czyści salt jeszcze nie zjadając nogi litery T."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+      "title": "Mathematical morphology — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html",
+      "title": "OpenCV Python tutorial — Morphological transformations",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.sciencedirect.com/book/9780126372403/image-analysis-and-mathematical-morphology",
+      "title": "Image Analysis and Mathematical Morphology (Academic Press, 1982)",
+      "kind": "book",
+      "author": "Jean Serra",
+      "year": 1982
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 9 (Morphological Image Processing)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.morphology.html",
+      "title": "scikit-image — morphology module reference",
+      "kind": "article"
+    }
+  ]
+}

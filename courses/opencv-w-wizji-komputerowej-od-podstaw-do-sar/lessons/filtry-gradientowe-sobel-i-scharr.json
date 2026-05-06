@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtry-gradientowe-sobel-i-scharr",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Filtry gradientowe: Sobel i Scharr",
+  "eyebrow": "FILTRACJA",
+  "description": "Operator Sobela i jego rotacyjnie optymalna poprawka Scharra — jak z dwóch jąder 3×3 wyciąga się gradient obrazu, jego magnitudę i kierunek, oraz dlaczego dobór wag w jądrze 3×3 jest pierwszym krokiem każdego klasycznego detektora krawędzi.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "gradient-jako-pochodna",
+      "title": "Gradient obrazu — krawędź to skok jasności",
+      "type": "theory",
+      "data": {
+        "markdown": "Krawędź na obrazie to **skok jasności** — granica między dwoma obszarami o różnej intensywności. Niemal każdy klasyczny pipeline detekcji (Canny w następnym module, wyznaczanie konturów, dopasowanie cech) zaczyna od tego samego pytania: gdzie ten skok jest najszybszy? Odpowiedź daje **gradient obrazu** — wektor pierwszych pochodnych cząstkowych:\n\n$$ \\nabla I(x, y) \\;=\\; \\Bigl( \\tfrac{\\partial I}{\\partial x},\\; \\tfrac{\\partial I}{\\partial y} \\Bigr) $$\n\nZ gradientu liczymy dwie wielkości używane potem przez detektory krawędzi:\n\n- **magnitudę** $\\lvert \\nabla I \\rvert = \\sqrt{(\\partial I / \\partial x)^2 + (\\partial I / \\partial y)^2}$ — siłę krawędzi w danym punkcie;\n- **kierunek** $\\theta = \\operatorname{atan2}\\bigl(\\partial I / \\partial y,\\; \\partial I / \\partial x\\bigr)$ — orientację, w którą piksel „rośnie\" jasnościowo. Uwaga: gradient wskazuje **w poprzek** krawędzi, nie wzdłuż niej — to częsta pomyłka.\n\n![Klasyczna scena testowa z artykułu Wikipedii o operatorze Sobela: czarno-biała fotografia dwóch rowerów opartych o ścianę — wyraźne kontury ram, szprych, łańcuchów oraz cieni tworzą bogaty zestaw krawędzi pionowych, poziomych i ukośnych do detekcji](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons — kanoniczna ilustracja używana w artykule „Sobel operator\".)*\n\nObraz cyfrowy nie jest funkcją ciągłą, więc tych pochodnych nie liczymy ze wzoru, tylko aproksymujemy je **różnicami skończonymi** sąsiednich pikseli. Najprostsza, **różnica centralna** $\\bigl(I(x+1) - I(x-1)\\bigr)/2$ działa, ale jest wrażliwa na szum: dwa sąsiadujące piksele wystarczą, by jeden outlier dał fałszywy „gradient\". Operator Sobela rozwiązuje to tak, że **wygładza** różnicę w pionie, zanim policzy różnicę w poziomie — i odwrotnie. Stąd jądro 3×3 zamiast skromnej trójki współczynników."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Sobel_operator",
+          "title": "Sobel operator — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "jadra-sobela-i-scharra",
+      "title": "Jądra Sobela 3×3 i poprawka Scharra",
+      "type": "theory",
+      "data": {
+        "markdown": "Operator Sobela używa dwóch jąder 3×3 — jednego dla pochodnej w kierunku $x$, drugiego dla $y$:\n\n$$ G_x \\;=\\; \\begin{bmatrix} -1 & 0 & +1 \\\\\\\\ -2 & 0 & +2 \\\\\\\\ -1 & 0 & +1 \\end{bmatrix} \\qquad G_y \\;=\\; \\begin{bmatrix} -1 & -2 & -1 \\\\\\\\ \\;\\;0 & \\;\\;0 & \\;\\;0 \\\\\\\\ +1 & +2 & +1 \\end{bmatrix} $$\n\nKażde z nich rozkłada się na **iloczyn dwóch jąder 1D**: $G_x = [1, 2, 1]^{\\top} \\cdot [-1, 0, +1]$. Pionowa kolumna $[1, 2, 1]^{\\top}$ to filtr wygładzający (uśrednia trzy wiersze z większą wagą dla wiersza środkowego — to właśnie krok podobny do Gaussa), a pozioma $[-1, 0, +1]$ to różnica centralna. Sobel sprowadza się więc do reguły *„wygładź pionowo, odejmij sąsiada w poziomie\"* — kompromis między czystą różnicą (szybką, ale szumną) a rozmyciem (cichym, ale rozjedzającym krawędzie).\n\nZ tej dekompozycji wynikają dwie praktyczne konsekwencje. Po pierwsze, **separowalność**: zamiast jednej konwolucji 3×3 (9 mnożeń na piksel) można policzyć dwie konwolucje 1×3 i 3×1 (6 mnożeń). Po drugie — **OpenCV liczy korelację, nie konwolucję** (jądro **nie jest** odbijane o 180°, tak jak w `cv2.filter2D`). Dla symetrycznego $G_x$ Sobela (symetria wzdłuż osi pionowej, antysymetria wzdłuż poziomej) to nie ma znaczenia — odbicie nie zmienia wyniku.\n\n**Poprawka Scharra.** Hanno Scharr w pracy doktorskiej z 2000 r. pokazał, że dla rozmiaru 3×3 da się dobrać wagi tak, żeby **błąd kierunku gradientu względem rotacji obrazu** był minimalny. Jego jądro:\n\n$$ G_x^{\\text{Scharr}} \\;=\\; \\begin{bmatrix} -3 & 0 & +3 \\\\\\\\ -10 & 0 & +10 \\\\\\\\ -3 & 0 & +3 \\end{bmatrix} $$\n\ngubi mniej krawędzi obróconych pod kątem 45° niż klasyczny Sobel. Różnica jest niewielka w wartości bezwzględnej, ale odczuwalna w pipeline'ach feature-matching, gdzie kierunek gradientu wchodzi do deskryptora (SIFT, ORB). W OpenCV używasz Scharra wywołaniem `cv2.Scharr(img, cv2.CV_64F, 1, 0)` lub równoważnie `cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=cv2.FILTER_SCHARR)` (`ksize=-1`)."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.11588/heidok.00000962",
+          "title": "Scharr, H. — Optimal Operators in Digital Image Processing (Ph.D. thesis, 2000)",
+          "kind": "paper",
+          "author": "Hanno Scharr",
+          "year": 2000
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d5/d0f/tutorial_py_gradients.html",
+          "title": "OpenCV Python tutorial — Image gradients (Sobel/Scharr/Laplacian)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "porownanie-jader",
+      "title": "Sobel vs Scharr vs Prewitt — porównanie jąder 3×3",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "operator", "label": "Operator", "type": "string" },
+          { "key": "kernel", "label": "Jądro Gx (3×3)", "type": "string" },
+          { "key": "rotation", "label": "Symetria obrotowa", "type": "string" },
+          { "key": "notes", "label": "Charakterystyka" }
+        ],
+        "rows": [
+          {
+            "operator": "Prewitt (1970)",
+            "kernel": "[ [−1, 0, +1],  [−1, 0, +1],  [−1, 0, +1] ]",
+            "rotation": "Słaba",
+            "notes": "Najprostsze: pionowe wygładzenie wagą [1, 1, 1]. Najgorsza odpowiedź na ukośne krawędzie. W OpenCV nie ma dedykowanego API — trzeba zaimplementować przez cv2.filter2D."
+          },
+          {
+            "operator": "Sobel (1968)",
+            "kernel": "[ [−1, 0, +1],  [−2, 0, +2],  [−1, 0, +1] ]",
+            "rotation": "Średnia",
+            "notes": "Wagi [1, 2, 1] na środkowy wiersz; standard branżowy. Wywołanie: cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3)."
+          },
+          {
+            "operator": "Scharr (2000)",
+            "kernel": "[ [−3, 0, +3],  [−10, 0, +10],  [−3, 0, +3] ]",
+            "rotation": "Optymalna dla 3×3",
+            "notes": "Wagi dobrane numerycznie tak, by błąd kierunku gradientu po obrocie obrazu był minimalny. Wywołanie: cv2.Scharr(img, cv2.CV_64F, 1, 0) lub cv2.Sobel(..., ksize=cv2.FILTER_SCHARR)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-sobel-gx",
+      "title": "Zaimplementuj `sobel_gx(img)` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `sobel_gx(img)`, która ręcznie aplikuje 3×3 jądro Sobela $G_x$ do dwuwymiarowej tablicy `numpy.ndarray` i zwraca tablicę `float64` o tym samym kształcie. Funkcja MUSI:\n\n1. Skonwertować wejście na `numpy.ndarray` typu `float64` (`np.asarray(img, dtype=np.float64)`).\n2. Użyć **paddingu zerowego** o szerokości 1 piksela na każdym brzegu — wartości poza obrazem traktuj jako 0.\n3. Dla każdego piksela `(r, c)` policzyć sumę ważoną sąsiedztwa 3×3 z wagami $G_x$:\n\n```\n[-1,  0, +1]\n[-2,  0, +2]\n[-1,  0, +1]\n```\n\nZwracaj `numpy.ndarray` typu `float64` o kształcie identycznym z wejściem. **Nie używaj `cv2.Sobel` ani `cv2.filter2D`** — celem jest samodzielnie zaimplementować konwolucję 2D z poprzedniej lekcji w wersji z konkretnym jądrem.\n\n```\nimg = np.zeros((3, 5)); img[:, 2:] = 1.0\nsobel_gx(img)[1, 1]   # -> 4.0  (krawędź pionowa od 0 do 1)\nsobel_gx(img)[1, 2]   # -> 4.0  (drugi piksel zony reakcji)\nsobel_gx(img)[1, 0]   # -> 0.0  (obszar płaski)\n```",
+        "starterCode": "import numpy as np\n\ndef sobel_gx(img):\n    # img: numpy.ndarray 2D, dowolny typ liczbowy\n    # Krok po kroku:\n    #   1. img = np.asarray(img, dtype=np.float64)\n    #   2. Dolóż padding zerowy o szerokosci 1 z kazdej strony (np. zbuduj\n    #      tablice (H+2, W+2) wypelniona zerami i wpisz img w srodek).\n    #   3. Dla kazdego (r, c) zbuduj okno 3x3 i policz sume\n    #        -1*w[0,0] + 0*w[0,1] + 1*w[0,2]\n    #        -2*w[1,0] + 0*w[1,1] + 2*w[1,2]\n    #        -1*w[2,0] + 0*w[2,1] + 1*w[2,2]\n    #   4. Zwroc tablice (H, W) typu float64.\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    out = np.zeros((H, W), dtype=np.float64)\n    return out\n",
+        "tests": [
+          {
+            "name": "staly_obraz_zwraca_same_zera",
+            "body": "import numpy as np\nimg = np.full((4, 6), 7.0, dtype=np.float64)\ny = sobel_gx(img)\nassert isinstance(y, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(y).__name__}'\nassert y.shape == (4, 6), f'oczekiwano ksztaltu (4, 6), dostalismy {y.shape}'\nassert np.allclose(y, 0.0, atol=1e-9), f'staly obraz powinien dac wszedzie 0.0; jest {y}'",
+            "hidden": false
+          },
+          {
+            "name": "pionowa_krawedz_daje_wartosc_4_w_srodku",
+            "body": "import numpy as np\nimg = np.zeros((3, 5), dtype=np.float64)\nimg[:, 2:] = 1.0   # krawedz pionowa miedzy kolumna 1 a 2\ny = sobel_gx(img)\nassert y.shape == (3, 5), f'ksztalt: {y.shape}'\n# W srodkowym wierszu (r=1) zona reakcji obejmuje kolumny 1 i 2;\n# kazda powinna miec wartosc 4.0 (= 1+2+1 dla skoku 0 -> 1).\nassert abs(y[1, 1] - 4.0) < 1e-9, f'oczekiwano y[1, 1] = 4.0, jest {y[1, 1]}'\nassert abs(y[1, 2] - 4.0) < 1e-9, f'oczekiwano y[1, 2] = 4.0, jest {y[1, 2]}'\n# Plaski obszar (kolumna 0) — wszedzie 0.\nassert abs(y[1, 0] - 0.0) < 1e-9, f'oczekiwano y[1, 0] = 0.0, jest {y[1, 0]}'"
+          },
+          {
+            "name": "pozioma_krawedz_nie_aktywuje_gx",
+            "body": "import numpy as np\nimg = np.zeros((5, 3), dtype=np.float64)\nimg[2:, :] = 1.0   # krawedz pozioma miedzy wierszem 1 a 2\ny = sobel_gx(img)\n# Gx jest pochodna w poziomie — pozioma krawedz nie powinna jej aktywowac\n# w kolumnie srodkowej (c=1), bo wagi sumuja sie do 0 wzdluz wiersza.\nassert abs(y[1, 1] - 0.0) < 1e-9, f'pozioma krawedz nie powinna aktywowac Gx w c=1, jest {y[1, 1]}'\nassert abs(y[2, 1] - 0.0) < 1e-9, f'pozioma krawedz nie powinna aktywowac Gx w c=1, jest {y[2, 1]}'"
+          },
+          {
+            "name": "antysymetria_wzgledem_obrotu_obrazu_o_180",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.uniform(0, 255, size=(6, 8)).astype(np.float64)\ny = sobel_gx(img)\ny_rot = sobel_gx(img[::-1, ::-1])\n# Sobel Gx jest antysymetryczny wzgledem osi pionowej i symetryczny wzgledem osi poziomej,\n# wiec po obrocie obrazu o 180 stopni odpowiedz powinna byc -y[::-1, ::-1].\nassert np.allclose(y_rot, -y[::-1, ::-1], atol=1e-9), 'Gx powinno byc antysymetryczne wzgledem obrotu o 180°'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef sobel_gx(img):\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    pad = np.zeros((H + 2, W + 2), dtype=np.float64)\n    pad[1:H + 1, 1:W + 1] = img\n    out = np.empty((H, W), dtype=np.float64)\n    for r in range(H):\n        for c in range(W):\n            w = pad[r:r + 3, c:c + 3]\n            out[r, c] = (\n                -1.0 * w[0, 0] + 0.0 * w[0, 1] + 1.0 * w[0, 2]\n                + -2.0 * w[1, 0] + 0.0 * w[1, 1] + 2.0 * w[1, 2]\n                + -1.0 * w[2, 0] + 0.0 * w[2, 1] + 1.0 * w[2, 2]\n            )\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-cv8u-gotcha",
+      "title": "Sprawdź się: dlaczego znika połowa krawędzi?",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `cv2.Sobel(img, cv2.CV_8U, 1, 0, ksize=3)` na obrazie w skali szarości i widzisz tylko jedną stronę każdej pionowej krawędzi — przejścia z ciemnego do jasnego pojawiają się jako jasne piksele, ale przejścia z jasnego do ciemnego po prostu znikają. Jaka jest najczęstsza przyczyna i jak to poprawić?",
+        "options": [
+          "Typ wyjściowy `cv2.CV_8U` (uint8) obcina wartości ujemne do zera. Pochodna $\\partial I / \\partial x$ jest dodatnia tylko gdy jasność rośnie wzdłuż osi $x$; dla przejść z jasnego do ciemnego jest ujemna i znika po cast'cie do `uint8`. Naprawia się to wywołaniem z `cv2.CV_64F` (lub `cv2.CV_16S`) i pobraniem `np.absolute(...)` przed wyświetleniem.",
+          "Parametr `ksize=3` jest zbyt mały — Sobel z tak małym oknem zawsze gubi jedną stronę krawędzi; trzeba użyć `ksize=5` lub `ksize=7`, żeby zobaczyć obie strony.",
+          "Operator Sobela jest z założenia jednokierunkowy — odpowiada tylko na jeden znak gradientu. Aby zobaczyć obie strony krawędzi, trzeba wywołać `cv2.Sobel` dwa razy z `dx=1` i `dx=-1` i zsumować wyniki.",
+          "Obraz musi mieć trzy kanały (`cv2.cvtColor(..., cv2.COLOR_GRAY2BGR)`); na jednokanałowym wejściu Sobel wykrywa tylko krawędzie dodatnio-skierowane."
+        ],
+        "correct": [0],
+        "explanation": "Sobel zwraca **podpisane** wartości pochodnej cząstkowej — dodatnie tam, gdzie jasność rośnie wzdłuż danej osi, ujemne tam, gdzie maleje. Typ `cv2.CV_8U` jest typem bez znaku (`uint8`, zakres 0–255), więc wszystkie wartości ujemne zostaną obcięte do zera **zanim** je w ogóle zobaczysz — i połowa krawędzi przepada. Stąd kanoniczny wzorzec: licz Sobela jako `cv2.CV_64F` (lub `cv2.CV_16S`), a dopiero przed wyświetleniem zrób `np.absolute(...)` lub `cv2.convertScaleAbs(...)`. Odpowiedź B myli `ksize` z typem wyjścia — `ksize=3` z `CV_64F` widzi obie strony bez problemu. Odpowiedź C jest fałszywa: pojedyncze wywołanie `Sobel` z `CV_64F` zwraca już obie strony (z przeciwnymi znakami), nie ma sensu wywoływać z `dx=-1`. Odpowiedź D myli temat: liczba kanałów nie ma związku ze znakiem gradientu.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-cv2-sobel-scharr",
+      "title": "Piaskownica: `cv2.Sobel`, `cv2.Scharr` i przekrój przez krawędź",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Maly obraz syntetyczny: ciemne tlo z ostra krawedzia pionowa po srodku\n# i drugim, ciemniejszym prostokatem po lewej stronie krawedzi.\nH, W = 96, 128\nimg = np.full((H, W), 90, dtype=np.uint8)\nimg[:, 64:] = 200            # ostra krawedz pionowa (jasniej w prawo)\nimg[20:50, 30:60] = 30       # drugi prostokat — ciemniejszy obszar po lewej\n\n# Pochodne — UWAGA: typ wyjscia cv2.CV_64F, NIE CV_8U.\n# CV_8U obcialby wartosci ujemne do 0 i polowa krawedzi by zniknela.\ngx_sobel  = cv2.Sobel(img,  cv2.CV_64F, 1, 0, ksize=3)\ngy_sobel  = cv2.Sobel(img,  cv2.CV_64F, 0, 1, ksize=3)\ngx_scharr = cv2.Scharr(img, cv2.CV_64F, 1, 0)\ngy_scharr = cv2.Scharr(img, cv2.CV_64F, 0, 1)\n\n# Magnituda gradientu — sila krawedzi.\nmag_sobel  = np.sqrt(gx_sobel ** 2  + gy_sobel ** 2)\nmag_scharr = np.sqrt(gx_scharr ** 2 + gy_scharr ** 2)\n\n# Przekroj przez wiersz 60, kolumny 60..68 — okolica krawedzi pionowej.\ndef cut(arr):\n    return np.round(arr[60, 60:68], 1)\n\nprint('IMG (jasnosc po lewej i prawej krawedzi)   :', cut(img.astype(np.float64)))\nprint('Gx Sobel   (znak: + = jasniej w prawo)     :', cut(gx_sobel))\nprint('Gx Scharr  (jak wyzej, ale wyzsze wartosci):', cut(gx_scharr))\nprint('|G| Sobel  (magnituda Sobela)              :', cut(mag_sobel))\nprint('|G| Scharr (magnituda Scharra)             :', cut(mag_scharr))\n\n# Pytania do siebie:\n#   * Co dzieje sie z gx_sobel po prawej stronie krawedzi (kolumny 64–65)\n#     vs po lewej? Zwroc uwage na ZNAK pochodnej.\n#   * Zmien ksize w cv2.Sobel na 5 lub 7 — jak rozszerza sie zona reakcji\n#     wokol krawedzi i ile wynosi maksymalna magnituda?\n#   * Wywolaj cv2.Sobel z cv2.CV_8U zamiast CV_64F i porownaj wyniki\n#     w okolicy ZNAK-zmiennych krawedzi.\n#   * Stworz obraz obrocony o 30° (cv2.warpAffine z macierza obrotu) i porownaj,\n#     czy mag_sobel czy mag_scharr trzyma stalsza odpowiedz wzdluz krawedzi.\n",
+        "encouragement": "Pobaw się parametrem `ksize` w `cv2.Sobel` i porównaj odpowiedzi z `cv2.Scharr` — i pamiętaj, że Scharra można też wywołać przez `cv2.Sobel(..., ksize=cv2.FILTER_SCHARR)`."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Sobel_operator",
+      "title": "Sobel operator — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d5/d0f/tutorial_py_gradients.html",
+      "title": "OpenCV Python tutorial — Image gradients (Sobel/Scharr/Laplacian)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.11588/heidok.00000962",
+      "title": "Scharr, H. — Optimal Operators in Digital Image Processing (Ph.D. thesis, 2000)",
+      "kind": "paper",
+      "author": "Hanno Scharr",
+      "year": 2000
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3.2 (Linear filtering)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

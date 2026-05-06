@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "slug": "szkieletyzacja-i-transformata-dystansu",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Szkieletyzacja i transformata dystansu",
+  "eyebrow": "FILTRACJA",
+  "description": "Pole odległości każdego białego piksela do tła i jego lokalne maksima — przepis OpenCV na medialny szkielet, ziarna do Watershedu i mapę szerokości obiektu, zbudowany na algorytmie Rosenfelda-Pfaltza i jego liniowym następcy Felzenszwalba-Huttenlochera.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "intuicja-szkielet-i-pole-odleglosci",
+      "title": "Po co DT i szkielet: dwa pytania o tę samą maskę",
+      "type": "theory",
+      "data": {
+        "markdown": "Po lekcji o erozji i dylacji wracamy do tego samego obiektu — binarnej maski — ale zadajemy o niego dwa **inne** pytania: *„jak głęboko w środku jestem?\"* i *„gdzie biegnie linia środka?\"*. Pierwsze rozwiązuje **transformata dystansu (DT)**, drugie — **szkielet (medial axis)**. Oba narzędzia są ze sobą sprzężone: szkielet to **lokalne maksima** pola odległości, a pole odległości jest fundamentem, na którym zbudowany jest szybki Watershed (m6), pomiar szerokości obiektu (np. drogi na zdjęciu satelitarnym), wyznaczanie minimalnego prześwitu w pipeline'ach robotycznych i seedowanie ziaren przed segmentacją.\n\n**Szkielet** w sensie Bluma (1967): wyobraź sobie, że odpalasz pożar wzdłuż całego brzegu obiektu naraz, fronty propagują się ku środkowi z jednakową prędkością. Linia, na której fronty z różnych stron **spotykają się** — to właśnie szkielet. Formalnie: zbiór środków **maksymalnych dysków wpisanych** w obiekt (każdego dysku, którego nie da się powiększyć bez wyjścia poza maskę). Litera „A\" daje szkielet w kształcie gałęzi przypominający rentgen, dłoń — pięć palców promieniujących z dłoniowego środka, droga na zdjęciu satelitarnym — pojedynczą cienką linię zamiast pasa.\n\n![Schematyczna ilustracja erozji z dokumentacji OpenCV: czarno-biała maska binarna z literą „J\" przed (po lewej) i po (po prawej) erozji prostokątnym strukturalnym elementem 3×3. Klasyczny szkielet morfologiczny Lantuéjoula powstaje przez **iteracyjne** powtarzanie tej erozji aż do zniknięcia obiektu i sumowanie różnicy między każdą iteracją a jej otwarciem.](https://docs.opencv.org/4.x/Morphology_1_Tutorial_Theory_Erosion.png)\n\n*(Źródło: dokumentacja OpenCV — tutorial *Eroding and Dilating*. Te same rysunki ilustrują kanoniczny przepis na szkielet morfologiczny: $S(A) = \\bigcup_{n=0}^{N} \\bigl((A \\ominus nB) \\setminus ((A \\ominus nB) \\circ B)\\bigr)$.)*\n\nNaiwna iteracyjna erozja działa, ale ma dwie wady: jest $O(\\text{iteracji} \\cdot HW)$ i wynik jest **8-spójny** tylko dla niektórych SE. Dlatego nowoczesne pipeline'y (`cv2.ximgproc.thinning`, `skimage.morphology.medial_axis`) liczą szkielet **z transformaty dystansu**: DT daje promień największego dysku wpisanego w każdym punkcie, a szkielet to jego *grzbiet* — lokalne maksima DT. To właśnie DT rozkładamy na czynniki pierwsze w reszcie lekcji."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Topological_skeleton",
+          "title": "Topological skeleton — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "definicja-dt-i-dwa-przebiegi",
+      "title": "Definicja DT, trzy metryki i algorytm dwóch przebiegów",
+      "type": "theory",
+      "data": {
+        "markdown": "Dla każdego białego piksela $p \\in A$ obiektu **transformata dystansu** $D_A$ to:\n\n$$ D_A(p) \\;=\\; \\min_{q \\notin A} \\; d(p, q) $$\n\ngdzie $d(\\cdot, \\cdot)$ to wybrana metryka. Dla pikseli tła $D_A(p) = 0$ z definicji. OpenCV udostępnia trzy metryki w `cv2.distanceTransform(src, distanceType, maskSize)`:\n\n- **`cv2.DIST_L1`** — Manhattan: $d = |\\Delta x| + |\\Delta y|$. Liczona **dokładnie** maską 3×3 w dwóch przebiegach algorytmu Rosenfelda-Pfaltza (1966).\n- **`cv2.DIST_C`** — Chebyshev (chessboard): $d = \\max(|\\Delta x|, |\\Delta y|)$. Także dwa przebiegi 3×3 — w tej metryce DT to dokładnie liczba iteracji dylacji 8-spójnej potrzebna, by tło dotarło do piksela.\n- **`cv2.DIST_L2`** — euklidesowa: $d = \\sqrt{\\Delta x^2 + \\Delta y^2}$. Aproksymowana w masce 3×3 (*chamfer 3-4*, błąd ~5%) lub 5×5 (*chamfer 5-7-11*, błąd ~2%), albo liczona **dokładnie w czasie liniowym** algorytmem Felzenszwalba-Huttenlochera (2012) przy `maskSize=cv2.DIST_MASK_PRECISE`.\n\n![Schematyczna ilustracja dylacji z dokumentacji OpenCV: ta sama litera „J\" przed i po dylacji prostokątnym strukturalnym elementem 3×3 — w metryce Chebysheva $L_\\infty$ wartość DT w danym pikselu to dokładnie liczba **iteracji** takiej dylacji, jakich potrzeba, by tło `dotarło` do tego piksela; każdy krok dylacji 3×3 to jedna jednostka odległości.](https://docs.opencv.org/4.x/Morphology_1_Tutorial_Theory_Dilation.png)\n\n**Algorytm dwóch przebiegów Rosenfelda-Pfaltza** (Manhattan): inicjalizujemy `dt[i,j] = 0` dla tła, $+\\infty$ dla obiektu. **Forward** od lewego górnego rogu (i = 0..H, j = 0..W): `dt[i,j] = min(dt[i,j], dt[i-1,j]+1, dt[i,j-1]+1)`. **Backward** od prawego dolnego (i = H-1..0, j = W-1..0): `dt[i,j] = min(dt[i,j], dt[i+1,j]+1, dt[i,j+1]+1)`. Po dwóch przebiegach wartość każdego piksela równa się **rzeczywistej** Manhattan-odległości — bo każda najkrótsza 4-spójna ścieżka do tła wykonuje albo same kroki *„w dół-prawo\"* (uchwyci ją forward), albo *„w górę-lewo\"* (backward), więc co najmniej jeden z przebiegów ją zrelaksuje. Złożoność: $O(HW)$ zamiast $O((HW)^2)$ z brutalnego porównania każdego piksela z każdym tłem.\n\nW OpenCV jedna linia:\n\n```python\ndt = cv2.distanceTransform(mask, distanceType=cv2.DIST_L2,\n                            maskSize=cv2.DIST_MASK_PRECISE)\n```\n\nWymaga, by `mask` była `uint8` z wartościami **0/255** (białe piksele = obiekt) lub 0/1. Wynik to `float32` z odległościami w pikselach. Najczęstsza pomyłka: podać obraz w skali szarości zamiast progowanej maski binarnej — DT „chodzi\" wtedy po pikselach o wartości 0, a nie po tle obiektu."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d7/d1b/group__imgproc__misc.html#ga8a0b7fdfcb7a13dde018988ba3a43042",
+          "title": "OpenCV — `distanceTransform` API reference",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1145/321356.321357",
+          "title": "Sequential Operations in Digital Picture Processing (J. ACM, 1966)",
+          "kind": "paper",
+          "author": "Azriel Rosenfeld and John L. Pfaltz",
+          "year": 1966
+        }
+      ]
+    },
+    {
+      "id": "tabela-cv2-distancetransform",
+      "title": "Pięć wariantów `cv2.distanceTransform` w jednym miejscu",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "metryka",
+            "label": "Metryka (`distanceType`)",
+            "type": "string"
+          },
+          {
+            "key": "maska",
+            "label": "`maskSize`",
+            "type": "string"
+          },
+          {
+            "key": "dokladnosc",
+            "label": "Dokładność",
+            "type": "string"
+          },
+          {
+            "key": "kiedy",
+            "label": "Kiedy sięgnąć",
+            "type": "string"
+          }
+        ],
+        "rows": [
+          {
+            "metryka": "DIST_L1 (Manhattan, |Δx|+|Δy|)",
+            "maska": "DIST_MASK_3 (jedyna sensowna)",
+            "dokladnosc": "DOKŁADNA — algorytm Rosenfelda-Pfaltza w dwóch przebiegach.",
+            "kiedy": "Szybkie ziarna do Watershed, pomiary „w jednostkach kroku 4-spójnego\", przybliżenia bez ekstrakcji pierwiastka."
+          },
+          {
+            "metryka": "DIST_C (Chebyshev, max(|Δx|,|Δy|))",
+            "maska": "DIST_MASK_3",
+            "dokladnosc": "DOKŁADNA — równoważna liczbie iteracji dylacji 8-spójnej.",
+            "kiedy": "Gdy chcesz „liczbę kroków króla szachowego\" do tła; szybko, bez pierwiastka i bez aproksymacji."
+          },
+          {
+            "metryka": "DIST_L2 (Euklides, √(Δx²+Δy²))",
+            "maska": "DIST_MASK_3",
+            "dokladnosc": "Chamfer 3-4 — przybliżenie z typowym błędem ok. 5%.",
+            "kiedy": "Gdy potrzeba L2, ale liczy się tylko relatywna odległość (np. ranking pikseli) — najszybsza opcja euklidesowa."
+          },
+          {
+            "metryka": "DIST_L2",
+            "maska": "DIST_MASK_5",
+            "dokladnosc": "Chamfer 5-7-11 — błąd ok. 2%.",
+            "kiedy": "Domyślny kompromis szybkość ↔ dokładność; wystarcza do większości pomiarów geometrycznych."
+          },
+          {
+            "metryka": "DIST_L2",
+            "maska": "DIST_MASK_PRECISE",
+            "dokladnosc": "DOKŁADNA — algorytm Felzenszwalba-Huttenlochera (2012) w czasie liniowym O(HW).",
+            "kiedy": "Pomiary szerokości / promienia w pikselach, ekstrakcja medial axis przez `ximgproc.thinning`, każde użycie, w którym 2% błędu chamferu zaszkodzi."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-manhattan-dt-od-zera",
+      "title": "Zaimplementuj `manhattan_distance_transform` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `manhattan_distance_transform(mask)`, która dla **binarnej** maski (`uint8`, wartości 0 lub 255) zwróci **dokładną** transformatę dystansu w metryce Manhattan jako `numpy.ndarray` typu `int32` o tym samym kształcie:\n\n1. Dla każdego **tła** (`mask[i, j] == 0`) wynik `dt[i, j] == 0`.\n2. Dla każdego **obiektu** (`mask[i, j] == 255`) wynik `dt[i, j]` to liczba kroków 4-spójnych (góra/dół/lewo/prawo) do najbliższego piksela tła.\n3. Użyj algorytmu **dwóch przebiegów** Rosenfelda-Pfaltza:\n\n   - inicjalizuj `dt = 0` dla tła i `INF = h + w` dla obiektu (bezpieczna górna granica),\n   - **forward** od lewego górnego rogu: `dt[i,j] = min(dt[i,j], dt[i-1,j]+1, dt[i,j-1]+1)`,\n   - **backward** od prawego dolnego: `dt[i,j] = min(dt[i,j], dt[i+1,j]+1, dt[i,j+1]+1)`.\n\n**Nie używaj `cv2.distanceTransform`, `scipy.ndimage.distance_transform_*` ani `skimage.morphology.medial_axis`** — celem jest zaimplementowanie definicji ręcznie, by zobaczyć, dlaczego dwa przebiegi wystarczają.\n\n```\nmask = np.zeros((5, 5), dtype=np.uint8)\nmask[1:4, 1:4] = 255          # 3x3 bialy kwadrat w srodku\nmanhattan_distance_transform(mask)\n# array([[0, 0, 0, 0, 0],\n#        [0, 1, 1, 1, 0],\n#        [0, 1, 2, 1, 0],\n#        [0, 1, 1, 1, 0],\n#        [0, 0, 0, 0, 0]], dtype=int32)\n```",
+        "starterCode": "import numpy as np\n\ndef manhattan_distance_transform(mask):\n    # mask: numpy.ndarray 2D, dtype uint8, wartosci 0 (tlo) lub 255 (obiekt).\n    # Zwroc tablice int32 o tym samym ksztalcie z odlegloscia Manhattan\n    # do najblizszego piksela tla; dla pikseli tla wynik = 0.\n    #\n    # Krok po kroku:\n    #   1. mask = np.asarray(mask)\n    #   2. h, w = mask.shape\n    #   3. INF = h + w   # bezpieczna gorna granica Manhattan-odleglosci\n    #   4. dt = np.where(mask == 0, 0, INF).astype(np.int32)\n    #   5. Forward: dla i = 0..h-1, j = 0..w-1, jezeli dt[i,j] != 0:\n    #        if i > 0: dt[i,j] = min(dt[i,j], dt[i-1,j] + 1)\n    #        if j > 0: dt[i,j] = min(dt[i,j], dt[i,j-1] + 1)\n    #   6. Backward: dla i = h-1..0, j = w-1..0:\n    #        if i+1 < h: dt[i,j] = min(dt[i,j], dt[i+1,j] + 1)\n    #        if j+1 < w: dt[i,j] = min(dt[i,j], dt[i,j+1] + 1)\n    #   7. zwroc dt.\n    mask = np.asarray(mask)\n    return np.zeros_like(mask, dtype=np.int32)\n",
+        "tests": [
+          {
+            "name": "ksztalt_dtype_i_tlo_zerowe",
+            "body": "import numpy as np\nmask = np.zeros((5, 5), dtype=np.uint8)\nmask[1:4, 1:4] = 255\nout = manhattan_distance_transform(mask)\nassert isinstance(out, np.ndarray), f'oczekiwano numpy.ndarray, jest {type(out).__name__}'\nassert out.shape == (5, 5), f'ksztalt {out.shape} != (5, 5)'\nassert out.dtype == np.int32, f'dtype {out.dtype} != int32'\nassert int(out[0, 0]) == 0, f'tlo (0,0) powinno miec dt=0, jest {int(out[0, 0])}'\nassert int(out[1, 1]) == 1, f'rog bialego kwadratu (1,1) powinien miec dt=1, jest {int(out[1, 1])}'\nassert int(out[2, 2]) == 2, f'srodek bialego kwadratu (2,2) powinien miec dt=2, jest {int(out[2, 2])}'",
+            "hidden": false
+          },
+          {
+            "name": "wszystko_tlo_daje_zera",
+            "body": "import numpy as np\nmask = np.zeros((6, 8), dtype=np.uint8)\nout = manhattan_distance_transform(mask)\nassert (out == 0).all(), f'maska samych zer powinna dac DT zlozona z zer; max = {int(out.max())}'"
+          },
+          {
+            "name": "izolowany_bialy_piksel_ma_dt_jeden",
+            "body": "import numpy as np\nmask = np.zeros((5, 5), dtype=np.uint8)\nmask[2, 2] = 255\nout = manhattan_distance_transform(mask)\nassert int(out[2, 2]) == 1, f'samotny bialy piksel ma 4 sasiadow tla -> dt=1; jest {int(out[2, 2])}'\nassert int(out.sum()) == 1, f'tylko jeden niezerowy element oczekiwany; suma = {int(out.sum())}'"
+          },
+          {
+            "name": "dt_rosnie_liniowo_od_jedynego_pikselu_tla_w_rogu",
+            "body": "import numpy as np\nmask = np.full((5, 5), 255, dtype=np.uint8)\nmask[0, 0] = 0\nout = manhattan_distance_transform(mask)\nassert int(out[0, 0]) == 0\nassert int(out[4, 4]) == 8, f'manhattan (4,4) -> (0,0) = 8; jest {int(out[4, 4])}'\nassert int(out[2, 2]) == 4, f'manhattan (2,2) -> (0,0) = 4; jest {int(out[2, 2])}'\nassert int(out[0, 3]) == 3, f'manhattan (0,3) -> (0,0) = 3; jest {int(out[0, 3])}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef manhattan_distance_transform(mask):\n    mask = np.asarray(mask)\n    h, w = mask.shape\n    INF = h + w\n    dt = np.where(mask == 0, 0, INF).astype(np.int32)\n    # forward pass: top-left -> bottom-right\n    for i in range(h):\n        for j in range(w):\n            if dt[i, j] == 0:\n                continue\n            if i > 0:\n                dt[i, j] = min(int(dt[i, j]), int(dt[i - 1, j]) + 1)\n            if j > 0:\n                dt[i, j] = min(int(dt[i, j]), int(dt[i, j - 1]) + 1)\n    # backward pass: bottom-right -> top-left\n    for i in range(h - 1, -1, -1):\n        for j in range(w - 1, -1, -1):\n            if i + 1 < h:\n                dt[i, j] = min(int(dt[i, j]), int(dt[i + 1, j]) + 1)\n            if j + 1 < w:\n                dt[i, j] = min(int(dt[i, j]), int(dt[i, j + 1]) + 1)\n    return dt\n"
+      }
+    },
+    {
+      "id": "quiz-pulapki-dt-i-szkieletu",
+      "title": "Sprawdź się: co naprawdę robi `cv2.distanceTransform` i medial axis",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o **transformacie dystansu** i **szkielecie** (`cv2.distanceTransform`, medial axis) są **prawdziwe**? (zaznacz wszystkie pasujące)",
+        "options": [
+          "DT zwraca dla każdego białego piksela odległość do najbliższego piksela tła; piksele tła mają z definicji DT = 0, a wynikiem jest tablica `float32` (lub całkowita dla `DIST_L1`/`DIST_C` z maską 3×3).",
+          "Szkielet morfologiczny obiektu można otrzymać z DT jako lokalne maksima pola odległości (z dokładnością do dyskretyzacji): grzbiety DT to wpisane środki maksymalnych dysków.",
+          "Wybór `maskSize=DIST_MASK_3` z `DIST_L2` daje **dokładny** wynik euklidesowy w czasie liniowym; `DIST_MASK_PRECISE` to tylko wolniejsza wersja z rozszerzonym sąsiedztwem, więc używanie go to strata czasu.",
+          "Algorytm dwóch przebiegów Rosenfelda-Pfaltza wyznacza **dokładną** Manhattan-odległość w czasie $O(HW)$, bo każda najkrótsza 4-spójna ścieżka do tła idzie albo „w dół-prawo\" (uchwytna w forward), albo „w górę-lewo\" (uchwytna w backward).",
+          "Można podać `cv2.distanceTransform` obraz w skali szarości i otrzymać sensowny wynik — funkcja sama traktuje wartości > 0 jako obiekt, a zera jako tło."
+        ],
+        "correct": [
+          0,
+          1,
+          3,
+          4
+        ],
+        "explanation": "**(0) PRAWDA.** DT z definicji $D_A(p) = \\min_{q \\notin A} d(p, q)$ przyjmuje wartość 0 na zbiorze tła (infimum po niepustym zbiorze zawierającym samo $p$, więc $d(p, p) = 0$) i dodatnią dla obiektu. OpenCV domyślnie zwraca `float32`; dla `DIST_L1`/`DIST_C` z `DIST_MASK_3` wyniki są jednak liczbami całkowitymi z definicji. **(1) PRAWDA.** Bluma 1967: szkielet obiektu to zbiór środków maksymalnych wpisanych dysków; dla każdego takiego środka DT równa się promieniowi dysku. Stąd implementacja w `skimage.morphology.medial_axis` wyznacza jednocześnie szkielet i jego DT — `medial_axis(mask, return_distance=True)`. Lokalność jest dyskretna (porównanie z 4/8 sąsiadami), nie ciągła. **(3) PRAWDA.** Geometrycznie: każda najkrótsza Manhattan-ścieżka pomiędzy $p$ a najbliższym tłem wykonuje monotoniczne kroki — w jakimś kierunku w pionie (góra LUB dół) i w jakimś w poziomie (lewo LUB prawo). Forward relaksuje pary „dół-prawo\", backward — „góra-lewo\"; po dwóch przebiegach każda ze ścieżek została zrelaksowana co najmniej raz. Złożoność liniowa (każdy piksel odwiedzony dwa razy z $O(1)$ pracą) — to klasyczny wynik z 1966 r. **(4) PRAWDA.** `cv2.distanceTransform` traktuje **każdą wartość różną od zera** jako piksel obiektu. To jednak **pułapka**: jeśli wrzucisz nieprogowany obraz w skali szarości, DT zacznie się na każdym pikselu o wartości 0 (np. dolnej krawędzi histogramu) — wynik prawie nigdy nie ma sensu. **Zawsze** progujemy przed DT (Otsu, adaptacyjne, ręczny próg). **(2) FAŁSZ.** Jest **odwrotnie**: `DIST_MASK_3` z `DIST_L2` to **chamfer 3-4** — szybkie przybliżenie z błędem rzędu 5% w stosunku do prawdziwej euklidesowej. Dokładność w czasie liniowym daje dopiero `DIST_MASK_PRECISE`, który implementuje algorytm Felzenszwalba-Huttenlochera (2012) — ten sam koszt asymptotyczny co chamfer, ale bez przybliżenia. Dla pomiarów geometrycznych domyślnie sięga się po `DIST_MASK_PRECISE`.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-dt-i-szkielet-na-syntetyku",
+      "title": "Piaskownica: DT, chamfer vs precise, iteracyjny szkielet",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obiekt: prostokat z 'reka' wystajaca z prawej strony.\n# Dobrze widac na nim, jak DT rosnie ku srodkom najszerszych miejsc,\n# i jak szkielet biegnie wzdluz osi tego prostokata + jego reki.\nH, W = 80, 140\nmask = np.zeros((H, W), dtype=np.uint8)\nmask[15:65, 20:80] = 255          # gruby korpus 50x60\nmask[35:45, 60:130] = 255         # cienka reka 10x70 wystajaca w prawo\n\n# --- Transformata dystansu trzech wariantow OpenCV ---------------------\ndt_l1   = cv2.distanceTransform(mask, distanceType=cv2.DIST_L1, maskSize=cv2.DIST_MASK_3)\ndt_l2_3 = cv2.distanceTransform(mask, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_3)\ndt_l2_p = cv2.distanceTransform(mask, distanceType=cv2.DIST_L2, maskSize=cv2.DIST_MASK_PRECISE)\n\nprint(f'max DT  L1   (Manhattan, MASK_3)        = {float(dt_l1.max()):6.3f}')\nprint(f'max DT  L2   (Euklides chamfer 3-4)     = {float(dt_l2_3.max()):6.3f}')\nprint(f'max DT  L2   (Euklides PRECISE F+H 12)  = {float(dt_l2_p.max()):6.3f}')\nprint(f'roznica chamfer vs precise (px)         = {float(np.abs(dt_l2_3 - dt_l2_p).max()):6.3f}')\n\n# --- Szkielet morfologiczny (iteracyjna erozja Lantuejoula) ------------\nkernel = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))\nskeleton = np.zeros_like(mask)\nimg = mask.copy()\nfor it in range(200):  # gorny limit zapobiegajacy nieskonczonej petli\n    eroded = cv2.erode(img, kernel)\n    opened = cv2.dilate(eroded, kernel)\n    skeleton = cv2.bitwise_or(skeleton, cv2.subtract(img, opened))\n    img = eroded\n    if cv2.countNonZero(img) == 0:\n        break\nprint(f'szkielet: {int((skeleton == 255).sum())} pikseli (z {int((mask == 255).sum())} obiektu)')\n\n# Pytania do siebie:\n#   * Jaki promien ma najwiekszy dysk wpisany w korpus 50x60? A w cienka reke 10x70?\n#     Sprobuj odczytac z dt_l2_p.max() w odpowiednich wycinkach.\n#   * Skaluj 'reke' do 6 pikseli szerokosci. Co dzieje sie z dt_l2_p w tej rece?\n#     Co dzieje sie ze szkieletem w okolicy laczenia korpusu z reka?\n#   * Zamien CROSS na RECT. O ile wiecej pikseli ma szkielet — i czemu?\n#     (Wskazowka: erozja krzyzem zostawia ostrzejsze 'wahliwe' grzbiety.)\n#   * Dodaj do maski male otworek bool: mask[35:38, 40:43] = 0. Jak DT i szkielet\n#     na to reaguja? (Szkielet utworzy zamknieta petle wokol dziury.)\n#   * cv2.DIST_C: max DT to liczba krokow krola szachowego do tla. Sprawdz, ze\n#     dla ramy bez dziur DIST_C z MASK_3 jest dokladnie identyczne z liczba iteracji\n#     erozji 8-spojnej — to dwie nazwy tej samej operacji.\n",
+        "encouragement": "Pokręć szerokością „ręki\" i sprawdź, przy ilu pikselach DT_L2 precise zaczyna się różnić od chamferu o więcej niż jeden piksel."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Topological_skeleton",
+      "title": "Topological skeleton — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d7/d1b/group__imgproc__misc.html#ga8a0b7fdfcb7a13dde018988ba3a43042",
+      "title": "OpenCV — `distanceTransform` API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.4086/toc.2012.v008a019",
+      "title": "Distance Transforms of Sampled Functions (Theory of Computing, 2012)",
+      "kind": "paper",
+      "author": "Pedro F. Felzenszwalb and Daniel P. Huttenlocher",
+      "year": 2012
+    },
+    {
+      "url": "https://doi.org/10.1145/321356.321357",
+      "title": "Sequential Operations in Digital Picture Processing (J. ACM, 1966)",
+      "kind": "paper",
+      "author": "Azriel Rosenfeld and John L. Pfaltz",
+      "year": 1966
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.morphology.html#skimage.morphology.medial_axis",
+      "title": "scikit-image — `medial_axis` reference (DT-based skeleton)",
+      "kind": "article"
+    }
+  ]
+}

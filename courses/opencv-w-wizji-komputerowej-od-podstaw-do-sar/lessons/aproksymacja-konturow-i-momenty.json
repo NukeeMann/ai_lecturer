@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "slug": "aproksymacja-konturow-i-momenty",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Aproksymacja konturów i momenty",
+  "eyebrow": "KRAWĘDZIE I KONTURY",
+  "description": "Z gęstej listy punktów konturu wyciskamy dwie kompaktowe charakterystyki: krótszy wielokąt z `cv2.approxPolyDP` (algorytm Ramer–Douglas–Peucker sterowany tolerancją ε = k · arcLength) oraz słownik momentów z `cv2.moments`. Pokażemy, jak ε kontroluje stopień uproszczenia, dlaczego centroidę liczymy jako (m10/m00, m01/m00), czym różnią się momenty surowe, centralne i znormalizowane oraz dlaczego μ10 = μ01 = 0 z definicji.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "approx-poly-dp",
+      "title": "Aproksymacja konturu — algorytm Ramer–Douglas–Peucker",
+      "type": "theory",
+      "data": {
+        "markdown": "Kontury zwracane przez `cv2.findContours` to **gęste listy punktów** wzdłuż całego brzegu obiektu — często setki współrzędnych dla jednej figury. Do dalszej analizy (czy to prostokąt? czy trójkąt? czy może pięciokąt?) potrzebna jest krótsza, **wielokątna** reprezentacja. Tę pracę wykonuje `cv2.approxPolyDP(contour, epsilon, closed)`, czyli wywołanie algorytmu **Ramer–Douglas–Peucker** opublikowanego przez Douglasa i Peuckera w 1973 r.\n\n![Animacja działania algorytmu Ramer–Douglas–Peucker: w każdym kroku wybierany jest punkt o największej prostopadłej odległości od bieżącej cięciwy łączącej końce fragmentu — gdy odległość przekracza tolerancję ε, punkt zostaje zachowany i krzywa rozdzielona, w przeciwnym razie wszystkie punkty pomiędzy są odrzucane](https://upload.wikimedia.org/wikipedia/commons/3/30/Douglas-Peucker_animated.gif)\n\n*(Animacja: Wikimedia Commons, domena publiczna.)*\n\nAlgorytm działa rekurencyjnie: dla bieżącego fragmentu liczy prostopadłą odległość każdego punktu od cięciwy łączącej jego końce, znajduje punkt o **maksymalnej** odległości i porównuje ją z progiem $\\varepsilon$. Jeśli odległość jest mniejsza od $\\varepsilon$, wszystkie punkty pomiędzy są odrzucane (cięciwa wystarcza); jeśli większa — punkt zostaje zachowany jako nowy wierzchołek, a fragment dzieli się na dwa, do których procedurę stosujemy ponownie. Większe $\\varepsilon$ ⇒ mniej wierzchołków, większa rozbieżność z oryginałem.\n\nW praktyce $\\varepsilon$ dobiera się **proporcjonalnie do obwodu** konturu, żeby ten sam współczynnik działał na duże i małe figury:\n\n$$ \\varepsilon \\;=\\; k \\cdot \\mathrm{cv2.arcLength}(\\text{contour},\\ \\text{closed}=\\text{True}), \\qquad k \\in [0{,}01;\\ 0{,}05] $$\n\nFlaga `closed=True` informuje, że krzywa wraca do punktu startowego — to standardowy przypadek brzegu pojedynczego obiektu zwróconego przez `findContours`. Dla $k = 0{,}02$ zaszumiony pięciokąt zostaje uproszczony zwykle do dokładnie pięciu wierzchołków, a `len(approx)` staje się solidną cechą do **klasyfikacji kształtu** (3 → trójkąt, 4 → czworokąt, 5 → pięciokąt itd.)."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.3138/FM57-6770-U75U-7727",
+          "title": "Douglas, D. H. and Peucker, T. K. — Algorithms for the Reduction of the Number of Points Required to Represent a Digitized Line or its Caricature (Cartographica, 1973)",
+          "kind": "paper",
+          "author": "David H. Douglas and Thomas K. Peucker",
+          "year": 1973
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/dd/d49/tutorial_py_contour_features.html",
+          "title": "OpenCV Python tutorial — Contour features (area, perimeter, moments, approxPolyDP)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "momenty-i-centroida",
+      "title": "Momenty obrazu i centroida",
+      "type": "theory",
+      "data": {
+        "markdown": "Dla binarnej maski konturu (piksele wewnątrz figury = 1, na zewnątrz = 0) **moment rzędu** $(p, q)$ definiujemy jako:\n\n$$ m_{pq} \\;=\\; \\sum_{x} \\sum_{y} x^{p}\\, y^{q}\\, I(x, y) $$\n\nZerowy moment $m_{00}$ to po prostu **pole** figury (suma jedynek = liczba białych pikseli), a momenty pierwszego rzędu wyznaczają **środek masy** — *centroidę*:\n\n$$ c_x \\;=\\; \\frac{m_{10}}{m_{00}}, \\qquad c_y \\;=\\; \\frac{m_{01}}{m_{00}} $$\n\n![Trójkąt z trzema medianami przecinającymi się w jednym wewnętrznym punkcie — centroidzie geometrycznej; ten sam punkt zwraca formuła m10/m00, m01/m00 dla maski binarnej tego trójkąta](https://upload.wikimedia.org/wikipedia/commons/4/43/Centroid.svg)\n\n*(Diagram: Wikimedia Commons, domena publiczna.)*\n\n**Momenty centralne** $\\mu_{pq}$ to te same sumy, ale liczone względem $(c_x, c_y)$ zamiast względem początku układu współrzędnych:\n\n$$ \\mu_{pq} \\;=\\; \\sum_{x} \\sum_{y} (x - c_x)^{p}\\, (y - c_y)^{q}\\, I(x, y) $$\n\nZ tej definicji od razu wynika, że $\\mu_{10} = \\mu_{01} = 0$ (sumujemy odchylenia od średniej), dlatego momenty centralne są **niezmiennicze wobec przesunięcia** figury w obrazie. Po dodatkowej normalizacji\n\n$$ \\eta_{pq} \\;=\\; \\frac{\\mu_{pq}}{m_{00}^{\\,1+(p+q)/2}} $$\n\nstają się też niezmiennicze wobec **skali** — to one są fundamentem siedmiu niezmienników Hu, którymi zajmiemy się w lekcji o `matchShapes`. W OpenCV cały zestaw pobierzesz jednym wywołaniem `M = cv2.moments(contour)`; zwrócony słownik zawiera klucze `'m00'`, `'m10'`, `'m01'`, `'m20'`, `'m11'`, `'m02'`, `'mu20'`, `'mu11'`, `'mu02'`, `'nu20'`, `'nu11'`, `'nu02'`, … (przedrostek `m` — moment surowy, `mu` — centralny, `nu` — znormalizowany)."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Image_moment",
+          "title": "Image moment — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d8/d23/classcv_1_1Moments.html",
+          "title": "OpenCV — cv::Moments class reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "centroid-from-moments",
+      "title": "Implementacja: centroida ze słownika momentów",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `centroid_from_moments(M)`, która ze słownika momentów (dokładnie tego kształtu, jaki zwraca `cv2.moments(contour)`) zwraca krotkę `(cx, cy)` typu `float`. Jeżeli `M['m00'] == 0` (pusty kontur — figura nie ma pola), funkcja powinna zwrócić `None` zamiast dzielić przez zero.\n\nUżyj wzoru z poprzedniej sekcji:\n\n```\nc_x = M['m10'] / M['m00']\nc_y = M['m01'] / M['m00']\n```\n\nPrzykład:\n\n```\nM = {'m00': 10, 'm10': 50, 'm01': 70}\ncentroid_from_moments(M)  # -> (5.0, 7.0)\n```",
+        "starterCode": "def centroid_from_moments(M):\n    \"\"\"Zwraca (cx, cy) jako float lub None, gdy kontur ma zerowe pole (m00 == 0).\"\"\"\n    # TODO: zaimplementuj wzór c_x = m10/m00, c_y = m01/m00.\n    # Pamiętaj o przypadku M['m00'] == 0 — wtedy zwroc None.\n    return None\n",
+        "tests": [
+          {
+            "name": "centroid_for_unit_mass_at_5_7",
+            "body": "M = {'m00': 10, 'm10': 50, 'm01': 70}\nresult = centroid_from_moments(M)\nassert result == (5.0, 7.0), f'oczekiwano (5.0, 7.0), otrzymano {result}'",
+            "hidden": false
+          },
+          {
+            "name": "returns_none_for_empty_contour",
+            "body": "assert centroid_from_moments({'m00': 0, 'm10': 0, 'm01': 0}) is None"
+          },
+          {
+            "name": "fractional_centroid_is_float",
+            "body": "M = {'m00': 4, 'm10': 14, 'm01': 18}\nresult = centroid_from_moments(M)\nassert result is not None\ncx, cy = result\nassert abs(cx - 3.5) < 1e-9 and abs(cy - 4.5) < 1e-9, f'otrzymano ({cx}, {cy})'"
+          },
+          {
+            "name": "handles_negative_first_order_moments",
+            "body": "M = {'m00': 2, 'm10': -4, 'm01': 6}\nassert centroid_from_moments(M) == (-2.0, 3.0)"
+          }
+        ],
+        "solution": "def centroid_from_moments(M):\n    if M['m00'] == 0:\n        return None\n    cx = M['m10'] / M['m00']\n    cy = M['m01'] / M['m00']\n    return (cx, cy)\n"
+      }
+    },
+    {
+      "id": "quiz-epsilon",
+      "title": "Sprawdź się: rola parametru ε",
+      "type": "quiz",
+      "data": {
+        "question": "Pracujesz z konturem zewnętrznym budynku liczącym ok. 200 punktów i wywołujesz `cv2.approxPolyDP(contour, epsilon, True)`. Co najlepiej opisuje rolę parametru `epsilon`?",
+        "options": [
+          "Maksymalna prostopadła odległość punktu konturu od uproszczonej krzywej — większe ε ⇒ mniej wierzchołków i większa rozbieżność z oryginałem.",
+          "Docelowa liczba wierzchołków, do jakiej kontur ma zostać uproszczony.",
+          "Próg gradientu w pikselach — punkty o magnitudzie gradientu poniżej ε są usuwane z konturu.",
+          "Minimalna długość boku — sąsiednie boki krótsze niż ε są łączone w jeden."
+        ],
+        "correct": [0],
+        "explanation": "`approxPolyDP` realizuje algorytm Ramer–Douglas–Peucker: w każdej iteracji szuka punktu o **największej prostopadłej odległości** od cięciwy łączącej końce fragmentu. Jeśli ta odległość przekracza ε, punkt zostaje zachowany i fragment dzieli się rekurencyjnie; w przeciwnym razie wszystkie punkty pomiędzy są odrzucane. Sterujesz więc *tolerancją odległości*, a nie liczbą wierzchołków, progiem gradientu czy długością boku. Stąd typowy dobór ε = k · arcLength(contour, True) z k ∈ [0,01; 0,05] — skaluje się on z obwodem, więc ten sam k działa dla figur dużych i małych.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-pole-i-centroida",
+      "title": "Eksperymentuj: pole i centroida z momentów",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Sztuczny kontur — dwunastokat foremny przesuniety o (50, 40).\n# To wielokat zamkniety: punkty sa uporzadkowane przeciwnie do ruchu wskazowek zegara.\nn = 12\nt = np.linspace(0, 2 * np.pi, n, endpoint=False)\nxs = 50 + 30 * np.cos(t)\nys = 40 + 30 * np.sin(t)\ncontour = np.stack([xs, ys], axis=1)\n\n# Pole z formuly Shoelace — dla wielokata to dokladny odpowiednik m00 z cv2.moments.\ndef polygon_area(c):\n    x, y = c[:, 0], c[:, 1]\n    return 0.5 * abs((x * np.roll(y, -1) - np.roll(x, -1) * y).sum())\n\n# Naiwna centroida = srednia wierzcholkow.\n# Dziala dla rownomiernie rozlozonych punktow, ale przesuwa sie ku zageszczeniu,\n# kiedy probkowanie staje sie nierownomierne.\nnaive_c = contour.mean(axis=0)\n\n# Centroida wazona polem trojkatow — to wlasnie zwraca cv2.moments dla wielokata.\ndef polygon_centroid(c):\n    x, y = c[:, 0], c[:, 1]\n    cross = x * np.roll(y, -1) - np.roll(x, -1) * y\n    a = 0.5 * cross.sum()  # pole ze znakiem\n    cx = ((x + np.roll(x, -1)) * cross).sum() / (6 * a)\n    cy = ((y + np.roll(y, -1)) * cross).sum() / (6 * a)\n    return (cx, cy)\n\nprint('liczba wierzcholkow:', len(contour))\nprint('pole (Shoelace):', round(polygon_area(contour), 2))\nprint('centroida (srednia wierzchowkow):', tuple(np.round(naive_c, 3)))\nprint('centroida (z momentow):', tuple(round(v, 3) for v in polygon_centroid(contour)))\n\n# Sprobuj:\n# 1) zmien n na 4, 6, 100 — kiedy obie metody daja ten sam wynik?\n# 2) podstaw nierownomierne probkowanie, np. xs = 50 + 30*np.cos(t**2)\n#    i zobacz, ktorą metoda przesuwa sie ku zageszczeniu probek.\n# 3) przesun caly ksztalt: xs += 100; ys -= 50 — jak zmienia sie pole, a jak centroida?\n",
+        "encouragement": "Zmieniaj liczbę punktów i sposób ich rozłożenia — zobacz, kiedy uśrednienie wierzchołków wystarcza, a kiedy trzeba sięgnąć po momenty."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/dd/d49/tutorial_py_contour_features.html",
+      "title": "OpenCV Python tutorial — Contour features (area, perimeter, moments, approxPolyDP)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Image_moment",
+      "title": "Image moment — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.3138/FM57-6770-U75U-7727",
+      "title": "Douglas, D. H. and Peucker, T. K. — Algorithms for the Reduction of the Number of Points Required to Represent a Digitized Line or its Caricature (Cartographica, 1973)",
+      "kind": "paper",
+      "author": "David H. Douglas and Thomas K. Peucker",
+      "year": 1973
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d8/d23/classcv_1_1Moments.html",
+      "title": "OpenCV — cv::Moments class reference",
+      "kind": "article"
+    }
+  ]
+}

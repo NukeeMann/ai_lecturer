@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "slug": "korekcja-geometryczna-i-ortorektyfikacja",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Korekcja geometryczna i ortorektyfikacja",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Bocznie patrzący radar widzi świat ukośnie: relief wymusza foreshortening, layover i shadow, a oś slant range nie jest osią terenową. Lekcja wyjaśnia geometrię SAR i pokazuje, jak Range-Doppler Terrain Correction z DEM przerzuca scenę do współrzędnych mapy.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "geometria-bocznego-radaru",
+      "title": "Bocznie patrzący radar — skąd biorą się zniekształcenia",
+      "type": "theory",
+      "data": {
+        "markdown": "Sentinel-1 leci na ~700 km nad powierzchnią Ziemi i świeci impulsem **w bok**, pod kątem padania (incidence angle) od ok. 20° w near range do 45° w far range. Każdy piksel produktu Level-1 GRD jest indeksowany w **slant range** — odległości skośnej między anteną a punktem na powierzchni — a nie w terenowej odległości na ziemi. To jest *fundamentalna* różnica w stosunku do zdjęcia z samolotu lub kamery satelitarnej w nadirze.\n\nWybór bocznej geometrii powoduje **trzy charakterystyczne zniekształcenia zależne od reliefu** plus jedno globalne:\n\n- **Foreshortening (skrócenie)** — stoki skierowane *ku radarowi* kompresują się w obrazie. Zbocze fizycznej długości $L$ o nachyleniu $\\alpha$ oświetlane pod kątem padania $\\theta$ zajmuje na obrazie tylko $L \\cdot \\sin(\\theta - \\alpha)$ pikseli w osi range. Im bardziej zbocze patrzy na satelitę (czyli im mniejsza różnica $\\theta - \\alpha$), tym bardziej obraz góry jest spłaszczony — stąd typowo bardzo jasne, wąskie pasy po stronie satelitarnej grzbietów górskich.\n- **Layover (nakładanie)** — gdy zbocze jest *strome­nie* niż kąt padania ($\\alpha > \\theta$), wierzchołek odbija sygnał szybciej niż podstawa. Na obrazie wierzchołek pojawia się **przed** podstawą; dwa różne miejsca terenu o różnej wysokości lądują w *jednym* pikselu slant range, a ich sygnały są fizycznie zsumowane. To jest zniekształcenie nieodwracalne — żadne mapowanie geometryczne nie rozdzieli tego, co radar zsumował koherentnie.\n- **Shadow (cień)** — zbocza po stronie *przeciwnej* do anteny nie są oświetlone wcale. Sygnał ich nie dosięga, a piksele są ciemne, bez względu na fizyczne pokrycie. W cieniu **nie ma sygnału do odzyskania**.\n- **Slant ↔ ground range** — nawet na płaskim morzu odstęp piksela w obrazie nie jest stały w jednostkach terenowych: blisko nadir kompresja jest ekstremalna, w far range słabnie. To efekt geometryczny, niezależny od reliefu, i jako jedyny daje się skorygować analitycznie."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+          "title": "ESA Sentinel-1 SAR User Guide",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-efektow",
+      "title": "Foreshortening, layover, shadow — mapa decyzji",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "efekt", "label": "Efekt geometryczny", "type": "string", "sortable": false },
+          { "key": "kiedy", "label": "Kiedy występuje", "type": "string", "sortable": false },
+          { "key": "sygnatura", "label": "Wizualna sygnatura w obrazie", "type": "string", "sortable": false },
+          { "key": "korekta", "label": "Czy daje się skorygować?", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "efekt": "Foreshortening",
+            "kiedy": "Zbocze ku radarowi, $0 < \\alpha < \\theta$",
+            "sygnatura": "Wąski, jasny pas po stronie satelitarnej grzbietu — fizycznie długie zbocze ściśnięte do kilku pikseli range",
+            "korekta": "Tak. Range-Doppler Terrain Correction z DEM-em rozciąga te piksele do prawdziwej długości terenowej w siatce mapy"
+          },
+          {
+            "efekt": "Layover",
+            "kiedy": "Bardzo strome zbocze, $\\alpha > \\theta$",
+            "sygnatura": "Wierzchołek pojawia się **przed** podstawą; sygnały z różnych wysokości zsumowane w jednym pikselu",
+            "korekta": "Tylko częściowo. Geokodowanie poprawnie umiejscawia piksele, ale informacja jest nieodwracalnie zsumowana — piksele oznacza się jako *layover* i wyklucza z analiz"
+          },
+          {
+            "efekt": "Shadow",
+            "kiedy": "Zbocze po przeciwnej stronie góry, niedoświetlone wiązką",
+            "sygnatura": "Czarne plamy o ostrych krawędziach, niezależne od pokrycia terenu",
+            "korekta": "Nie. W cieniu nie ma sygnału do odzyskania; piksele oznacza się jako *shadow* i wyklucza z analiz"
+          },
+          {
+            "efekt": "Slant ↔ ground range",
+            "kiedy": "Cała scena, nawet płaski teren",
+            "sygnatura": "Stała deformacja proporcji wzdłuż osi range; pixel spacing zmienny od near do far range",
+            "korekta": "Tak, jednoznacznie. Mapowanie $g = \\sqrt{r^2 - h^2}$ (płaska Ziemia) lub przez DEM jest analityczne i wbudowane w produkty Sentinel-1 GRD-H"
+          }
+        ]
+      }
+    },
+    {
+      "id": "range-doppler-i-dem",
+      "title": "Range-Doppler Terrain Correction i rola DEM",
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyczna korekta geometryczna SAR-a nazywa się **Range-Doppler Terrain Correction (RDTC)** i w typowym pipeline'ie jest delegowana do ESA SNAP — `Radar → Geometric → Terrain Correction → Range-Doppler Terrain Correction`. Algorytm jest **iteracyjnym geokodowaniem wstecz**: zamiast dla każdego piksela SAR liczyć, gdzie *padł* on na ziemi, dla każdej komórki **siatki mapy** szuka się odpowiadającego piksela w obrazie SAR.\n\nPipeline w skrócie, z trzema składnikami fizycznymi:\n\n1. Wczytaj **DEM** (Copernicus DEM 30 m lub SRTM 30 m) pokrywający scenę i zresampluj go do siatki wyjściowej — zwykle UTM o pikselu 10 m (IW SLC) albo 20 m (IW GRD-H).\n2. Dla każdej komórki $(\\lambda,\\,\\varphi,\\,h)$ z DEM:\n   - znajdź pozycję satelity $\\mathbf{p}_{\\text{sat}}(t)$ z **wektorów stanu orbity** dołączonych do produktu (`<orbitFile>`),\n   - rozwiąż **równanie zerowego Dopplera** względem chwili naświetlenia $t^{*}$:\n     $$ f_D(t)\\;=\\;\\frac{2}{\\lambda}\\,\\bigl(\\mathbf{v}_{\\text{sat}}(t)\\cdot \\hat{\\mathbf{r}}(t)\\bigr)\\;=\\;0,\\qquad \\hat{\\mathbf{r}}(t)\\;=\\;\\frac{\\mathbf{p}_{\\text{sat}}(t)-\\mathbf{p}_{\\text{px}}}{\\lVert\\mathbf{p}_{\\text{sat}}(t)-\\mathbf{p}_{\\text{px}}\\rVert}, $$\n   - oblicz slant range $r^{*} = \\lVert\\mathbf{p}_{\\text{sat}}(t^{*})-\\mathbf{p}_{\\text{px}}\\rVert$.\n3. Z pary $(t^{*},\\,r^{*})$ wylicz indeks piksela $(i,\\,j)$ w obrazie SAR i odczytaj wartość przez interpolację (zwykle bicubic).\n\nKluczowy detal: **bez DEM-u** nie da się odróżnić foreshorteningu od poprawnej geometrii płaskiego terenu — ten sam slant range przy różnej wysokości terenu odpowiada różnym punktom na ziemi. To dlatego \"szybka\" korekta przez 4 GCP-y i homografię (`cv2.findHomography`) **nie wystarczy** dla typowej sceny Sentinel-1: homografia zakłada, że scena leży na płaszczyźnie, a Tatry, Alpy czy nawet pofałdowane Mazury tej hipotezie się sprzeciwiają. Dla terenu *naprawdę* płaskiego (otwarty ocean, depresje) homografia z 4 narożnikami daje sensowny wynik — i tylko tam.\n\nOpenCV samo w sobie **nie ma** modułu DEM ani solvera dopplerowskiego. Praktyczny wzorzec to: *RDTC w SNAP-ie → zapis jako GeoTIFF w UTM → `rasterio.open(...)` → tablica NumPy → dalsze filtracje, segmentacja, CFAR i tak dalej w `cv2`*. Po RDTC siatka jest geograficznie spójna, a `cv2.warpAffine` / `cv2.remap` wystarczają już tylko do *ko-rejestracji* sub-pikselowej między scenami z różnych dat (np. dla detekcji zmian)."
+      },
+      "sources": [
+        {
+          "url": "https://step.esa.int/main/toolboxes/snap/",
+          "title": "ESA SNAP toolbox documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+          "title": "Small, D. — Flattening Gamma: Radiometric Terrain Correction for SAR Imagery (IEEE TGRS 2011)",
+          "kind": "paper",
+          "author": "David Small",
+          "year": 2011
+        }
+      ]
+    },
+    {
+      "id": "exercise-slant-to-ground",
+      "title": "Zaimplementuj `slant_to_ground_flat(slant_ranges, sat_altitude_m)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję, która dla **płaskiej Ziemi** mapuje slant range na ground range. Geometria: satelita znajduje się nad nadir-em na wysokości $H$ (`sat_altitude_m`), a piksel SAR jest widziany pod ukośną odległością $r$ (`slant_ranges`, w metrach). Z trójkąta prostokątnego *satelita → nadir → piksel*:\n\n$$ g \\;=\\; \\sqrt{r^{2} - H^{2}} $$\n\nWymagania:\n\n1. Akceptuj `slant_ranges` jako liczbę albo `numpy.ndarray` (1D lub 2D); zwracaj wartość tego samego typu i kształtu co wejście (skalary jako `numpy.float64`, tablice jako `numpy.ndarray` o `dtype=float64`).\n2. Dla pikseli, w których $r < H$ (geometrycznie niemożliwe — slant range nigdy nie może być mniejsza od wysokości satelity), zwróć `numpy.nan`. Dla $r = H$ wynik to dokładnie $0$ (nadir).\n3. Nie używaj pętli po pikselach — `numpy.where` + `numpy.sqrt` wystarczą. Funkcja musi działać wektorowo na tablicach.\n\n```\nslant_to_ground_flat(700_000.0, 700_000.0)             # -> 0.0 (nadir)\nslant_to_ground_flat(1_300_000.0, 500_000.0)           # -> 1_200_000.0 (3-4-5 prostokątny)\nslant_to_ground_flat(np.array([400.0, 500.0, 1300.0]), 500.0)\n# -> array([nan, 0.0, 1200.0])\n```",
+        "starterCode": "import numpy as np\n\ndef slant_to_ground_flat(slant_ranges, sat_altitude_m):\n    # slant_ranges: float | np.ndarray; sat_altitude_m: float (>= 0)\n    # TODO: zaimplementuj g = sqrt(r^2 - H^2) wektorowo,\n    # ze slant_ranges < sat_altitude_m zwracajacymi NaN.\n    # Pamietaj, ze numpy.sqrt z ujemnego elementu da warning + NaN — schowaj\n    # to przez np.where(mask, sqrt(...), nan), liczac argument tylko tam,\n    # gdzie jest dodatni.\n    return slant_ranges\n",
+        "tests": [
+          {
+            "name": "nadir_zwraca_zero",
+            "body": "import numpy as np\nout = slant_to_ground_flat(700_000.0, 700_000.0)\nassert isinstance(out, float) or (hasattr(out, 'dtype') and out.dtype == np.float64), f'oczekiwano float / numpy.float64, dostalismy {type(out).__name__}'\nassert abs(float(out) - 0.0) < 1e-6, f'nadir powinien dac ground range = 0, dostalismy {float(out):.6f}'",
+            "hidden": false
+          },
+          {
+            "name": "trojkat_pitagorasa_3_4_5",
+            "body": "out = slant_to_ground_flat(1_300_000.0, 500_000.0)\nassert abs(float(out) - 1_200_000.0) < 1e-3, f'r=1300, H=500 -> g=1200 (twierdzenie Pitagorasa), dostalismy {float(out):.4f}'"
+          },
+          {
+            "name": "wektoryzacja_na_1d_tablicy",
+            "body": "import numpy as np\nslants = np.array([400.0, 500.0, 1300.0, 2600.0])\nout = slant_to_ground_flat(slants, 500.0)\nassert isinstance(out, np.ndarray), f'dla wejscia ndarray oczekiwano ndarray, dostalismy {type(out).__name__}'\nassert out.shape == (4,), f'ksztalt powinien byc (4,), jest {out.shape}'\nassert np.isnan(out[0]), f'dla r=400 < H=500 oczekiwano NaN, dostalismy {out[0]}'\nassert abs(out[1] - 0.0) < 1e-6, f'r=H=500 -> g=0, dostalismy {out[1]}'\nassert abs(out[2] - 1200.0) < 1e-6, f'r=1300, H=500 -> g=1200, dostalismy {out[2]}'\nexpected_far = (2600.0 ** 2 - 500.0 ** 2) ** 0.5\nassert abs(out[3] - expected_far) < 1e-6, f'r=2600, H=500 -> g~{expected_far:.4f}, dostalismy {out[3]}'"
+          },
+          {
+            "name": "zachowuje_ksztalt_2d",
+            "body": "import numpy as np\nslants = np.array([[800.0, 1000.0], [500.0, 100.0]])\nout = slant_to_ground_flat(slants, 500.0)\nassert out.shape == (2, 2), f'ksztalt 2D musi byc zachowany, jest {out.shape}'\nassert out.dtype == np.float64, f'oczekiwano float64, dostalismy {out.dtype}'\nassert np.isnan(out[1, 1]), f'r=100 < H=500 -> NaN, dostalismy {out[1, 1]}'\nassert abs(out[1, 0] - 0.0) < 1e-9, f'r=H=500 -> 0, dostalismy {out[1, 0]}'\nexpected_00 = (800.0 ** 2 - 500.0 ** 2) ** 0.5\nassert abs(out[0, 0] - expected_00) < 1e-6, f'r=800, H=500 -> g~{expected_00:.4f}, dostalismy {out[0, 0]}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef slant_to_ground_flat(slant_ranges, sat_altitude_m):\n    H = float(sat_altitude_m)\n    arr = np.asarray(slant_ranges, dtype=np.float64)\n    valid = arr >= H\n    diff_sq = np.where(valid, arr * arr - H * H, 0.0)\n    out = np.where(valid, np.sqrt(diff_sq), np.nan)\n    if np.ndim(slant_ranges) == 0:\n        return np.float64(out)\n    return out\n"
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Orthorectification",
+          "title": "Orthorectification — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-misconceptions",
+      "title": "Sprawdź się: co da się skorygować, a co nie",
+      "type": "quiz",
+      "data": {
+        "question": "Otwierasz nową scenę Sentinel-1 GRD-H nad Tatrami i planujesz pipeline ortorektyfikacji. Które stwierdzenia są **poprawne**?",
+        "options": [
+          "Layover (gdy nachylenie zbocza $\\alpha$ jest większe niż kąt padania $\\theta$) jest **nieodwracalny** — sygnały z dwóch różnych wysokości są fizycznie zsumowane w jednym pikselu slant range; geokodowanie ich nie rozdziela, można je tylko oznaczyć i wykluczyć.",
+          "Cztery GCP-y dobrane przy charakterystycznych skrzyżowaniach dróg i `cv2.findHomography` z `cv2.RANSAC` wystarczą do pełnej ortorektyfikacji typowej sceny Sentinel-1 nad pofałdowanym terenem — homografia obsłuży foreshortening, layover i shadow w jednym kroku.",
+          "Range-Doppler Terrain Correction wymaga **DEM-u** (np. Copernicus DEM 30 m) — bez modelu wysokości nie da się odróżnić foreshorteningu od poprawnej geometrii płaskiego terenu, bo różne wysokości lądują na tych samych slant range.",
+          "Shadow (cień radarowy) można uzupełnić interpolacją z sąsiednich pikseli, bo w cieniu też jest jakiś słaby sygnał — wystarczy tylko silniej wyciągnąć kontrast w `cv2.equalizeHist` i pikseli przestaną być czarne."
+        ],
+        "correct": [0, 2],
+        "explanation": "Stwierdzenie 1 jest **poprawne**: w obszarze layoveru wierzchołek góry odbija sygnał szybciej niż jej podstawa, więc dwa różne punkty terenu trafiają do *jednego* piksela slant range, a ich amplitudy są zsumowane koherentnie. Geometria nie odzyska informacji, której fizyka już zsumowała — jedynym sensownym wyjściem jest maska *layover/shadow*. Stwierdzenie 3 jest **poprawne**: bez DEM-u dla każdego piksela mamy tylko jego slant range $r$, ale ten sam $r$ może odpowiadać każdej parze (ground range, wysokość) na hiperboli odległości; foreshortening to po prostu kompresja takiej trajektorii. DEM ustala wysokość, a wtedy ($t^{*}$, $r^{*}$) są już jednoznaczne. Stwierdzenie 2 jest **błędne**: homografia zakłada, że cała scena leży na **płaszczyźnie**. Tatry tej hipotezie nie spełniają — homografia nie ma w sobie żadnej wiedzy o reliefie i nie skoryguje ani foreshorteningu, ani layoveru. Cztery GCP-y to dobry pomysł dla otwartego morza albo dla *kalibracji sub-pikselowej* sceny już ortorektyfikowanej, ale nie dla samej ortorektyfikacji terenu górskiego. Stwierdzenie 4 jest **błędne**: w cieniu radarowym **nie ma żadnego sygnału** — wiązka tam fizycznie nie dociera. `equalizeHist` rozciągnie szum termiczny do dziwnej tekstury, ale z niej żadnej informacji o pokryciu terenu nie odzyskasz. Cień maskuje się i wyklucza, podobnie jak layover.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-slant-vs-ground",
+      "title": "Piaskownica: slant range vs ground range na płaskiej Ziemi",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport cv2\n\n# Plaska Ziemia. Sentinel-1 IW: H ~= 700 km, kat padania 20-45 stopni.\n# Pas obrazu rozciaga sie od near range ~750 km do far range ~1100 km.\nH_KM = 700.0\nW_PX = 1000\nH_PX = 64\n\n# Liniowa siatka w slant range — tak indeksowany jest produkt SLC / GRD\n# 'natywnie', przed Range-Doppler Terrain Correction.\nslant_km = np.linspace(750.0, 1100.0, W_PX)\nground_km = np.sqrt(slant_km ** 2 - H_KM ** 2)\n\nprint(f'slant pixel spacing      : {(slant_km[-1] - slant_km[0]) / (W_PX - 1):.4f} km/pix (stale)')\nprint(f'ground pixel spacing near: {(ground_km[1] - ground_km[0]):.4f} km/pix')\nprint(f'ground pixel spacing far : {(ground_km[-1] - ground_km[-2]):.4f} km/pix')\n\n# Symuluj pas SAR z dwiema wysepkami o tej samej szerokosci terenowej\n# (np. 20 km) — w slant range beda mialy ROZNA szerokosc w pikselach,\n# bo blizej nadir piksel range odpowiada wiekszej dlugosci na ziemi.\nslant_strip = np.zeros((H_PX, W_PX), dtype=np.float32)\n# 'Wysepka 1' = ground 200..220 km od nadir; znajdz odpowiadajacy slant range\nisland_ground = (200.0, 220.0)\nisland_slant = np.sqrt(np.array(island_ground) ** 2 + H_KM ** 2)\nstart_px = int(round((island_slant[0] - slant_km[0]) / (slant_km[-1] - slant_km[0]) * (W_PX - 1)))\nend_px   = int(round((island_slant[1] - slant_km[0]) / (slant_km[-1] - slant_km[0]) * (W_PX - 1)))\nslant_strip[:, start_px:end_px + 1] = 1.0\nprint(f'wysepka 200-220 km nad ziemia => slant pikseli {start_px}..{end_px} (szerokosc {end_px - start_px + 1} px)')\n\n# 'Wysepka 2' = ground 700..720 km od nadir (tej samej dlugosci terenowej)\nisland2_ground = (700.0, 720.0)\nisland2_slant = np.sqrt(np.array(island2_ground) ** 2 + H_KM ** 2)\nstart_px2 = int(round((island2_slant[0] - slant_km[0]) / (slant_km[-1] - slant_km[0]) * (W_PX - 1)))\nend_px2   = int(round((island2_slant[1] - slant_km[0]) / (slant_km[-1] - slant_km[0]) * (W_PX - 1)))\nslant_strip[:, start_px2:end_px2 + 1] = 1.0\nprint(f'wysepka 700-720 km nad ziemia => slant pikseli {start_px2}..{end_px2} (szerokosc {end_px2 - start_px2 + 1} px)')\nprint('-> w slant range bliska wysepka jest WAZSZA niz dalsza, mimo identycznej dlugosci na ziemi!')\n\n# Przeprojektuj pas do ground range jednolitej siatki przez cv2.remap.\n# Kluczowa idea geokodowania: dla kazdego piksela siatki WYJSCIOWEJ liczymy,\n# z ktorego ulamkowego piksela siatki WEJSCIOWEJ go pobrac.\nground_target = np.linspace(ground_km[0], ground_km[-1], W_PX)\nslant_back = np.sqrt(ground_target ** 2 + H_KM ** 2)\nsrc_x = (slant_back - slant_km[0]) / (slant_km[-1] - slant_km[0]) * (W_PX - 1)\n\nmap_x = np.tile(src_x.astype(np.float32), (H_PX, 1))\nmap_y = np.tile(np.arange(H_PX, dtype=np.float32).reshape(-1, 1), (1, W_PX))\n\nground_strip = cv2.remap(\n    slant_strip, map_x, map_y,\n    interpolation=cv2.INTER_LINEAR,\n    borderMode=cv2.BORDER_CONSTANT, borderValue=0.0,\n)\n\ndef width_in_pixels(row, threshold=0.5):\n    on = row > threshold\n    if not on.any():\n        return 0\n    idx = np.flatnonzero(on)\n    return int(idx[-1] - idx[0] + 1)\n\nprint()\nprint('-- szerokosci wysepek (w pikselach) --')\nprint(f'  slant near : {width_in_pixels(slant_strip[0, : start_px + 80])}')\nprint(f'  slant far  : {width_in_pixels(slant_strip[0, start_px2 - 50 : end_px2 + 50])}')\nprint(f'  ground near: {width_in_pixels(ground_strip[0, : W_PX // 4])}')\nprint(f'  ground far : {width_in_pixels(ground_strip[0, 3 * W_PX // 4 :])}')\nprint()\nprint('Po geokodowaniu obie wysepki maja porownywalna szerokosc — bo na ziemi RZECZYWISCIE')\nprint('maja te sama dlugosc, a ground range to wlasnie geometria, w ktorej sie zgadza.')\n",
+        "encouragement": "Zmień `H_KM` na 500 km albo na 1000 km i obserwuj, jak zmienia się szerokość wysepek w slant range — niższy satelita oznacza mocniejsze foreshortening blisko nadir."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://step.esa.int/main/toolboxes/snap/",
+      "title": "ESA SNAP toolbox documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Orthorectification",
+      "title": "Orthorectification — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+      "title": "Small, D. — Flattening Gamma: Radiometric Terrain Correction for SAR Imagery (IEEE TGRS 2011)",
+      "kind": "paper",
+      "author": "David Small",
+      "year": 2011
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+      "title": "ESA Sentinel-1 SAR User Guide",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

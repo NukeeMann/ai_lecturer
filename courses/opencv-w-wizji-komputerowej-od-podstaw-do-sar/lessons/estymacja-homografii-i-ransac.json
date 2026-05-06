@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "slug": "estymacja-homografii-i-ransac",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Estymacja homografii i RANSAC",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Po teście Lowe'a zostaje Ci kilkaset par dopasowań — z których część to outliery. Homografia 3×3 wiąże dwa rzuty tej samej płaskiej powierzchni, a RANSAC pozwala ją wyznaczyć mimo szumu: losuje 4 pary, dopasowuje model przez DLT, liczy inliery po błędzie reprojekcji i wybiera największy konsensus. To samo serce, które za chwilę będzie zszywać panoramy.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "macierz-homografii",
+      "title": "Homografia: 3×3 macierz, 8 stopni swobody i magiczne 4 pary punktów",
+      "type": "theory",
+      "data": {
+        "markdown": "Między dwoma zdjęciami **tej samej płaskiej powierzchni** — fasady budynku, planszy reklamowej, boiska z trybun, kartki obracanej w ręku — istnieje *projektywne odwzorowanie* 2D → 2D. Nazywamy je **homografią** i zapisujemy jako macierz 3×3:\n\n$$ H = \\begin{bmatrix} h_{11} & h_{12} & h_{13} \\\\ h_{21} & h_{22} & h_{23} \\\\ h_{31} & h_{32} & h_{33} \\end{bmatrix} $$\n\nDziała na **współrzędnych jednorodnych** $(x, y, 1)$. Aby przenieść punkt $(x, y)$ z pierwszego obrazu do drugiego, mnożymy:\n\n$$ \\begin{bmatrix} x' \\\\ y' \\\\ w' \\end{bmatrix} = H \\begin{bmatrix} x \\\\ y \\\\ 1 \\end{bmatrix}, \\qquad u = \\frac{x'}{w'},\\; v = \\frac{y'}{w'} $$\n\n**Dehomogenizacja (dzielenie przez $w'$) jest tym, co odróżnia homografię od transformacji afinicznej** — wprowadza zniekształcenie perspektywiczne, dzięki któremu równoległe linie biegnące w głąb sceny zbiegają się w jednym punkcie ucieczki. Macierz afiniczna ma ostatni wiersz $[0, 0, 1]$ (czyli $w' \\equiv 1$), więc dehomogenizacja jest trywialna i prostokąt zostaje równoległobokiem; w pełnej homografii $h_{31}$ i $h_{32}$ zwykle są niezerowe i prostokąt staje się dowolnym czworokątem.\n\n![Cztery przykładowe rzuty perspektywiczne tego samego zdjęcia: oryginał (po lewej u góry), pochylony do tyłu, ukosem w bok i kombinacja obu — pokazują, że homografia z 8 stopniami swobody potrafi odwzorować dowolny czworokąt na dowolny inny czworokąt](https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Perspective_correction.svg/640px-Perspective_correction.svg.png)\n\n*(Obraz: Wikimedia Commons, plik `Perspective_correction.svg` — kanoniczna ilustracja korekcji perspektywy, czyli odwrotnej homografii: zniekształcony rzut ukośny → wyprostowany prostokąt.)*\n\nMacierz $H$ ma 9 elementów, ale jest **określona z dokładnością do skali** — pomnożenie wszystkich elementów przez dowolne $\\lambda \\neq 0$ daje tę samą transformację po dehomogenizacji. To zostawia **8 stopni swobody**. Każda para punktów $(x_i, y_i) \\leftrightarrow (u_i, v_i)$ daje **2 równania liniowe** na te 8 niewiadomych (jedno dla $u$, jedno dla $v$). Stąd magiczna liczba **4 par punktów**: $4 \\times 2 = 8$ — minimalny zbiór, który jednoznacznie wyznacza $H$ (warunek: żadne trzy z czterech nie leżą na jednej prostej w żadnym z obrazów).\n\nMając więcej par $N \\geq 4$, problem staje się nadokreślony i rozwiązujemy go metodą **DLT** (*Direct Linear Transform*): składamy wszystkie równania w macierz $A$ rozmiaru $2N \\times 9$ i szukamy $A\\,\\mathbf{h} = \\mathbf{0}$ (gdzie $\\mathbf{h}$ to spłaszczone $H$) jako wektora osobliwego o najmniejszej wartości osobliwej z **SVD** macierzy $A$. Praktycznie poprzedza się to normalizacją Hartleya (centrowanie i skalowanie współrzędnych) — bez niej DLT jest numerycznie kapryśny przy współrzędnych pikselowych rzędu tysięcy. To jest dokładnie pipeline, który wewnątrz wykonuje `cv2.findHomography(..., method=0)` — pod warunkiem, że dane są czyste."
+      },
+      "sources": [
+        {
+          "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+          "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 4 Estimation – 2D Projective Transformations",
+          "kind": "book",
+          "author": "Richard Hartley and Andrew Zisserman",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "ransac-pieciokrok",
+      "title": "RANSAC w pięciu krokach (i dlaczego LSQ tu nie wystarczy)",
+      "type": "theory",
+      "data": {
+        "markdown": "Oczywiste pytanie: co jeśli dane *nie są* czyste? Po teście Lowe'a z poprzedniej lekcji nadal zostaje **5–30% par-outlierów** — dopasowania podobne deskryptorowo, ale geometrycznie sprzeczne (powtarzający się wzór na fasadzie, podobne narożniki okien, błyski słońca). **Metoda najmniejszych kwadratów aplikowana wprost (DLT na całym zbiorze) wtedy katastrofalnie zawodzi**: SVD minimalizuje sumę kwadratów reprojekcji *po wszystkich* parach, a kilka outlierów potrafi pociągnąć $H$ daleko od prawdy. Jeden outlier z błędem 200 px waży tyle, co 200 inlierów z błędem po 1 px każdy — i tak DLT w cichości wybiera kompromis, który dla obu jest zły.\n\n**RANSAC** (*Random Sample Consensus*, Fischler & Bolles 1981) odwraca logikę: zamiast godzić wszystkie pary, *zakłada*, że większość jest poprawna, *losuje* minimalny podzbiór, dopasowuje model i sprawdza, ile reszty się z nim zgadza. Pętla w pięciu krokach:\n\n1. **Losuj minimalny zbiór** — dla homografii $s = 4$ pary punktów (bez powtórzeń).\n2. **Dopasuj model** — policz $H$ z tych 4 par przez DLT (zamknięta forma, jedno SVD na małej macierzy 8 × 9).\n3. **Policz inliery** — dla każdej z $N$ par policz **błąd reprojekcji** $\\,\\bigl\\lVert (u_i, v_i) - \\pi\\bigl(H \\cdot (x_i, y_i, 1)^\\top\\bigr) \\bigr\\rVert$, gdzie $\\pi$ to dehomogenizacja. Para to *inlier*, jeśli błąd jest poniżej progu `ransacReprojThreshold` (typowo 3–5 px).\n4. **Powtórz $K$ razy**, zachowując model (i jego maskę inlierów) z największą liczbą inlierów.\n5. **Refit** — na sam koniec dopasuj $H$ ponownie przez DLT na **wszystkich** inlierach najlepszego modelu (DLT na 80 parach jest dużo dokładniejszy niż DLT na minimalnych 4).\n\nIle iteracji $K$ trzeba? Zaskakująco mało. Jeśli udział outlierów wynosi $\\varepsilon$, to prawdopodobieństwo wylosowania 4 inlierów na raz to $(1 - \\varepsilon)^4$. Aby z prawdopodobieństwem $p$ trafić w taki czysty zestaw choć raz w $K$ iteracjach, potrzeba:\n\n$$ K \\geq \\frac{\\log(1 - p)}{\\log\\bigl(1 - (1 - \\varepsilon)^s\\bigr)} $$\n\nDla $\\varepsilon = 0{,}5$, $s = 4$, $p = 0{,}99$: $K \\approx 72$ iteracji. Dla $\\varepsilon = 0{,}3$: $K \\approx 17$. Dla $\\varepsilon = 0{,}1$: $K \\approx 5$. RANSAC działa szybko nawet przy 50% szumu, ale liczba iteracji rośnie wykładniczo w okolicach 70–80% outlierów — wtedy lepiej najpierw zaostrzyć test Lowe'a (mniejsze `ratio`).\n\nOpenCV implementuje całą tę pętlę w jednej linijce: **`H, mask = cv2.findHomography(src, dst, cv2.RANSAC, 5.0)`**. Argumenty: tablice `(N, 1, 2)` punktów źródłowych i docelowych, `method` (`cv2.RANSAC`, `cv2.LMEDS` lub w nowszych wydaniach OpenCV `cv2.USAC_MAGSAC` — solidniejszy wariant USAC), oraz **`ransacReprojThreshold`** w pikselach. Zwraca: macierz $H$ rozmiaru $3 \\times 3$ oraz **maskę** $(N, 1)$ z 1 dla inlierów i 0 dla outlierów. Tej maski używasz później, by:\n\n- przefiltrować listę `cv2.DMatch` do dalszej wizualizacji `cv2.drawMatches(...)`,\n- zsumować i sprawdzić, czy w ogóle mamy dość inlierów na sensowny stitching (zwykle: ≥ 10 z ≥ 30 kandydatów),\n- zignorować całe dopasowanie, jeśli inlierów jest za mało — bo to znak, że obrazy *nie* nakładają się na tę samą płaską scenę."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1145/358669.358692",
+          "title": "Fischler, M. A. and Bolles, R. C. — Random Sample Consensus: A Paradigm for Model Fitting (CACM 1981)",
+          "kind": "paper",
+          "author": "Martin A. Fischler and Robert C. Bolles",
+          "year": 1981
+        }
+      ]
+    },
+    {
+      "id": "fillblanks-findhomography",
+      "title": "Wpisz brakujące argumenty findHomography",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Złóż jednolinijkowe wywołanie `cv2.findHomography` w pełnym pipeline'ie: keypointy + dopasowania po teście Lowe'a → punkty `(N, 1, 2)` → estymacja $H$ + maska inlierów → zliczenie. Wpisz trzy fragmenty: **metodę** estymacji, **próg reprojekcji** w pikselach i **agregator** maski.\n\nWskazówki:\n- metoda powinna być nazwą stałej z `cv2`, wybierającą algorytm odporny na outliery (a nie pure DLT — `0` lub `cv2.LMEDS`),\n- typowy próg reprojekcji w panoramach z keypointów to 3–5 pikseli (dokumentacja OpenCV i Hartley–Zisserman),\n- maska to `np.ndarray` o kształcie `(N, 1)` z wartościami 0/1; sumując dostajesz liczbę inlierów.",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n# good = lista cv2.DMatch po tescie Lowe'a (poprzednia lekcja).\n# kp_q, kp_t = keypointy zapytania (query) i treningu (train).\nsrc_pts = np.float32([kp_q[m.queryIdx].pt for m in good]).reshape(-1, 1, 2)\ndst_pts = np.float32([kp_t[m.trainIdx].pt for m in good]).reshape(-1, 1, 2)\n\n# Wybierz metode estymacji oraz prog odleglosci reprojekcji w pikselach.\nH, mask = cv2.findHomography(src_pts, dst_pts, {{method}}, {{threshold}})\n\n# mask: ndarray (N, 1) z 0/1 - inliery oznaczone jedynka.\ninlier_count = int(mask.{{aggregator}}())\nprint(f'Inliery: {inlier_count}/{len(good)}')\n",
+        "slots": [
+          {
+            "id": "method",
+            "hint": "Stała cv2.* nazywająca odporny na outliery algorytm losowo-konsensusowy.",
+            "validation": { "kind": "oneOf", "values": ["cv2.RANSAC"] }
+          },
+          {
+            "id": "threshold",
+            "hint": "Próg odległości reprojekcji w pikselach — typowo 3–5.",
+            "validation": { "kind": "oneOf", "values": ["3.0", "5.0", "5", "3", "4.0", "4"] }
+          },
+          {
+            "id": "aggregator",
+            "hint": "Metoda ndarray, która sprowadzi maskę 0/1 do liczby inlierów.",
+            "validation": { "kind": "oneOf", "values": ["sum", "ravel().sum"] }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-ransac-vs-lsq",
+      "title": "Sprawdź się: który wariant estymacji jest właściwy",
+      "type": "quiz",
+      "data": {
+        "question": "Po teście Lowe'a (ratio = 0,75) między dwoma zdjęciami fasady zostało Ci 200 par keypointów, ale podejrzewasz, że ~30% z nich to outliery (powtarzający się wzór okien). Który sposób wyznaczenia homografii daje najlepszy estymat?",
+        "options": [
+          "cv2.getPerspectiveTransform(src_pts[:4], dst_pts[:4]) — minimalne 4 pary wystarczą do wyznaczenia 8 stopni swobody.",
+          "cv2.findHomography(src_pts, dst_pts, 0) — czysty DLT/SVD na wszystkich 200 parach minimalizuje globalny błąd kwadratowy.",
+          "cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0) — losuj 4 pary, mierz błąd reprojekcji do progu 5 px, zachowaj model z największym konsensusem.",
+          "cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 0.3) — bardzo surowy próg gwarantuje, że żaden outlier nie wejdzie do modelu, niezależnie od poziomu szumu."
+        ],
+        "correct": [2],
+        "explanation": "Odpowiedź **A** wybiera arbitralne 4 pierwsze pary z 200 — wystarczy, że jedna z nich to outlier (a przy 30% szumu szansa na to jest ~76%) i całe $H$ jest nie do uratowania. Marnujemy też informację z pozostałych 196 par. Odpowiedź **B** to dokładnie ten przypadek, którego dotyczy lekcja: pure DLT/SVD na całym zbiorze to **metoda najmniejszych kwadratów**, a kilka outlierów z błędem reprojekcji rzędu setek pikseli waży w sumie kwadratów więcej niż dziesiątki inlierów z błędem subpikselowym. Estymat $H$ wychodzi przesunięty „w stronę\" outlierów. Odpowiedź **D** jest pułapką w drugą stronę: keypointy SIFT/ORB mają niepewność lokalizacji rzędu 1 px (a w pełnej skali piramidy nawet 2 px). Próg 0,3 px odrzuci jako outliery także prawdziwe inliery — konsensus skurczy się do 4–6 par, RANSAC straci próbkę większościową i zwróci niestabilne $H$, często gorsze od pure LSQ. Standardowa rekomendacja w dokumentacji OpenCV i Hartley–Zisserman to **3–5 px** dla `ransacReprojThreshold` — i to jest dokładnie odpowiedź **C**, która łączy odporność na outliery z realistycznym progiem.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga4abc2ece9fab9398f2e560d53c8c9780",
+          "title": "cv::findHomography — OpenCV API reference (rekomendowany ransacReprojThreshold = 1–10 px, typowo 3–5)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-inlier-mask",
+      "title": "Zaimplementuj rdzeń RANSAC: maskę inlierów z błędu reprojekcji",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `compute_inlier_mask(src_pts, dst_pts, H, threshold=5.0)`, która jest **rdzeniem kroku 3 algorytmu RANSAC** (z poprzedniej teorii): policz, które pary punktów zgadzają się z daną homografią $H$.\n\nKonwencja:\n- `src_pts`, `dst_pts` to tablice NumPy o kształcie `(N, 2)` z pikselowymi współrzędnymi $(x, y)$,\n- `H` to `np.ndarray` rozmiaru `(3, 3)` (typ float),\n- `threshold` to próg w pikselach.\n\nKrok po kroku:\n\n1. **Homogenizuj** `src_pts`: dolep kolumnę jedynek → `(N, 3)`.\n2. **Aplikuj $H$**: `proj = src_h @ H.T` → `(N, 3)`.\n3. **Dehomogenizuj**: podziel pierwsze 2 kolumny przez 3-cią (broadcasting). Otrzymasz `(N, 2)`.\n4. **Policz błąd L2** między `proj_xy` a `dst_pts` po `axis=1`. To jest błąd reprojekcji w pikselach.\n5. Zwróć `np.ndarray` typu `bool` o kształcie `(N,)`: `True` tam, gdzie błąd `< threshold`.\n\nSygnatura odpowiada metodzie `cv2.findHomography(...)[1].ravel().astype(bool)` po dopasowaniu $H$ — robisz dokładnie to samo wewnętrzne porównanie, tylko ręcznie.\n\n```\nH = np.eye(3)\nsrc = np.array([[0.0, 0.0], [10.0, 20.0]])\ndst = src.copy()\ncompute_inlier_mask(src, dst, H, 1.0)  # -> np.array([True, True])\n```",
+        "starterCode": "import numpy as np\n\n\ndef compute_inlier_mask(src_pts, dst_pts, H, threshold=5.0):\n    # src_pts, dst_pts: ndarray (N, 2) z pikselowymi (x, y)\n    # H:                ndarray (3, 3) - macierz homografii\n    # threshold:        prog reprojekcji w pikselach\n    # Zwraca:           ndarray bool (N,) - True dla inlierow\n    src = np.asarray(src_pts, dtype=np.float64)\n    dst = np.asarray(dst_pts, dtype=np.float64)\n    N = src.shape[0]\n    # TODO:\n    #   1. src_h = np.hstack([src, np.ones((N, 1))]) -> (N, 3)\n    #   2. proj  = src_h @ H.T                       -> (N, 3)\n    #   3. proj_xy = proj[:, :2] / proj[:, 2:3]      -> (N, 2)  (dehomogenizacja)\n    #   4. err = np.linalg.norm(proj_xy - dst, axis=1)\n    #   5. return err < threshold\n    return np.zeros(N, dtype=bool)\n",
+        "tests": [
+          {
+            "name": "identycznosc_dla_H_jednostkowej",
+            "body": "# H = I, src = dst -> wszystkie pary sa idealnie wyrownane (blad = 0).\nH = np.eye(3)\nsrc = np.array([[10.0, 20.0], [50.0, 60.0], [100.0, 100.0]])\ndst = src.copy()\nmask = compute_inlier_mask(src, dst, H, threshold=1.0)\nassert mask.dtype == bool, f'oczekiwano dtype=bool, jest {mask.dtype}'\nassert mask.shape == (3,), f'oczekiwano ksztaltu (3,), jest {mask.shape}'\nassert mask.all(), 'identyczna H + identyczne pary -> wszystkie powinny byc inlierami'",
+            "hidden": false
+          },
+          {
+            "name": "outlier_jest_odrzucany",
+            "body": "# H = I, ale czwarta para ma dst odsuniete o ~212 px - musi byc outlierem.\nH = np.eye(3)\nsrc = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [50.0, 50.0]])\ndst = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 10.0], [200.0, 200.0]])\nmask = compute_inlier_mask(src, dst, H, threshold=2.0)\nassert mask.tolist() == [True, True, True, False], f'oczekiwano [T,T,T,F], jest {mask.tolist()}'"
+          },
+          {
+            "name": "respektuje_prog_threshold",
+            "body": "# Dla pary src=(0,0), dst=(3,4) blad euklidesowy = sqrt(9+16) = 5.0.\nH = np.eye(3)\nsrc = np.array([[0.0, 0.0]])\ndst = np.array([[3.0, 4.0]])\nassert compute_inlier_mask(src, dst, H, threshold=10.0).tolist() == [True],  'blad 5 < prog 10 -> inlier'\nassert compute_inlier_mask(src, dst, H, threshold=5.5).tolist()  == [True],  'blad 5 < prog 5.5 -> inlier'\nassert compute_inlier_mask(src, dst, H, threshold=4.9).tolist()  == [False], 'blad 5 > prog 4.9 -> outlier'"
+          },
+          {
+            "name": "macierz_translacji_jest_uwzgledniana",
+            "body": "# H przesuwa kazdy punkt o (5, 7); dst odpowiednio przesuniete -> wszystko inliery.\nH = np.array([[1.0, 0.0, 5.0],\n              [0.0, 1.0, 7.0],\n              [0.0, 0.0, 1.0]])\nsrc = np.array([[0.0, 0.0], [10.0, 20.0], [100.0, -50.0]])\ndst = np.array([[5.0, 7.0], [15.0, 27.0], [105.0, -43.0]])\nmask = compute_inlier_mask(src, dst, H, threshold=0.1)\nassert mask.all(), f'idealna translacja powinna miec wszystkie inliery, jest {mask.tolist()}'\n# Sanity check: gdy NIE uwzglednisz translacji w H (np. zostawisz src), powinno wybuchnac.\nmask_wrong = compute_inlier_mask(src, dst, np.eye(3), threshold=0.1)\nassert not mask_wrong.any(), 'jednostkowa H zamiast translacji nie powinna dawac zadnych inlierow'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef compute_inlier_mask(src_pts, dst_pts, H, threshold=5.0):\n    src = np.asarray(src_pts, dtype=np.float64)\n    dst = np.asarray(dst_pts, dtype=np.float64)\n    N = src.shape[0]\n    src_h = np.hstack([src, np.ones((N, 1), dtype=np.float64)])  # (N, 3)\n    proj = src_h @ H.T                                            # (N, 3)\n    proj_xy = proj[:, :2] / proj[:, 2:3]                          # (N, 2) dehomogenizacja\n    err = np.linalg.norm(proj_xy - dst, axis=1)                   # (N,)\n    return err < threshold\n"
+      }
+    },
+    {
+      "id": "sandbox-prog-ransac",
+      "title": "Piaskownica: jak wybór progu ransacReprojThreshold wpływa na estymat",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# --- Syntetyczna scena z prawdziwa homografia + 30% outlierow ---\nrng = np.random.default_rng(0)\nN_GOOD, N_BAD = 70, 30\n\n# Punkty zrodlowe rozrzucone po obrazie 500x500\nsrc_clean = rng.uniform(0, 500, size=(N_GOOD, 2)).astype(np.float64)\n\n# Prawdziwa homografia: skalowanie + skos + niezerowa perspektywa (h31, h32 != 0)\nH_true = np.array([\n    [1.20, 0.10, -30.0],\n    [0.00, 0.95,  20.0],\n    [0.0008, 0.0002, 1.0],\n], dtype=np.float64)\n\n# Idealna projekcja H_true na inlierach + szum subpikselowy (~0.5 px)\nsrc_h = np.hstack([src_clean, np.ones((N_GOOD, 1))])\nproj = src_h @ H_true.T\ndst_clean = proj[:, :2] / proj[:, 2:3]\ndst_clean = dst_clean + rng.normal(0, 0.5, dst_clean.shape)\n\n# Outliery - pary calkowicie losowe (brak geometrycznej zgodnosci)\nsrc_bad = rng.uniform(0, 500, size=(N_BAD, 2))\ndst_bad = rng.uniform(0, 500, size=(N_BAD, 2))\n\nsrc_pts = np.vstack([src_clean, src_bad]).astype(np.float32).reshape(-1, 1, 2)\ndst_pts = np.vstack([dst_clean, dst_bad]).astype(np.float32).reshape(-1, 1, 2)\n\n# True_inliers znajduje sie na pierwszych N_GOOD indeksach - przyda sie do oceny.\ntrue_inlier_set = set(range(N_GOOD))\n\n\ndef report(label, H_est, mask):\n    if H_est is None:\n        print(f'{label:30s} | findHomography zwrocilo None (za malo inlierow)')\n        return\n    flat = mask.ravel().astype(bool)\n    n_in = int(flat.sum())\n    n_correct = sum(1 for i, keep in enumerate(flat) if keep and i in true_inlier_set)\n    n_wrong = n_in - n_correct\n    err_block = float(np.linalg.norm(H_est[:2, :3] - H_true[:2, :3]))\n    print(f'{label:30s} | inliery: {n_in:3d} (poprawnie {n_correct}, falszywie {n_wrong}) '\n          f'| ||H_est - H_true||_F (blok 2x3): {err_block:.4f}')\n\n\n# --- Strategia 1: pure DLT/SVD (method=0) - bez RANSAC, dla porownania ---\nH_lsq, mask_lsq = cv2.findHomography(src_pts, dst_pts, 0)\nreport('LSQ (method=0)', H_lsq, np.ones(len(src_pts), dtype=np.uint8))\n\n# --- Strategia 2: RANSAC z roznym progiem ransacReprojThreshold ---\nfor t in (0.5, 1.0, 3.0, 5.0, 10.0, 30.0):\n    H_r, mask_r = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, t)\n    report(f'RANSAC threshold={t:5.1f}px', H_r, mask_r)\n\n# Pytania do siebie:\n#   * Przy ktorym progu prawdziwe inliery zaczynaja sie 'gubic' (n_in spada ponizej 70)?\n#   * Przy ktorym progu pierwsze outliery zaczynaja byc liczone jako inliery (n_wrong > 0)?\n#   * Co stanie sie z 'LSQ' jak zmienisz N_BAD na 5? A na 60? Czy RANSAC nadal sobie radzi?\n#   * Zwieksz szum z 0.5 do 3.0 px - jak musisz dostosowac threshold, zeby inliery sie nie sypaly?\n",
+        "encouragement": "Sprawdź, jak wąskie jest okno dobrego progu — zbyt ostry gubi prawdziwe inliery, zbyt luźny wpuszcza outliery i przesuwa H."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1145/358669.358692",
+      "title": "Fischler, M. A. and Bolles, R. C. — Random Sample Consensus: A Paradigm for Model Fitting (CACM 1981)",
+      "kind": "paper",
+      "author": "Martin A. Fischler and Robert C. Bolles",
+      "year": 1981
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d1/de0/tutorial_py_feature_homography.html",
+      "title": "OpenCV Python tutorial — Feature matching + Homography to find objects",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+      "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 4 Estimation – 2D Projective Transformations",
+      "kind": "book",
+      "author": "Richard Hartley and Andrew Zisserman",
+      "year": 2004
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Random_sample_consensus",
+      "title": "Random sample consensus — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 8.1 (2D and 3D feature-based alignment)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

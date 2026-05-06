@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "slug": "algorytm-watershed-i-markery",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Algorytm Watershed i markery",
+  "eyebrow": "SEGMENTACJA",
+  "description": "Watershed traktuje obraz jak relief i zalewa go wodą — z każdego lokalnego minimum rośnie zlewnia, a tamy między zlewniami stają się granicami segmentacji. Zobaczysz topograficzną metaforę i pełny pipeline OpenCV (Otsu, morfologia, transformata dystansu, `connectedComponents`, `cv2.watershed`), zrozumiesz, dlaczego naiwny watershed nadsegmentuje i jak markery to naprawiają, zaimplementujesz krok przygotowania markerów z konwencją `labels + 1` plus zerowanie strefy unknown, a w piaskownicy rozdzielisz dwie sklejone monety, eksperymentując z progiem na transformacie dystansu.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "obraz-jako-relief",
+      "title": "Obraz jako relief — metafora zalewania",
+      "type": "theory",
+      "data": {
+        "markdown": "Wyobraź sobie obraz w skali szarości jako **mapę wysokości** — jasne piksele to szczyty, ciemne to doliny. Dla segmentacji wygodniej wziąć **moduł gradientu** $\\lvert \\nabla I \\rvert$: wnętrza jednolitych obiektów są wtedy dolinami (małe gradienty), a krawędzie obiektów — graniami (duże gradienty).\n\n![Klasyczny obraz testowy z tutoriala OpenCV: kilka okrągłych monet leżących blisko siebie na ciemnym tle — niektóre się stykają, więc proste progowanie zlepia stykające się monety w jedną bryłę zamiast je rozdzielić](https://docs.opencv.org/4.x/water_coins.jpg)\n\n*(Obraz: dokumentacja OpenCV, [tutorial Image Segmentation with Watershed](https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html).)*\n\n**Algorytm Watershed** (Beucher i Meyer) traktuje ten relief jak prawdziwy teren i zalewa go wodą *od dołu*. Z każdego lokalnego minimum zaczyna rosnąć **zlewnia** (catchment basin) — region zalany przez tę samą wodę. W miejscach, gdzie woda z dwóch sąsiednich zlewni miałaby się spotkać, algorytm stawia **tamę** (linię wododzielną, *watershed line*). Po zakończeniu zalewania obraz jest podzielony tymi tamami na rozłączne regiony — to jest twoja segmentacja.\n\nZ tej topograficznej intuicji wynikają dwie rzeczy, które warto zapamiętać:\n\n- *Każde lokalne minimum* funkcji wysokości daje **osobny region** w wyniku — także każde drobne wgłębienie spowodowane szumem.\n- Granica między regionami biegnie po pikselach o **lokalnie najwyższej** wartości — czyli po naturalnych krawędziach obrazu.\n\nDlatego watershed świeci tam, gdzie zwykłe progowanie zawodzi: **rozdziela dotykające się obiekty** (sklejone monety, sąsiadujące jądra komórek), bo wąska \"szyjka\" między nimi to lokalna grań, a watershed właśnie po graniach wytycza tamy. To różnica jakościowa, nie ilościowa: nie istnieje próg jasności, którym sklejone monety oddzielisz progowaniem globalnym lub Otsu — a watershed z markerami sobie z tym poradzi."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Watershed_(image_processing)",
+          "title": "Watershed (image processing) — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "markery-i-pipeline-opencv",
+      "title": "Markery i pełny pipeline OpenCV",
+      "type": "theory",
+      "data": {
+        "markdown": "**Naiwny watershed nadsegmentuje.** Każde miejscowe minimum staje się osobnym regionem; nawet czysto wyglądająca moneta ma w sobie kilkanaście drobnych minimów (wgłębienia w bicie, szum sensora) — i zamiast jednej zlewni dostajesz dwadzieścia. To jeden z dwóch problemów, które rozwiązują **markery**.\n\n![Wizualizacja transformaty dystansu na masce binarnej kilku stykających się monet: środki monet są jasne (duża odległość od najbliższego piksela tła), brzegi i wąskie szyjki między stykającymi się monetami są ciemne — to pozwala wykryć osobny pik dla każdej monety i użyć tych pików jako markerów](https://docs.opencv.org/4.x/water_dt.jpg)\n\n*(Obraz: dokumentacja OpenCV, tutorial Watershed.)*\n\nMarker (seed) to po prostu pewny piksel, o którym **my** mówimy algorytmowi: \"tu jest obiekt nr 2\", \"tu jest tło\". `cv2.watershed` zalewa wodę tylko z markerów; lokalnych minimów bez markera nie traktuje jako źródła. Konwencja `cv2.watershed`:\n\n- `markers` to tablica `int32` o tym samym kształcie co obraz.\n- `markers > 0` — pewny marker (każda liczba całkowita to osobny region; **1** zwyczajowo dla tła, **2, 3, ...** dla obiektów).\n- `markers == 0` — *nieznane*; tu watershed wleje wodę z najbliższych markerów.\n- Po `cv2.watershed(img, markers)`: piksele granic między regionami dostają wartość `-1`.\n\n**Standardowy pipeline OpenCV** (na przykładzie sklejonych monet z poprzedniej sekcji):\n\n```python\nimport cv2\nimport numpy as np\n\nimg = cv2.imread('coins.jpg')\ngray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)\n\n# 1. Binaryzacja Otsu (monety ciemniejsze od tla -> THRESH_BINARY_INV)\n_, thresh = cv2.threshold(gray, 0, 255,\n                          cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)\n\n# 2. Otwarcie morfologiczne -- usun ziarniste szumy\nkernel = np.ones((3, 3), np.uint8)\nopened = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)\n\n# 3. 'Pewne tlo': dilatacja maski rozszerza obszar 'kandydatow na monete';\n#    co JEST POZA dilatacja -- na pewno nie jest moneta.\nsure_bg = cv2.dilate(opened, kernel, iterations=3)\n\n# 4. 'Pewne pierwsze plany': transformata dystansu daje odleglosc kazdego piksela\n#    od najblizszego piksela tla. Wysokie wartosci = srodki monet.\ndist = cv2.distanceTransform(opened, cv2.DIST_L2, 5)\n_, sure_fg = cv2.threshold(dist, 0.5 * dist.max(), 255, 0)\nsure_fg = sure_fg.astype(np.uint8)\n\n# 5. 'Nieznany' to obwarka brzegowa: w sure_bg, ale nie w sure_fg.\nunknown = cv2.subtract(sure_bg, sure_fg)\n\n# 6. connectedComponents na sure_fg -- kazda moneta dostaje swoja etykiete\n#    (0 = poza sure_fg, 1, 2, ... = osobne monety).\nn_labels, labels = cv2.connectedComponents(sure_fg)\n\n# 7. Przesun, zeby tlo bylo 1 (a nie 0); 0 zostaw dla 'nieznane'.\nmarkers = labels + 1\nmarkers[unknown == 255] = 0\n\n# 8. Watershed zalewa od markerow.\nmarkers = cv2.watershed(img, markers)\nimg[markers == -1] = (0, 0, 255)   # czerwone linie wododzielne\n```\n\nKrok 7 jest sednem etapu \"przygotuj markery\" i często myli się początkujących. `connectedComponents` zwraca `0` dla pikseli poza maską i `1, 2, ...` dla osobnych obiektów. Watershed jednak rezerwuje `0` dla pikseli *nieznanych* — a tło chce widzieć pod jakimś dodatnim numerem (zwyczajowo 1). Dodajemy więc `1` do całej tablicy etykiet — tło dostaje 1, każda moneta dostaje 2, 3, 4, ... — a potem ręcznie zerujemy piksele należące do strefy `unknown`. Dokładnie ten dwulinijkowy krok zaimplementujesz za chwilę w ćwiczeniu."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html",
+          "title": "OpenCV Python tutorial — Image segmentation with watershed algorithm",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-nadsegmentacja",
+      "title": "Sprawdź się: dlaczego naiwny watershed nadsegmentuje?",
+      "type": "quiz",
+      "data": {
+        "question": "Uruchamiasz `cv2.watershed` na obrazie monet *bez* własnych markerów (markers wygenerowane wprost z lokalnych minimów obrazu) i dostajesz kilkadziesiąt regionów zamiast spodziewanych ośmiu monet plus tła. Co jest źródłem nadsegmentacji?",
+        "options": [
+          "Każde lokalne minimum funkcji wysokości — także drobne wgłębienia spowodowane szumem sensora i fakturą bicia monety — staje się osobnym źródłem zalewania, więc każda moneta zostaje rozcięta na wiele zlewni.",
+          "`cv2.watershed` zawsze zwraca dokładnie 256 regionów, bo używa wewnętrznie typu `uint8` — sklejone monety są w środku jednego regionu, a reszta to artefakty kompresji.",
+          "Watershed wymaga obrazu kolorowego z trzema kanałami; na obrazie szarym bez konwersji do BGR dostaje wewnętrzny błąd i fragmentuje wynik.",
+          "Linie wododzielne w `cv2.watershed` są zawsze co najmniej 3 piksele grube i sztucznie rozcinają jednolite obszary, gdy dwa minima leżą blisko siebie."
+        ],
+        "correct": [0],
+        "explanation": "**Odpowiedź A** trafia w sedno. Watershed traktuje każde lokalne minimum jako osobne źródło wody — w idealnym świecie jedna moneta = jedno minimum (środek), ale prawdziwe obrazy mają mikro-wgłębienia: szum sensora, faktura bicia, niedoskonała oświetleniówka. Każde z nich jest minimum kilku-pikselowym, więc zalewanie startuje z dziesiątek źródeł na jednej monecie i powstaje dziesięć tam wewnątrz monety zamiast jednej granicy wokół niej. Dokładnie to naprawiają **markery**: zamiast pozwalać algorytmowi szukać minimów samemu, *my* mówimy mu, gdzie chcemy, żeby zaczął zalewać — typowo w środkach kandydatów (`sure_fg` z transformaty dystansu) plus jeden marker tła.\n\n**B** to całkowita konfabulacja. `cv2.watershed` operuje na tablicy `markers` typu `int32` (musi mieścić znacznik `-1` na liniach wododzielnych i wszystkie etykiety obiektów), a liczba zwróconych regionów jest dokładnie taka, ile dałeś markerów na wejście — nie ma żadnego sufitu 256. Pytanie wystawia tę odpowiedź jako pułapkę dla osób mylących `markers` z obrazem `uint8`.\n\n**C** to nieporozumienie. `cv2.watershed` przyjmuje obraz wejściowy 8-bitowy *3-kanałowy*, ale tylko po to, żeby na nim narysować linie graniczne — sama \"wysokość\" relifu (na której zalewa) jest tablicą `markers`, niezależną od kanałów obrazu. Jeśli masz tylko obraz szary, robisz `cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)` i używasz tego jako pierwszy argument; nie powoduje to żadnej dodatkowej fragmentacji.\n\n**D** też nie. Linie wododzielne w wyniku `cv2.watershed` są zaznaczone wartością `-1` i mają **dokładnie 1 piksel grubości** (jest to topologiczna granica między dwiema zlewniami). Nadsegmentacja nie pochodzi od grubych granic, tylko od *nadmiaru samych granic*.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-prepare-markers",
+      "title": "Zaimplementuj `prepare_watershed_markers`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `prepare_watershed_markers(component_labels, unknown_mask)` — krok 7 z pipeline'u OpenCV. To linia, której wszyscy zapominają, a bez której `cv2.watershed` zwraca śmieci.\n\n**Sygnatura.**\n\n- `component_labels` — `numpy.ndarray` typu całkowitego (zwykle `int32`, jak zwraca `cv2.connectedComponents`). Wartość `0` oznacza \"poza maską `sure_fg`\", a `1, 2, ...` to kolejne obiekty pierwszego planu.\n- `unknown_mask` — `numpy.ndarray` o tym samym kształcie. Niezerowe piksele oznaczają strefę nieznaną (zwykle wartość `1` lub `255` z `cv2.subtract`); zerowe — pewną etykietę.\n- Zwróć `numpy.ndarray` o tym samym kształcie, **dtype `np.int32`**, w którym:\n  - **Każdy** piksel ma wartość `component_labels + 1` (czyli tło dostaje **1**, a obiekty **2, 3, ...**),\n  - poza pikselami, gdzie `unknown_mask` jest niezerowe — tam wynik to **0** (`cv2.watershed` użyje ich jako pikseli do zalania).\n\n**Przykład.**\n\n```\ncomponent_labels = [[0, 1, 1],     unknown_mask = [[0, 0, 0],\n                    [0, 0, 2]]                     [0, 0, 0]]\n\n-> markers       = [[1, 2, 2],\n                    [1, 1, 3]]\n```\n\n```\ncomponent_labels = [[0, 1, 1],     unknown_mask = [[1, 0, 0],\n                    [0, 0, 2]]                     [0, 1, 0]]\n\n-> markers       = [[0, 2, 2],\n                    [1, 0, 3]]\n```\n\n**Reguły.**\n\n1. Wynik musi mieć `dtype == np.int32` (`cv2.watershed` *wymaga* `int32` i bez tego rzuci błędem typu).\n2. Funkcja ma działać zarówno dla `unknown_mask` w konwencji 0/1, jak i 0/255 — czyli traktuj **dowolną niezerową wartość** jako \"nieznane\".\n3. Nie modyfikuj wejściowych tablic — zwróć nową.\n4. Spodziewaj się dowolnego, niekoniecznie 2D kształtu (testy używają 2D, ale rozwiązanie nie powinno zakładać konkretnej liczby wymiarów).",
+        "starterCode": "import numpy as np\n\ndef prepare_watershed_markers(component_labels, unknown_mask):\n    # component_labels: tablica calkowitoliczbowa, 0 = poza sure_fg, 1, 2, ... = obiekty.\n    # unknown_mask: tablica tego samego ksztaltu; niezerowe piksele = strefa nieznana.\n    # Zwroc: tablica int32 tego samego ksztaltu, gdzie:\n    #   - wynik = component_labels + 1 wszedzie indziej,\n    #   - wynik = 0 tam, gdzie unknown_mask jest niezerowe.\n    # Wskazowka: najpierw zrob (component_labels.astype(np.int32) + 1), potem zeruj\n    # tam, gdzie unknown_mask != 0. Nie zapomnij o dtype int32.\n    component_labels = np.asarray(component_labels)\n    unknown_mask = np.asarray(unknown_mask)\n    # TODO: zaimplementuj zgodnie z opisem.\n    return np.zeros_like(component_labels, dtype=np.int32)\n",
+        "tests": [
+          {
+            "name": "podstawowy_przyklad_bez_unknown",
+            "body": "import numpy as np\ncc = np.array([[0, 1, 1], [0, 0, 2]], dtype=np.int32)\nunk = np.zeros((2, 3), dtype=np.uint8)\nm = prepare_watershed_markers(cc, unk)\nassert m.dtype == np.int32, f'oczekiwano dtype int32, dostalismy {m.dtype}'\nassert m.shape == (2, 3), f'oczekiwano shape (2, 3), dostalismy {m.shape}'\nassert m.tolist() == [[1, 2, 2], [1, 1, 3]], f'wartosci niepoprawne: {m.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "przesuwa_etykiety_o_jeden",
+            "body": "import numpy as np\ncc = np.array([[0, 0, 0], [0, 5, 5]], dtype=np.int32)\nunk = np.zeros((2, 3), dtype=np.uint8)\nm = prepare_watershed_markers(cc, unk)\nassert m.tolist() == [[1, 1, 1], [1, 6, 6]], f'oczekiwane przesuniecie etykiet o 1: {m.tolist()}'\nassert m.dtype == np.int32"
+          },
+          {
+            "name": "unknown_zeruje_pixele",
+            "body": "import numpy as np\ncc = np.array([[0, 1, 1], [0, 0, 2]], dtype=np.int32)\nunk = np.array([[1, 0, 0], [0, 1, 0]], dtype=np.uint8)\nm = prepare_watershed_markers(cc, unk)\nassert m.tolist() == [[0, 2, 2], [1, 0, 3]], f'tam gdzie unk!=0 powinno byc 0: {m.tolist()}'"
+          },
+          {
+            "name": "konwencja_0_lub_255_z_cv2_subtract",
+            "body": "import numpy as np\ncc = np.array([[2, 2], [3, 0]], dtype=np.int32)\nunk = np.array([[0, 255], [0, 0]], dtype=np.uint8)\nm = prepare_watershed_markers(cc, unk)\nassert m.tolist() == [[3, 0], [4, 1]], f'unk=255 (a nie tylko 1) powinien tez zerowac: {m.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef prepare_watershed_markers(component_labels, unknown_mask):\n    component_labels = np.asarray(component_labels)\n    unknown_mask = np.asarray(unknown_mask)\n    markers = component_labels.astype(np.int32) + 1\n    markers[unknown_mask != 0] = 0\n    return markers\n"
+      }
+    },
+    {
+      "id": "sandbox-rozdziel-monety",
+      "title": "Piaskownica: rozdziel sklejone monety",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz: dwie monety stykajace sie w srodku, na ciemnym tle.\nH, W = 200, 320\nimg = np.full((H, W, 3), 30, dtype=np.uint8)               # ciemne tlo\ncv2.circle(img, (130, 100), 60, (210, 210, 210), -1)       # moneta 1 (jasna)\ncv2.circle(img, (200, 100), 60, (210, 210, 210), -1)       # moneta 2 (jasna)\n\nrng = np.random.RandomState(0)\nimg = np.clip(img.astype(np.int32) + rng.randint(-15, 16, img.shape), 0, 255).astype(np.uint8)\n\n# 1. Binaryzacja Otsu (monety jasniejsze niz tlo -> THRESH_BINARY, bez INV)\ngray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)\n_, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)\n\n# 2. Otwarcie morfologiczne\nkernel = np.ones((3, 3), np.uint8)\nopened = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=2)\n\n# 3. Pewne tlo: dilatacja maski\nsure_bg = cv2.dilate(opened, kernel, iterations=3)\n\n# 4. Transformata dystansu + prog -> pewne pierwsze plany.\n#    POBAW SIE Z TYM PROGIEM:\nDIST_THRESH = 0.5\ndist = cv2.distanceTransform(opened, cv2.DIST_L2, 5)\n_, sure_fg = cv2.threshold(dist, DIST_THRESH * dist.max(), 255, 0)\nsure_fg = sure_fg.astype(np.uint8)\n\n# 5. Strefa nieznana = sure_bg \\ sure_fg\nunknown = cv2.subtract(sure_bg, sure_fg)\n\n# 6. connectedComponents -> kazda moneta = osobna etykieta\nn_labels, labels = cv2.connectedComponents(sure_fg)\n\n# 7. Przygotuj markery (krok z cwiczenia)\nmarkers = labels + 1\nmarkers[unknown == 255] = 0\n\n# 8. Watershed\nmarkers = cv2.watershed(img, markers)\n\n# Po watershed: etykiety to 1 (tlo), 2... (monety), -1 (linie wododzielne)\nunique = sorted(np.unique(markers).tolist())\nn_coins = len([u for u in unique if u >= 2])\n\nprint(f'DIST_THRESH = {DIST_THRESH:.2f}')\nprint(f'  unikalne etykiety w markers: {unique}')\nprint(f'  liczba pierwszego planu (markers >= 2): {n_coins}')\nprint(f'  pikseli na granicach (-1): {int((markers == -1).sum())}')\nprint(f'  liczba skladowych w sure_fg (przed shift): {n_labels - 1}')\n\n# Eksperymenty:\n#  1) DIST_THRESH = 0.7 -- prog wysoki, sure_fg male i moze zostac TYLKO JEDNA skladowa\n#     (lub zero!). Watershed dostaje za malo markerow i znajduje 1 monete zamiast 2.\n#  2) DIST_THRESH = 0.3 -- prog niski, sure_fg sklei sie miedzy stykajacymi sie monetami\n#     w jeden duzy region. n_labels - 1 spadnie do 1 i znowu dostaniesz tylko 1 monete.\n#  3) DIST_THRESH = 0.5 -- typowo wlasciwe -- powinno wyjsc dokladnie 2 monety.\n#  4) Przesun srodki monet blizej siebie (np. 130 i 175 zamiast 130 i 200).\n#     Czy 0.5 dalej dziala? Co trzeba podniesc, zeby znow oddzielic monety?\n#  5) Dodaj trzecia monete i sprawdz, czy pipeline skaluje sie bez zmian.\n",
+        "encouragement": "Zmieniaj `DIST_THRESH` i położenie monet — i wyczuj, kiedy markery są \"za hojne\", a kiedy \"za skąpe\"."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1201/9781482277234-12",
+      "title": "Beucher, S. and Meyer, F. — The Morphological Approach to Segmentation: The Watershed Transformation (Mathematical Morphology in Image Processing, 1993)",
+      "kind": "paper",
+      "author": "Serge Beucher and Fernand Meyer",
+      "year": 1993
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d3/db4/tutorial_py_watershed.html",
+      "title": "OpenCV Python tutorial — Image segmentation with watershed algorithm",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Watershed_(image_processing)",
+      "title": "Watershed (image processing) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7 Segmentation (region-based segmentation, watershed)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

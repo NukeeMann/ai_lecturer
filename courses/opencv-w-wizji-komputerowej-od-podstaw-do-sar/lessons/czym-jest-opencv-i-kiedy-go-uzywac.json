@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "slug": "czym-jest-opencv-i-kiedy-go-uzywac",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Czym jest OpenCV i kiedy go używać",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "Wprowadzenie do biblioteki OpenCV: skąd się wzięła, co znajdziesz w środku i kiedy lepiej sięgnąć po inne narzędzie.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "intro",
+      "title": "Czym jest OpenCV i co znajdziesz w środku",
+      "type": "theory",
+      "data": {
+        "markdown": "**OpenCV** (Open Source Computer Vision Library) to biblioteka do klasycznej wizji komputerowej i przetwarzania obrazów, rozwijana od 1999 roku — najpierw przez Intela, dziś przez **OpenCV Foundation**. Od wersji 4.5.x całość jest dostępna na liberalnej licencji **Apache 2.0**, więc używasz jej bez ograniczeń komercyjnych.\n\nW praktyce dostajesz jeden import (`import cv2`) i kilkanaście modułów wyspecjalizowanych w różnych zadaniach: arytmetyka tablic (`core`), filtracja i transformacje (`imgproc`), I/O obrazów (`imgcodecs`) i wideo (`videoio`), detektory cech (`features2d`), geometria 3D (`calib3d`), klasyczne detektory (`objdetect`), analiza ruchu (`video`), uruchamianie modeli neuronowych (`dnn`) oraz proste GUI (`highgui`).\n\nOpenCV jest napisany w C++, ale udostępnia oficjalne wiązania do **Pythona, Javy i JavaScript** — w tym kursie pracujemy w Pythonie przez pakiet `opencv-python`. Pod spodem każda funkcja `cv2.*` woła zoptymalizowany kod natywny, dlatego nawet pętla po klatkach wideo z kamery na zwykłym CPU bywa realtime'owa."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/OpenCV",
+          "title": "OpenCV — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "modules-table",
+      "title": "Najważniejsze moduły OpenCV",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "module", "label": "Moduł", "type": "string", "sortable": false },
+          { "key": "zawartosc", "label": "Co znajdziesz", "type": "string", "sortable": false },
+          { "key": "zastosowanie", "label": "Typowe zastosowanie", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          { "module": "core", "zawartosc": "Mat / ndarray, arytmetyka, struktury danych", "zastosowanie": "Fundament każdej operacji — działa pod spodem wszystkiego" },
+          { "module": "imgproc", "zawartosc": "Filtracja, progowanie, kontury, morfologia, transformacje geometryczne", "zastosowanie": "Klasyczne przetwarzanie obrazu (rozmycie, krawędzie, CLAHE)" },
+          { "module": "imgcodecs", "zawartosc": "imread, imwrite", "zastosowanie": "Wczytywanie i zapis JPEG / PNG / TIFF" },
+          { "module": "videoio", "zawartosc": "VideoCapture, VideoWriter", "zastosowanie": "Strumienie wideo z plików, kamer i RTSP" },
+          { "module": "features2d", "zawartosc": "Detektory i deskryptory: ORB, BRISK, AKAZE, SIFT", "zastosowanie": "Dopasowywanie obrazów, panoramy, lokalizacja" },
+          { "module": "calib3d", "zawartosc": "Kalibracja kamery, solvePnP, stereo, homografia", "zastosowanie": "Geometria 3D, korekcja dystorsji, mapy disparycji" },
+          { "module": "objdetect", "zawartosc": "Haar Cascades, HOG", "zastosowanie": "Klasyczne detektory twarzy i pieszych" },
+          { "module": "video", "zawartosc": "Optical flow, MOG2/KNN, KCF, CSRT, MOSSE", "zastosowanie": "Analiza ruchu i śledzenie obiektów w wideo" },
+          { "module": "dnn", "zawartosc": "Loader modeli ONNX / Caffe / TensorFlow", "zastosowanie": "Inferencja gotowych sieci — bez instalacji PyTorcha" },
+          { "module": "highgui", "zawartosc": "imshow, waitKey, namedWindow", "zastosowanie": "Proste okna podglądu w aplikacjach desktop" },
+          { "module": "ml", "zawartosc": "SVM, k-NN, Random Forest, Boosting", "zastosowanie": "Klasyczne uczenie maszynowe na cechach z imgproc" }
+        ]
+      }
+    },
+    {
+      "id": "when-to-use",
+      "title": "Kiedy sięgnąć po OpenCV — a kiedy po inne narzędzie",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV nie jest narzędziem na każdą okazję. Świeci w **klasycznych pipeline'ach wizji komputerowej** uruchamianych w czasie rzeczywistym: filtracja, detekcja krawędzi, dopasowywanie cech, kalibracja kamery, śledzenie obiektów. Dobrze sprawdza się też jako lekki runtime inferencyjny — `cv2.dnn` uruchomi model w formacie ONNX czy Caffe bez ciągnięcia PyTorcha.\n\nSięgnij po inne narzędzie, kiedy:\n\n- **trenujesz sieć neuronową** — to robota dla **PyTorcha** albo **TensorFlow**; OpenCV potrafi tylko wywołać gotowy, wyeksportowany model;\n- **pracujesz z danymi geoprzestrzennymi** (GeoTIFF, projekcje, metadane GIS) — **`rasterio`** i **GDAL** znają układy współrzędnych, OpenCV widzi tylko piksele bez georeferencji;\n- **edytujesz pojedyncze zdjęcia** — **`Pillow`** ma prostszy API do schematu \"wczytaj, zmień rozmiar, zapisz JPEG\", a **`scikit-image`** lepiej wpina się w naukowy ekosystem Pythona (NumPy, Pandas, scikit-learn).\n\nW tym kursie regularnie łączymy OpenCV z `numpy`, sporadycznie z `rasterio` (moduł SAR) i z `cv2.dnn` (jedna lekcja porównująca klasykę z deep learningiem)."
+      },
+      "sources": [
+        {
+          "url": "https://opencv.org/about/",
+          "title": "OpenCV — About",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "task-tool-match",
+      "title": "Dopasuj zadanie do narzędzia",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przeciągnij każde zadanie do narzędzia, które najlepiej się do niego nadaje.",
+        "items": [
+          { "id": "t-canny-stream", "label": "Strumień z kamery, konwersja BGR→Gray i wykrywanie krawędzi (Canny) w czasie rzeczywistym" },
+          { "id": "t-clahe-medical", "label": "Lokalne wyrównanie histogramu (CLAHE) na zdjęciu medycznym" },
+          { "id": "t-train-cnn", "label": "Trening sieci konwolucyjnej do klasyfikacji obrazów" },
+          { "id": "t-sentinel-grd", "label": "Wczytanie produktu GRD z Sentinel-1 razem z georeferencją i metadanymi GIS" },
+          { "id": "t-resize-jpeg", "label": "Zmiana rozmiaru zdjęcia z aparatu i zapis jako JPEG do galerii" },
+          { "id": "t-reproject-utm", "label": "Reprojekcja rastra z UTM do EPSG:4326 z zachowaniem metadanych" }
+        ],
+        "zones": [
+          {
+            "id": "z-opencv",
+            "label": "OpenCV (cv2)",
+            "accepts": ["t-canny-stream", "t-clahe-medical"]
+          },
+          {
+            "id": "z-torch",
+            "label": "PyTorch / TensorFlow",
+            "accepts": ["t-train-cnn"]
+          },
+          {
+            "id": "z-rasterio",
+            "label": "rasterio / GDAL",
+            "accepts": ["t-sentinel-grd", "t-reproject-utm"]
+          },
+          {
+            "id": "z-pillow",
+            "label": "Pillow / PIL",
+            "accepts": ["t-resize-jpeg"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "requireAll": true,
+        "explanation": "OpenCV króluje w realtime'owych pipeline'ach klasycznej wizji komputerowej — w tym CLAHE i detekcji krawędzi. Trening sieci to domena PyTorcha lub TensorFlow; OpenCV co najwyżej uruchomi gotowy model przez `cv2.dnn`. Wszystko, co dotyczy układów współrzędnych i metadanych GIS (GeoTIFF, reprojekcja, Sentinel-1), załatwiają `rasterio` i GDAL. Pillow jest najprostszym wyborem do prostych operacji typu \"wczytaj, zmień rozmiar, zapisz JPEG\"."
+      }
+    },
+    {
+      "id": "check-dnn",
+      "title": "OpenCV vs deep learning — częsta pułapka",
+      "type": "quiz",
+      "data": {
+        "question": "Czy OpenCV to framework deep learning, w którym trenujemy modele?",
+        "options": [
+          "Tak — `cv2.dnn` to nowoczesny framework treningowy konkurujący z PyTorchem.",
+          "Nie — `cv2.dnn` to runtime inferencyjny; modele trenuje się gdzie indziej (np. PyTorch / TensorFlow) i eksportuje do ONNX, Caffe albo TensorFlow, żeby je tu uruchomić.",
+          "Tak, ale tylko dla małych klasycznych sieci typu LeNet — nowsze architektury wymagają innego frameworka.",
+          "Nie — OpenCV w ogóle nie potrafi uruchamiać sieci neuronowych; do tego musisz zainstalować PyTorcha."
+        ],
+        "correct": [1],
+        "explanation": "`cv2.dnn` to wyłącznie **runtime inferencyjny** — wczyta wagi z formatu ONNX, Caffe albo TensorFlow i wykona forward pass. Sam trening (gradienty, optymalizator, loss) odbywa się w PyTorchu lub TensorFlow, a do OpenCV trafia już wyeksportowany, gotowy model. Dlatego OpenCV nadaje się świetnie do **wdrożenia** klasyfikatora czy detektora w skromnym środowisku, ale nie zastąpi frameworka treningowego.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-array",
+      "title": "Obraz to po prostu tablica NumPy",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# OpenCV reprezentuje obraz jako ndarray w kolejnosci kanalow BGR (nie RGB!).\n# Tu udajemy malenki obraz 4x4 pikseli z trzema kanalami uint8.\nimg = np.zeros((4, 4, 3), dtype=np.uint8)\nimg[:, :, 0] = 255          # caly kanal niebieski na maks (B)\nimg[1:3, 1:3, 1] = 200       # zielony kwadracik (G) w srodku\n\nprint('shape :', img.shape)  # (H, W, C) = (4, 4, 3)\nprint('dtype :', img.dtype)  # uint8 to standard 8-bit/kanal\nprint('B[0,0]:', img[0, 0, 0])\nprint('G[1,1]:', img[1, 1, 1])\nprint('R[1,1]:', img[1, 1, 2])\n\n# Sprobuj zmienic dtype na np.float32, dolozyc kanal alfa albo zamienic\n# kanaly 0 i 2 (BGR -> RGB) i obserwuj, co sie dzieje z shape i wartosciami.\n",
+        "encouragement": "Pobaw się kształtem i kanałami — w kolejnej lekcji ten sam ndarray dostaniesz prosto z `cv2.imread`."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/OpenCV",
+      "title": "OpenCV — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://opencv.org/about/",
+      "title": "OpenCV — About",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d9/df8/tutorial_root.html",
+      "title": "OpenCV documentation — main tutorials index (4.x)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.oreilly.com/library/view/learning-opencv-3/9781491937983/",
+      "title": "Learning OpenCV 3",
+      "kind": "book",
+      "author": "Adrian Kaehler and Gary Bradski",
+      "year": 2017
+    }
+  ]
+}

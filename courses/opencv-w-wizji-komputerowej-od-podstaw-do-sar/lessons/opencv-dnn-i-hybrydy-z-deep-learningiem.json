@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "slug": "opencv-dnn-i-hybrydy-z-deep-learningiem",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "OpenCV dnn i hybrydy z deep learningiem",
+  "eyebrow": "WYDAJNOŚĆ",
+  "description": "cv2.dnn jako silnik inferencyjny dla modeli ONNX i Caffe — pipeline blobFromImage → setInput → forward, jeden konkretny przykład hybrydy klasyki z siecią oraz IoU/NMS, czyli to, co dopinasz po wyjściu detektora.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "wstep",
+      "title": "cv2.dnn — silnik inferencyjny, nie framework treningowy",
+      "type": "theory",
+      "data": {
+        "markdown": "`cv2.dnn` to **silnik inferencyjny** wbudowany w OpenCV: wczytuje gotowy model z plików **ONNX**, **Caffe** lub **TensorFlow** i potrafi go uruchomić bez doinstalowywania PyTorcha ani TensorFlow. Trening robisz osobno, w eksporcie zostaje graf wag, a `cv2.dnn` woła `forward()` przy każdej klatce."
+      }
+    },
+    {
+      "id": "pipeline",
+      "title": "Pipeline inferencji: blob → setInput → forward → dekodowanie",
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyczny pipeline ma cztery kroki. Najpierw budujesz tensor wejściowy: `cv2.dnn.blobFromImage(img, scalefactor, size, mean, swapRB)` zmniejsza obraz do oczekiwanej rozdzielczości, odejmuje średnią i przeskalowuje piksele. Następnie ładujesz model przez `net = cv2.dnn.readNetFromONNX(\"yolo.onnx\")` (analogicznie `readNetFromCaffe`, `readNetFromTensorflow`). Potem podajesz wejście — `net.setInput(blob)` — i wywołujesz `outputs = net.forward()`. Na końcu **dekodujesz wyjście**: dla klasyfikacji to softmax na logitach $z$:\n\n$$ p_c = \\frac{e^{z_c}}{\\sum_k e^{z_k}} $$\n\na dla detekcji — odczyt ramek, klas i pewności, próg pewności i NMS.\n\n![Schemat sieci feed-forward: warstwa wejściowa z trzema neuronami po lewej, jedna warstwa ukryta z czterema neuronami w środku, warstwa wyjściowa z dwoma neuronami po prawej; wszystkie połączenia są pełne (każdy neuron warstwy następnej połączony z każdym neuronem poprzedniej) i narysowane różnymi kolorami](https://upload.wikimedia.org/wikipedia/commons/thumb/4/46/Colored_neural_network.svg/640px-Colored_neural_network.svg.png)\n*(Image: Wikimedia Commons, Glosser.ca, CC BY-SA 3.0)*\n\nWybór backendu i urządzenia ustawiasz dwoma flagami:\n\n```python\nnet.setPreferableBackend(cv2.dnn.DNN_BACKEND_DEFAULT)\nnet.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)\n```\n\nZamiast `DNN_TARGET_CPU` można wskazać `DNN_TARGET_CUDA` (jeśli OpenCV jest zbudowane z `WITH_CUDA=ON` i `OPENCV_DNN_CUDA=ON`) lub `DNN_TARGET_OPENCL` — wtedy ten sam model leci na GPU bez zmiany reszty kodu."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d58/tutorial_table_of_content_dnn.html",
+          "title": "OpenCV — DNN module overview",
+          "kind": "article"
+        },
+        {
+          "url": "https://onnx.ai/onnx/intro/",
+          "title": "ONNX — Open Neural Network Exchange specification",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "hybrydy",
+      "title": "Hybryda klasyki i sieci: po co i kiedy",
+      "type": "theory",
+      "data": {
+        "markdown": "**Hybryda** to klasyka + sieć: klasyczne OpenCV robi to, w czym jest tanie i pewne — kalibracja, korekcja dystorsji, ROI z masek, trackery KCF/CSRT — a `cv2.dnn` wchodzi tylko tam, gdzie sieć daje wyraźną przewagę: ResNet-SSD zamiast Haar Cascades dla twarzy, YOLO zamiast HOG+SVM dla pieszych. Cena jest stała: większy model, więcej GB pamięci, mniej czytelne błędy."
+      },
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1804.02767",
+          "title": "Redmon, J. and Farhadi, A. — YOLOv3: An Incremental Improvement",
+          "kind": "paper",
+          "author": "Joseph Redmon and Ali Farhadi",
+          "year": 2018
+        },
+        {
+          "url": "https://arxiv.org/abs/1512.02325",
+          "title": "Liu, W. et al. — SSD: Single Shot MultiBox Detector",
+          "kind": "paper",
+          "author": "Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed, Cheng-Yang Fu and Alexander C. Berg",
+          "year": 2016
+        }
+      ]
+    },
+    {
+      "id": "quiz-czym-jest-dnn",
+      "title": "Quiz: co realnie potrafi cv2.dnn",
+      "type": "quiz",
+      "data": {
+        "question": "OpenCV ma moduł `cv2.dnn`. Co realnie potrafi ten moduł, gdy uruchamiasz go na typowym CPU bez dodatkowych zależności?",
+        "options": [
+          "Trenować sieci neuronowe od zera, podobnie jak PyTorch albo TensorFlow.",
+          "Wczytać gotowy graf z plików ONNX / Caffe / TensorFlow i wykonać na nim `forward()` — czyli inferencję.",
+          "Pobrać zbiór danych ImageNet i zrobić fine-tuning dowolnego modelu w jednej linijce.",
+          "Zastąpić cały moduł `cv2.imgproc`, oferując głębsze sieci do każdej operacji obrazowej."
+        ],
+        "correct": [1],
+        "explanation": "`cv2.dnn` jest **wyłącznie silnikiem inferencyjnym** — wczytuje wytrenowany gdzie indziej model (PyTorch / TensorFlow / Keras → eksport do ONNX lub Caffe) i puszcza przez niego dane. Nie ma optymalizatora, nie ma autograda, nie ma backpropu. To jedna z klasycznych pułapek z sekcji *Common misconceptions*: „cv2.dnn jest frameworkiem deep-learningowym” — nie jest. Jego siłą jest właśnie to, że nie ciągnie ze sobą gigabajtowego runtime'u, gdy chcesz tylko uruchomić model w produkcji.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "zadanie-iou",
+      "title": "Implementacja IoU dla ramki detekcyjnej",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Po `net.forward()` z modelu typu YOLO / SSD dostajesz listę kandydujących ramek. Żeby zostawić tylko najmocniejsze, potrzebujesz **IoU (Intersection over Union)** — stosunku pola części wspólnej do pola sumy dwóch ramek:\n\n$$ \\mathrm{IoU}(A, B) = \\frac{|A \\cap B|}{|A \\cup B|} $$\n\nNapisz funkcję **`iou(box_a, box_b)`**, gdzie każda ramka to krotka `(x1, y1, x2, y2)` (lewy-górny i prawy-dolny róg w pikselach, `x2 > x1`, `y2 > y1`). Zwróć liczbę zmiennoprzecinkową w przedziale `[0.0, 1.0]`. Dla ramek rozłącznych zwróć `0.0`. Dla identycznych — `1.0`.\n\n```\niou((10, 10, 20, 20), (10, 10, 20, 20)) == 1.0\niou((0, 0, 10, 10),  (20, 20, 30, 30)) == 0.0\n```",
+        "starterCode": "def iou(box_a, box_b):\n    \"\"\"IoU dwoch ramek prostokatnych w formacie (x1, y1, x2, y2).\n\n    Zwraca float w przedziale [0.0, 1.0]:\n      0.0 — ramki sa rozlaczne,\n      1.0 — ramki sa identyczne.\n    \"\"\"\n    # TODO: policz prostokat czesci wspolnej (max z lewych x, max z gornych y,\n    # min z prawych x, min z dolnych y); dla pustej intersekcji zwroc 0.0;\n    # union to suma pol minus pole przeciecia; iou = inter / union.\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "identical_boxes_have_iou_1",
+            "body": "assert iou((10, 10, 20, 20), (10, 10, 20, 20)) == 1.0",
+            "hidden": false
+          },
+          {
+            "name": "disjoint_boxes_have_iou_0",
+            "body": "assert iou((0, 0, 10, 10), (20, 20, 30, 30)) == 0.0"
+          },
+          {
+            "name": "horizontal_half_overlap",
+            "body": "assert abs(iou((0, 0, 10, 10), (5, 0, 15, 10)) - (50.0 / 150.0)) < 1e-9"
+          },
+          {
+            "name": "fully_contained_box",
+            "body": "assert iou((0, 0, 20, 20), (5, 5, 15, 15)) == 0.25"
+          }
+        ],
+        "solution": "def iou(box_a, box_b):\n    ax1, ay1, ax2, ay2 = box_a\n    bx1, by1, bx2, by2 = box_b\n    ix1 = max(ax1, bx1)\n    iy1 = max(ay1, by1)\n    ix2 = min(ax2, bx2)\n    iy2 = min(ay2, by2)\n    iw = max(0, ix2 - ix1)\n    ih = max(0, iy2 - iy1)\n    inter = iw * ih\n    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)\n    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)\n    union = area_a + area_b - inter\n    if union == 0:\n        return 0.0\n    return inter / union\n"
+      }
+    },
+    {
+      "id": "piaskownica-nms",
+      "title": "Piaskownica: NMS na surowych ramkach detektora",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "def iou(a, b):\n    ax1, ay1, ax2, ay2 = a\n    bx1, by1, bx2, by2 = b\n    ix1, iy1 = max(ax1, bx1), max(ay1, by1)\n    ix2, iy2 = min(ax2, bx2), min(ay2, by2)\n    iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)\n    inter = iw * ih\n    area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)\n    area_b = max(0, bx2 - bx1) * max(0, by2 - by1)\n    union = area_a + area_b - inter\n    return inter / union if union else 0.0\n\ndef nms(boxes, scores, iou_thr=0.5):\n    \"\"\"Zwraca indeksy ramek do zachowania (Non-Maximum Suppression).\"\"\"\n    order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)\n    keep = []\n    while order:\n        best = order.pop(0)\n        keep.append(best)\n        order = [i for i in order if iou(boxes[best], boxes[i]) <= iou_thr]\n    return keep\n\n# Symulacja surowego wyjscia detektora (np. po cv2.dnn.forward dla YOLO).\n# Trzy klastry kandydatow + jedna pojedyncza ramka:\nboxes = [\n    (10, 10, 110, 110),   # twarz #1\n    (12, 12, 108, 108),   # ten sam obiekt, inna ramka\n    (15, 9,  112, 113),   # i jeszcze raz ten sam obiekt\n    (200, 50, 300, 150),  # twarz #2\n    (210, 55, 295, 145),  # ta sama twarz #2\n    (50, 200, 150, 300),  # twarz #3 (samotna)\n]\nscores = [0.92, 0.88, 0.81, 0.95, 0.74, 0.83]\n\nfor thr in [0.1, 0.3, 0.5, 0.8]:\n    kept = nms(boxes, scores, iou_thr=thr)\n    print(f\"iou_thr={thr}: zostawiamy ramki o indeksach {kept}\")\n",
+        "encouragement": "Zmieniaj próg `iou_thr` i obserwuj, kiedy NMS zaczyna scalać sąsiednie detekcje, a kiedy je rozdziela — to dokładnie ten parametr, który dostrajasz po `cv2.dnn.forward`."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d58/tutorial_table_of_content_dnn.html",
+      "title": "OpenCV — DNN module overview",
+      "kind": "article"
+    },
+    {
+      "url": "https://onnx.ai/onnx/intro/",
+      "title": "ONNX — Open Neural Network Exchange specification",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1804.02767",
+      "title": "Redmon, J. and Farhadi, A. — YOLOv3: An Incremental Improvement",
+      "kind": "paper",
+      "author": "Joseph Redmon and Ali Farhadi",
+      "year": 2018
+    },
+    {
+      "url": "https://arxiv.org/abs/1512.02325",
+      "title": "Liu, W. et al. — SSD: Single Shot MultiBox Detector",
+      "kind": "paper",
+      "author": "Wei Liu, Dragomir Anguelov, Dumitru Erhan, Christian Szegedy, Scott Reed, Cheng-Yang Fu and Alexander C. Berg",
+      "year": 2016
+    }
+  ]
+}

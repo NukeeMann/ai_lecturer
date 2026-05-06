@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "slug": "polaryzacje-pasma-i-formaty-sar",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Polaryzacje, pasma i formaty SAR",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Co naprawdę zapisuje piksel SAR: liniowa polaryzacja H/V, kanały HH, HV, VV, VH i macierz rozpraszania, wybór pasma C/L/X oraz kluczowe formaty Sentinel-1 — SLC, GRD i OCN.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "polaryzacja",
+      "title": "Polaryzacja H i V — macierz rozpraszania",
+      "type": "theory",
+      "data": {
+        "markdown": "Impuls radarowy to fala elektromagnetyczna — ma kierunek propagacji i **kierunek drgań pola elektrycznego**, czyli **polaryzację**. SAR satelitarny wybiera między dwiema liniowymi polaryzacjami: **H** (*horizontal*, drgania równoległe do powierzchni Ziemi) i **V** (*vertical*, drgania w przybliżeniu pionowe).\n\nKonfigurację zawsze opisuje **para** w schemacie *nadawana → odbierana*. Stąd cztery możliwe kanały:\n\n- **HH** — nadawanie i odbiór w poziomie (co-pol),\n- **VV** — nadawanie i odbiór w pionie (co-pol),\n- **HV** — nadajnik H, odbiornik V (cross-pol),\n- **VH** — nadajnik V, odbiornik H (cross-pol).\n\n**Co-pol** (HH, VV) jest silne dla *rozpraszania powierzchniowego* (gładkie pole, asfalt, spokojna woda) i *rozpraszania podwójnego* — tzw. **double bounce** od dwóch prostopadłych powierzchni (statek przy wodzie, fasada budynku przy chodniku). **Cross-pol** (HV, VH) wymaga, aby coś *obróciło* polaryzację fali — typowo gęsta wegetacja, w której fala wielokrotnie odbija się od liści i gałęzi (**rozpraszanie objętościowe**).\n\nFormalnie pojedynczy piksel polarymetryczny opisuje **macierz rozpraszania Sinclair**:\n\n$$ S \\;=\\; \\begin{bmatrix} S_{HH} & S_{HV} \\\\\\\\ S_{VH} & S_{VV} \\end{bmatrix} $$\n\nPełna polarymetria (*quad-pol*) rejestruje wszystkie cztery zespolone wartości. **Sentinel-1 nie robi quad-pol** — pracuje w trybach **single-pol** (jeden element) albo **dual-pol** (cały wiersz: nadajnik H i para *(HH, HV)* albo nadajnik V i para *(VV, VH)*). Dlatego z czterech składników $S$ widzimy w praktyce tylko parę zsynchronizowaną z polaryzacją nadajnika."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1201/9781420054989",
+          "title": "Polarimetric Radar Imaging: From Basics to Applications",
+          "kind": "book",
+          "author": "Jong-Sen Lee and Eric Pottier",
+          "year": 2009
+        }
+      ]
+    },
+    {
+      "id": "formaty",
+      "title": "Formaty produktów Sentinel-1: SLC, GRD, OCN",
+      "type": "theory",
+      "data": {
+        "markdown": "Surowy zapis SAR jest **zespolony**. Format **SLC** (*Single Look Complex*) zachowuje amplitudę i fazę: każdy piksel to liczba zespolona $z = a\\,e^{j\\varphi}$. Faza umożliwia *interferometrię* (InSAR — pomiar deformacji terenu z dwóch przelotów), ale wymaga ścisłej kalibracji i ko-rejestracji obu scen z dokładnością do ułamka piksela.\n\n**GRD** (*Ground Range Detected*) to ten sam moment akwizycji, ale po dwóch operacjach: **detekcji amplitudy** (faza odrzucona — zostaje $a$ lub $a^2$) i **rzucie ze skosu na geometrię ziemi** (*slant range → ground range*, z multilookiem dla zmniejszenia speckle). Pojedynczy piksel GRD jest rzeczywisty, a piksele tworzą prostokątną siatkę nad powierzchnią Ziemi — i tu klasyczne narzędzia OpenCV (`GaussianBlur`, `morphologyEx`, `Canny`) działają prosto z palca, po drobnej kalibracji radiometrycznej.\n\nTrzeci format — **OCN** (*Ocean*) — to wyjście dedykowanych algorytmów oceanograficznych nad otwartą wodą: pole wiatru, widmo falowania, prędkości prądów. To nie jest obraz w sensie OpenCV i w tym kursie go nie używamy.\n\nDodatkowy sufiks oznacza rozdzielczość: **GRDH** (*High*, ≈ 10 m) i **GRDM** (*Medium*, ≈ 40 m). **Domyślnym wyborem dla klasycznych pipeline'ów OpenCV** jest **GRDH w trybie IW** — to jest produkt, który ESA udostępnia masowo nad lądem i który zaraz potem trafia do `rasterio.open(...)`. SLC zostawiamy do interferometrii — to materiał na osobny kurs."
+      },
+      "sources": [
+        {
+          "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/acquisition-modes",
+          "title": "Sentinel-1 SAR — Acquisition modes and product types (ESA User Guide)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tryby-pol",
+      "title": "Tryby akwizycji Sentinel-1 i ich polaryzacje",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "mode", "label": "Tryb", "type": "string", "sortable": false },
+          { "key": "swath", "label": "Szerokość pasa", "type": "string", "sortable": false },
+          { "key": "res", "label": "Rozdzielczość (GRD)", "type": "string", "sortable": false },
+          { "key": "pol", "label": "Polaryzacje", "type": "string", "sortable": false },
+          { "key": "products", "label": "Produkty", "type": "string", "sortable": false },
+          { "key": "use", "label": "Typowe zastosowania", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "mode": "SM (Stripmap)",
+            "swath": "≈ 80 km",
+            "res": "≈ 5 × 5 m",
+            "pol": "single (HH lub VV) albo dual (HH+HV / VV+VH)",
+            "products": "SLC, GRD",
+            "use": "Lokalne kampanie wysokiej rozdzielczości, sytuacje ratunkowe"
+          },
+          {
+            "mode": "IW (Interferometric Wide)",
+            "swath": "≈ 250 km",
+            "res": "≈ 20 × 22 m (GRDH ≈ 10 × 10 m po multilooku)",
+            "pol": "single (HH lub VV) albo dual (HH+HV / VV+VH)",
+            "products": "SLC, GRD",
+            "use": "Domyślny tryb nad lądami: rolnictwo, monitoring zmian, mapowanie powodzi"
+          },
+          {
+            "mode": "EW (Extra Wide)",
+            "swath": "≈ 400 km",
+            "res": "≈ 20 × 40 m (GRDM ≈ 40 × 40 m)",
+            "pol": "single (HH lub VV) albo dual (HH+HV / VV+VH)",
+            "products": "SLC, GRD",
+            "use": "Lód morski, polarne strefy ekstremalnej pogody, długie wybrzeża"
+          },
+          {
+            "mode": "WV (Wave)",
+            "swath": "winiety 20 × 20 km co 100 km",
+            "res": "≈ 5 × 5 m",
+            "pol": "tylko single (VV lub HH)",
+            "products": "SLC, OCN",
+            "use": "Otwarty ocean: stan morza, kierunek falowania, wiatr powierzchniowy"
+          }
+        ]
+      }
+    },
+    {
+      "id": "match-rozpraszanie",
+      "title": "Polaryzacja ↔ dominujący mechanizm rozpraszania",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każda obserwacja niżej to konkretny piksel obrazu Sentinel-1 z konkretną polaryzacją nad konkretnym terenem. Wrzuć ją do tej kategorii rozpraszania, w której ten kanał świeci najjaśniej.",
+        "items": [
+          { "id": "field-hh", "label": "HH nad płaskim, świeżo zaoranym polem" },
+          { "id": "sea-vv", "label": "VV nad spokojnym morzem otwartym" },
+          { "id": "forest-hv", "label": "HV nad gęstym lasem mieszanym" },
+          { "id": "facade-vv", "label": "VV nad pionowymi fasadami w mieście, prostopadłymi do kierunku patrzenia" }
+        ],
+        "zones": [
+          {
+            "id": "surface",
+            "label": "Rozpraszanie powierzchniowe (Bragg/specular)",
+            "accepts": ["field-hh", "sea-vv"]
+          },
+          {
+            "id": "volume",
+            "label": "Rozpraszanie objętościowe (cross-pol)",
+            "accepts": ["forest-hv"]
+          },
+          {
+            "id": "double",
+            "label": "Rozpraszanie podwójne (double bounce)",
+            "accepts": ["facade-vv"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "requireAll": true,
+        "explanation": "Co-pol (HH, VV) jest najsilniejsze tam, gdzie fala pada na *jedną* gładką powierzchnię (rozpraszanie powierzchniowe) lub odbija się dwukrotnie pod kątem prostym między dwiema powierzchniami (double bounce nad fasadami i statkami). Cross-pol (HV, VH) wymaga *zmiany* polaryzacji w trakcie rozpraszania — to dzieje się w gęstej koronie drzew, gdzie fala wielokrotnie odbija się od chaotycznie zorientowanych liści i gałęzi (rozpraszanie objętościowe). Spokojne morze i zaorane pole wracają niemal całą energią w tej samej polaryzacji, w której zostały oświetlone — dlatego HH i VV są tam jasne, a HV ciemne."
+      }
+    },
+    {
+      "id": "code-pol",
+      "title": "Rozkoduj parę polaryzacji z nazwy produktu Sentinel-1",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "W nazwach produktów Sentinel-1 spotykasz fragmenty `1SDV`, `1SDH`, `1SSV`, `1SSH` — to **kody polaryzacji**. Dwie litery po `1S` oznaczają:\n\n- pierwsza litera `S` (single) lub `D` (dual) — czy kanał ma **jedną** polaryzację, czy **dwie**;\n- druga litera `H` lub `V` — polaryzacja **nadajnika**.\n\nNapisz funkcję `parse_polarization_code(code)`, która dostaje dwuliterowy kod (np. `'SH'`, `'DV'`) i zwraca **listę** kanałów polaryzacyjnych w kolejności: najpierw co-pol nadajnika, potem cross-pol (jeśli dual). Nie używaj `cv2` ani `numpy` — wystarczy słownik mapujący.\n\n```\nparse_polarization_code('SH')  ==  ['HH']\nparse_polarization_code('SV')  ==  ['VV']\nparse_polarization_code('DH')  ==  ['HH', 'HV']\nparse_polarization_code('DV')  ==  ['VV', 'VH']\n```\n\nZałóż, że `code` ma dokładnie dwa znaki i jest jednym z czterech wariantów wyżej. Bądź odporny na małe litery (`'dv'` powinno działać tak samo jak `'DV'`).",
+        "starterCode": "def parse_polarization_code(code):\n    # Argument 'code' to dwuliterowy lancuch np. 'SH', 'DV', 'dh'.\n    # Pierwsza litera: 'S' (single) lub 'D' (dual) -> liczba kanalow.\n    # Druga litera:    'H' lub 'V'                 -> polaryzacja nadajnika.\n    # Zwroc liste kanalow w kolejnosci: co-pol najpierw, potem cross-pol.\n    pass\n",
+        "tests": [
+          {
+            "name": "single_h_returns_hh",
+            "body": "assert parse_polarization_code('SH') == ['HH']",
+            "hidden": false
+          },
+          {
+            "name": "single_v_returns_vv",
+            "body": "assert parse_polarization_code('SV') == ['VV']"
+          },
+          {
+            "name": "dual_h_returns_co_pol_then_cross_pol",
+            "body": "assert parse_polarization_code('DH') == ['HH', 'HV']"
+          },
+          {
+            "name": "dual_v_is_case_insensitive",
+            "body": "assert parse_polarization_code('dv') == ['VV', 'VH']\nassert parse_polarization_code('DV') == ['VV', 'VH']"
+          }
+        ],
+        "solution": "def parse_polarization_code(code):\n    table = {\n        'SH': ['HH'],\n        'SV': ['VV'],\n        'DH': ['HH', 'HV'],\n        'DV': ['VV', 'VH'],\n    }\n    return list(table[code.upper()])\n"
+      }
+    },
+    {
+      "id": "check-misconception",
+      "title": "Co dostajesz w produkcie 1SDV?",
+      "type": "quiz",
+      "data": {
+        "question": "W nazwie produktu Sentinel-1 widzisz fragment `1SDV` (tryb IW, dual-pol z nadajnikiem V). Które dwa kanały polaryzacyjne znajdziesz w odpowiadającym mu produkcie GRD?",
+        "options": [
+          "VV i VH — nadajnik V, dwa odbiorniki: V (co-pol) i H (cross-pol).",
+          "HH i VV — obie co-pol w jednym przelotcie.",
+          "HV i VH — Sentinel-1 zapisuje obie kierunki cross-pol naraz.",
+          "HH i HV — bo `D` w `1SDV` oznacza dwukierunkową akwizycję, niezależnie od litery V."
+        ],
+        "correct": [0],
+        "explanation": "**`1SDV`** to *dual-pol z nadajnikiem V*: radar wysyła falę spolaryzowaną pionowo i odbiera obie polaryzacje na powrocie — czyli **VV** (co-pol) i **VH** (cross-pol). Sentinel-1 nadaje *jedną* polaryzację w danej akwizycji, więc HH+VV w jednym przelotcie wymagałoby quad-pol, którego ta misja nie wykonuje. HV i VH są w monostatycznym SAR fizycznie prawie identyczne, ale w produktach Sentinel-1 zapisywany jest tylko ten kierunek cross-pol, który pasuje do polaryzacji nadajnika — VH przy `1SDV`, HV przy `1SDH`. Czwarty dystraktor myli `D` z 'dwukierunkową akwizycją' — `D` oznacza po prostu *dual* (dwa kanały odbiorcze), nie ma drugiego nadajnika.",
+        "multiSelect": false
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/acquisition-modes",
+      "title": "Sentinel-1 SAR — Acquisition modes and product types (ESA User Guide)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Polarimetry#Radar_polarimetry",
+      "title": "Polarimetry — Wikipedia (radar polarimetry section)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1201/9781420054989",
+      "title": "Polarimetric Radar Imaging: From Basics to Applications",
+      "kind": "book",
+      "author": "Jong-Sen Lee and Eric Pottier",
+      "year": 2009
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+      "title": "ESA Sentinel-1 SAR User Guide",
+      "kind": "article"
+    }
+  ]
+}

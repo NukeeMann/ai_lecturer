@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "slug": "instalacja-i-konfiguracja-srodowiska",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Instalacja i konfiguracja środowiska",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "Postaw izolowane środowisko Pythona, dobierz właściwy wariant pakietu opencv-python z PyPI i zweryfikuj wersję — od dev-laptopa po headless serwer SAR.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "intro-srodowisko",
+      "title": "Po co osobne środowisko i który wariant pakietu",
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy projekt OpenCV zaczyna się od dwóch decyzji: **gdzie** zainstalować pakiet (najlepiej w izolowanym środowisku, nie globalnie) i **który wariant** `opencv-python` wybrać z PyPI.\n\nW ekosystemie naukowego Pythona dwa narzędzia rządzą izolacją:\n\n- **`venv`** — wbudowany w stdlib (`python3 -m venv .venv` → `source .venv/bin/activate`). Lekki, działa wszędzie, idealny do czystych projektów `pip`-owych.\n- **`conda` / `mamba`** — preferowany w geo-ekosystemie SAR (GDAL, `rasterio`, `snap`), bo dostarcza skompilowane biblioteki C bez kompilatora w systemie.\n\nWariant pakietu OpenCV wybiera się wzdłuż **dwóch osi**: czy zawiera moduły *contrib* (`cv2.SIFT_create` przed wygaśnięciem patentu, dodatkowe trackery, `cv2.dnn_superres`) oraz czy linkuje biblioteki GUI (`libGL`, Qt) potrzebne do `cv2.imshow`. Cztery kombinacje to cztery pakiety na PyPI — porównasz je w tabeli niżej.\n\n> Złota zasada: **nie instaluj kilku wariantów naraz w jednym środowisku**. Wszystkie publikują ten sam moduł `cv2`, więc drugi `pip install` po prostu nadpisuje pierwszy w sposób, który łatwo prowadzi do tajemniczych `ImportError: libGL.so.1` na produkcji."
+      },
+      "sources": [
+        {
+          "url": "https://pypi.org/project/opencv-python/",
+          "title": "OpenCV — Installation in Python (PyPI)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "warianty-pakietu",
+      "title": "Cztery warianty opencv-python — kiedy którego użyć",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "pakiet", "label": "Pakiet PyPI", "type": "string", "sortable": true },
+          { "key": "contrib", "label": "Moduły contrib", "type": "boolean", "sortable": true },
+          { "key": "gui", "label": "GUI (imshow)", "type": "boolean", "sortable": true },
+          { "key": "kiedy", "label": "Kiedy wybrać", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "pakiet": "opencv-python",
+            "contrib": false,
+            "gui": true,
+            "kiedy": "Dev-laptop, kursy i prototypy z cv2.imshow; nie potrzebujesz SIFT-a ani dodatkowych trackerów."
+          },
+          {
+            "pakiet": "opencv-contrib-python",
+            "contrib": true,
+            "gui": true,
+            "kiedy": "Dev-laptop, gdy potrzebujesz SIFT/SURF, MultiTracker, ximgproc, dnn_superres lub ArUco."
+          },
+          {
+            "pakiet": "opencv-python-headless",
+            "contrib": false,
+            "gui": false,
+            "kiedy": "Kontener Docker / serwer CI bez X11, prosty pipeline obrazu — bez okienek imshow."
+          },
+          {
+            "pakiet": "opencv-contrib-python-headless",
+            "contrib": true,
+            "gui": false,
+            "kiedy": "Headless cloud-VM, na której pipeline SAR korzysta z ximgproc lub dnn_superres."
+          }
+        ],
+        "initialSort": { "key": "pakiet", "dir": "asc" }
+      }
+    },
+    {
+      "id": "parser-wersji",
+      "title": "Parser numeru wersji OpenCV",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Po instalacji pierwsza linia diagnostyki to `cv2.__version__` — zwraca on string w formacie `MAJOR.MINOR.PATCH.BUILD` (np. `'4.10.0.84'`). Aby porównywać kompatybilność w kodzie, potrzebujesz tej wartości jako krotki intów.\n\nZaimplementuj funkcję `parse_opencv_version(s)`, która rozbija taki string na czteroelementową krotkę intów. Zaufaj formatowi — nie waliduj inputu, skup się na `split` i konwersji.\n\n```\nparse_opencv_version(\"4.10.0.84\") == (4, 10, 0, 84)\nparse_opencv_version(\"3.4.18.65\") == (3, 4, 18, 65)\n```",
+        "starterCode": "def parse_opencv_version(s):\n    \"\"\"Rozbij 'MAJOR.MINOR.PATCH.BUILD' na (int, int, int, int).\n\n    Zaufaj formatowi - nie waliduj inputu.\n    \"\"\"\n    # TODO: zwróć krotkę 4 intów\n    return (0, 0, 0, 0)\n",
+        "tests": [
+          {
+            "name": "parses_standard_release",
+            "body": "assert parse_opencv_version(\"4.10.0.84\") == (4, 10, 0, 84)",
+            "hidden": false
+          },
+          {
+            "name": "parses_legacy_release",
+            "body": "assert parse_opencv_version(\"3.4.18.65\") == (3, 4, 18, 65)"
+          },
+          {
+            "name": "preserves_zero_components",
+            "body": "assert parse_opencv_version(\"4.0.0.0\") == (4, 0, 0, 0)"
+          },
+          {
+            "name": "returns_ints_not_strings",
+            "body": "result = parse_opencv_version(\"4.10.0.84\")\nassert all(isinstance(x, int) for x in result), f'oczekiwano krotki intów, dostałem {[type(x).__name__ for x in result]}'"
+          }
+        ],
+        "solution": "def parse_opencv_version(s):\n    return tuple(int(x) for x in s.split(\".\"))\n"
+      }
+    },
+    {
+      "id": "quiz-headless-contrib",
+      "title": "Sprawdź się: który pakiet do kontenera SAR?",
+      "type": "quiz",
+      "data": {
+        "question": "Pracujesz nad pipeline'em SAR, który ma działać w obrazie Dockera bez X11 i wykorzystywać moduł `cv2.dnn_superres` (algorytm super-resolucji z modułów contrib). Który pakiet z PyPI zainstalujesz w obrazie?",
+        "options": [
+          "opencv-python",
+          "opencv-contrib-python",
+          "opencv-python-headless",
+          "opencv-contrib-python-headless"
+        ],
+        "correct": [3],
+        "explanation": "Wariant *headless* nie linkuje `libGL` ani `Qt` — w obrazie Dockera bez X11 nie chcesz tych zależności (i tak nie odpalisz `imshow`, a obraz jest cięższy). Wariant *contrib* dorzuca dodatkowe moduły, w tym `cv2.dnn_superres`. Pakiet bez `headless` wymagałby ręcznej instalacji `libGL.so.1` w kontenerze; pakiet bez `contrib` po prostu nie miałby `dnn_superres`. Tylko `opencv-contrib-python-headless` spełnia oba wymagania jednocześnie.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://pypi.org/project/opencv-python/",
+          "title": "OpenCV — Installation in Python (PyPI)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-rozszerz-parser",
+      "title": "Eksperymentuj: porównanie wersji",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "def parse_opencv_version(s):\n    return tuple(int(x) for x in s.split(\".\"))\n\n# Rozszerz parser o stabilne porównanie wersji.\n# Funkcja is_at_least(version_str, required) ma zwracać True gdy zainstalowana wersja\n# jest >= required, gdzie required to krotka (major, minor) - przyda się przy bramce\n# kompatybilności kursu (kurs zakłada cv2 >= 4.5).\n\ndef is_at_least(version_str, required):\n    # TODO: porównaj odpowiednie człony krotek\n    return False\n\nprint(is_at_least(\"4.10.0.84\", (4, 5)))  # oczekiwane: True\nprint(is_at_least(\"4.5.0.0\",  (4, 5)))   # oczekiwane: True (równość = at least)\nprint(is_at_least(\"3.4.18.65\", (4, 5)))  # oczekiwane: False\n",
+        "encouragement": "Spróbuj rozszerzyć parser o stabilne porównanie — w realnym kodzie to pierwsza linia obrony przed nieoczywistymi błędami po aktualizacji pakietu."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pypi.org/project/opencv-python/",
+      "title": "OpenCV — Installation in Python (PyPI)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.python.org/3/library/venv.html",
+      "title": "venv — Creation of virtual environments (Python documentation)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.conda.io/projects/conda/en/stable/user-guide/tasks/manage-environments.html",
+      "title": "Managing environments — conda user guide",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d6/d00/tutorial_py_root.html",
+      "title": "OpenCV Python tutorials (4.x)",
+      "kind": "article"
+    }
+  ]
+}

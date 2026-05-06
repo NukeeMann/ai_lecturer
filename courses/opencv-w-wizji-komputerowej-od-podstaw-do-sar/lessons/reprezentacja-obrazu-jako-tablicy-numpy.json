@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "slug": "reprezentacja-obrazu-jako-tablicy-numpy",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m1",
+  "title": "Reprezentacja obrazu jako tablicy NumPy",
+  "eyebrow": "FUNDAMENTY OPENCV",
+  "description": "Obraz w OpenCV to po prostu numpy.ndarray o shape (H, W, C) — poznaj kolejność osi, dtype i kolejność kanałów BGR, zanim ruszysz dalej.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "obraz-to-ndarray",
+      "title": "Obraz to ndarray (H, W, C)",
+      "type": "theory",
+      "data": {
+        "markdown": "W OpenCV obraz **to** `numpy.ndarray` — nie ma osobnej klasy `Image`, nie ma metod typu `img.get_pixel(x, y)`. Wczytujesz `img = cv2.imread(\"foto.jpg\")` i dostajesz zwykłą tablicę, którą indeksujesz, kroisz i mnożysz jak każdą inną w NumPy.\n\nDla obrazu kolorowego shape ma postać `(H, W, C)` — najpierw **wysokość**, potem **szerokość**, na końcu liczba kanałów (zwykle 3 dla BGR). Dla skali szarości shape spada do dwuwymiarowego `(H, W)`.\n\nMały przykład — kolorowy obraz 3 × 4 piksele to ndarray o shape `(3, 4, 3)`, a pojedynczy piksel jest wektorem trzech wartości, po jednej na kanał:\n\n```python\nimg.shape          # (3, 4, 3)  -> (H, W, C)\nimg.dtype          # uint8\nimg[0, 0]          # array([245,  12,  30], dtype=uint8)\n                   #          B    G    R   (uwaga: BGR, nie RGB)\n```\n\nKolejność `(H, W)` to **row-major NumPy**: pierwszy indeks to numer wiersza (czyli **y**, licząc od góry), drugi to numer kolumny (**x**). Jest to **odwrotnie** niż `(width, height)`, którego używa np. `cv2.resize(img, (W, H))` przyjmując `dsize=(width, height)`. Tej asymetrii nie zauważysz, dopóki dwa razy z rzędu nie pomylisz wymiarów — wtedy zauważysz mocno."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d3/df2/tutorial_py_basic_ops.html",
+          "title": "OpenCV Python tutorial — Basic operations on images",
+          "kind": "article"
+        },
+        {
+          "url": "https://numpy.org/doc/stable/reference/arrays.ndarray.html",
+          "title": "NumPy — The N-dimensional array (ndarray)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "bgr-czy-rgb",
+      "title": "BGR, nie RGB — kolejność kanałów w OpenCV",
+      "type": "theory",
+      "data": {
+        "markdown": "Pierwsza pułapka, którą OpenCV stawia każdemu nowemu użytkownikowi: **kanały są ułożone BGR, nie RGB**. To dziedzictwo z lat 90., kiedy systemowe formaty bitmap (Windows BMP, niektóre karty graficzne) używały takiej kolejności bajtów — OpenCV po prostu to zachował, a wsteczna kompatybilność nie pozwala teraz zmienić.\n\nPraktyczne konsekwencje:\n\n- `cv2.imread(\"kot.jpg\")` zwraca tablicę w **BGR**. Gdy wyświetlisz ją bezpośrednio przez `matplotlib.pyplot.imshow`, kanały R i B są zamienione — kot wychodzi niebieski. Lekarstwo: `cv2.cvtColor(img, cv2.COLOR_BGR2RGB)` przed `plt.imshow`.\n- Indeks kanału w shape `(H, W, 3)`: `img[..., 0]` to **B**, `img[..., 1]` to **G**, `img[..., 2]` to **R**.\n- Modele DL (PyTorch, ONNX) zwykle oczekują **RGB** — przed `cv2.dnn.blobFromImage` używasz parametru `swapRB=True` albo robisz konwersję ręcznie.\n\nObraz w skali szarości (`cv2.imread(..., cv2.IMREAD_GRAYSCALE)` lub po `cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)`) nie ma osi kanałów — shape jest dwuwymiarowy `(H, W)`. Częsta wpadka: kod, który ślepo czyta `img.shape[2]`, łapie `IndexError` na obrazie szarości. Defensywne `if img.ndim == 2` rozwiązuje sprawę u źródła."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/df/d9d/tutorial_py_colorspaces.html",
+          "title": "OpenCV Python tutorial — Changing colorspaces (BGR vs RGB)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-dtype",
+      "title": "Typowe dtype obrazów — czego używać i kiedy",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "dtype", "label": "dtype", "type": "string", "sortable": true },
+          { "key": "zakres", "label": "Zakres wartości", "type": "string", "sortable": false },
+          { "key": "bajty", "label": "Bajty / piksel · kanał", "type": "number", "sortable": true },
+          { "key": "kiedy", "label": "Kiedy używać", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "dtype": "uint8",
+            "zakres": "0–255",
+            "bajty": 1,
+            "kiedy": "Standard fotografii i wideo. Domyślny wynik cv2.imread dla plików JPEG i PNG; 99% klasycznego pipeline'u OpenCV."
+          },
+          {
+            "dtype": "uint16",
+            "zakres": "0–65 535",
+            "bajty": 2,
+            "kiedy": "TIFF-y wysokiej dynamiki, zdjęcia medyczne (DICOM 12/16-bit), kamery przemysłowe i część obrazów satelitarnych przed kalibracją."
+          },
+          {
+            "dtype": "float32",
+            "zakres": "≈ −3.4·10^38 do 3.4·10^38 (zwykle 0.0–1.0)",
+            "bajty": 4,
+            "kiedy": "Po normalizacji przed siecią DL, przy operacjach gradientowych (Sobel/Laplace), FFT, dB-skali SAR i wszędzie, gdzie potrzebujesz wartości ujemnych lub ułamkowych."
+          },
+          {
+            "dtype": "float64",
+            "zakres": "≈ ±1.8·10^308",
+            "bajty": 8,
+            "kiedy": "Domyślny dtype wyników np.mean lub dzielenia w NumPy. W obrazach raczej unikać — dwa razy więcej pamięci niż float32 bez praktycznej korzyści dla wizji komputerowej."
+          }
+        ],
+        "initialSort": { "key": "bajty", "dir": "asc" }
+      }
+    },
+    {
+      "id": "exercise-bgr-to-rgb",
+      "title": "Zadanie: BGR → RGB jednym slicem",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "OpenCV wczytuje obraz w kolejności **BGR**, a zdecydowana większość bibliotek wyświetlających i modeli DL oczekuje **RGB**. Najtańsza konwersja to po prostu odwrócenie kolejności na osi kanałów — to jeden slice w NumPy, bez kopiowania pikseli (chyba że sam tego zażądasz).\n\nZaimplementuj `bgr_to_rgb(img)`, który dla wejścia o shape `(H, W, 3)` zwraca tablicę o tej samej shape i tym samym dtype, ale z **odwróconą** kolejnością kanałów (B i R zamienione miejscami). Zwróć kopię (`.copy()`), żeby modyfikacja wyniku nie wpływała na oryginał.\n\n```\nimg[0, 0]  == [10, 20, 30]   # BGR\nout[0, 0]  == [30, 20, 10]   # RGB\n```",
+        "starterCode": "import numpy as np\n\ndef bgr_to_rgb(img):\n    \"\"\"Zamień kolejność kanałów BGR -> RGB.\n\n    img: ndarray o shape (H, W, 3) i dowolnym dtype\n    return: ndarray o tej samej shape i dtype, z odwróconą osią kanałów\n    \"\"\"\n    # TODO: użyj indeksowania NumPy na ostatniej osi.\n    # Wskazówka: img[:, :, ::-1] zwraca widok z odwróconą osią kanałów.\n    # Nie zapomnij o .copy(), żeby zwrócić niezależną tablicę.\n    return img\n",
+        "tests": [
+          {
+            "name": "swaps_single_pixel",
+            "body": "import numpy as np\nimg = np.array([[[10, 20, 30]]], dtype=np.uint8)\nout = bgr_to_rgb(img)\nassert out.tolist() == [[[30, 20, 10]]], f'oczekiwano [[[30, 20, 10]]], dostałem {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "preserves_shape_and_dtype",
+            "body": "import numpy as np\nimg = np.zeros((4, 5, 3), dtype=np.uint8)\nout = bgr_to_rgb(img)\nassert out.shape == (4, 5, 3), f'oczekiwano shape (4, 5, 3), dostałem {out.shape}'\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, dostałem {out.dtype}'"
+          },
+          {
+            "name": "swaps_full_image_correctly",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.integers(0, 256, size=(3, 4, 3), dtype=np.uint8)\nout = bgr_to_rgb(img)\nassert np.array_equal(out[..., 0], img[..., 2]), 'kanał 0 wyniku powinien być kanałem 2 wejścia (R)'\nassert np.array_equal(out[..., 1], img[..., 1]), 'kanał 1 (zielony) powinien zostać niezmieniony'\nassert np.array_equal(out[..., 2], img[..., 0]), 'kanał 2 wyniku powinien być kanałem 0 wejścia (B)'"
+          },
+          {
+            "name": "returns_independent_copy",
+            "body": "import numpy as np\nimg = np.array([[[10, 20, 30]]], dtype=np.uint8)\nout = bgr_to_rgb(img)\nout[0, 0, 0] = 99\nassert img[0, 0, 0] == 10, 'modyfikacja wyniku nie może zmieniać oryginału — wróć z .copy()'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef bgr_to_rgb(img):\n    return img[:, :, ::-1].copy()\n"
+      }
+    },
+    {
+      "id": "quiz-shape-trap",
+      "title": "Sprawdź się: jakie shape ma wczytane zdjęcie?",
+      "type": "quiz",
+      "data": {
+        "question": "Funkcja `cv2.imread('foto.jpg')` wczytała bez błędu kolorowe zdjęcie o rozdzielczości 1280 × 720 pikseli (czyli 1280 px w poziomie, 720 px w pionie). Co zwróci `img.shape`?",
+        "options": [
+          "(1280, 720, 3) — bo NumPy zachowuje kolejność (szerokość, wysokość, kanały) zgodną z geometrią ekranu",
+          "(720, 1280, 3) — bo NumPy używa kolejności wierszowej: pierwszy wymiar to wiersze (czyli H), drugi to kolumny (czyli W)",
+          "(3, 720, 1280) — bo OpenCV używa układu CHW jak PyTorch",
+          "(3, 1280, 720) — bo kolejność BGR daje 3 jako pierwszy wymiar, a potem szerokość przed wysokością"
+        ],
+        "correct": [1],
+        "explanation": "NumPy (i OpenCV w Pythonie) używa **kolejności wierszowej** — pierwszy indeks to numer wiersza (wysokość, H), drugi to numer kolumny (szerokość, W), a trzeci to kanał (C). Dlatego `cv2.imread` zdjęcia 1280 × 720 zwraca tablicę o shape `(720, 1280, 3)`. Pułapka: część funkcji OpenCV przyjmuje rozmiar w kolejności `(W, H)` (np. `cv2.resize(img, (1280, 720))`), ale `img.shape` zawsze zaczyna się od H. Układ CHW to konwencja PyTorch / Caffe — żeby tam wejść, trzeba dodatkowego `np.transpose(img, (2, 0, 1))`.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/reference/arrays.ndarray.html",
+          "title": "NumPy — The N-dimensional array (ndarray)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-indeksowanie",
+      "title": "Eksperymentuj: shape, dtype i slicing",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Syntetyczny obraz 6 x 8 pikseli, BGR uint8, dwa poziome pasy + czerwony kwadracik.\nimg = np.zeros((6, 8, 3), dtype=np.uint8)\nimg[0:3, :, 0] = 200       # górny pas: niebieski (kanał B)\nimg[3:6, :, 1] = 200       # dolny pas: zielony  (kanał G)\nimg[2:4, 3:5, 2] = 255     # czerwony kwadracik na granicy (kanał R)\n\nprint('shape :', img.shape)             # (H, W, C) = (6, 8, 3)\nprint('dtype :', img.dtype)              # uint8\nprint('img[0, 0] (BGR):', img[0, 0])    # piksel z górnego pasa\nprint('ROI 2 x 2 środek:')\nprint(img[2:4, 3:5])                    # widok bez kopiowania\n\n# Spróbuj:\n#  - przekonwertować obraz na float32 i znormalizować do [0, 1] przez podzielenie / 255.0\n#  - zamienić kolejność kanałów (BGR -> RGB) jednym slicem: img[:, :, ::-1]\n#  - wyzerować górny pas niebieski, ale zachować czerwony kwadracik\n#  - sprawdzić, jak zmienia się shape po np.expand_dims(img, axis=0) (dodanie wymiaru batch)\n",
+        "encouragement": "Pobaw się indeksami i kanałami — ten sam toolbox dostaniesz przy każdym filtrze, bo każda operacja OpenCV zaczyna się od pętli po tych samych osiach."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://numpy.org/doc/stable/reference/arrays.ndarray.html",
+      "title": "NumPy — The N-dimensional array (ndarray)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d3/df2/tutorial_py_basic_ops.html",
+      "title": "OpenCV Python tutorial — Basic operations on images",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Pixel",
+      "title": "Pixel — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/index.html",
+      "title": "NumPy user guide",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+=== Attempt 1 — 2026-05-06T04:06:02.879Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+I'll follow the generate_lesson skill instructions, not the ralph orchestrator workflow (the user explicitly said not to touch scripts/ralph/).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-o…)
+←   190 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/research.md
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Research: OpenCV w wizji komputerowej: od podstaw do SAR
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 299:## Filtr Kalmana i mini-projekt MOT
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 295	- [Henriques, J. F., Caseiro, R., Martins, P. and Batista, J. — *High-Speed Tracking with Kernelized Correlation Filters* (IEEE TPAMI 2015)](https://doi.org/10.1109/TPAMI.2014.2345390) — kind: pap…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	# Sources: OpenCV w wizji komputerowej: od podstaw do SAR
+Now let me read the schemas to understand what's allowed.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Glob(pattern: src/widgets/**/schema.ts)
+← src/widgets/Theory/schema.ts
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/ParametricExplorer/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+Let me look at an existing lesson in this course to crib structure.
+→ Glob(pattern: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/czym-jest-opencv-i-kiedy-go-uzywac.json
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-o…)
+← 190 /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/trackery-kcf-csrt-i-mosse.json
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 100	    },
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← No files found
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-p…)
+← no assets dir
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/konwolucja-2d-i-jadra-filtrow.json:1
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+Let me check if any existing content references a specific Kalman image URL.
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← Found 8 files
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	=== Attempt 1 — 2026-05-06T04:06:02.879Z ===
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/convex-hull-i-defekty.json:16:[Omitted long matching line]
+→ Bash(command: curl -sI -o /dev/null -w "%{http_code} %{url_effective}\n" "https://upload.wikim…)
+← 200 https://upload.wikimedia.org/wikipedia/commons/a/a5/Basic_concept_of_Kalman_filtering.svg
+→ Bash(command: for url in \
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Basic_…)
+← 200 https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Basic_concept_of_Kalman_filtering.svg/500px-Basic_concept_of_Kalman_filtering.svg.png
+I have enough context. Now I'll author the lesson by writing a Python script that builds the JSON (avoiding manual escaping errors), then validate against the schema.
+→ Bash(command: mkdir -p /tmp/lesson_gen && ls /home/nukeemann/projects/ai_lecturer/courses/open…)
+← ls: cannot access '/home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/filtr-kalmana-i-mini-projekt-mot.json': No such file or directory
+→ Write(file_path: /tmp/lesson_gen/build_lesson.py)
+← File created successfully at: /tmp/lesson_gen/build_lesson.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/lesson_gen/build_lesson.py)
+← wrote /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/filtr-kalmana-i-mini-projekt-mot.json
+Now let me validate against the LessonSchema.
+→ Bash(command: npx tsx -e "
+import { LessonSchema } from './src/lib/schemas/lesson';
+import fs …)
+← OK: lesson validates against LessonSchema
+Schema validates. Let me also sanity-check the code solutions actually pass the tests they ship with.
+→ Bash(command: python3 -c "
+import json, subprocess, tempfile, os, textwrap
+data = json.load(op…)
+← == exercise-kalman-1d ==
+All solutions pass their tests. Let me verify the starter code does NOT trivially pass (i.e., the exercise actually requires work).
+→ Bash(command: python3 -c "
+import json, subprocess, tempfile, os
+data = json.load(open('/home/…)
+← == exercise-kalman-1d (starter) ==
+Lesson written and validates. Summary:
+- **File:** `courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/lessons/filtr-kalmana-i-mini-projekt-mot.json`
+- **6 sections** (theory, theory, quiz, code, code, sandbox) — mini-project skew toward code per research.md guidance.
+- **Sections:**
+  1. `po-co-kalman` (theory) — frames why Kalman is needed in MOT (jitter, occlusions, association). Inline Wikimedia Commons image of the predict→update loop (URL verified). Section sources: Kalman 1960, Wikipedia.
+  2. `stan-i-rownania` (theory) — KaTeX-heavy: state $[p_x,p_y,v_x,v_y]^T$, $F$/$H$ matrices, full predict & update equations stated without re-derivation (per research.md note for module 6 lesson 10), `cv2.KalmanFilter` API note. Section source: Welch & Bishop tutorial.
+  3. `quiz-zgubiona-klatka` — 5 options, single-select on the predict-only "coasting" pattern when `tracker.update()` returns `ok=False`; distractors built from real MOT bugs.
+  4. `exercise-kalman-1d` — implement one Kalman step in 1-D, plain NumPy. 4 tests (1 visible smoke test + 3 hidden). Solution verified to pass; starter fails 3/4.
+  5. `exercise-mot-step` — the mini-project core. `KalmanTrack` class provided; learner implements `step_mot()` with predict → global-greedy bramkowanie → update → drop after max_misses → spawn. 4 tests. Solution verified to pass; starter fails 3/4.
+  6. `sandbox-strojenie-q-r` — synthetic 1-D motion with mid-clip turn; `cv2.KalmanFilter` with editable `q` and `r` plus 5 suggested experiments.
+- **Sources:** 4 lesson-level (Kalman 1960 paper, Welch & Bishop 2006 paper, OpenCV `kalman.py` sample, Wikipedia article); papers carry author + year.
+- **Validation:** `LessonSchema.safeParse` returns OK. All code solutions execute and pass their tests under `python3`.
+- **Untouched:** `scripts/ralph/`, `course.json`, every other lesson file, `research.md`, `sources.md`.
+[result success (775.4s)]

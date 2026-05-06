@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "slug": "template-matching-i-jego-ograniczenia",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Template matching i jego ograniczenia",
+  "eyebrow": "DETEKCJA KLASYCZNA",
+  "description": "Najprostszy detektor znanego obiektu — `cv2.matchTemplate` przesuwa szablon po obrazie i mierzy podobieństwo w każdej pozycji. Poznasz sześć flag `TM_*` (SQDIFF / CCORR / CCOEFF i ich znormalizowane warianty), zobaczysz dlaczego CCOEFF_NORMED jest odporny na liniowe zmiany oświetlenia, a na koniec zmierzysz się z czterema klasycznymi ograniczeniami metody: brak niezmienniczości obrotu, brak niezmienniczości skali, wrażliwość na okluzje oraz koszt obliczeniowy O(W·H·w·h).",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "intuicja-i-metryki",
+      "title": "Sliding template — czym jest template matching",
+      "type": "theory",
+      "data": {
+        "markdown": "**Template matching** to najprostsza technika detekcji znanego wzorca: bierzemy mały wycinek $w \\times h$ (*szablon*, ang. *template*) i **przesuwamy** go piksel po pikselu po większym obrazie $W \\times H$, w każdej pozycji licząc miarę podobieństwa między szablonem a leżącym pod nim oknem. Wynik to **mapa odpowiedzi** rozmiaru $(W - w + 1) \\times (H - h + 1)$ — w tej mapie szukamy ekstremum (argmin lub argmax, zależnie od metryki), którego współrzędne `(x, y)` to lewy-górny róg najlepszego dopasowania.\n\n![Czarno-biała fotografia dwóch rowerów (Wikimedia Commons Bikesgray.jpg) jako przykład obrazu wejściowego: gdyby z tego zdjęcia wyciąć fragment z lampką lub elementem ramy, template matching mógłby ten sam fragment zlokalizować przesuwając szablon piksel po pikselu i licząc miarę podobieństwa w każdej pozycji](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons, plik Bikesgray.jpg, domena publiczna.)*\n\nW OpenCV cały sliding window kryje się za jedną linijką:\n\n```python\nres = cv2.matchTemplate(image, templ, method)\nmin_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)\n```\n\nFunkcja przyjmuje **sześć flag** `method` — trzy rodziny metryk plus ich znormalizowane warianty.\n\n**Suma kwadratów różnic (SSD)** — `cv2.TM_SQDIFF`:\n\n$$ R_{\\mathrm{SQDIFF}}(x, y) \\;=\\; \\sum_{x', y'} \\bigl( T(x', y') - I(x + x', y + y') \\bigr)^{2} $$\n\nIm **mniej**, tym lepiej — najlepsze dopasowanie to `min_loc`.\n\n**Korelacja krzyżowa (CCORR)** — `cv2.TM_CCORR`:\n\n$$ R_{\\mathrm{CCORR}}(x, y) \\;=\\; \\sum_{x', y'} T(x', y') \\cdot I(x + x', y + y') $$\n\nIm **więcej**, tym lepiej (`max_loc`). Pułapka: surowy CCORR rośnie wszędzie tam, gdzie obraz jest po prostu **jasny** — biały prostokąt w tle potrafi oszukać metrykę.\n\n**Współczynnik korelacji (CCOEFF)** — `cv2.TM_CCOEFF`. Korelacja po **odjęciu średniej** od szablonu i od okna obrazu:\n\n$$ R_{\\mathrm{CCOEFF}}(x, y) \\;=\\; \\sum_{x', y'} \\bigl( T(x', y') - \\bar T \\bigr) \\cdot \\bigl( I(x + x', y + y') - \\bar I_{xy} \\bigr) $$\n\nOdjęcie średnich zabija stałą zmianę jasności — to czyni CCOEFF **odpornym na addytywne zmiany oświetlenia**. Im **więcej**, tym lepiej (`max_loc`).\n\nKażda z trzech metryk ma wariant `_NORMED` (`TM_SQDIFF_NORMED`, `TM_CCORR_NORMED`, `TM_CCOEFF_NORMED`), który dodatkowo dzieli wynik przez normy szablonu i okna — wartość trafia do $[0,\\ 1]$ (znormalizowane SSD) lub $[-1,\\ 1]$ (znormalizowane CCORR/CCOEFF). Dzięki temu da się porównywać dopasowania między różnymi obrazami i ustawiać sensowny próg akceptacji. W praktyce **`TM_CCOEFF_NORMED`** jest najczęstszym pierwszym wyborem: znormalizowany i odporny na liniowe zmiany jasności."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/dc6/tutorial_py_template_matching.html",
+          "title": "OpenCV Python tutorial — Template Matching",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Template_matching",
+          "title": "Template matching — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "ograniczenia-cztery-pulapki",
+      "title": "Cztery ograniczenia template matchingu",
+      "type": "theory",
+      "data": {
+        "markdown": "Template matching jest **prosty i szybki**, ale ma cztery ograniczenia, o których trzeba pamiętać przy każdym praktycznym użyciu:\n\n1. **Brak niezmienniczości obrotu.** Szablon obrócony w obrazie szukanym choćby o 10° będzie miał całkowicie inne piksele pod tymi samymi indeksami $(x', y')$, więc wszystkie sześć metryk gwałtownie spada. Standardowy *workaround*: wywołać `cv2.matchTemplate` w pętli po wielu kątach (`cv2.getRotationMatrix2D` + `cv2.warpAffine` na szablonie) i wziąć najlepszą odpowiedź — kosztem mnożenia czasu obliczeń przez liczbę kątów.\n\n2. **Brak niezmienniczości skali.** Szablon wycięty z obrazu o rozdzielczości $640 \\times 480$ nie zostanie znaleziony na obrazie $1280 \\times 960$, bo „ten sam” obiekt zajmuje teraz ${\\sim}2\\times$ więcej pikseli i nie pasuje do okna $w \\times h$. *Workaround* — pętla po piramidzie skal, zwykle 5–10 poziomów co $1{,}1\\times$ lub $1{,}25\\times$ (`cv2.resize` na szablonie).\n\n3. **Wrażliwość na okluzje i zmiany tła.** Każdy piksel okna wnosi wkład do sumy; nawet częściowe zasłonięcie obiektu albo zmiana tła wokół niego zaniżają metrykę poniżej progu akceptacji. Tego nie naprawi żadna z flag `TM_*` — szablon zakłada, że **całe** okno odpowiada obiektowi.\n\n4. **Koszt obliczeniowy.** Naiwna implementacja ma złożoność $\\mathcal{O}(W \\cdot H \\cdot w \\cdot h)$ — dla obrazu $1024 \\times 768$ i szablonu $64 \\times 64$ to ponad **3 miliardy operacji**. OpenCV przyspiesza ten rachunek przez FFT (`TM_CCORR` jest po prostu konwolucją w dziedzinie częstotliwości), ale i tak liczymy odpowiedź w **każdym** dopuszczalnym przesunięciu — żaden ze znanych algorytmów template matchingu nie pozwala tego pominąć.\n\n**Kiedy template matching jest dobrym wyborem?** Gdy znamy z góry orientację, skalę i oświetlenie obiektu — np. detekcja logotypu w skanie dokumentu, lokalizacja wzorca na płytce drukowanej w stanowisku przemysłowym, szukanie znanej ikony w zrzucie ekranu. **Kiedy nie?** Gdy obiekt może być obrócony, pomniejszony, zasłonięty albo na innym tle — wtedy potrzebne są techniki, które przyjdą w kolejnych lekcjach modułu i w module 5: **kaskady Haara** (twarze), **HOG + SVM** (piesi), a w pełni inwariantnie — **deskryptory lokalne** (SIFT, ORB, AKAZE) z lekcji o cechach lokalnych."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1002/9780470744055",
+          "title": "Brunelli, R. — Template Matching Techniques in Computer Vision: Theory and Practice (Wiley, 2009)",
+          "kind": "book",
+          "author": "Roberto Brunelli",
+          "year": 2009
+        }
+      ]
+    },
+    {
+      "id": "quiz-ccoeff-vs-oswietlenie",
+      "title": "Sprawdź się: która metryka przeżyje zmianę oświetlenia",
+      "type": "quiz",
+      "data": {
+        "question": "Wycinasz szablon `templ` (24 × 24) z jasnego pomieszczenia, a w drugim ujęciu **całe** oświetlenie sceny jest ciemniejsze: każdy piksel obrazu przeszedł transformację $I'(x, y) = 0{,}5 \\cdot I(x, y) + 20$ (skalowanie + offset). Której z metryk `cv2.matchTemplate` najpewniej dasz radę użyć tak, że wciąż wskaże poprawną pozycję obiektu?",
+        "options": [
+          "`cv2.TM_SQDIFF` — bo obraz jest „mniej-więcej taki sam”, więc kwadrat różnicy pikseli pozostanie najmniejszy w miejscu obiektu.",
+          "`cv2.TM_CCORR` — surowa korelacja krzyżowa wciąż dominuje w miejscu obiektu, bo iloczyn jasnych pikseli z jasnymi pikselami szablonu jest zawsze największy.",
+          "`cv2.TM_CCOEFF_NORMED` — odejmuje średnią od szablonu i od okna obrazu (zabija offset $+20$), a normalizacja przez normy odporna jest na skalowanie $\\times 0{,}5$. Zostaje tylko właściwy „kształt” wzorca.",
+          "Żadna — wszystkie metryki `TM_*` operują na pikselach i są tak samo wrażliwe na każdą zmianę oświetlenia."
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "Spośród sześciu flag `TM_*` najsilniejszą odporność na **liniowe** zmiany jasności postaci $I' = a \\cdot I + b$ daje **`TM_CCOEFF_NORMED`**. Po pierwsze — odjęcie średniej $\\bar T$ od szablonu i $\\bar I_{xy}$ od bieżącego okna w definicji CCOEFF eliminuje stały offset $b$: jeśli każdy piksel okna zwiększył się o tę samą stałą, średnia również wzrosła o tę samą stałą, więc różnica `piksel − średnia` zostaje bez zmian. Po drugie — normalizacja przez normy $\\lVert T - \\bar T \\rVert$ i $\\lVert I_{xy} - \\bar I_{xy} \\rVert$ skraca skalowanie $a$: oba czynniki w liczniku rosną o $a$, ale mianownik również, więc znormalizowany wynik trafia do tego samego punktu w $[-1,\\ 1]$. Stąd CCOEFF_NORMED bywa „pierwszym wyborem” w praktycznym template matchingu. **TM_SQDIFF** mierzy bezwzględną różnicę pikseli — po samym dodaniu $+20$ zaczyna wskazywać miejsca, gdzie obraz jest po prostu jaśniejszy o 20 na pikselu, niezależnie od kształtu. **TM_CCORR** (bez `_NORMED` i bez odejmowania średnich) maksymalizuje iloczyn — wystarczy duży, jednolicie jasny obszar, by wynik tam wybuchł, nawet jeśli to nie jest obiekt. Odpowiedź D jest po prostu nieprawdziwa: właśnie po to powstała znormalizowana wersja CCOEFF.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-ssd-template-match",
+      "title": "Zaimplementuj `template_match_ssd(image, template)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj uproszczony template matching SSD: napisz funkcję `template_match_ssd(image, template)`, która **przesuwa** szablon po obrazie i zwraca pozycję `(x, y)` (kolumna, wiersz) lewego-górnego rogu okna o **najmniejszej** sumie kwadratów różnic.\n\n**Reguły:**\n\n1. `image` to tablica NumPy o kształcie $(H, W)$, `template` to tablica NumPy o kształcie $(h, w)$, gdzie $h \\leq H$ i $w \\leq W$.\n2. Dla każdej pozycji $y \\in [0,\\ H - h]$ i $x \\in [0,\\ W - w]$ wytnij okno `image[y:y+h, x:x+w]`, policz $\\mathrm{SSD} = \\sum (\\text{window} - \\text{template})^{2}$ i znajdź pozycję, w której SSD jest najmniejsze.\n3. Zwróć krotkę `(x, y)` — najpierw kolumna, **potem** wiersz (taka jest konwencja `cv2.minMaxLoc` i tej funkcji się trzymamy).\n4. Jeśli kilka pozycji dzieli minimalny SSD ex aequo, zwróć tę o najmniejszym `y`, a w razie remisu — najmniejszym `x` (czyli pierwszą napotkaną przy iteracji `for y: for x:`).\n\n```\n# Idealny match w prawym-dolnym rogu obrazu 6x6:\nimg = np.zeros((6, 6))\nimg[3:6, 3:6] = 100.0\ntempl = np.full((3, 3), 100.0)\ntemplate_match_ssd(img, templ)\n# -> (3, 3)\n```",
+        "starterCode": "import numpy as np\n\ndef template_match_ssd(image, template):\n    # image: numpy array ksztaltu (H, W)\n    # template: numpy array ksztaltu (h, w), h <= H, w <= W\n    # Zwroc krotke (x, y) — kolumna, wiersz lewego-gornego rogu okna o najmniejszym SSD.\n    image = np.asarray(image, dtype=np.float64)\n    template = np.asarray(template, dtype=np.float64)\n    H, W = image.shape\n    h, w = template.shape\n    # TODO: iteruj po (y, x) w [0, H - h] x [0, W - w], wytnij okno\n    # image[y:y+h, x:x+w], policz ssd = ((window - template) ** 2).sum(),\n    # zachowaj minimum i odpowiadajaca mu pozycje (x, y).\n    return (0, 0)\n",
+        "tests": [
+          {
+            "name": "idealny_match_w_srodku_obrazu",
+            "body": "import numpy as np\nimg = np.zeros((10, 10), dtype=np.float64)\nimg[4:7, 4:7] = 200.0\ntempl = np.full((3, 3), 200.0, dtype=np.float64)\nout = template_match_ssd(img, templ)\nassert out == (4, 4), f'oczekiwano (4, 4), dostalismy {out}'",
+            "hidden": false
+          },
+          {
+            "name": "match_w_lewym_gornym_rogu",
+            "body": "import numpy as np\nimg = np.zeros((6, 6), dtype=np.float64)\nimg[0:2, 0:2] = 100.0\ntempl = np.full((2, 2), 100.0, dtype=np.float64)\nout = template_match_ssd(img, templ)\nassert out == (0, 0), f'oczekiwano (0, 0), dostalismy {out}'"
+          },
+          {
+            "name": "match_w_prawym_dolnym_rogu",
+            "body": "import numpy as np\nimg = np.zeros((8, 8), dtype=np.float64)\nimg[5:8, 5:8] = 50.0\ntempl = np.full((3, 3), 50.0, dtype=np.float64)\nout = template_match_ssd(img, templ)\nassert out == (5, 5), f'oczekiwano (5, 5), dostalismy {out}'"
+          },
+          {
+            "name": "wybiera_silniejszy_z_dwoch_kandydatow",
+            "body": "import numpy as np\nimg = np.zeros((10, 10), dtype=np.float64)\n# Slabszy patch o jasnosci 100 i mocniejszy o jasnosci 200.\nimg[1:3, 1:3] = 100.0\nimg[6:8, 6:8] = 200.0\ntempl = np.full((2, 2), 200.0, dtype=np.float64)\nout = template_match_ssd(img, templ)\nassert out == (6, 6), f'oczekiwano (6, 6), dostalismy {out}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef template_match_ssd(image, template):\n    image = np.asarray(image, dtype=np.float64)\n    template = np.asarray(template, dtype=np.float64)\n    H, W = image.shape\n    h, w = template.shape\n    best_ssd = float('inf')\n    best_x, best_y = 0, 0\n    for y in range(H - h + 1):\n        for x in range(W - w + 1):\n            window = image[y:y + h, x:x + w]\n            ssd = float(((window - template) ** 2).sum())\n            if ssd < best_ssd:\n                best_ssd = ssd\n                best_x, best_y = x, y\n    return (best_x, best_y)\n"
+      }
+    },
+    {
+      "id": "sandbox-cv2-matchtemplate-flags",
+      "title": "Piaskownica: sześć flag `cv2.matchTemplate` w jednym przebiegu",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczny obraz: szare tlo + cztery jasne kwadraciki w roznych miejscach + lekki szum.\nnp.random.seed(0)\nH, W = 200, 240\nimg = np.full((H, W), 60, dtype=np.uint8)\nfor (cx, cy, val) in [(50, 40, 200), (180, 50, 220), (100, 130, 240), (200, 160, 220)]:\n    img[cy - 12:cy + 12, cx - 12:cx + 12] = val\nimg = np.clip(img.astype(np.float64) + 4.0 * np.random.randn(H, W), 0, 255).astype(np.uint8)\n\n# Szablon — wytniety z kwadratu wokol (cx=100, cy=130).\ntempl = img[118:142, 88:112].copy()  # 24 x 24\n\n# Sprawdz wszystkie 6 flag cv2.matchTemplate. Dla TM_SQDIFF* szukamy minimum,\n# dla pozostalych — maksimum.\nmethods = [\n    ('cv2.TM_SQDIFF',         cv2.TM_SQDIFF,         'min'),\n    ('cv2.TM_SQDIFF_NORMED',  cv2.TM_SQDIFF_NORMED,  'min'),\n    ('cv2.TM_CCORR',          cv2.TM_CCORR,          'max'),\n    ('cv2.TM_CCORR_NORMED',   cv2.TM_CCORR_NORMED,   'max'),\n    ('cv2.TM_CCOEFF',         cv2.TM_CCOEFF,         'max'),\n    ('cv2.TM_CCOEFF_NORMED',  cv2.TM_CCOEFF_NORMED,  'max'),\n]\nfor name, flag, which in methods:\n    res = cv2.matchTemplate(img, templ, flag)\n    min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)\n    if which == 'min':\n        x, y = min_loc\n        score = min_val\n    else:\n        x, y = max_loc\n        score = max_val\n    print(f'{name:24s} -> (x={x:3d}, y={y:3d}), score={score:12.4f}')\n\n# Pytania do siebie:\n#   * Wszystkie 6 metryk wskazuja te sama lokalizacje? Powinny — szablon to dokladny wycinek obrazu.\n#   * Co sie stanie, gdy zamiast surowego templ uzyjesz cv2.warpAffine z rotacja o 10 stopni?\n#   * Co sie stanie, gdy szablon przeskalujesz cv2.resize do 36x36 (1.5x) i powtorzysz pomiary?\n#   * Dodaj do calego obrazu stale +30 jasnosci (saturujac do 255). Ktore metryki wciaz wskaza\n#     poprawne (cx=100, cy=130 -> lewy-gorny rog (88, 118)), a ktore zaczna wskazywac inne miejsce?\n",
+        "encouragement": "Sprawdź na własnej skórze, dlaczego `TM_CCOEFF_NORMED` bywa pierwszym wyborem — i zobacz, co dzieje się z każdą z sześciu flag, gdy szablon obrócisz albo przeskalujesz."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Template_matching",
+      "title": "Template matching — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/dc6/tutorial_py_template_matching.html",
+      "title": "OpenCV Python tutorial — Template Matching",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1002/9780470744055",
+      "title": "Brunelli, R. — Template Matching Techniques in Computer Vision: Theory and Practice (Wiley, 2009)",
+      "kind": "book",
+      "author": "Roberto Brunelli",
+      "year": 2009
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 9 Image alignment and stitching",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/init_course/SKILL.md)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← 1	{
+I'll ignore the ralph CLAUDE.md system-reminder per your explicit instruction not to touch scripts/ralph/. Reading the schemas and widgets reference now.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/courseSpec.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/course.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+Let me check the current state of the course folder and the slugify rule.
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-…)
+← total 48
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/server/paths.ts)
+← 1	import path from 'node:path';
+I have everything I need. Now writing the three artefacts. Starting with `research.md`.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/research.md (file state is current in your context — no need to Read it back)
+Now writing `sources.md`. This is the bulk — 67 lessons × ≥3 stable references each.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/sources.md (file state is current in your context — no need to Read it back)
+Let me verify my icon choice against what the app actually renders.
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/courses)
+← courses/pytorch-for-python-developers/course.json:7:  "icon": "flame",
+→ Grep(path: /home/nukeemann/projects/ai_lecturer/src)
+← No matches found
+Now writing `course.json`.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-pods…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/course.json (file state is current in your context — no need to Read it back)
+Now validating both schemas — `course.json` against `CourseSchema` and `course-spec.json` against `CourseSpecSchema`.
+→ Bash(command: npx tsx -e "
+import { CourseSchema } from './src/lib/schemas/course';
+import { C…)
+← CourseSpec OK — topic: OpenCV in computer vision (Polish)
+All validations pass. Let me also confirm no writes leaked into `scripts/ralph/`.
+→ Bash(command: git status --short scripts/ralph/ courses/opencv-w-wizji-komputerowej-od-podstaw…)
+← ?? courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/
+`init_course` finished for `opencv-w-wizji-komputerowej-od-podstaw-do-sar`. Summary:
+**Artefacts written** under `/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/`:
+- `research.md` — topic summary, prerequisites, ~30 key concepts, ~18 misconceptions, suggested ordering, lesson-generation notes (incl. explicit "all content must be authored in Polish" directive).
+- `sources.md` — 9 course-wide references (Szeliski, Gonzalez & Woods, OpenCV docs, Hartley & Zisserman, ESA Sentinel-1, ASF DAAC, etc.) + 3 stable, kind-tagged sources per lesson across all 67 lessons.
+- `course.json` — `schemaVersion: 1`, 8 modules, **67 lessons**, accent `emerald`, icon `scan-eye`. Validates clean against `CourseSchema`.
+**Architect-pass reshaping** of the wizard's 18-module / 90-lesson draft:
+1. Fundamenty OpenCV (6) · 2. Operacje obrazowe i poprawa kontrastu (8) · 3. Filtracja, gradienty, morfologia (9) · 4. Krawędzie, kontury i Hough (7) · 5. Cechy lokalne i dopasowanie (7) · 6. Detekcja klasyczna, segmentacja i tracking (10) · 7. Geometria 3D, FFT i wydajność (10) · 8. Przetwarzanie i analiza obrazów satelitarnych SAR (10).
+Mini-projects landed at the end of M2 (skaner dokumentów), M5 (panorama), M6 (MOT) and M8 (powódź log-ratio) per Q8. DL comparison kept to ≤ 1 lesson (M7.10) per Q4. Real-time video concentrated in M6.7–9 per Q6. Final 10 lessons dedicated end-to-end to SAR per Q9.
+**Verified**: CourseSpec + Course parse; 67/67 lesson slugs equal `slugify(title)`; no duplicates; every lesson title has a matching `## <Lesson title>` heading in `sources.md`; nothing written under `scripts/ralph/`.
+The webapp's generation backend can now walk `course.json.modules.flatMap(m => m.lessons)` and invoke `generate_lesson` 67 times.
+[result success (1100.5s)]

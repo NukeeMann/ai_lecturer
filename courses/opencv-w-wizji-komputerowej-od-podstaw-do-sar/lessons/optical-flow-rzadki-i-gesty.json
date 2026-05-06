@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "slug": "optical-flow-rzadki-i-gesty",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Optical flow rzadki i gęsty",
+  "eyebrow": "TRACKING",
+  "description": "Klasyczny optical flow odpowiada na proste pytanie: o ile pikseli i w którą stronę przesunął się każdy punkt sceny między klatką poprzednią a bieżącą — pod założeniem, że jego jasność się nie zmieniła. Wyciągniemy z tego założenia *równanie ograniczenia optical flow* ($I_x u + I_y v + I_t = 0$), zobaczymy problem apertury (jedno równanie, dwie niewiadome), a potem zajrzymy do dwóch flagowych implementacji w OpenCV: rzadkiego *Lucas-Kanade* z piramidą rozdzielczości (`cv2.calcOpticalFlowPyrLK`), który śledzi garstkę dobrych narożników, i gęstego *Farnebäcka* (`cv2.calcOpticalFlowFarneback`), który zwraca pole wektorowe dla każdego piksela. W ćwiczeniu zaimplementujesz konwersję pola przepływu na magnitudę i kąt — pierwszy krok do każdej wizualizacji ruchu — a w piaskownicy uruchomisz Farnebäcka na parze syntetycznych klatek z zadaną translacją i przekonasz się, że mityczne *więcej iteracji = większa dokładność* nie działa: liczy się liczba poziomów piramidy.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "intuicja-i-zalozenia",
+      "title": "Stała jasność i problem apertury",
+      "type": "theory",
+      "data": {
+        "markdown": "**Optical flow** to dwukanałowe pole wektorowe $(u(x, y),\\, v(x, y))$ — dla każdego piksela mówi, dokąd \"poszedł\" w klatce kolejnej. To **rzut** ruchu trójwymiarowej sceny na płaszczyznę obrazu (a ten rzut nie zawsze jest tym samym, co ruch fizyczny — kręcąca się jednolita kula nie generuje optical flow, bo nic nie zmienia jasności).\n\n![Klasyczna wizualizacja gęstego optical flow z dokumentacji OpenCV: po lewej fragment sekwencji wideo z poruszającym się obiektem, po prawej kolorowa mapa pola przepływu w kodowaniu HSV — odcień koduje kąt wektora, a nasycenie (lub jasność) jego długość; różowo-żółte plamy odpowiadają obszarom o wyraźnym ruchu w prawo i w dół, niebieskie — w przeciwną stronę](https://docs.opencv.org/4.x/opticalfb.jpg)\n\n*(Obraz: dokumentacja OpenCV, [tutorial Optical Flow](https://docs.opencv.org/4.x/d4/dee/tutorial_optical_flow.html).)*\n\n**Założenie 1: stała jasność (brightness constancy).** Każdy klasyczny algorytm optical flow zaczyna od tego samego: zakładamy, że ten sam fragment sceny ma w obu klatkach **tę samą jasność**:\n\n$$ I(x, y, t) = I\\bigl(x + u\\,\\Delta t,\\; y + v\\,\\Delta t,\\; t + \\Delta t\\bigr) $$\n\nRozwijamy prawą stronę w szereg Taylora wokół $(x, y, t)$ i odrzucamy człony wyższego rzędu (założenie *małego ruchu* — drugie założenie!). Po skróceniu $I(x, y, t)$ z obu stron i podzieleniu przez $\\Delta t$ dostajemy **równanie ograniczenia optical flow**:\n\n$$ I_x \\, u + I_y \\, v + I_t = 0 $$\n\ngdzie $I_x, I_y$ to gradienty przestrzenne (Sobel/Scharr z lekcji 4 modułu 3), a $I_t$ to różnica jasności tego samego piksela między klatkami ($I_t \\approx I(x, y, t+1) - I(x, y, t)$).\n\n**Problem apertury.** To **jedno** równanie z **dwiema** niewiadomymi $(u, v)$ na piksel. Geometrycznie: znając gradient i pochodną czasową, znamy wyłącznie składową ruchu **prostopadłą do krawędzi** (tzw. *normal flow*). Składowa **wzdłuż krawędzi** jest niewidoczna z lokalnego okna — ścianka pasiastej tapety przesuwająca się w prawo wygląda *tak samo*, jakby przesuwała się ukośnie.\n\nŻeby wyznaczyć pełny wektor $(u, v)$, każdy klasyczny algorytm dorzuca **dodatkowe założenie**:\n\n- **Lucas-Kanade** (1981): zakłada, że flow jest *stały w małym okienku* (np. 5×5, 7×7, 21×21). Dostajemy wtedy jedno równanie na każdy piksel okna, układ jest nadokreślony i rozwiązuje się go przez najmniejsze kwadraty (`flow = (AᵀA)⁻¹ Aᵀ b`).\n- **Horn-Schunck** (1981) — *globalna* gładkość: minimalizuje sumę po całym obrazie z karą za szybkie zmiany $(u, v)$ między sąsiadami.\n- **Farnebäck** (2003): aproksymuje sąsiedztwo każdego piksela **wielomianem kwadratowym** $f(\\mathbf{x}) \\approx \\mathbf{x}^\\top A \\mathbf{x} + \\mathbf{b}^\\top \\mathbf{x} + c$ i dopasowuje translację z minimalizacji różnicy współczynników między klatkami.\n\nWspólny problem małego ruchu rozwiązuje **piramida rozdzielczości**: ten sam algorytm uruchamia się od najmniejszej wersji obrazu (gdzie skok 30 pikseli to skok 2 pikseli) i propaguje wynik w górę, doprecyzowując go na każdym poziomie."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Optical_flow",
+          "title": "Optical flow — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.ri.cmu.edu/publications/an-iterative-image-registration-technique-with-an-application-to-stereo-vision/",
+          "title": "Lucas, B. D. and Kanade, T. — An Iterative Image Registration Technique with an Application to Stereo Vision (IJCAI 1981)",
+          "kind": "paper",
+          "author": "Bruce D. Lucas and Takeo Kanade",
+          "year": 1981
+        }
+      ]
+    },
+    {
+      "id": "lk-vs-farneback",
+      "title": "Rzadki Lucas-Kanade vs gęsty Farnebäck — dwa API w cv2",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV pakuje teorię z poprzedniej sekcji w dwa wywołania, które wybiera się świadomie — w zależności od tego, **ilu pikseli** chcesz śledzić.\n\n**Rzadki przepływ — `cv2.calcOpticalFlowPyrLK`.** Bierze listę punktów (zwykle narożników wykrytych przez `cv2.goodFeaturesToTrack` z lekcji o detektorach Harrisa/Shi-Tomasiego) i znajduje, gdzie te konkretne punkty wylądowały w klatce następnej:\n\n```python\nimport cv2\nimport numpy as np\n\ncap = cv2.VideoCapture('clip.mp4')\nok, prev = cap.read()\nprev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)\nprev_pts = cv2.goodFeaturesToTrack(\n    prev_gray, maxCorners=200, qualityLevel=0.01, minDistance=10\n)\n\nlk_params = dict(\n    winSize=(21, 21),                 # okno LK; im wieksze, tym wieksza tolerancja na ruch ale wieksze rozmycie kierunku\n    maxLevel=3,                       # liczba poziomow piramidy (0 = bez piramidy, 3 = 4 poziomy)\n    criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),\n)\n\nwhile True:\n    ok, frame = cap.read()\n    if not ok:\n        break\n    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)\n    next_pts, status, err = cv2.calcOpticalFlowPyrLK(\n        prev_gray, gray, prev_pts, None, **lk_params\n    )\n    good_new = next_pts[status.flatten() == 1]\n    good_old = prev_pts[status.flatten() == 1]\n    # ... rysuj sciezki, podstaw prev_gray = gray, prev_pts = good_new.reshape(-1, 1, 2)\n```\n\nKluczowe pola odpowiedzi:\n\n- `next_pts` — `(N, 1, 2)` `float32` z nowymi pozycjami; tej samej długości co `prev_pts`.\n- `status` — `(N, 1)` `uint8`; `1` jeśli punkt udało się zlokalizować, `0` jeśli zgubiony (wyszedł poza obraz, niemożliwy do dopasowania, `err` przekroczyło próg).\n- `err` — `(N, 1)` `float32` z miarą jakości dopasowania okna.\n\n**Gęsty przepływ — `cv2.calcOpticalFlowFarneback`.** Liczy wektor $(u, v)$ dla **każdego** piksela i zwraca jeden trójwymiarowy ndarray `flow` o kształcie `(H, W, 2)`:\n\n```python\nflow = cv2.calcOpticalFlowFarneback(\n    prev_gray, gray,\n    None,            # bez startowego flow (alternatywnie poprzedni flow z OPTFLOW_USE_INITIAL_FLOW)\n    pyr_scale=0.5,   # wspolczynnik skalowania piramidy (0.5 = klasyczne polowienie)\n    levels=3,        # liczba poziomow piramidy\n    winsize=15,      # rozmiar uszredniajacego sasiedztwa (wieksze = bardziej odporne na szum, mniej szczegolow)\n    iterations=3,    # iteracje w obrebie KAZDEGO poziomu piramidy\n    poly_n=5,        # rozmiar sasiedztwa do dopasowania wielomianu (5 lub 7)\n    poly_sigma=1.2,  # sigma Gaussa dla wag pikseli przy dopasowaniu\n    flags=0,\n)\nu = flow[..., 0]    # przesuniecie poziome (w prawo +)\nv = flow[..., 1]    # przesuniecie pionowe (w dol +)\n```\n\n**Kiedy co.**\n\n| Cecha | Rzadki LK | Gęsty Farnebäck |\n|---|---|---|\n| co śledzi | listę narożników (zwykle ~50–500) | każdy piksel `(H × W)` |\n| koszt | bardzo niski; działa real-time na CPU | wysoki; sekwencja 1080p mieli ~30–60 ms/klatkę |\n| typowe użycie | tracking obiektu, stabilizacja, structure-from-motion | segmentacja ruchu, kompensacja ruchu w wideo, oszacowanie ruchu kamery |\n| wybór punktów | wymaga dobrych cech (Shi-Tomasi, ORB) | nie wymaga niczego |\n| wrażliwość na obszary jednorodne | znika problem (puste obszary nie mają cech) | tam flow jest hałaśliwy / zerowy |\n\nCzęsta pułapka — **to nie liczba `iterations` decyduje o tym, czy LK ogarnie szybki ruch**. Jeśli kamera kiwa się o 40 px między klatkami, a ty masz `winSize=(15,15)` i `maxLevel=0`, żadna liczba iteracji tego nie naprawi: LK założył mały ruch i tej swojej wiary się trzyma. Jedyne, co pomaga, to **poziomy piramidy** — każdy dorzucony poziom *podwaja* tolerowane przesunięcie. `maxLevel=3` (cztery poziomy: pełen, 1/2, 1/4, 1/8) bezpiecznie obsługuje ruchy do ~30 px dla okna 21×21."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/dee/tutorial_optical_flow.html",
+          "title": "OpenCV Python tutorial — Optical Flow (Lucas-Kanade i Farnebäck)",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1007/3-540-45103-X_50",
+          "title": "Farnebäck, G. — Two-Frame Motion Estimation Based on Polynomial Expansion (SCIA 2003)",
+          "kind": "paper",
+          "author": "Gunnar Farnebäck",
+          "year": 2003
+        }
+      ]
+    },
+    {
+      "id": "quiz-iteracje-vs-piramida",
+      "title": "Sprawdź się: szybki ruch i parametry LK",
+      "type": "quiz",
+      "data": {
+        "question": "Śledzisz `cv2.calcOpticalFlowPyrLK` na nagraniu z drona. Przy szybkich panoramach (kamera obraca się o ~25 pikseli między klatkami) bardzo wiele punktów ginie — `status` zwraca zera. Aktualnie używasz `winSize=(15, 15)`, `maxLevel=0` i `criteria=(... 10, 0.03)`. Który **jeden** parametr ma największą szansę uratować trackowanie?",
+        "options": [
+          "Zwiększyć `iterations` w `criteria` z 10 do 100 — algorytm dostanie więcej okazji do skonwergowania na właściwą pozycję.",
+          "Zwiększyć `maxLevel` z 0 do 3 — każdy dodatkowy poziom piramidy podwaja maksymalne wspierane przesunięcie, więc 4 poziomy obejmą ruch ~16× większy niż pojedyncza skala.",
+          "Zmniejszyć `winSize` z (15, 15) do (3, 3) — mniejsze okno mniej uśrednia, więc precyzyjniej trafi w nowy punkt.",
+          "Zwiększyć `qualityLevel` w `cv2.goodFeaturesToTrack` z 0.01 do 0.5 — lepsze narożniki to mniej zgubionych punktów."
+        ],
+        "correct": [1],
+        "explanation": "**Odpowiedź B** jest właściwa. Lucas-Kanade w jednej skali zakłada *mały ruch* — okno 15×15 z `maxLevel=0` wiarygodnie obsługuje przesunięcia rzędu kilku pikseli, nie 25. Piramida rozdzielczości to *jedyny* mechanizm, który tę barierę pokonuje: algorytm startuje od miniaturowej wersji obrazu (gdzie 25 px to ~3 px), znajduje tam zgrubny przepływ, propaguje go na poziom wyżej i tam doprecyzowuje. `maxLevel=3` (cztery poziomy: pełen, 1/2, 1/4, 1/8) toleruje przesunięcia rzędu 30 px dla okna 21×21 — to dokładnie reżim z zadania. To jest też powód, dla którego *więcej iteracji nie pomaga* na pojedynczej skali: jeśli prawdziwa pozycja punktu leży poza basenem zbieżności metody Newtona startowanej z `prev_pts`, nie ma znaczenia, ile razy iterujemy — wracamy do tego samego (lub gorszego) lokalnego minimum.\n\n**A** to mit *więcej iteracji = lepsza dokładność*. Domyślnie LK iteruje do 10–30 razy lub do `eps = 0.03 px`, co prawie zawsze konweruje w kilku krokach **w obrębie własnego okna**. Dolewanie iteracji nie zmienia zasięgu — zmienia jedynie precyzję końcową w obrębie tego, co i tak by trafiło.\n\n**C** pogarsza, nie poprawia. Mniejsze okno znaczy *mniej równań* w nadokreślonym układzie LK — macierz `AᵀA` staje się słabo uwarunkowana (zwłaszcza w obszarach z jednym dominującym kierunkiem gradientu — tam wraca *problem apertury*) i punkty masowo dryfują wzdłuż krawędzi. Standardowe rekomendacje to 15–31 px dla LK z piramidą.\n\n**D** pomoże dla *jakości* utrzymanych punktów (mocniejsze narożniki rzeczywiście dłużej żyją), ale nie tknie sedna problemu: nawet idealny narożnik Harrisowy zniknie, jeśli przeskoczy o 25 px w jednej skali z `maxLevel=0`. Punkty nie giną przez zły wybór startowy — giną, bo algorytm szuka ich za blisko.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-magnitude-angle",
+      "title": "Zaimplementuj `flow_magnitude_and_angle`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Mając w ręku gęste pole przepływu z `cv2.calcOpticalFlowFarneback`, pierwsze dwie operacje, które praktycznie zawsze wykonujesz, to **magnituda** (długość wektora — \"jak szybko\") i **kąt** (kierunek — \"dokąd\"). Bez nich nie ma kolorowej wizualizacji HSV, segmentacji ruchomych regionów po prędkości ani wykrywania ruchu kierunkowego.\n\nZaimplementuj funkcję:\n\n```python\nflow_magnitude_and_angle(flow) -> (magnitude, angle)\n```\n\n**Sygnatura.**\n\n- `flow` — `numpy.ndarray` typu `float32` (lub kompatybilnego) o kształcie `(H, W, 2)`. Kanał `0` to składowa pozioma `u` (w prawo dodatnia), kanał `1` to składowa pionowa `v` (w dół dodatnia, zgodnie z konwencją OpenCV).\n- Zwróć **krotkę** `(magnitude, angle)`:\n  - `magnitude` — `numpy.ndarray` `float32` o kształcie `(H, W)`, równa $\\sqrt{u^2 + v^2}$;\n  - `angle` — `numpy.ndarray` `float32` o kształcie `(H, W)`, równa `np.arctan2(v, u)` w **radianach** (zakres $(-\\pi,\\, \\pi]$, jak sam `np.arctan2`).\n\n**Reguły.**\n\n1. Obie tablice wynikowe muszą mieć `dtype == np.float32` — taki dtype przyjmuje `cv2.cartToPolar` i większość pipeline'ów wizualizacji.\n2. Nie modyfikuj wejścia — testy zweryfikują, że `flow` zostało nietknięte.\n3. Funkcja powinna działać dla dowolnych `H` i `W` (testy używają małych macierzy `2×2` i `3×3`, ale rozwiązanie nie powinno zakładać konkretnego rozmiaru).\n4. **Nie używaj `cv2`** — celem ćwiczenia jest pokazanie, że całość to dwa wywołania NumPy: `np.hypot` (lub `np.sqrt(u**2 + v**2)`) i `np.arctan2`.\n\n**Przykład.**\n\n```\nflow = [[(3, 0)], [(0, 4)]]   # ksztalt (2, 1, 2)\nmagnitude == [[3.0], [4.0]]\nangle     == [[0.0], [pi/2]]   # arctan2(0, 3)=0;  arctan2(4, 0)=pi/2\n```",
+        "starterCode": "import numpy as np\n\ndef flow_magnitude_and_angle(flow):\n    # flow: ndarray (H, W, 2), kanal 0 = u (poziome), kanal 1 = v (pionowe).\n    # Zwroc: (magnitude, angle) -- obie ndarray (H, W), dtype=np.float32.\n    flow = np.asarray(flow)\n    u = flow[..., 0]\n    v = flow[..., 1]\n    # TODO: obliczyc magnitude = sqrt(u^2 + v^2) i angle = arctan2(v, u),\n    # rzutowac obie do np.float32 i zwrocic jako krotke.\n    magnitude = np.zeros(flow.shape[:2], dtype=np.float32)\n    angle = np.zeros(flow.shape[:2], dtype=np.float32)\n    return magnitude, angle\n",
+        "tests": [
+          {
+            "name": "zerowy_przeplyw_zwraca_zera",
+            "body": "import numpy as np\nflow = np.zeros((3, 4, 2), dtype=np.float32)\nm, a = flow_magnitude_and_angle(flow)\nassert m.shape == (3, 4) and a.shape == (3, 4), f'zle ksztalty: {m.shape}, {a.shape}'\nassert m.dtype == np.float32 and a.dtype == np.float32, f'zle dtype: {m.dtype}, {a.dtype}'\nassert np.allclose(m, 0.0), 'magnituda zera musi byc zerowa'\nassert np.allclose(a, 0.0), 'arctan2(0, 0) powinno byc 0 (konwencja NumPy)'",
+            "hidden": false
+          },
+          {
+            "name": "czysty_ruch_w_prawo",
+            "body": "import numpy as np\n# u = 3 wszedzie, v = 0 wszedzie -> magnitude=3, angle=0.\nflow = np.zeros((2, 2, 2), dtype=np.float32)\nflow[..., 0] = 3.0\nm, a = flow_magnitude_and_angle(flow)\nassert np.allclose(m, 3.0), f'oczekiwano magnitude=3 wszedzie, dostalismy {m}'\nassert np.allclose(a, 0.0), f'oczekiwano angle=0 wszedzie, dostalismy {a}'"
+          },
+          {
+            "name": "ruch_w_dol_to_kat_pi_przez_2",
+            "body": "import numpy as np\n# u = 0, v = 4 -> magnitude=4, angle=pi/2 (konwencja OpenCV: v dodatnie = w dol).\nflow = np.zeros((2, 2, 2), dtype=np.float32)\nflow[..., 1] = 4.0\nm, a = flow_magnitude_and_angle(flow)\nassert np.allclose(m, 4.0), f'oczekiwano magnitude=4, dostalismy {m}'\nassert np.allclose(a, np.pi / 2), f'oczekiwano angle=pi/2, dostalismy {a}'"
+          },
+          {
+            "name": "rozne_wektory_jednoczesnie",
+            "body": "import numpy as np\n# Kazdy piksel ma rozny wektor. Zaprawdzmy jednoczesnie magnitudy i katy.\nflow = np.array([\n    [[3.0, 0.0], [0.0, 4.0]],\n    [[1.0, 1.0], [-2.0, 0.0]],\n], dtype=np.float32)\nm, a = flow_magnitude_and_angle(flow)\nexpected_m = np.array([[3.0, 4.0], [np.sqrt(2.0), 2.0]], dtype=np.float32)\nexpected_a = np.array([[0.0, np.pi / 2], [np.pi / 4, np.pi]], dtype=np.float32)\nassert np.allclose(m, expected_m, atol=1e-6), f'magnitudy: {m} vs {expected_m}'\nassert np.allclose(a, expected_a, atol=1e-6), f'katy: {a} vs {expected_a}'\nassert m.dtype == np.float32 and a.dtype == np.float32"
+          },
+          {
+            "name": "wejscie_pozostaje_nietkniete",
+            "body": "import numpy as np\nflow = np.array([[[3.0, 4.0]]], dtype=np.float32)\nflow_copy = flow.copy()\n_ = flow_magnitude_and_angle(flow)\nassert np.array_equal(flow, flow_copy), 'flow_magnitude_and_angle nie powinno modyfikowac wejscia'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef flow_magnitude_and_angle(flow):\n    flow = np.asarray(flow)\n    u = flow[..., 0]\n    v = flow[..., 1]\n    magnitude = np.hypot(u, v).astype(np.float32)\n    angle = np.arctan2(v, u).astype(np.float32)\n    return magnitude, angle\n"
+      }
+    },
+    {
+      "id": "sandbox-farneback-syntetyczny",
+      "title": "Piaskownica: Farnebäck na zadanej translacji",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\nrng = np.random.RandomState(0)\nH, W = 96, 128\n\n# 1. Klatka 0: szachownica + szum -- duzo gradientow we wszystkich kierunkach,\n#    czyli idealne warunki dla Farnebacka (zero apertury).\nbase = np.zeros((H, W), dtype=np.uint8)\ntile = 8\nyy, xx = np.indices((H, W))\nbase[((yy // tile) + (xx // tile)) % 2 == 0] = 200\nbase[((yy // tile) + (xx // tile)) % 2 == 1] = 60\nframe0 = np.clip(base.astype(np.int32) + rng.randint(-10, 11, base.shape), 0, 255).astype(np.uint8)\n\n# 2. Klatka 1: ZNANE przesuniecie (dx, dy) wzgledem klatki 0.\n#    np.roll robi cykliczny shift -- to wystarczy do oceny dokladnosci flow w srodku obrazu.\nDX, DY = 4, -2   # ruch o 4 px w prawo, 2 px w gore\nframe1 = np.roll(frame0, shift=(DY, DX), axis=(0, 1))\n\n# 3. Farnebäck z rozsadnymi parametrami startowymi.\nflow = cv2.calcOpticalFlowFarneback(\n    frame0, frame1,\n    None,\n    pyr_scale=0.5,\n    levels=3,\n    winsize=15,\n    iterations=3,\n    poly_n=5,\n    poly_sigma=1.2,\n    flags=0,\n)\n\n# 4. Statystyki -- bierzemy tylko srodek obrazu, zeby unikac efektow brzegowych po np.roll.\nmargin = 16\ncentral = flow[margin:-margin, margin:-margin]\nu_mean = float(np.mean(central[..., 0]))\nv_mean = float(np.mean(central[..., 1]))\n\nmag = np.hypot(central[..., 0], central[..., 1])\n\nprint(f'Zadany ruch (DX, DY) = ({DX}, {DY})')\nprint(f'Sredni odzyskany flow w srodku: u = {u_mean:+.3f} px, v = {v_mean:+.3f} px')\nprint(f'Sredni blad u: {abs(u_mean - DX):.3f} px,  bledu v: {abs(v_mean - DY):.3f} px')\nprint(f'Magnitude srednia / max: {mag.mean():.3f} / {mag.max():.3f} px')\n\n# Eksperymenty -- wybierz jeden i zmien wartosci na gorze:\n#  1) Zwieksz DX do 25 px. Czy pojedynczy poziom piramidy (levels=1) odzyska ten ruch?\n#     A levels=4? Ile px daje sie maksymalnie wycisnac z winsize=15?\n#  2) Zwieksz iterations z 3 do 30. Czy sredni blad maleje proporcjonalnie -- czy plateu nastepuje juz przy ~5?\n#     To jest powod, dla ktorego 'wiecej iteracji = lepsza dokladnosc' to mit (te same iteracje sa NA KAZDYM poziomie).\n#  3) Zmien szachownice na obszar jednorodny (np. base[:] = 128). Co Farnebäck zwraca, gdy nie ma gradientow?\n#     (Spojrz na magnitude -- bedzie bliska zero nawet gdy DX, DY != 0. To jest aperture w pelnej krasie.)\n#  4) Zmniejsz winsize do 5. Czy szum w polu flow rosnie? A zwiekszenie do 31?\n#  5) Probuj DY = 0.5 zamiast calkowitego (przez cv2.warpAffine z macierza translacji subpiksel).\n#     Farnebäck radzi sobie z subpikselami -- u_mean powinno byc blisko 0.5.\n",
+        "encouragement": "Pokręć `levels` i `iterations` osobno — zobacz, który parametr naprawdę przesuwa próg detekcji szybkiego ruchu, a który tylko polerue ostatnie cyfry."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.ri.cmu.edu/publications/an-iterative-image-registration-technique-with-an-application-to-stereo-vision/",
+      "title": "Lucas, B. D. and Kanade, T. — An Iterative Image Registration Technique with an Application to Stereo Vision (IJCAI 1981)",
+      "kind": "paper",
+      "author": "Bruce D. Lucas and Takeo Kanade",
+      "year": 1981
+    },
+    {
+      "url": "https://doi.org/10.1007/3-540-45103-X_50",
+      "title": "Farnebäck, G. — Two-Frame Motion Estimation Based on Polynomial Expansion (SCIA 2003)",
+      "kind": "paper",
+      "author": "Gunnar Farnebäck",
+      "year": 2003
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/dee/tutorial_optical_flow.html",
+      "title": "OpenCV Python tutorial — Optical Flow (Lucas-Kanade i Farnebäck)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Optical_flow",
+      "title": "Optical flow — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — rozdział o estymacji ruchu",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

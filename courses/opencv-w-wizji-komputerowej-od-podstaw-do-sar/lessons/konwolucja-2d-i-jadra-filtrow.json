@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "slug": "konwolucja-2d-i-jadra-filtrow",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Konwolucja 2D i jądra filtrów",
+  "eyebrow": "FILTRACJA",
+  "description": "Czym jest splot 2D, jak czytać jądro filtra, dlaczego `cv2.filter2D` w rzeczywistości liczy korelację — i co to zmienia dla niesymetrycznych operatorów.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intro-konwolucja",
+      "title": "Konwolucja 2D — jeden mechanizm, wiele filtrów",
+      "type": "theory",
+      "data": {
+        "markdown": "Konwolucja 2D to operacja, w której każdy nowy piksel jest *ważoną sumą sąsiadów*, a wagami są wartości małej macierzy zwanej **jądrem** (ang. *kernel*). To samo narzędzie napędza rozmycie Gaussa, gradient Sobela, filtr Laplace'a i większość detektorów krawędzi — różnią się **wyłącznie** wartościami wpisanymi w jądro.\n\nFormalnie, dla obrazu $I$ i jądra $K$ o rozmiarze $(2a+1)\\times(2b+1)$ konwolucję definiuje się jako:\n\n$$ (I \\ast K)(x, y) \\;=\\; \\sum_{i = -a}^{a} \\sum_{j = -b}^{b} K(i, j)\\cdot I(x - i,\\; y - j) $$\n\nKażdy piksel wyniku to suma $(2a+1)(2b+1)$ iloczynów. Dla typowego jądra $3\\times 3$ to dziewięć mnożeń i osiem dodawań *na każdy piksel obrazu*. Stąd dwie obserwacje, do których będziemy wracać przez cały moduł:\n\n1. **Koszt rośnie kwadratowo z rozmiarem jądra.** $5\\times 5$ to 25 mnożeń, $11\\times 11$ to 121. Niektóre jądra (Gaussa, separowalne) da się rozłożyć na dwa przejścia 1D i wrócić do kosztu liniowego — patrz lekcja o filtrach rozmywających.\n2. **Brzegi wymagają decyzji.** Dla pikseli przy krawędzi obrazu jądro „wystaje” poza tablicę. OpenCV oferuje kilka strategii (`BORDER_REPLICATE`, `BORDER_REFLECT`, `BORDER_CONSTANT`, `BORDER_WRAP`); domyślną i najbezpieczniejszą jest replikacja krawędzi.\n\nJądro można czytać jak „przepis”: jeśli jego elementy sumują się do **1**, filtr zachowuje średnią jasność (tak działa rozmycie). Jeśli sumują się do **0**, wynik ma sens *różnicy* — obszary o stałej jasności wyzerują się, a wartości znacząco różne od zera pojawią się tylko tam, gdzie obraz szybko się zmienia (gradienty, krawędzie). Ta arytmetyczna obserwacja będzie dobrym sprawdzianem przy każdym nowym jądrze, które poznasz w tym module."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Kernel_(image_processing)",
+          "title": "Kernel (image processing) — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Convolution",
+          "title": "Convolution — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "korelacja-vs-konwolucja",
+      "title": "Pułapka OpenCV — `filter2D` to korelacja, nie konwolucja",
+      "type": "theory",
+      "data": {
+        "markdown": "Tu kryje się klasyczna zasadzka, od której rozbija się większość pierwszych implementacji Sobela: **`cv2.filter2D` nie liczy konwolucji, tylko korelację**. Różnica jest jedna — *czy jądro odwracamy* przed sumowaniem.\n\n- **Korelacja** (to liczy `filter2D`):\n  $$ (I \\star K)(x, y) \\;=\\; \\sum_{i, j} K(i, j)\\cdot I(x + i,\\; y + j) $$\n- **Konwolucja** (definicja matematyczna z poprzedniej sekcji):\n  $$ (I \\ast K)(x, y) \\;=\\; \\sum_{i, j} K(i, j)\\cdot I(x - i,\\; y - j) $$\n\nDla **symetrycznych** jąder ($K(i, j) = K(-i, -j)$) — jądro Gaussa, jądro uśredniające, dyskretny Laplasjan — różnica znika i obie operacje dają identyczny wynik. W praktyce 95% filtrów jest symetrycznych, więc literatura traktuje pojęcia wymiennie.\n\nZasadzka pojawia się przy **niesymetrycznych** jądrach. Klasyczny przykład — jądro Sobela $S_x$:\n\n$$ S_x \\;=\\; \\begin{pmatrix} -1 & 0 & 1 \\\\\\\\ -2 & 0 & 2 \\\\\\\\ -1 & 0 & 1 \\end{pmatrix} $$\n\nSplot z $S_x$ daje wartości **dodatnie** tam, gdzie jasność rośnie w prawo. Korelacja z tym samym $S_x$ (czyli to, co liczy `filter2D`) da wartości o **przeciwnym znaku** — bo nie odwróciliśmy jądra. Jeśli twój gradient ma odwrócony znak względem oczekiwań, najprawdopodobniej zapomniałaś/zapomniałeś o tej różnicy.\n\nDwa sposoby wyjścia z pułapki:\n\n- Zaakceptować konwencję `filter2D` i zinterpretować znak (gradient OpenCV-Sobela domyślnie idzie w drugą stronę względem definicji matematycznej — w docelowych zastosowaniach i tak liczy się `magnitude`, nie znak).\n- Odwrócić jądro ręcznie przed wywołaniem: `cv2.flip(K, -1)` zamienia $K(i, j)$ na $K(-i, -j)$, dzięki czemu korelacja zaczyna zwracać dokładnie to samo, co konwolucja.\n\nKonwencja `filter2D` ma swoje uzasadnienie wydajnościowe (mniej operacji na indeksach), ale dokumentacja OpenCV uczciwie ostrzega, że *„The function does actually compute correlation, not the convolution”*. Warto zerknąć do tej linijki przy każdym nowym filtrze niesymetrycznym."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#ga27c049795ce870216ddfb366086b5a04",
+          "title": "OpenCV — `filter2D` API reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "dopasuj-jadro",
+      "title": "Dopasuj jądro do efektu",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każde z poniższych jąder 3×3 ma wpisany konkretny „przepis”. Dopasuj je do efektu, jaki wywołują na obrazie. Jeśli nie pamiętasz — kieruj się sumą elementów: 1 → zachowanie jasności, 0 → wzmocnienie różnic.",
+        "items": [
+          {
+            "id": "k-identity",
+            "label": "Jądro 3×3 z 1 pośrodku, 0 wszędzie indziej."
+          },
+          {
+            "id": "k-box",
+            "label": "Jądro 3×3, w którym każda komórka to 1/9 (suma wynosi 1)."
+          },
+          {
+            "id": "k-sharpen",
+            "label": "Jądro 3×3 z 5 pośrodku, –1 nad/pod i po bokach, 0 w rogach (suma 1)."
+          },
+          {
+            "id": "k-laplacian",
+            "label": "Jądro 3×3 z –4 pośrodku, +1 nad/pod i po bokach, 0 w rogach (suma 0)."
+          },
+          {
+            "id": "k-sobel-x",
+            "label": "Jądro 3×3 z kolumną –1, –2, –1 po lewej, kolumną zer pośrodku i kolumną +1, +2, +1 po prawej (suma 0)."
+          },
+          {
+            "id": "k-emboss",
+            "label": "Jądro 3×3: ujemne wartości w lewym górnym narożniku, dodatnie w prawym dolnym, 1 pośrodku."
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-identity",
+            "label": "Obraz bez zmian (filtr neutralny)",
+            "accepts": ["k-identity"]
+          },
+          {
+            "id": "z-blur",
+            "label": "Rozmycie przez uśrednienie sąsiadów",
+            "accepts": ["k-box"]
+          },
+          {
+            "id": "z-sharpen",
+            "label": "Wyostrzanie krawędzi",
+            "accepts": ["k-sharpen"]
+          },
+          {
+            "id": "z-edge",
+            "label": "Detekcja krawędzi (Laplasjan, izotropowo)",
+            "accepts": ["k-laplacian"]
+          },
+          {
+            "id": "z-gradient",
+            "label": "Gradient w kierunku poziomym (Sobel x)",
+            "accepts": ["k-sobel-x"]
+          },
+          {
+            "id": "z-emboss",
+            "label": "Efekt płaskorzeźby (emboss)",
+            "accepts": ["k-emboss"]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Reguła kciuka: suma elementów = 1 → operator zachowujący średnią jasność (identyczność, rozmycie, wyostrzanie); suma elementów = 0 → operator różnicowy, który wyzeruje obszary stałej jasności (Laplasjan, Sobel). Emboss jest hybrydą — suma wynosi 1, ale niesymetryczne rozmieszczenie wag generuje pozorny „cień” po jednej stronie krawędzi."
+      }
+    },
+    {
+      "id": "exercise-correlate2d",
+      "title": "Zaimplementuj `correlate2d_3x3` z replikacją krawędzi",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `correlate2d_3x3(image, kernel)`, która wykonuje **2D korelację** (taką samą, jak `cv2.filter2D`) z jądrem 3×3 i replikacją krawędzi (`BORDER_REPLICATE`). Funkcja zwraca tablicę `np.float64` o tym samym kształcie co wejściowy obraz.\n\nPodpowiedź — w korelacji *nie odwracamy* jądra. Dla każdego piksela wyniku w pozycji $(y, x)$:\n\n$$ \\text{out}(y, x) \\;=\\; \\sum_{j = -1}^{1} \\sum_{i = -1}^{1} K(j+1,\\, i+1)\\cdot I\\bigl(\\text{clip}(y+j),\\; \\text{clip}(x+i)\\bigr) $$\n\ngdzie `clip` oznacza przycięcie do prawidłowych indeksów (`max(0, min(H-1, .))` itd.).\n\nNie używaj `cv2.filter2D` — celem jest zrozumienie pętli. Możesz korzystać z `numpy`. Kontrakt:\n\n- `image` to dwuwymiarowy `numpy.ndarray` (`H × W`), dowolny `dtype`.\n- `kernel` to `numpy.ndarray` o kształcie `(3, 3)`.\n- Wynik: `numpy.ndarray` typu `float64` o kształcie identycznym z `image`.\n\nPrzykład sanity-check: dla `kernel = identity` wynik powinien być równy `image` (z dokładnością do `dtype`).",
+        "starterCode": "import numpy as np\n\ndef correlate2d_3x3(image, kernel):\n    \"\"\"2D korelacja z jadrem 3x3 i replikacja krawedzi.\n\n    Krok po kroku:\n      1. Skonwertuj image i kernel do float64.\n      2. Pobierz wymiary H, W = image.shape.\n      3. Utworz wynikowa tablice zeros_like(image).\n      4. Dla kazdego (y, x) w zakresie obrazu zsumuj iloczyny\n         kernel[j+1, i+1] * image[clip(y+j), clip(x+i)] dla j, i w (-1, 0, 1).\n      5. Zwroc tablice wynikowa.\n    \"\"\"\n    image = np.asarray(image, dtype=np.float64)\n    kernel = np.asarray(kernel, dtype=np.float64)\n    # TODO: zaimplementuj petle korelacji z replikacja krawedzi.\n    return np.zeros_like(image)\n",
+        "tests": [
+          {
+            "name": "tozsamosc_zwraca_obraz",
+            "body": "import numpy as np\nimg = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]], dtype=np.float64)\nidentity = np.array([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float64)\nout = correlate2d_3x3(img, identity)\nassert out.shape == img.shape, f'Ksztalt {out.shape} != {img.shape}'\nassert out.dtype == np.float64, f'dtype {out.dtype} != float64'\nassert np.allclose(out, img), f'Identycznosciowe jadro powinno zwrocic obraz bez zmian, dostalismy {out.tolist()}'",
+            "hidden": false
+          },
+          {
+            "name": "rozmycie_obszaru_jednolitego_jest_jednolite",
+            "body": "import numpy as np\nimg = np.full((4, 4), 100.0, dtype=np.float64)\nbox = np.full((3, 3), 1.0 / 9.0, dtype=np.float64)\nout = correlate2d_3x3(img, box)\nassert np.allclose(out, 100.0), f'Box-blur na obszarze stalym powinien zwrocic ten sam obszar, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "srodek_box_blur_to_srednia_okna",
+            "body": "import numpy as np\nimg = np.array([\n    [1.0, 2.0, 1.0],\n    [2.0, 4.0, 2.0],\n    [1.0, 2.0, 1.0],\n], dtype=np.float64)\nbox = np.full((3, 3), 1.0 / 9.0, dtype=np.float64)\nout = correlate2d_3x3(img, box)\nexpected_center = (1 + 2 + 1 + 2 + 4 + 2 + 1 + 2 + 1) / 9.0\nassert np.isclose(out[1, 1], expected_center), f'Oczekiwano {expected_center} w srodku, dostalismy {out[1, 1]}'"
+          },
+          {
+            "name": "korelacja_uzywa_jadra_bez_odwracania",
+            "body": "import numpy as np\n# Niesymetryczne jadro: detekcja gradientu w prawo. Korelacja (bez odwracania)\n# daje wartosc dodatnia po prawej stronie skoku.\nimg = np.zeros((1, 5), dtype=np.float64)\nimg[0, 2:] = 10.0   # skok 0 -> 10 miedzy x=1 a x=2\nkernel = np.array([\n    [0.0, 0.0, 0.0],\n    [-1.0, 0.0, 1.0],\n    [0.0, 0.0, 0.0],\n], dtype=np.float64)\nout = correlate2d_3x3(img, kernel)\n# Korelacja: out[0, x] = -img[0, x-1] + img[0, x+1] (z replikacja).\n# x=0: -img[0,0] + img[0,1] = -0 + 0 = 0\n# x=1: -img[0,0] + img[0,2] = -0 + 10 = 10\n# x=2: -img[0,1] + img[0,3] = -0 + 10 = 10\n# x=3: -img[0,2] + img[0,4] = -10 + 10 = 0\n# x=4: -img[0,3] + img[0,4] = -10 + 10 = 0  (replikacja na prawym brzegu)\nexpected = np.array([[0.0, 10.0, 10.0, 0.0, 0.0]], dtype=np.float64)\nassert np.allclose(out, expected), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef correlate2d_3x3(image, kernel):\n    image = np.asarray(image, dtype=np.float64)\n    kernel = np.asarray(kernel, dtype=np.float64)\n    H, W = image.shape\n    out = np.zeros_like(image)\n    for y in range(H):\n        for x in range(W):\n            acc = 0.0\n            for j in (-1, 0, 1):\n                for i in (-1, 0, 1):\n                    yy = max(0, min(H - 1, y + j))\n                    xx = max(0, min(W - 1, x + i))\n                    acc += kernel[j + 1, i + 1] * image[yy, xx]\n            out[y, x] = acc\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-co-liczy-filter2d",
+      "title": "Sprawdź się: co dokładnie liczy `cv2.filter2D`?",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `cv2.filter2D(img, -1, K)` z jądrem `K` o rozmiarze 3×3. Co OpenCV faktycznie liczy w środku?",
+        "options": [
+          "Konwolucję — bibliotekę odwraca jądro `K` przed sumowaniem, dzięki czemu wynik dokładnie pasuje do matematycznej definicji splotu.",
+          "Korelację — sumę iloczynów elementów `K` i okna obrazu **bez** odwracania jądra; dla symetrycznych `K` jest to to samo, co konwolucja, dla niesymetrycznych — wynik o przeciwnym znaku.",
+          "Splot 1D wzdłuż wierszy, a następnie wzdłuż kolumn — niezależnie od tego, czy `K` jest separowalne, czy nie.",
+          "Konwolucję, jeśli `K` jest symetryczne, a korelację, jeśli `K` jest niesymetryczne — biblioteka rozpoznaje to automatycznie."
+        ],
+        "correct": [1],
+        "explanation": "Dokumentacja OpenCV wprost mówi: *„The function does actually compute correlation, not the convolution”*. Korelacja to suma iloczynów `K(i, j) * I(x + i, y + j)` — bez znaku minus przy indeksach `i` i `j`. Dla jąder symetrycznych ($K(i, j) = K(-i, -j)$), takich jak Gauss, box-blur czy dyskretny Laplasjan, różnica znika; dla niesymetrycznych jak Sobel `S_x` korelacja daje wynik o **przeciwnym znaku** względem konwolucji. Jeśli w pipeline’ie potrzebujesz dokładnie konwolucji, odwróć jądro ręcznie (`cv2.flip(K, -1)`) lub zaakceptuj konwencję i zinterpretuj znak w aplikacji. Odpowiedź A myli się o krok kluczowy (brak odwracania), C opisuje *separowalność* (która jest osobnym tematem), a D przypisuje OpenCV automagię, której tam nie ma — to ty, jako autor, decydujesz, którą operację chcesz.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#ga27c049795ce870216ddfb366086b5a04",
+          "title": "OpenCV — `filter2D` API reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-jadra",
+      "title": "Piaskownica: wypróbuj klasyczne jądra na jednym obrazku",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Maly syntetyczny obraz: jasny kwadrat 3x3 na ciemnym tle, calosc 9x9.\nimage = np.zeros((9, 9), dtype=np.float64)\nimage[3:6, 3:6] = 100.0\n\n# Klasyczne jadra 3x3:\nidentity = np.array([\n    [0, 0, 0],\n    [0, 1, 0],\n    [0, 0, 0],\n], dtype=np.float64)\n\nbox = np.full((3, 3), 1.0 / 9.0, dtype=np.float64)\n\nsharpen = np.array([\n    [ 0, -1,  0],\n    [-1,  5, -1],\n    [ 0, -1,  0],\n], dtype=np.float64)\n\nlaplacian = np.array([\n    [0,  1, 0],\n    [1, -4, 1],\n    [0,  1, 0],\n], dtype=np.float64)\n\nsobel_x = np.array([\n    [-1, 0, 1],\n    [-2, 0, 2],\n    [-1, 0, 1],\n], dtype=np.float64)\n\n# Funkcja korelacji (taka jak w poprzednim cwiczeniu):\ndef correlate2d_3x3(image, kernel):\n    image = np.asarray(image, dtype=np.float64)\n    kernel = np.asarray(kernel, dtype=np.float64)\n    H, W = image.shape\n    out = np.zeros_like(image)\n    for y in range(H):\n        for x in range(W):\n            acc = 0.0\n            for j in (-1, 0, 1):\n                for i in (-1, 0, 1):\n                    yy = max(0, min(H - 1, y + j))\n                    xx = max(0, min(W - 1, x + i))\n                    acc += kernel[j + 1, i + 1] * image[yy, xx]\n            out[y, x] = acc\n    return out\n\nprint('--- input ---')\nprint(image.astype(int))\nfor name, K in [\n    ('identity', identity),\n    ('box', box),\n    ('sharpen', sharpen),\n    ('laplacian', laplacian),\n    ('sobel_x', sobel_x),\n]:\n    out = correlate2d_3x3(image, K)\n    print(f'\\n--- {name} (suma elementow jadra = {float(K.sum()):.2f}) ---')\n    print(np.round(out, 1))\n\n# Pytania do siebie:\n#   * Ktore jadra zachowuja srednia jasnosc (suma elementow == 1)?\n#   * Ktore wzmacniaja roznice (suma == 0)? Zauwaz, ze obszary stalej jasnosci sa zerowane.\n#   * Sprobuj wlasnego niesymetrycznego jadra i porownaj wynik z `np.flip(np.flip(K, 0), 1)`\n#     (czyli jadrem odwroconym) — to jest dokladnie roznica miedzy korelacja a konwolucja.\n",
+        "encouragement": "Zmieniaj wartości jądra i obserwuj sumę jego elementów — to najszybszy sposób przewidzenia, czy filtr przyciemni cały obraz, zachowa jasność czy wzmocni krawędzie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Kernel_(image_processing)",
+      "title": "Kernel (image processing) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Convolution",
+      "title": "Convolution — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#ga27c049795ce870216ddfb366086b5a04",
+      "title": "OpenCV — `filter2D` API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 3 (Image processing)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

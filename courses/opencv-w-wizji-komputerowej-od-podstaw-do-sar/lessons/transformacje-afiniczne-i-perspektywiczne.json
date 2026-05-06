@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "slug": "transformacje-afiniczne-i-perspektywiczne",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Transformacje afiniczne i perspektywiczne",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Od macierzy 2×3 (afiniczna, 3 pary punktów) do macierzy 3×3 (homografia, 4 pary punktów) — kiedy `cv2.warpAffine` wystarczy, a kiedy musisz sięgnąć po `cv2.warpPerspective`.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "afiniczna-vs-perspektywiczna",
+      "title": "Afiniczna kontra perspektywiczna — co naprawdę zachowują",
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji obracaliśmy obraz wokół środka — była to **transformacja afiniczna** w jej najprostszej postaci. Teraz cofnijmy się o krok i zobaczmy, jaką klasę przekształceń obejmuje cała ta rodzina, oraz dlaczego sama afiniczność nie wystarczy do *wyprostowania* skośnie sfotografowanej kartki papieru.\n\n**Transformacja afiniczna** uogólnia translację, skalowanie, obrót i ścinanie — można ją zapisać jako mnożenie macierzy $2 \\times 3$ przez współrzędne jednorodne $(x, y, 1)^\\top$:\n\n$$ \\begin{bmatrix} x' \\\\\\\\ y' \\end{bmatrix} = \\begin{bmatrix} a_{11} & a_{12} & b_1 \\\\\\\\ a_{21} & a_{22} & b_2 \\end{bmatrix} \\begin{bmatrix} x \\\\\\\\ y \\\\\\\\ 1 \\end{bmatrix} $$\n\nKluczowa własność: każda transformacja afiniczna **zachowuje równoległość linii** (i — jako przypadek szczególny — *prostoliniowość* punktów). Trójkąt po przekształceniu jest dalej trójkątem; równoległobok — równoległobokiem. Macierz ma **6 niewiadomych**, więc wystarczają **3 pary punktów** (każda para daje 2 równania) do jej jednoznacznego wyznaczenia.\n\n**Transformacja perspektywiczna** (zwana też *homografią*) jest silniejsza — modeluje to, co dzieje się przy rzutowaniu płaskiej sceny przez aparat: równoległe brzegi kartki w obrazie **przestają być równoległe** i zbiegają się w punkcie ucieczki.\n\nOperuje na pełnych współrzędnych jednorodnych z macierzą $3 \\times 3$:\n\n$$ \\begin{bmatrix} x' w' \\\\\\\\ y' w' \\\\\\\\ w' \\end{bmatrix} = \\begin{bmatrix} h_{11} & h_{12} & h_{13} \\\\\\\\ h_{21} & h_{22} & h_{23} \\\\\\\\ h_{31} & h_{32} & 1 \\end{bmatrix} \\begin{bmatrix} x \\\\\\\\ y \\\\\\\\ 1 \\end{bmatrix}, \\qquad x' = \\frac{x' w'}{w'}, \\quad y' = \\frac{y' w'}{w'} $$\n\nTen *dzielnik przez $w'$* (rzut z punktu 3D na płaszczyznę obrazu) odpowiada za zbieganie linii — coś, czego macierz afiniczna z definicji nie potrafi. Macierz ma **8 niewiadomych** (skala wektora $h$ jest umowna, dlatego $h_{33}$ ustawiamy na 1), więc do jej wyznaczenia trzeba **4 par punktów**.\n\nPodsumowując hierarchię: $\\text{sztywna} \\subset \\text{podobieństwa} \\subset \\text{afiniczna} \\subset \\text{perspektywiczna}$. Każda kolejna klasa ma więcej stopni swobody i zachowuje *mniej* własności geometrycznych."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Affine_transformation",
+          "title": "Affine transformation — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Homography_(computer_vision)",
+          "title": "Homography (computer vision) — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://szeliski.org/Book/",
+          "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 8 (Image alignment)",
+          "kind": "book",
+          "author": "Richard Szeliski",
+          "year": 2022
+        }
+      ]
+    },
+    {
+      "id": "hierarchia-zachowywanych-cech",
+      "title": "Co która klasa zachowuje — dopasuj transformację do jej najsłabszego niezmiennika",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każda klasa transformacji jest podzbiorem następnej. Dopasuj klasę do **najmocniejszej** cechy, którą zachowuje (i jednocześnie pierwszej, którą gubi przy uogólnieniu).",
+        "items": [
+          { "id": "i-rigid", "label": "Sztywna (translacja + obrót)" },
+          { "id": "i-similarity", "label": "Podobieństwa (translacja + obrót + jednorodne skalowanie)" },
+          { "id": "i-affine", "label": "Afiniczna (macierz 2×3)" },
+          { "id": "i-perspective", "label": "Perspektywiczna / homografia (macierz 3×3)" }
+        ],
+        "zones": [
+          { "id": "z-distance", "label": "Zachowuje odległości między punktami (kongruencja)", "accepts": ["i-rigid"] },
+          { "id": "z-angle", "label": "Zachowuje kąty i stosunki długości — kształt bez zmian, tylko rozmiar", "accepts": ["i-similarity"] },
+          { "id": "z-parallel", "label": "Zachowuje równoległość linii (ale już nie kąty ani odległości)", "accepts": ["i-affine"] },
+          { "id": "z-collinear", "label": "Zachowuje tylko prostoliniowość — proste pozostają prostymi, równoległość znika", "accepts": ["i-perspective"] }
+        ],
+        "explanation": "Hierarchia: sztywna ⊂ podobieństwa ⊂ afiniczna ⊂ perspektywiczna. Każda klasa zachowuje wszystko, co zachowują klasy mocniejsze, plus własną cechę charakterystyczną. Transformacja **sztywna** (3 stopnie swobody w 2D: 2 translacje + 1 obrót) zachowuje odległości — to obroty + przesunięcia. **Podobieństwa** (4 DoF) dodaje skalę — kąty pozostają, ale odległości skalują się o stały współczynnik. **Afiniczna** (6 DoF) dorzuca ścinanie i nierównomierne skalowanie — kąty i długości się zmieniają, ale linie równoległe pozostają równoległe. **Perspektywiczna** (8 DoF) dorzuca dzielenie przez $w'$ — równoległe linie zbiegają się w punkcie ucieczki, więc równoległość znika; pozostaje tylko prostoliniowość."
+      }
+    },
+    {
+      "id": "api-opencv",
+      "title": "API OpenCV: 3 punkty afinicznie, 4 punkty perspektywicznie",
+      "type": "theory",
+      "data": {
+        "markdown": "W praktyce nie liczymy macierzy ręcznie. OpenCV udostępnia **symetryczne pary funkcji** — jedną do *wyznaczenia* macierzy z dopasowanych punktów, drugą do *zastosowania* tej macierzy do obrazu:\n\n| Klasa            | Wyznaczenie M                 | Zastosowanie do obrazu     | Kształt M | Pary punktów |\n|------------------|-------------------------------|----------------------------|-----------|--------------|\n| Afiniczna        | `cv2.getAffineTransform`      | `cv2.warpAffine`           | 2 × 3     | 3            |\n| Perspektywiczna  | `cv2.getPerspectiveTransform` | `cv2.warpPerspective`      | 3 × 3     | 4            |\n\nKlasyczny przepis na **prostowanie skośnie sfotografowanego dokumentu** (zaczątek mini-projektu skanera dokumentów z końca tego modułu):\n\n```python\nimport numpy as np\nimport cv2\n\n# Cztery rogi wykrytego dokumentu w obrazie (TL, TR, BR, BL).\nsrc = np.float32([[ 84, 130], [510, 110], [560, 720], [ 60, 700]])\n\n# Rozdzielczosc wyjsciowa: prostokatna kartka 420 x 594 px (~A4 przy 0.5 mm/piksel).\nWo, Ho = 420, 594\ndst = np.float32([[0, 0], [Wo - 1, 0], [Wo - 1, Ho - 1], [0, Ho - 1]])\n\nM = cv2.getPerspectiveTransform(src, dst)        # macierz 3 x 3 z 4 par punktow\nflat = cv2.warpPerspective(img, M, dsize=(Wo, Ho))\n```\n\nDla samej afiniczności kod jest niemal identyczny — wystarczą trzy pary punktów i dwie inne funkcje:\n\n```python\nsrc3 = np.float32([[ 84, 130], [510, 110], [ 60, 700]])\ndst3 = np.float32([[  0,   0], [Wo - 1,  0], [  0, Ho - 1]])\nA = cv2.getAffineTransform(src3, dst3)            # macierz 2 x 3\nout = cv2.warpAffine(img, A, dsize=(Wo, Ho))\n```\n\n**Trzy szczegóły, na które warto uważać**:\n\n1. Punkty muszą mieć typ `np.float32` — nie `int`. `getAffineTransform` / `getPerspectiveTransform` cicho odrzucają tablicę `int64` lub rzucają błąd na nowszych OpenCV.\n2. **Kolejność punktów musi pasować**: $i$-ty punkt w `src` jest mapowany na $i$-ty punkt w `dst`. Jeśli zamienisz dwa rogi miejscami, dostaniesz odbicie lustrzane lub całkiem zniekształcony wynik.\n3. `dsize=(W, H)` to rozmiar **wyjścia** w pikselach (`width`, `height`) — to ty ustalasz, jak duży będzie obraz po wyprostowaniu, niezależnie od wejścia."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+          "title": "OpenCV Python tutorial — Geometric transformations of images",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "skaner-dokumentu-cloze",
+      "title": "Skaner dokumentu — uzupełnij wywołania OpenCV",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Czterech rogów dokumentu nie da się wyprostować macierzą afiniczną — perspektywa aparatu sprawia, że równoległe brzegi kartki w obrazie zbiegają się w punkcie ucieczki. Uzupełnij wywołania, aby zbudować macierz $3 \\times 3$ z 4 par punktów i zastosować ją do obrazu.",
+        "language": "python",
+        "template": "import numpy as np\nimport cv2\n\n# 4 narozniki dokumentu w obrazie zrodlowym (TL, TR, BR, BL).\nsrc = np.float32([[84, 130], [510, 110], [560, 720], [60, 700]])\n\n# Docelowe narozniki: prostokatna kartka 420 x 594 px.\nWo, Ho = 420, 594\ndst = np.float32([[0, 0], [Wo - 1, 0], [Wo - 1, Ho - 1], [0, Ho - 1]])\n\n# Wyznacz macierz 3 x 3 z 4 par punktow.\nM = cv2.{{matrix_fn}}(src, dst)\n\n# Zastosuj macierz, aby wyprostowac dokument do prostokata Wo x Ho.\nflat = cv2.{{warp_fn}}(img, M, dsize={{dsize_arg}})\n",
+        "slots": [
+          {
+            "id": "matrix_fn",
+            "hint": "Funkcja zwracająca macierz 3×3 z dokładnie 4 par punktów (homografia).",
+            "validation": { "kind": "exact", "value": "getPerspectiveTransform" }
+          },
+          {
+            "id": "warp_fn",
+            "hint": "Funkcja przekształcająca obraz macierzą 3×3 (z dzieleniem przez w').",
+            "validation": { "kind": "exact", "value": "warpPerspective" }
+          },
+          {
+            "id": "dsize_arg",
+            "hint": "Krotka (width, height) wyjścia w pikselach — tu zmienne Wo i Ho.",
+            "validation": {
+              "kind": "oneOf",
+              "values": ["(Wo, Ho)", "(Wo,Ho)"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "kiedy-perspektywa-vs-afiniczna",
+      "title": "Sprawdź się: która transformacja do skośnej kartki?",
+      "type": "quiz",
+      "data": {
+        "question": "Chcesz *wyprostować* skośnie sfotografowaną kartkę papieru tak, by w wyniku jej brzegi tworzyły prostokąt. Której funkcji OpenCV i ilu par punktów potrzebujesz?",
+        "options": [
+          "`cv2.getAffineTransform` z 3 par punktów — afiniczna jest wystarczająca, bo brzegi kartki są równoległe.",
+          "`cv2.getPerspectiveTransform` z 4 par punktów — kartka na fotografii nie ma już równoległych brzegów (zbiegają się w punkcie ucieczki), więc afiniczna nie wystarczy.",
+          "`cv2.getRotationMatrix2D` — wystarczy obrócić obraz pod właściwym kątem, żeby brzegi się wyrównały.",
+          "`cv2.findHomography` z RANSAC — to jedyny sposób wyznaczenia homografii, niezależnie od liczby par punktów."
+        ],
+        "correct": [1],
+        "explanation": "Aparat rzutuje płaską scenę przez perspektywę, więc równoległe w rzeczywistości brzegi kartki w obrazie **przestają być równoległe** — zbiegają się w punkcie ucieczki. Transformacja **afiniczna** z definicji *zachowuje równoległość linii*, więc nie odwzoruje (ani nie odwróci) tego efektu — potrzebujesz pełnej homografii $3 \\times 3$, do wyznaczenia której trzeba **4 par punktów** (8 niewiadomych ÷ 2 równania na parę). `cv2.getRotationMatrix2D` jest jedynie szczególnym przypadkiem afiniczności (1 stopień swobody — kąt obrotu) — tym bardziej nie wystarcza. `cv2.findHomography` także działa z 4 (i więcej) par punktów i jest świetne, gdy korzystasz z RANSAC do odrzucenia outlierów wśród *wielu zaszumionych* dopasowań — ale dla *czterech znanych, dobrych* rogów dokumentu prostszym wyborem jest deterministyczne `getPerspectiveTransform`.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-apply-homography",
+      "title": "Implementacja: `apply_homography(H, points)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `apply_homography(H, points)`, która stosuje macierz homografii $3 \\times 3$ do listy punktów 2D — w czystym NumPy, bez `cv2`. Tak właśnie *pod spodem* działa `cv2.perspectiveTransform`.\n\nKroki:\n\n1. Zamień `points` na tablicę kształtu `(N, 2)`: `points = np.asarray(points, dtype=np.float64).reshape(-1, 2)`.\n2. Dołącz kolumnę jedynek, żeby uzyskać współrzędne jednorodne `(N, 3)`: `homog = np.hstack([points, np.ones((N, 1))])`.\n3. Pomnóż: `transformed = (H @ homog.T).T` — kształt `(N, 3)`.\n4. **Podziel pierwsze dwie kolumny przez trzecią** (rzut z $(x w', y w', w')$ na $(x, y)$): `return transformed[:, :2] / transformed[:, 2:3]`.\n\nPrzykład:\n\n```\napply_homography(np.eye(3), [[1, 2], [3, 4]])\n# array([[1., 2.],\n#        [3., 4.]])\n```\n\n```\nT = np.array([[1, 0, 5], [0, 1, 3], [0, 0, 1]], dtype=float)\napply_homography(T, [[0, 0], [10, 20]])\n# array([[ 5.,  3.],\n#        [15., 23.]])\n```\n\nFunkcja powinna zwracać `np.ndarray` o kształcie `(N, 2)` i typie zmiennoprzecinkowym.",
+        "starterCode": "import numpy as np\n\ndef apply_homography(H, points):\n    \"\"\"Zastosuj macierz homografii 3 x 3 do listy punktow 2D.\n\n    Parametry:\n      H: array_like o ksztalcie (3, 3)\n      points: array_like o ksztalcie (N, 2) lub lista [(x, y), ...]\n\n    Zwraca:\n      np.ndarray o ksztalcie (N, 2) z punktami po przeksztalceniu.\n    \"\"\"\n    H = np.asarray(H, dtype=np.float64)\n    points = np.asarray(points, dtype=np.float64).reshape(-1, 2)\n    # TODO: zaimplementuj zgodnie z opisem.\n    return points\n",
+        "tests": [
+          {
+            "name": "macierz_jednostkowa_zwraca_punkty_bez_zmian",
+            "body": "import numpy as np\nH = np.eye(3)\npts = [[1.0, 2.0], [3.0, 4.0]]\nout = apply_homography(H, pts)\nassert isinstance(out, np.ndarray), f'Wynik powinien byc np.ndarray, jest {type(out).__name__}'\nassert out.shape == (2, 2), f'Ksztalt powinien byc (2, 2), jest {out.shape}'\nnp.testing.assert_allclose(out, np.array([[1.0, 2.0], [3.0, 4.0]]), atol=1e-9)",
+            "hidden": false
+          },
+          {
+            "name": "translacja_przesuwa_kazdy_punkt",
+            "body": "import numpy as np\nH = np.array([[1.0, 0.0, 5.0], [0.0, 1.0, 3.0], [0.0, 0.0, 1.0]])\npts = [[0.0, 0.0], [10.0, 20.0], [-2.0, 7.0]]\nout = apply_homography(H, pts)\nexpected = np.array([[5.0, 3.0], [15.0, 23.0], [3.0, 10.0]])\nnp.testing.assert_allclose(out, expected, atol=1e-9)"
+          },
+          {
+            "name": "obrot_90_stopni_wokol_poczatku",
+            "body": "import numpy as np\n# Obrot przeciwnie do ruchu wskazowek zegara o 90 stopni: (x, y) -> (-y, x).\nH = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])\npts = [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]\nout = apply_homography(H, pts)\nexpected = np.array([[0.0, 1.0], [-1.0, 0.0], [-1.0, 1.0]])\nnp.testing.assert_allclose(out, expected, atol=1e-9)"
+          },
+          {
+            "name": "perspektywa_dzielenie_przez_w_prim",
+            "body": "import numpy as np\n# Niezerowe h31 powoduje, ze w' = 1 + 0.1 * x; punkt (10, 20) trafia na (10, 20, 2)\n# i po podzieleniu daje (5, 10).\nH = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.1, 0.0, 1.0]])\nout = apply_homography(H, [[10.0, 20.0]])\nexpected = np.array([[5.0, 10.0]])\nnp.testing.assert_allclose(out, expected, atol=1e-9)"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef apply_homography(H, points):\n    H = np.asarray(H, dtype=np.float64)\n    points = np.asarray(points, dtype=np.float64).reshape(-1, 2)\n    N = points.shape[0]\n    ones = np.ones((N, 1), dtype=np.float64)\n    homog = np.hstack([points, ones])         # (N, 3)\n    transformed = (H @ homog.T).T              # (N, 3)\n    w = transformed[:, 2:3]\n    return transformed[:, :2] / w\n"
+      }
+    },
+    {
+      "id": "sandbox-dlt",
+      "title": "Piaskownica: macierz homografii z 4 par punktów (DLT)",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Algorytm DLT (Direct Linear Transform) — to dokladnie to, co cv2.getPerspectiveTransform\n# liczy pod spodem (z dokladnoscia do skali wektora h, ktorego h33 normujemy do 1).\n#\n# Idea: kazda para punktow (x, y) -> (x', y') daje 2 rownania liniowe na 9 wspolczynnikow\n# H. 4 pary punktow -> 8 rownan -> uklad Ah = 0 z A o ksztalcie (8, 9). Rozwiazanie\n# minimalizujace ||Ah|| przy ||h||=1 to ostatni wiersz V^T z rozkladu SVD A = U S V^T.\n\ndef homography_from_4_pairs(src, dst):\n    src = np.asarray(src, dtype=np.float64)\n    dst = np.asarray(dst, dtype=np.float64)\n    rows = []\n    for (x, y), (xp, yp) in zip(src, dst):\n        rows.append([-x, -y, -1,  0,  0,  0,  x * xp,  y * xp,  xp])\n        rows.append([ 0,  0,  0, -x, -y, -1,  x * yp,  y * yp,  yp])\n    A = np.asarray(rows, dtype=np.float64)\n    _, _, Vt = np.linalg.svd(A)\n    h = Vt[-1]\n    H = h.reshape(3, 3)\n    return H / H[2, 2]   # normujemy h33 do 1\n\n\ndef apply_homography(H, points):\n    points = np.asarray(points, dtype=np.float64).reshape(-1, 2)\n    N = points.shape[0]\n    homog = np.hstack([points, np.ones((N, 1))])\n    transformed = (H @ homog.T).T\n    return transformed[:, :2] / transformed[:, 2:3]\n\n\n# Cztery narozniki kwadratu jednostkowego mapujemy na cztery narozniki nieregularnego czworokata\n# — typowy ksztalt skosno sfotografowanej kartki.\nsrc = np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])\ndst = np.array([[0.0, 0.0], [2.0, 0.1], [2.5, 1.2], [0.2, 1.0]])\n\nH = homography_from_4_pairs(src, dst)\nprint('Macierz homografii H (h33 znormalizowane do 1):')\nprint(np.round(H, 4))\n\nprint()\nprint('Sprawdzenie: src -> apply_homography(H, src)  vs  dst:')\nmapped = apply_homography(H, src)\nfor s, m, d in zip(src, mapped, dst):\n    print(f'  {s} -> {np.round(m, 4)}    target {d}')\n\n# Pytania do siebie:\n#   * Sprawdz, ze blad ||mapped - dst|| jest poniżej ~1e-12 dla 4 par punktow.\n#   * Co zwraca SVD, jesli 3 z 4 punktow leza na jednej prostej (uklad zdegenerowany)?\n#   * Spróbuj 5 par punktow — DLT przejdzie do najmniejszych kwadratow; jak duzy bedzie blad?\n#   * Porownaj wyznaczone H z tym, co zwroci cv2.getPerspectiveTransform na tych samych\n#     parach punktów (jesli masz pod reka srodowisko z OpenCV).\n",
+        "encouragement": "Zmień jeden z punktów docelowych i obserwuj, jak macierz odbiega od identyczności — zobaczysz każdy z ośmiu stopni swobody w działaniu."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Affine_transformation",
+      "title": "Affine transformation — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Homography_(computer_vision)",
+      "title": "Homography (computer vision) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+      "title": "OpenCV Python tutorial — Geometric transformations of images",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 8 (Image alignment)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

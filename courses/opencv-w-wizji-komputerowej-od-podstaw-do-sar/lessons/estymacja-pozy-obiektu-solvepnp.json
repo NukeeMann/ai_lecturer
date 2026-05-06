@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "slug": "estymacja-pozy-obiektu-solvepnp",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Estymacja pozy obiektu solvePnP",
+  "eyebrow": "GEOMETRIA 3D",
+  "description": "Mając model 3D, obraz, na którym widać jego cechy, i znaną macierz K, `cv2.solvePnP` odzyskuje 6-DoF pozę obiektu względem kamery (rotację i translację). Poznasz wymóg ≥3 niewspółliniowych korespondencji, różnice między flagami P3P / AP3P / EPNP / IPPE / ITERATIVE oraz to, kiedy sięgnąć po `solvePnPRansac`. Zaimplementujesz funkcję błędu reprojekcji — dokładnie tę, którą OpenCV minimalizuje wewnątrz iteracyjnego solvera Levenberga–Marquardta.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "definicja-pnp",
+      "title": "Czym jest PnP i dlaczego minimum 3 punkty",
+      "type": "theory",
+      "data": {
+        "markdown": "W lekcji o pinhole zapisaliśmy projekcję świata na piksele jako $\\lambda u_i = K\\,[\\,R \\mid t\\,]\\,X_i$ — mając $K, R, t$ i punkt świata $X_i$, *znamy* jego piksel $u_i$. **PnP — Perspective-n-Point** odwraca to zadanie: gdy znasz $K$ (z kalibracji) i widzisz na zdjęciu znany model 3D, *odzyskaj* sześć liczb opisujących pozę obiektu względem kamery — trzy parametry rotacji i trzy translacji.\n\n![Schemat aparatu dziurkowego: promień ze sceny przechodzi przez punktowy otwór i pada na płaszczyznę obrazu odległą o ogniskową f. PnP wykonuje to równanie *do tyłu* — z obserwowanych pikseli i znanego modelu 3D (Xi) wraca do kąta i położenia kamery (R, t)](https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Pinhole-camera.svg/640px-Pinhole-camera.svg.png)\n\nFormalnie: na wejściu masz $N \\geq 3$ korespondencji $(X_i, u_i)$, gdzie $X_i \\in \\mathbb{R}^3$ to znana pozycja punktu w układzie obiektu (np. róg planarnego markera ArUco albo wewnętrzny narożnik szachownicy), a $u_i \\in \\mathbb{R}^2$ to obserwowany piksel. `cv2.solvePnP(...)` zwraca `rvec` (3-elementowy wektor Rodriguesa rotacji świat→kamera) i `tvec` (translacja świat→kamera) takie, że dla każdego $i$ projekcja $X_i$ przez $K\\,[\\,R \\mid t\\,]$ trafia możliwie blisko obserwowanego $u_i$.\n\n**Dlaczego minimum 3 punkty?** Każda korespondencja daje 2 niezależne równania (po dehomogenizacji $u, v$), a poza ma 6 stopni swobody — wydaje się, że 3 punkty × 2 równania = 6 niewiadomych zamknie zadanie. Ale układ jest **nieliniowy** (przez dzielenie przez $Z_\\mathrm{cam}$), więc słynny **P3P** z trzech *niewspółliniowych* korespondencji zwraca **do czterech kandydujących pozy**. Żeby wybrać prawdziwą, OpenCV potrzebuje **czwartego** punktu kontrolnego — `cv2.SOLVEPNP_P3P` i nowsze `SOLVEPNP_AP3P` przyjmują dokładnie 4 punkty (3 do P3P + 1 do dezambiguacji).\n\nPnP **wymaga** znanej $K$ — bez niej nie odróżnisz „kamera z dłuższą ogniskową, obiekt dalej\" od „kamera z krótszą ogniskową, obiekt bliżej\". Skala fizyczna wisi w powietrzu. Dlatego w pipeline'ie najpierw `cv2.calibrateCamera`, potem `cv2.undistort` (albo przekazanie `distCoeffs` razem z $K$), dopiero na końcu `cv2.solvePnP`.\n"
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Perspective-n-Point",
+          "title": "Perspective-n-Point — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "flagi-solvepnp",
+      "title": "Flagi solvePnP i wariant RANSAC",
+      "type": "theory",
+      "data": {
+        "markdown": "`cv2.solvePnP(...)` przyjmuje argument `flags`, który mówi solverowi, *jaki algorytm* uruchomić. Każda flaga zakłada inną sytuację — wybór mocno wpływa na czas i dokładność.\n\n![Planarny wzorzec kalibracyjny z okręgami w regularnej siatce — typowe wejście dla SOLVEPNP_IPPE: wszystkie 3D punkty leżą w jednej płaszczyźnie Z = 0, a OpenCV wykrywa ich obrazy w pikselach przez findCirclesGrid](https://upload.wikimedia.org/wikipedia/commons/thumb/9/91/Acircles_pattern.svg/480px-Acircles_pattern.svg.png)\n\n- **`SOLVEPNP_ITERATIVE`** — domyślny. Inicjalizuje DLT/EPnP, potem domyka błąd reprojekcji **Levenbergiem–Marquardtem**. Najlepszy, gdy masz dużo poprawnych korespondencji i zależy ci na ostatecznej dokładności; wymaga $\\geq 4$ punktów (lub $\\geq 6$ dla nie-planarnego świata 3D).\n- **`SOLVEPNP_P3P` / `SOLVEPNP_AP3P`** — *dokładnie* 4 punkty (3 do P3P + 1 do wyboru rozwiązania); szybkie i analityczne, idealne wewnątrz pętli RANSAC. AP3P (Ke & Roumeliotis 2017) jest nowszą, numerycznie stabilniejszą wersją.\n- **`SOLVEPNP_EPNP`** — dla $N \\geq 4$ punktów; zamknięte rozwiązanie w czasie $\\mathcal{O}(N)$, mniej dokładne niż ITERATIVE, ale **deterministyczne** i bardzo szybkie. Często używane jako *inicjalizacja* dla późniejszego LM.\n- **`SOLVEPNP_IPPE`** — dla **planarnych** wzorców (wszystkie $X_i$ leżą w jednej płaszczyźnie $Z = 0$); zwraca dwie pozy (planar PnP ma fundamentalną dwuznaczność „flip\"), z których iteracyjny solver wybiera lepszą. To właściwy wybór dla markerów ArUco i tabliczek kalibracyjnych.\n- **`SOLVEPNP_IPPE_SQUARE`** — szybsza ścieżka dla *kwadratowego* markera o znanej długości boku.\n\nGdy 2D pochodzą z detektora cech (SIFT, ORB) lub markera w trudnych warunkach, **outliery są nieuniknione** — sięgnij wtedy po `cv2.solvePnPRansac(...)`. Wewnątrz powtarza minimalny PnP (`P3P` / `AP3P`) na losowych próbkach 4 korespondencji, mierzy zgodność ze wszystkimi obserwacjami w `reprojectionError` (typowo 5–8 px) i zwraca pozę z największym konsensem inlierów. To ten sam wzorzec, który znasz z `findHomography(..., cv2.RANSAC)`.\n"
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/s11263-008-0152-6",
+          "title": "Lepetit, V., Moreno-Noguer, F. and Fua, P. — EPnP: An Accurate O(n) Solution to the PnP Problem (IJCV 2009)",
+          "kind": "paper",
+          "author": "Vincent Lepetit, Francesc Moreno-Noguer and Pascal Fua",
+          "year": 2009
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga549c2075fac14829ff4a58bc931c033d",
+          "title": "OpenCV — solvePnP API reference (flags: ITERATIVE, EPNP, P3P, AP3P, IPPE)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cloze-pipeline-solvepnp",
+      "title": "Wpisz brakujące fragmenty pipeline'u pozy",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Trzy ruchome części w pipeline'ie pozy: **flaga** dopasowana do geometrii, **wariant RANSAC** dla zaszumionych obserwacji oraz konwersja Rodriguesa, gdy potrzebujesz pełnej macierzy $R$ (np. żeby przekształcić wektor sceny do układu kamery).\n\nWskazówki:\n- Marker ma 4 narożniki na płaszczyźnie ($Z = 0$ dla wszystkich), więc używamy planarnego algorytmu IPPE.\n- Detektor cech zwrócił 32 pary korespondencji; podejrzewamy ~30% outlierów — używamy wariantu RANSAC.\n- Z `rvec` (kompresja Rodriguesa) wyciągamy macierz rotacji 3×3 funkcją z modułu `cv2`.",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n# Marker planarny 0.1 x 0.1 m: 4 narozniki, Z = 0 dla wszystkich.\nobject_points = np.array([\n    [0.0, 0.0, 0.0], [0.1, 0.0, 0.0],\n    [0.1, 0.1, 0.0], [0.0, 0.1, 0.0],\n], dtype=np.float64)\n\n# Wykryte rogi w pikselach (po cv2.cornerSubPix), w tej samej kolejnosci.\nimage_points = np.array([\n    [342.1, 198.7], [481.5, 211.4],\n    [495.2, 348.9], [355.8, 339.0],\n], dtype=np.float64)\n\n# Intrinsics z poprzedniej kalibracji; obraz juz po undistort, dist = 0.\nK = np.array([[800.0, 0.0, 640.0],\n              [0.0,   800.0, 360.0],\n              [0.0,   0.0,   1.0]], dtype=np.float64)\ndist_coeffs = np.zeros((4, 1))\n\n# === slot 1: planarny marker (Z = 0) -> ktora flaga? ===\nflag_planar = {{flag_planar}}\nok, rvec, tvec = cv2.solvePnP(\n    object_points, image_points, K, dist_coeffs, flags=flag_planar,\n)\n\n# === slot 2: tym razem 32 zaszumione korespondencje z ~30% outlierami ===\nok2, rvec2, tvec2, inliers = {{ransac_call}}(\n    object_points_big, image_points_big, K, dist_coeffs,\n    reprojectionError=8.0,\n)\n\n# === slot 3: rvec (Rodrigues) -> macierz rotacji 3x3 ===\nR, _ = {{rodrigues}}(rvec)\nprint('R shape =', R.shape, 'tvec =', tvec.ravel())\n",
+        "slots": [
+          {
+            "id": "flag_planar",
+            "hint": "Flaga dla planarnego markera (wszystkie 3D punkty maja Z = 0). Zaczyna sie od cv2.SOLVEPNP_...",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "cv2.SOLVEPNP_IPPE",
+                "cv2.SOLVEPNP_IPPE_SQUARE"
+              ]
+            }
+          },
+          {
+            "id": "ransac_call",
+            "hint": "Wariant solvePnP odporny na outliery - ten sam wzorzec, co findHomography z RANSAC.",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "cv2.solvePnPRansac"
+              ]
+            }
+          },
+          {
+            "id": "rodrigues",
+            "hint": "Funkcja, ktora zamienia 3-elementowy wektor Rodriguesa na pelna macierz rotacji 3x3 (i odwrotnie).",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "cv2.Rodrigues"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-pnp-wymagania",
+      "title": "Sprawdź się: co MUSI dostać solvePnP",
+      "type": "quiz",
+      "data": {
+        "question": "Detektor zwraca cztery narożniki płaskiej tabliczki o znanym wymiarze 10 × 10 cm. Co MUSI dostać `cv2.solvePnP`, żeby `tvec` wyszedł w metrach i był metrycznie poprawny?",
+        "options": [
+          "Tylko współrzędne 2D narożników w pikselach — `solvePnP` zna geometrię markera i resztę odtworzy sam.",
+          "2D narożniki, **3D współrzędne** narożników w jednostkach metrycznych oraz **skalibrowaną macierz K** (plus współczynniki dystorsji albo obraz już po `undistort`).",
+          "2D narożniki i K, ale 3D mogą być w dowolnych jednostkach — i tak normalizują się do wewnętrznej skali kamery.",
+          "Wystarczą cztery pary 2D ↔ 2D z dwóch klatek i `cv2.findHomography`; 3D potrzebne jest dopiero przy triangulacji."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "PnP rozwiązuje równanie λu = K[R|t]X — żeby `tvec` był wyrażony w metrach, MUSI dostać X w metrach (jednostki 3D wprost determinują jednostki translacji). Bez K skala kamery wisi w powietrzu i nieodróżnialne stają się dwa przypadki: dłuższa ogniskowa z obiektem dalej oraz krótsza ogniskowa z obiektem bliżej (klasyczny mit z listy najczęstszych pomyłek). Jeśli obraz nie jest po `undistort`, do `solvePnP` przekazujesz `dist_coeffs` razem z K — w przeciwnym razie dystorsja przelewa się w błąd rotacji. Odpowiedź D myli homografię (świat → świat dla planarnej sceny; daje pozę tylko *z dokładnością do skali* po dodatkowej dekompozycji) z PnP (świat 3D → piksele; daje pozę metrycznie).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "kod-blad-reprojekcji",
+      "title": "Zaimplementuj funkcję celu solvePnP: błąd reprojekcji",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `reprojection_error(K, R, t, points3d, points2d)` zwracającą **średni euklidesowy błąd reprojekcji** w pikselach. To dokładnie ta funkcja celu, którą `cv2.solvePnP(..., flags=cv2.SOLVEPNP_ITERATIVE)` minimalizuje wewnątrz Levenberga–Marquardta — i to ona jest jedyną wiarygodną miarą jakości wyestymowanej pozy.\n\nKonwencja:\n- `K`: ndarray (3, 3) — intrinsics,\n- `R`: ndarray (3, 3) — rotacja świat → kamera (już po Rodriguesie),\n- `t`: ndarray (3,) — translacja świat → kamera,\n- `points3d`: ndarray (N, 3) — znane punkty świata,\n- `points2d`: ndarray (N, 2) — obserwowane piksele.\n\nKrok po kroku:\n\n1. **Ekstrinsics**: `pts_cam = points3d @ R.T + t` → kształt `(N, 3)`.\n2. **Intrinsics**: `pts_img = pts_cam @ K.T` → wektory homogeniczne `(N, 3)`.\n3. **Dehomogenizacja**: `proj = pts_img[:, :2] / pts_img[:, 2:3]` → `(N, 2)`.\n4. **Błąd**: zwróć `np.linalg.norm(points2d - proj, axis=1).mean()`.\n\n```\nK = np.eye(3); R = np.eye(3); t = np.zeros(3)\nreprojection_error(K, R, t, np.array([[0., 0., 1.]]), np.array([[0., 0.]]))  # -> 0.0\n```",
+        "starterCode": "import numpy as np\n\n\ndef reprojection_error(K, R, t, points3d, points2d):\n    \"\"\"\n    Sredni euklidesowy blad reprojekcji w pikselach.\n\n    K:        ndarray (3, 3) - intrinsics\n    R:        ndarray (3, 3) - rotacja swiat -> kamera\n    t:        ndarray (3,)   - translacja swiat -> kamera\n    points3d: ndarray (N, 3) - znane punkty swiata\n    points2d: ndarray (N, 2) - obserwowane piksele\n\n    Zwraca float - srednia po N euklidesowych norm (||u_obs - u_proj||).\n    \"\"\"\n    K_  = np.asarray(K,        dtype=np.float64)\n    R_  = np.asarray(R,        dtype=np.float64)\n    t_  = np.asarray(t,        dtype=np.float64)\n    pts = np.asarray(points3d, dtype=np.float64)\n    obs = np.asarray(points2d, dtype=np.float64)\n    # TODO:\n    #   1. pts_cam = pts @ R_.T + t_                  -> (N, 3)\n    #   2. pts_img = pts_cam @ K_.T                   -> (N, 3) homogeniczne\n    #   3. proj    = pts_img[:, :2] / pts_img[:, 2:3] -> (N, 2)\n    #   4. zwroc np.linalg.norm(obs - proj, axis=1).mean()\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "idealna_projekcja_zwraca_zero",
+            "body": "# Idealna projekcja -> blad = 0.\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.zeros(3)\npts3d = np.array([[0.0, 0.0, 1.0],\n                  [1.0, 0.0, 5.0],\n                  [0.0, 2.0, 5.0]])\n# Idealne obserwacje wyliczone z tej samej projekcji.\npts2d = np.array([[320.0, 240.0],\n                  [420.0, 240.0],\n                  [320.0, 440.0]])\nerr = reprojection_error(K, R, t, pts3d, pts2d)\nassert abs(err - 0.0) < 1e-9, f'oczekiwano 0.0, jest {err}'",
+            "hidden": false
+          },
+          {
+            "name": "stale_przesuniecie_3_4_daje_5_px",
+            "body": "# Obserwacje przesuniete o stale (3, 4) px wzgledem idealnej projekcji\n# -> sredni euklidesowy blad = 5.0 px (3-4-5 trojkat).\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.zeros(3)\npts3d = np.array([[0.0, 0.0, 1.0],\n                  [1.0, 0.0, 5.0],\n                  [0.0, 2.0, 5.0]])\nideal = np.array([[320.0, 240.0],\n                  [420.0, 240.0],\n                  [320.0, 440.0]])\nshifted = ideal + np.array([3.0, 4.0])\nerr = reprojection_error(K, R, t, pts3d, shifted)\nassert abs(err - 5.0) < 1e-9, f'oczekiwano 5.0, jest {err}'"
+          },
+          {
+            "name": "translacja_kamery_jest_uwzgledniana",
+            "body": "# Translacja kamery musi byc uwzgledniana - brak t = blad rosnie.\nK = np.array([[500.0, 0.0, 320.0],\n              [0.0,   500.0, 240.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.array([0.0, 0.0, 4.0])\npts3d = np.array([[1.0, 0.0, 1.0]])\n# Po translacji glebia w kamerze = 5, wiec piksel = (320 + 500/5, 240) = (420, 240).\npts2d = np.array([[420.0, 240.0]])\nerr_with_t = reprojection_error(K, R, t, pts3d, pts2d)\nassert abs(err_with_t - 0.0) < 1e-9, f'z poprawnym t oczekiwano 0, jest {err_with_t}'\n# Bez t (zerowa translacja) - punkt projektuje sie inaczej, blad > 0.\nerr_no_t = reprojection_error(K, R, np.zeros(3), pts3d, pts2d)\nassert err_no_t > 1.0, f'pominiecie t powinno dac duzy blad, jest {err_no_t}'"
+          },
+          {
+            "name": "zwraca_srednia_a_nie_sume_dla_N_punktow",
+            "body": "# Sprawdz, ze funkcja dziala na wiekszej tablicy i zwraca *srednia*, nie sume.\nK = np.array([[800.0, 0.0, 640.0],\n              [0.0,   800.0, 360.0],\n              [0.0,   0.0,   1.0]])\nR = np.eye(3); t = np.array([0.0, 0.0, 0.5])\nrng = np.random.default_rng(0)\npts3d = rng.uniform(-0.1, 0.1, size=(20, 3))\npts3d[:, 2] = 0.0  # marker planarny\n# Idealne obserwacje przez ten model.\npts_cam = pts3d @ R.T + t\npts_img = pts_cam @ K.T\nideal = pts_img[:, :2] / pts_img[:, 2:3]\n# Dodaj stala 1 px w kierunku +X kazdemu punktowi -> blad = 1.0 px.\nerr = reprojection_error(K, R, t, pts3d, ideal + np.array([1.0, 0.0]))\nassert abs(err - 1.0) < 1e-9, f'oczekiwano 1.0 px sredniej, jest {err}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef reprojection_error(K, R, t, points3d, points2d):\n    K_  = np.asarray(K,        dtype=np.float64)\n    R_  = np.asarray(R,        dtype=np.float64)\n    t_  = np.asarray(t,        dtype=np.float64)\n    pts = np.asarray(points3d, dtype=np.float64)\n    obs = np.asarray(points2d, dtype=np.float64)\n    pts_cam = pts @ R_.T + t_                # (N, 3) w ukladzie kamery\n    pts_img = pts_cam @ K_.T                 # (N, 3) homogeniczne piksele\n    proj    = pts_img[:, :2] / pts_img[:, 2:3]\n    return float(np.linalg.norm(obs - proj, axis=1).mean())\n"
+      }
+    },
+    {
+      "id": "sandbox-solvepnp-szum",
+      "title": "Piaskownica: jak szum i wybór flagi wpływają na pozę",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\nrng = np.random.default_rng(0)\n\n# --- Marker planarny 0.1 m x 0.1 m -- 4 rogi, Z = 0 dla wszystkich. ---\nobject_points = np.array([\n    [0.0, 0.0, 0.0],\n    [0.1, 0.0, 0.0],\n    [0.1, 0.1, 0.0],\n    [0.0, 0.1, 0.0],\n], dtype=np.float64)\n\nK = np.array([[800.0, 0.0, 640.0],\n              [0.0,   800.0, 360.0],\n              [0.0,   0.0,   1.0]], dtype=np.float64)\ndist_coeffs = np.zeros((4, 1))\n\n# Prawdziwa poza, ktora chcemy odzyskac.\nrvec_true = np.array([0.10, -0.20, 0.05])      # ~12 stopni mieszanka\ntvec_true = np.array([0.05, -0.03, 0.60])      # 60 cm przed kamera\n\n# --- Symulacja obserwacji 2D = projekcja przez prawdziwa poza + szum. ---\nNOISE_PX = 1.0     # zmieniaj 0.0, 0.5, 1.0, 3.0, 8.0\nimg_pts, _ = cv2.projectPoints(object_points, rvec_true, tvec_true, K, dist_coeffs)\nimg_pts = (img_pts.reshape(-1, 2)\n           + rng.normal(0.0, NOISE_PX, size=(4, 2))).astype(np.float64)\n\nprint(f'Szum subpikselowy: {NOISE_PX:.2f} px')\nprint('-' * 60)\n\n# --- Porownanie flag dla planarnego markera. ---\nflags = [\n    ('IPPE      ', cv2.SOLVEPNP_IPPE),\n    ('ITERATIVE ', cv2.SOLVEPNP_ITERATIVE),\n    ('AP3P      ', cv2.SOLVEPNP_AP3P),\n]\nfor label, flag in flags:\n    try:\n        ok, rvec, tvec = cv2.solvePnP(\n            object_points, img_pts, K, dist_coeffs, flags=flag,\n        )\n    except cv2.error as e:\n        print(f'{label}: blad solvera ({e})')\n        continue\n    if not ok:\n        print(f'{label}: solver nie zbiegl')\n        continue\n    err_r_deg = np.degrees(np.linalg.norm(rvec.ravel() - rvec_true))\n    err_t_mm  = np.linalg.norm(tvec.ravel() - tvec_true) * 1000.0\n    print(f'{label}: blad rotacji = {err_r_deg:6.3f} stopni,  '\n          f'blad translacji = {err_t_mm:6.2f} mm')\n\n# --- Wariant RANSAC: dorzucamy 8 ewidentnych outlierow. ---\noutliers = rng.uniform(0.0, 1280.0, size=(8, 2))\nimg_pts_dirty = np.vstack([img_pts, outliers]).astype(np.float64)\nobj_pts_dirty = np.vstack([object_points, object_points * 2.0]).astype(np.float64)\nok, rvec_r, tvec_r, inliers = cv2.solvePnPRansac(\n    obj_pts_dirty, img_pts_dirty, K, dist_coeffs,\n    reprojectionError=8.0, iterationsCount=200,\n)\nn_in = len(inliers) if inliers is not None else 0\nprint('-' * 60)\nprint(f'RANSAC z 8 outlierami: inlierow = {n_in}/{len(obj_pts_dirty)}')\n\n# Pytania do siebie:\n#  * Podkrec NOISE_PX do 5.0 -- ktora flaga zaczyna sie sypac pierwsza?\n#  * Zerowy szum + same 4 punkty: AP3P i IPPE powinny dac blad ~ 0\n#    (analityczne); ITERATIVE tez. Co sie dzieje, gdy ustawisz NOISE_PX = 8.0?\n#  * Dodaj wieksza translacje (tvec_true * 5) i sprawdz, jak skaluje sie\n#    blad translacji w mm -- czy proporcjonalnie do glebokosci?\n#  * Zmien zakres outlierow w solvePnPRansac (reprojectionError = 2.0)\n#    -- czy RANSAC dalej znajduje wszystkie inliery?\n",
+        "encouragement": "Podkręć NOISE_PX i zobacz, kiedy IPPE zaczyna mylić się co do *flipa* — to ta dwuznaczność planarnej PnP, o której mówiła teoria."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1007/s11263-008-0152-6",
+      "title": "Lepetit, V., Moreno-Noguer, F. and Fua, P. — EPnP: An Accurate O(n) Solution to the PnP Problem (IJCV 2009)",
+      "kind": "paper",
+      "author": "Vincent Lepetit, Francesc Moreno-Noguer and Pascal Fua",
+      "year": 2009
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga549c2075fac14829ff4a58bc931c033d",
+      "title": "OpenCV — solvePnP API reference (flags: ITERATIVE, EPNP, P3P, AP3P, IPPE)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d7/d53/tutorial_py_pose.html",
+      "title": "OpenCV — Pose estimation tutorial (chessboard + axes overlay)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Perspective-n-Point",
+      "title": "Perspective-n-Point — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+      "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 7 Computation of Camera Matrix P",
+      "kind": "book",
+      "author": "Richard Hartley and Andrew Zisserman",
+      "year": 2004
+    }
+  ]
+}

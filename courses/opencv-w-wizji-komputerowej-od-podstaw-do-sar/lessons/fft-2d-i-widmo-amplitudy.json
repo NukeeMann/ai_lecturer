@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "slug": "fft-2d-i-widmo-amplitudy",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "FFT 2D i widmo amplitudy",
+  "eyebrow": "FFT",
+  "description": "Każdy obraz to suma dwuwymiarowych sinusoid — `np.fft.fft2`, `fftshift` i skala logarytmiczna pokazują, jakie struktury przestrzenne dominują w obrazie i otwierają drogę do filtracji w domenie częstotliwości.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "po-co-domena-czestotliwosci",
+      "title": "Po co domena częstotliwości?",
+      "type": "theory",
+      "data": {
+        "markdown": "W domenie przestrzennej obraz to siatka pikseli — operujesz na *jasnościach* w lokalnych okienkach (konwolucja, gradient, filtr medianowy). W domenie częstotliwości reprezentujesz **ten sam** obraz jako sumę dwuwymiarowych sinusoid o różnych okresach i kierunkach. Każdej sinusoidzie przypisujesz dwie liczby: **amplitudę** $|F(u, v)|$ — jak silny jest jej wkład — i **fazę** $\\arg F(u, v)$ — gdzie ma swój maksimum.\n\n![Diagram syntezy Fouriera — graficzne sumowanie kolejnych sinusoid harmonicznych pokazujące, że już kilka wyrazów dobrze przybliża falę okresową, a każdy kolejny wyraz dokłada drobniejsze szczegóły](https://upload.wikimedia.org/wikipedia/commons/thumb/f/fa/Fourier_synthesis.svg/480px-Fourier_synthesis.svg.png)\n\n*(Obraz: Wikimedia Commons, public domain)*\n\nTo, co w obrazie widać jako **gładkie tło i powolne zmiany oświetlenia**, w widmie skupia się blisko środka — to *niskie częstotliwości*. To, co w obrazie widać jako **drobne tekstury, krawędzie i szum**, w widmie wędruje na obrzeża — to *wysokie częstotliwości*. Stąd dwa praktyczne zastosowania: **filtr dolnoprzepustowy** w widmie ⇒ rozmycie obrazu, **filtr górnoprzepustowy** w widmie ⇒ wyostrzenie i wydobycie krawędzi. To samo można zrobić konwolucją w domenie przestrzennej, ale dla dużych jąder FFT bywa znacznie szybsze (twierdzenie o splocie zamienia konwolucję $O(N^2 k^2)$ na mnożenie $O(N^2)$ poprzedzone i zakończone FFT $O(N^2\\log N)$)."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/de/dbc/tutorial_py_fourier_transform.html",
+          "title": "OpenCV Python tutorial — Fourier Transform",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "dft-2d-widmo-i-fftshift",
+      "title": "DFT 2D, widmo amplitudy i fftshift",
+      "type": "theory",
+      "data": {
+        "markdown": "Dyskretna transformata Fouriera obrazu $f(x, y)$ o rozmiarze $M\\times N$ to:\n\n$$ F(u, v) \\;=\\; \\sum_{x=0}^{M-1}\\sum_{y=0}^{N-1} f(x, y)\\, e^{-j 2\\pi \\left(\\tfrac{u x}{M} + \\tfrac{v y}{N}\\right)} $$\n\nWynik jest **zespolony** — każdy współczynnik $F(u, v)$ niesie amplitudę $|F(u, v)|$ i fazę $\\arg F(u, v)$. *Widmo amplitudy* (magnitude spectrum) to po prostu macierz modułów:\n\n$$ A(u, v) \\;=\\; |F(u, v)| \\;=\\; \\sqrt{\\Re F(u,v)^{2} + \\Im F(u,v)^{2}} $$\n\n![Schemat ogólnej dekompozycji FFT Cooleya–Tukeya — DFT o rozmiarze N rekurencyjnie rozkłada się na DFT-y o rozmiarze N/2, redukując złożoność z O(N²) do O(N log N) dzięki ponownemu wykorzystaniu obrotów $W_N$](https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Cooley-tukey-general.svg/640px-Cooley-tukey-general.svg.png)\n\n*(Obraz: Wikimedia Commons, public domain)*\n\nDwa praktyczne zabiegi, bez których widmo jest nieczytelne:\n\n- **`np.fft.fftshift`** — `fft2` zwraca tablicę z **DC w lewym górnym rogu** $F(0, 0)$, a kolejne wiersze/kolumny wędrują od $0$ do $N - 1$ z zerową częstotliwością na obu końcach traktowaną cyklicznie. `fftshift` przesuwa cyklicznie macierz tak, by DC trafiło do środka — wtedy niskie częstotliwości skupiają się w centrum, wysokie na obrzeżach. Dla parzystego $N$ DC ląduje dokładnie w pikselu $\\big[\\,N/2,\\, N/2\\,\\big]$.\n- **Skala logarytmiczna** $A_{\\log} = \\log(1 + A)$ — bez niej widmo wygląda jak czarny obraz z jednym jasnym pikselem, bo $A(0, 0) = \\sum_{x, y} f(x, y)$ (suma jasności obrazu) jest zwykle o 3–6 rzędów wielkości większe od pozostałych współczynników. Dodatek $+1$ chroni przed $\\log 0$ tam, gdzie amplituda jest dokładnie zero.\n\nDodatkowa konsekwencja: dla **rzeczywistego** obrazu (a takie są wszystkie obrazy w skali szarości) widmo jest **Hermitowsko-symetryczne**: $F(-u, -v) = \\overline{F(u, v)}$. Po `fftshift` widać tę symetrię gołym okiem — widmo jest punktowo-symetryczne względem środka, co wykorzystamy w testach."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1090/S0025-5718-1965-0178586-1",
+          "title": "Cooley, J. W. and Tukey, J. W. — An Algorithm for the Machine Calculation of Complex Fourier Series (Mathematics of Computation 1965)",
+          "kind": "paper",
+          "author": "James W. Cooley and John W. Tukey",
+          "year": 1965
+        }
+      ]
+    },
+    {
+      "id": "exercise-amplitude-spectrum",
+      "title": "Zaimplementuj `amplitude_spectrum(img)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `amplitude_spectrum(img)`, która zwraca **widmo amplitudy** dwuwymiarowego obrazu, gotowe do wyświetlenia. Pipeline jest dokładnie taki, jak w teorii:\n\n1. Policz dwuwymiarową DFT obrazu: `F = np.fft.fft2(img)`.\n2. Przesuń DC z $[0, 0]$ do środka: `F_shifted = np.fft.fftshift(F)`.\n3. Weź moduły: `A = np.abs(F_shifted)`.\n4. Zlogarytmuj dla czytelności: `np.log1p(A)` (czyli $\\log(1 + A)$).\n5. Zwróć tablicę `numpy.float64` o tym samym kształcie co `img`.\n\nNie trzeba normalizować wyniku do przedziału $[0, 255]$ — to robota wyświetlacza. Liczy się sam pipeline.\n\n```\nimg = np.ones((8, 8), dtype=np.float64)   # obraz staly\nspec = amplitude_spectrum(img)\nspec.shape                                # -> (8, 8)\nnp.unravel_index(spec.argmax(), spec.shape)  # -> (4, 4)  -- DC w srodku po fftshift\n```\n\nWskazówki: dla obrazu stałego cała energia siedzi w DC; dla losowego obrazu rzeczywistego widmo jest punktowo-symetryczne względem środka.",
+        "starterCode": "import numpy as np\n\ndef amplitude_spectrum(img):\n    # img: 2D numpy array (rzeczywiste, np. dtype=np.float64)\n    # Zwroc 2D macierz log(1 + |F(u, v)|) z DC przesunietym do srodka,\n    # tej samej wielkosci co img i typu float64.\n    #\n    # Krok po kroku:\n    #   1. F          = np.fft.fft2(img)\n    #   2. F_shifted  = np.fft.fftshift(F)\n    #   3. A          = np.abs(F_shifted)\n    #   4. zwroc      np.log1p(A) jako float64\n    return np.zeros_like(img, dtype=np.float64)\n",
+        "tests": [
+          {
+            "name": "ksztalt_dtype_dla_obrazu_stalego",
+            "body": "import numpy as np\nimg = np.ones((16, 16), dtype=np.float64)\nout = amplitude_spectrum(img)\nassert isinstance(out, np.ndarray), f'Oczekiwano numpy.ndarray, dostalismy {type(out).__name__}'\nassert out.shape == (16, 16), f'Ksztalt powinien byc (16, 16), jest {out.shape}'\nassert out.dtype == np.float64, f'Dtype powinien byc float64, jest {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "dc_w_srodku_po_fftshift",
+            "body": "import numpy as np\nimg = np.ones((16, 16), dtype=np.float64)\nout = amplitude_spectrum(img)\npeak = np.unravel_index(np.argmax(out), out.shape)\nassert peak == (8, 8), f'Po fftshift maksimum (DC) powinno byc w srodku (8, 8), jest na {peak}'"
+          },
+          {
+            "name": "wartosc_dc_to_log_sumy",
+            "body": "import numpy as np\nimg = np.full((8, 8), 4.0, dtype=np.float64)\nout = amplitude_spectrum(img)\n# Dla obrazu stalego F(0, 0) = sum(img) = 4 * 64 = 256, wszystkie inne wspolczynniki zerowe.\nexpected_dc = np.log1p(256.0)\nassert np.isclose(out[4, 4], expected_dc, atol=1e-6), f'Wartosc DC powinna byc log(1 + sum(img)) = {expected_dc:.6f}, jest {out[4, 4]:.6f}'\n# Poza DC wszystkie wartosci powinny byc zerowe (log(1 + 0) = 0).\nmask = np.ones_like(out, dtype=bool)\nmask[4, 4] = False\nassert np.all(np.abs(out[mask]) < 1e-9), f'Dla obrazu stalego wszystkie nie-DC wartosci powinny byc 0, max odchylenie: {np.abs(out[mask]).max():.2e}'"
+          },
+          {
+            "name": "symetria_dla_obrazu_rzeczywistego",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.random((8, 8)).astype(np.float64)\nout = amplitude_spectrum(img)\nH, W = out.shape\n# Widmo amplitudy obrazu rzeczywistego jest punktowo-symetryczne wzgledem srodka po fftshift:\n# |F(u, v)| = |F(-u, -v)| -> out[i, j] == out[H-i, W-j] dla 1 <= i < H, 1 <= j < W.\nfor (i, j) in [(1, 2), (3, 5), (2, 1), (6, 4)]:\n    ii, jj = H - i, W - j\n    assert np.isclose(out[i, j], out[ii, jj], atol=1e-6), f'Symetria zlamana: out[{i},{j}]={out[i, j]:.6f} vs out[{ii},{jj}]={out[ii, jj]:.6f}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef amplitude_spectrum(img):\n    F = np.fft.fft2(img)\n    F_shifted = np.fft.fftshift(F)\n    A = np.abs(F_shifted)\n    return np.log1p(A).astype(np.float64)\n"
+      }
+    },
+    {
+      "id": "quiz-log-skala-i-fftshift",
+      "title": "Sprawdź się: dlaczego logarytm i fftshift",
+      "type": "quiz",
+      "data": {
+        "question": "Po wywołaniu `np.abs(np.fft.fft2(img))` widmo wygląda jak czarny obraz z jednym jasnym pikselem w lewym górnym rogu. Co należy zrobić, żeby zobaczyć w nim strukturę?",
+        "options": [
+          "Wyzerować ten piksel i znormalizować pozostałe wartości do przedziału $[0, 1]$.",
+          "Wywołać `np.fft.fftshift`, żeby przesunąć DC do środka, a potem zlogarytmować widmo wzorem $\\log(1 + A)$ — jasny piksel to składowa DC, o rzędy wielkości większa od reszty.",
+          "Powiększyć obraz wejściowy — dla małych obrazów FFT zwraca zbyt mało częstotliwości, więc widmo jest niedoinformowane.",
+          "Zamienić `np.abs` na `np.real`, ponieważ `np.abs` myli się dla liczb zespolonych z ujemnymi częściami rzeczywistymi."
+        ],
+        "correct": [1],
+        "explanation": "Jasny piksel w rogu to **DC**, czyli $F(0, 0) = \\sum f(x, y)$ — suma wszystkich jasności obrazu, zwykle o 3–6 rzędów wielkości większa od pozostałych współczynników. Dwa zabiegi rozwiązują problem osobno: `fftshift` przesuwa DC do środka tablicy (wizualnie wygodniej), a $\\log(1 + A)$ ściska zakres dynamiczny tak, że słabsze częstotliwości stają się widoczne. Wyzerowanie DC (A) wyrzuca informację o średniej jasności; powiększanie obrazu (C) nie zmienia struktury widma — `fft2(img)` zwraca tablicę o tym samym rozmiarze co `img`, i wszystkie częstotliwości są tam reprezentowane od początku; `np.real` (D) bierze tylko część rzeczywistą, a moduł $|F|$ wymaga obu części.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Fast_Fourier_transform",
+          "title": "Fast Fourier transform — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-sinusoidalna-kratka",
+      "title": "Sinusoidalna kratka i jej widmo",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Wygeneruj 2D sinusoide o zadanej czestotliwosci (kx, ky) cykli na caly obraz\n# i zobacz, gdzie pojawiaja sie pary maksimow w widmie amplitudy.\nH, W = 128, 128\ny, x = np.indices((H, W), dtype=np.float64)\n\n# Pokrec tymi dwoma liczbami:\n#   - (kx, ky) = (6, 0)  -> pionowe paski (zmiennosc tylko wzdluz x)\n#   - (kx, ky) = (0, 6)  -> poziome paski\n#   - (kx, ky) = (4, 4)  -> ukosna kratka pod 45 stopni\n#   - (kx, ky) = (12, 0) -> drobniejsze paski -> maksima dalej od srodka\nkx, ky = 6.0, 0.0\nimg = np.sin(2.0 * np.pi * (kx * x / W + ky * y / H))\n\n# Skopiuj swoje rozwiazanie z poprzedniego cwiczenia,\n# albo zaimplementuj w jednej linii i porownaj.\ndef amplitude_spectrum(img):\n    F = np.fft.fft2(img)\n    return np.log1p(np.abs(np.fft.fftshift(F))).astype(np.float64)\n\nspec = amplitude_spectrum(img)\nprint('Ksztalt widma:', spec.shape)\nprint('Maksimum DC:', spec[H // 2, W // 2])\n\n# Znajdz dwa najwieksze maksima POZA DC i wypisz ich pozycje wzgledem srodka.\nspec_no_dc = spec.copy()\nspec_no_dc[H // 2, W // 2] = 0.0\nflat_idx = np.argsort(spec_no_dc, axis=None)[-2:]\nfor idx in flat_idx:\n    i, j = np.unravel_index(idx, spec.shape)\n    print(f'pik na ({i}, {j}), przesuniecie wzgledem srodka = ({i - H // 2}, {j - W // 2})')\n",
+        "encouragement": "Pokręć kx i ky jak gałkami nawigacji — para jasnych punktów w widmie pokaże, w którym kierunku „patrzy\" Twoja sinusoida i jak gęste są jej prążki."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Fast_Fourier_transform",
+      "title": "Fast Fourier transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/de/dbc/tutorial_py_fourier_transform.html",
+      "title": "OpenCV Python tutorial — Fourier Transform (`dft`, `idft`, magnitude i phase)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1090/S0025-5718-1965-0178586-1",
+      "title": "Cooley, J. W. and Tukey, J. W. — An Algorithm for the Machine Calculation of Complex Fourier Series (Mathematics of Computation 1965)",
+      "kind": "paper",
+      "author": "James W. Cooley and John W. Tukey",
+      "year": 1965
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — § 4 (Filtering in the Frequency Domain)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

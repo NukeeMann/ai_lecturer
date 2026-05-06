@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "slug": "tekstury-glcm-i-cechy-haralicka",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Tekstury GLCM i cechy Haralicka",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "GLCM redukuje fragment obrazu SAR do macierzy współwystępowania poziomów szarości, a pięć skalarnych cech Haralicka (Contrast, Dissimilarity, Homogeneity, Energy, Correlation) zamienia tę macierz w wektor opisujący teksturę. To do dziś rdzeń klasyfikacji land-cover z Sentinel-1 GRD przed wprowadzeniem deep learningu.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "co-to-jest-glcm",
+      "title": "Czym jest GLCM i jak ją się buduje",
+      "type": "theory",
+      "data": {
+        "markdown": "W tej lekcji odchodzimy od **detekcji krawędzi** do **opisu obszarów**. SAR pod skalą piksela wygląda jednorodnie (z dokładnością do speckle'a), ale klasy obiektów — las, miasto, woda, pola — różnią się **wzorem powtarzalności** lokalnych jasności. Tę powtarzalność nazywamy **teksturą**. Najprostszym, statystycznym jej deskryptorem są **GLCM** (Gray-Level Co-occurrence Matrix) i wyprowadzone z nich **cechy Haralicka** (Haralick, Shanmugam & Dinstein, IEEE TSMC 1973).\n\nGLCM to dwuwymiarowa macierz $L \\times L$, której element $P(i, j)$ liczy, ile razy w obrazie pojawia się **uporządkowana para** wartości $(i, j)$ pikseli oddalonych o ustalony **wektor przesunięcia** $\\boldsymbol{d} = (\\Delta x, \\Delta y)$:\n\n$$ P(i, j \\mid \\boldsymbol{d}) \\;=\\; \\#\\{(p, q) : I(p, q) = i,\\; I(p + \\Delta x,\\, q + \\Delta y) = j\\}. $$\n\nZanim zaczniemy liczyć, podejmujemy trzy decyzje konstrukcyjne:\n\n1. **Kwantyzacja.** Dla 256-poziomowej intensywności GLCM ma $256^2 = 65\\,536$ elementów — w większości zer. Standardowo redukujemy do $L = 8$, $16$ albo $32$ poziomów (np. `np.digitize` z równomiernymi przedziałami albo proste `((I - I_{\\min}) / (I_{\\max} - I_{\\min}) \\cdot L)`). Mniejsze $L$ daje gęstszą, statystycznie wiarygodniejszą macierz; większe $L$ — subtelniejsze rozróżnianie sąsiednich poziomów.\n2. **Wektor przesunięcia.** Para $(\\Delta x, \\Delta y)$ definiuje **dystans i kierunek**, na którym mierzymy współwystępowanie. Cztery klasyczne kierunki to $0^\\circ$, $45^\\circ$, $90^\\circ$, $135^\\circ$ przy odległości $1$; aby uzyskać niewrażliwość kierunkową, uśrednia się macierze ze wszystkich czterech orientacji.\n3. **Normalizacja i symetria.** Po zliczeniu dzielimy przez liczbę wszystkich par, otrzymując estymator prawdopodobieństwa $\\hat P(i, j)$. Następnie symetryzujemy: $\\hat P_{\\rm sym} = \\tfrac{1}{2}\\bigl(\\hat P + \\hat P^\\top\\bigr)$ — co czyni macierz niezmienniczą na zamianę \"skąd\" i \"dokąd\".\n\n![Przykład z dokumentacji scikit-image: dwa wycinki obrazu w skali szarości (trawa i niebo) wraz z odpowiadającymi macierzami GLCM zwizualizowanymi jako mapy cieplne — dla tekstury jednorodnej masa skupia się ciasno przy diagonali, dla tekstury kontrastowej rozprasza się szeroko poza diagonalą](https://scikit-image.org/docs/stable/_images/sphx_glr_plot_glcm_001.png)\n\n*(Rysunek: dokumentacja scikit-image, [galeria `plot_glcm`](https://scikit-image.org/docs/stable/auto_examples/features_detection/plot_glcm.html).)*"
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Haralick, Shanmugam & Dinstein — Textural Features for Image Classification (IEEE TSMC 1973)",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam and Itshak Dinstein",
+          "year": 1973
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Co-occurrence_matrix",
+          "title": "Co-occurrence matrix — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "piec-cech-haralicka",
+      "title": "Pięć cech Haralicka",
+      "type": "theory",
+      "data": {
+        "markdown": "Sama macierz GLCM jest zbyt duża, aby porównywać dwa fragmenty obrazu wartość-po-wartości — dla $L = 16$ to już 256 liczb na okno. Haralick, Shanmugam i Dinstein (1973) zaproponowali **redukcję do pojedynczych skalarów**. Spośród 14 cech z oryginalnego artykułu w praktyce SAR liczy się dziś **pięć kluczowych** — i dokładnie te zwraca `skimage.feature.graycoprops`.\n\nNiech $\\hat P(i, j)$ będzie znormalizowaną, symetryczną macierzą GLCM o $L$ poziomach, a $\\mu_x$, $\\sigma_x$ — średnią i odchyleniem standardowym **brzegowego** rozkładu po pierwszej współrzędnej (analogicznie $\\mu_y$, $\\sigma_y$ po drugiej):\n\n$$ \\mu_x \\;=\\; \\sum_{i, j} i \\cdot \\hat P(i, j), \\qquad \\sigma_x^2 \\;=\\; \\sum_{i, j} (i - \\mu_x)^2 \\cdot \\hat P(i, j). $$\n\nPięć kluczowych cech Haralicka to:\n\n- **Contrast** — średnia kwadratowa różnicy poziomów współwystępujących pikseli; rośnie z lokalnym kontrastem:\n  $$ \\mathrm{Contrast} \\;=\\; \\sum_{i, j} (i - j)^2 \\cdot \\hat P(i, j). $$\n- **Dissimilarity** — analogiczna, ale **liniowa** miara różnicy; mniej penalizuje skrajne wartości:\n  $$ \\mathrm{Dissimilarity} \\;=\\; \\sum_{i, j} |i - j| \\cdot \\hat P(i, j). $$\n- **Homogeneity** (Inverse Difference Moment) — rośnie, gdy masa skupia się przy diagonali, czyli sąsiedzi mają zbliżone jasności:\n  $$ \\mathrm{Homogeneity} \\;=\\; \\sum_{i, j} \\frac{\\hat P(i, j)}{1 + (i - j)^2}. $$\n- **Energy** (Angular Second Moment) — kwadrat normy macierzy; mierzy \"jednoplamkowość\" rozkładu, równa $1$ wtedy i tylko wtedy, gdy GLCM ma jeden niezerowy element:\n  $$ \\mathrm{Energy} \\;=\\; \\sum_{i, j} \\hat P(i, j)^2. $$\n- **Correlation** — miara liniowej zależności jasności sąsiadów ($\\in [-1, 1]$); $0$ dla niezależnych, $\\pm 1$ dla idealnie skorelowanych:\n  $$ \\mathrm{Correlation} \\;=\\; \\sum_{i, j} \\frac{(i - \\mu_x)\\,(j - \\mu_y) \\cdot \\hat P(i, j)}{\\sigma_x \\, \\sigma_y}. $$\n\nW praktyce SAR zestaw tych cech używa się jako **deskryptora wektorowego**: dla każdego małego okna (np. $33 \\times 33$ piksele wokół rozważanego centrum) liczymy wektor $[\\mathrm{Contrast},\\, \\mathrm{Dissimilarity},\\, \\mathrm{Homogeneity},\\, \\mathrm{Energy},\\, \\mathrm{Correlation}]$ i karmimy nim klasyfikator (k-means w przestrzeni cech, SVM, las losowy). Otrzymujemy mapę klas pokrycia terenu: woda jest skrajnie *energiczna* (ciemna i jednorodna), miasto skrajnie *kontrastowe* (jasne struktury obok cieni budynków), pola — pośrednie. Takie podejście jest do dziś rdzeniem klasyfikacji land-cover z Sentinel-1 GRD przed zwrotem ku deep learningowi."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Haralick, Shanmugam & Dinstein — Textural Features for Image Classification (IEEE TSMC 1973)",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam and Itshak Dinstein",
+          "year": 1973
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+          "title": "skimage.feature.graycomatrix and graycoprops — scikit-image documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-rzadka-glcm",
+      "title": "Dlaczego Energy 'kłamie' przy zbyt wielu poziomach",
+      "type": "quiz",
+      "data": {
+        "question": "Liczysz GLCM 256-poziomową na fragmencie 33×33 piksele obrazu Sentinel-1 GRD i otrzymujesz macierz, której prawie wszystkie 65 536 elementów to zera, a kilka rozproszonych komórek ma wartości 1–2. Cecha **Energy** wyszła bardzo wysoka — mimo że na oko widać silną teksturę. Co najprawdopodobniej poszło nie tak?",
+        "options": [
+          "Liczba poziomów $L = 256$ jest zbyt **wysoka** w stosunku do wielkości okna 33×33 (ok. 1024 par): macierz GLCM jest skrajnie rzadka, więc estymator $\\hat P^2$ daje sztucznie wysokie Energy. Trzeba skwantyzować obraz do $L = 8$–$32$ poziomów, żeby cechy miały jakikolwiek sens statystyczny.",
+          "Trzeba pomnożyć macierz GLCM przez $L^2$ — ten artefakt wynika z braku skalowania energii do liczby poziomów.",
+          "GLCM dla SAR powinno się liczyć **wyłącznie** na obrazie w dB, nigdy w intensywności — w skali liniowej Energy zawsze wychodzi błędnie wysokie.",
+          "Należy dodać szum gaussowski do okna przed liczeniem GLCM, żeby cecha Energy odzwierciedlała teksturę zamiast spadać do 0 w jednorodnych obszarach."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Klasyczna pułapka: GLCM 256-poziomowa na oknie z ledwie 1000 par jest **skrajnie rzadka** — $\\hat P(i, j)$ dla większości komórek wynosi $0$, a w nielicznych komórkach $\\frac{1}{N_{\\rm par}}$. Wówczas $\\sum \\hat P^2 \\approx \\sum \\bigl(\\tfrac{1}{N_{\\rm par}}\\bigr)^2 \\cdot N_{\\rm niezer}$ rośnie sztucznie, bo masa zostaje skupiona w bardzo małej liczbie komórek. Standardowa praktyka SAR — i to, co pokazuje `skimage.feature.graycomatrix(..., levels=16)` — to redukcja do $L = 8$–$32$, by macierz była gęsto wypełniona. Dystraktor 1 wymyśla nieistniejący czynnik skali. Dystraktor 2 myli kwestię: GLCM działa zarówno na intensywności, jak i na dB; problem to liczba poziomów, nie skala. Dystraktor 3 odwraca logikę — szum dodatkowy nie 'naprawia' rzadkiej macierzy, tylko przykrywa ją inną patologią.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "kod-glcm-contrast",
+      "title": "Zaimplementuj `glcm_contrast`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `glcm_contrast(image, levels, dx, dy)`, która liczy cechę Haralicka **Contrast** dla pojedynczego okna obrazu.\n\nArgumenty:\n\n- `image` — `numpy.ndarray` o kształcie `(H, W)` lub równoważna lista list (dodatnie wartości intensywności);\n- `levels` — `int >= 2`, liczba poziomów kwantyzacji (np. `8`, `16`, `32`);\n- `dx`, `dy` — całkowite przesunięcia odpowiednio w kolumnach (`x`) i wierszach (`y`); dopuszczalne ujemne.\n\nAlgorytm (krok po kroku):\n\n1. **Kwantyzacja.** Przeskaluj `image` liniowo do przedziału $[0, L)$ i przytnij do `int` w zakresie `0..levels-1`. Dla obrazu stałego (gdzie `max == min`) potraktuj wszystkie piksele jako poziom `0`.\n2. **Zliczanie par.** Zbuduj macierz $L \\times L$ taką, że `P[i, j]` to liczba par `(image[r, c], image[r + dy, c + dx])`, dla których pierwszy piksel ma poziom `i`, a drugi — poziom `j`. Iteruj tylko po pikselach, dla których oba indeksy mieszczą się w obrazie.\n3. **Normalizacja.** Podziel `P` przez liczbę wszystkich zliczonych par. Jeżeli zliczonych par jest zero (np. obraz jednorzędowy z `dy = 1`), zwróć `0.0`.\n4. **Cecha Contrast.** Zwróć $\\sum_{i, j} (i - j)^2 \\cdot \\hat P(i, j)$ jako `float`.\n\nQuick check:\n\n```\nglcm_contrast([[0, 0, 9, 9],\n               [0, 0, 9, 9],\n               [0, 0, 9, 9],\n               [0, 0, 9, 9]], levels=2, dx=1, dy=0)\n# -> 1/3   (jedna z trzech sąsiadujących par jest mieszana, dwie są jednorodne)\n```\n\nDla obrazu stałego cecha musi wyjść `0.0`. Dla naprzemiennego pasiastego wzorca przy odpowiednim przesunięciu — `(L - 1)^2`.",
+        "starterCode": "import numpy as np\n\ndef glcm_contrast(image, levels, dx, dy):\n    # Cecha Haralicka Contrast dla pojedynczego okna obrazu.\n    # Zwraca: float = sum_{i, j} (i - j)^2 * P_norm[i, j],\n    # gdzie P[i, j] = liczba par (image[r, c], image[r + dy, c + dx])\n    # o poziomach (i, j), znormalizowana do prawdopodobienstwa.\n    arr = np.asarray(image, dtype=float)\n    h, w = arr.shape\n    # TODO: kwantyzuj 'arr' do levels poziomow w [0, levels - 1].\n    # TODO: zbuduj macierz P o ksztalcie (levels, levels) zliczajaca pary.\n    # TODO: znormalizuj P; jesli liczba par == 0, zwroc 0.0.\n    # TODO: zwroc sum_{i, j} (i - j)^2 * P[i, j].\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "constant_image_yields_zero_contrast",
+            "body": "import numpy as np\nimg = np.full((4, 4), 5.0)\nresult = glcm_contrast(img, levels=4, dx=1, dy=0)\nassert abs(result - 0.0) < 1e-9, result",
+            "hidden": false
+          },
+          {
+            "name": "two_level_horizontal_step_one_third",
+            "body": "import numpy as np\nimg = np.array([[0, 0, 9, 9]] * 4, dtype=float)\n# kwantyzacja levels=2: lewa polowka -> 0, prawa polowka -> 1.\n# Pary przy dx=1, dy=0: 4 wiersze * 3 pary = 12; 4 'mieszane' (0,1) i 8 jednorodnych.\n# Contrast = 4/12 * (0-1)^2 + 8/12 * 0 = 1/3.\nresult = glcm_contrast(img, levels=2, dx=1, dy=0)\nassert abs(result - 1.0 / 3.0) < 1e-9, result"
+          },
+          {
+            "name": "alternating_rows_max_contrast",
+            "body": "import numpy as np\nimg = np.array([\n    [0, 0, 0, 0],\n    [9, 9, 9, 9],\n    [0, 0, 0, 0],\n    [9, 9, 9, 9],\n], dtype=float)\n# levels=2, dy=1 (przesuniecie o jeden wiersz w dol).\n# Wszystkie 12 par to (0, 1) lub (1, 0) -> Contrast = 1.0 = (L - 1)^2.\nresult = glcm_contrast(img, levels=2, dx=0, dy=1)\nassert abs(result - 1.0) < 1e-9, result"
+          },
+          {
+            "name": "cfar_invariant_under_global_brightness_scaling",
+            "body": "import numpy as np\n# Po kwantyzacji do tej samej liczby poziomow obraz przeskalowany razy 100\n# powinien dac dokladnie te sama wartosc Contrast — to wlasnosc CFAR-podobna,\n# wynikajaca z tego, ze GLCM operuje na poziomach kwantyzacji, nie na bezwzglednej jasnosci.\ndim = np.array([[1.0, 1.0, 9.0, 9.0]] * 3)\nbright = dim * 100.0\na = glcm_contrast(dim, levels=2, dx=1, dy=0)\nb = glcm_contrast(bright, levels=2, dx=1, dy=0)\nassert abs(a - b) < 1e-9, (a, b)"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef glcm_contrast(image, levels, dx, dy):\n    arr = np.asarray(image, dtype=float)\n    h, w = arr.shape\n    lo, hi = arr.min(), arr.max()\n    if hi == lo:\n        quantized = np.zeros((h, w), dtype=int)\n    else:\n        scaled = (arr - lo) / (hi - lo) * levels\n        quantized = np.clip(scaled.astype(int), 0, levels - 1)\n\n    P = np.zeros((levels, levels), dtype=float)\n    r_lo, r_hi = max(0, -dy), min(h, h - dy)\n    c_lo, c_hi = max(0, -dx), min(w, w - dx)\n    for r in range(r_lo, r_hi):\n        for c in range(c_lo, c_hi):\n            i = quantized[r, c]\n            j = quantized[r + dy, c + dx]\n            P[i, j] += 1.0\n\n    total = P.sum()\n    if total == 0:\n        return 0.0\n    P /= total\n\n    contrast = 0.0\n    for i in range(levels):\n        for j in range(levels):\n            contrast += (i - j) ** 2 * P[i, j]\n    return float(contrast)\n"
+      }
+    },
+    {
+      "id": "tabela-piec-cech",
+      "title": "Pięć cech Haralicka obok siebie",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "feature",
+            "label": "Cecha",
+            "type": "string",
+            "sortable": false
+          },
+          {
+            "key": "formula",
+            "label": "Wzór ($\\hat P = \\hat P_{\\rm sym}$)",
+            "type": "string",
+            "sortable": false
+          },
+          {
+            "key": "co_mierzy",
+            "label": "Co mierzy",
+            "type": "string",
+            "sortable": false
+          },
+          {
+            "key": "min_max",
+            "label": "Zakres / kiedy maksymalna",
+            "type": "string",
+            "sortable": false
+          },
+          {
+            "key": "rola_sar",
+            "label": "Po co w SAR",
+            "type": "string",
+            "sortable": false
+          }
+        ],
+        "rows": [
+          {
+            "feature": "Contrast",
+            "formula": "$\\sum_{i, j} (i - j)^2 \\cdot \\hat P(i, j)$",
+            "co_mierzy": "Średnia kwadratowa różnicy poziomów współwystępujących pikseli",
+            "min_max": "$[0,\\, (L-1)^2]$; maksymalna dla naprzemiennego wzorca skrajnych poziomów",
+            "rola_sar": "Wyróżnia obszary miejskie i przybrzeżne (silne sąsiedztwo jasne–ciemne)"
+          },
+          {
+            "feature": "Dissimilarity",
+            "formula": "$\\sum_{i, j} |i - j| \\cdot \\hat P(i, j)$",
+            "co_mierzy": "Średnia bezwzględna różnica poziomów (liniowa wersja Contrast)",
+            "min_max": "$[0,\\, L - 1]$; maksymalna dla tego samego wzorca co Contrast",
+            "rola_sar": "Mniej wrażliwa na pojedyncze skrajne pary niż Contrast — stabilna nad polami"
+          },
+          {
+            "feature": "Homogeneity",
+            "formula": "$\\sum_{i, j} \\dfrac{\\hat P(i, j)}{1 + (i - j)^2}$",
+            "co_mierzy": "Stopień skupienia masy GLCM przy diagonali (sąsiedzi o zbliżonych jasnościach)",
+            "min_max": "$(0,\\, 1]$; równa $1$ dla obrazu stałego",
+            "rola_sar": "Maksymalna nad spokojną wodą i rozległymi polami; spada nad miastem"
+          },
+          {
+            "feature": "Energy",
+            "formula": "$\\sum_{i, j} \\hat P(i, j)^2$",
+            "co_mierzy": "Skupienie rozkładu w pojedynczych komórkach (Angular Second Moment)",
+            "min_max": "$(0,\\, 1]$; równa $1$, gdy GLCM ma jeden niezerowy element",
+            "rola_sar": "Wskazuje teksturę regularną i jednolitą; w SAR — wodę, asfalt, lotnisko"
+          },
+          {
+            "feature": "Correlation",
+            "formula": "$\\sum_{i, j} \\dfrac{(i - \\mu_x)(j - \\mu_y) \\cdot \\hat P(i, j)}{\\sigma_x \\, \\sigma_y}$",
+            "co_mierzy": "Liniowa zależność jasności sąsiednich pikseli",
+            "min_max": "$[-1,\\, 1]$; bliska $1$ dla gładkich gradientów, bliska $0$ dla losowego speckle'a",
+            "rola_sar": "Odróżnia gładkie gradienty (wybrzeże, plaża) od losowych obszarów speckle"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sandbox-syntetyczne-tekstury",
+      "title": "Cztery tekstury, jeden zestaw cech",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# --------------------------------------------------------------------\n# Cztery syntetyczne tekstury 32x32, kwantyzowane do levels=8 poziomow.\n# Spróbuj zmienić rozmiar 'size', liczbe poziomow 'levels' albo wektor\n# przesuniecia (dx, dy) i zobacz, jak piec cech Haralicka odroznia\n# tekstury jednorodne, gradientowe, naprzemienne i losowe.\n# --------------------------------------------------------------------\nsize = 32\nlevels = 8\nrng = np.random.default_rng(7)\n\nflat = np.full((size, size), 4.0)\ngradient = np.tile(np.linspace(0.0, 7.0, size), (size, 1))\nchecker = np.indices((size, size)).sum(axis=0) % 2 * 7.0\nrandom_speckle = rng.gamma(shape=4.0, scale=0.25, size=(size, size)) * 4.0\n\n\ndef quantize(img, levels):\n    arr = np.asarray(img, dtype=float)\n    lo, hi = arr.min(), arr.max()\n    if hi == lo:\n        return np.zeros_like(arr, dtype=int)\n    return np.clip(((arr - lo) / (hi - lo) * levels).astype(int), 0, levels - 1)\n\n\ndef glcm(img, levels, dx, dy):\n    q = quantize(img, levels)\n    h, w = q.shape\n    P = np.zeros((levels, levels), dtype=float)\n    r_lo, r_hi = max(0, -dy), min(h, h - dy)\n    c_lo, c_hi = max(0, -dx), min(w, w - dx)\n    for r in range(r_lo, r_hi):\n        for c in range(c_lo, c_hi):\n            P[q[r, c], q[r + dy, c + dx]] += 1.0\n    P = (P + P.T) / 2.0\n    s = P.sum()\n    return P / s if s > 0 else P\n\n\ndef features(P):\n    L = P.shape[0]\n    i_idx, j_idx = np.indices((L, L))\n    contrast = float(((i_idx - j_idx) ** 2 * P).sum())\n    dissim = float((np.abs(i_idx - j_idx) * P).sum())\n    homog = float((P / (1.0 + (i_idx - j_idx) ** 2)).sum())\n    energy = float((P ** 2).sum())\n    mu_x = float((i_idx * P).sum())\n    mu_y = float((j_idx * P).sum())\n    var_x = float(((i_idx - mu_x) ** 2 * P).sum())\n    var_y = float(((j_idx - mu_y) ** 2 * P).sum())\n    if var_x > 0 and var_y > 0:\n        corr = float(((i_idx - mu_x) * (j_idx - mu_y) * P).sum() / np.sqrt(var_x * var_y))\n    else:\n        corr = float(\"nan\")\n    return contrast, dissim, homog, energy, corr\n\n\nprint(f\"{'tekstura':>14} | {'Contr':>7} {'Diss':>6} {'Homog':>7} {'Energy':>8} {'Corr':>7}\")\nprint(\"-\" * 60)\nfor name, img in [(\"flat\", flat), (\"gradient\", gradient), (\"checker\", checker), (\"speckle\", random_speckle)]:\n    P = glcm(img, levels=levels, dx=1, dy=0)\n    c, d, h_, e, r = features(P)\n    print(f\"{name:>14} | {c:7.3f} {d:6.3f} {h_:7.3f} {e:8.4f} {r:7.3f}\")\n",
+        "encouragement": "Zmień `levels`, rozmiar okna albo kierunek `(dx, dy)` i obserwuj, jak `Energy` rośnie wraz ze zbyt wysoką liczbą poziomów na małym oknie — dokładnie jak w sekcji teoretycznej."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+      "title": "Haralick, Shanmugam & Dinstein — Textural Features for Image Classification (IEEE TSMC 1973)",
+      "kind": "paper",
+      "author": "Robert M. Haralick, K. Shanmugam and Itshak Dinstein",
+      "year": 1973
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+      "title": "skimage.feature.graycomatrix and graycoprops — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Co-occurrence_matrix",
+      "title": "Co-occurrence matrix — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "Moreira et al. — A Tutorial on Synthetic Aperture Radar (IEEE GRSM 2013)",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek and Konstantinos P. Papathanassiou",
+      "year": 2013
+    }
+  ]
+}

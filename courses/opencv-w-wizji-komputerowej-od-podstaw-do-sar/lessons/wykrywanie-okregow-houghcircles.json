@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "slug": "wykrywanie-okregow-houghcircles",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Wykrywanie okręgów HoughCircles",
+  "eyebrow": "KRAWĘDZIE I HOUGH",
+  "description": "Trójwymiarowy akumulator (a, b, r), wariant gradientowy w OpenCV i pułapki cv2.HoughCircles — od idei do działającego wywołania.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "od-linii-do-okregu",
+      "title": "Od linii do okręgu — akumulator rośnie do trzech wymiarów",
+      "type": "theory",
+      "data": {
+        "markdown": "Linia w transformacie Hougha miała dwa parametry $(\\rho, \\theta)$, więc **akumulator był dwuwymiarowy**. Z okręgiem ta sytuacja się zmienia: każdy okrąg na płaszczyźnie ma **trzy** parametry — środek $(a, b)$ i promień $r$ — spełniające równanie\n\n$$(x - a)^2 + (y - b)^2 = r^2.$$\n\nDlatego akumulator $A(a, b, r)$ jest **trójwymiarowy**, a jego rozmiar (i czas zliczania głosów) rośnie jak $n_a \\cdot n_b \\cdot n_r$. Drugą konsekwencją jest to, że pojedynczy piksel krawędziowy nie głosuje na jedną krzywą, tylko na **całą rodzinę okręgów**: dla ustalonego $r$ jego głos rozkłada się na okrąg w przestrzeni $(a, b)$ — wszystkie środki, które są dokładnie $r$ od tego piksela.\n\n![Wynik działania cv2.HoughCircles na zdjęciu rozłożonych monet — każda moneta otoczona narysowanym okręgiem o znalezionym promieniu, a w centrum każdej zaznaczony środek; przykład z oficjalnego tutoriala OpenCV](https://docs.opencv.org/4.x/houghcircles2.jpg)\n\n*(Rysunek: dokumentacja OpenCV, tutorial Hough Circle Transform.)*\n\nZasada głosowania jest taka sama jak dla linii (wiele pikseli wskazujących na ten sam szczyt akumulatora ⇒ kandydat), ale pamięć i koszt obliczeń idą w górę o cały rząd wielkości. Dlatego OpenCV nie używa naiwnego pełnego wariantu — patrz następna sekcja."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Circle_Hough_Transform",
+          "title": "Circle Hough Transform — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "hough-gradient-i-api",
+      "title": "Wariant gradientowy i parametry cv2.HoughCircles",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV nie buduje pełnego 3D akumulatora. Domyślny wariant **`cv2.HOUGH_GRADIENT`** wykorzystuje **kierunek gradientu** w każdym pikselu krawędziowym: piksel głosuje tylko wzdłuż prostej prostopadłej do krawędzi (a nie na cały okrąg w przestrzeni $(a, b)$ dla ustalonego $r$). Dzięki temu zliczanie środków odbywa się w 2D, a promień $r$ ustala się w drugim, jednowymiarowym przebiegu.\n\nMinimalne wywołanie wygląda tak:\n\n```python\nimport cv2\n\ngray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)\ngray = cv2.medianBlur(gray, 5)  # WAŻNE: wstępne odszumienie\n\ncircles = cv2.HoughCircles(\n    gray, cv2.HOUGH_GRADIENT, dp=1, minDist=20,\n    param1=100, param2=30, minRadius=5, maxRadius=50,\n)\n```\n\nNajważniejsze parametry:\n\n- **`dp`** — odwrotność rozdzielczości akumulatora względem obrazu (`1.0` = ten sam rozmiar; `2.0` = połowa rozdzielczości, szybciej, ale szczyt jest rozmyty).\n- **`minDist`** — minimalna odległość między środkami; jeśli jest za mała, jeden obiekt wygeneruje wiele zachodzących wykryć.\n- **`param1`** — górny próg używanego wewnętrznie detektora Canny'ego.\n- **`param2`** — próg liczby głosów dla środka. **Zmniejszanie `param2` zwiększa liczbę fałszywych okręgów** — to najczęstsza pułapka strojenia.\n- **`minRadius`, `maxRadius`** — zakres szukanych promieni; ustawiaj zgodnie ze skalą obiektu, inaczej algorytm wyłapie też okręgi rodzące się z szumu."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/d53/tutorial_py_houghcircles.html",
+          "title": "OpenCV Python tutorial — Hough Circle Transform",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-pulapki",
+      "title": "Sprawdź się: parametry HoughCircles",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołałeś `cv2.HoughCircles` na zdjęciu monet i otrzymujesz dziesiątki nakładających się fałszywych okręgów. Która pojedyncza zmiana **z największym prawdopodobieństwem** naprawi wynik?",
+        "options": [
+          "Wyraźnie zmniejszyć `param2`, żeby algorytm znalazł więcej kandydatów na środek.",
+          "Rozmyć obraz (np. `cv2.medianBlur` lub `cv2.GaussianBlur`) przed wywołaniem i ustawić `minDist` co najmniej rzędu spodziewanego promienia obiektu.",
+          "Przekonwertować obraz z BGR do RGB, bo `HoughCircles` oczekuje porządku kanałów RGB.",
+          "Zwiększyć `dp` do 3 lub 4, żeby akumulator miał grubsze komórki i mocniejsze szczyty."
+        ],
+        "correct": [1],
+        "explanation": "Lawina fałszywych okręgów wynika zwykle z dwóch typowych błędów: surowy, zaszumiony obraz produkuje gradienty „wszędzie\" (rozwiązanie: rozmycie przed wywołaniem) oraz zbyt mały `minDist` pozwala wielu kandydatom środka kliknąć tę samą monetę (rozwiązanie: `minDist` co najmniej rzędu spodziewanego promienia). Pozostałe odpowiedzi pogarszają sytuację: obniżanie `param2` zmniejsza próg głosów, więc dopuszcza WIĘCEJ kandydatów; `HoughCircles` operuje na pojedynczym kanale szarym, więc kolejność BGR vs RGB go nie dotyczy; wysokie `dp` rozmywa szczyt akumulatora po sąsiednich komórkach zamiast go zaostrzyć.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-circle-score",
+      "title": "Zaimplementuj liczenie głosów dla jednej kandydatki na okrąg",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Sercem akumulatora Hougha dla okręgów jest pytanie: **ile pikseli krawędziowych leży na okręgu o środku $(c_x, c_y)$ i promieniu $r$?**\n\nZaimplementuj funkcję `circle_score(points, cx, cy, r, tol=0.5)`, która:\n\n- przyjmuje listę punktów `points` (każdy to krotka `(x, y)`),\n- przyjmuje kandydata `(cx, cy, r)`,\n- zwraca liczbę punktów spełniających $\\bigl| \\sqrt{(x - c_x)^2 + (y - c_y)^2} - r \\bigr| \\le \\text{tol}$.\n\nTolerancja `tol` modeluje dyskretyzację siatki: punkt głosuje na okrąg, jeśli mieści się w wąskim pierścieniu wokół niego.\n\n```\n# Idealny okrag o promieniu 5 wokol (0, 0)\ncircle_score([(5, 0), (0, 5), (-5, 0), (0, -5)], cx=0, cy=0, r=5) == 4\n```",
+        "starterCode": "import math\n\ndef circle_score(points, cx, cy, r, tol=0.5):\n    # points: lista krotek (x, y)\n    # (cx, cy, r): parametry kandydatki na okrag\n    # tol: szerokosc pierscienia tolerancji\n    # TODO: zwroc liczbe punktow spelniajacych |sqrt((x-cx)**2 + (y-cy)**2) - r| <= tol\n    return 0\n",
+        "tests": [
+          {
+            "name": "idealny_okrag_promien_5",
+            "body": "assert circle_score([(5, 0), (0, 5), (-5, 0), (0, -5)], cx=0, cy=0, r=5, tol=0.5) == 4",
+            "hidden": false
+          },
+          {
+            "name": "outliery_poza_pierscieniem",
+            "body": "assert circle_score([(5, 0), (0, 5), (-5, 0), (0, -5), (10, 10), (1, 1)], cx=0, cy=0, r=5, tol=0.5) == 4"
+          },
+          {
+            "name": "zly_promien_zero_glosow",
+            "body": "assert circle_score([(5, 0), (0, 5), (-5, 0), (0, -5)], cx=0, cy=0, r=2, tol=0.5) == 0"
+          },
+          {
+            "name": "przesuniety_srodek",
+            "body": "import math\npoints = [(3 + math.cos(t), 4 + math.sin(t)) for t in [0, math.pi/2, math.pi, 3*math.pi/2]]\nassert circle_score(points, cx=3, cy=4, r=1, tol=0.1) == 4"
+          }
+        ],
+        "solution": "import math\n\ndef circle_score(points, cx, cy, r, tol=0.5):\n    count = 0\n    for x, y in points:\n        d = math.sqrt((x - cx) ** 2 + (y - cy) ** 2)\n        if abs(d - r) <= tol:\n            count += 1\n    return count\n"
+      }
+    },
+    {
+      "id": "sandbox-mini-akumulator",
+      "title": "Zbuduj mały akumulator (a, b) dla ustalonego promienia",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport math\n\n# Zaszumione punkty z okregu o srodku (5, 5) i promieniu 3\nrng = np.random.default_rng(0)\nn_pts = 60\nang = rng.uniform(0.0, 2 * np.pi, n_pts)\nxs = 5.0 + 3.0 * np.cos(ang) + rng.uniform(-0.2, 0.2, n_pts)\nys = 5.0 + 3.0 * np.sin(ang) + rng.uniform(-0.2, 0.2, n_pts)\npoints = list(zip(xs.tolist(), ys.tolist()))\n\n# Ustalamy promien i przeszukujemy siatke (a, b) - pokrec parametrami\nr = 3.0\ntol = 0.3\na_vals = np.linspace(0.0, 10.0, 41)\nb_vals = np.linspace(0.0, 10.0, 41)\n\nacc = np.zeros((len(a_vals), len(b_vals)), dtype=int)\nfor x, y in points:\n    for i, a in enumerate(a_vals):\n        for j, b in enumerate(b_vals):\n            if abs(math.sqrt((x - a) ** 2 + (y - b) ** 2) - r) <= tol:\n                acc[i, j] += 1\n\npeak = np.unravel_index(int(np.argmax(acc)), acc.shape)\nprint('Liczba punktow:', n_pts)\nprint('Najlepszy srodek (a, b):', round(float(a_vals[peak[0]]), 2), round(float(b_vals[peak[1]]), 2))\nprint('Glosy w szczycie:', int(acc[peak[0], peak[1]]))\n",
+        "encouragement": "Spróbuj przesunąć `r` o 0.5 lub zacieśnić `tol` — zobacz, jak szybko głosy w szczycie spadają, kiedy promień przestaje pasować do danych."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Circle_Hough_Transform",
+      "title": "Circle Hough Transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d53/tutorial_py_houghcircles.html",
+      "title": "OpenCV Python tutorial — Hough Circle Transform",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1016/0262-8856(90)90059-E",
+      "title": "Comparative study of Hough Transform methods for circle finding (Image and Vision Computing, 1990)",
+      "kind": "paper",
+      "author": "H. K. Yuen, J. Princen, J. Illingworth and J. Kittler",
+      "year": 1990
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7 Feature detection and matching",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

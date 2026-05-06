@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "slug": "deskryptory-sift-i-surf",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m5",
+  "title": "Deskryptory SIFT i SURF",
+  "eyebrow": "CECHY LOKALNE",
+  "description": "Od ograniczenia detektora narożników po dwa klasyczne deskryptory skalowo- i obrotowo-niezmiennicze: SIFT (DoG + 128-D wektor) i jego szybsze przybliżenie SURF (wyznacznik Hessianu + obraz całkowy + 64-D wektor) — z testem Lowe'a w roli filtra pasujących par.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "po-co-skalowa-niezmienniczosc",
+      "title": "Narożnik to za mało: dlaczego potrzebujemy deskryptora",
+      "type": "theory",
+      "data": {
+        "markdown": "Detektor Harrisa z poprzedniej lekcji świetnie znajduje *gdzie* są ciekawe punkty, ale milczy o tym, *czym one są*. Jeśli zrobisz drugie zdjęcie tego samego budynku z innego miejsca albo bliżej, narożniki będą w innych pikselach — i bez „odcisku palca\" wokół każdego z nich nie ma jak ich skojarzyć. Co gorsza, sam Harris **nie jest skalowo-niezmienniczy**: ten sam róg z odległości 5 m i 50 m daje inną odpowiedź $R$, bo gradient liczony jest w tym samym fizycznym oknie 3 × 3 pikseli — czyli w innym fizycznym kontekście.\n\n![Para zdjęć tego samego pojazdu z różnych odległości i kątów. Lewa: oryginalne zdjęcie z naniesionymi setkami żółtych okręgów reprezentujących keypointy SIFT — każdy okrąg ma swoją skalę (rozmiar) i orientację (kreska wewnątrz). Prawa: ta sama scena po cyfrowym przeskalowaniu i obrocie — keypointy SIFT pojawiają się w odpowiednich miejscach z odpowiednimi skalami i kątami, więc dopasowanie 1:1 jest możliwe.](https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Sift_keypoints_filtering.jpg/640px-Sift_keypoints_filtering.jpg)\n\n*(Obraz: Wikimedia Commons, plik `Sift_keypoints_filtering.jpg` — kanoniczna ilustracja z artykułu Wikipedii o SIFT.)*\n\n**Deskryptor lokalny** to wektor liczb opisujący lokalne otoczenie keypointu w sposób:\n\n- **niezmienniczy** ze względu na skalę (zoom), obrót, a w dużym stopniu też zmianę oświetlenia,\n- **odróżnialny** — różne miejsca obrazu dają wektory daleko od siebie w sensie L2,\n- **kompaktowy** — jedna liczba na piksel okna byłaby wektorem 1024-D, więc trzeba go *streszczać*.\n\nW tej lekcji poznasz dwa klasyczne, ważone historycznie deskryptory: **SIFT** (Lowe 2004), który jest złotym standardem i punktem odniesienia, oraz **SURF** (Bay 2006), który mając ~3× szybszy pipeline, stał się popularnym kompromisem szybkość/jakość przed erą deskryptorów binarnych (ORB, BRISK, AKAZE — następna lekcja)."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Scale-invariant_feature_transform",
+          "title": "Scale-invariant feature transform — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sift-cztery-kroki",
+      "title": "SIFT — anatomia algorytmu w czterech krokach",
+      "type": "theory",
+      "data": {
+        "markdown": "**SIFT** (*Scale-Invariant Feature Transform*, Lowe 2004) sprowadza się do czterech etapów; OpenCV chowa je za jednym wywołaniem `cv2.SIFT_create().detectAndCompute(img, None)`, ale warto wiedzieć, co dzieje się w środku.\n\n**1. Skala-przestrzeń i Difference of Gaussians (DoG).** Dla każdego piksela budowana jest piramida obrazów rozmytych Gaussem z rosnącą $\\sigma$:\n\n$$ L(x, y, \\sigma) \\;=\\; G(x, y, \\sigma) \\,\\ast\\, I(x, y), \\qquad D(x, y, \\sigma) \\;=\\; L(x, y, k\\sigma) - L(x, y, \\sigma) $$\n\nDoG $D$ jest tanim przybliżeniem znormalizowanego skalą laplasjanu $\\sigma^2 \\nabla^2 G$ — operatora, który ma ekstrema dokładnie tam, gdzie są *blob-y* w obrazie.\n\n**2. Lokalizacja keypointów.** Kandydat to taki $(x, y, \\sigma)$, w którym $D$ jest ekstremum w okienku $3 \\times 3 \\times 3$ (sąsiedzi w przestrzeni i w skali). Następnie Lowe interpoluje pozycję sub-pikselowo (rozwiązanie układu $\\nabla D = 0$ wokół ekstremum) i odrzuca słabe (mała odpowiedź) oraz krawędziowe (analogiczne kryterium do Harrisa, na macierzy Hessianu) kandydatury.\n\n**3. Orientacja dominująca.** Wokół każdego keypointu liczony jest histogram gradientów (36 koszyków po 10°), ważony Gaussem o $\\sigma$ proporcjonalnej do skali keypointu. Pik histogramu daje *orientację* — od tej chwili wszystkie dalsze obliczenia robione są **względem niej**, co daje obrót-niezmienniczość. Jeśli jest drugi pik powyżej 80% wysokości głównego, generowany jest dodatkowy keypoint z tą samą pozycją i drugą orientacją.\n\n**4. Deskryptor 128-D.** Wokół keypointu (znormalizowanego skalą i obrotem) wycinana jest siatka $4 \\times 4$ podblocków po $4 \\times 4$ piksele. W każdym podbloku liczony jest histogram gradientów w 8 kierunkach. Daje to wektor o długości $4 \\cdot 4 \\cdot 8 = 128$. Wektor jest L2-normalizowany, obcinany do 0,2 (tłumi efekt zmian oświetlenia), znów normalizowany — i to jest finalny deskryptor SIFT.\n\nNie musisz tego ręcznie liczyć: `cv2.SIFT_create()` w OpenCV ≥ 4.4 zwraca listę keypointów + macierz `(N, 128)` `float32`. Patent Lowe'a wygasł w marcu 2020 i odtąd SIFT mieszka **w głównym module** OpenCV, nie w `opencv-contrib`."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+          "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004)",
+          "kind": "paper",
+          "author": "David G. Lowe",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "surf-przyspieszenie",
+      "title": "SURF — to samo, tylko szybciej",
+      "type": "theory",
+      "data": {
+        "markdown": "**SURF** (*Speeded Up Robust Features*, Bay, Tuytelaars, Van Gool 2006) miał jedno hasło: *„Tak samo jak SIFT, ale 3× szybciej\"*. Trzy główne triki:\n\n**1. Wyznacznik Hessianu zamiast DoG.** Keypoint to ekstremum funkcji $\\det H_\\sigma$, gdzie $H$ to macierz drugich pochodnych $L_{xx}, L_{yy}, L_{xy}$ rozmytego Gaussem obrazu.\n\n**2. Aproksymacja box-filtrami i obraz całkowy.** Drugie pochodne Gaussa SURF zastępuje prostokątnymi *„box-filtrami\"*, które na obrazie całkowym (*integral image*) liczy się w **stałym czasie** niezależnie od rozmiaru filtra:\n\n$$ \\Sigma_{\\text{box}}(x_1, y_1, x_2, y_2) \\;=\\; \\Sigma(x_2, y_2) - \\Sigma(x_1{-}1, y_2) - \\Sigma(x_2, y_1{-}1) + \\Sigma(x_1{-}1, y_1{-}1) $$\n\nDzięki temu zamiast budować piramidę co-raz-mniejszych obrazów (tak robi SIFT), SURF zostawia obraz w oryginalnym rozmiarze i **powiększa filtr** — co dodatkowo przyspiesza, bo nie trzeba interpolować pikseli.\n\n**3. Krótszy deskryptor 64-D.** Wokół keypointu liczone są sumy odpowiedzi falek Haara $d_x, d_y$ w siatce $4 \\times 4$. W każdym polu zachowywane są cztery liczby: $\\sum d_x, \\sum d_y, \\sum |d_x|, \\sum |d_y|$. Razem $4 \\cdot 4 \\cdot 4 = 64$ wymiary (jest też wariant `extended=True` z 128, ale 64 wystarcza).\n\nZ punktu widzenia użytkownika: deskryptory są jakościowo porównywalne, SURF jest 2–3× szybszy w typowych warunkach, ale **patent SURF wciąż obowiązuje** (US 8,165,401 oraz EU). W OpenCV SURF żyje w module `opencv-contrib`, w `cv2.xfeatures2d.SURF_create`, i jest dostępny tylko, jeśli zbudujesz OpenCV z flagą `OPENCV_ENABLE_NONFREE=ON`. W praktyce to ogranicza go do badań i projektów akademickich; w produkcji częściej sięga się dziś po ORB lub AKAZE (kolejna lekcja)."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/11744023_32",
+          "title": "Bay, H., Tuytelaars, T. and Van Gool, L. — SURF: Speeded Up Robust Features (ECCV 2006)",
+          "kind": "paper",
+          "author": "Herbert Bay, Tinne Tuytelaars and Luc Van Gool",
+          "year": 2006
+        }
+      ]
+    },
+    {
+      "id": "porownanie-tabelaryczne",
+      "title": "SIFT vs SURF — co wybrać i kiedy",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "wymiar", "label": "Wymiar", "type": "string" },
+          { "key": "sift", "label": "SIFT", "type": "string" },
+          { "key": "surf", "label": "SURF", "type": "string" }
+        ],
+        "rows": [
+          {
+            "wymiar": "Detektor keypointów",
+            "sift": "Ekstrema Difference of Gaussians (DoG) w piramidzie skali",
+            "surf": "Ekstrema wyznacznika Hessianu (Hessian-determinant) na obrazie całkowym"
+          },
+          {
+            "wymiar": "Długość deskryptora",
+            "sift": "128 (4 × 4 podbloki × 8 kierunków)",
+            "surf": "64 domyślnie (extended=True → 128)"
+          },
+          {
+            "wymiar": "Dtype deskryptora",
+            "sift": "float32",
+            "surf": "float32"
+          },
+          {
+            "wymiar": "Niezmienniczość",
+            "sift": "Skala, obrót, częściowo oświetlenie i affine",
+            "surf": "Skala, obrót, częściowo oświetlenie i affine"
+          },
+          {
+            "wymiar": "Czas (rząd wielkości)",
+            "sift": "Bazowy: ~1 ×",
+            "surf": "Szybsze: ~2–3 × niż SIFT (dzięki obrazowi całkowemu)"
+          },
+          {
+            "wymiar": "Status patentowy (2026)",
+            "sift": "Patent wygasł w marcu 2020 — wolne do użycia",
+            "surf": "Patent nadal obowiązuje — non-free w OpenCV"
+          },
+          {
+            "wymiar": "Moduł OpenCV",
+            "sift": "Główny moduł: cv2.SIFT_create() (od OpenCV 4.4)",
+            "surf": "opencv-contrib: cv2.xfeatures2d.SURF_create() (wymaga OPENCV_ENABLE_NONFREE=ON)"
+          },
+          {
+            "wymiar": "Typowy matcher",
+            "sift": "FLANN z indeksem KD-tree lub BFMatcher z normą L2",
+            "surf": "Identycznie — FLANN/BFMatcher z normą L2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-patent-i-licencja",
+      "title": "Sprawdź się: który deskryptor wolno mi użyć w produkcie?",
+      "type": "quiz",
+      "data": {
+        "question": "Piszesz aplikację komercyjną (zamknięte źródło, sprzedawana klientom) i chcesz zastosować deskryptor lokalny do dopasowania zdjęć produktów. Które stwierdzenie jest poprawne w roku 2026?",
+        "options": [
+          "Ani SIFT, ani SURF nie da się legalnie użyć w komercji — oba są opatentowane i dostępne tylko w `opencv-contrib`.",
+          "SIFT jest wolny do użycia (patent Lowe'a wygasł w marcu 2020 i SIFT mieszka teraz w głównym module `cv2`); SURF wciąż jest objęty patentem i wymaga `opencv-contrib` zbudowanego z `OPENCV_ENABLE_NONFREE=ON`.",
+          "Oba są wolne, bo OpenCV jest na licencji Apache 2.0 — licencja biblioteki nadrzędna jest nad ewentualnymi patentami.",
+          "Tylko SURF jest wolny — to jego nazwa „Speeded Up Robust Features\" oznacza, że został zaprojektowany jako otwarta alternatywa dla zamkniętego SIFT."
+        ],
+        "correct": [1],
+        "explanation": "Patent Lowe'a na SIFT (US 6,711,293) wygasł 6 marca 2020. Od OpenCV 4.4 SIFT jest w głównym module jako `cv2.SIFT_create()` — używasz go bez ograniczeń, również komercyjnie. SURF jest patentowo objęty zarówno w USA, jak i Europie (Bay et al.), więc OpenCV trzyma go w `opencv-contrib/xfeatures2d` i kompiluje tylko z flagą `OPENCV_ENABLE_NONFREE=ON`; w produkcji najczęściej zastępujesz go ORB-em lub AKAZE-m (następna lekcja). Odpowiedź A jest historycznie prawdziwa, ale **nieaktualna** od 2020 roku. Odpowiedź C myli licencję biblioteki (open source) z patentami algorytmów — to dwa różne obszary prawne. Odpowiedź D odwraca rzeczywistość: SURF powstał *po* SIFT i jest *bardziej* opatentowany, nie mniej.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-lowe-ratio-test",
+      "title": "Zaimplementuj test Lowe'a (ratio test) na surowych odległościach",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "**Test Lowe'a** to filtr, który po dopasowaniu k-NN (z $k = 2$) decyduje, które dopasowania zachować. Idea: jeśli najbliższy sąsiad jest *wyraźnie* bliższy od drugiego najbliższego, dopasowanie jest jednoznaczne i raczej poprawne. Jeśli oba są blisko siebie — keypoint prawdopodobnie należy do powtarzalnej tekstury (cegły, liście) i lepiej go odrzucić.\n\nFormalnie zachowujemy parę, dla której:\n\n$$ d_1 \\;<\\; r \\cdot d_2 $$\n\ngdzie $d_1 \\leq d_2$ to L2-odległości od deskryptora-zapytania do dwóch jego najbliższych sąsiadów w zbiorze treningowym, a $r$ to próg (Lowe sugeruje $r = 0{,}75$).\n\nNapisz funkcję `lowe_ratio_filter(neighbors, ratio=0.75)`, która:\n\n1. Bierze listę par `[(d1, d2), ...]` (każdy element to dwie liczby rzeczywiste, gdzie $d_1 \\leq d_2$).\n2. Zwraca **listę indeksów** (`int`) tych elementów, które przechodzą test Lowe'a — czyli spełniają $d_1 < r \\cdot d_2$.\n3. Indeksy w wyniku MUSZĄ być w **rosnącej kolejności** (kolejność wejściowa).\n4. Jeśli $d_2 = 0$, traktuj parę jako odrzuconą (test jest niezdefiniowany — nieskończenie wiele „idealnych\" sąsiadów).\n\n```\nlowe_ratio_filter([(0.10, 0.50), (0.40, 0.45), (0.20, 0.80)], 0.75)\n# -> [0, 2]  (pierwsza i trzecia para przechodza; druga ma d1/d2 ~ 0.89 > 0.75)\n```",
+        "starterCode": "def lowe_ratio_filter(neighbors, ratio=0.75):\n    # neighbors: list[tuple[float, float]] gdzie kazda krotka to (d1, d2), d1 <= d2.\n    # ratio: float, prog Lowe'a (typowo 0.7 - 0.8).\n    #\n    # Zwroc liste intow: indeksy par speniajacych d1 < ratio * d2,\n    # w rosnacej kolejnosci. Pomin pary z d2 == 0.\n    keep = []\n    for i, (d1, d2) in enumerate(neighbors):\n        # TODO: zaimplementuj test Lowe'a.\n        pass\n    return keep\n",
+        "tests": [
+          {
+            "name": "podstawowy_przyklad_z_brief",
+            "body": "result = lowe_ratio_filter([(0.10, 0.50), (0.40, 0.45), (0.20, 0.80)], 0.75)\nassert result == [0, 2], f'oczekiwano [0, 2], jest {result}'",
+            "hidden": false
+          },
+          {
+            "name": "wszystko_przechodzi_przy_luznym_progu",
+            "body": "# Przy ratio=1.0 kazda para z d1 < d2 powinna przejsc.\npairs = [(0.1, 0.2), (0.5, 0.6), (0.0, 1.0)]\nresult = lowe_ratio_filter(pairs, 1.0)\nassert result == [0, 1, 2], f'oczekiwano [0, 1, 2], jest {result}'"
+          },
+          {
+            "name": "nic_nie_przechodzi_przy_surowym_progu",
+            "body": "# Przy ratio=0.1 zaden d1 nie bedzie wyraznie mniejszy od 0.1 * d2.\npairs = [(0.10, 0.50), (0.40, 0.45), (0.20, 0.80)]\nresult = lowe_ratio_filter(pairs, 0.1)\nassert result == [], f'oczekiwano [], jest {result}'"
+          },
+          {
+            "name": "obsluga_d2_rownego_zero",
+            "body": "# d2 = 0 powinno zostac odrzucone (test niezdefiniowany).\n# d1 = 0, d2 = 0: rowniez odrzucone.\n# Pierwsza para (d1=0.1, d2=0.4): 0.1 < 0.75 * 0.4 = 0.3, przechodzi.\nresult = lowe_ratio_filter([(0.1, 0.4), (0.0, 0.0), (0.5, 0.0)], 0.75)\nassert result == [0], f'oczekiwano [0], jest {result}'"
+          },
+          {
+            "name": "kolejnosc_indeksow_rosnaca",
+            "body": "# 100 par losowych - sprawdz, czy indeksy wynikowe sa rosnace.\nimport random\nrandom.seed(7)\npairs = [(random.uniform(0.0, 1.0), random.uniform(1.0, 2.0)) for _ in range(100)]\nresult = lowe_ratio_filter(pairs, 0.75)\nassert result == sorted(result), 'indeksy wyniku musza byc rosnace'\nassert len(set(result)) == len(result), 'indeksy w wyniku musza byc unikalne'\n# Sanity: kazdy zachowany indeks faktycznie przechodzi test.\nfor i in result:\n    d1, d2 = pairs[i]\n    assert d2 > 0 and d1 < 0.75 * d2, f'para {i} nie przechodzi testu: d1={d1}, d2={d2}'"
+          }
+        ],
+        "solution": "def lowe_ratio_filter(neighbors, ratio=0.75):\n    keep = []\n    for i, (d1, d2) in enumerate(neighbors):\n        if d2 > 0 and d1 < ratio * d2:\n            keep.append(i)\n    return keep\n"
+      }
+    },
+    {
+      "id": "sandbox-sift-on-image",
+      "title": "Piaskownica: `cv2.SIFT_create` na syntetycznej scenie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Syntetyczna 'scena' - pare jasnych okregow i prostokatow na ciemnym tle.\n# SIFT lubi blob-y, wiec okregi daja silne keypointy w roznych skalach.\nH, W = 240, 360\nimg = np.zeros((H, W), dtype=np.uint8)\ncv2.circle(img, ( 60,  60), 18, 240, thickness=-1)\ncv2.circle(img, (180, 100), 30, 200, thickness=-1)\ncv2.circle(img, (300, 160), 12, 220, thickness=-1)\ncv2.rectangle(img, (40, 150), (110, 210), 180, thickness=-1)\nimg = cv2.GaussianBlur(img, (3, 3), 0.7)\n\n# --- SIFT ---\n# Domyslne parametry (Lowe 2004): nfeatures=0 (bez ograniczenia),\n# nOctaveLayers=3, contrastThreshold=0.04, edgeThreshold=10, sigma=1.6.\nsift = cv2.SIFT_create()\nkeypoints, descriptors = sift.detectAndCompute(img, mask=None)\n\nprint('SIFT: znaleziono', len(keypoints), 'keypointow.')\nif descriptors is not None:\n    print('     deskryptory shape =', descriptors.shape, 'dtype =', descriptors.dtype)\n\n# Sprawdz pierwsze 5 keypointow: pozycja (x, y), skala, orientacja w stopniach.\nfor i, kp in enumerate(keypoints[:5]):\n    print(f'  kp[{i}] -> (x={kp.pt[0]:5.1f}, y={kp.pt[1]:5.1f}), '\n          f'size={kp.size:5.2f}, angle={kp.angle:6.1f}, response={kp.response:.4f}')\n\n# Pytania do siebie:\n#   * Zmien sift = cv2.SIFT_create(contrastThreshold=0.10) - ile keypointow zostaje?\n#     (im wyzszy prog, tym mniej keypointow, ale silniejszych).\n#   * Zmien sigma na 0.8 - co dzieje sie z najmniejsza skala wykrywanych blob-ow?\n#   * Zwieksz nOctaveLayers do 5 - czy znajdujesz wiecej keypointow w roznych skalach?\n#   * Sprawdz, czy descriptors.shape[1] zawsze rowna sie 128 - to definicyjna dlugosc deskryptora SIFT.\n#   * (jezeli masz dostep do drugiego obrazu, np. cv2.imread('cameraman.png', 0))\n#     odpal sift.detectAndCompute na obu i policz pary najblizszych sasiadow przez\n#     cv2.BFMatcher(cv2.NORM_L2).knnMatch(desc1, desc2, k=2), a potem zastosuj\n#     test Lowe'a z poprzedniego cwiczenia (m.distance < 0.75 * n.distance).\n",
+        "encouragement": "Pokombinuj parametrami SIFT i obserwuj, jak `len(keypoints)` reaguje — to najszybszy sposób, by wyrobić sobie intuicję, co progi `contrast` i `edge` faktycznie robią."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/df5/tutorial_py_sift_intro.html",
+          "title": "OpenCV Python tutorial — Introduction to SIFT",
+          "kind": "article"
+        }
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1023/B:VISI.0000029664.99615.94",
+      "title": "Lowe, D. G. — Distinctive Image Features from Scale-Invariant Keypoints (IJCV 2004)",
+      "kind": "paper",
+      "author": "David G. Lowe",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1007/11744023_32",
+      "title": "Bay, H., Tuytelaars, T. and Van Gool, L. — SURF: Speeded Up Robust Features (ECCV 2006)",
+      "kind": "paper",
+      "author": "Herbert Bay, Tinne Tuytelaars and Luc Van Gool",
+      "year": 2006
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/df5/tutorial_py_sift_intro.html",
+      "title": "OpenCV Python tutorial — Introduction to SIFT",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Scale-invariant_feature_transform",
+      "title": "Scale-invariant feature transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7.1 (Points and patches)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtr-kalmana-i-mini-projekt-mot",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m6",
+  "title": "Filtr Kalmana i mini-projekt MOT",
+  "eyebrow": "MINI-PROJEKT",
+  "description": "Dopinamy moduł 6: filtr Kalmana wygładza drżenie trackera i pozwala ścieżce 'lecieć dalej' przez krótkie okluzje. Składamy w jeden pipeline MOT: detekcja → predict → bramkowanie → asocjacja → update → spawn / drop.",
+  "estimatedMinutes": 22,
+  "sections": [
+    {
+      "id": "po-co-kalman",
+      "title": "Po co filtr Kalmana w MOT",
+      "type": "theory",
+      "data": {
+        "markdown": "Tracker (KCF/CSRT/MOSSE z poprzedniej lekcji) zwraca *jeden bbox na klatkę* — i to wszystko. Gdy złożysz pełen pipeline **MOT (Multiple Object Tracking)** — detektor + asocjacja + tracker per-obiekt + zliczanie linii — szybko trafiasz na trzy zgrzyty, których sam tracker nie rozwiąże:\n\n1. **Drżenie estymaty** — środek bboxa skacze klatka po klatce o 2–4 px, nawet gdy obiekt płynie po linii prostej. To efekt sub-pikselowego dopasowania filtra korelacyjnego, nie ruchu obiektu. Trajektoria narysowana po surowych pomiarach trackera wygląda jak zygzak.\n2. **Krótkie zgubienia** — `tracker.update()` co kilkadziesiąt klatek zwraca `ok=False` (okluzja, ostry odblask, zmiana skali). Sam tracker nie powie ci, *gdzie* obiekt prawdopodobnie się znajduje; jego ostatnia znana pozycja jest po prostu *ostatnia*.\n3. **Asocjacja detekcji ↔ ścieżek** — w MOT detektor wypluwa zbiór bboxów dla *całej* klatki. Aby przypisać każdy bbox do istniejącej ścieżki (a nie utworzyć nową dla każdej klatki), trzeba wiedzieć, *gdzie ścieżka powinna być teraz* — inaczej dwa blisko siebie obiekty zamienią się tożsamościami.\n\n**Filtr Kalmana** rozwiązuje wszystkie trzy. Trzyma stan obiektu — typowo $\\mathbf{x} = [p_x, p_y, v_x, v_y]^{T}$ (pozycja + prędkość) — oraz macierz kowariancji $P$, która mówi, *o ile się myli*. W każdej klatce wykonuje dwa kroki: **predict** ekstrapoluje stan modelem dynamiki (np. ruch jednostajny prostoliniowy $p \\mathrel{+}= v\\,\\Delta t$), powiększając niepewność, a **update** koryguje predykcję świeżym pomiarem ważąc oba źródła proporcjonalnie do ich kowariancji.\n\n![Schemat pętli predict → update z artykułu Wikipedii o filtrze Kalmana: bloki „Update step” (innowacja $y$, wzmocnienie $K$, korekta stanu i kowariancji) oraz „Predict step” (propagacja stanu macierzą $F$ i kowariancji $F P F^T + Q$) tworzą rekurencyjny cykl iterowany dla każdej klatki, pomiar $z$ wpada do bloku update, a estymata wraca do predict](https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Basic_concept_of_Kalman_filtering.svg/500px-Basic_concept_of_Kalman_filtering.svg.png)\n\n*(Obraz: Wikimedia Commons, Petteri Aimonen, [File:Basic_concept_of_Kalman_filtering.svg](https://commons.wikimedia.org/wiki/File:Basic_concept_of_Kalman_filtering.svg) — domena publiczna.)*\n\nTo trzy własności w pakiecie: (1) **wygładzenie** drżenia trackera bez agresywnego uśredniania, które zabiłoby reakcję na faktyczny zwrot obiektu; (2) **predykcja na klatki bez pomiaru** — gdy `ok=False`, robisz `predict()` bez `update()` i ścieżka „leci dalej” rozsądną prędkością przez 2–3 klatki okluzji; (3) **kowariancja $P$** używana w *bramkowaniu* asocjacji — pomiar dalszy niż $3\\sigma$ od predykcji nie pasuje do tej ścieżki, kropka.\n\nWażne zastrzeżenie: filtr Kalmana jest **optymalny tylko dla modeli liniowych z gaussowskim szumem**. Nasz model „stała prędkość + biały szum gaussowski w przyspieszeniu” jest celowo prostym przybliżeniem — wystarcza dla pieszych w równym tempie, ale dla obiektów manewrujących (skok piłki, gwałtowny zwrot) trzeba sięgnąć po bogatszy model (constant-acceleration, IMM) albo wariant nieliniowy (UKF / EKF)."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1115/1.3662552",
+          "title": "Kalman, R. E. — A New Approach to Linear Filtering and Prediction Problems (ASME Journal of Basic Engineering, 1960)",
+          "kind": "paper",
+          "author": "Rudolf E. Kálmán",
+          "year": 1960
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Kalman_filter",
+          "title": "Kalman filter — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "stan-i-rownania",
+      "title": "Stan, dynamika i równania predict / update",
+      "type": "theory",
+      "data": {
+        "markdown": "Dla śledzenia środka bboxa w obrazie standardowy model to **constant velocity** w 2D. Stan $\\mathbf{x}$ i pomiar $\\mathbf{z}$:\n\n$$ \\mathbf{x} = \\begin{bmatrix} p_x \\\\ p_y \\\\ v_x \\\\ v_y \\end{bmatrix}, \\qquad \\mathbf{z} = \\begin{bmatrix} m_x \\\\ m_y \\end{bmatrix} $$\n\n— pomiar jest 2-wymiarowy (środek bboxa zwracany przez tracker albo detektor), stan jest 4-wymiarowy, bo prędkość ukrywa się przed pomiarem i Kalman musi ją *wywnioskować* z różnic kolejnych pozycji.\n\nEwolucja stanu: $\\mathbf{x}_k = F\\mathbf{x}_{k-1} + \\mathbf{w}$, gdzie $\\mathbf{w} \\sim \\mathcal{N}(0, Q)$ to szum procesu (modeluje to, że obiekt jednak czasem przyspiesza), a macierz przejścia $F$ przy $\\Delta t = 1$ klatka:\n\n$$ F = \\begin{bmatrix} 1 & 0 & \\Delta t & 0 \\\\ 0 & 1 & 0 & \\Delta t \\\\ 0 & 0 & 1 & 0 \\\\ 0 & 0 & 0 & 1 \\end{bmatrix}, \\qquad H = \\begin{bmatrix} 1 & 0 & 0 & 0 \\\\ 0 & 1 & 0 & 0 \\end{bmatrix} $$\n\nMacierz pomiaru $H$ „wyciąga” z 4-wymiarowego stanu tylko pozycję — pomiar widzi $p_x, p_y$, prędkości pozostają ukryte. Pomiar ma własny szum $\\mathbf{v} \\sim \\mathcal{N}(0, R)$, gdzie $R$ to kowariancja niedokładności pomiaru.\n\n**Predict** (krok dynamiczny, bez pomiaru):\n\n$$ \\hat{\\mathbf{x}}^{-} = F\\,\\hat{\\mathbf{x}}, \\qquad P^{-} = F\\,P\\,F^{T} + Q $$\n\n**Update** (korekta pomiarem $\\mathbf{z}$):\n\n$$ \\mathbf{y} = \\mathbf{z} - H\\hat{\\mathbf{x}}^{-}, \\quad S = H\\,P^{-}\\,H^{T} + R, \\quad K = P^{-}\\,H^{T}\\,S^{-1} $$\n\n$$ \\hat{\\mathbf{x}} = \\hat{\\mathbf{x}}^{-} + K\\,\\mathbf{y}, \\qquad P = (I - K\\,H)\\,P^{-} $$\n\nWzmocnienie $K$ (Kalman gain) automatycznie waży, czemu wierzyć: gdy $R$ jest duże (pomiary szumne), $K \\to 0$ i filtr trzyma się modelu; gdy $Q$ jest duże (model słabo ufa stałej prędkości), $K$ rośnie i filtr coraz mocniej trzyma się pomiaru. Strojenie filtra to dobranie $Q$ i $R$ — **nie** $K$, które wynika z nich automatycznie.\n\nOpenCV daje gotową implementację: `cv2.KalmanFilter(dynamParams=4, measureParams=2)` udostępnia `transitionMatrix` ($= F$), `measurementMatrix` ($= H$), `processNoiseCov` ($= Q$), `measurementNoiseCov` ($= R$), `errorCovPost` ($= P$) i metody `predict()` oraz `correct(z)`. W ćwiczeniu 1-D zaimplementujesz krok od zera — zobaczysz, że to dosłownie sześć linijek NumPy. W mini-projekcie i piaskowniczej posłużymy się gotowym `cv2.KalmanFilter` z $\\Delta t = 1$."
+      },
+      "sources": [
+        {
+          "url": "https://www.cs.unc.edu/~welch/media/pdf/kalman_intro.pdf",
+          "title": "Welch, G. and Bishop, G. — An Introduction to the Kalman Filter (UNC-Chapel Hill TR 95-041, 2006)",
+          "kind": "paper",
+          "author": "Greg Welch and Gary Bishop",
+          "year": 2006
+        }
+      ]
+    },
+    {
+      "id": "quiz-zgubiona-klatka",
+      "title": "Sprawdź się: tracker zwrócił `ok=False`",
+      "type": "quiz",
+      "data": {
+        "question": "Tracker zgłasza `ok=False` dla *jednej* klatki w środku trwającej ścieżki. Każda Twoja ścieżka MOT jest opakowana filtrem Kalmana (constant-velocity, stan `[px, py, vx, vy]`). Jak poprawnie zareagować w tej klatce, zanim w kolejnej spróbujesz ponowić asocjację z detektorem?",
+        "options": [
+          "Wywołać `kf.predict()` i zaraz potem `kf.correct(z_last)` z ostatnim znanym pomiarem — żeby Kalman dostał *coś* i nie zerwał rytmu aktualizacji.",
+          "Wywołać tylko `kf.predict()`, krok korekty pominąć w tej klatce; niepewność `P` urośnie naturalnie przez `P_pred = F P Fᵀ + Q`, a estymata będzie ekstrapolowana modelem stałej prędkości.",
+          "Zarchiwizować ścieżkę jako *zgubioną*, a gdy tracker w kolejnej klatce wróci z `ok=True` — utworzyć nową ścieżkę z nowym `track_id`.",
+          "Zresetować stan filtra (`statePost = 0`, `errorCovPost = I`) — okluzja unieważnia historię i lepiej zacząć od nowa.",
+          "Pominąć obie operacje w tej klatce — *nie* wywołać ani `predict()`, ani `correct()`. Stan filtra zostaje zamrożony do następnego udanego pomiaru."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "**Poprawna odpowiedź: B** — to standardowy wzorzec „coastingu” przez krótką okluzję.\n\n`predict()` ekstrapoluje stan macierzą $F$ (pozycja przesuwa się o $v\\,\\Delta t$, prędkość zostaje), a kowariancja $P$ rośnie zgodnie z $P^{-} = F P F^{T} + Q$. Dzięki temu w *następnej* klatce, gdy detektor wróci z prawdziwym pomiarem, asocjacja oprze się o realistyczną pozycję ścieżki, a bramka $3\\sigma$ poprawnie się rozszerzy. Po 2–3 klatkach predict-only $P$ jest na tyle duża, że nawet pomiar trochę przesunięty wpadnie w bramkę — a jeśli przez `max_misses` klatek (typowo 3–5) żaden pomiar się nie pojawia, ścieżka jest dropowana.\n\n**A** — wstawienie *starego* pomiaru do `correct()` to bug, który wygląda niewinnie, ale niszczy filtr. Innowacja $y = z_\\text{last} - H\\hat{\\mathbf{x}}^{-}$ jest obliczona względem przeszłej pozycji, więc **zerowa albo bliska zera** (bo `predict()` przesunął już $\\hat{\\mathbf{x}}$ do przodu o ilość, którą $z_\\text{last}$ widziało godzinę temu); Kalman wnioskuje, że obiekt się nie ruszył — i zabija prędkość. Po 2-3 takich klatkach prędkość wyzeruje się i filtr przestanie wyprzedzać obiekt.\n\n**C** — zerwanie tożsamości po jednej klatce zgubienia mija się z całym celem trackingu. Punktem MOT jest, że *to wciąż ten sam obiekt z poprzedniej klatki*. Producja MOT typowo dropuje ścieżkę dopiero po 3–5 kolejnych klatkach `ok=False` (parametr `max_misses`).\n\n**D** — reset niszczy nauczoną prędkość. Po resecie filtr „nie wie”, w którą stronę szła ścieżka, więc gdy tracker wróci, predykcja na nowej klatce będzie statyczna i pomiar może wypaść poza bramkę. Reset jest dopuszczalny tylko przy spawning *nowej* ścieżki, nigdy w środku trwającej.\n\n**E** — zamrożenie stanu wygląda jak „bezpieczna” opcja, ale niewywołanie `predict()` oznacza, że predykcja w *następnej* klatce będzie liczona od pozycji starszej o jedną klatkę. Jeśli obiekt się rusza, to natychmiastowy bias w asocjacji i ryzyko przerzutu tożsamości na sąsiednią ścieżkę.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-kalman-1d",
+      "title": "Ćwiczenie: jeden krok filtra Kalmana w 1-D",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **jeden krok** filtra Kalmana w 1-D (stan: `[pozycja, prędkość]`, pomiar skalarny: pozycja). To dokładnie te równania z lekcji, tylko że w jednowymiarowej projekcji — bez `cv2`, czysty NumPy.\n\nSygnatura:\n\n```python\nkalman_step_1d(x_prev, P_prev, z, dt, q, r) -> (x_new, P_new)\n```\n\n- `x_prev` — `np.ndarray` shape `(2,)`, $[p, v]^{T}$.\n- `P_prev` — `np.ndarray` shape `(2, 2)`, kowariancja stanu.\n- `z` — `float`, skalarny pomiar pozycji.\n- `dt` — `float`, krok czasowy między poprzednią klatką a tą.\n- `q` — `float`, *skalarna* gęstość szumu procesu (użyj `Q = q * np.eye(2)`, czyli identyczna niepewność procesu na pozycji i prędkości — pragmatyczne uproszczenie, bardziej realistyczny model dyskretnej białej akceleracji to też dwa-trzy linijki, ale pomińmy).\n- `r` — `float`, skalarna wariancja szumu pomiaru (`R = r`, bo pomiar jest skalarny).\n\nZwróć krotkę `(x_new, P_new)`:\n\n- `x_new` — `np.ndarray` shape `(2,)`, stan po update.\n- `P_new` — `np.ndarray` shape `(2, 2)`, kowariancja po update.\n\n**Reguły.**\n\n1. Macierze $F$ i $H$ zbuduj wewnątrz funkcji według wzorów z lekcji ($F = \\begin{bsmallmatrix} 1 & dt \\\\ 0 & 1 \\end{bsmallmatrix}$, $H = \\begin{bsmallmatrix} 1 & 0 \\end{bsmallmatrix}$).\n2. **Nie modyfikuj** `x_prev` ani `P_prev` — twórz nowe tablice. Mutowanie wejścia jest błędem.\n3. Pracuj w `float64`. `r = 0.0` jest legalnym wejściem (testy to sprawdzają — wtedy filtr ufa pomiarowi w 100 %, $K[0] = 1$, więc `x_new[0] == z` co do bitu).\n4. Nie używaj `cv2`, `scipy`, ani gotowych KF — całość ma się zmieścić w ~10 linijkach NumPy.",
+        "starterCode": "import numpy as np\n\n\ndef kalman_step_1d(x_prev, P_prev, z, dt, q, r):\n    # x_prev: np.ndarray (2,) -- [pozycja, predkosc]\n    # P_prev: np.ndarray (2, 2)\n    # z: float -- skalarny pomiar pozycji\n    # dt, q, r: float\n    #\n    # TODO 1. Zbuduj F (2x2) i H (1x2) z dt zgodnie ze wzorami z lekcji.\n    # TODO 2. Zbuduj Q = q * I_{2x2} oraz potraktuj R = r jako skalar.\n    # TODO 3. Predict:  x_pred = F @ x_prev,  P_pred = F @ P_prev @ F.T + Q.\n    # TODO 4. Update:  y = z - (H @ x_pred)[0]  (skalar)\n    #                   S = (H @ P_pred @ H.T)[0, 0] + R  (skalar)\n    #                   K = (P_pred @ H.T).flatten() / S  (shape (2,))\n    #                   x_new = x_pred + K * y\n    #                   P_new = (I - K @ H) @ P_pred   (np.outer(K, H[0]))\n    # TODO 5. Zwroc (x_new, P_new) jako swieze tablice.\n    return np.zeros(2), np.eye(2)\n",
+        "tests": [
+          {
+            "name": "stala_predkosc_zerowa_innowacja",
+            "body": "import numpy as np\nx_prev = np.array([0.0, 1.0])  # pozycja 0, predkosc 1\nP_prev = np.eye(2)\nx_new, P_new = kalman_step_1d(x_prev, P_prev, z=1.0, dt=1.0, q=0.0, r=1.0)\n# Pomiar pasuje dokladnie do predykcji -> innowacja = 0 -> x_new = x_pred = [1, 1]\nassert abs(x_new[0] - 1.0) < 1e-9\nassert abs(x_new[1] - 1.0) < 1e-9\n# Niepewnosc pozycji powinna spasc po update\nassert P_new[0, 0] < P_prev[0, 0]\n",
+            "hidden": false
+          },
+          {
+            "name": "r_zero_uflnosc_pomiarowi",
+            "body": "import numpy as np\n# r = 0 -> filtr ufa pomiarowi w 100 %, x_new[0] == z dokladnie.\nx_prev = np.array([5.0, 0.0])\nP_prev = np.eye(2)\nx_new, _ = kalman_step_1d(x_prev, P_prev, z=10.0, dt=1.0, q=0.0, r=0.0)\nassert abs(x_new[0] - 10.0) < 1e-9\n",
+            "hidden": true
+          },
+          {
+            "name": "r_ogromne_filtr_zostaje_przy_modelu",
+            "body": "import numpy as np\n# r = 1e12 -> wzmocnienie K ~ 0, x_new ~ x_pred = [1, 1], pomiar ignorowany.\nx_prev = np.array([0.0, 1.0])\nP_prev = np.eye(2)\nx_new, _ = kalman_step_1d(x_prev, P_prev, z=999.0, dt=1.0, q=0.0, r=1e12)\nassert abs(x_new[0] - 1.0) < 0.01\nassert abs(x_new[1] - 1.0) < 0.01\n",
+            "hidden": true
+          },
+          {
+            "name": "wejscie_nieruszone",
+            "body": "import numpy as np\n# Funkcja nie moze mutowac swoich argumentow.\nx_prev = np.array([2.0, 0.5])\nP_prev = np.diag([3.0, 4.0])\nx_before = x_prev.copy()\nP_before = P_prev.copy()\nkalman_step_1d(x_prev, P_prev, z=2.5, dt=1.0, q=0.1, r=1.0)\nassert np.array_equal(x_prev, x_before), 'kalman_step_1d zmodyfikowal x_prev'\nassert np.array_equal(P_prev, P_before), 'kalman_step_1d zmodyfikowal P_prev'\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef kalman_step_1d(x_prev, P_prev, z, dt, q, r):\n    F = np.array([[1.0, dt], [0.0, 1.0]])\n    H = np.array([[1.0, 0.0]])\n    Q = q * np.eye(2)\n    R = r\n    # Predict\n    x_pred = F @ x_prev.astype(np.float64)\n    P_pred = F @ P_prev.astype(np.float64) @ F.T + Q\n    # Update\n    y = z - (H @ x_pred)[0]\n    S = (H @ P_pred @ H.T)[0, 0] + R\n    K = (P_pred @ H.T).flatten() / S  # shape (2,)\n    x_new = x_pred + K * y\n    P_new = (np.eye(2) - np.outer(K, H[0])) @ P_pred\n    return x_new, P_new\n"
+      }
+    },
+    {
+      "id": "exercise-mot-step",
+      "title": "Mini-projekt: krok pętli MOT z asocjacją i bramkowaniem",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Składamy mini-projekt MOT. Detektor (niech to będzie tracker z poprzedniej lekcji albo `cv2.dnn`) wyrzuca w każdej klatce zbiór pomiarów `[(x, y), ...]`. Twoja praca: utrzymywać listę aktywnych ścieżek, asocjować pomiary z istniejącymi ścieżkami przez **bramkowanie** Euclidesowe wokół predykcji Kalmana, dropować ścieżki po zbyt wielu kolejnych zgubieniach i spawnować nowe dla pomiarów, które do żadnej istniejącej nie pasują.\n\nKlasa `KalmanTrack` jest już zaimplementowana w starter code (constant-velocity 4-D Kalman z $\\Delta t = 1$, atrybuty `track_id`, `misses`, `predicted_pos` oraz metody `predict()` / `update(z)`). Twoje zadanie:\n\n```python\nstep_mot(tracks, measurements, gate, max_misses, next_id) -> (new_tracks, next_id)\n```\n\n- `tracks` — `list[KalmanTrack]` ścieżek aktywnych z poprzedniej klatki.\n- `measurements` — `list[tuple[float, float]]`, pomiary `(x, y)` z bieżącej klatki.\n- `gate` — `float`, maksymalna euklidesowa odległość px między predykcją ścieżki a pomiarem, żeby parę uznać za dopuszczalną.\n- `max_misses` — `int`, po ilu *kolejnych* klatkach bez pomiaru ścieżka zostaje porzucona (gdy `track.misses >= max_misses`).\n- `next_id` — `int`, kolejny wolny `track_id` do przyznania nowo spawnowanej ścieżce.\n\nKrok pętli MOT:\n\n1. Wywołaj `t.predict()` na **każdej** ścieżce — dzięki temu `t.predicted_pos` jest świeże.\n2. Zbuduj listę kandydatów `(odległość, ti, mi)` dla każdej pary `(track_i, measurement_i)`, której odległość $\\le$ `gate`.\n3. Posortuj kandydatów po odległości rosnąco i greedy-przypisz: pierwszy kandydat zajmuje swoją ścieżkę i pomiar, kolejne pomijają już zajęte.\n4. Dla każdej przypisanej pary wywołaj `t.update(z)` i ustaw `t.misses = 0`.\n5. Dla ścieżek bez pomiaru zwiększ `t.misses += 1`; jeśli `t.misses >= max_misses`, wypadają z listy aktywnych.\n6. Dla pomiarów, które nie znalazły ścieżki, utwórz nową `KalmanTrack(next_id, measurement)` i inkrementuj `next_id`.\n7. Zwróć krotkę `(new_active_tracks, next_id)`.\n\n**Reguły.**\n\n- Lista zwrócona w `new_active_tracks` może być w dowolnej kolejności.\n- `next_id` powinien po wyjściu wynosić `next_id_in + (liczba spawnowanych ścieżek)`.\n- *Greedy global* (sortuj wszystkich kandydatów po odległości i bierz po kolei) jest obowiązkowe — dwa pomiary konkurujące o jedną ścieżkę powinny dać efekt: bliższy zwycięża, dalszy spawnuje nowy.",
+        "starterCode": "import numpy as np\n\n\nclass KalmanTrack:\n    \"\"\"Constant-velocity Kalman 4-D dla srodka bboxa, dt = 1 klatka.\"\"\"\n\n    def __init__(self, track_id, init_pos):\n        self.track_id = track_id\n        self.misses = 0\n        self.x = np.array([float(init_pos[0]), float(init_pos[1]), 0.0, 0.0])\n        self.P = np.diag([10.0, 10.0, 1000.0, 1000.0])\n        self.F = np.array([\n            [1.0, 0.0, 1.0, 0.0],\n            [0.0, 1.0, 0.0, 1.0],\n            [0.0, 0.0, 1.0, 0.0],\n            [0.0, 0.0, 0.0, 1.0],\n        ])\n        self.H = np.array([\n            [1.0, 0.0, 0.0, 0.0],\n            [0.0, 1.0, 0.0, 0.0],\n        ])\n        self.Q = np.eye(4) * 0.1\n        self.R = np.eye(2) * 4.0\n        self.predicted_pos = (float(self.x[0]), float(self.x[1]))\n\n    def predict(self):\n        self.x = self.F @ self.x\n        self.P = self.F @ self.P @ self.F.T + self.Q\n        self.predicted_pos = (float(self.x[0]), float(self.x[1]))\n        return self.predicted_pos\n\n    def update(self, z):\n        z = np.array([float(z[0]), float(z[1])])\n        y = z - self.H @ self.x\n        S = self.H @ self.P @ self.H.T + self.R\n        K = self.P @ self.H.T @ np.linalg.inv(S)\n        self.x = self.x + K @ y\n        self.P = (np.eye(4) - K @ self.H) @ self.P\n\n\ndef step_mot(tracks, measurements, gate, max_misses, next_id):\n    # tracks: list[KalmanTrack]\n    # measurements: list[tuple[float, float]]\n    # Zwroc krotke (new_active_tracks: list[KalmanTrack], next_id: int).\n    #\n    # TODO 1. Wywolaj t.predict() na kazdym track.\n    # TODO 2. Zbuduj liste kandydatow (dist, ti, mi) z dist <= gate.\n    # TODO 3. Posortuj rosnaco po odleglosci i greedy-przypisz, pomijajac\n    #          juz uzyte ti i mi.\n    # TODO 4. Dla kazdej pary: track.update(z); track.misses = 0.\n    # TODO 5. Dla nieprzypisanych track: track.misses += 1; drop, gdy >= max_misses.\n    # TODO 6. Dla nieprzypisanych pomiarow: spawn KalmanTrack(next_id, m); next_id += 1.\n    # TODO 7. Zwroc (new_active_tracks, next_id).\n    return tracks, next_id\n",
+        "tests": [
+          {
+            "name": "pomiar_blisko_track_zostaje_przypisany",
+            "body": "t1 = KalmanTrack(1, (50.0, 50.0))\ntracks = [t1]\n# Pomiar 2 px od predykcji startowej -- powinien sie zwiazac.\nmeasurements = [(52.0, 51.0)]\nnew_tracks, next_id = step_mot(tracks, measurements, gate=20.0, max_misses=5, next_id=2)\nassert len(new_tracks) == 1\nassert new_tracks[0].track_id == 1\nassert new_tracks[0].misses == 0\nassert next_id == 2  # zaden track nie spawnowany\n",
+            "hidden": false
+          },
+          {
+            "name": "pomiar_poza_bramka_spawnuje_nowy_track",
+            "body": "t1 = KalmanTrack(1, (10.0, 10.0))\ntracks = [t1]\n# Pomiar daleko od t1 -- nie pasuje bramka, t1 dostaje miss, pomiar -> nowy track.\nmeasurements = [(200.0, 200.0)]\nnew_tracks, next_id = step_mot(tracks, measurements, gate=20.0, max_misses=5, next_id=2)\nids = sorted(t.track_id for t in new_tracks)\nassert ids == [1, 2], f'spodziewane id [1, 2], dostalismy {ids}'\nassert next_id == 3\nt1_after = [t for t in new_tracks if t.track_id == 1][0]\nassert t1_after.misses == 1\n",
+            "hidden": true
+          },
+          {
+            "name": "track_dropowany_po_max_misses",
+            "body": "t1 = KalmanTrack(1, (10.0, 10.0))\nt1.misses = 4  # po tym kroku bedzie 5 -- prog max_misses\ntracks = [t1]\n# Brak pomiarow -> t1 nie znajdzie pary, misses staje sie 5 i wypada.\nnew_tracks, next_id = step_mot(tracks, [], gate=20.0, max_misses=5, next_id=2)\nassert new_tracks == []\nassert next_id == 2\n",
+            "hidden": true
+          },
+          {
+            "name": "dwa_pomiary_o_jeden_track_blizszy_wygrywa",
+            "body": "t1 = KalmanTrack(1, (50.0, 50.0))\ntracks = [t1]\n# Pierwszy pomiar daleki (10 px od predykcji startowej), drugi bliski (3 px).\n# Greedy global po dystansie powinien przypisac drugi do t1, pierwszy spawnuje nowy track.\nmeasurements = [(60.0, 50.0), (53.0, 50.0)]\nnew_tracks, next_id = step_mot(tracks, measurements, gate=20.0, max_misses=5, next_id=2)\nassert len(new_tracks) == 2\nids = sorted(t.track_id for t in new_tracks)\nassert ids == [1, 2], f'spodziewane id [1, 2], dostalismy {ids}'\nt1_after = [t for t in new_tracks if t.track_id == 1][0]\nassert t1_after.misses == 0  # t1 dostal swoj update z blizszego pomiaru\nassert next_id == 3\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\nclass KalmanTrack:\n    def __init__(self, track_id, init_pos):\n        self.track_id = track_id\n        self.misses = 0\n        self.x = np.array([float(init_pos[0]), float(init_pos[1]), 0.0, 0.0])\n        self.P = np.diag([10.0, 10.0, 1000.0, 1000.0])\n        self.F = np.array([\n            [1.0, 0.0, 1.0, 0.0],\n            [0.0, 1.0, 0.0, 1.0],\n            [0.0, 0.0, 1.0, 0.0],\n            [0.0, 0.0, 0.0, 1.0],\n        ])\n        self.H = np.array([\n            [1.0, 0.0, 0.0, 0.0],\n            [0.0, 1.0, 0.0, 0.0],\n        ])\n        self.Q = np.eye(4) * 0.1\n        self.R = np.eye(2) * 4.0\n        self.predicted_pos = (float(self.x[0]), float(self.x[1]))\n\n    def predict(self):\n        self.x = self.F @ self.x\n        self.P = self.F @ self.P @ self.F.T + self.Q\n        self.predicted_pos = (float(self.x[0]), float(self.x[1]))\n        return self.predicted_pos\n\n    def update(self, z):\n        z = np.array([float(z[0]), float(z[1])])\n        y = z - self.H @ self.x\n        S = self.H @ self.P @ self.H.T + self.R\n        K = self.P @ self.H.T @ np.linalg.inv(S)\n        self.x = self.x + K @ y\n        self.P = (np.eye(4) - K @ self.H) @ self.P\n\n\ndef step_mot(tracks, measurements, gate, max_misses, next_id):\n    measurements = list(measurements)\n    for t in tracks:\n        t.predict()\n\n    candidates = []\n    for ti, t in enumerate(tracks):\n        for mi, m in enumerate(measurements):\n            dx = t.predicted_pos[0] - m[0]\n            dy = t.predicted_pos[1] - m[1]\n            d = (dx * dx + dy * dy) ** 0.5\n            if d <= gate:\n                candidates.append((d, ti, mi))\n    candidates.sort()\n\n    used_t, used_m = set(), set()\n    for d, ti, mi in candidates:\n        if ti in used_t or mi in used_m:\n            continue\n        used_t.add(ti)\n        used_m.add(mi)\n        tracks[ti].update(measurements[mi])\n        tracks[ti].misses = 0\n\n    survivors = []\n    for ti, t in enumerate(tracks):\n        if ti in used_t:\n            survivors.append(t)\n        else:\n            t.misses += 1\n            if t.misses < max_misses:\n                survivors.append(t)\n\n    for mi, m in enumerate(measurements):\n        if mi not in used_m:\n            survivors.append(KalmanTrack(next_id, m))\n            next_id += 1\n\n    return survivors, next_id\n"
+      }
+    },
+    {
+      "id": "sandbox-strojenie-q-r",
+      "title": "Piaskownica: stroimy szum procesu i pomiaru",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport cv2\n\n# Syntetyczna trajektoria 1-D: stala predkosc, w polowie zwrot.\nrng = np.random.default_rng(0)\nN = 80\ntrue_pos = np.cumsum(np.full(N, 1.5))\n# Zwrot w klatce 40 -- dobry test reaktywnosci filtra.\ntrue_pos[40:] = true_pos[40] + np.cumsum(np.full(N - 40, -1.0))\n\n# Pomiary z szumem gaussowskim.\nsigma_meas = 3.0\nmeasurements = true_pos + rng.normal(0, sigma_meas, size=N)\n\n# Filtr Kalmana 2-stanowy: [pos, vel].\nkf = cv2.KalmanFilter(2, 1)\nkf.transitionMatrix = np.array([[1, 1], [0, 1]], dtype=np.float32)\nkf.measurementMatrix = np.array([[1, 0]], dtype=np.float32)\n\n# *** STRAJ MNIE: ***\nq = 0.05    # szum procesu (q duze -> filtr ufa pomiarom; mniej lagu, wiecej drzenia)\nr = 9.0     # szum pomiaru (r duze -> filtr ufa modelowi; gladsze, wiecej lagu)\n\nkf.processNoiseCov = (np.eye(2, dtype=np.float32) * q)\nkf.measurementNoiseCov = np.array([[r]], dtype=np.float32)\nkf.errorCovPost = np.eye(2, dtype=np.float32) * 100.0\nkf.statePost = np.array([[measurements[0]], [0.0]], dtype=np.float32)\n\nestimates = []\nfor z in measurements:\n    kf.predict()\n    est = kf.correct(np.array([[float(z)]], dtype=np.float32))\n    estimates.append(float(est[0, 0]))\n\nestimates = np.array(estimates)\n\n# Diagnostyka: blad RMS pomiaru vs estymaty.\nrmse_meas = float(np.sqrt(np.mean((measurements - true_pos) ** 2)))\nrmse_est  = float(np.sqrt(np.mean((estimates - true_pos) ** 2)))\nprint(f'RMSE pomiaru:  {rmse_meas:.3f}')\nprint(f'RMSE Kalman:   {rmse_est:.3f}  (mniejszy = lepszy)')\nprint(f'Pierwsze 6 estymat: {estimates[:6].round(2).tolist()}')\nprint(f'Estymata w klatce zwrotu (i=40): {estimates[40]:.2f},  prawda {true_pos[40]:.2f}')\nprint(f'Estymata 5 klatek po zwrocie:    {estimates[45]:.2f},  prawda {true_pos[45]:.2f}')\n\n# Eksperymenty -- po jednym, zeby widziec efekt:\n#  1) r = 0.01 (filtr 'ufa' pomiarom): RMSE Kalman zblizy sie do RMSE pomiaru,\n#     trajektoria bedzie skakac jak surowe pomiary -- filtr przestaje wygladzac.\n#  2) q = 1e-6, r = 25.0 (filtr 'ufa' modelowi): RMSE minimalny w czesci stalej-predkosci,\n#     ale w klatce zwrotu (i=40) estymata bedzie 'leciec' jeszcze przez 5-10 klatek\n#     w starym kierunku -- klasyczny lag.\n#  3) q = 0.5, r = 9.0: zwrot zostanie zlapany szybciej, kosztem wiekszego drzenia.\n#  4) Zwieksz sigma_meas do 8.0 i przy domyslnych q/r popatrz, ile zostalo z drzenia.\n#     Potem zostaw sigma_meas = 8.0, ale ustaw r = 1.0 -- 'klamanie' co do szumu pomiaru\n#     degraduje filtr, RMSE Kalman wzrosnie powyzej RMSE pomiaru.\n#  5) (Bonus.) Symuluj okluzje: zamien co 10. pomiar na NaN i w petli omijaj kf.correct(),\n#     wywoluj samo kf.predict(). Zobaczysz, ze filtr 'leci dalej' przez okluzje, ale\n#     errorCovPost rosnie -- to jest powod, dla ktorego predict-only ma sens.\n",
+        "encouragement": "Pchnij `q` i `r` do ekstremów i obserwuj, kiedy filtr przesuwa odpowiedzialność z modelu na pomiar — i odwrotnie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1115/1.3662552",
+      "title": "Kalman, R. E. — A New Approach to Linear Filtering and Prediction Problems (ASME Journal of Basic Engineering, 1960)",
+      "kind": "paper",
+      "author": "Rudolf E. Kálmán",
+      "year": 1960
+    },
+    {
+      "url": "https://www.cs.unc.edu/~welch/media/pdf/kalman_intro.pdf",
+      "title": "Welch, G. and Bishop, G. — An Introduction to the Kalman Filter (UNC-Chapel Hill TR 95-041, 2006)",
+      "kind": "paper",
+      "author": "Greg Welch and Gary Bishop",
+      "year": 2006
+    },
+    {
+      "url": "https://github.com/opencv/opencv/blob/4.x/samples/python/kalman.py",
+      "title": "OpenCV — Python sample: Kalman filter (samples/python/kalman.py)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Kalman_filter",
+      "title": "Kalman filter — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

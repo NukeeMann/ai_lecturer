@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-zmian-sar-i-mini-projekt-powodzi",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Detekcja zmian SAR i mini-projekt powodzi",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Mini-projekt zamykający moduł SAR: z dwóch ko-zarejestrowanych scen Sentinel-1 (przed i po) wyciągamy mapę zalania, łącząc operator log-ratio, progowanie Otsu i morfologię w jeden pipeline w stylu DLR / UN-SPIDER.",
+  "estimatedMinutes": 22,
+  "sections": [
+    {
+      "id": "po-co-detekcja-zmian",
+      "title": "Po co detekcja zmian akurat na SAR",
+      "type": "theory",
+      "data": {
+        "markdown": "Powódź na obrazie satelitarnym to klasyczny problem **detekcji zmian** (change detection). Mamy dwie ko-zarejestrowane sceny SAR — *przed* (czysta scena referencyjna, najczęściej z kilku tygodni przed katastrofą) i *po* (scena z dnia zalania) — i pytamy: **gdzie backscatter spadł** w sposób spójny z zalaniem terenu? SAR jest do tego zadania niemal idealnym sensorem: mikrofalowe pasmo C w Sentinel-1 **przebija chmury i działa nocą**, więc obraz jest dostępny niezależnie od tego, czy nad sceną wisi front opadowy. Sama powódź zostawia dodatkowo bardzo czytelny *odcisk fizyczny* — gładka tafla wody działa jak **lustro odbijające sygnał z dala od anteny** (specular reflection), więc do satelity wraca prawie nic. Świeżo zalany teren widzimy jako **ciemny plaster** o backscatterze rzędu $-20$ do $-25$ dB, kontrastujący ze średnim $-10$ do $-15$ dB nad polami i miastem.\n\n![Kwadratowa scena radarowa Sentinel-1 z syntetycznie nałożonym ciemnym plastrem zalania w centrum: tło sceny pulsuje ziarnistym multiplikatywnym specklem o jasności typowej dla pól i miast, a obszar zalany ma jednorodnie niski backscatter — to właśnie ta różnica w jasności jest sygnałem detekcji zmian](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c5/Noise_salt_and_pepper.png/480px-Noise_salt_and_pepper.png)\n\n*(Powyższy obraz to ilustracyjny ziarnisty wzór z Wikimedia Commons, public domain — użyty tu wyłącznie do przypomnienia, jak \"żywy\" jest typowy speckle Sentinel-1: nawet jednorodne tło iskrzy.)*\n\nNaiwnym pomysłem byłoby liczyć **różnicę** $D(p) = I_2(p) - I_1(p)$ — tak postępujemy w detekcji zmian na zwykłej fotografii optycznej. Na SAR to nie zadziała z dwóch powodów. Po pierwsze, speckle jest **multiplikatywny** (vide poprzednie lekcje modułu): odchylenie standardowe różnicy rośnie razem z lokalną średnią, więc próg dobrze działający w cichej zatoce zaleje fałszywymi alarmami obszary o wysokim backscatterze. Po drugie, **kalibracja radiometryczna i kąt padania** zmieniają się między orbitami — produkty Sentinel-1 z dwóch dat różnią się o stały multiplikatywny współczynnik, niezwiązany z fizyczną zmianą sceny. Standardowym rozwiązaniem (Rignot i van Zyl 1993) jest operator **ratio** $I_2/I_1$, a w praktyce jego logarytm — **log-ratio** $r(p) = \\ln\\bigl(I_2(p)/I_1(p)\\bigr)$. Tak postępują operacyjne pipeline'y DLR (Twele i in., 2016) oraz dokumentacja UN-SPIDER, które złożymy w mini-projekcie tej lekcji."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.225529",
+          "title": "Rignot & van Zyl — Change Detection Techniques for ERS-1 SAR Data (IEEE TGRS 1993)",
+          "kind": "paper",
+          "author": "Eric J. M. Rignot and Jakob J. van Zyl",
+          "year": 1993
+        }
+      ]
+    },
+    {
+      "id": "log-ratio-derivation",
+      "title": "Dlaczego log-ratio: model multiplikatywny i progowanie Otsu",
+      "type": "theory",
+      "data": {
+        "markdown": "Przyjmijmy multiplikatywny model jednolookowy z poprzedniej lekcji: $I_t(p) = R_t(p)\\cdot n_t(p)$, gdzie $R_t$ to fizyczne backscatter sceny w chwili $t$, a $n_t$ to multiplikatywny czynnik szumowy o jednostkowej średniej, $\\mathbb{E}[n_t] = 1$. Iloraz dwóch ko-zarejestrowanych scen rozpada się na dwa niezależne czynniki:\n\n$$ \\frac{I_2(p)}{I_1(p)} \\;=\\; \\frac{R_2(p)}{R_1(p)} \\cdot \\frac{n_2(p)}{n_1(p)} $$\n\nWspólny multiplikator kalibracyjny (różnica gain'u systemu między dwiema datami) **skraca się** identycznie w liczniku i mianowniku — to pierwsza przewaga ratio nad różnicą $I_2 - I_1$. Drugą zyskujemy biorąc logarytm:\n\n$$ r(p) \\;=\\; \\ln\\frac{I_2(p)}{I_1(p)} \\;=\\; \\underbrace{\\ln\\frac{R_2(p)}{R_1(p)}}_{\\text{sygnał zmiany}} \\;+\\; \\underbrace{\\ln\\frac{n_2(p)}{n_1(p)}}_{\\text{szum addytywny i symetryczny}} $$\n\nLogarytm zamienia multiplikatywny szum na **addytywny** i — co kluczowe — **symetryczny względem zera**: spadek backscatteru o czynnik $10$ daje $r = -\\ln 10 \\approx -2{,}30$, taki sam wzrost daje $r \\approx +2{,}30$. Dla pikseli, które *nie zmieniły się fizycznie*, $R_2 = R_1$ i pierwszy człon znika; histogram log-ratio koncentruje się wtedy wokół zera w przybliżonym rozkładzie Gaussa (z centralnego twierdzenia granicznego po L-look uśrednieniu, którym Sentinel-1 GRD jest fabrycznie obrobiony).\n\nDwumodalny histogram — wąski centralny pik *bez zmian* plus lewy ogon *zalania* — to dokładnie konfiguracja, dla której metoda **Otsu** (poznana w module 3) jest niemal mechanicznym wyborem progu. Ponieważ powódź to **spadek** backscatteru, pracujemy z **jednostronnym progiem** $r(p) < T$ (gdzie $T < 0$). Operator pochodny **mean-ratio** $\\bar I_2/\\bar I_1$ — liczony po lokalnym uśrednieniu okienkiem $5\\times 5$ lub $7\\times 7$ — redukuje speckle przed progowaniem, kosztem rozmywania konturów strefy zalania; w pełnym pipeline DLR/UN-SPIDER uśrednianie wykonujemy po log-ratio, a za progowaniem dokładamy morfologię (otwarcie + zamknięcie) usuwającą izolowane fałszywe piksele i łatającą drobne dziury w masce wody."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1080/01431161.2016.1192304",
+          "title": "Twele et al. — Sentinel-1-based flood mapping: a fully automated processing chain (IJRS 2016)",
+          "kind": "paper",
+          "author": "André Twele, Wenxi Cao, Simon Plank and Sandro Martinis",
+          "year": 2016
+        }
+      ]
+    },
+    {
+      "id": "operatory-zmian",
+      "title": "Operatory detekcji zmian — kiedy który",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "operator", "label": "Operator", "type": "string", "sortable": false },
+          { "key": "wzor", "label": "Wzór", "type": "string", "sortable": false },
+          { "key": "model_szumu", "label": "Model szumu, dla którego jest dobry", "type": "string", "sortable": false },
+          { "key": "mocne", "label": "Gdzie świeci", "type": "string", "sortable": false },
+          { "key": "slabe", "label": "Gdzie pęka", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "operator": "Różnica (difference)",
+            "wzor": "$D(p) = I_2(p) - I_1(p)$",
+            "model_szumu": "Addytywny gaussowski",
+            "mocne": "Standard w obrazie optycznym i danych z czujników addytywnych (LiDAR, termowizja)",
+            "slabe": "Na SAR: wariancja różnicy rośnie z lokalną średnią; różnice kalibracyjne między scenami wyglądają jak zmiana"
+          },
+          {
+            "operator": "Ratio",
+            "wzor": "$Q(p) = I_2(p) / I_1(p)$",
+            "model_szumu": "Multiplikatywny",
+            "mocne": "Skraca wspólny gain kalibracyjny; bezwymiarowy próg działający niezależnie od poziomu tła",
+            "slabe": "Niesymetryczny względem 1 — spadek $\\times 10$ daje $0{,}1$, wzrost $\\times 10$ daje $10$; histogram trudniej progować"
+          },
+          {
+            "operator": "Log-ratio",
+            "wzor": "$r(p) = \\ln\\bigl(I_2(p)/I_1(p)\\bigr)$",
+            "model_szumu": "Multiplikatywny po linearyzacji",
+            "mocne": "Symetryczny wokół $0$, addytywny szum, wyraźnie dwumodalny histogram → Otsu progowanie niemal automatyczne",
+            "slabe": "Wymaga $\\varepsilon$-stabilizacji przy $I_t \\to 0$ (cienie radarowe, layover) — inaczej dostaniemy $\\pm\\infty$"
+          },
+          {
+            "operator": "Mean-ratio",
+            "wzor": "$Q_\\mu(p) = \\bar I_2(p) / \\bar I_1(p)$ liczone na oknie $k\\times k$",
+            "model_szumu": "Multiplikatywny, z dodatkową redukcją speckle",
+            "mocne": "Zmniejsza wariancję ratio ok. $k^2$-krotnie; zalecany w pipeline DLR przed progowaniem",
+            "slabe": "Rozmywa kontury strefy zalania; przy zbyt dużym $k$ tracimy małe akweny i wąskie cieki wodne"
+          }
+        ]
+      }
+    },
+    {
+      "id": "log-ratio-implementacja",
+      "title": "Zaimplementuj log-ratio na dwóch scenach SAR",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `log_ratio(I1, I2, eps=1e-6)`, która dla dwóch ko-zarejestrowanych obrazów intensywności SAR zwraca operator log-ratio:\n\n$$ r(p) \\;=\\; \\ln\\!\\left(\\frac{I_2(p) + \\varepsilon}{I_1(p) + \\varepsilon}\\right) $$\n\nWymagania:\n\n- Wynik ma ten sam kształt co `I1` / `I2` i `dtype=np.float64`.\n- Stabilizator $\\varepsilon$ chroni przed $\\log 0$ — dodajemy go *do każdego* z obrazów osobno (a nie do samego ilorazu).\n- Funkcja działa jednolicie na dowolnym 2-D ndarray; nie zakładaj wymiarów.\n- Jeżeli `I1.shape != I2.shape`, podnieś `ValueError` z czytelną treścią.\n\n```\nI1 = np.array([[1.0, 2.0], [4.0, 8.0]])\nI2 = np.array([[1.0, 1.0], [4.0, 4.0]])\nlog_ratio(I1, I2)  # → [[0.0, -ln 2], [0.0, -ln 2]] (z dokładnością do eps)\n```",
+        "starterCode": "import numpy as np\n\n\ndef log_ratio(I1, I2, eps=1e-6):\n    \"\"\"\n    Operator log-ratio dla detekcji zmian na obrazach SAR.\n\n    I1, I2 — 2-D np.ndarray intensywności SAR (>= 0), ten sam kształt.\n    eps    — mały dodatek stabilizujący log(0); domyślnie 1e-6.\n\n    Zwraca: np.ndarray dtype=float64 o ksztalcie I1.shape, gdzie\n            r[p] = ln((I2[p] + eps) / (I1[p] + eps)).\n    \"\"\"\n    # TODO 1: zwaliduj zgodnosc ksztaltow (rzuc ValueError, jesli sie nie zgadzaja).\n    # TODO 2: skonwertuj wejscia do float64 i policz log-ratio z eps-stabilizacja.\n    # TODO 3: zwroc wynik.\n    return np.zeros_like(I1, dtype=np.float64)\n",
+        "tests": [
+          {
+            "name": "zwraca_zera_dla_identycznych_obrazow",
+            "body": "import numpy as np\nI = np.array([[1.0, 2.0, 4.0], [8.0, 16.0, 32.0]])\nout = log_ratio(I, I)\nassert isinstance(out, np.ndarray)\nassert out.dtype == np.float64\nassert out.shape == I.shape\nassert np.allclose(out, 0.0, atol=1e-5)",
+            "hidden": false
+          },
+          {
+            "name": "ujemny_dla_zalanego_pixela_i_symetryczny",
+            "body": "import numpy as np\nI1 = np.array([[1.0]])\nI2 = np.array([[0.1]])\nfwd = log_ratio(I1, I2)\nbwd = log_ratio(I2, I1)\nassert fwd.shape == (1, 1)\nassert float(fwd[0, 0]) < 0.0\nassert np.isclose(float(fwd[0, 0]), np.log(0.1 / 1.0), atol=1e-4)\nassert np.allclose(fwd, -bwd, atol=1e-5)"
+          },
+          {
+            "name": "stabilizator_eps_chroni_przed_log_zero",
+            "body": "import numpy as np\nI1 = np.array([[0.0, 1.0]])\nI2 = np.array([[0.0, 1.0]])\nout = log_ratio(I1, I2, eps=1e-6)\nassert np.all(np.isfinite(out))\nassert np.isclose(float(out[0, 0]), 0.0, atol=1e-9)"
+          },
+          {
+            "name": "rzuca_valueerror_dla_roznych_ksztaltow",
+            "body": "import numpy as np\nI1 = np.zeros((4, 4))\nI2 = np.zeros((4, 5))\ntry:\n    log_ratio(I1, I2)\nexcept ValueError:\n    pass\nelse:\n    raise AssertionError('oczekiwano ValueError dla niezgodnych ksztaltow')"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef log_ratio(I1, I2, eps=1e-6):\n    I1 = np.asarray(I1, dtype=np.float64)\n    I2 = np.asarray(I2, dtype=np.float64)\n    if I1.shape != I2.shape:\n        raise ValueError(\n            f'log_ratio: niezgodne ksztalty I1 {I1.shape} vs I2 {I2.shape}'\n        )\n    return np.log((I2 + eps) / (I1 + eps))\n"
+      }
+    },
+    {
+      "id": "quiz-detekcja-zmian",
+      "title": "Sprawdź się: kiedy ratio bije różnicę",
+      "type": "quiz",
+      "data": {
+        "question": "Dwie ko-zarejestrowane sceny Sentinel-1 GRD nad tym samym obszarem zostały skalibrowane różnymi gain'ami systemu — produkt z 1 marca przeszedł rekalibrację radiometryczną i jego intensywność jest systematycznie $1{,}15\\times$ wyższa niż w produkcie z 1 lutego, *bez żadnej fizycznej zmiany sceny*. Który z operatorów detekcji zmian poradzi sobie z tym multiplikatywnym przesunięciem najlepiej?",
+        "options": [
+          "Różnica $I_2 - I_1$ — w obszarach jednorodnych przesunięcie się skraca i zostaje samo zero.",
+          "Log-ratio $r = \\ln(I_2/I_1)$ — wspólny multiplikator wpada do logarytmu jako stała addytywna i można go wyznaczyć (lub zignorować jeśli próg jest wyznaczany z histogramu Otsu).",
+          "Bezwzględna różnica $|I_2 - I_1|$ — moduł neutralizuje znak przesunięcia kalibracyjnego.",
+          "Wszystkie trzy operatory zachowują się identycznie, bo multiplikatywny gain wynosi zaledwie $1{,}15$."
+        ],
+        "correct": [1],
+        "explanation": "Multiplikatywne przesunięcie kalibracyjne $I_2 = 1{,}15\\,I_1$ przekłada się na $r = \\ln 1{,}15 \\approx 0{,}14$ jako **stała wartość** w całym obrazie log-ratio — czyli histogram Otsu ma centralny pik wokół $0{,}14$ zamiast wokół $0$, ale jego kształt i pozycja względna lewego ogona (zalanie) pozostają niezmienione. W operatorze różnicy $D = I_2 - I_1 = 0{,}15\\,I_1$ wartość rośnie *proporcjonalnie do lokalnej intensywności*, więc bardziej jasne piksele dostają większy fałszywy sygnał zmiany — co dokładnie psuje próg i wytwarza fałszywe alarmy nad jasnymi obiektami (miastami, polami z dużym backscatterem). Odpowiedź 3 nie pomaga, bo $|D|$ nadal skaluje się z $I_1$. Odpowiedź 4 myli małą wartość $1{,}15$ z brakiem efektu — w SAR nawet $0{,}5$ dB systematycznego biasu wystarczy do destabilizacji progu opartego na histogramie różnicy.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "mini-projekt-pipeline",
+      "title": "Mini-projekt: full flood pipeline na syntetycznej parze scen",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy import ndimage as ndi\n\n# --------------------------------------------------------------------\n# Mini-projekt powodzi: pelen pipeline zmian SAR na syntetycznej parze\n# scen \"przed\" i \"po\". Pipeline (DLR / UN-SPIDER):\n#\n#   1. log-ratio z eps-stabilizacja\n#   2. usrednianie 5x5 (mean-log-ratio)        - redukcja speckle\n#   3. progowanie Otsu w jednostronnym trybie  - prog T < 0\n#   4. otwarcie morfologiczne 3x3              - usuwa izolowane piksele\n#   5. zamkniecie morfologiczne 5x5            - lata male dziury w masce wody\n#   6. odrzucenie skladowych < min_area pikseli- usuwa \"sol\" w jeziorach\n#\n# Pobaw sie window_size, min_area i seed - zobacz, jak parametry\n# wplywaja na precyzje, recall i czystosc ostatecznej maski.\n# --------------------------------------------------------------------\n\nrng = np.random.default_rng(7)\n\n\ndef make_scene(rng, base, change_mask=None, change_factor=0.1, L=4):\n    \"\"\"Syntetyczna scena Sentinel-1-like: deterministyczne backscatter * speckle.\"\"\"\n    H, W = base.shape\n    R = base.astype(np.float64)\n    if change_mask is not None:\n        R = R.copy()\n        R[change_mask] *= change_factor\n    # Specklowy szum gamma o sredniej 1 i wariancji 1/L (L-look)\n    n = rng.gamma(shape=L, scale=1.0 / L, size=(H, W))\n    return R * n\n\n\nH = W = 256\nbase = np.full((H, W), 0.20, dtype=np.float64)  # ~ -7 dB tlo\nyy, xx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')\n# Miasto / pole o wyzszym backscatterze\nbase[(yy < 80) & (xx > 160)] = 0.50  # ~ -3 dB jasny obszar\n# Obszar zalania (pojawia sie tylko na scenie \"po\")\nflood = (yy > 100) & (yy < 200) & (xx > 60) & (xx < 200) & ((yy + xx) % 3 != 0)\n\nI1 = make_scene(rng, base, change_mask=None)\nI2 = make_scene(rng, base, change_mask=flood, change_factor=0.05)  # spadek x20 na zalaniu\n\n# ---------- 1. log-ratio ----------\neps = 1e-6\nr = np.log((I2 + eps) / (I1 + eps))\n\n# ---------- 2. usrednianie ----------\nwindow_size = 5\nkernel = np.ones((window_size, window_size)) / (window_size * window_size)\nr_smooth = ndi.convolve(r, kernel, mode='reflect')\n\n# ---------- 3. Otsu jednostronny (na ujemnym ogonie) ----------\ndef otsu_threshold(values, bins=256):\n    hist, edges = np.histogram(values, bins=bins)\n    p = hist.astype(np.float64) / hist.sum()\n    centers = 0.5 * (edges[:-1] + edges[1:])\n    omega = np.cumsum(p)\n    mu = np.cumsum(p * centers)\n    mu_t = mu[-1]\n    denom = omega * (1.0 - omega)\n    denom[denom == 0] = 1e-12\n    sigma_b2 = (mu_t * omega - mu) ** 2 / denom\n    return float(centers[int(np.argmax(sigma_b2))])\n\nT = otsu_threshold(r_smooth)\n# Powodz to *spadek* backscatteru, wiec szukamy r < T (jednostronnie).\nflood_raw = r_smooth < T\n\n# ---------- 4-5. morfologia ----------\nflood_open = ndi.binary_opening(flood_raw, structure=np.ones((3, 3)))\nflood_close = ndi.binary_closing(flood_open, structure=np.ones((5, 5)))\n\n# ---------- 6. odrzucenie malych skladowych ----------\nmin_area = 50\nlabels, n_comp = ndi.label(flood_close)\nsizes = ndi.sum(flood_close, labels, index=np.arange(1, n_comp + 1))\nkeep = np.zeros(n_comp + 1, dtype=bool)\nkeep[1:] = sizes >= min_area\nfinal_mask = keep[labels]\n\n# ---------- ewaluacja ----------\ngt = flood\ntp = int(np.logical_and(final_mask, gt).sum())\nfp = int(np.logical_and(final_mask, ~gt).sum())\nfn = int(np.logical_and(~final_mask, gt).sum())\nprecision = tp / max(tp + fp, 1)\nrecall = tp / max(tp + fn, 1)\nf1 = 2 * precision * recall / max(precision + recall, 1e-9)\n\nprint(f'Otsu prog T = {T:+.3f}  (powinien byc ujemny)')\nprint(f'wykryte piksele: {int(final_mask.sum()):>6d}')\nprint(f'piksele GT zalania:   {int(gt.sum()):>6d}')\nprint(f'precision = {precision:.3f}')\nprint(f'recall    = {recall:.3f}')\nprint(f'F1        = {f1:.3f}')\n",
+        "encouragement": "Spróbuj zwiększyć `window_size` do `9` i zobacz, jak rośnie recall, ale tracimy ostre brzegi maski — albo zmniejsz `min_area` do `5` i policz, ile fałszywych alarmów wraca."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/36.225529",
+      "title": "Rignot & van Zyl — Change Detection Techniques for ERS-1 SAR Data (IEEE TGRS 1993)",
+      "kind": "paper",
+      "author": "Eric J. M. Rignot and Jakob J. van Zyl",
+      "year": 1993
+    },
+    {
+      "url": "https://doi.org/10.1080/01431161.2016.1192304",
+      "title": "Twele et al. — Sentinel-1-based flood mapping: a fully automated processing chain (IJRS 2016)",
+      "kind": "paper",
+      "author": "André Twele, Wenxi Cao, Simon Plank and Sandro Martinis",
+      "year": 2016
+    },
+    {
+      "url": "https://www.un-spider.org/advisory-support/recommended-practices/recommended-practice-google-earth-engine-flood-mapping/in-detail",
+      "title": "UN-SPIDER — Recommended practice: Flood mapping with Sentinel-1",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+      "title": "ESA Sentinel-1 SAR User Guide",
+      "kind": "article"
+    }
+  ]
+}

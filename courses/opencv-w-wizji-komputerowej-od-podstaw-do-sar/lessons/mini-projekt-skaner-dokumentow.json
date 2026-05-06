@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "slug": "mini-projekt-skaner-dokumentow",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Mini-projekt: skaner dokumentów",
+  "eyebrow": "MINI-PROJEKT",
+  "description": "Złóż w jeden 5-krokowy pipeline wszystko z modułu 2 — od skali i Canny przez wyprostowanie czworokąta po adaptacyjne progowanie.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "pipeline-overview",
+      "title": "Pipeline skanera dokumentów",
+      "type": "theory",
+      "data": {
+        "markdown": "W tej lekcji łączymy w jeden pipeline wszystko, co poznałeś w module 2: skalowanie, konwersję barw, transformacje geometryczne i progowanie. **Klasyczny skaner dokumentów** — taki, jaki znajdziesz w aplikacji typu CamScanner — w pełni mieści się w pięciu krokach, bez sieci neuronowej i bez chmury.\n\n![Schemat: zdjęcie kartki sfotografowanej pod skosem (po lewej) zostaje wyprostowane do prostokątnego, czarno-białego skanu A4 (po prawej) przy użyciu czterech rogów jako punktów odniesienia](https://upload.wikimedia.org/wikipedia/commons/thumb/8/8a/Perspective_correction.svg/640px-Perspective_correction.svg.png)\n\n1. **Wczytaj i przeskaluj** zdjęcie do bezpiecznej szerokości (≈ 800–1200 px) i zachowaj współczynnik skali — gdy później rzutujesz znaleziony kontur z powrotem na oryginał, ten współczynnik się przyda.\n2. **Wykryj krawędzie kartki**: szarość → rozmycie Gaussa → `cv2.Canny`. Wszystkie trzy kroki znasz z modułu 2.\n3. **Znajdź kontur** największego wielokąta o czterech rogach: `cv2.findContours` + `cv2.approxPolyDP` z tolerancją około 2 % obwodu. To kontur kartki.\n4. **Wyprostuj** czworokąt do prostokąta funkcjami `cv2.getPerspectiveTransform` i `cv2.warpPerspective`. Tu przemycamy całą perspektywę.\n5. **Wybiel tło** — `cv2.adaptiveThreshold` na obrazie szarym daje ostry, czarno-biały skan, nawet gdy oświetlenie nie jest równomierne.\n\nDwie nuty z poprzednich lekcji, które się odzywają:\n\n- **Adaptacyjne, nie globalne progowanie** — kartka po deskewie zwykle ma gradient jasności (cień ręki, lampa z boku). Otsu daje wtedy plamy; metoda adaptacyjna podejmuje decyzję per okno wokół piksela.\n- **Kolejność rogów** czworokąta jest umowna, ale `getPerspectiveTransform` wymaga, by była *spójna* z prostokątem docelowym — inaczej obraz wyjdzie odbity albo do góry nogami."
+      }
+    },
+    {
+      "id": "perspective-math",
+      "title": "Czworokąt → prostokąt: przekształcenie perspektywiczne",
+      "type": "theory",
+      "data": {
+        "markdown": "Aby cztery rogi kartki na zdjęciu $(p_1, p_2, p_3, p_4)$ trafiły dokładnie na cztery rogi prostokąta $(q_1, q_2, q_3, q_4)$, potrzebujemy odwzorowania, które działa we **współrzędnych jednorodnych**:\n\n$$ \\begin{pmatrix} x' \\\\ y' \\\\ w' \\end{pmatrix} = H \\begin{pmatrix} x \\\\ y \\\\ 1 \\end{pmatrix}, \\qquad H = \\begin{pmatrix} h_{11} & h_{12} & h_{13} \\\\ h_{21} & h_{22} & h_{23} \\\\ h_{31} & h_{32} & 1 \\end{pmatrix} $$\n\nMacierz $H$ ma 8 stopni swobody (ostatni element ustalamy na $1$, by uniknąć dowolnego skalowania), a każdy z czterech punktów dostarcza $2$ równania — dokładnie tyle, by układ miał jednoznaczne rozwiązanie. To dlatego `cv2.getPerspectiveTransform(src, dst)` przyjmuje **dokładnie 4 punkty** w każdej tablicy: mniej i układ jest niedookreślony, więcej i trzeba by sięgnąć po `findHomography` z RANSAC-iem (moduł 5).\n\nPiksel docelowy $(x', y')$ pochodzi ze źródłowego $(x, y)$ wedle:\n\n$$ x' = \\frac{h_{11} x + h_{12} y + h_{13}}{h_{31} x + h_{32} y + 1}, \\qquad y' = \\frac{h_{21} x + h_{22} y + h_{23}}{h_{31} x + h_{32} y + 1} $$\n\n`cv2.warpPerspective` robi to za Ciebie — i robi to w *odwrotnym* kierunku (dla każdego piksela docelowego liczy odpowiadający mu piksel źródłowy używając $H^{-1}$), co zapobiega dziurom w obrazie wynikowym."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+          "title": "OpenCV-Python — Geometric Transformations of Images",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-order-corners",
+      "title": "Uporządkuj rogi czworokąta",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Funkcja `cv2.getPerspectiveTransform` oczekuje czterech rogów w **konkretnej** kolejności względem prostokąta docelowego. Napisz `order_corners(pts)`, która z czterech punktów `(x, y)` w dowolnej kolejności zwraca listę `[TL, TR, BR, BL]` (lewy-górny, prawy-górny, prawy-dolny, lewy-dolny).\n\nWskazówka: dla typowo zorientowanej kartki **suma** $x + y$ jest najmniejsza w lewym-górnym i największa w prawym-dolnym, a **różnica** $y - x$ — najmniejsza w prawym-górnym i największa w lewym-dolnym.\n\n```\norder_corners([(10, 10), (0, 0), (10, 0), (0, 10)]) == [(0, 0), (10, 0), (10, 10), (0, 10)]\n```",
+        "starterCode": "def order_corners(pts):\n    # pts: lista 4 par (x, y) w dowolnej kolejności\n    # zwróć [TL, TR, BR, BL]\n    return pts\n",
+        "tests": [
+          {
+            "name": "kwadrat_w_dowolnej_kolejnosci",
+            "body": "assert order_corners([(10, 10), (0, 0), (10, 0), (0, 10)]) == [(0, 0), (10, 0), (10, 10), (0, 10)]",
+            "hidden": false
+          },
+          {
+            "name": "kartka_pod_skosem",
+            "body": "assert order_corners([(95, 80), (0, 0), (5, 75), (100, 5)]) == [(0, 0), (100, 5), (95, 80), (5, 75)]"
+          },
+          {
+            "name": "kartka_z_offsetem_od_zera",
+            "body": "assert order_corners([(105, 80), (50, 5), (48, 80), (105, 5)]) == [(50, 5), (105, 5), (105, 80), (48, 80)]"
+          }
+        ],
+        "solution": "def order_corners(pts):\n    by_sum = sorted(pts, key=lambda p: p[0] + p[1])\n    tl, br = by_sum[0], by_sum[-1]\n    by_diff = sorted(pts, key=lambda p: p[1] - p[0])\n    tr, bl = by_diff[0], by_diff[-1]\n    return [tl, tr, br, bl]\n"
+      }
+    },
+    {
+      "id": "cloze-deskew",
+      "title": "Złóż funkcję deskew_document",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Wstaw dwie brakujące funkcje OpenCV. `deskew_document` dostaje obraz i cztery uporządkowane rogi (`[TL, TR, BR, BL]`), a zwraca prostokątny skan o zadanym rozmiarze.",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\ndef deskew_document(image, corners_ordered, target_size=(800, 1100)):\n    # corners_ordered: lista [TL, TR, BR, BL] (np. z order_corners)\n    # target_size: (szerokość, wysokość) docelowego prostokąta — A4 w proporcji\n    src = np.array(corners_ordered, dtype=\"float32\")\n    w, h = target_size\n    dst = np.array([[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]], dtype=\"float32\")\n    M = cv2.{{matrix_fn}}(src, dst)\n    warped = cv2.{{warp_fn}}(image, M, (w, h))\n    return warped\n",
+        "slots": [
+          {
+            "id": "matrix_fn",
+            "hint": "Funkcja OpenCV, która z 4 punktów źródłowych i 4 docelowych liczy macierz 3×3.",
+            "validation": { "kind": "exact", "value": "getPerspectiveTransform" }
+          },
+          {
+            "id": "warp_fn",
+            "hint": "Funkcja OpenCV, która stosuje macierz 3×3 i interpoluje obraz wynikowy.",
+            "validation": { "kind": "exact", "value": "warpPerspective" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "check-progowanie",
+      "title": "Wybór progowania po deskew",
+      "type": "quiz",
+      "data": {
+        "question": "Po wyprostowaniu kartki obraz wciąż ma nierównomierne oświetlenie (cień ręki z jednej strony, lampa z drugiej). Które progowanie da najczystszy czarno-biały skan?",
+        "options": [
+          "cv2.threshold z metodą Otsu na całym obrazie",
+          "cv2.adaptiveThreshold z ADAPTIVE_THRESH_GAUSSIAN_C i blockSize w zakresie 25–51",
+          "cv2.threshold ze stałym progiem 128",
+          "Brak progowania — wystarczy cv2.GaussianBlur, by tło stało się jasne, a litery czarne"
+        ],
+        "correct": [1],
+        "explanation": "Globalne metody (Otsu i stały próg) wybierają jedną wartość dla całego obrazu; nierównomierne oświetlenie sprawia, że jedna część kartki staje się cała czarna, a druga cała biała. cv2.adaptiveThreshold liczy próg dla każdego okna wokół piksela, więc lokalny gradient jest neutralizowany — to dokładnie ten przypadek. Sam Gauss tylko rozmywa, nie binaryzuje, więc litery zostałyby szare zamiast czarnych.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Pełen pipeline na własnym zdjęciu",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# 1. wczytaj zdjęcie kartki (podmień ścieżkę)\nimg = cv2.imread(\"twoje_zdjecie.jpg\")\nratio = img.shape[0] / 800.0\nsmall = cv2.resize(img, (int(img.shape[1] / ratio), 800))\n\n# 2. szarość, rozmycie, Canny\ngray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)\nblur = cv2.GaussianBlur(gray, (5, 5), 0)\nedges = cv2.Canny(blur, 75, 200)\n\n# 3. znajdź największy 4-rogowy kontur\ncontours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)\ncontours = sorted(contours, key=cv2.contourArea, reverse=True)\nquad = None\nfor c in contours[:5]:\n    peri = cv2.arcLength(c, True)\n    approx = cv2.approxPolyDP(c, 0.02 * peri, True)\n    if len(approx) == 4:\n        quad = approx.reshape(4, 2)\n        break\n\n# TODO: uporządkuj rogi przez order_corners(quad.tolist())\n# TODO: wyprostuj czworokąt funkcją deskew_document\n# TODO: na obrazie szarym zastosuj cv2.adaptiveThreshold z ADAPTIVE_THRESH_GAUSSIAN_C\n# TODO: zapisz wynik przez cv2.imwrite(\"skan.png\", final)\n\n# Pomysły do eksploracji:\n# - zmień progi Canny z (75, 200) na (50, 150) — co się stanie z wykrytym konturem?\n# - powiększ blockSize w adaptiveThreshold z 11 do 51 — kiedy litery zaczynają zlewać się z tłem?\n# - co jeśli kartka leży na podobnej, jasnej powierzchni i Canny gubi krawędź papieru?\n",
+        "encouragement": "Spróbuj różnych zdjęć — najtrudniejsze są kartki na jasnym blacie i te ze złamanym światłem."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+      "title": "OpenCV-Python — Geometric Transformations of Images",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html",
+      "title": "OpenCV-Python — Image Thresholding (sekcja Adaptive Thresholding)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1016/0734-189X(85)90016-7",
+      "title": "Topological structural analysis of digitized binary images by border following",
+      "kind": "paper",
+      "author": "Satoshi Suzuki and Keiichi Abe",
+      "year": 1985
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Homography_(computer_vision)",
+      "title": "Homography (computer vision) — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

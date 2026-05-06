@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "slug": "operator-laplace-i-zera-przejscia",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m3",
+  "title": "Operator Laplace i zera przejścia",
+  "eyebrow": "FILTRACJA",
+  "description": "Druga pochodna obrazu jako alternatywne źródło krawędzi — operator Laplace, dyskretne jądra L4 i L8, lokalizacja krawędzi przez zera przejścia oraz schemat LoG (Laplasjan z Gaussa) Marra-Hildretha jako naturalna odpowiedź na to, że druga pochodna podwójnie wzmacnia szum.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "druga-pochodna-i-zera-przejscia",
+      "title": "Druga pochodna lokalizuje krawędź zerem przejścia",
+      "type": "theory",
+      "data": {
+        "markdown": "Pierwsza pochodna w gradiencie z poprzedniej lekcji **wskazuje krawędź** — magnituda $|\\nabla I|$ ma w okolicy krawędzi maksimum. Druga pochodna idzie krok dalej: w punkcie krawędzi **zmienia znak**. Dla idealnego skoku jasności pierwsza pochodna jest impulsem w pojedynczym punkcie, a druga pochodna ma kształt **dodatni → zerowy → ujemny** (lub odwrotnie) — i to **przejście przez zero** lokalizuje krawędź z dokładnością do jednego piksela.\n\nOperator Laplace (Laplasjan) to suma drugich pochodnych cząstkowych skalarnej funkcji obrazu:\n\n$$ \\nabla^2 I(x, y) \\;=\\; \\frac{\\partial^2 I}{\\partial x^2} \\;+\\; \\frac{\\partial^2 I}{\\partial y^2} $$\n\nInaczej niż gradient, **Laplasjan nie ma kierunku** — jest izotropowy (niezależny od kąta obrotu układu współrzędnych). Daje pojedynczą tablicę reakcji z dodatnimi wartościami po jednej stronie krawędzi i ujemnymi po drugiej; granicę między nimi (czyli **zera przejścia**) traktujemy jako linię krawędzi.\n\n![Klasyczna scena testowa do detekcji krawędzi: czarno-biała fotografia dwóch rowerów opartych o ścianę — wyraźne pionowe i ukośne kontury ram, szprych i cieni są dobrym tłem dla porównania reakcji Laplasjanu z reakcją gradientu Sobela z poprzedniej lekcji](https://upload.wikimedia.org/wikipedia/commons/3/3f/Bikesgray.jpg)\n\n*(Obraz: Wikimedia Commons — kanoniczna ilustracja z artykułów „Sobel operator\" i „Edge detection\", domena publiczna.)*\n\nW wymiarze 1D łatwo zobaczyć tę logikę. Dla schodka $I(x) = 0$ dla $x < x_0$ i $I(x) = 1$ dla $x \\geq x_0$:\n\n- pierwsza pochodna ma jeden niezerowy piksel (impuls) w okolicy $x_0$;\n- druga pochodna ma w tej samej okolicy parę **+1, −1** — i **zero przejścia** wypada dokładnie pomiędzy tymi dwoma pikselami, na środku skoku.\n\nTen dwukrokowy sygnał (góra–dół) jest sygnaturą krawędzi w domenie drugiej pochodnej. Detekcja krawędzi metodą Laplasjanu sprowadza się więc do znalezienia w obrazie wszystkich miejsc, w których odpowiedź **zmienia znak** między sąsiednimi pikselami."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Discrete_Laplace_operator",
+          "title": "Discrete Laplace operator — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1098/rspb.1980.0020",
+          "title": "Marr, D. and Hildreth, E. — Theory of Edge Detection (Proc. R. Soc. B, 1980)",
+          "kind": "paper",
+          "author": "David Marr and Ellen Hildreth",
+          "year": 1980
+        }
+      ]
+    },
+    {
+      "id": "dyskretne-jadra-i-log",
+      "title": "Dyskretne jądra L4 i L8 oraz wygładzanie Gaussem (LoG)",
+      "type": "theory",
+      "data": {
+        "markdown": "W obrazie cyfrowym drugą pochodną aproksymujemy **drugą różnicą skończoną**. Dla osi $x$:\n\n$$ \\frac{\\partial^2 I}{\\partial x^2}(x, y) \\;\\approx\\; I(x{+}1,\\, y) \\;-\\; 2\\,I(x,\\, y) \\;+\\; I(x{-}1,\\, y) $$\n\nSumując analogiczną różnicę po osi $y$ otrzymujemy **jądro Laplasjanu 4-sąsiedzkiego** 3×3:\n\n$$ L_4 \\;=\\; \\begin{bmatrix} 0 & +1 & 0 \\\\\\\\ +1 & -4 & +1 \\\\\\\\ 0 & +1 & 0 \\end{bmatrix} $$\n\nW wersji 8-sąsiedzkiej dokłada się przekątne (z wagą +1 i centralnym −8), przez co odpowiedź nieco lepiej znosi ukośne krawędzie:\n\n$$ L_8 \\;=\\; \\begin{bmatrix} +1 & +1 & +1 \\\\\\\\ +1 & -8 & +1 \\\\\\\\ +1 & +1 & +1 \\end{bmatrix} $$\n\nSuma wag każdego z tych jąder to **zero** — to gwarantuje, że na obszarach o stałej jasności Laplasjan zwraca dokładnie 0. Każde dyskretne jądro Laplasjanu MUSI mieć tę własność (suma wag = 0); to pierwszy test, którego za chwilę użyjesz w ćwiczeniu.\n\n**Pułapka praktyczna.** Druga pochodna **wzmacnia szum jeszcze mocniej niż pierwsza** — drobne fluktuacje pikseli wystają ponad faktyczne krawędzie i mnożą fałszywe zera przejścia. Dlatego Marr i Hildreth zaproponowali w 1980 r. wcześniejsze **wygładzanie Gaussem**, dając operator **Laplasjan z Gaussa (LoG)**:\n\n$$ \\mathrm{LoG}_\\sigma(I) \\;=\\; \\nabla^2 \\bigl( G_\\sigma * I \\bigr) $$\n\ngdzie $G_\\sigma$ to dwuwymiarowe jądro Gaussa o odchyleniu $\\sigma$. Detekcja krawędzi w schemacie Marra–Hildretha to: **wygładź Gaussem → policz Laplasjan → znajdź zera przejścia**. W praktyce LoG aproksymuje się **różnicą dwóch Gaussów** (DoG, $G_{\\sigma_1} - G_{\\sigma_2}$ przy $\\sigma_2 / \\sigma_1 \\approx 1.6$) — szybciej liczbowo i dobrze pasuje do scale-space, z którym spotkasz się w SIFT w module 5.\n\n**OpenCV.** Wywołanie `cv2.Laplacian(img, ddepth, ksize=k)` liczy Laplasjan z separowanym jądrem Sobela; dla `ksize=1` używa właśnie jądra $L_4$ powyżej. Krytyczna decyzja to typ wyjścia (`ddepth`): `cv2.CV_8U` (uint8) obetnie wartości ujemne do zera — zniszczy **całą jedną stronę** zera przejścia. Standardowy wzorzec to `cv2.CV_64F` plus `np.absolute(...)` lub `cv2.convertScaleAbs(...)` przed wyświetleniem."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#gad78703e4c8fe703d479c1860d76429e6",
+          "title": "OpenCV — Laplacian API reference",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1098/rspb.1980.0020",
+          "title": "Marr, D. and Hildreth, E. — Theory of Edge Detection (Proc. R. Soc. B, 1980)",
+          "kind": "paper",
+          "author": "David Marr and Ellen Hildreth",
+          "year": 1980
+        }
+      ]
+    },
+    {
+      "id": "porownanie-jader-laplasjanu",
+      "title": "L_4 vs L_8 vs LoG — które jądro kiedy",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "operator",
+            "label": "Operator",
+            "type": "string"
+          },
+          {
+            "key": "kernel",
+            "label": "Jądro 3×3 (lub schemat)",
+            "type": "string"
+          },
+          {
+            "key": "isotropy",
+            "label": "Izotropia",
+            "type": "string"
+          },
+          {
+            "key": "notes",
+            "label": "Charakterystyka i wywołanie"
+          }
+        ],
+        "rows": [
+          {
+            "operator": "Laplasjan 4-sąsiedzki (L4)",
+            "kernel": "[ [0, +1, 0],  [+1, −4, +1],  [0, +1, 0] ]",
+            "isotropy": "Słaba",
+            "notes": "Najprostsze. Wagi sumują się do 0 (DC-rejection). Dobrze reaguje na krawędzie pionowe i poziome, gorzej na ukośne. W OpenCV: cv2.Laplacian(img, cv2.CV_64F, ksize=1)."
+          },
+          {
+            "operator": "Laplasjan 8-sąsiedzki (L8)",
+            "kernel": "[ [+1, +1, +1],  [+1, −8, +1],  [+1, +1, +1] ]",
+            "isotropy": "Średnia",
+            "notes": "Dokłada przekątne (waga +1), centralna waga −8. Lepsza reakcja na krawędzie 45°, ale silniej wzmacnia szum. W OpenCV brak osobnego API — buduje się jądro ręcznie i podaje do cv2.filter2D(img, cv2.CV_64F, kernel)."
+          },
+          {
+            "operator": "LoG (Laplasjan z Gaussa)",
+            "kernel": "∇²(G_σ * I) — najpierw rozmycie Gaussem o odch. σ, potem Laplasjan",
+            "isotropy": "Dobra (zależy od σ)",
+            "notes": "Standard Marra–Hildretha. Parametr σ kontroluje skalę krawędzi: małe σ → drobne krawędzie i więcej szumu, duże σ → grube kontury. W OpenCV: cv2.GaussianBlur + cv2.Laplacian; LoG bywa też przybliżany jako DoG (G_σ1 − G_σ2)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "exercise-laplacian-4n",
+      "title": "Zaimplementuj `laplacian_4n(img)` od zera",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `laplacian_4n(img)`, która ręcznie aplikuje **3×3 jądro Laplasjanu 4-sąsiedzkiego** do dwuwymiarowej tablicy `numpy.ndarray` i zwraca tablicę `float64` o tym samym kształcie. Funkcja MUSI:\n\n1. Skonwertować wejście na `numpy.ndarray` typu `float64` (`np.asarray(img, dtype=np.float64)`).\n2. Użyć **paddingu zerowego** o szerokości 1 piksela na każdym brzegu — wartości poza obrazem traktuj jak 0.\n3. Dla każdego piksela `(r, c)` policzyć sumę ważoną sąsiedztwa 3×3 z wagami $L_4$:\n\n```\n[ 0, +1,  0]\n[+1, -4, +1]\n[ 0, +1,  0]\n```\n\nZwracaj `numpy.ndarray` typu `float64` o kształcie identycznym z wejściem. **Nie używaj `cv2.Laplacian` ani `cv2.filter2D`** — celem jest samodzielne zaimplementowanie konwolucji 2D z konkretnym jądrem, takie jakie zna `cv2.Laplacian` pod spodem.\n\n```\nimg = np.zeros((3, 5)); img[:, 2:] = 1.0   # pionowa krawędź 0 -> 1\nlaplacian_4n(img)[1, 1]   # ->  1.0  (po ciemnej stronie krawędzi)\nlaplacian_4n(img)[1, 2]   # -> -1.0  (po jasnej stronie krawędzi)\nlaplacian_4n(img)[1, 0]   # ->  0.0  (płaski obszar)\n```",
+        "starterCode": "import numpy as np\n\ndef laplacian_4n(img):\n    # img: numpy.ndarray 2D, dowolny typ liczbowy\n    # Krok po kroku:\n    #   1. img = np.asarray(img, dtype=np.float64)\n    #   2. Dolóż padding zerowy o szerokosci 1 z kazdej strony (np. zbuduj\n    #      tablice (H+2, W+2) wypelniona zerami i wpisz img w srodek).\n    #   3. Dla kazdego (r, c) zbuduj okno 3x3 i policz sume\n    #         0*w[0,0] + 1*w[0,1] + 0*w[0,2]\n    #       + 1*w[1,0] - 4*w[1,1] + 1*w[1,2]\n    #       + 0*w[2,0] + 1*w[2,1] + 0*w[2,2]\n    #   4. Zwroc tablice (H, W) typu float64.\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    out = np.zeros((H, W), dtype=np.float64)\n    return out\n",
+        "tests": [
+          {
+            "name": "staly_obraz_zwraca_same_zera",
+            "body": "import numpy as np\nimg = np.full((4, 6), 7.0, dtype=np.float64)\ny = laplacian_4n(img)\nassert isinstance(y, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(y).__name__}'\nassert y.dtype == np.float64, f'oczekiwano dtype float64, jest {y.dtype}'\nassert y.shape == (4, 6), f'oczekiwano ksztaltu (4, 6), dostalismy {y.shape}'\n# Suma wag jadra Laplasjanu = 0, wiec na stalym obrazie wynik = 0 wszedzie poza brzegiem.\n# Brzeg z paddingiem zerowym tez ma reakcje, ale wnetrze (H-2, W-2) musi byc dokladnie zero.\nassert np.allclose(y[1:-1, 1:-1], 0.0, atol=1e-9), f'wnetrze stalego obrazu powinno byc 0.0; jest {y[1:-1, 1:-1]}'",
+            "hidden": false
+          },
+          {
+            "name": "pionowa_krawedz_daje_para_plus1_minus1",
+            "body": "import numpy as np\nimg = np.zeros((3, 5), dtype=np.float64)\nimg[:, 2:] = 1.0   # pionowa krawedz miedzy kolumna 1 a 2\ny = laplacian_4n(img)\nassert y.shape == (3, 5), f'ksztalt: {y.shape}'\n# W srodkowym wierszu (r=1) odpowiedz powinna byc dwukrokowa: +1 po ciemnej, -1 po jasnej.\nassert abs(y[1, 1] - 1.0) < 1e-9, f'oczekiwano y[1, 1] = +1.0, jest {y[1, 1]}'\nassert abs(y[1, 2] - (-1.0)) < 1e-9, f'oczekiwano y[1, 2] = -1.0, jest {y[1, 2]}'\n# Plaski obszar po lewej i po prawej powinien byc zerowy.\nassert abs(y[1, 0] - 0.0) < 1e-9, f'oczekiwano y[1, 0] = 0.0, jest {y[1, 0]}'\nassert abs(y[1, 4] - 0.0) < 1e-9, f'oczekiwano y[1, 4] = 0.0, jest {y[1, 4]}'"
+          },
+          {
+            "name": "izolowany_impuls_daje_minus4_w_centrum_i_plus1_u_sasiadow",
+            "body": "import numpy as np\nimg = np.zeros((5, 5), dtype=np.float64)\nimg[2, 2] = 1.0   # pojedynczy jasny piksel\ny = laplacian_4n(img)\n# Przyklad ze wzoru: w centrum -4, u 4 sasiadow +1, na przekatnych 0.\nassert abs(y[2, 2] - (-4.0)) < 1e-9, f'centrum: oczekiwano -4.0, jest {y[2, 2]}'\nassert abs(y[1, 2] - 1.0) < 1e-9, f'gora: oczekiwano +1.0, jest {y[1, 2]}'\nassert abs(y[3, 2] - 1.0) < 1e-9, f'dol: oczekiwano +1.0, jest {y[3, 2]}'\nassert abs(y[2, 1] - 1.0) < 1e-9, f'lewo: oczekiwano +1.0, jest {y[2, 1]}'\nassert abs(y[2, 3] - 1.0) < 1e-9, f'prawo: oczekiwano +1.0, jest {y[2, 3]}'\n# Na przekatnych jadro L4 ma wage 0 — przekatne sasiady nie wnosza wkladu.\nassert abs(y[1, 1] - 0.0) < 1e-9, f'lewy gorny rog: oczekiwano 0.0, jest {y[1, 1]}'\nassert abs(y[3, 3] - 0.0) < 1e-9, f'prawy dolny rog: oczekiwano 0.0, jest {y[3, 3]}'"
+          },
+          {
+            "name": "izotropia_wzgledem_obrotu_o_180",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.uniform(0, 255, size=(6, 8)).astype(np.float64)\ny = laplacian_4n(img)\ny_rot = laplacian_4n(img[::-1, ::-1])\n# Jadro Laplasjanu jest symetryczne wzgledem obrotu o 180° (L4 == rot180(L4)),\n# wiec dla zero-paddingu odpowiedz spelnia laplacian(rot180(img)) == rot180(laplacian(img)).\nassert np.allclose(y_rot, y[::-1, ::-1], atol=1e-9), 'L4 powinno byc niezmiennicze wzgledem obrotu o 180°'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef laplacian_4n(img):\n    img = np.asarray(img, dtype=np.float64)\n    H, W = img.shape\n    pad = np.zeros((H + 2, W + 2), dtype=np.float64)\n    pad[1:H + 1, 1:W + 1] = img\n    out = np.empty((H, W), dtype=np.float64)\n    for r in range(H):\n        for c in range(W):\n            w = pad[r:r + 3, c:c + 3]\n            out[r, c] = (\n                0.0 * w[0, 0] + 1.0 * w[0, 1] + 0.0 * w[0, 2]\n                + 1.0 * w[1, 0] - 4.0 * w[1, 1] + 1.0 * w[1, 2]\n                + 0.0 * w[2, 0] + 1.0 * w[2, 1] + 0.0 * w[2, 2]\n            )\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-zera-przejscia-i-cv8u",
+      "title": "Sprawdź się: zera przejścia i pułapki Laplasjanu",
+      "type": "quiz",
+      "data": {
+        "question": "Wywołujesz `cv2.Laplacian(img, cv2.CV_8U, ksize=3)` na zaszumionym obrazie w skali szarości i otrzymujesz wynik, w którym **połowa krawędzi w ogóle nie istnieje** oraz pojawia się masa drobnych „ziarnistych\" odpowiedzi na płaskich obszarach. Które dwa stwierdzenia poprawnie diagnozują problem i wskazują kanoniczne naprawy?",
+        "options": [
+          "Typ `cv2.CV_8U` (uint8) obcina wartości ujemne do zera — Laplasjan zwraca **podpisane** wartości (po jednej stronie krawędzi dodatnie, po drugiej ujemne), więc cała ujemna połowa zera przejścia znika. Naprawa: licz Laplasjan jako `cv2.CV_64F`, a dopiero przed wyświetleniem zrób `np.absolute(...)` lub `cv2.convertScaleAbs(...)`.",
+          "Druga pochodna wzmacnia szum znacznie silniej niż pierwsza, więc surowy Laplasjan na zaszumionym obrazie ma „ziarnistą\" odpowiedź. Kanoniczna naprawa to schemat **Laplasjan z Gaussa (LoG)** — najpierw `cv2.GaussianBlur` o niezerowym σ, potem dopiero `cv2.Laplacian`.",
+          "`ksize=3` jest po prostu zbyt mały — dla zaszumionych obrazów Laplasjan wymaga `ksize=7` lub większego, żeby w ogóle widzieć obie strony krawędzi.",
+          "Operator Laplace jest jednokierunkowy — żeby zobaczyć obie strony krawędzi trzeba wywołać `cv2.Laplacian` osobno z `dx=1` i `dx=-1`, a wyniki zsumować.",
+          "Liczba kanałów wejścia jest źle dobrana — Laplasjan wymaga obrazu trzykanałowego (`cv2.cvtColor(..., cv2.COLOR_GRAY2BGR)`), na jednokanałowym wykrywa tylko krawędzie dodatnio-skierowane."
+        ],
+        "correct": [
+          0,
+          1
+        ],
+        "explanation": "Dwa zupełnie niezależne błędy współistnieją w tym wywołaniu i obie naprawy są standardem branżowym. **(0) Znak.** Laplasjan zwraca wartości podpisane: po ciemnej stronie krawędzi dodatnie, po jasnej ujemne (lub odwrotnie — patrz ćwiczenie powyżej). Typ `cv2.CV_8U` jest bez znaku (zakres 0–255) i obcina wszystko, co ujemne, do zera — niszcząc dokładnie tę połowę zera przejścia, którą chcesz znaleźć. Stąd wzorzec `CV_64F` plus `np.absolute(...)`. **(1) Szum.** Ponieważ druga pochodna podwójnie wzmacnia drobne fluktuacje, surowy Laplasjan na realnym obrazie zawsze ma „ziarnisty\" wygląd — to nie błąd implementacji, tylko fizyka operatora. Marr i Hildreth rozwiązali ten problem w 1980 r. proponując LoG: najpierw `cv2.GaussianBlur(img, (0, 0), sigma)`, potem `cv2.Laplacian(...)` na wygładzonym wejściu. Odpowiedzi 2, 3, 4 są fałszywe: większy `ksize` nie naprawia kwestii znaku (problem leży w `ddepth`); Laplasjan jest **izotropowy**, nie jednokierunkowy, jedno wywołanie wystarcza; liczba kanałów nie ma związku ze znakiem ani z izotropią.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-laplacian-i-log",
+      "title": "Piaskownica: cv2.Laplacian, LoG i zera przejścia",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# Maly obraz syntetyczny: ciemne tlo z ostra krawedzia pionowa po srodku\n# i drobnym szumem gaussowskim — idealne pole do porownania surowego\n# Laplasjanu z LoG (Gauss + Laplasjan).\nrng = np.random.default_rng(0)\nH, W = 96, 128\nimg = np.full((H, W), 90, dtype=np.float64)\nimg[:, 64:] = 200                # ostra krawedz pionowa\nimg[20:50, 30:60] = 30           # drugi prostokat — ciemniejszy obszar po lewej\nimg += rng.normal(0, 6, size=img.shape)   # delikatny szum gaussowski\nimg = np.clip(img, 0, 255).astype(np.uint8)\n\n# Surowy Laplasjan — UWAGA: typ wyjscia cv2.CV_64F, NIE CV_8U!\n# CV_8U obcialby wartosci ujemne do 0 i polowa zera przejscia by zniknela.\nlap_raw = cv2.Laplacian(img, cv2.CV_64F, ksize=3)\n\n# LoG: najpierw Gauss, potem Laplasjan. sigma=1.4 to typowy punkt startu Marra-Hildretha.\nimg_blur = cv2.GaussianBlur(img, ksize=(0, 0), sigmaX=1.4)\nlap_log = cv2.Laplacian(img_blur, cv2.CV_64F, ksize=3)\n\n# Detekcja zera przejscia w wierszu 60 (dla LoG): pokaz indeksy, gdzie znak\n# Laplasjanu zmienia sie miedzy sasiednimi pikselami.\nrow_log = lap_log[60]\nzc_indices = np.where(np.diff(np.sign(row_log)) != 0)[0]\n\ndef cut(arr):\n    return np.round(arr[60, 60:70], 1)\n\nprint('IMG (jasnosc wokol krawedzi)             :', cut(img.astype(np.float64)))\nprint('Laplasjan SUROWY (CV_64F)                :', cut(lap_raw))\nprint('Laplasjan LoG    (sigma=1.4)             :', cut(lap_log))\nprint('Zera przejscia w wierszu 60 (LoG, indexy):', zc_indices.tolist())\n\n# Pytania do siebie:\n#   * Jak rozni sie magnituda lap_raw od lap_log w okolicy krawedzi?\n#     Ktora wersja ma mniej fluktuacji w plaskich obszarach (np. kolumny 0..20)?\n#   * Wywolaj cv2.Laplacian(img, cv2.CV_8U, ksize=3) i porownaj — gdzie\n#     znikaja wartosci ujemne i co to robi z zerami przejscia?\n#   * Zmien sigma w GaussianBlur na 0.5, 1.0, 2.0, 3.0 — jak rosnie szerokosc\n#     reakcji LoG na krawedzi i jak zmienia sie liczba zer przejscia (zc_indices)?\n#   * Zaimplementuj L8 jako cv2.filter2D z jadrem [[1,1,1],[1,-8,1],[1,1,1]]\n#     i porownaj jego reakcje na ukosnej krawedzi z wynikiem cv2.Laplacian.\n",
+        "encouragement": "Pobaw się parametrem σ w `cv2.GaussianBlur` przed Laplasjanem — i zobacz, jak płynnie LoG przechodzi z drobnoskalowych krawędzi (małe σ) do grubych konturów (duże σ)."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Discrete_Laplace_operator",
+      "title": "Discrete Laplace operator — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d86/group__imgproc__filter.html#gad78703e4c8fe703d479c1860d76429e6",
+      "title": "OpenCV — Laplacian API reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1098/rspb.1980.0020",
+      "title": "Marr, D. and Hildreth, E. — Theory of Edge Detection (Proc. R. Soc. B, 1980)",
+      "kind": "paper",
+      "author": "David Marr and Ellen Hildreth",
+      "year": 1980
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d5/d0f/tutorial_py_gradients.html",
+      "title": "OpenCV Python tutorial — Image gradients (Sobel/Scharr/Laplacian)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 3 (Spatial Filtering, Laplacian and Unsharp Masking)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    }
+  ]
+}

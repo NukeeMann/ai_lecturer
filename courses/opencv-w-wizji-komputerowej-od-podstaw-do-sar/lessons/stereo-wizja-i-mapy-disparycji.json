@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "slug": "stereo-wizja-i-mapy-disparycji",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Stereo wizja i mapy disparycji",
+  "eyebrow": "GEOMETRIA 3D",
+  "description": "Dwa rektyfikowane widoki tej samej sceny pozwalają oszacować głębię — bez aktywnego skanera, tylko z pikselowej różnicy między obrazami. Poznasz pojęcie disparycji ($d = x_L - x_R$) oraz jej związek z głębią ($Z = f \\cdot B / d$), dwa matchery OpenCV (StereoBM i StereoSGBM Hirschmüllera 2008), kontraktowe wymagania ich parametrów (`numDisparities` wielokrotność 16, `blockSize` nieparzysty, kary $P_1, P_2$ zalecane jako $8 \\cdot c \\cdot k^2$ i $32 \\cdot c \\cdot k^2$) oraz fixed-point kodowanie wyniku, który trzeba ręcznie podzielić przez 16.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "geometria-stereo",
+      "title": "Z dwóch widoków do głębi: pipeline i wzór $Z = fB/d$",
+      "type": "theory",
+      "data": {
+        "markdown": "**Stereo wizja** odtwarza głębię sceny z **dwóch obrazów** zrobionych z lekko różnych pozycji — tak jak parę ludzkich oczu. Dla każdego punktu sceny lokalizujemy jego rzut na lewym obrazie $(x_L, y_L)$ oraz prawym $(x_R, y_R)$ i liczymy *disparycję*:\n\n$$ d = x_L - x_R $$\n\nPełen pipeline ma cztery kroki — pominięcie któregokolwiek psuje wynik:\n\n1. **Kalibracja stereo** (`cv2.stereoCalibrate`) wyznacza intrynsykę $K_L, K_R$ obu kamer i pozę między nimi $(R, t)$.\n2. **Rektyfikacja** (`cv2.stereoRectify` + `cv2.initUndistortRectifyMap` + `cv2.remap`) *przekrzywia* obie klatki tak, żeby **odpowiadające piksele leżały na tym samym wierszu** — czyli $y_L = y_R$. Bez tego kroku poszukiwanie odpowiedników jest 2D (drogie i zaszumione) zamiast 1D wzdłuż linii epipolarnej.\n3. **Block matching** — dla każdego $(x_L, y)$ matcher (`StereoBM` lub `StereoSGBM`) szuka takiego $d$, że okno $k \\times k$ wokół $(x_L, y)$ z lewej najlepiej pasuje do okna wokół $(x_L - d, y)$ z prawej. Wynik: **mapa disparycji** $D(x, y)$.\n4. **Disparity → głębia** — dla skalibrowanej rektyfikowanej pary z poziomą bazą $B$ obowiązuje wzór wyprowadzony z trójkątów podobnych:\n\n$$ Z(x, y) = \\frac{f \\cdot B}{d(x, y)} $$\n\ngdzie $f$ to ogniskowa w pikselach, a $B$ to *baseline* — fizyczna odległość między kamerami w metrach.\n\n![Diagram geometrii dwukamerowego stereo z dokumentacji OpenCV: dwa pinhole'e oddalone o baseline B, jeden punkt 3D rzutowany na lewy obraz w x_L i na prawy w x_R; z trójkątów podobnych wynika, że Z = f*B/(x_L - x_R)](https://docs.opencv.org/4.x/stereo_depth.jpg)\n\nDwie konsekwencje wzoru, które zdają się z bólem na każdym pierwszym uruchomieniu:\n\n- **$Z$ jest *odwrotnie* proporcjonalna do $d$.** Piksel z dużą disparycją jest *blisko*, piksel z disparycją bliską 0 jest *daleko*; gdy $d = 0$, mówimy o nieskończoności (i kod musi to obsłużyć — dzielenie przez zero).\n- **Mapa disparycji ≠ mapa głębi.** $D$ to liczby pikseli, $Z$ to metry. Bez znajomości $f$ i $B$ z disparycji nie wyciągniesz fizycznej odległości."
+      },
+      "sources": [
+        {
+          "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+          "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 11 Computation of the Fundamental Matrix",
+          "kind": "book",
+          "author": "Richard Hartley and Andrew Zisserman",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "bm-vs-sgbm",
+      "title": "StereoBM kontra StereoSGBM: lokalność vs półglobalność",
+      "type": "theory",
+      "data": {
+        "markdown": "OpenCV daje dwa gotowe matchery: **`StereoBM`** (Block Matching) i **`StereoSGBM`** (Semi-Global Block Matching, na podstawie pracy Hirschmüllera 2008). Różnią się tym, *jak* wybierają najlepszą disparycję dla każdego piksela.\n\n`StereoBM` jest **lokalny i szybki** — dla każdego $(x, y)$ przesuwa okno $k \\times k$ po linii epipolarnej w prawym obrazie i wybiera $d^*$ minimalizujące sumę bezwzględnych różnic (SAD):\n\n$$ d^*(x, y) = \\arg\\min_{d \\in [0, D_{\\max})} \\sum_{(\\Delta x, \\Delta y)} \\bigl| I_L(x + \\Delta x, y + \\Delta y) - I_R(x - d + \\Delta x, y + \\Delta y) \\bigr| $$\n\nDziała świetnie na **bogato teksturowanych** scenach (cegły, liście, książki na półce), ale dryfuje na obszarach gładkich (jednolita ściana, niebo) — bez tekstury każde $d$ daje podobny SAD i wynik losowy.\n\n`StereoSGBM` rozwiązuje ten problem: minimalizuje **globalny** koszt z **karami za skoki disparycji** ($P_1$ — mała kara za $|\\Delta d| = 1$ między sąsiadami, $P_2 > P_1$ — duża za $|\\Delta d| > 1$), agregowany wzdłuż 8 lub 16 ścieżek przez obraz. Sąsiadujące piksele 'głosują' na tę samą disparycję, więc gładkie obszary dostają sensowną wartość zamiast szumu — kosztem 3–5× wolniejszego czasu wykonania. **Domyślnie używaj SGBM** — chyba że potrzebujesz real-time na słabym CPU.\n\n**Trzy parametry, które *muszą* być prawidłowo ustawione**:\n\n- `numDisparities` — szerokość zakresu szukania, w pikselach. **Musi być wielokrotnością 16** (wymóg implementacji SIMD w OpenCV); typowo 64–256. Im większa baseline lub bliższa scena, tym większe `numDisparities`.\n- `blockSize` — bok okna SAD. **Musi być nieparzysty** i $\\geq 5$. Małe `blockSize` (5–7) → ostre krawędzie, dużo szumu; duże (15–21) → gładko, ale rozmyte krawędzie obiektów.\n- Dla SGBM: $P_1, P_2$ kontrolują 'gładkość' mapy. Dokumentacja zaleca $P_1 = 8 \\cdot c \\cdot k^2$ oraz $P_2 = 32 \\cdot c \\cdot k^2$, gdzie $c$ to liczba kanałów obrazu, a $k$ to `blockSize`. Dla obrazu szarości i `blockSize=5`: $P_1 = 200$, $P_2 = 800$.\n\n**Pułapka kodowania wyniku**: `compute(...)` zwraca mapę typu `CV_16S` jako **fixed-point z 4 bitami subpikselowymi**. Żeby dostać prawdziwą disparycję w pikselach, dziel przez 16:\n\n```python\nraw = stereo.compute(left, right)            # int16, fixed-point\ndisparity = raw.astype(np.float32) / 16.0    # float, w pikselach\n```\n\nPiksele, dla których matcher nie znalazł odpowiednika, dostają wartość `-1` (po podziale: ujemna). Maskuj je przed konwersją na głębię."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.2007.1166",
+          "title": "Hirschmüller, H. — Stereo Processing by Semi-Global Matching and Mutual Information (IEEE TPAMI 2008)",
+          "kind": "paper",
+          "author": "Heiko Hirschmüller",
+          "year": 2008
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/dd/d53/tutorial_py_depthmap.html",
+          "title": "OpenCV Python tutorial — Depth map from stereo images",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-disparity-vs-depth",
+      "title": "Sprawdź się: disparycja, głębia i rektyfikacja",
+      "type": "quiz",
+      "data": {
+        "question": "Po uruchomieniu cv2.StereoSGBM_create(...).compute(left, right) i uzyskaniu mapy disparycji chcesz odczytać 'jak daleko' jest każdy piksel. Które ze zdań *prawdziwie* opisują związek między disparycją a głębią dla skalibrowanej pary stereo? (zaznacz wszystkie poprawne)",
+        "options": [
+          "Większa disparycja oznacza, że obiekt jest BLIŻEJ kamer — bo ze wzoru Z = f·B/d głębia maleje z rosnącym d.",
+          "Mapa disparycji w jednostkach pikseli to to samo co mapa głębi w metrach — wystarczy zmienić nazwę zmiennej w kodzie.",
+          "Aby przeliczyć disparycję na głębię w metrach, potrzebujesz dodatkowo ogniskowej f w pikselach i baseline B w metrach.",
+          "StereoBM/StereoSGBM zakładają, że obrazy są wcześniej zrektyfikowane (epipolarne wiersze poziome) — bez tego mapa disparycji jest praktycznie bezużyteczna."
+        ],
+        "correct": [0, 2, 3],
+        "explanation": "Trzy zdania prawdziwe (0, 2, 3) opisują dokładnie wzór Z = f·B/d i jego założenia: (0) ze wzoru wynika odwrotna proporcjonalność — duże d ↔ małe Z (blisko); (2) sam d to liczba pikseli, dopiero f (w pikselach) i B (w metrach) zamieniają go na fizyczną odległość; (3) matchery porównują okna wzdłuż wierszy obrazu (linii epipolarnych), więc bez rektyfikacji okno w prawym obrazie szuka odpowiednika w złym wierszu i mapa wychodzi szumem. Zdanie (1) jest klasyczną pułapką początkujących — disparycja i głębia mają RÓŻNE jednostki i są w odwrotnej, NIELINIOWEJ relacji (mała zmiana d w pobliżu d = 0 daje gigantyczną zmianę Z, a w pobliżu d_max praktycznie żadną); to dlatego stereo pasywne traci dokładność wraz z odległością.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "kod-disparity-to-depth",
+      "title": "Zaimplementuj rdzeń: disparity → depth",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `disparity_to_depth(disparity, focal_px, baseline_m)`, która zamienia *jedną* wartość disparycji na *jedną* wartość głębi w metrach, zgodnie ze wzorem $Z = f \\cdot B / d$.\n\nReguły:\n\n- `disparity` to liczba zmiennoprzecinkowa $\\geq 0$ — w pikselach (po podzieleniu przez 16, jak po `compute`).\n- `focal_px` to ogniskowa kamery w pikselach (skalar > 0).\n- `baseline_m` to fizyczny rozstaw kamer w metrach (skalar > 0).\n- **Gdy `disparity == 0`, zwróć `float('inf')`** — punkt jest w nieskończoności i `Z = f·B/0` nie ma sensu numerycznie.\n- W pozostałych przypadkach zwróć `float(focal_px * baseline_m / disparity)`.\n\n```\ndisparity_to_depth(20.0, 500.0, 0.10)  # -> 2.5     (d duze, blisko)\ndisparity_to_depth(2.0,  500.0, 0.10)  # -> 25.0    (d male, daleko)\ndisparity_to_depth(0.0,  500.0, 0.10)  # -> inf\n```",
+        "starterCode": "import math\n\ndef disparity_to_depth(disparity, focal_px, baseline_m):\n    \"\"\"\n    disparity: float >= 0 (w pikselach)\n    focal_px:  float > 0 (ogniskowa w pikselach)\n    baseline_m: float > 0 (rozstaw kamer w metrach)\n    Zwraca: glebia w metrach jako float;\n            float('inf'), gdy disparity == 0.\n    \"\"\"\n    # TODO:\n    #   1. Jesli disparity == 0 -> zwroc float('inf').\n    #   2. W innym przypadku zwroc float(focal_px * baseline_m / disparity).\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "bliski_obiekt_d20",
+            "body": "# d = 20 px, f = 500 px, B = 0.1 m -> Z = 500*0.1/20 = 2.5 m.\nz = disparity_to_depth(20.0, 500.0, 0.10)\nassert abs(z - 2.5) < 1e-9, f'oczekiwano 2.5, jest {z}'",
+            "hidden": false
+          },
+          {
+            "name": "daleki_obiekt_d2_to_25m",
+            "body": "# d = 2 px, f = 500, B = 0.1 -> Z = 25 m.\nz = disparity_to_depth(2.0, 500.0, 0.10)\nassert abs(z - 25.0) < 1e-9, f'oczekiwano 25.0, jest {z}'"
+          },
+          {
+            "name": "zero_disparycja_to_nieskonczonosc",
+            "body": "import math\n# Punkt w nieskonczonosci (lub niezmatchowany piksel).\nz = disparity_to_depth(0.0, 700.0, 0.05)\nassert math.isinf(z) and z > 0, f'oczekiwano +inf, jest {z}'\n# Sprawdz, ze inne baseline / focal nie zmieniaja zachowania dla d=0.\nz2 = disparity_to_depth(0.0, 1200.0, 0.20)\nassert math.isinf(z2) and z2 > 0, f'oczekiwano +inf, jest {z2}'"
+          },
+          {
+            "name": "skalowanie_baseline_dwukrotnie_dwukrotnie_dalej",
+            "body": "# Z = f*B/d -> liniowe w B przy stalym d.\nz1 = disparity_to_depth(10.0, 800.0, 0.05)   # 800*0.05/10 = 4.0\nz2 = disparity_to_depth(10.0, 800.0, 0.10)   # 800*0.10/10 = 8.0\nassert abs(z1 - 4.0) < 1e-9, f'oczekiwano 4.0, jest {z1}'\nassert abs(z2 - 8.0) < 1e-9, f'oczekiwano 8.0, jest {z2}'\nassert abs(z2 - 2 * z1) < 1e-9, 'B x 2 powinno dac Z x 2 przy tym samym d i f'"
+          }
+        ],
+        "solution": "import math\n\ndef disparity_to_depth(disparity, focal_px, baseline_m):\n    if disparity == 0:\n        return float('inf')\n    return float(focal_px * baseline_m / disparity)\n"
+      }
+    },
+    {
+      "id": "cloze-sgbm-params",
+      "title": "Skonfiguruj StereoSGBM_create: brakujące parametry",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Dostałeś już zrektyfikowaną parę obrazów stereo w skali szarości i chcesz wyciągnąć mapę disparycji przez `StereoSGBM`. Uzupełnij brakujące wartości tak, żeby parametry były **kontraktowo poprawne** (OpenCV po prostu rzuci wyjątek dla złego `numDisparities` lub `blockSize`) i zgodne z rekomendacją z dokumentacji.\n\nWskazówki:\n- `numDisparities` musi być **wielokrotnością 16**. Dla blisko-średniej sceny dobry punkt startu to 64.\n- `blockSize` musi być **nieparzysty** i $\\geq 5$. Mniejsze → ostre krawędzie, większe → gładko.\n- Współczynniki przy $P_1, P_2$ to standardowa rekomendacja Hirschmüllera: **8** dla $P_1$, **32** dla $P_2$ (mnożone przez liczbę kanałów i kwadrat `blockSize`).",
+        "language": "python",
+        "template": "import cv2\nimport numpy as np\n\n# Pre-rektyfikowane lewy/prawy obraz w skali szarosci.\nleft  = cv2.imread('left_rect.png', cv2.IMREAD_GRAYSCALE)\nright = cv2.imread('right_rect.png', cv2.IMREAD_GRAYSCALE)\n\nch    = 1                       # liczba kanalow (grayscale -> 1)\nblock = {{block}}               # nieparzysty, >= 5; przyjmiemy stale\n\nstereo = cv2.StereoSGBM_create(\n    minDisparity=0,\n    numDisparities={{num_disp}},          # MUSI byc wielokrotnoscia 16\n    blockSize=block,\n    P1={{p1_coef}} * ch * block ** 2,     # rekomendacja: stala dla P1\n    P2={{p2_coef}} * ch * block ** 2,     # rekomendacja: stala dla P2\n    disp12MaxDiff=1,\n    uniquenessRatio=10,\n    speckleWindowSize=100,\n    speckleRange=2,\n)\n\nraw = stereo.compute(left, right)\ndisparity = raw.astype(np.float32) / 16.0   # rozpakuj fixed-point\n",
+        "slots": [
+          {
+            "id": "block",
+            "hint": "Bok okna SAD; nieparzysty i >= 5. Dobry punkt startu to 5.",
+            "validation": {
+              "kind": "oneOf",
+              "values": ["5", "7", "9", "11", "13", "15"]
+            }
+          },
+          {
+            "id": "num_disp",
+            "hint": "Szerokosc zakresu szukania, w pikselach. MUSI byc wielokrotnoscia 16. Dla typowej sceny 64-128.",
+            "validation": {
+              "kind": "regex",
+              "pattern": "(16|32|48|64|80|96|112|128|144|160|176|192|208|224|240|256)"
+            }
+          },
+          {
+            "id": "p1_coef",
+            "hint": "Wspolczynnik przy P1 z rekomendacji Hirschmullera (P1 = ? * ch * blockSize**2).",
+            "validation": {
+              "kind": "exact",
+              "value": "8"
+            }
+          },
+          {
+            "id": "p2_coef",
+            "hint": "Wspolczynnik przy P2 z rekomendacji Hirschmullera (P2 = ? * ch * blockSize**2).",
+            "validation": {
+              "kind": "exact",
+              "value": "32"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sandbox-stereo",
+      "title": "Piaskownica: jak parametry SGBM zmieniają mapę disparycji",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\n\n# --- Maly syntetyczny obraz stereo z dwoma 'plytami' na roznych odleglosciach. ---\nH, W = 200, 320\nleft  = np.zeros((H, W), dtype=np.uint8)\nright = np.zeros((H, W), dtype=np.uint8)\n\n# Bliski obiekt: duza disparycja (~30 px). 'Lewy' widzi go w (80..160), 'prawy' przesuniety o 30 w lewo.\nleft[60:140,  80:160]            = 200\nright[60:140, 80 - 30:160 - 30]  = 200\n\n# Daleki obiekt: mala disparycja (~8 px).\nleft[30:70,   220:280]           = 100\nright[30:70,  220 - 8:280 - 8]   = 100\n\n# Lekka tekstura, zeby SGBM mial co dopasowac.\nrng   = np.random.default_rng(0)\nnoise = rng.integers(0, 30, size=(H, W), dtype=np.uint8)\nleft  = cv2.add(left,  noise)\nright = cv2.add(right, noise)\n\n# --- Parametry SGBM. Modyfikuj te trzy wartosci! ---\nNUM_DISP = 64    # wielokrotnosc 16; powieksz, gdy obiekty sa blizej\nBLOCK    = 5     # nieparzysty, >= 5; mniejszy = ostrzejsze krawedzie, wiecej szumu\nch       = 1\n\nstereo = cv2.StereoSGBM_create(\n    minDisparity=0,\n    numDisparities=NUM_DISP,\n    blockSize=BLOCK,\n    P1=8  * ch * BLOCK ** 2,\n    P2=32 * ch * BLOCK ** 2,\n    disp12MaxDiff=1,\n    uniquenessRatio=10,\n    speckleWindowSize=100,\n    speckleRange=2,\n)\n\nraw       = stereo.compute(left, right)\ndisparity = raw.astype(np.float32) / 16.0    # rozpakuj fixed-point\n\n# Konwersja do glebi: trzeba znac kalibracje. Przyjmiemy:\nFOCAL_PX   = 700.0\nBASELINE_M = 0.10  # 10 cm baseline\n\nvalid_mask = disparity > 0\ndepth      = np.full_like(disparity, np.inf, dtype=np.float32)\ndepth[valid_mask] = FOCAL_PX * BASELINE_M / disparity[valid_mask]\n\n# --- Diagnostyka ---\npct_valid = valid_mask.mean() * 100.0\nprint(f'Pikseli z poprawna disparycja: {pct_valid:.1f}%')\n\nif valid_mask.any():\n    d_vals = disparity[valid_mask]\n    print('Disparycja [px] - min/srednia/max:',\n          round(float(d_vals.min()), 2),\n          round(float(d_vals.mean()), 2),\n          round(float(d_vals.max()), 2))\n\n    z_vals = depth[valid_mask]\n    print('Glebia [m]      - min/srednia/max:',\n          round(float(z_vals.min()), 3),\n          round(float(z_vals.mean()), 3),\n          round(float(z_vals.max()), 3))\n\n# Pytania do eksperymentu:\n#  * Zmniejsz NUM_DISP do 16 - co dzieje sie z blizszym obiektem (d ~ 30 px)?\n#  * Zwieksz BLOCK do 21 - czy procent poprawnych pikseli rosnie? a krawedzie?\n#  * Zakomentuj cv2.add(..., noise) - co staje sie z disparycja na gladkich plytach?\n#  * Zmien BASELINE_M z 0.10 na 0.20 - czy mapa glebi wyglada inaczej, czy tylko skalujemy os Z?\n",
+        "encouragement": "Zwróć uwagę: parametry SGBM kształtują *mapę disparycji*, ale konwersja do metrów to czysta arytmetyka — błąd w (f, B) zmienia jednostki, nie kształt powierzchni."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.2007.1166",
+      "title": "Hirschmüller, H. — Stereo Processing by Semi-Global Matching and Mutual Information (IEEE TPAMI 2008)",
+      "kind": "paper",
+      "author": "Heiko Hirschmüller",
+      "year": 2008
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/dd/d53/tutorial_py_depthmap.html",
+      "title": "OpenCV Python tutorial — Depth map from stereo images",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.cambridge.org/core/books/multiple-view-geometry-in-computer-vision/0B6F289C78B2B23F596CAA76D3D43F7A",
+      "title": "Multiple View Geometry in Computer Vision, 2nd ed. — § 11 Computation of the Fundamental Matrix",
+      "kind": "book",
+      "author": "Richard Hartley and Andrew Zisserman",
+      "year": 2004
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Computer_stereo_vision",
+      "title": "Computer stereo vision — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

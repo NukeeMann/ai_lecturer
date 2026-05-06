@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 1,
+  "slug": "profilowanie-i-wektoryzacja-w-opencv",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Profilowanie i wektoryzacja w OpenCV",
+  "eyebrow": "WYDAJNOŚĆ",
+  "description": "Najpierw zmierz, potem optymalizuj — `cv2.getTickCount` i `cProfile` jako kompas, a wektoryzacja NumPy/OpenCV jako narzędzie, które zamienia 30 s pętli Pythona w 30 ms wywołania w C.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "intro-mierz-zanim-optymalizujesz",
+      "title": "Mierz, zanim optymalizujesz",
+      "type": "theory",
+      "data": {
+        "markdown": "Profilowanie odpowiada na jedno pytanie: *w której linii czas naprawdę ucieka?* W pipeline'ach OpenCV intuicja często myli — `cv2.GaussianBlur` na obrazie Full HD trwa kilka milisekund, a niewinnie wyglądająca pętla `for y in range(H): for x in range(W): ...` po tej samej tablicy potrafi zżerać kilkanaście sekund. Zanim cokolwiek przyspieszysz, *zmierz* — bez liczb optymalizacja jest zgadywaniem.\n\nTrzy narzędzia warto mieć pod ręką:\n\n- **`cv2.getTickCount()` + `cv2.getTickFrequency()`** — wbudowany w OpenCV stoper o rozdzielczości tików platformy. Idiomatyczny pomiar:\n\n```python\nt0 = cv2.getTickCount()\nresult = cv2.GaussianBlur(img, (5, 5), 1.0)\nms = (cv2.getTickCount() - t0) / cv2.getTickFrequency() * 1000.0\nprint(f'GaussianBlur: {ms:.2f} ms')\n```\n\n- **`time.perf_counter()`** — standardowa biblioteczna alternatywa o równie wysokiej rozdzielczości; różni się tylko nazwą. Dla wielokrotnych pomiarów w notebooku zwykle wygodniej sięgnąć po `%timeit`, który automatycznie powtarza fragment i raportuje medianę z $n$ uruchomień.\n- **`cProfile` + `pstats`** — gdy *nie wiesz*, gdzie szukać. Uruchom `python -m cProfile -o out.prof skrypt.py`, a potem otwórz wynik:\n\n```python\nimport pstats\npstats.Stats('out.prof').sort_stats('cumulative').print_stats(20)\n```\n\nW kolumnie `cumtime` posortowanej top-20 niemal zawsze siedzi winowajca — najczęściej pojedyncza pętla po pikselach albo wywołanie funkcji w głębokim łańcuchu, którego się nie spodziewałeś.\n\nDodatkowo OpenCV udostępnia globalną flagę `cv2.useOptimized()` (oraz `cv2.setUseOptimized(True/False)`) — gdy jest włączona, biblioteka wybiera zoptymalizowane ścieżki SIMD (SSE / AVX / NEON). Domyślnie jest `True`; warto upewnić się przed pomiarem, że nikt nie wyłączył jej w sesji notebooka — różnica potrafi sięgać 2–4×.\n\nReguła kciuka: **najpierw zmierz, potem zmieniaj**. Optymalizowanie fragmentu, którego nie zmierzyłeś, kończy się zwykle skomplikowaniem kodu, który i tak był nieistotny dla całkowitego czasu, podczas gdy prawdziwy bottleneck stoi nietknięty kilka linii dalej."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/dc/d71/tutorial_py_optimization.html",
+          "title": "OpenCV Python tutorial — Performance measurement and improvement",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.python.org/3/library/profile.html",
+          "title": "Python cProfile — official documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "theory-wektoryzacja",
+      "title": "Wektoryzacja: jeden krok C zamiast miliona kroków Pythona",
+      "type": "theory",
+      "data": {
+        "markdown": "Gdy profilowanie wskazuje pętlę `for` po pikselach, prawie zawsze odpowiedzią jest **wektoryzacja** — zastąpienie iteracji w Pythonie *jednym* wywołaniem operacji NumPy lub OpenCV, które w środku iteruje w skompilowanym C++.\n\nDlaczego to taka dramatyczna różnica? Każda iteracja `for` w CPythonie ma rzędu $50$–$100\\,\\mathrm{ns}$ narzutu samego interpretera (dispatch bajtkodu, odwołania do atrybutów, alokacje obiektów `int`/`float`). Dla obrazu $1024 \\times 1024 \\approx 10^{6}$ pikseli daje to $50$–$100\\,\\mathrm{ms}$ *zanim policzysz cokolwiek*. To samo zadanie wykonane jako pojedyncze wyrażenie typu `image + 10` schodzi do dziesiątek mikrosekund, bo iteracja po milionie pikseli dzieje się w skompilowanej pętli C nad ciągłym buforem `ndarray`, z dodatkowym SIMD (SSE/AVX) na nowoczesnych procesorach.\n\nTrzy regularne źródła wektoryzacji w pipeline'ie OpenCV:\n\n- **Operacje arytmetyczne na całych tablicach** — `image + 10`, `mask & other`, `image * 0.5`, `np.where(cond, a, b)` — wszystko działa per piksel, bez pętli.\n- **Indeksowanie zaawansowane** (*fancy indexing*) — `lut[image]` aplikuje LUT $256$-elementowy do każdego piksela jednym wywołaniem; działa identycznie do `cv2.LUT` w C.\n- **Funkcje OpenCV** — `cv2.add`, `cv2.GaussianBlur`, `cv2.threshold`, `cv2.warpAffine`, `cv2.filter2D` — wszystkie iterują po obrazie wewnętrznie w C++ z włączonymi optymalizacjami SIMD. Zamiana pętli Pythona na wywołanie funkcji OpenCV to typowe przyspieszenie $100\\times$–$1000\\times$.\n\n**Pułapka, w którą wpada każdy.** Pętla `for` z `np.sum` czy `np.mean` *w środku* **nie jest** wektoryzacją:\n\n```python\nfor i in range(H):\n    for j in range(W):\n        out[i, j] = np.sum(window)   # N x M wywolan np.sum z narzutem Pythona\n```\n\nMimo że NumPy wygląda przy każdej iteracji, *zewnętrzna* pętla i tak wykonuje $H \\cdot W$ kroków interpretera. Wektoryzacja musi **zlikwidować** zewnętrzną pętlę — np. zamieniając lokalną sumę na splot z jądrem stałym (`cv2.boxFilter`) albo na bramkowane przesunięcia tablicy. Test, który warto zrobić mentalnie: *czy moje wyrażenie zawiera pętlę po pikselach?* Jeśli tak, prawdopodobnie nie jest jeszcze zwektoryzowane.\n\nNa koniec: **broadcasting** robi za nas pracę z dopasowaniem kształtów. Tablica obrazu $(H, W, 3)$ minus średnia kanałowa o kształcie $(3,)$ działa bez ręcznego replikowania — NumPy automatycznie rozszerza brakujące osie zgodnie z regułami broadcastingu, ponownie iterując w skompilowanym C."
+      },
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/user/basics.broadcasting.html",
+          "title": "NumPy — Broadcasting (user guide)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-apply-lut",
+      "title": "Zaimplementuj `apply_lut(image, lut)` bez pętli",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `apply_lut(image, lut)`, która jest **wektoryzowanym odpowiednikiem** `cv2.LUT` — czyli aplikuje 256-elementową tablicę przeglądową do każdego piksela obrazu w skali szarości. Wymagania:\n\n- `image` to dwuwymiarowa `numpy.ndarray` typu `uint8` o dowolnym kształcie `(H, W)`.\n- `lut` to jednowymiarowa `numpy.ndarray` typu `uint8` o długości dokładnie $256$.\n- Wynik ma mieć **ten sam kształt co `image`** i **dtype `uint8`**, a wartość każdego piksela `out[i, j]` powinna być równa `lut[image[i, j]]`.\n- **Nie używaj pętli `for` po pikselach** (ani `while`) — rozwiązanie ma być wektoryzowane jednym wywołaniem NumPy.\n\n```\nlut = np.arange(255, -1, -1, dtype=np.uint8)   # inwersja jasnosci\nimg = np.array([[0, 64], [128, 255]], dtype=np.uint8)\napply_lut(img, lut)\n# array([[255, 191],\n#        [127,   0]], dtype=uint8)\n```\n\nWskazówka: w NumPy `lut[image]` to *fancy indexing* — kluczowa idiomatyka wektoryzowanego pipeline'u. Jedna linia kodu, $\\mathcal{O}(H \\cdot W)$ pracy w skompilowanym C, zero narzutu interpretera.",
+        "starterCode": "import numpy as np\n\ndef apply_lut(image, lut):\n    # image: 2D numpy.ndarray (H, W) typu uint8\n    # lut:   1D numpy.ndarray dlugosci 256, typu uint8\n    # Zwroc tablice (H, W) typu uint8 z lut[image[i, j]] na pozycji (i, j).\n    #\n    # Wektoryzowane rozwiazanie ma jedna linie:\n    #   return lut[image]\n    # ...ale najpierw sprawdz, czy starter Cie nie zmyli — funkcja na razie\n    # zwraca obraz bez zmian, wiec wszystkie testy powinny upadac.\n    return image\n",
+        "tests": [
+          {
+            "name": "identycznosciowy_lut_zwraca_obraz",
+            "body": "import numpy as np\nlut = np.arange(256, dtype=np.uint8)\nimg = np.array([[0, 1, 2], [253, 254, 255]], dtype=np.uint8)\nout = apply_lut(img, lut)\nassert isinstance(out, np.ndarray), f'oczekiwano numpy.ndarray, dostalismy {type(out).__name__}'\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, dostalismy {out.dtype}'\nassert out.shape == img.shape, f'oczekiwano ksztaltu {img.shape}, dostalismy {out.shape}'\nassert np.array_equal(out, img), f'identycznosciowy LUT powinien zwrocic ten sam obraz, dostalismy\\n{out}'",
+            "hidden": false
+          },
+          {
+            "name": "inwersja_jasnosci",
+            "body": "import numpy as np\nlut = np.arange(255, -1, -1, dtype=np.uint8)\nimg = np.array([[0, 64], [128, 255]], dtype=np.uint8)\nexpected = np.array([[255, 191], [127, 0]], dtype=np.uint8)\nout = apply_lut(img, lut)\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, dostalismy {out.dtype}'\nassert np.array_equal(out, expected), f'oczekiwano\\n{expected}\\notrzymano\\n{out}'"
+          },
+          {
+            "name": "lut_progujacy_daje_obraz_binarny",
+            "body": "import numpy as np\nlut = np.where(np.arange(256) >= 128, 255, 0).astype(np.uint8)\nrng = np.random.default_rng(0)\nimg = rng.integers(0, 256, size=(8, 8), dtype=np.uint8)\nexpected = np.where(img >= 128, 255, 0).astype(np.uint8)\nout = apply_lut(img, lut)\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, dostalismy {out.dtype}'\nassert np.array_equal(out, expected), 'LUT progujacy powinien dawac obraz binarny 0/255 zgodny z img >= 128'\nassert set(np.unique(out).tolist()).issubset({0, 255}), f'wartosci binarne powinny byc tylko {{0, 255}}, sa {sorted(np.unique(out).tolist())}'"
+          },
+          {
+            "name": "zachowuje_ksztalt_dla_duzego_obrazu",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nimg = rng.integers(0, 256, size=(64, 96), dtype=np.uint8)\nlut = (np.arange(256, dtype=np.uint16) * 2 % 256).astype(np.uint8)\nout = apply_lut(img, lut)\nassert out.shape == (64, 96), f'oczekiwano ksztaltu (64, 96), jest {out.shape}'\nassert out.dtype == np.uint8, f'oczekiwano dtype uint8, jest {out.dtype}'\n# Punktowa weryfikacja na kilku pikselach.\nfor (i, j) in [(0, 0), (10, 20), (63, 95), (32, 48)]:\n    assert int(out[i, j]) == int(lut[img[i, j]]), (\n        f'piksel ({i}, {j}): oczekiwano {int(lut[img[i, j]])}, jest {int(out[i, j])}'\n    )"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef apply_lut(image, lut):\n    return lut[image]\n"
+      }
+    },
+    {
+      "id": "check-gpu-narzut",
+      "title": "Sprawdź się: dlaczego mała operacja na GPU bywa wolniejsza?",
+      "type": "quiz",
+      "data": {
+        "question": "Zmierzyłeś czas konwolucji 3×3 na obrazie 64×64: `cv2.filter2D` na CPU trwa $0{,}4\\,\\mathrm{ms}$, a `cv2.cuda.filter2D` na GPU trwa $8\\,\\mathrm{ms}$. Które stwierdzenie najlepiej tłumaczy ten wynik?",
+        "options": [
+          "GPU jest *zawsze* wolniejsze od CPU dla operacji obrazowych poniżej rozmiaru $1024 \\times 1024$ — to znana właściwość architektur CUDA.",
+          "Dla małego obrazu narzut przesłania danych do/z pamięci GPU oraz uruchomienia kernela CUDA dominuje nad samą operacją; GPU wygrywa dopiero przy dużych obrazach lub wsadach klatek, gdzie ten stały koszt amortyzuje się.",
+          "Twoja karta graficzna nie obsługuje SIMD, więc `cv2.cuda` w ogóle nie korzysta z rdzeni CUDA i robi obliczenia sekwencyjnie na CPU.",
+          "`cv2.filter2D` automatycznie przełącza się na GPU dla każdego obrazu — `cv2.cuda.filter2D` jest funkcją wycofaną, której nie należy już używać."
+        ],
+        "correct": [1],
+        "explanation": "Każde wywołanie kernela CUDA niesie ze sobą stały narzut: przesłanie bufora hosta do VRAM (`cudaMemcpy`), uruchomienie kernela, synchronizacja, kopia wyniku z powrotem. Dla obrazka $64 \\times 64$ ten narzut (typowo kilka ms) dominuje nad samą konwolucją, której CPU domyka w setkach mikrosekund dzięki wektoryzacji SIMD. GPU naprawdę zaczyna wygrywać przy dużych obrazach (np. $4\\mathrm{K}$), wsadach klatek z wideo albo ciężkich operacjach (deep learning, splot z wielkim jądrem), gdzie kilka ms narzutu rozkłada się na duży wolumen pracy. Stwierdzenie A jest zbyt kategorycznym uproszczeniem (GPU bije CPU już dla obrazów rzędu $512 \\times 512$ przy ciężkich operacjach), C myli architektury (CUDA cores *są* równoległym SIMD-em), a D jest po prostu nieprawdziwe — `cv2.filter2D` to ścieżka CPU, a moduł `cv2.cuda` istnieje i jest aktywnie wspierany.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-loop-vs-vector",
+      "title": "Pętla Pythona vs `lut[image]` — zmierz różnicę",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import time\nimport numpy as np\n\n# Maly obraz (256x256) i LUT odwracajacy jasnosc.\nrng = np.random.default_rng(0)\nimage = rng.integers(0, 256, size=(256, 256), dtype=np.uint8)\nlut = np.arange(255, -1, -1, dtype=np.uint8)   # 255 - i\n\n# Wersja 1 — petla Pythona po wszystkich pikselach (wolna).\ndef apply_lut_loop(image, lut):\n    H, W = image.shape\n    out = np.empty_like(image)\n    for i in range(H):\n        for j in range(W):\n            out[i, j] = lut[image[i, j]]\n    return out\n\n# Wersja 2 — wektoryzacja przez fancy indexing (szybka).\ndef apply_lut_vec(image, lut):\n    return lut[image]\n\n# Pomiar — uzywamy time.perf_counter (mozna zamienic na cv2.getTickCount).\nt0 = time.perf_counter()\nout_loop = apply_lut_loop(image, lut)\nt_loop = time.perf_counter() - t0\n\nt0 = time.perf_counter()\nout_vec = apply_lut_vec(image, lut)\nt_vec = time.perf_counter() - t0\n\nprint(f'Petla Pythona:        {t_loop * 1000:8.2f} ms')\nprint(f'NumPy fancy indexing: {t_vec  * 1000:8.4f} ms')\nprint(f'Przyspieszenie:       {t_loop / max(t_vec, 1e-9):8.0f} x')\nprint(f'Wyniki identyczne:    {np.array_equal(out_loop, out_vec)}')\n\n# Sproboj:\n#   - powieksz obraz do (512, 512) lub (1024, 1024) — przyspieszenie zwykle rosnie.\n#   - zmien LUT na progujacy: np.where(np.arange(256) >= 128, 255, 0).astype(np.uint8)\n#   - dodaj trzecia wersje: cv2.LUT(image, lut) — to ta sama logika w C++ z OpenCV;\n#     porownaj jej czas z wersja NumPy.\n#   - zawin pomiar w petle 5–10 powtorzen i wez mediane — pojedynczy pomiar\n#     potrafi byc zaszumiony.\n",
+          "encouragement": "Zauważ, że dla pętli Pythona czas rośnie liniowo z liczbą pikseli, a dla wektoryzacji ledwo drgnie — to dokładnie ta różnica, dla której warto profilować przed optymalizacją."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.python.org/3/library/profile.html",
+      "title": "Python cProfile — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/dc/d71/tutorial_py_optimization.html",
+      "title": "OpenCV Python tutorial — Performance measurement and improvement",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/basics.broadcasting.html",
+      "title": "NumPy — Broadcasting (user guide)",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/user/index.html",
+      "title": "NumPy user guide",
+      "kind": "article"
+    }
+  ]
+}

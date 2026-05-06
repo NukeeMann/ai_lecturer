@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "slug": "wprowadzenie-do-falek-2d",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m7",
+  "title": "Wprowadzenie do falek 2D",
+  "eyebrow": "FALKI 2D",
+  "description": "Falki łączą lokalizację przestrzenną z analizą wieloskalową: DWT 2D dzieli obraz na podpasma LL/LH/HL/HH, fundament JPEG2000, denoisingu i wieloskalowej analizy SAR.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intro",
+      "title": "Po co falki — okno, skala, lokalizacja",
+      "type": "theory",
+      "data": {
+        "markdown": "FFT mówi nam, **jakie** częstotliwości występują w obrazie, ale nie **gdzie** się znajdują. Jeśli przekształcisz nieostry portret, dostaniesz globalne widmo — i nigdy nie dowiesz się, czy rozmycie pochodzi z dolnej połowy kadru, czy z całej klatki naraz. To poważne ograniczenie wszędzie tam, gdzie sygnał ma cechy **lokalne**: tekst na zeskanowanym dokumencie, krawędź statku w obrazie SAR, plama szumu w jednym narożniku zdjęcia.\n\nPierwszą próbą obejścia był **STFT** (Short-Time Fourier Transform): tnij obraz na okna i licz Fouriera w każdym oknie z osobna. Problem polega na tym, że okno o stałym rozmiarze daje stały kompromis: małe okno świetnie zlokalizuje krawędź w przestrzeni, ale rozmyje informację o niskich częstotliwościach (długie fale po prostu się w nim nie mieszczą), a duże okno odwrotnie.\n\n**Falki** rozwiązują ten kompromis hierarchicznie: zamiast jednej długości okna używamy całej rodziny — wąskich okien dla wysokich częstotliwości i szerokich okien dla niskich. To **analiza wieloskalowa** (multi-resolution analysis): każde podpasmo opisuje równocześnie *gdzie* i *jak wąsko-pasmowo* coś się dzieje.\n\nDla obrazu 2D jeden krok DWT daje cztery podpasma w połowie rozdzielczości: gładkie przybliżenie $LL$ plus trzy rodzaje detali ($LH$, $HL$, $HH$). Powtarzając krok rekurencyjnie wyłącznie na $LL$, dostajemy **piramidę** o malejącej rozdzielczości — dokładnie strukturę, która stoi za standardem **JPEG2000**, klasycznym denoisingiem przez progowanie współczynników i wieloskalową analizą tekstur w obrazach SAR."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Wavelet",
+          "title": "Wavelet — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "haar-i-podpasma",
+      "title": "DWT 2D krok po kroku — Haar i piramida podpasm",
+      "type": "theory",
+      "data": {
+        "markdown": "Dyskretna transformata falkowa (DWT) korzysta z **dwóch komplementarnych filtrów** o długości $L$: dolnoprzepustowego $h$ (przybliżenie) i górnoprzepustowego $g$ (detal). Najprostszy przypadek to **falka Haara** ($L = 2$):\n\n$$ h \\;=\\; \\tfrac{1}{\\sqrt{2}}\\,(1, \\; 1), \\qquad g \\;=\\; \\tfrac{1}{\\sqrt{2}}\\,(1, \\; -1). $$\n\nKrok DWT na sygnale 1D to splot z $h$ i $g$, każdy zakończony **decymacją o krok 2**. Dla sygnału długości $N$ otrzymujesz $N/2$ współczynników przybliżenia i $N/2$ współczynników detalu — łącznie nadal $N$ liczb, bo Haar jest **ortogonalny** i zachowuje energię ($\\lVert x \\rVert^2 = \\lVert L \\rVert^2 + \\lVert H \\rVert^2$).\n\nDla obrazu używamy **transformaty separowalnej**: najpierw filtrujemy każdy wiersz parą $(h, g)$, potem każdą kolumnę uzyskanej tablicy. Wyniki układają się w cztery podpasma rozmiaru $H/2 \\times W/2$:\n\n- **LL** — niskie wzdłuż obu osi: gładkie przybliżenie obrazu w połowie rozdzielczości.\n- **LH** — niska wzdłuż wierszy, wysoka wzdłuż kolumn: **detale poziome** (krawędzie poziome — tam, gdzie obraz różni się między *wierszami*).\n- **HL** — wysoka wzdłuż wierszy, niska wzdłuż kolumn: **detale pionowe** (krawędzie pionowe — tam, gdzie obraz różni się między *kolumnami*).\n- **HH** — wysokie wzdłuż obu osi: **detale ukośne** i drobny szum.\n\nDla Haara w bloku $2 \\times 2$ o wartościach $\\bigl(\\begin{smallmatrix} a & b \\\\ c & d \\end{smallmatrix}\\bigr)$ wzory są bezpośrednie:\n\n$$ LL = \\frac{a + b + c + d}{2}, \\qquad LH = \\frac{a + b - c - d}{2}, $$\n\n$$ HL = \\frac{a - b + c - d}{2}, \\qquad HH = \\frac{a - b - c + d}{2}. $$\n\nAby zbudować **piramidę wielopoziomową**, powtarzamy DWT *tylko* na $LL$: poziom 2 daje cztery nowe podpasma o rozmiarze $H/4 \\times W/4$, poziom 3 — $H/8 \\times W/8$, i tak dalej. Każdy kolejny poziom dwukrotnie zmniejsza skalę przestrzenną; po trzech krokach z obrazu $1024 \\times 1024$ zostaje $128 \\times 128$. W produkcji sięgamy po **PyWavelets** (`pywt.dwt2`, `pywt.wavedec2`), które oferuje też dłuższe rodziny — Daubechies $db2$–$db20$, biortogonalne CDF 9/7 znane z JPEG2000, symlety, coiflety — wszystkie zachowujące tę samą strukturę czterech podpasm na poziom."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/34.192463",
+          "title": "Mallat, S. — A Theory for Multiresolution Signal Decomposition: The Wavelet Representation (IEEE TPAMI 1989)",
+          "kind": "paper",
+          "author": "Stéphane G. Mallat",
+          "year": 1989
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Haar_wavelet",
+          "title": "Haar wavelet — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "check-podpasma",
+      "title": "Sprawdź się: co naprawdę dają cztery podpasma",
+      "type": "quiz",
+      "data": {
+        "question": "Po jednopoziomowej DWT 2D obrazu $256 \\times 256$ z falką Haara dostajesz cztery podpasma. Które stwierdzenie jest *prawdziwe*?",
+        "options": [
+          "Cztery podpasma mają rozmiar $256 \\times 256$ każde — DWT mnoży liczbę próbek przez cztery.",
+          "Każde podpasmo ma rozmiar $128 \\times 128$, a podpasmo $HL$ koncentruje energię krawędzi *pionowych* — pikseli, gdzie obraz różni się między sąsiednimi kolumnami.",
+          "DWT to po prostu szybsza wersja FFT — informacja o **położeniu** krawędzi jest w obu reprezentacjach taka sama.",
+          "Podpasmo $LL$ zawiera wyłącznie składową stałą (DC) obrazu — analogicznie do zerowego współczynnika FFT."
+        ],
+        "correct": [1],
+        "explanation": "Ortogonalna DWT z decymacją o 2 zmniejsza każdy wymiar dwukrotnie, więc cztery podpasma rozmiaru $128 \\times 128$ łącznie zawierają $4 \\cdot 128^2 = 256^2$ próbek — transformata zachowuje liczbę współczynników (A jest błędne). $HL$ powstaje z górnoprzepustowego filtra wzdłuż *wierszy* (czyli wykrywa różnice między sąsiednimi kolumnami) i niskoprzepustowego wzdłuż kolumn — to są krawędzie **pionowe**. Falki, w przeciwieństwie do FFT, *zachowują lokalizację przestrzenną*: pozycja niezerowego współczynnika $HL$ wskazuje, gdzie krawędź się znajduje (C jest błędne). $LL$ to nie sama składowa DC, lecz wieloskalowe przybliżenie obrazu w połowie rozdzielczości — zawiera całą gładką strukturę, nie pojedynczą wartość (D jest błędne).",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Haar_wavelet",
+          "title": "Haar wavelet — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "exercise-haar-dwt2",
+      "title": "Zaimplementuj `haar_dwt2(image)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `haar_dwt2(image)`, która wykonuje **jednopoziomową, ortogonalną DWT 2D z falką Haara**. Wejście: dwuwymiarowa tablica `numpy` o **parzystej** wysokości i szerokości (typ `float`). Wyjście: krotka czterech tablic `(LL, LH, HL, HH)`, każda o rozmiarze $H/2 \\times W/2$, typu `float64`, obliczona z 2×2 bloków wejścia według wzorów:\n\n$$ LL = \\frac{a + b + c + d}{2}, \\quad LH = \\frac{a + b - c - d}{2}, \\quad HL = \\frac{a - b + c - d}{2}, \\quad HH = \\frac{a - b - c + d}{2}, $$\n\ngdzie $\\bigl(\\begin{smallmatrix} a & b \\\\ c & d \\end{smallmatrix}\\bigr)$ to blok $2 \\times 2$ wejścia o lewym górnym rogu w $(2i, 2j)$.\n\n```\nimg = np.array([[0, 1, 0, 1],\n                [0, 1, 0, 1],\n                [0, 1, 0, 1],\n                [0, 1, 0, 1]], dtype=float)\nLL, LH, HL, HH = haar_dwt2(img)\n# LL == [[1, 1], [1, 1]];  HL == [[-1, -1], [-1, -1]];  LH, HH == zera\n```\n\nWskazówki: korzystaj wyłącznie z `numpy`. Najczystsze rozwiązanie używa wycinków co drugi piksel (`image[0::2, 0::2]`, `image[0::2, 1::2]`, `image[1::2, 0::2]`, `image[1::2, 1::2]`) — to są właśnie tablice $a$, $b$, $c$, $d$ wyciągnięte z każdego bloku $2 \\times 2$.",
+        "starterCode": "import numpy as np\n\ndef haar_dwt2(image):\n    # image: 2D numpy.ndarray, parzysta wysokosc i szerokosc, dtype zmiennoprzecinkowy.\n    # Zwroc krotke (LL, LH, HL, HH) tablic float64 o rozmiarze (H//2, W//2).\n    #\n    # Plan:\n    #   a = image[0::2, 0::2]   # lewy gorny piksel kazdego bloku 2x2\n    #   b = image[0::2, 1::2]   # prawy gorny\n    #   c = image[1::2, 0::2]   # lewy dolny\n    #   d = image[1::2, 1::2]   # prawy dolny\n    #   LL = (a + b + c + d) / 2.0\n    #   LH = (a + b - c - d) / 2.0\n    #   HL = (a - b + c - d) / 2.0\n    #   HH = (a - b - c + d) / 2.0\n    #   return (LL.astype(np.float64), LH.astype(np.float64),\n    #           HL.astype(np.float64), HH.astype(np.float64))\n    H, W = image.shape\n    zeros = np.zeros((H // 2, W // 2), dtype=np.float64)\n    return zeros, zeros.copy(), zeros.copy(), zeros.copy()\n",
+        "tests": [
+          {
+            "name": "ksztalty_i_dtypes_dla_obrazu_zerowego",
+            "body": "import numpy as np\nimg = np.zeros((4, 4), dtype=np.float64)\nLL, LH, HL, HH = haar_dwt2(img)\nfor name, sub in (('LL', LL), ('LH', LH), ('HL', HL), ('HH', HH)):\n    assert isinstance(sub, np.ndarray), f'{name} powinno byc numpy.ndarray, jest {type(sub).__name__}'\n    assert sub.shape == (2, 2), f'{name} powinno miec ksztalt (2, 2), ma {sub.shape}'\n    assert sub.dtype == np.float64, f'{name} powinno miec dtype float64, ma {sub.dtype}'\n    assert np.allclose(sub, 0.0, atol=1e-12), f'{name} dla obrazu zerowego powinno byc same zera, max odchylenie {np.max(np.abs(sub)):.2e}'",
+            "hidden": false
+          },
+          {
+            "name": "obraz_staly_idzie_w_LL",
+            "body": "import numpy as np\nimg = np.full((4, 4), 3.0, dtype=np.float64)\nLL, LH, HL, HH = haar_dwt2(img)\nassert np.allclose(LL, 6.0, atol=1e-12), f'Dla obrazu stalego = 3.0 podpasmo LL powinno byc stale = 2 * 3.0 = 6.0 (suma 4 pikseli / 2), jest {LL}'\nassert np.allclose(LH, 0.0, atol=1e-12), f'Dla obrazu stalego LH powinno byc zerowe (brak detali poziomych), max |LH| = {np.max(np.abs(LH)):.2e}'\nassert np.allclose(HL, 0.0, atol=1e-12), f'Dla obrazu stalego HL powinno byc zerowe (brak detali pionowych), max |HL| = {np.max(np.abs(HL)):.2e}'\nassert np.allclose(HH, 0.0, atol=1e-12), f'Dla obrazu stalego HH powinno byc zerowe (brak detali ukosnych), max |HH| = {np.max(np.abs(HH)):.2e}'"
+          },
+          {
+            "name": "pionowa_kratownica_swieci_w_HL",
+            "body": "import numpy as np\nimg = np.tile(np.array([[0.0, 1.0, 0.0, 1.0]]), (4, 1))\nLL, LH, HL, HH = haar_dwt2(img)\nassert np.allclose(LL, 1.0, atol=1e-12), f'LL powinno byc stale = 1.0 (srednia bloku 2x2 pomnozona razy 2), jest {LL}'\nassert np.allclose(LH, 0.0, atol=1e-12), f'LH powinno byc zerowe (brak roznicy miedzy wierszami), max |LH| = {np.max(np.abs(LH)):.2e}'\nassert np.allclose(HL, -1.0, atol=1e-12), f'HL powinno byc stale = -1.0 (krawedz pionowa miedzy kolumnami), jest {HL}'\nassert np.allclose(HH, 0.0, atol=1e-12), f'HH powinno byc zerowe dla czysto pionowej krawedzi, max |HH| = {np.max(np.abs(HH)):.2e}'"
+          },
+          {
+            "name": "pozioma_kratownica_swieci_w_LH",
+            "body": "import numpy as np\nimg = np.tile(np.array([[0.0], [1.0]]), (2, 4))\nLL, LH, HL, HH = haar_dwt2(img)\nassert np.allclose(LL, 1.0, atol=1e-12), f'LL powinno byc stale = 1.0, jest {LL}'\nassert np.allclose(LH, -1.0, atol=1e-12), f'LH powinno byc stale = -1.0 (krawedz pozioma miedzy wierszami), jest {LH}'\nassert np.allclose(HL, 0.0, atol=1e-12), f'HL powinno byc zerowe (brak roznicy miedzy kolumnami), max |HL| = {np.max(np.abs(HL)):.2e}'\nassert np.allclose(HH, 0.0, atol=1e-12), f'HH powinno byc zerowe dla czysto poziomej krawedzi, max |HH| = {np.max(np.abs(HH)):.2e}'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef haar_dwt2(image):\n    a = image[0::2, 0::2].astype(np.float64)\n    b = image[0::2, 1::2].astype(np.float64)\n    c = image[1::2, 0::2].astype(np.float64)\n    d = image[1::2, 1::2].astype(np.float64)\n    LL = (a + b + c + d) / 2.0\n    LH = (a + b - c - d) / 2.0\n    HL = (a - b + c - d) / 2.0\n    HH = (a - b - c + d) / 2.0\n    return LL, LH, HL, HH\n"
+      }
+    },
+    {
+      "id": "sandbox-piramida-haar",
+      "title": "Piramida Haara — odrzuć detale i zrekonstruuj",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Maly syntetyczny obraz 8x8: gladkie tlo + jedna pionowa krawedz + szum.\nrng = np.random.default_rng(0)\nbase = np.linspace(0.0, 1.0, 8)[None, :].repeat(8, axis=0)   # gradient poziomy\nedge = (np.arange(8)[None, :] >= 4).astype(np.float64)        # skok przy x=4\nnoise = 0.05 * rng.standard_normal((8, 8))\nimg = base + 0.5 * edge + noise\n\ndef haar_dwt2(image):\n    a = image[0::2, 0::2].astype(np.float64)\n    b = image[0::2, 1::2].astype(np.float64)\n    c = image[1::2, 0::2].astype(np.float64)\n    d = image[1::2, 1::2].astype(np.float64)\n    LL = (a + b + c + d) / 2.0\n    LH = (a + b - c - d) / 2.0\n    HL = (a - b + c - d) / 2.0\n    HH = (a - b - c + d) / 2.0\n    return LL, LH, HL, HH\n\ndef haar_idwt2(LL, LH, HL, HH):\n    # Odwrocenie wzorow z lekcji: a = (LL + LH + HL + HH) / 2, itd.\n    a = (LL + LH + HL + HH) / 2.0\n    b = (LL + LH - HL - HH) / 2.0\n    c = (LL - LH + HL - HH) / 2.0\n    d = (LL - LH - HL + HH) / 2.0\n    H, W = LL.shape\n    out = np.zeros((2 * H, 2 * W), dtype=np.float64)\n    out[0::2, 0::2] = a\n    out[0::2, 1::2] = b\n    out[1::2, 0::2] = c\n    out[1::2, 1::2] = d\n    return out\n\nLL, LH, HL, HH = haar_dwt2(img)\nprint('LL:\\n', np.round(LL, 3))\nprint('HL (krawedzie pionowe):\\n', np.round(HL, 3))\nprint('LH (krawedzie poziome):\\n', np.round(LH, 3))\nprint('HH (detale ukosne / szum):\\n', np.round(HH, 3))\n\n# Eksperyment 1 — zeruj HH (najczestszy szum) i zrekonstruuj.\nimg_denoised = haar_idwt2(LL, LH, HL, np.zeros_like(HH))\nprint('\\n||img - rekonstrukcja po wyzerowaniu HH|| =',\n      float(np.linalg.norm(img - img_denoised)))\n\n# Eksperyment 2 — zostaw tylko LL (kompresja 4x).\nimg_lowres = haar_idwt2(LL, np.zeros_like(LH), np.zeros_like(HL), np.zeros_like(HH))\nprint('||img - rekonstrukcja z samego LL||         =',\n      float(np.linalg.norm(img - img_lowres)))\n\n# Eksperyment 3 — dwa poziomy: zastosuj DWT na LL i zobacz LL2.\nLL2, LH2, HL2, HH2 = haar_dwt2(LL)\nprint('\\nLL2 (poziom 2, 2x2):\\n', np.round(LL2, 3))\n\n# Sproboj:\n#   - zwieksz \"noise\" i porownaj normy z eksperymentu 1 vs 2 (denoising vs kompresja)\n#   - zaprogresij progowanie miekkie HH: HH_thr = np.sign(HH) * np.maximum(np.abs(HH) - 0.05, 0)\n#   - zwieksz obraz do 16x16 i zrob 3 poziomy piramidy\n",
+        "encouragement": "Zauważ, że odrzucenie HH zwykle prawie nie boli, a zostawienie samego LL daje 4× kompresję — to jest cała intuicja JPEG2000."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/34.192463",
+      "title": "Mallat, S. — A Theory for Multiresolution Signal Decomposition: The Wavelet Representation (IEEE TPAMI 1989)",
+      "kind": "paper",
+      "author": "Stéphane G. Mallat",
+      "year": 1989
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Wavelet",
+      "title": "Wavelet — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Haar_wavelet",
+      "title": "Haar wavelet — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://pywavelets.readthedocs.io/en/latest/",
+      "title": "PyWavelets — Wavelet Transforms in Python (official documentation)",
+      "kind": "article"
+    }
+  ]
+}

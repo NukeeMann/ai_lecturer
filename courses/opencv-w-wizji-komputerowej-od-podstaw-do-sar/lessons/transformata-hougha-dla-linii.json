@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "slug": "transformata-hougha-dla-linii",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m4",
+  "title": "Transformata Hougha dla linii",
+  "eyebrow": "KRAWĘDZIE I HOUGH",
+  "description": "Reparametryzacja prostej do (ρ, θ) i głosowanie w akumulatorze — jak Hough znajduje linie nawet w dziurawych, zaszumionych krawędziach.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "intuicja-i-parametryzacja",
+      "title": "Od pikseli krawędziowych do kandydatów na linie",
+      "type": "theory",
+      "data": {
+        "markdown": "Po wykryciu krawędzi (np. detektorem Canny) zostajemy z **mapą binarną pikseli krawędziowych** — punktów, które prawdopodobnie leżą na granicach obiektów. W praktyce takie krawędzie są **dziurawe i zaszumione**: prawdziwa, długa linia w obrazie rozpada się na kilka krótszych odcinków przedzielonych przerwami i zakłóceniami, których morfologia ani filtracja same z siebie nie skleją w jedną prostą.\n\n![Diagram parametryzacji (ρ, θ) prostej w transformacie Hougha — wektor normalny prostej wychodzący z początku układu współrzędnych ma długość ρ i tworzy kąt θ z osią X, co jednoznacznie określa prostą](https://docs.opencv.org/4.x/houghlines1.svg)\n\n*(Rysunek: dokumentacja OpenCV, tutorial Hough Line Transform.)*\n\n**Pomysł Hougha** (w postaci $(\\rho, \\theta)$ wprowadzonej przez Dudę i Harta w 1972 r.) jest taki: zamiast szukać linii bezpośrednio na obrazie, każdy piksel krawędziowy **głosuje na wszystkie linie**, na których mógłby leżeć. Linia, która zbierze dużo głosów od wielu współliniowych pikseli, staje się kandydatem — nawet jeśli między tymi pikselami są przerwy.\n\nPozostaje pytanie: **jak sparametryzować linię?** Postać kierunkowa $y = m x + b$ ma fatalną wadę — dla linii pionowych $m \\to \\infty$ i siatka akumulatora musiałaby być nieograniczona. Dlatego OpenCV używa **postaci normalnej**:\n\n$$\\rho = x \\cos\\theta + y \\sin\\theta$$\n\ngdzie $\\rho$ to odległość prostej od początku układu współrzędnych (ze znakiem), a $\\theta \\in [0, \\pi)$ — kąt jej wektora normalnego. W tej parametryzacji każda prosta na płaszczyźnie ma dokładnie jedną parę $(\\rho, \\theta)$, a cała przestrzeń mieści się w skończonej, prostokątnej siatce."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1145/361237.361242",
+          "title": "Use of the Hough Transformation to Detect Lines and Curves in Pictures (CACM 1972)",
+          "kind": "paper",
+          "author": "Richard O. Duda and Peter E. Hart",
+          "year": 1972
+        }
+      ]
+    },
+    {
+      "id": "akumulator-i-opencv-api",
+      "title": "Akumulator, lokalne maksima i API OpenCV",
+      "type": "theory",
+      "data": {
+        "markdown": "Akumulator Hougha to **dwuwymiarowa siatka** $(\\rho, \\theta)$, w której każda komórka liczy głosy. Algorytm w trzech krokach:\n\n1. Dyskretyzuj $\\rho$ (np. krok 1 piksel) i $\\theta$ (np. krok 1° = $\\pi/180$).\n2. Dla każdego piksela krawędziowego $(x, y)$ przejrzyj wszystkie $\\theta$, policz $\\rho = x \\cos\\theta + y \\sin\\theta$ i dodaj **+1** do komórki $(\\rho, \\theta)$.\n3. Znajdź lokalne maksima w akumulatorze — komórki, które przekroczyły zadany **próg głosów**, to wykryte linie.\n\nOpenCV udostępnia dwa warianty:\n\n- `cv2.HoughLines(edges, rho, theta, threshold)` — **klasyczny**: zwraca pary $(\\rho, \\theta)$ opisujące **nieskończone** linie. Przydatny, gdy interesuje nas sam **kierunek** linii (np. wykrycie horyzontu).\n- `cv2.HoughLinesP(edges, rho, theta, threshold, minLineLength, maxLineGap)` — **probabilistyczny**: losowo próbkuje piksele dla szybkości i zwraca **końce konkretnych odcinków** $(x_1, y_1, x_2, y_2)$. Parametr `minLineLength` odrzuca krótkie fragmenty, a `maxLineGap` pozwala skleić odcinki rozdzielone niewielką luką.\n\n![Wynik wykrywania linii za pomocą HoughLinesP nałożony na zdjęcie planszy szachowej — każda krawędź pól oznaczona kolorowym odcinkiem o własnych końcach](https://docs.opencv.org/4.x/houghlines5.jpg)\n\n*(Rysunek: dokumentacja OpenCV, tutorial Hough Line Transform.)*\n\nW typowych zastosowaniach (krawędzie dokumentów, pasy drogi, ramki tabel, kraty technologiczne) używa się prawie zawsze `HoughLinesP` — jest szybsza i od razu zwraca to, czego potrzebujemy: **odcinki**, nie nieskończone proste."
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d6/d10/tutorial_py_houghlines.html",
+          "title": "OpenCV Python tutorial — Hough Line Transform",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-parametryzacja",
+      "title": "Sprawdź się: dlaczego (ρ, θ)?",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego klasyczna i probabilistyczna transformata Hougha w OpenCV używa parametryzacji (ρ, θ) zamiast prostszej (m, b) z postaci kierunkowej y = m x + b?",
+        "options": [
+          "Bo (ρ, θ) zajmuje mniej pamięci w akumulatorze niż (m, b).",
+          "Bo dla linii pionowych nachylenie m dąży do nieskończoności, więc siatka akumulatora w (m, b) musiałaby być nieograniczona.",
+          "Bo (m, b) nie pozwala wykryć linii z przerwami, a (ρ, θ) wbudowuje obsługę przerw.",
+          "Bo (ρ, θ) działa na obrazach kolorowych, a (m, b) tylko na obrazach w skali szarości."
+        ],
+        "correct": [1],
+        "explanation": "W postaci kierunkowej y = m x + b nachylenie m jest nieograniczone — dla idealnie pionowej krawędzi rośnie do nieskończoności i akumulator musiałby pokrywać oś rzeczywistą bez końca. Parametryzacja normalna ρ = x·cos(θ) + y·sin(θ) używa kąta θ ∈ [0, π) i odległości ρ ∈ [-ρ_max, ρ_max], więc cała przestrzeń mieści się w skończonej siatce. Pozostałe odpowiedzi mylą inne mechanizmy — przerwy w liniach skleja parametr maxLineGap w HoughLinesP, a obie funkcje przyjmują na wejściu jednokanałowy obraz krawędzi, niezależnie od pierwotnej kolorystyki.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-vote-count",
+      "title": "Zaimplementuj liczenie głosów dla jednej kandydatki",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Sercem akumulatora Hougha jest pytanie: **ile pikseli krawędziowych wspiera daną prostą $(\\rho, \\theta)$?**\n\nZaimplementuj funkcję `hough_line_score(points, rho, theta, tol=0.5)`, która:\n\n- przyjmuje listę punktów `points` (każdy punkt to krotka `(x, y)`),\n- przyjmuje kandydata `(rho, theta)` (kąt w radianach),\n- zwraca **liczbę punktów spełniających** $\\lvert x \\cos\\theta + y \\sin\\theta - \\rho \\rvert \\le \\text{tol}$.\n\nTolerancja `tol` modeluje dyskretyzację: punkt głosuje na linię, jeśli mieści się w wąskim pasku wokół niej.\n\n```\n# y = 0 (linia pozioma): rho = 0, theta = π/2\nhough_line_score([(0, 0), (1, 0), (2, 0)], rho=0, theta=math.pi/2) == 3\n```",
+        "starterCode": "import math\n\ndef hough_line_score(points, rho, theta, tol=0.5):\n    # points: lista krotek (x, y)\n    # rho, theta: parametry kandydatki na linię (theta w radianach)\n    # tol: szerokość paska tolerancji\n    # TODO: zwróć liczbę punktów spełniających |x*cos(theta) + y*sin(theta) - rho| <= tol\n    return 0\n",
+        "tests": [
+          {
+            "name": "linia_pozioma_y_rowne_0",
+            "body": "import math\nassert hough_line_score([(0, 0), (1, 0), (2, 0)], rho=0, theta=math.pi/2, tol=0.5) == 3",
+            "hidden": false
+          },
+          {
+            "name": "linia_pionowa_x_rowne_2",
+            "body": "import math\nassert hough_line_score([(2, 0), (2, 1), (2, 5)], rho=2, theta=0.0, tol=0.5) == 3"
+          },
+          {
+            "name": "linia_ukosna_y_rowne_x",
+            "body": "import math\nassert hough_line_score([(0, 0), (1, 1), (2, 2), (3, 3)], rho=0.0, theta=3*math.pi/4, tol=0.5) == 4"
+          },
+          {
+            "name": "outliery_nie_glosuja",
+            "body": "import math\nassert hough_line_score([(0, 0), (1, 0), (2, 0), (5, 5), (7, -3)], rho=0, theta=math.pi/2, tol=0.5) == 3"
+          }
+        ],
+        "solution": "import math\n\ndef hough_line_score(points, rho, theta, tol=0.5):\n    cos_t = math.cos(theta)\n    sin_t = math.sin(theta)\n    count = 0\n    for x, y in points:\n        if abs(x * cos_t + y * sin_t - rho) <= tol:\n            count += 1\n    return count\n"
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Zbuduj mały akumulator i znajdź szczyt",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport math\n\n# Zaszumione punkty z linii y = 0.5*x + 1\nrng = np.random.default_rng(0)\nxs = np.arange(0, 20, dtype=float)\nys = 0.5 * xs + 1.0 + rng.uniform(-0.3, 0.3, size=xs.shape)\npoints = list(zip(xs.tolist(), ys.tolist()))\n\n# Parametry siatki akumulatora — pokręć nimi i obserwuj liczbę głosów w szczycie\nn_thetas = 90\nn_rhos = 60\nrho_max = 30.0\n\nthetas = np.linspace(0.0, np.pi, n_thetas, endpoint=False)\nrhos = np.linspace(-rho_max, rho_max, n_rhos)\n\nacc = np.zeros((n_rhos, n_thetas), dtype=int)\nfor x, y in points:\n    for j, t in enumerate(thetas):\n        r = x * math.cos(t) + y * math.sin(t)\n        i = int(np.argmin(np.abs(rhos - r)))\n        acc[i, j] += 1\n\npeak_i, peak_j = np.unravel_index(int(np.argmax(acc)), acc.shape)\nprint('Liczba punktow:', len(points))\nprint('Najlepsze (rho, theta):', round(float(rhos[peak_i]), 2), round(float(thetas[peak_j]), 2))\nprint('Glosy w szczycie:', int(acc[peak_i, peak_j]))\n",
+        "encouragement": "Zwiększ n_thetas i n_rhos i obserwuj, jak rośnie liczba głosów w szczycie — i kiedy szczyt zaczyna się rozmywać po sąsiednich komórkach."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Hough_transform",
+      "title": "Hough transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1145/361237.361242",
+      "title": "Use of the Hough Transformation to Detect Lines and Curves in Pictures (CACM 1972)",
+      "kind": "paper",
+      "author": "Richard O. Duda and Peter E. Hart",
+      "year": 1972
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d6/d10/tutorial_py_houghlines.html",
+      "title": "OpenCV Python tutorial — Hough Line Transform",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — § 7 Feature detection and matching",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

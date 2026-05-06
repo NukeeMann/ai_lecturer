@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 1,
+  "slug": "wyrownanie-histogramu-i-clahe",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m2",
+  "title": "Wyrównanie histogramu i CLAHE",
+  "eyebrow": "OPERACJE OBRAZOWE",
+  "description": "Rozciągnij wąski histogram na cały zakres jasności globalnym wyrównaniem — i poznaj CLAHE, gdy obraz ma lokalnie zmienną jasność.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "pomysl-globalny",
+      "title": "Wyrównanie histogramu — pomysł globalny",
+      "type": "theory",
+      "data": {
+        "markdown": "Histogram obrazu **niedoświetlonego** z poprzedniej lekcji skupiał całą masę pikseli w wąskim przedziale jasności — górne $\\sim\\!100$ wartości pozostało praktycznie niewykorzystane. **Wyrównanie histogramu** (ang. *histogram equalization*) to globalne, monotoniczne przekształcenie wartości pikseli, które rozciąga ten wąski rozkład tak, by jasności pokrywały cały dostępny zakres $[0, L-1]$ (dla `uint8` to $[0, 255]$).\n\nKluczem jest **dystrybuanta** (CDF) histogramu. Jeśli $H[j]$ to liczba pikseli o jasności $j$, a $N$ to łączna liczba pikseli ($N = \\sum_{j=0}^{L-1} H[j]$), to nowa wartość $T(k)$ przypisana pikselom o jasności $k$ wynosi:\n\n$$T(k) = \\operatorname{round}\\!\\left(\\frac{L-1}{N}\\sum_{j=0}^{k} H[j]\\right)$$\n\nGeometrycznie: dystrybuanta wejściowego histogramu (skumulowane zliczenia od lewej) jest mapowana na linię prostą — to dlatego po wyrównaniu CDF obrazu wyjściowego jest niemal liniowa, a sam histogram jest **rozciągnięty na cały zakres** $[0, 255]$. Nie jest doskonale jednostajny: mapowanie operuje na dyskretnych poziomach `uint8` i kilka wejściowych jasności często ląduje na tym samym poziomie wyjściowym — ale to wystarcza, by wydobyć kontrast.\n\nW OpenCV jednolinijkowy odpowiednik:\n\n```python\nimg_eq = cv2.equalizeHist(img_gray)  # tylko 1-kanalowy uint8\n```\n\nDla obrazów kolorowych **nie wyrównuj histogramów** wszystkich kanałów BGR osobno — zafałszuje to barwy. Konwertuj do LAB lub HSV, wyrównaj jedynie kanał luminancji (`L` lub `V`), a potem wróć do BGR funkcją `cv2.cvtColor`."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Histogram_equalization",
+          "title": "Histogram equalization — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.imageprocessingplace.com/",
+          "title": "Digital Image Processing, 4th ed. — Chapter 3 (Intensity Transformations and Spatial Filtering)",
+          "kind": "book",
+          "author": "Rafael C. Gonzalez and Richard E. Woods",
+          "year": 2018
+        }
+      ]
+    },
+    {
+      "id": "histogram-po-wyrownaniu",
+      "title": "Histogram po globalnym wyrównaniu (16 kubełków)",
+      "type": "histogram",
+      "data": {
+        "binEdges": [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 256],
+        "counts": [1180, 1290, 1410, 1380, 1310, 1370, 1290, 1340, 1300, 1320, 1380, 1310, 1290, 1360, 1310, 1160]
+      }
+    },
+    {
+      "id": "kiedy-globalne-pomaga",
+      "title": "Sprawdź się: kiedy `equalizeHist` faktycznie pomaga",
+      "type": "quiz",
+      "data": {
+        "question": "Cyfrowa fotografia dnia ma już rozkład jasności rozciągnięty niemal jednostajnie po całym zakresie 0–255. Co stanie się po przepuszczeniu jej przez `cv2.equalizeHist`?",
+        "options": [
+          "Znacząco wzrośnie kontrast — `equalizeHist` zawsze rozciąga histogram, niezależnie od kształtu wejścia.",
+          "Niewielka zmiana — gdy CDF jest już zbliżona do liniowej, mapowanie $T(k)$ działa jak przekształcenie niemal tożsamościowe.",
+          "Pojawi się szum typu sól-i-pieprz, bo zaokrąglenie do `uint8` wprowadza losowe wartości 0 i 255 w przypadkowych pikselach.",
+          "Obraz zostanie zamieniony na binarny (tylko 0 i 255) — wyrównanie wykorzystuje wyłącznie skrajne kubełki histogramu."
+        ],
+        "correct": [1],
+        "explanation": "Mapowanie $T(k)$ to skumulowany histogram przeskalowany do $[0, 255]$. Jeśli oryginalny histogram jest już bliski jednostajnego, jego CDF jest niemal liniowa — a po przeskalowaniu daje funkcję zbliżoną do tożsamościowej, więc obraz wygląda prawie identycznie. To dlatego `equalizeHist` *nie* jest darmowym ulepszeniem do każdego zdjęcia: stosuj go, gdy histogram jest skupiony w wąskim przedziale, a nie rozciągnięty już po całym zakresie. Sól-i-pieprz wymaga niezależnego, lokalnego przekłamania pojedynczych pikseli — wyrównanie jest globalnym, monotonicznym mapowaniem i takiego szumu nie wprowadza. Wynik nie jest binarny: dla wystarczająco bogatego histogramu wejściowego mapowanie wykorzystuje większość 256 poziomów wyjściowych.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-equalize-histogram",
+      "title": "Implementacja: `equalize_histogram(image)`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `equalize_histogram(image)`, która wykonuje **globalne wyrównanie histogramu** obrazu w skali szarości `uint8` w czystym NumPy — bez `cv2`.\n\nKroki algorytmu:\n\n1. Policz histogram 256-kubełkowy: `counts = np.bincount(image.ravel(), minlength=256)[:256]`.\n2. Wyznacz dystrybuantę: `cdf = counts.cumsum()`.\n3. Znajdź $\\text{cdf}_{\\min}$ — pierwszą **niezerową** wartość dystrybuanty (najmniejsza jasność, która faktycznie występuje w obrazie).\n4. Zbuduj LUT: `lut[k] = round(255 * (cdf[k] - cdf_min) / (cdf[-1] - cdf_min))`, przyciętą do `[0, 255]` i rzutowaną na `uint8`.\n5. Zwróć `lut[image]` — NumPy rozprowadzi indeksowanie po całej tablicy `image`.\n\nNa wejściu: `image` typu `np.ndarray` o `dtype=np.uint8`, najczęściej 2D `(H, W)`. Na wyjściu: tablica `np.uint8` o **takim samym kształcie** jak wejście.\n\n**Przypadek brzegowy:** dla obrazu jednorodnego (`cdf[-1] == cdf_min`, mianownik wynosi 0) zwróć po prostu kopię wejścia — algorytm nie ma czego rozciągnąć.\n\n```\nimg = np.array([[1, 1, 2, 2], [3, 3, 4, 4], [5, 5, 6, 6], [7, 7, 7, 7]], dtype=np.uint8)\nequalize_histogram(img)\n#  -> [[  0,   0,  36,  36],\n#      [ 73,  73, 109, 109],\n#      [146, 146, 182, 182],\n#      [255, 255, 255, 255]]\n```",
+        "starterCode": "import numpy as np\n\ndef equalize_histogram(image):\n    \"\"\"Globalne wyrownanie histogramu w czystym NumPy.\n\n    Krok po kroku:\n      1. counts  = np.bincount(image.ravel(), minlength=256)[:256]\n      2. cdf     = counts.cumsum()\n      3. cdf_min = pierwsza niezerowa wartosc cdf (np. cdf[cdf > 0].min())\n      4. denom   = cdf[-1] - cdf_min   # uwaga na przypadek denom == 0!\n      5. lut     = np.round(255.0 * (cdf - cdf_min) / denom)\n                     .clip(0, 255).astype(np.uint8)\n      6. return  lut[image]            # broadcast indeksowania\n    \"\"\"\n    image = np.asarray(image, dtype=np.uint8)\n    # TODO: zaimplementuj wyrownanie histogramu i zwroc obraz tej samej wielkosci.\n    return image\n",
+        "tests": [
+          {
+            "name": "zachowuje_ksztalt_i_dtype",
+            "body": "import numpy as np\nimg = np.array([[10, 20, 30], [40, 50, 60]], dtype=np.uint8)\nout = equalize_histogram(img)\nassert isinstance(out, np.ndarray), f'Wynik powinien byc np.ndarray, jest {type(out).__name__}'\nassert out.shape == (2, 3), f'Ksztalt powinien byc (2, 3), jest {out.shape}'\nassert out.dtype == np.uint8, f'dtype powinien byc uint8, jest {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "zgadza_sie_z_recznie_policzonym_przykladem",
+            "body": "import numpy as np\nimg = np.array([\n    [1, 1, 2, 2],\n    [3, 3, 4, 4],\n    [5, 5, 6, 6],\n    [7, 7, 7, 7],\n], dtype=np.uint8)\nexpected = np.array([\n    [  0,   0,  36,  36],\n    [ 73,  73, 109, 109],\n    [146, 146, 182, 182],\n    [255, 255, 255, 255],\n], dtype=np.uint8)\nout = equalize_histogram(img)\nassert np.array_equal(out, expected), f'Oczekiwano {expected.tolist()}, dostalismy {out.tolist()}'"
+          },
+          {
+            "name": "rozciaga_waski_zakres_do_pelnego",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.integers(50, 150, size=(32, 32), dtype=np.uint8)  # tylko 50..149\nout = equalize_histogram(img)\nassert int(out.min()) == 0, f'Po wyrownaniu min powinien byc 0, jest {int(out.min())}'\nassert int(out.max()) == 255, f'Po wyrownaniu max powinien byc 255, jest {int(out.max())}'"
+          },
+          {
+            "name": "obraz_jednorodny_nie_powoduje_bledu",
+            "body": "import numpy as np\nimg = np.full((4, 4), 100, dtype=np.uint8)\nout = equalize_histogram(img)\nassert out.dtype == np.uint8 and out.shape == (4, 4), f'dtype/ksztalt powinny byc zachowane, sa {out.dtype}/{out.shape}'\nassert int(np.unique(out).size) == 1, f'Obraz jednorodny powinien pozostac jednorodny, znaleziono {int(np.unique(out).size)} roznych wartosci'"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef equalize_histogram(image):\n    image = np.asarray(image, dtype=np.uint8)\n    counts = np.bincount(image.ravel(), minlength=256)[:256]\n    cdf = counts.cumsum()\n    nonzero = cdf > 0\n    if not nonzero.any():\n        return image.copy()\n    cdf_min = int(cdf[nonzero].min())\n    denom = int(cdf[-1] - cdf_min)\n    if denom == 0:\n        return image.copy()\n    lut = np.round(255.0 * (cdf - cdf_min) / denom)\n    lut = np.clip(lut, 0, 255).astype(np.uint8)\n    return lut[image]\n"
+      }
+    },
+    {
+      "id": "clahe-adaptacyjne",
+      "title": "CLAHE — adaptacyjne wyrównanie z ograniczeniem",
+      "type": "theory",
+      "data": {
+        "markdown": "Globalne wyrównanie ma jedną poważną wadę: traktuje cały obraz **jednym** mapowaniem $T(k)$. Gdy scena ma silne lokalne różnice ekspozycji (zdjęcie pomieszczenia z oknem, obraz medyczny, zdjęcie SAR z różnymi pokryciami terenu), globalna CDF wzmacnia kontrast tam, gdzie nie trzeba, i rozciąga szum w jednolitych obszarach.\n\n**CLAHE** (*Contrast Limited Adaptive Histogram Equalization*, Zuiderveld 1994) rozwiązuje to w trzech krokach:\n\n1. **Podział na kafelki** — obraz dzielony jest na siatkę $m \\times n$ kafelków (w OpenCV domyślnie $8 \\times 8$). Każdy kafelek ma własny histogram i własne lokalne mapowanie $T_{i,j}(k)$.\n2. **Ograniczenie (*clip limit*)** — przed obliczeniem CDF każdy słupek histogramu jest **przycinany** do progu `clipLimit`; nadmiar zliczeń jest redystrybuowany równomiernie po wszystkich 256 kubełkach. To powstrzymuje nadmierne wzmacnianie rzadkich wartości — czyli szumu w jednolitych regionach.\n3. **Interpolacja dwuliniowa** — żeby uniknąć widocznych granic między kafelkami, dla każdego piksela OpenCV interpoluje cztery sąsiednie mapowania $T_{i,j}$ na podstawie odległości od środków kafelków.\n\nW Pythonie:\n\n```python\nclahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))\nimg_eq = clahe.apply(img_gray)  # uint8, 1 kanal\n```\n\nTypowe nastawy: `clipLimit` w okolicach $2$–$4$ (większy = silniejszy efekt, ale więcej szumu), `tileGridSize` od $4 \\times 4$ do $16 \\times 16$ (mniejsze kafelki = bardziej lokalne dopasowanie, ale więcej widocznych artefaktów). CLAHE jest **standardem** dla obrazów medycznych (CT, MRI), zdjęć z silnym kontroświetleniem oraz — co istotne dla modułu 8 tego kursu — obrazów SAR po konwersji do dB, gdzie *speckle* lokalnie obniża kontrast struktury terenu."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Adaptive_histogram_equalization#Contrast_Limited_AHE",
+          "title": "Adaptive histogram equalization (CLAHE) — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1016/B978-0-12-336156-1.50061-6",
+          "title": "Contrast Limited Adaptive Histogram Equalization (Graphics Gems IV)",
+          "kind": "paper",
+          "author": "Karel Zuiderveld",
+          "year": 1994
+        }
+      ]
+    },
+    {
+      "id": "sandbox-globalne-vs-kafelkowe",
+      "title": "Piaskownica: globalne wyrównanie vs proste kafelkowe",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Syntetyczny obraz o nierownomiernym oswietleniu:\n#   - lewa polowa ciemna  (jasnosci 30..89)\n#   - prawa polowa jasna  (jasnosci 130..199)\n# Plus dwa ukryte kwadraty 16x16 nieco jasniejsze od tla — w obu polowach.\nrng = np.random.default_rng(0)\n\nH, W = 64, 128\nimg = np.zeros((H, W), dtype=np.uint8)\nimg[:, :W // 2] = rng.integers(30, 90, (H, W // 2), dtype=np.uint8)    # ciemna lewa\nimg[:, W // 2:] = rng.integers(130, 200, (H, W // 2), dtype=np.uint8)  # jasna prawa\nimg[20:36, 20:36] = np.clip(img[20:36, 20:36].astype(np.int16) + 25, 0, 255).astype(np.uint8)\nimg[20:36, 80:96] = np.clip(img[20:36, 80:96].astype(np.int16) + 25, 0, 255).astype(np.uint8)\n\n\ndef equalize_histogram(image):\n    \"\"\"Globalne wyrownanie histogramu w czystym NumPy (kopia z poprzedniej sekcji).\"\"\"\n    image = np.asarray(image, dtype=np.uint8)\n    counts = np.bincount(image.ravel(), minlength=256)[:256]\n    cdf = counts.cumsum()\n    nonzero = cdf > 0\n    if not nonzero.any():\n        return image.copy()\n    cdf_min = int(cdf[nonzero].min())\n    denom = int(cdf[-1] - cdf_min)\n    if denom == 0:\n        return image.copy()\n    lut = np.round(255.0 * (cdf - cdf_min) / denom).clip(0, 255).astype(np.uint8)\n    return lut[image]\n\n\ndef equalize_per_tile(image, tiles=(2, 2)):\n    \"\"\"Najprostsza wersja CLAHE: bez clip-limit, bez interpolacji — tylko niezalezne kafelki.\"\"\"\n    out = image.copy()\n    H, W = image.shape\n    th, tw = H // tiles[0], W // tiles[1]\n    for i in range(tiles[0]):\n        for j in range(tiles[1]):\n            y0, y1 = i * th, (i + 1) * th\n            x0, x1 = j * tw, (j + 1) * tw\n            out[y0:y1, x0:x1] = equalize_histogram(image[y0:y1, x0:x1])\n    return out\n\n\nglobalne = equalize_histogram(img)\nkafelkowe = equalize_per_tile(img, tiles=(2, 2))\n\nprint(f'oryginal:  min={int(img.min()):3d}, max={int(img.max()):3d}, mean={float(img.mean()):.1f}')\nprint(f'globalne:  min={int(globalne.min()):3d}, max={int(globalne.max()):3d}, mean={float(globalne.mean()):.1f}')\nprint(f'kafelkowe: min={int(kafelkowe.min()):3d}, max={int(kafelkowe.max()):3d}, mean={float(kafelkowe.mean()):.1f}')\n\n# Pytania do siebie:\n#   * Zwieksz tiles=(2, 2) do (4, 4) — czy lokalny kontrast w obu polowach rosnie?\n#   * Spojrz na srednie jasnosci ukrytych kwadratow (img[20:36, 20:36] vs globalne[20:36, 20:36])\n#       — ktora wersja silniej oddziela kwadrat od tla?\n#   * Co stanie sie z 'globalne[20:36, 80:96]' (jasny kwadrat w jasnej polowie)?\n#   * Wprowadz w kafelkowym efekt clip-limit: po policzeniu counts przytnij counts > 50 do 50,\n#       a nadmiar rozdziel rownomiernie po wszystkich kubelkach.\n",
+        "encouragement": "Zmieniaj rozmiar siatki kafelków i obserwuj, jak coraz mniejsze fragmenty obrazu dostają coraz silniejsze własne mapowania."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Histogram_equalization",
+      "title": "Histogram equalization — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Adaptive_histogram_equalization#Contrast_Limited_AHE",
+      "title": "Adaptive histogram equalization (CLAHE) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1016/B978-0-12-336156-1.50061-6",
+      "title": "Contrast Limited Adaptive Histogram Equalization (Graphics Gems IV)",
+      "kind": "paper",
+      "author": "Karel Zuiderveld",
+      "year": 1994
+    },
+    {
+      "url": "https://www.imageprocessingplace.com/",
+      "title": "Digital Image Processing, 4th ed. — Chapter 3 (Intensity Transformations and Spatial Filtering)",
+      "kind": "book",
+      "author": "Rafael C. Gonzalez and Richard E. Woods",
+      "year": 2018
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d5/daf/tutorial_py_histogram_equalization.html",
+      "title": "OpenCV Python tutorial — Histograms (2: histogram equalization)",
+      "kind": "article"
+    }
+  ]
+}

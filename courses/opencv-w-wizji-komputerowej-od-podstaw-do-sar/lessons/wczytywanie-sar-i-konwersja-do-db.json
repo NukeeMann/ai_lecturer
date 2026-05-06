@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "slug": "wczytywanie-sar-i-konwersja-do-db",
+  "courseSlug": "opencv-w-wizji-komputerowej-od-podstaw-do-sar",
+  "moduleId": "m8",
+  "title": "Wczytywanie SAR i konwersja do dB",
+  "eyebrow": "DANE SATELITARNE SAR",
+  "description": "Od pliku GeoTIFF do tablicy NumPy: wczytywanie sceny Sentinel-1 GRD przez rasterio i konwersja surowej intensywności do logarytmicznej skali decybelowej, na której pracuje reszta pipeline'u SAR.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "wczytywanie-grd",
+      "title": "Sentinel-1 GRD jako GeoTIFF — `rasterio` w trzech linijkach",
+      "type": "theory",
+      "data": {
+        "markdown": "Produkty Sentinel-1 GRD trafiają do nas jako pliki **GeoTIFF** — to ten sam kontener, który GIS-y znają od lat: rastrowe dane plus metadane geograficzne (układ współrzędnych, bounding box, transformacja afiniczna z piksela na układ ziemski). Dla pipeline'u OpenCV liczy się głównie *zawartość* — dwuwymiarowa tablica liczb rzeczywistych — ale nie chcemy ręcznie parsować nagłówków TIFF, więc używamy biblioteki **`rasterio`**, cienkiej Pythonowej nakładki na **GDAL**.\n\nKanoniczny wzorzec wygląda tak:\n\n```python\nimport rasterio\nimport numpy as np\n\nwith rasterio.open('S1A_IW_GRDH_VV.tiff') as src:\n    arr = src.read(1).astype(np.float32)   # pasmo 1 -> ndarray (H, W), float32\n    transform = src.transform              # afiniczna mapa piksel -> (lon, lat)\n    crs = src.crs                          # uklad wspolrzednych, np. EPSG:4326\n```\n\nTrzy szczegóły są tu warte podkreślenia. **Po pierwsze**, kontekstowe `with` pilnuje, żeby uchwyt do GDAL-a zamknął się nawet wtedy, gdy w środku rzucimy wyjątek. **Po drugie**, `src.read(1)` zwraca pierwsze pasmo jako tablicę o kształcie `(H, W)` — typowo `uint16` dla GRD Sentinel-1 — i przed dalszym przetwarzaniem rzucamy ją na `float32`, żeby `cv2.GaussianBlur`, `np.log10` i nasze własne filtry speckle nie potknęły się o całkowitoliczbowe obcięcia. **Po trzecie**, `transform` i `crs` przydadzą się dopiero przy korekcji geometrycznej (lekcja: *Korekcja geometryczna i ortorektyfikacja*); na potrzeby filtracji speckle'u i progowania wystarczy sama tablica `arr`.\n\nDlaczego *nie* `cv2.imread(path)`? Bo Sentinel-1 GRD to często **16-bitowa, jednokanałowa, nieskalowana intensywność** lub amplituda — `imread` rzutuje ją po cichu na 8 bitów i tracimy 99 % zakresu dynamicznego, którego potrzebujemy do detekcji statków, mapowania zmian czy CFAR-a. Powyższe trzy linijki z `rasterio` zachowują pełen zakres i metadane geograficzne, a OpenCV dalej w pipeline pracuje na zwykłym `np.ndarray`."
+      },
+      "sources": [
+        {
+          "url": "https://rasterio.readthedocs.io/en/latest/topics/reading.html",
+          "title": "rasterio documentation — Reading datasets",
+          "kind": "article"
+        },
+        {
+          "url": "https://gdal.org/",
+          "title": "GDAL — official documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "dlaczego-db",
+      "title": "Skala decybelowa: ujarzmianie dynamiki SAR",
+      "type": "theory",
+      "data": {
+        "markdown": "Jeden problem widać natychmiast po `arr = src.read(1)`: rozkład wartości w SAR jest **silnie skośny**. Spokojna woda zwraca wartości bliskie zeru; pole rolne — kilkadziesiąt jednostek; double-bounce od fasady budynku — kilka tysięcy; statek na otwartym morzu — dziesiątki tysięcy. Histogram tego w skali liniowej jest praktycznie nieczytelny: 99 % pikseli skupia się w wąskim pasku przy zerze, a obraz wygląda jak czarna płachta z kilkoma jasnymi punktami.\n\nLekarstwem jest **logarytmiczna skala decybelowa**. Decybel kompresuje wieloskalowe wartości fizyczne do zakresu, który łatwo czytać i wizualizować. Dla **intensywności** $I$ (mocy / kwadratu amplitudy) używamy:\n\n$$ I_{\\text{dB}} \\;=\\; 10 \\cdot \\log_{10} I $$\n\nDla **amplitudy** $A$, gdzie $I = A^2$, mnożnik podwaja się:\n\n$$ A_{\\text{dB}} \\;=\\; 20 \\cdot \\log_{10} A $$\n\nW Sentinel-1 GRD po kalibracji radiometrycznej do współczynnika $\\sigma^0$ (lekcja: *Kalibracja radiometryczna do sigma0*) wartości pikseli są **intensywnościami**, więc poprawny mnożnik to **10**. Dopiero w tej dziedzinie klasyczne narzędzia OpenCV (CLAHE, `Canny`, progowanie) dostają rozkład zbliżony do gaussowskiego i zachowują się tak, jak przywykliśmy z obrazów optycznych.\n\nDrugi szczegół jest numeryczny: $\\log_{10} 0 = -\\infty$, a SAR potrafi mieć piksele równe zero (cień radarowy, błędy kalibracji, maska poza pasem akwizycji). Dlatego przed logarytmem **przycinamy** od dołu do małej stałej $\\varepsilon$:\n\n$$ I_{\\text{dB}} \\;=\\; 10 \\cdot \\log_{10}\\!\\bigl( \\max(I,\\, \\varepsilon) \\bigr), \\qquad \\varepsilon \\sim 10^{-6} $$\n\nTakie minimum odpowiada *podłodze* −60 dB i nie wpływa na żaden realistyczny piksel sceny — najsłabsze obszary spokojnej wody w Sentinel-1 zaczynają się dopiero przy około −25 dB. Operacja jest też w pełni wektoryzowalna w NumPy: `10.0 * np.log10(np.maximum(arr, eps))` — jedna linijka, kilkadziesiąt megapikseli na sekundę, bez pętli."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Decibel",
+          "title": "Decibel — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/data-formats/radiometric-calibration",
+          "title": "Sentinel-1 — Radiometric calibration (ESA User Guide)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "typowe-wartosci",
+      "title": "Typowe wartości backscatter $\\sigma^0$ — liniowe vs dB",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "powierzchnia", "label": "Powierzchnia / cel", "type": "string", "sortable": false },
+          { "key": "linear", "label": "$\\sigma^0$ liniowe (typowo)", "type": "string", "sortable": false },
+          { "key": "db", "label": "$\\sigma^0$ w dB", "type": "string", "sortable": false },
+          { "key": "uwagi", "label": "Uwagi", "type": "string", "sortable": false }
+        ],
+        "rows": [
+          {
+            "powierzchnia": "Spokojne morze otwarte",
+            "linear": "≈ 3 · 10⁻³",
+            "db": "≈ −25 dB",
+            "uwagi": "Specularne odbicie poza anteną; bardzo ciemny piksel — naturalna referencja powodzi"
+          },
+          {
+            "powierzchnia": "Powódź / zalane pole",
+            "linear": "≈ 10⁻²",
+            "db": "≈ −20 dB",
+            "uwagi": "Klucz do mini-projektu mapowania powodzi: log-ratio podświetla różnicę względem stanu sprzed zalania"
+          },
+          {
+            "powierzchnia": "Pole rolne (zaorane, mokre)",
+            "linear": "≈ 6 · 10⁻²",
+            "db": "≈ −12 dB",
+            "uwagi": "Rozpraszanie powierzchniowe Bragg; wartość zależy od wilgotności gleby"
+          },
+          {
+            "powierzchnia": "Las (korony drzew)",
+            "linear": "≈ 0,1",
+            "db": "≈ −10 dB",
+            "uwagi": "Rozpraszanie objętościowe; cross-pol (HV) świeci tu szczególnie jasno"
+          },
+          {
+            "powierzchnia": "Asfalt miejski",
+            "linear": "≈ 0,05",
+            "db": "≈ −13 dB",
+            "uwagi": "Płaska powierzchnia — odbicie zwierciadlane z dala od anteny"
+          },
+          {
+            "powierzchnia": "Fasady miast (double-bounce)",
+            "linear": "≈ 3",
+            "db": "≈ +5 dB",
+            "uwagi": "Dwukrotne odbicie pod kątem prostym chodnik–ściana; bardzo jasne piksele"
+          },
+          {
+            "powierzchnia": "Statek na pełnym morzu",
+            "linear": "≈ 30",
+            "db": "≈ +15 dB",
+            "uwagi": "Duża struktura metalowa; cel CFAR-a w lekcji *CFAR — detekcja statków na SAR*"
+          },
+          {
+            "powierzchnia": "Reflektor narożnikowy (corner reflector)",
+            "linear": "≈ 10³",
+            "db": "≈ +30 dB",
+            "uwagi": "Wzorzec kalibracyjny; w skali liniowej 5 rzędów wielkości jaśniejszy niż morze"
+          }
+        ]
+      }
+    },
+    {
+      "id": "kod-konwersja",
+      "title": "Zaimplementuj `intensity_to_db`",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `intensity_to_db(arr, eps=1e-6)`, która konwertuje tablicę nieujemnych intensywności (np. skalibrowane $\\sigma^0$) na skalę decybelową, używając wzoru:\n\n$$ I_{\\text{dB}} \\;=\\; 10 \\cdot \\log_{10}\\!\\bigl(\\max(I, \\varepsilon)\\bigr) $$\n\nWymagania:\n\n- argument `arr` to `np.ndarray` dowolnego kształtu — zwróć tablicę o **tym samym** kształcie;\n- przycinaj od dołu do `eps`, żeby uniknąć $\\log_{10}(0)$;\n- mnożnik to **10** (intensywność, nie amplituda).\n\nPrzykłady oczekiwanych wartości:\n\n```\nintensity_to_db(np.array([1.0]))                ->  ~ [ 0.0]\nintensity_to_db(np.array([10.0, 100.0]))        ->  ~ [10.0, 20.0]\nintensity_to_db(np.array([0.0]),  eps=1e-6)     ->  ~ [-60.0]    # podloga = 10*log10(1e-6)\n```",
+        "starterCode": "import numpy as np\n\ndef intensity_to_db(arr, eps=1e-6):\n    # arr: np.ndarray nieujemnych intensywnosci (linear sigma0).\n    # eps: mala stala podlogowa, ktora chroni przed log10(0).\n    # Zwroc: tablice tego samego ksztaltu z wartosciami w dB.\n    pass\n",
+        "tests": [
+          {
+            "name": "unit_intensity_is_zero_db",
+            "body": "import numpy as np\nresult = intensity_to_db(np.array([1.0], dtype=np.float32))\nassert result.shape == (1,)\nassert abs(float(result[0])) < 1e-4",
+            "hidden": false
+          },
+          {
+            "name": "decade_steps_match_ten_db_steps",
+            "body": "import numpy as np\narr = np.array([1.0, 10.0, 100.0, 1000.0], dtype=np.float32)\nresult = intensity_to_db(arr)\nexpected = np.array([0.0, 10.0, 20.0, 30.0], dtype=np.float32)\nassert np.allclose(result, expected, atol=1e-3)"
+          },
+          {
+            "name": "zero_clipped_to_eps_floor",
+            "body": "import numpy as np\nresult = intensity_to_db(np.array([0.0], dtype=np.float32), eps=1e-6)\nassert np.isfinite(float(result[0]))\nassert abs(float(result[0]) - (-60.0)) < 1e-3"
+          },
+          {
+            "name": "preserves_shape_for_2d_array",
+            "body": "import numpy as np\narr = np.full((4, 5), 25.0, dtype=np.float32)\nout = intensity_to_db(arr)\nassert out.shape == (4, 5)\nimport math\nexpected = 10.0 * math.log10(25.0)\nassert abs(float(out[0, 0]) - expected) < 1e-3\nassert abs(float(out[3, 4]) - expected) < 1e-3"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef intensity_to_db(arr, eps=1e-6):\n    safe = np.maximum(arr.astype(np.float32), np.float32(eps))\n    return 10.0 * np.log10(safe)\n"
+      }
+    },
+    {
+      "id": "quiz-grd-dn",
+      "title": "Co dokładnie wczytałeś z `src.read(1)`?",
+      "type": "quiz",
+      "data": {
+        "question": "Otwierasz scenę Sentinel-1 GRD przez `rasterio.open(path).read(1)` i widzisz tablicę `uint16` z wartościami od 0 do około 6500. Co tak naprawdę reprezentują te liczby?",
+        "options": [
+          "Surowe wartości amplitudy detekcyjnej (tzw. *digital number*) w skali liniowej — to **nie** są decybele i jeszcze **nie** są skalibrowanym $\\sigma^0$; potrzebują kalibracji radiometrycznej oraz konwersji `10·log10(...)` zanim zaczną pełnić rolę fizycznej miary.",
+          "Wartości backscatter $\\sigma^0$ wyrażone już w decybelach — wystarczy je odjąć od 0, żeby wrócić do skali liniowej.",
+          "Wartości jasności RGB skalowane do zakresu 0–255 jak w typowym JPEG-u, tylko z większą precyzją.",
+          "Współrzędne geograficzne pikseli wyrażone w tysięcznych częściach stopnia szerokości i długości."
+        ],
+        "correct": [0],
+        "explanation": "Surowy GRD przechowuje **liniową, skalibrowaną do *digital number* (DN) amplitudę** — liczbę całkowitą `uint16` proporcjonalną do amplitudy echa, bez obróbki logarytmicznej i przed właściwą kalibracją radiometryczną do $\\sigma^0$. Żeby otrzymać fizyczne backscatter, wykonasz kolejno: kalibrację z LUT-em (lekcja *Kalibracja radiometryczna do sigma0*), a następnie konwersję `10·log10(max(σ⁰, ε))` z tej lekcji. Dystraktor 2 wpada w klasyczną pułapkę — myli format GRD z reprezentacją końcową. Dystraktor 3 zakłada, że SAR działa jak kamera (mylący odruch z pierwszych modułów). Dystraktor 4 myli zawartość pasm z metadanymi `transform` / `crs`, które `rasterio` udostępnia oddzielnie.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/data-formats/radiometric-calibration",
+          "title": "Sentinel-1 — Radiometric calibration (ESA User Guide)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "sandbox-eps",
+      "title": "Pobaw się parametrem $\\varepsilon$",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Syntetyczna scena SAR-podobna: rozklad gamma (po multilooku\n# intensywnosc SAR jest blisko gamma) plus kilka jasnych celow.\nrng = np.random.default_rng(0)\nshape = (256, 256)\nintensity = rng.gamma(shape=2.0, scale=0.05, size=shape).astype(np.float32)\nintensity[120:124, 120:124] = 30.0   # 'statek' = jasny cel\nintensity[10:14, 10:14] = 0.0        # 'cien radarowy' = zera\n\ndef intensity_to_db(arr, eps=1e-6):\n    safe = np.maximum(arr.astype(np.float32), np.float32(eps))\n    return 10.0 * np.log10(safe)\n\neps = 1e-6\narr_db = intensity_to_db(intensity, eps=eps)\n\nprint('eps =', eps)\nprint('linear: min={:.4f}  max={:.2f}  mean={:.4f}'.format(\n    float(intensity.min()), float(intensity.max()), float(intensity.mean())))\nprint('dB:     min={:6.2f} max={:5.2f} mean={:6.2f} std={:5.2f}'.format(\n    float(arr_db.min()), float(arr_db.max()),\n    float(arr_db.mean()), float(arr_db.std())))\n",
+        "encouragement": "Spróbuj zwiększyć eps do 1e-3, 1.0 albo 10.0 i zaobserwuj, w którym momencie podłoga decybelowa zaczyna zjadać realne piksele spokojnej wody."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://rasterio.readthedocs.io/en/latest/topics/reading.html",
+      "title": "rasterio documentation — Reading datasets",
+      "kind": "article"
+    },
+    {
+      "url": "https://gdal.org/",
+      "title": "GDAL — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Decibel",
+      "title": "Decibel — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar/data-formats/radiometric-calibration",
+      "title": "Sentinel-1 — Radiometric calibration (ESA User Guide)",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/user-guides/sentinel-1-sar",
+      "title": "ESA Sentinel-1 SAR User Guide",
+      "kind": "article"
+    }
+  ]
+}
