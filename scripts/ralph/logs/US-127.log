@@ -1,0 +1,11 @@
+[2026-05-06T23:54:58+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T23:57:26+0200] Now extend sources.ts for `.pdf`:
+[2026-05-06T23:57:34+0200] Now extend `loadStagedSourcesForPrompt` so .pdf with a sibling is treated as text:
+[2026-05-06T23:57:56+0200] Now wire the extractor into the upload route's POST and extend DELETE to unlink the .pdf sibling:
+[2026-05-06T23:58:26+0200] The existing `moveDraftSourcesToCourse` is already generic (uses `${name}.md` regardless of extension). Now write tests.
+[2026-05-06T23:59:23+0200] Now extend `sources.test.ts` for the .pdf branches:
+[2026-05-06T23:59:57+0200] Now add a moveDraftSourcesToCourse test for pdf+sibling collision suffix:
+[2026-05-07T00:00:22+0200] Now run the smoke test against the reference PDF via the actual route handler:
+[2026-05-07T00:02:34+0200] Now append progress note:
+[2026-05-07T00:04:29+0200] US-127 complete and committed (`b8502de`). PDF pre-extraction now mirrors the docx pipeline: `pdf-parse` produces a `.extracted/<name>.pdf.md` sibling at upload time (no poppler dependency), `resolveSourcePathForPrompt` and `loadStagedSourcesForPrompt` treat .pdf the same as .docx, the upload route's POST/DELETE are wired in, and `moveDraftSourcesToCourse` was generic enough to handle .pdf siblings unchanged. Smoke test on the 83-page Polish reference PDF produced 102,108 chars with the page-1 separator and the first question's literal text. Typecheck clean, eslint clean, 672/672 tests passing.
+[2026-05-07T00:04:29+0200] [result success turns=67 cost=$6.2637975] US-127 complete and committed (`b8502de`). PDF pre-extraction now mirrors the docx pipeline: `pdf-parse` produces a `.extracted/<name>.pdf.md` sibling at upload time (no poppler dependency), `resolveSourcePathForPrompt` and `loadStagedSourcesForPrompt` treat .pdf the same as .docx, the upload route's POST/DELETE are wired in, and `moveDraftSourcesToCourse` was generic enough to handle .pdf siblings unchanged. Smoke test on the 83-page Polish reference PDF produced 102,108 chars with the page-1 separator and the first question's literal text. Typecheck clean, eslint clean, 672/672 tests passing.
