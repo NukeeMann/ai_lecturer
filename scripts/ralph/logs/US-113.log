@@ -1,0 +1,34 @@
+[2026-05-06T12:54:11+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T12:54:45+0200] Let me check tests and the schema build:
+[2026-05-06T12:55:07+0200] Now let me look at the lesson page section renderer to see where descriptions need to flow through:
+[2026-05-06T12:55:12+0200] Good. Now I have enough context. Let me make the edits.
+[2026-05-06T12:55:55+0200] Now wire description from SectionRenderer:
+[2026-05-06T12:56:14+0200] Now update course generation prompts to optionally emit description:
+[2026-05-06T12:56:58+0200] Typecheck passes. Now run tests:
+[2026-05-06T12:57:03+0200] All 603 tests pass. Now browser verification with playwright:
+[2026-05-06T12:57:23+0200] I'll set up a temp courses dir with one lesson that has 2 sections (one with description, one without), start the dev server pointed at it, and verify.
+[2026-05-06T12:59:18+0200] All assertions pass. The description renders below the title in `with-desc` and is absent (no extra space — `bodyTop === headerBottom`) in `no-desc`. Now let me commit:
+[2026-05-06T12:59:33+0200] Now append progress entry:
+[2026-05-06T13:00:57+0200] Only US-113's passes flipped from `false` to `true`; all other stories' flags are unchanged. The commit is in HEAD with `US-113.passes=true`.
+[2026-05-06T13:01:10+0200] US-113 done and committed (`21a96ee`).
+
+**Summary:**
+- Added optional `description: string` to the section base schema (`src/lib/schemas/lesson.ts`); discriminated-union ergonomics propagate it to all 13 widget kinds without per-variant edits.
+- Extended `Widget` component (`src/widgets/Widget.tsx`) with a `description?` prop that renders a `<p data-widget-description>` band styled with `var(--fs-sm)` + `var(--text-secondary)` between the header and the body — only when the value is non-empty.
+- Wired `<Widget description={section.description} />` in the lesson page's `SectionRenderer`.
+- Regenerated widget JSON schemas (`src/widgets/schemas/lesson.json` now lists the optional field on every variant).
+- Updated `scripts/ralph/skills/generate_lesson/SKILL.md` with optional-description guidance (skip on theory; ≤ 160 chars; omit when not warranted).
+- Quality gates: typecheck clean, 603/603 tests pass.
+- Playwright verified on `:3113` with `COURSES_ROOT_OVERRIDE=/tmp/us113-courses`: described section renders the band between header and body (`fs-sm`/`text-secondary` tokens confirmed); undescribed section has zero gap (`bodyTop - headerBottom == 0`). Screenshots at `/tmp/us113-{lesson,with-desc,no-desc}.png`.
+- `scripts/ralph/prd.json`: only US-113.passes flipped (verified diff against `HEAD~1`).
+[2026-05-06T13:01:10+0200] [result success turns=75 cost=$4.3770472499999995] US-113 done and committed (`21a96ee`).
+
+**Summary:**
+- Added optional `description: string` to the section base schema (`src/lib/schemas/lesson.ts`); discriminated-union ergonomics propagate it to all 13 widget kinds without per-variant edits.
+- Extended `Widget` component (`src/widgets/Widget.tsx`) with a `description?` prop that renders a `<p data-widget-description>` band styled with `var(--fs-sm)` + `var(--text-secondary)` between the header and the body — only when the value is non-empty.
+- Wired `<Widget description={section.description} />` in the lesson page's `SectionRenderer`.
+- Regenerated widget JSON schemas (`src/widgets/schemas/lesson.json` now lists the optional field on every variant).
+- Updated `scripts/ralph/skills/generate_lesson/SKILL.md` with optional-description guidance (skip on theory; ≤ 160 chars; omit when not warranted).
+- Quality gates: typecheck clean, 603/603 tests pass.
+- Playwright verified on `:3113` with `COURSES_ROOT_OVERRIDE=/tmp/us113-courses`: described section renders the band between header and body (`fs-sm`/`text-secondary` tokens confirmed); undescribed section has zero gap (`bodyTop - headerBottom == 0`). Screenshots at `/tmp/us113-{lesson,with-desc,no-desc}.png`.
+- `scripts/ralph/prd.json`: only US-113.passes flipped (verified diff against `HEAD~1`).
