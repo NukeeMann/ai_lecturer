@@ -1,0 +1,29 @@
+[2026-05-06T16:11:24+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T16:14:35+0200] Now let me make the changes. Start with the schemas (clarify, structure, courseSpec, dependencies), then propagate through UI.
+[2026-05-06T16:15:11+0200] Now update wizard dependencies hash so description is part of the topic stage hash (otherwise downstream caches won't invalidate when description changes).
+[2026-05-06T16:15:49+0200] Now add the Description textarea in Stage1:
+[2026-05-06T16:16:07+0200] Now update buildCourseSpec to include description:
+[2026-05-06T16:16:17+0200] Now check the other parts of page.tsx that need updating - URL ?description= param handling, generate POST body, and the stage 6 generation log display.
+[2026-05-06T16:18:10+0200] Now let me check existing schemas test to see if my CourseSpec change breaks anything:
+[2026-05-06T16:18:19+0200] Now let me run typecheck and tests:
+[2026-05-06T16:18:41+0200] All 639 tests pass. Let me run lint:
+[2026-05-06T16:19:24+0200] Lint errors are pre-existing on the branch baseline. Now browser verification.
+[2026-05-06T16:25:33+0200] All acceptance criteria verified. Let me now update the prd.json and progress.txt and commit.
+[2026-05-06T16:27:12+0200] US-123 done. Commit `30ddf54` is in HEAD with `passes: true` for US-123.
+
+What changed:
+- Stage 1 now renders a "Describe (optional)" textarea below the topic input.
+- Description flows into `/api/wizard/clarify` and `/api/wizard/structure` bodies; both prompts embed it as a `Description: …` line (skipped when empty).
+- Persisted optionally on `CourseSpec` so ralph reads it from `course-spec.json`.
+- Rolled into the `topic` stage hash so edits invalidate downstream wizard caches.
+
+Verification: typecheck clean, 639/639 tests pass, playwright confirmed the textarea, the request bodies to both LLM endpoints contain the description verbatim, and Stage 1 still advances with description blank.
+[2026-05-06T16:27:12+0200] [result success turns=107 cost=$7.8836790000000025] US-123 done. Commit `30ddf54` is in HEAD with `passes: true` for US-123.
+
+What changed:
+- Stage 1 now renders a "Describe (optional)" textarea below the topic input.
+- Description flows into `/api/wizard/clarify` and `/api/wizard/structure` bodies; both prompts embed it as a `Description: …` line (skipped when empty).
+- Persisted optionally on `CourseSpec` so ralph reads it from `course-spec.json`.
+- Rolled into the `topic` stage hash so edits invalidate downstream wizard caches.
+
+Verification: typecheck clean, 639/639 tests pass, playwright confirmed the textarea, the request bodies to both LLM endpoints contain the description verbatim, and Stage 1 still advances with description blank.
