@@ -42,6 +42,7 @@ import {
   visibleLessonSlots,
   computeSliderEdges,
 } from '@/lib/lessons/lessonSlots';
+import { reverseLogLines, reverseLiveLogLines } from '@/lib/lessons/genLog';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -2399,12 +2400,15 @@ function StageLogSection({
         ? 'var(--danger, #b91c1c)'
         : 'var(--accent-text)';
 
+  // US-111: render newest-first. Storage stays chronological (the SSE feed
+  // pushes oldest→newest); the panel reverses for display so the most recent
+  // line is at the top and visible without scrolling.
   const bodyText = isActive
-    ? entry.liveLines.join('\n')
+    ? reverseLiveLogLines(entry.liveLines).join('\n')
     : entry.diskContent !== null
-      ? entry.diskContent
+      ? reverseLogLines(entry.diskContent)
       : entry.liveLines.length > 0
-        ? entry.liveLines.join('\n')
+        ? reverseLiveLogLines(entry.liveLines).join('\n')
         : '';
 
   return (
@@ -3033,7 +3037,10 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     ? Math.min(100, Math.round((progress.current / progress.total) * 100))
     : null;
 
-  // Auto-scroll the active stage's pre to bottom when its liveLines grow.
+  // US-111: newest entries render at the top, so keep the active stage's
+  // pre pinned to scrollTop=0 when its liveLines grow. The previous behavior
+  // (scrollTop = scrollHeight) auto-scrolled to bottom and is no longer
+  // appropriate now that the newest line is the first child of the panel.
   const activeStage = stages.find((s) => s.diskName === activeRef.current && s.status === 'started');
   useEffect(() => {
     const el = activeLogElRef.current;
@@ -3041,7 +3048,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     if (!activeStage) return;
     if (activeStage.liveLines.length === activeLineCountRef.current) return;
     activeLineCountRef.current = activeStage.liveLines.length;
-    el.scrollTop = el.scrollHeight;
+    el.scrollTop = 0;
   }, [activeStage]);
 
   const totalLogLines = useMemo(
