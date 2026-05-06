@@ -1,0 +1,39 @@
+[2026-05-06T11:03:50+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T11:05:26+0200] Now let me create the helper module and tests first.
+[2026-05-06T11:06:10+0200] Now I'll modify the slider to:
+1. Filter pending slots
+2. Hide scrollbar (CSS class)
+3. Add disabled state on L/R buttons
+4. Add wheel-on-hover handler
+[2026-05-06T11:06:14+0200] Now update the slider component:
+[2026-05-06T11:06:38+0200] Now update scrollByOne, the wheel handler, the render block (visible lessons + disabled buttons + scrollbar-hidden CSS class):
+[2026-05-06T11:06:48+0200] Now update the render block:
+[2026-05-06T11:07:08+0200] Now update the `sliderArrowStyle` to be a function that takes the disabled state:
+[2026-05-06T11:07:14+0200] Now add the scrollbar-hiding CSS class to globals.css:
+[2026-05-06T11:08:33+0200] Tests + typecheck pass. Now let me browser-verify with playwright. The Stage 5 slider only renders during a generation flow — that's a heavy path. Let me check if there's a simpler way to mount it (a test-only route or maybe trigger via SSE).
+[2026-05-06T11:12:22+0200] Good — dev server gone. Now start a clean one with mock env:
+[2026-05-06T11:12:58+0200] Good — port 3094 is alive at PID 34039. Let me write the playwright test. Looking at how to create a course quickly with >20 lessons through the wizard via API:
+[2026-05-06T11:14:14+0200] Now let me write the playwright test:
+[2026-05-06T11:15:28+0200] All AC verified in browser. Let me view the screenshot:
+[2026-05-06T11:15:32+0200] Slider looks clean — no scrollbar, L/R arrows visible. Now finalize: clean up courses test dir, mark done, commit.
+[2026-05-06T11:15:47+0200] Now mark US-109 passes=true in prd.json and update progress.txt:
+[2026-05-06T11:17:05+0200] US-109 landed in commit `3e454f9` with `passes: true`.
+
+**What changed:**
+- `src/lib/lessons/lessonSlots.ts` (new) — pure helpers: `visibleLessonSlots()` filters out pending, `computeSliderEdges()` returns `{atStart, atEnd}` for arrow disabling
+- `src/lib/lessons/lessonSlots.test.ts` (new) — 10 vitest cases including the AC's explicit "pending must not leak" reproducer
+- `src/app/create/page.tsx` — `LessonSlotsSlider` now renders only filtered (visible) slots, the L/R arrow `disabled` state tracks edge position via `scroll`+`ResizeObserver`, and a `wheel` listener attached with `{passive:false}` translates vertical wheel to horizontal scroll while preventing page scroll
+- `src/app/globals.css` — `.lesson-slot-track` class hides the native scrollbar (`scrollbar-width: none` + `::-webkit-scrollbar { display:none }`)
+- `scripts/ralph/prd.json` — US-109 `passes: true`
+
+**Verification:** typecheck clean, vitest 605/605 (was 595, +10 new), playwright run on a 25-lesson `GENERATION_MOCK=1` course confirmed every AC: scrollbar hidden, no `data-status="pending"` ever in the DOM, prev disabled at scrollLeft=0, next disabled at max, wheel shifted track 0→171px while `window.scrollY` stayed at 0.
+[2026-05-06T11:17:05+0200] [result success turns=103 cost=$6.797437249999999] US-109 landed in commit `3e454f9` with `passes: true`.
+
+**What changed:**
+- `src/lib/lessons/lessonSlots.ts` (new) — pure helpers: `visibleLessonSlots()` filters out pending, `computeSliderEdges()` returns `{atStart, atEnd}` for arrow disabling
+- `src/lib/lessons/lessonSlots.test.ts` (new) — 10 vitest cases including the AC's explicit "pending must not leak" reproducer
+- `src/app/create/page.tsx` — `LessonSlotsSlider` now renders only filtered (visible) slots, the L/R arrow `disabled` state tracks edge position via `scroll`+`ResizeObserver`, and a `wheel` listener attached with `{passive:false}` translates vertical wheel to horizontal scroll while preventing page scroll
+- `src/app/globals.css` — `.lesson-slot-track` class hides the native scrollbar (`scrollbar-width: none` + `::-webkit-scrollbar { display:none }`)
+- `scripts/ralph/prd.json` — US-109 `passes: true`
+
+**Verification:** typecheck clean, vitest 605/605 (was 595, +10 new), playwright run on a 25-lesson `GENERATION_MOCK=1` course confirmed every AC: scrollbar hidden, no `data-status="pending"` ever in the DOM, prev disabled at scrollLeft=0, next disabled at max, wheel shifted track 0→171px while `window.scrollY` stayed at 0.
