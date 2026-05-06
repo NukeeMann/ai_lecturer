@@ -2663,6 +2663,30 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-124",
+      "title": "Source uploads — extract .docx to text sibling so generation agents can actually read the content",
+      "description": "As a user creating a course from uploaded materials, when I attach a .docx the curriculum/lesson generators do not see its content because Claude Code's Read tool only handles text/PDF/PNG/JSON natively (a .docx is a zip-of-XML). The upload accepts the file silently but it is never grounded into the course. Pre-extract the .docx to markdown next to the original at upload time so the generation prompts can point Read at a file it can actually parse.",
+      "acceptanceCriteria": [
+        "package.json declares `mammoth` in dependencies (runtime, not devDependencies)",
+        "New module src/lib/server/docx.ts exports `extractDocxToMarkdown(srcPath, destPath)` using mammoth.convertToMarkdown — returns {ok:true, markdown, warnings} on success and {ok:false, reason} when mammoth throws (corrupt zip, not a docx). Non-fatal mammoth messages are surfaced as warnings, not failures.",
+        "src/lib/server/sources.ts exports `EXTRACTED_DIRNAME = '.extracted'`, `extractedSiblingPath(absPath)`, and `resolveSourcePathForPrompt(absPath)`. resolveSourcePathForPrompt returns `{ readPath, originalName, extractedFrom? }`: for .docx it returns the sibling .md path when it exists (use existsSync) with extractedFrom set to the original filename; for .pdf/.txt/.json it returns the original path unchanged.",
+        "POST /api/courses/upload-sources: after fs.writeFile of a .docx, calls extractDocxToMarkdown into `<targetDir>/.extracted/<finalName>.md`. On extractor failure it logs a warning to the server console and still returns 201 for the original upload — the .docx itself is never blocked by extraction issues.",
+        "moveDraftSourcesToCourse: when moving each entry, after computing finalName (post-collision-suffix), it also moves `<srcDir>/.extracted/<entryName>.md` to `<targetDir>/.extracted/<finalName>.md` if the sibling exists. Uses fs.rename with EXDEV → copyFile+unlink fallback (mirroring the existing pattern in this function). Final names of the docx and its sibling stay in sync even when the docx gets a `(2)` suffix in the destination.",
+        "defaultInitCourseCommand and defaultLessonCommand in src/lib/server/generation.ts use resolveSourcePathForPrompt to build the source list. For .docx with an extracted sibling the prompt line reads `- /…/.extracted/<name>.docx.md (extracted text from <name>.docx)` and the original .docx path is NOT injected. For .pdf/.txt/.json the prompt is unchanged.",
+        "GET /api/courses/upload-sources still lists ONLY files directly in /sources/ (the .extracted/ subdir is not enumerated, so the wizard UI does not show .md siblings as separate sources).",
+        "DELETE /api/courses/upload-sources for a .docx also unlinks its `<targetDir>/.extracted/<finalName>.md` sibling. Missing sibling is a no-op (idempotent), not an error.",
+        "Unit tests cover: extractDocxToMarkdown happy path on a fixture docx (asserts non-empty markdown output); extractDocxToMarkdown failure on a non-docx blob (returns ok:false); resolveSourcePathForPrompt returns the original path for .pdf and the sibling .md for .docx when it exists; moveDraftSourcesToCourse moves a (docx, .extracted/<name>.md) pair and renames both with the same collision suffix when the destination already has the docx.",
+        "Smoke test: upload /mnt/c/Users/nukee/Downloads/Lista pytań kierunkowych.docx via the upload-sources endpoint into a draft, finalize a course, then verify that <coursesRoot>/<slug>/sources/.extracted/Lista pytań kierunkowych.docx.md exists, is non-empty, and contains the literal substring 'Lista pytań kierunkowych'.",
+        "Out of scope for this story: .pptx extraction (separate parser needed — separate story), surfacing extraction warnings in the wizard UI, re-extracting docx files uploaded before this change.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 124,
+      "passes": false,
+      "notes": "Smoke test reference: mammoth 1.12.0 ran cleanly on the user's test docx — produced ~2.25M chars of markdown with Polish diacritics intact, one non-fatal warning ('Unrecognised paragraph style: List Paragraph'). No UI changes — backend + generation prompt only, hence empty tags array.",
+      "tags": []
     }
   ]
 }
