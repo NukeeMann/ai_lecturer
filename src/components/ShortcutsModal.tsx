@@ -33,7 +33,7 @@ const GROUPS: ShortcutGroup[] = [
       { keys: ['k'], label: 'Previous section' },
       { keys: ['up'], label: 'Previous section' },
       { keys: ['mod', 'B'], label: 'Toggle table of contents' },
-      { keys: ['mod', '.'], label: 'Toggle AI tutor' },
+      { keys: ['ctrl', 'Q'], label: 'Toggle AI tutor' },
       { keys: ['space'], label: 'Mark current section complete' },
       { keys: ['n'], label: 'Next lesson (when current is complete)' },
       { keys: ['p'], label: 'Previous lesson' },

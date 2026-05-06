@@ -89,4 +89,43 @@ describe('matchesShortcut', () => {
       }),
     ).toBe(true);
   });
+
+  // ctrl:true requires the literal Ctrl key on every platform — used for
+  // bindings where ⌘+key would collide with an OS shortcut (e.g. ⌘+Q quits
+  // the browser on macOS).
+  test('ctrl:true matches Ctrl on Windows / Linux', () => {
+    expect(
+      matchesShortcut(evt({ key: 'q', ctrlKey: true }), { key: 'q', ctrl: true }),
+    ).toBe(true);
+  });
+
+  test('ctrl:true matches Ctrl on macOS (Cmd ⌘ NOT held)', () => {
+    expect(
+      matchesShortcut(evt({ key: 'q', ctrlKey: true, metaKey: false }), {
+        key: 'q',
+        ctrl: true,
+      }),
+    ).toBe(true);
+  });
+
+  test('ctrl:true REJECTS ⌘ (metaKey) — Cmd+Q must NOT fire on macOS', () => {
+    expect(
+      matchesShortcut(evt({ key: 'q', metaKey: true }), { key: 'q', ctrl: true }),
+    ).toBe(false);
+  });
+
+  test('ctrl:true REJECTS plain key without modifier', () => {
+    expect(
+      matchesShortcut(evt({ key: 'q' }), { key: 'q', ctrl: true }),
+    ).toBe(false);
+  });
+
+  test('ctrl:true REJECTS Ctrl+Cmd combo', () => {
+    expect(
+      matchesShortcut(evt({ key: 'q', ctrlKey: true, metaKey: true }), {
+        key: 'q',
+        ctrl: true,
+      }),
+    ).toBe(false);
+  });
 });
