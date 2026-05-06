@@ -285,6 +285,15 @@ If no ratio is given, default to the balanced mix.
 
 `section.id` must be unique within the lesson. Use stable, content-bearing slugs (`"intro"`, `"definition"`, `"why-it-works"`, `"check-1"`, `"exercise"`, `"sandbox"`) — not opaque counters like `s1`/`s2`. Section-ID collisions are a schema-level hard fail.
 
+### Section description (optional, US-113)
+
+Every section type accepts an OPTIONAL `description: string` field on the section base (alongside `id`, `title`, `sources`). When present, it renders below the section title and above the widget body in the existing secondary-text style — useful when the title alone is too terse to convey the task.
+
+- Use it on `quiz`, `code`, `codeCloze`, `demo`, `sandbox`, `image`, `plotImage`, `parametricExplorer`, `dragMatch`, `dataTable`, `video`, and `custom` sections where a one-sentence framing helps the learner know *what to look for / what to do* before they engage with the widget body.
+- **Skip it on `theory`** — the markdown body is already prose; a separate description above the markdown is redundant.
+- Keep it to **one short sentence** (≤ 160 chars). Don't repeat the title verbatim; add information the title can't fit.
+- Omit the field entirely when no extra context is warranted — empty / whitespace strings should not be emitted. Widgets without a description render unchanged.
+
 ### Per-widget content rules
 
 #### Theory (`type: "theory"`)
