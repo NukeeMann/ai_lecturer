@@ -93,6 +93,29 @@ describe('buildClarifyUserMessage', () => {
     expect(msg).toContain('unspecified');
     expect(msg).toContain('balanced');
   });
+
+  it('embeds description when provided (US-123)', () => {
+    const msg = buildClarifyUserMessage({
+      topic: 'Linear algebra',
+      description: 'I want to learn enough linear algebra to read ML papers.',
+      refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+    });
+    expect(msg).toContain('Description: I want to learn enough linear algebra to read ML papers.');
+  });
+
+  it('omits description block when description is missing or whitespace-only (US-123)', () => {
+    const without = buildClarifyUserMessage({
+      topic: 'Linear algebra',
+      refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+    });
+    expect(without).not.toMatch(/Description:/);
+    const blank = buildClarifyUserMessage({
+      topic: 'Linear algebra',
+      description: '   ',
+      refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+    });
+    expect(blank).not.toMatch(/Description:/);
+  });
 });
 
 describe('extractJsonPayload', () => {

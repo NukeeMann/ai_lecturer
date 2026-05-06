@@ -1368,4 +1368,19 @@ describe('CourseSpecSchema', () => {
   it('rejects an out-of-enum durationTarget value', () => {
     expect(() => CourseSpecSchema.parse({ ...minimal, durationTarget: 'forever' })).toThrow();
   });
+
+  it('accepts an optional description (US-123)', () => {
+    const parsed = CourseSpecSchema.parse({
+      ...minimal,
+      description: 'I want to read ML papers without losing the thread on matrix calc.',
+    });
+    expect(parsed.description).toBe(
+      'I want to read ML papers without losing the thread on matrix calc.',
+    );
+  });
+
+  it('parses without a description field (US-123 — description is optional)', () => {
+    const parsed = CourseSpecSchema.parse(minimal);
+    expect(parsed.description).toBeUndefined();
+  });
 });

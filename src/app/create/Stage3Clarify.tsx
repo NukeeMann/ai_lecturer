@@ -68,6 +68,7 @@ export default function Stage3Clarify({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: draft.topic,
+          description: draft.description,
           refine: {
             level: draft.level,
             durationTarget: draft.durationTarget,
@@ -121,7 +122,7 @@ export default function Stage3Clarify({
       if (seq !== requestSeq.current) return;
       setState({ kind: 'error', message: (err as Error).message });
     }
-  }, [draft.topic, draft.level, draft.durationTarget, draft.theoryPracticeRatio, f, setDraft]);
+  }, [draft.topic, draft.description, draft.level, draft.durationTarget, draft.theoryPracticeRatio, f, setDraft]);
 
   // First-time entry / stale-reopen: kick off a load (or surface a confirm
   // dialog if the user has typed answers we'd otherwise discard). The

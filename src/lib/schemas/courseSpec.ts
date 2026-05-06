@@ -57,6 +57,12 @@ export const ClarificationAnswersSchema = z.record(z.string());
 
 export const CourseSpecSchema = z.object({
   topic: z.string(),
+  /**
+   * Optional learner-provided description gathered alongside the topic in the
+   * wizard's Stage 1 (US-123). Persisted so the ralph generation pipeline can
+   * surface it to downstream lesson-authoring agents.
+   */
+  description: z.string().optional(),
   level: LevelSchema,
   durationTarget: DurationTargetSchema,
   theoryPracticeRatio: z.number().min(0).max(1),

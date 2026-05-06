@@ -51,6 +51,8 @@ export interface HashableClarificationQuestion {
 
 export interface HashableDraft {
   topic: string;
+  /** Optional learner-provided description (US-123); part of the topic stage hash. */
+  description?: string;
   level: string | null;
   durationTarget: string | null;
   theoryPracticeRatio: number;
@@ -74,7 +76,12 @@ export type WizardCaches = Partial<Record<CachedStage, StageCacheRecord>>;
 export function computeStageInputHash(stage: WizardStage, draft: HashableDraft): string {
   switch (stage) {
     case 'topic':
-      return fnv1a32(stableJSON({ topic: draft.topic.trim() }));
+      return fnv1a32(
+        stableJSON({
+          topic: draft.topic.trim(),
+          description: (draft.description ?? '').trim(),
+        }),
+      );
     case 'refine':
       return fnv1a32(
         stableJSON({

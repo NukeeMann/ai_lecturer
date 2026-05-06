@@ -16,6 +16,12 @@ export const RefineDraftSchema = z.object({
 
 export const ClarifyRequestSchema = z.object({
   topic: z.string().min(1),
+  /**
+   * Optional learner-provided description of what they want from the course
+   * (US-123). Empty strings are treated as omitted so the prompt only mentions
+   * a description block when there's actual content.
+   */
+  description: z.string().optional(),
   refine: RefineDraftSchema,
 });
 
@@ -65,16 +71,22 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
 }
 
 export function buildClarifyUserMessage(req: ClarifyRequest): string {
-  const { topic, refine } = req;
+  const { topic, description, refine } = req;
+  const trimmedDescription = (description ?? '').trim();
   const lines = [
     'Draft course spec so far:',
     `- Topic: ${topic.trim()}`,
+  ];
+  if (trimmedDescription.length > 0) {
+    lines.push(`- Description: ${trimmedDescription}`);
+  }
+  lines.push(
     `- Learner level: ${refine.level ?? 'unspecified'}`,
     `- Length: ${durationLabel(refine.durationTarget)}`,
     `- Mix: ${ratioLabel(refine.theoryPracticeRatio)} (${refine.theoryPracticeRatio}/100)`,
     '',
     'Generate up to 10 clarification questions to ask the learner before drafting modules and lessons. Return JSON only.',
-  ];
+  );
   return lines.join('\n');
 }
 

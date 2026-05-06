@@ -50,6 +50,7 @@ import { strings } from '@/lib/i18n/strings';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
+  description: '',
   level: null,
   durationTarget: null,
   theoryPracticeRatio: 50,
@@ -476,6 +477,11 @@ function buildCourseSpec(draft: Draft, structure: StructureDraft) {
     },
     createdAt: new Date().toISOString(),
   };
+
+  const trimmedDescription = draft.description.trim();
+  if (trimmedDescription.length > 0) {
+    spec.description = trimmedDescription;
+  }
 
   if (draft.clarificationQuestions && draft.clarificationQuestions.length > 0) {
     const answers = draft.clarification ?? {};
@@ -1423,6 +1429,43 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
               outline: 'none',
             }}
           />
+          <div style={{ marginTop: 'var(--space-5)' }}>
+            <label
+              htmlFor="stage1-description-input"
+              style={{
+                display: 'block',
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text-tertiary)',
+                marginBottom: 6,
+              }}
+            >
+              Describe (optional)
+            </label>
+            <textarea
+              id="stage1-description-input"
+              data-testid="stage1-description-input"
+              value={draft.description}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, description: e.target.value }))
+              }
+              placeholder="Add richer context — goals, prior knowledge, what you want out of this course."
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-strong)',
+                background: 'var(--bg-elevated)',
+                color: 'var(--text)',
+                fontFamily: 'inherit',
+                fontSize: 'var(--fs-sm)',
+                lineHeight: 1.5,
+                resize: 'vertical',
+                outline: 'none',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
           <div
             style={{
               marginTop: 'var(--space-5)',

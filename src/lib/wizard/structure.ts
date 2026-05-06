@@ -20,6 +20,12 @@ export const RefineDraftSchema = z.object({
 
 export const StructureRequestSchema = z.object({
   topic: z.string().min(1),
+  /**
+   * Optional learner-provided description of what they want from the course
+   * (US-123). Forwarded into the structure prompt alongside the topic so the
+   * outline reflects the richer context that a single-line topic can't carry.
+   */
+  description: z.string().optional(),
   refine: RefineDraftSchema,
   /** Free-form clarification answers, keyed by `<id>: <question text>`. */
   clarification: z.record(z.string(), z.string()).optional(),
@@ -80,14 +86,20 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
 }
 
 export function buildStructureUserMessage(req: StructureRequest): string {
-  const { topic, refine, clarification } = req;
+  const { topic, description, refine, clarification } = req;
+  const trimmedDescription = (description ?? '').trim();
   const lines = [
     'Draft course spec:',
     `- Topic: ${topic.trim()}`,
+  ];
+  if (trimmedDescription.length > 0) {
+    lines.push(`- Description: ${trimmedDescription}`);
+  }
+  lines.push(
     `- Learner level: ${refine.level ?? 'unspecified'}`,
     `- Length: ${durationLabel(refine.durationTarget)}`,
     `- Mix: ${ratioLabel(refine.theoryPracticeRatio)} (${refine.theoryPracticeRatio}/100)`,
-  ];
+  );
 
   const answerEntries = clarification
     ? Object.entries(clarification).filter(([, v]) => v.trim().length > 0)

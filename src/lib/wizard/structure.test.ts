@@ -116,6 +116,31 @@ describe('buildStructureUserMessage', () => {
     });
     expect(msg).not.toContain("Learner's clarification answers");
   });
+
+  it('embeds description when provided and forwards alongside clarification answers (US-123)', () => {
+    const msg = buildStructureUserMessage({
+      topic: 'Linear algebra',
+      description: 'I want to read ML papers without losing the thread on matrix calc.',
+      refine: { level: 'beginner', durationTarget: 'short', theoryPracticeRatio: 50 },
+      clarification: { 'q1: What is your goal?': 'apply to ML' },
+    });
+    expect(msg).toContain('Description: I want to read ML papers without losing the thread on matrix calc.');
+    expect(msg).toContain('q1: What is your goal? → apply to ML');
+  });
+
+  it('omits description block when description is missing or whitespace-only (US-123)', () => {
+    const without = buildStructureUserMessage({
+      topic: 'Linear algebra',
+      refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
+    });
+    expect(without).not.toMatch(/Description:/);
+    const blank = buildStructureUserMessage({
+      topic: 'Linear algebra',
+      description: '   ',
+      refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
+    });
+    expect(blank).not.toMatch(/Description:/);
+  });
 });
 
 describe('parseStructureResponse', () => {

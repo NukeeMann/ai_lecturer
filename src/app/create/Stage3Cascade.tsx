@@ -79,6 +79,13 @@ export interface ClarificationQuestion {
 
 export interface Draft {
   topic: string;
+  /**
+   * Optional learner-provided description gathered alongside the topic in
+   * Stage 1 (US-123). Forwarded to /api/wizard/clarify, /api/wizard/structure,
+   * and persisted on the CourseSpec so the ralph generation pipeline can use
+   * the richer context.
+   */
+  description: string;
   level: Level | null;
   durationTarget: DurationTarget | null;
   theoryPracticeRatio: number;
@@ -206,6 +213,7 @@ export default function Stage3Cascade({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           topic: draft.topic,
+          description: draft.description,
           refine: {
             level: draft.level,
             durationTarget: draft.durationTarget,
@@ -255,6 +263,7 @@ export default function Stage3Cascade({
     }
   }, [
     draft.topic,
+    draft.description,
     draft.level,
     draft.durationTarget,
     draft.theoryPracticeRatio,
