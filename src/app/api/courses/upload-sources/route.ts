@@ -19,6 +19,7 @@ import {
   withCollisionSuffix,
 } from '@/lib/server/sources';
 import { extractDocxToMarkdown } from '@/lib/server/docx';
+import { extractPdfToMarkdown } from '@/lib/server/pdf';
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
@@ -151,6 +152,19 @@ export async function POST(req: Request) {
         );
       }
     }
+    // US-127: same pattern for PDFs — pdf-parse does the text extraction
+    // (no poppler dependency required at runtime). Failures never block
+    // the original upload; the .pdf is already on disk and will fall
+    // through to `binary-unsupported` in the prompt loaders.
+    if (path.extname(finalName).toLowerCase() === '.pdf') {
+      const sibling = extractedSiblingPath(destPath);
+      const result = await extractPdfToMarkdown(destPath, sibling);
+      if (!result.ok) {
+        console.warn(
+          `[upload-sources] pdf extraction failed for ${finalName}: ${result.reason}`,
+        );
+      }
+    }
   }
 
   const body: UploadResponse = {
@@ -230,10 +244,12 @@ export async function DELETE(req: Request) {
     }
     throw err;
   }
-  // US-124: a deleted .docx leaves an orphaned .extracted/<name>.md sibling
-  // behind. Best-effort unlink — missing sibling is a no-op (idempotent),
-  // not an error, since older docx uploads predate the extractor.
-  if (path.extname(filename).toLowerCase() === '.docx') {
+  // US-124/US-127: a deleted .docx or .pdf leaves an orphaned
+  // .extracted/<name>.md sibling behind. Best-effort unlink — missing
+  // sibling is a no-op (idempotent), not an error, since older uploads
+  // predate the respective extractors.
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === '.docx' || ext === '.pdf') {
     const sibling = path.join(targetDir, EXTRACTED_DIRNAME, `${filename}.md`);
     try {
       await fs.unlink(sibling);
