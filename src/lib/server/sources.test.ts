@@ -288,7 +288,7 @@ describe('extractedSiblingPath (US-124)', () => {
 });
 
 describe('resolveSourcePathForPrompt (US-124)', () => {
-  it('returns the original path unchanged for .pdf', () => {
+  it('returns the original path unchanged for .pdf with no sibling', () => {
     const r = resolveSourcePathForPrompt('/tmp/something/a.pdf');
     expect(r).toEqual({ readPath: '/tmp/something/a.pdf', originalName: 'a.pdf' });
     expect(r.extractedFrom).toBeUndefined();
@@ -319,6 +319,21 @@ describe('resolveSourcePathForPrompt (US-124)', () => {
     expect(r.readPath).toBe(siblingPath);
     expect(r.originalName).toBe('a.docx');
     expect(r.extractedFrom).toBe('a.docx');
+  });
+
+  // US-127: same branch shape for .pdf as .docx.
+  it('returns the sibling .md path for .pdf when the sibling is on disk', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(path.join(dir, EXTRACTED_DIRNAME), { recursive: true });
+    const pdfPath = path.join(dir, 'a.pdf');
+    const siblingPath = path.join(dir, EXTRACTED_DIRNAME, 'a.pdf.md');
+    await fs.writeFile(pdfPath, 'fake-pdf-bytes');
+    await fs.writeFile(siblingPath, '--- page 1 ---\n\nExtracted body.\n');
+
+    const r = resolveSourcePathForPrompt(pdfPath);
+    expect(r.readPath).toBe(siblingPath);
+    expect(r.originalName).toBe('a.pdf');
+    expect(r.extractedFrom).toBe('a.pdf');
   });
 });
 
@@ -399,6 +414,40 @@ describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', 
       fs.access(path.join(dst, EXTRACTED_DIRNAME, 'orphan.docx.md')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  // US-127: the move logic is generic over `<name>.md` siblings, so a .pdf
+  // with its sibling rides through with the same collision-suffix
+  // synchronisation we already prove for .docx above.
+  it('keeps the pdf and sibling final names in sync under collision suffix', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    const dst = courseSourcesDir('algebra');
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.mkdir(dst, { recursive: true });
+    // Pre-existing pdf on the destination side forces the collision suffix.
+    await fs.writeFile(path.join(dst, 'notes.pdf'), 'pre-existing-pdf');
+    await fs.writeFile(path.join(src, 'notes.pdf'), 'from-draft-pdf');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'notes.pdf.md'),
+      'from-draft-pdf-md',
+    );
+
+    const moved = await moveDraftSourcesToCourse(id, 'algebra');
+    expect(moved).toEqual(['notes (2).pdf']);
+
+    expect(await fs.readFile(path.join(dst, 'notes.pdf'), 'utf8')).toBe(
+      'pre-existing-pdf',
+    );
+    expect(await fs.readFile(path.join(dst, 'notes (2).pdf'), 'utf8')).toBe(
+      'from-draft-pdf',
+    );
+    expect(
+      await fs.readFile(path.join(dst, EXTRACTED_DIRNAME, 'notes (2).pdf.md'), 'utf8'),
+    ).toBe('from-draft-pdf-md');
+    await expect(
+      fs.access(path.join(dst, EXTRACTED_DIRNAME, 'notes.pdf.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
 
 describe('loadStagedSourcesForPrompt (US-125)', () => {
@@ -442,6 +491,35 @@ describe('loadStagedSourcesForPrompt (US-125)', () => {
     expect(out[2]).toEqual({
       kind: 'binary-unsupported',
       originalName: 'z.pdf',
+    });
+  });
+
+  // US-127: a .pdf with its `.extracted/<name>.pdf.md` sibling on disk reads
+  // as text and carries `extractedFrom`; a .pdf without one stays
+  // `binary-unsupported` so the prompt still mentions the upload.
+  it('returns kind:text for a .pdf with sibling, binary-unsupported without', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'with-sibling.pdf'), 'binary-pdf-bytes');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'with-sibling.pdf.md'),
+      '--- page 1 ---\n\nExtracted pdf body.',
+    );
+    await fs.writeFile(path.join(src, 'without-sibling.pdf'), 'binary-pdf-bytes');
+
+    const out = loadStagedSourcesForPrompt(id);
+    // Lexicographic: with-sibling.pdf → without-sibling.pdf
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      kind: 'text',
+      originalName: 'with-sibling.pdf',
+      extractedFrom: 'with-sibling.pdf',
+      content: '--- page 1 ---\n\nExtracted pdf body.',
+    });
+    expect(out[1]).toEqual({
+      kind: 'binary-unsupported',
+      originalName: 'without-sibling.pdf',
     });
   });
 

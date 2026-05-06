@@ -267,7 +267,10 @@ export interface ResolvedSourcePath {
 export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath {
   const ext = path.extname(absPath).toLowerCase();
   const originalName = path.basename(absPath);
-  if (ext === '.docx') {
+  // .docx (US-124) and .pdf (US-127) both pre-extract to a markdown sibling
+  // at upload time — when present, the sibling is what we hand to the Read
+  // tool / inline-load into wizard prompts. Same branch shape for both.
+  if (ext === '.docx' || ext === '.pdf') {
     const sibling = extractedSiblingPath(absPath);
     if (existsSync(sibling)) {
       return { readPath: sibling, originalName, extractedFrom: originalName };
@@ -305,6 +308,18 @@ const TEXT_SOURCE_EXTS: ReadonlySet<string> = new Set([
   '.txt',
   '.md',
   '.json',
+]);
+
+// Extensions that have a server-side text extractor (US-124 docx, US-127
+// pdf). For these we still need to verify a sibling exists on disk before
+// treating them as text — the upload route logs a warning and leaves no
+// sibling when the extractor failed at upload time, and pre-fix uploads
+// from before the story landed never had one written. Either case must
+// fall through to `binary-unsupported` so the prompt still reflects that
+// the file is on disk but unreadable.
+const EXTRACTABLE_BINARY_EXTS: ReadonlySet<string> = new Set([
+  '.docx',
+  '.pdf',
 ]);
 
 const BUDGET_EXHAUSTED_PLACEHOLDER =
@@ -376,8 +391,18 @@ export function loadStagedSourcesForPrompt(
     const resolved = resolveSourcePathForPrompt(absPath);
     const originalName = resolved.originalName;
 
-    if (!TEXT_SOURCE_EXTS.has(ext)) {
-      // .pdf, .pptx, or any other non-text extension we can't extract yet.
+    // A binary format with a sibling extractor (US-124 docx, US-127 pdf)
+    // is only readable when its `.extracted/<name>.md` is on disk; if the
+    // upload-time extractor failed we keep the original visible to the
+    // model as `binary-unsupported` rather than feed it raw binary bytes.
+    if (EXTRACTABLE_BINARY_EXTS.has(ext) && !resolved.extractedFrom) {
+      result.push({ kind: 'binary-unsupported', originalName });
+      continue;
+    }
+
+    if (!TEXT_SOURCE_EXTS.has(ext) && !resolved.extractedFrom) {
+      // .pptx and any other extension without an extractor — preserve the
+      // filename in the array so the model knows the file exists.
       result.push({ kind: 'binary-unsupported', originalName });
       continue;
     }
