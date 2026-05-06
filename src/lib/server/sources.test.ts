@@ -5,14 +5,17 @@ import { tmpdir } from 'node:os';
 
 import {
   ALLOWED_EXTENSIONS,
+  EXTRACTED_DIRNAME,
   MAX_FILE_SIZE_BYTES,
   assertSafeDraftId,
   draftDir,
   draftSourcesDir,
   courseSourcesDir,
+  extractedSiblingPath,
   listCourseSourceFilesSync,
   makeDraftId,
   moveDraftSourcesToCourse,
+  resolveSourcePathForPrompt,
   sanitizeFilename,
   validateUpload,
   withCollisionSuffix,
@@ -264,5 +267,135 @@ describe('listCourseSourceFilesSync (US-104)', () => {
   it('rejects unsafe slugs', () => {
     expect(() => listCourseSourceFilesSync('../etc')).toThrow(/Invalid slug/i);
     expect(() => listCourseSourceFilesSync('a/b')).toThrow(/Invalid slug/i);
+  });
+});
+
+describe('extractedSiblingPath (US-124)', () => {
+  it('rewrites <dir>/<name>.docx to <dir>/.extracted/<name>.docx.md', () => {
+    expect(extractedSiblingPath('/tmp/a/b/notes.docx')).toBe(
+      path.join('/tmp/a/b', EXTRACTED_DIRNAME, 'notes.docx.md'),
+    );
+  });
+
+  it('preserves the full original basename including the extension', () => {
+    // Two source uploads with the same stem but different extensions must
+    // produce different sibling paths.
+    expect(extractedSiblingPath('/tmp/dir/file.docx')).not.toBe(
+      extractedSiblingPath('/tmp/dir/file.pdf.docx'),
+    );
+  });
+});
+
+describe('resolveSourcePathForPrompt (US-124)', () => {
+  it('returns the original path unchanged for .pdf', () => {
+    const r = resolveSourcePathForPrompt('/tmp/something/a.pdf');
+    expect(r).toEqual({ readPath: '/tmp/something/a.pdf', originalName: 'a.pdf' });
+    expect(r.extractedFrom).toBeUndefined();
+  });
+
+  it('returns the original path unchanged for .txt and .json', () => {
+    expect(resolveSourcePathForPrompt('/tmp/notes.txt').readPath).toBe('/tmp/notes.txt');
+    expect(resolveSourcePathForPrompt('/tmp/data.json').readPath).toBe('/tmp/data.json');
+  });
+
+  it('returns the original .docx path when no sibling exists yet', () => {
+    const docxPath = path.join(coursesRoot, 'demo', 'sources', 'a.docx');
+    // Sibling intentionally NOT written.
+    const r = resolveSourcePathForPrompt(docxPath);
+    expect(r.readPath).toBe(docxPath);
+    expect(r.extractedFrom).toBeUndefined();
+  });
+
+  it('returns the sibling .md path for .docx when the sibling is on disk', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(path.join(dir, EXTRACTED_DIRNAME), { recursive: true });
+    const docxPath = path.join(dir, 'a.docx');
+    const siblingPath = path.join(dir, EXTRACTED_DIRNAME, 'a.docx.md');
+    await fs.writeFile(docxPath, 'fake-docx-bytes');
+    await fs.writeFile(siblingPath, '# Hello\n');
+
+    const r = resolveSourcePathForPrompt(docxPath);
+    expect(r.readPath).toBe(siblingPath);
+    expect(r.originalName).toBe('a.docx');
+    expect(r.extractedFrom).toBe('a.docx');
+  });
+});
+
+describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', () => {
+  it('moves a .docx and its .extracted/<name>.md sibling together', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'notes.docx'), 'fake-docx-bytes');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'notes.docx.md'),
+      '# Notes\n\nExtracted content.\n',
+    );
+
+    const moved = await moveDraftSourcesToCourse(id, 'algebra');
+    expect(moved).toEqual(['notes.docx']);
+
+    const dst = courseSourcesDir('algebra');
+    expect(await fs.readFile(path.join(dst, 'notes.docx'), 'utf8')).toBe(
+      'fake-docx-bytes',
+    );
+    expect(
+      await fs.readFile(path.join(dst, EXTRACTED_DIRNAME, 'notes.docx.md'), 'utf8'),
+    ).toBe('# Notes\n\nExtracted content.\n');
+
+    // Source-side sibling cleared up by the draft-dir rm.
+    await expect(fs.access(draftDir(id))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('keeps the docx and sibling final names in sync under collision suffix', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    const dst = courseSourcesDir('algebra');
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    // Pre-existing docx on the destination side forces the collision suffix.
+    await fs.mkdir(dst, { recursive: true });
+    await fs.writeFile(path.join(dst, 'notes.docx'), 'pre-existing-docx');
+    // Draft contains a same-named docx + its sibling.
+    await fs.writeFile(path.join(src, 'notes.docx'), 'from-draft-docx');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'notes.docx.md'),
+      'from-draft-md',
+    );
+
+    const moved = await moveDraftSourcesToCourse(id, 'algebra');
+    expect(moved).toEqual(['notes (2).docx']);
+
+    // Original target file is untouched.
+    expect(await fs.readFile(path.join(dst, 'notes.docx'), 'utf8')).toBe(
+      'pre-existing-docx',
+    );
+    // The promoted draft docx + its sibling share the same `(2)` suffix.
+    expect(await fs.readFile(path.join(dst, 'notes (2).docx'), 'utf8')).toBe(
+      'from-draft-docx',
+    );
+    expect(
+      await fs.readFile(path.join(dst, EXTRACTED_DIRNAME, 'notes (2).docx.md'), 'utf8'),
+    ).toBe('from-draft-md');
+    // No `notes.docx.md` at the original (un-suffixed) name on the destination.
+    await expect(
+      fs.access(path.join(dst, EXTRACTED_DIRNAME, 'notes.docx.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('still moves docx files that have no sibling (older uploads)', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(src, { recursive: true });
+    await fs.writeFile(path.join(src, 'orphan.docx'), 'docx-only');
+
+    const moved = await moveDraftSourcesToCourse(id, 'algebra');
+    expect(moved).toEqual(['orphan.docx']);
+
+    const dst = courseSourcesDir('algebra');
+    expect(await fs.readFile(path.join(dst, 'orphan.docx'), 'utf8')).toBe('docx-only');
+    // No sibling materialised on the destination side.
+    await expect(
+      fs.access(path.join(dst, EXTRACTED_DIRNAME, 'orphan.docx.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

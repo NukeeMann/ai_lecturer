@@ -11,7 +11,7 @@
 // (if any) is moved into the new course directory via `moveDraftSourcesToCourse`.
 
 import path from 'node:path';
-import { promises as fs, readdirSync } from 'node:fs';
+import { promises as fs, existsSync, readdirSync } from 'node:fs';
 import { coursesRoot, courseDir, assertSafeSlug, InvalidSlugError } from './paths';
 
 /** Per-file size cap for uploaded source materials. 50 MiB — large enough
@@ -53,6 +53,13 @@ const FALLBACK_MIME_TYPES: ReadonlySet<string> = new Set(['', 'application/octet
  *  course.json under each entry — drafts have none and are silently
  *  skipped via ENOENT). */
 export const DRAFTS_DIRNAME = '.drafts';
+
+/** Subdirectory next to a /sources/ directory where pre-extracted text
+ *  siblings live for binary formats Claude Code's Read tool cannot parse
+ *  natively (currently: .docx → markdown). The leading dot keeps these
+ *  helper files out of GET /api/courses/upload-sources (which lists files
+ *  directly in /sources/, NOT recursively). See US-124. */
+export const EXTRACTED_DIRNAME = '.extracted';
 
 /** Same character class as `assertSafeSlug` — generated draft ids must be
  *  drawn from a safe alphabet so they cannot escape `<root>/.drafts/`. */
@@ -215,8 +222,65 @@ export function listCourseSourceFilesSync(slug: string): string[] {
     .sort();
 }
 
+/**
+ * Path of the extracted-text sibling for `absPath`. For
+ * `<dir>/<name>.docx` this returns `<dir>/.extracted/<name>.docx.md`. The
+ * extension is preserved in the sibling filename (rather than swapped to
+ * `.md` in place of `.docx`) so that two source uploads with the same stem
+ * but different extensions cannot collide on their siblings.
+ *
+ * Pure: does not check existence; callers (resolveSourcePathForPrompt, the
+ * upload route, moveDraftSourcesToCourse, the DELETE route) decide based on
+ * the result whether to read/write/unlink it.
+ */
+export function extractedSiblingPath(absPath: string): string {
+  const dir = path.dirname(absPath);
+  const base = path.basename(absPath);
+  return path.join(dir, EXTRACTED_DIRNAME, `${base}.md`);
+}
+
+export interface ResolvedSourcePath {
+  /** Absolute path the generation prompt should hand to the Read tool. For
+   *  .docx with an extracted sibling this is the sibling .md; for everything
+   *  else it's the original. */
+  readPath: string;
+  /** Original on-disk basename (e.g. `slides.docx`) for use in
+   *  human-readable prompt annotations. */
+  originalName: string;
+  /** When `readPath` differs from the original, the original's basename so
+   *  the prompt can label the line as "extracted text from <original>". */
+  extractedFrom?: string;
+}
+
+/**
+ * Resolve a source-file absolute path into a `{ readPath, originalName,
+ * extractedFrom? }` triple suitable for building a generation prompt
+ * (US-124). For `.docx` a pre-extracted markdown sibling under
+ * `.extracted/` is preferred when it exists on disk (`existsSync`); for
+ * `.pdf` / `.txt` / `.json` the original path is returned unchanged.
+ *
+ * Sync — called from the same generation-time code path as
+ * listCourseSourceFilesSync, which is itself sync. The existsSync check
+ * costs one stat per source file; that's negligible for the typical handful
+ * of uploads per course.
+ */
+export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath {
+  const ext = path.extname(absPath).toLowerCase();
+  const originalName = path.basename(absPath);
+  if (ext === '.docx') {
+    const sibling = extractedSiblingPath(absPath);
+    if (existsSync(sibling)) {
+      return { readPath: sibling, originalName, extractedFrom: originalName };
+    }
+  }
+  return { readPath: absPath, originalName };
+}
+
 /** List existing source filenames in a directory. Returns [] if the dir
- *  doesn't exist yet. */
+ *  doesn't exist yet. Only regular files directly under `dir` are listed —
+ *  the `.extracted/` sibling directory (US-124) is intentionally not
+ *  recursed so the wizard UI never shows a docx's extracted .md as a
+ *  separate source. */
 export async function listSourceFilenames(dir: string): Promise<string[]> {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -273,6 +337,27 @@ export async function moveDraftSourcesToCourse(
       }
     }
     moved.push(finalName);
+    // US-124: if a pre-extracted text sibling was produced at upload time
+    // (currently .docx → .extracted/<name>.md), move it alongside so the
+    // generation prompt resolver still finds it after finalisation. Final
+    // names of the docx and its sibling stay in sync even when the docx
+    // gets a `(2)` suffix in the destination.
+    const siblingSrc = path.join(srcDir, EXTRACTED_DIRNAME, `${name}.md`);
+    const siblingStat = await fs.stat(siblingSrc).catch(() => null);
+    if (siblingStat && siblingStat.isFile()) {
+      const siblingDest = path.join(targetDir, EXTRACTED_DIRNAME, `${finalName}.md`);
+      await fs.mkdir(path.dirname(siblingDest), { recursive: true });
+      try {
+        await fs.rename(siblingSrc, siblingDest);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EXDEV') {
+          await fs.copyFile(siblingSrc, siblingDest);
+          await fs.unlink(siblingSrc);
+        } else {
+          throw err;
+        }
+      }
+    }
   }
   // Best-effort cleanup of the now-empty draft directory tree.
   await fs.rm(draftDir(draftId), { recursive: true, force: true }).catch(() => {});

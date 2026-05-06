@@ -3,12 +3,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   ALLOWED_EXTENSIONS,
+  EXTRACTED_DIRNAME,
   InvalidDraftIdError,
   MAX_FILE_SIZE_BYTES,
   StoredSourceFile,
   assertSafeDraftId,
   courseSourcesDir,
   draftSourcesDir,
+  extractedSiblingPath,
   formatBytes,
   listSourceFilenames,
   makeDraftId,
@@ -16,6 +18,7 @@ import {
   validateUpload,
   withCollisionSuffix,
 } from '@/lib/server/sources';
+import { extractDocxToMarkdown } from '@/lib/server/docx';
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
@@ -133,6 +136,21 @@ export async function POST(req: Request) {
       size: buf.byteLength,
       type: file.type ?? '',
     });
+    // US-124: pre-extract .docx to a markdown sibling under .extracted/ so
+    // the curriculum/lesson generation prompts can point Claude Code's Read
+    // tool at a file format it can actually parse. Failures here NEVER
+    // block the original upload — the docx file itself is already on disk
+    // and we still return 201 for it; the extractor's reason is only logged
+    // server-side.
+    if (path.extname(finalName).toLowerCase() === '.docx') {
+      const sibling = extractedSiblingPath(destPath);
+      const result = await extractDocxToMarkdown(destPath, sibling);
+      if (!result.ok) {
+        console.warn(
+          `[upload-sources] docx extraction failed for ${finalName}: ${result.reason}`,
+        );
+      }
+    }
   }
 
   const body: UploadResponse = {
@@ -211,6 +229,19 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: 'File not found' }, { status: 404 });
     }
     throw err;
+  }
+  // US-124: a deleted .docx leaves an orphaned .extracted/<name>.md sibling
+  // behind. Best-effort unlink — missing sibling is a no-op (idempotent),
+  // not an error, since older docx uploads predate the extractor.
+  if (path.extname(filename).toLowerCase() === '.docx') {
+    const sibling = path.join(targetDir, EXTRACTED_DIRNAME, `${filename}.md`);
+    try {
+      await fs.unlink(sibling);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw err;
+      }
+    }
   }
   return NextResponse.json({ ok: true });
 }
