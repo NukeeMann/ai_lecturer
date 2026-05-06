@@ -133,3 +133,29 @@ Previous log archived to: archive/progress-2026-05-06-1310.txt
   - When playwright-scanning for Polish strings, you MUST exclude course-content selectors (`[data-testid="course-card"]`, `[data-testid="continue-hero"]`, `[data-testid="lesson-body"]`, `[data-section-id]`, `h1/h2/h3` lesson titles, the breadcrumb course/module/lesson labels, the next-lesson preview). Course content is authored in any language by design; only chrome (CTAs, navigation, panel headers, settings, error messages) is in scope for the sweep. A naive full-page diacritic scan over a course written in Polish will fail loudly even when the chrome is 100% English.
   - The `LessonSourcesPanel` returns `null` when `sources.length === 0`. To verify the "Sources" header renders, target a lesson that actually has sources (e.g. `gauss-basics/filtr-gaussa-w-praktyce` has 4) — the always-handy `gauss-basics/wprowadzenie-do-filtrowania` has none and silently hides the panel.
 ---
+
+## 2026-05-06 - US-120 - AI Lecturer logo persists in top-left on /create
+- The `/create` page header rendered an empty left slot (`<div style={headerSlotStyle} />`) where the dashboard and lesson page mount `<AppLogoLink/>`. Wired the same component into the wizard header so the global "AI Lecturer" logo is visible on every page and clicking it navigates back to the dashboard (`href="/"`, identical behaviour to the other surfaces).
+  - `src/app/create/page.tsx`: added `import { AppLogoLink } from '@/components/AppLogo';`. Replaced `<div style={headerSlotStyle} />` with `<div style={headerSlotStyle}><AppLogoLink /></div>`. The header itself was already a 3-column grid (`1fr auto 1fr`) — Stepper centred, settings/theme right-aligned — so the logo drops straight into the existing left slot with no styling changes; no new layout work needed.
+  - The header on /create is always-rendered (US-116 lifted it out of the `showStepper` gate), so the logo persists across every wizard stage including 'choose' / 'materials' where the stepper is hidden.
+- Failing-first regression test:
+  - `src/app/appLogoPlacement.test.ts`: static-source-check vitest (mirrors the US-116 `settingsMenuPlacement.test.ts` pattern). Asserts every top-level page (`/`, `/create`, `/courses/[slug]/lessons/[lessonSlug]`) imports `AppLogoLink` from `@/components/AppLogo` AND renders `<AppLogoLink ... />` in JSX. Verified failing on /create before the fix (regex didn't match the import line) → passing after.
+- Tests
+  - Typecheck (`tsc --noEmit`): clean.
+  - Lint (`npx eslint src/app/create/page.tsx src/app/appLogoPlacement.test.ts`): no new errors. The 3 pre-existing errors in `src/app/create/page.tsx` (`set-state-in-effect` at lines 2731/2745, `refs`-during-render at line 3061 — line numbers shifted +2 because the import + JSX block added two lines) reproduce on the base branch and are not introduced by US-120.
+  - Vitest (`npx vitest run`): 624 passed (621 + 3 new). The single pre-existing flake in `src/lib/server/generation.test.ts > getActiveRunSummary > writes a .generating.json marker…` re-appeared this run — same JSON-parse-during-write race documented under US-118 progress, unrelated to this story.
+- Browser-verified via `scripts/ralph/skills/playwright-skill` against a port-3020 dev server (Next 16 / Turbopack). Test script at `/tmp/playwright-test-us120.js` runs 11 assertions on `/create`:
+  - exactly one `header [data-testid="app-logo-link"]` mounted,
+  - logo's bounding box is **left of header centre** (logo centre @ x=85 vs header centre @ x=640) and vertically inside the header (top-left placement),
+  - `aria-label === "AI Lecturer — back to dashboard"` and label text === `"AI Lecturer"` (matches the dashboard / lesson page),
+  - `href === "/"`,
+  - clicking the logo navigates to `/` and the dashboard's `[data-testid="dashboard-header"]` mounts after navigation,
+  - dashboard also exposes `[data-testid="app-logo-link"]` (parity check),
+  - 0 console / page errors on /create render.
+  - Screenshots: `/tmp/us120-create-with-logo.png`, `/tmp/us120-after-click-dashboard.png`.
+- **Learnings for future iterations:**
+  - The /create header is a 3-column CSS grid (`gridTemplateColumns: '1fr auto 1fr'`, `headerSlotStyle` for the left slot, `headerCenterStyle` for the stepper, `headerRightStyle` for settings+theme). The empty `<div style={headerSlotStyle} />` was a structural placeholder the wizard-stepper layout already accommodated — wiring `<AppLogoLink/>` into it requires no new style or grid change, just dropping the component into the existing slot. Same pattern any time the wizard needs a left-side adornment.
+  - Static-source-check tests (read file → regex for import + JSX usage) work great for "component X must be mounted on every top-level page" regressions, given the project's `environment: 'node'` vitest config (no jsdom / RTL). The US-116 (`settingsMenuPlacement.test.ts`) and US-120 (`appLogoPlacement.test.ts`) tests are now twin canaries — when adding a new top-level page, add it to BOTH `PAGES` arrays so the chrome stays consistent.
+  - `[data-testid="app-logo-link"]` is the canonical playwright selector for the AI Lecturer logo on every page. `aria-label="AI Lecturer — back to dashboard"` is also stable. The component renders a `Link href="/"` (Next router) so click-and-navigate works in playwright via `Promise.all([page.waitForURL('/'), logo.click()])` — no special interception needed.
+  - `headerSlotStyle` does NOT centre its children. Don't add flex/justifyContent inside it just to render the logo — the `AppLogoLink` is already an `inline-flex` element and sits at the slot's natural top-left, which is what every other page uses. A rogue `justifyContent: 'center'` or extra wrapper on `headerSlotStyle` would break parity with `/` and the lesson page where the logo sits flush-left in their own headers.
+---
