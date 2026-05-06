@@ -95,9 +95,17 @@ export async function extractPdfToMarkdown(
   // Order by page number; pdf-parse returns pages in document order but
   // we sort defensively so a future version that streams pages out of
   // order doesn't silently break the page sequence.
+  //
+  // PDFs commonly contain U+0000 control bytes (font sub-table padding,
+  // structural markers); they survive text extraction unchanged. POSIX
+  // argv cannot carry null bytes, so when this markdown is later inlined
+  // into a wizard prompt and passed to `spawn('claude', ['-p', prompt])`
+  // the spawn aborts with "must be a string without null bytes". Stripping
+  // them here is safe — they carry no semantic information in extracted
+  // text — and keeps every downstream consumer of the sibling .md happy.
   const ordered = [...pages].sort((a, b) => a.num - b.num);
   const markdown = ordered
-    .map((p) => `${pageSeparator(p.num)}\n\n${p.text}`)
+    .map((p) => `${pageSeparator(p.num)}\n\n${p.text.replace(/\u0000/g, '')}`)
     .join('\n\n');
 
   try {

@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 
 import {
   ALLOWED_EXTENSIONS,
+  DEFAULT_PER_FILE_CHAR_CAP,
+  DEFAULT_TOTAL_CHAR_BUDGET,
   EXTRACTED_DIRNAME,
   MAX_FILE_SIZE_BYTES,
   assertSafeDraftId,
@@ -447,6 +449,13 @@ describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', 
     await expect(
       fs.access(path.join(dst, EXTRACTED_DIRNAME, 'notes.pdf.md')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('loadStagedSourcesForPrompt default budgets (US-128)', () => {
+  it('exposes 150k total / 60k per-file as the documented defaults', () => {
+    expect(DEFAULT_TOTAL_CHAR_BUDGET).toBe(150_000);
+    expect(DEFAULT_PER_FILE_CHAR_CAP).toBe(60_000);
   });
 });
 

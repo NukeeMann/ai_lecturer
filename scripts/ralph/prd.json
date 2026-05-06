@@ -2763,6 +2763,7 @@
     {
       "id": "US-128",
       "title": "Wizard inline budget bump + verify on real PDF — full grounding pass through Clarify + Structure",
+      "passes": true,
       "description": "As a user uploading a real-world textbook PDF (the kind that runs ~80 pages of Polish prose, like the reference `Lista pytań kierunkowych.pdf`), US-125's wizard inlining today caps every source at 30,000 total chars across all files — enough for ~10–15k tokens. After US-126 (mammoth without base64) and US-127 (PDF→text sibling), a typical multi-page document carries ~110k chars / ~45k tokens of real content; the existing 30k budget captures only ~25% of it. Bump the budget to 150,000 chars total and 60,000 per file (~55–60k tokens for Polish, fits comfortably in 200k Opus context with room for system prompt + draft spec + clarification answers + the model's reply), and verify end-to-end that the wizard's outline visibly tracks the contents of the PDF.",
       "acceptanceCriteria": [
         "src/lib/server/sources.ts: `loadStagedSourcesForPrompt` defaults change from `{ totalCharBudget: 30000, perFileCharCap: 12000 }` to `{ totalCharBudget: 150000, perFileCharCap: 60000 }`. The function signature still accepts `opts` so callers can override (no behavioral change for explicit-budget callers, only for the default-args call sites in /api/wizard/clarify and /api/wizard/structure).",
@@ -2776,7 +2777,6 @@
         "Tests pass"
       ],
       "priority": 128,
-      "passes": false,
       "notes": "Hard dependency: US-126 (mammoth without base64) AND US-127 (PDF→text sibling at upload) must be merged before this story runs — otherwise the new 150k budget either fills with base64 garbage (docx) or leaves PDFs as `binary-unsupported` (no sibling produced). The reference PDF `/home/nukeemann/projects/ai_lecturer/temp/Lista pytań kierunkowych.pdf` is the canonical smoke-test fixture across US-127 and this story; keep the path stable. Tag `ui` because the Stage 3 outline screenshot is a content-quality assertion, not just plumbing.",
       "tags": [
         "ui"

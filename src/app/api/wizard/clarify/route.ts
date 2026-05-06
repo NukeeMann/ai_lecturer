@@ -1,3 +1,7 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { tmpdir } from 'node:os';
+
 import { NextResponse } from 'next/server';
 import { selectConnector } from '@/lib/lessonChat/connector';
 import {
@@ -59,6 +63,17 @@ export async function POST(req: Request) {
 
   const userMessage =
     buildClarifyUserMessage(parsed.data, sources) + CLARIFY_MODEL_HINT;
+
+  // US-128: opt-in dump of the assembled prompt for smoke-testing the
+  // grounding pass on a real PDF.
+  if (process.env.GENERATION_DEBUG === '1') {
+    const dumpPath = path.join(tmpdir(), 'wizard-clarify-prompt.txt');
+    fs.writeFile(dumpPath, userMessage, 'utf8').catch((err) =>
+      console.warn(
+        `[wizard/clarify] GENERATION_DEBUG dump failed: ${(err as Error).message}`,
+      ),
+    );
+  }
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
