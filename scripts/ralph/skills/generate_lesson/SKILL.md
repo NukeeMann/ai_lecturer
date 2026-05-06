@@ -23,7 +23,7 @@ This skill is the back half of the course-generation pipeline. The front half is
 3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`, `plotImage.json`).
 4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Start from the matching `## <lesson title>` heading in `sources.md`; supplement with your own research only if those entries don't fully cover the lesson scope. See Step 4 for the full rules.
 5. **Visual illustrations pass** — pick the inline images and Image-widget hero figures that will accompany the lesson. Lessons should be visually rich, not walls of text. See Step 5 for the rules.
-6. Compose a lesson with **4–8 sections** mixing widget types (rules below).
+6. Compose a lesson with **8–14 sections** mixing widget types — roughly 2x the prior baseline so the lesson covers the topic in genuine depth — and structured as **at least two `[theory → 1–3 widgets]` pairs** (more pairs allowed). See Step 6 for the full layout rules.
 7. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
 8. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never write invalid JSON.
 9. Stop. The skill ends after the lesson file is written and validates.
@@ -255,19 +255,29 @@ The Image widget caches external URLs into `courses/<slug>/assets/images/` on sa
 
 ### Section count and mix
 
-- **4–8 sections per lesson**, in display order.
-- **Always at least 1 `theory` section.** Theory is the spine — start with it (so the learner has context before the first interactive section).
-- **At least 1 `quiz` section where conceptual checking helps.** Skip only if the lesson is pure mechanics (e.g. a hands-on debug walkthrough where a quiz feels artificial).
+- **8–14 sections per lesson**, in display order. This is roughly **2x the previous baseline** (the older 4–8 range produced lessons that were too thin for the topics being covered). Bias toward the upper half of the range for `intermediate` / `advanced` topics or `estimatedMinutes ≥ 12`; the lower end is reserved for tightly-scoped beginner lessons.
+- **At least TWO distinct `theory` sections** are MANDATORY — a single theory block, however long, is no longer acceptable. Split the topic into two (or more) coherent theory beats: e.g. *intuition / definition* in the first, *formal derivation / edge cases* in the second; or *forward direction* in the first, *inverse / failure modes* in the second.
+- **Each `theory` section MUST be followed by 1–3 widget sections** (any non-theory type: `quiz`, `code`, `demo`, `sandbox`, `image`, `plotImage`, `custom`). The required shape is:
+
+  ```
+  [theory] → [1–3 widgets] → [theory] → [1–3 widgets]   (two such pairs minimum, more pairs allowed)
+  ```
+
+  - Do **not** stack two `theory` sections back-to-back. Every `theory` section except the last must be followed by at least one widget before the next `theory` appears.
+  - The widget run after the **last** `theory` section must also contain 1–3 widgets — no lesson should end on a bare `theory` block.
+  - Three or more `[theory → widgets]` pairs are encouraged for `extensive` / `comprehensive` courses or when the lesson naturally splits into more than two beats.
+- **Always start with a `theory` section** (so the learner has context before the first interactive section).
+- **At least 1 `quiz` section where conceptual checking helps.** With ≥ 2 theory beats it is natural to put one quiz after each theory section. Skip only if the lesson is pure mechanics (e.g. a hands-on debug walkthrough where a quiz feels artificial).
 - **At least 1 `code` section OR 1 `demo` section where the topic permits hands-on.** For numeric / image / signal topics with a Pyodide-friendly task, prefer `code`. For visual intuition that benefits from a slider (currently only the `gauss` blur demo) prefer `demo`.
 - **At most one `demo` section per lesson** (the only registered demo is `gauss`; reusing it twice is redundant).
 - A `sandbox` section is a nice closer for hands-on lessons — encourages free exploration after the graded code exercise. Optional.
 - A `custom` section is an escape hatch for things no widget covers; use sparingly and only when the topic genuinely warrants it.
 
-When the invoking prompt or `course-spec.json` carries a `Theory/practice mix` (0..1), use it to tune the balance:
+When the invoking prompt or `course-spec.json` carries a `Theory/practice mix` (0..1), use it to tune the balance — but **the ≥ 2 theory sections + `[theory → 1–3 widgets]` shape is non-negotiable in every case**:
 
-- `≤ 0.3` → lean practice: 1 theory + (1–2 code) + 1 quiz + 1 sandbox.
-- `0.4–0.6` → balanced: 1–2 theory + 1 code (or 1 demo) + 1 quiz + optional sandbox.
-- `≥ 0.7` → lean theory: 2–3 theory + 1 quiz; code/sandbox only if the topic clearly invites it.
+- `≤ 0.3` → lean practice: 2 theory beats (kept compact) + 2–3 code + 1–2 quiz + 1 sandbox. Each theory pair leans on one short theory + 2–3 hands-on widgets.
+- `0.4–0.6` → balanced: 2–3 theory beats + 2 code (or 1 code + 1 demo) + 1–2 quiz + optional sandbox. Each theory pair: theory + 1–2 widgets.
+- `≥ 0.7` → lean theory: 3–4 theory beats + 1–2 quiz; code/sandbox only if the topic clearly invites it. Each theory pair: theory + 1 quiz/image widget is fine.
 
 If no ratio is given, default to the balanced mix.
 
@@ -281,7 +291,7 @@ If no ratio is given, default to the balanced mix.
 - `data.markdown` is plain markdown rendered with KaTeX support (`$inline$` and `$$block$$`).
 - Use KaTeX where math is genuinely relevant (formulas, summations, kernels) — don't force LaTeX into prose.
 - Use fenced code blocks for code snippets (\`\`\`python ... \`\`\`).
-- Length: 80–250 words is a good target for a single theory section. Prefer two short theory sections over one long one when the topic naturally splits.
+- Length: **150–400 words per theory section** (the prior 80–250-word target produced lessons that were too thin — this is the per-section half of the ~2x lesson-length increase). With ≥ 2 theory sections required (see *Section count and mix* above) this still keeps each block readable while letting the lesson cover the topic in genuine depth. Use the lower half of the range when the topic genuinely splits into many small beats; use the upper half when you have only the minimum two beats and need each to carry real weight.
 - Headings: don't open with `# `; the section's own title is already a heading. Use `##` / `###` for sub-structure if needed.
 
 #### Quiz (`type: "quiz"`)
@@ -452,6 +462,23 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
       }
     },
     {
+      "id": "algorithm",
+      "title": "Computing the median: window, sort, pick",
+      "type": "theory",
+      "data": {
+        "markdown": "Now that we have intuition for *why* the median preserves edges, let's pin down the **algorithm** the filter actually runs at every pixel.\n\nFor a window of side $k$ around pixel $(i, j)$:\n\n1. **Gather** the $k^2$ neighbour values into a local array (with edge replication when the window overhangs the image).\n2. **Sort** that array (or use a partial selection algorithm — `numpy.partition` is enough; a full sort is wasted work).\n3. **Pick** the middle element ($\\lfloor k^2 / 2 \\rfloor$, since $k$ is odd) and write it back to $\\hat I(i, j)$.\n\nNaively this is $O(N \\cdot k^2 \\log k^2)$ for an $N$-pixel image — fine for $k = 3, 5$, slow for $k = 11$ on a multi-megapixel photo. Production implementations (`scipy.ndimage.median_filter`, `cv2.medianBlur`) use **histogram-based sliding** (Huang 1979) or **constant-time forgetful selection** (Perreault & Hébert 2007) to bring the per-pixel cost down to $O(1)$ in $k$.\n\nA second consequence of the algorithm: the median filter is **not separable**. Unlike a Gaussian — which can be applied as a 1-D row pass followed by a 1-D column pass — the median of a 2-D window is *not* the median of medians. Don't try to factor it; either run a true 2-D window or use a separable approximation only when you can tolerate the error."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TASSP.1979.1163188",
+          "title": "A Fast Two-Dimensional Median Filtering Algorithm",
+          "kind": "paper",
+          "author": "T. Huang, G. Yang, G. Tang",
+          "year": 1979
+        }
+      ]
+    },
+    {
       "id": "exercise-implement",
       "title": "Implement a 1-D median filter",
       "type": "code",
@@ -478,6 +505,31 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
           }
         ],
         "solution": "from statistics import median\n\ndef median_filter_1d(signal, k):\n    n = len(signal)\n    half = k // 2\n    out = []\n    for i in range(n):\n        window = []\n        for j in range(i - half, i + half + 1):\n            j_clamped = max(0, min(n - 1, j))\n            window.append(signal[j_clamped])\n        out.append(median(window))\n    return out\n"
+      }
+    },
+    {
+      "id": "failure-modes",
+      "title": "When the median breaks",
+      "type": "theory",
+      "data": {
+        "markdown": "The median is the right tool for **impulse noise** — a few extreme outliers in an otherwise clean signal. It is the *wrong* tool for several other regimes, and a learner who reaches for it indiscriminately will be disappointed.\n\n**Gaussian noise.** If every pixel is perturbed by a small zero-mean Gaussian, the median has nothing to discard — there are no outliers, just a fuzzy distribution. A mean (or Gaussian) filter is statistically optimal here; the median is no better than the mean and is more expensive to compute.\n\n**Dense impulse noise.** The robustness guarantee — that the median ignores up to $\\lfloor (k^2 - 1)/2 \\rfloor$ outliers per window — only holds while corrupted pixels are a *minority* of the window. Once more than half of a $k \\times k$ window is salt-or-pepper, the median itself becomes one of the noisy values and the filter starts smearing the noise instead of removing it. The fix is a larger $k$, but a larger $k$ also blurs fine texture.\n\n**Thin lines and small features.** A 3-pixel-wide line in a $5 \\times 5$ median window is a minority of the window — the median throws it away. Edge preservation only kicks in when the feature is more than half the window in *both* dimensions. For thin structures (vessels in medical imaging, scratches in restoration), a different non-linear filter (rank, conservative, or anisotropic) is usually a better fit."
+      }
+    },
+    {
+      "id": "check-failure-modes",
+      "title": "Quick check: when does the median fail?",
+      "type": "quiz",
+      "data": {
+        "question": "Which of the following are scenarios where a 3×3 median filter performs *worse* than a 3×3 Gaussian filter? Select all that apply.",
+        "options": [
+          "Removing isolated pure-white pixels from an otherwise clean photo",
+          "Denoising an image with low-amplitude zero-mean Gaussian noise on every pixel",
+          "Cleaning an image where 60% of pixels have been replaced with random salt-or-pepper",
+          "Restoring a 1-pixel-wide horizontal line that was preserved through transmission"
+        ],
+        "correct": [1, 2, 3],
+        "explanation": "The median dominates only when corrupted pixels are a *minority* of the window AND the surviving features are more than half the window. For dense Gaussian noise (every pixel perturbed) the mean is statistically optimal and the median has no outliers to discard. For >50% salt-and-pepper the noisy values become the majority of the window, so the median IS one of them and stops working — only a larger window or a different filter recovers. And a 1-pixel-wide line is a minority of any 3×3 window, so the median throws it away while a Gaussian merely softens it.",
+        "multiSelect": true
       }
     },
     {
@@ -519,12 +571,10 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
 
 Why this lesson works as a worked example:
 
-- **5 sections** — comfortably inside the 4–8 range, appropriate for a 12-minute beginner lesson with a 0.4 theory/practice mix.
-- **1 theory** opens with intuition + an inline Wikimedia Commons image of salt-and-pepper noise (>300 chars of markdown justifies the visual; the alt text describes exactly what the figure shows) + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference; the lesson-level list still covers the rest.
-- **1 image widget** (hero figure) reinforces the edge-preservation claim with a stand-alone diagram comparing median vs. mean filter outputs on a step edge. The `alt` field is detailed and specific; `caption` summarises the takeaway in one sentence; `attribution.text` follows the `Wikimedia Commons, <author>, <license>` format and `attribution.url` points at the Commons file page.
-- **1 quiz** uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors — all three are mistakes a learner who skimmed the theory could realistically make. The explanation justifies the right answer specifically (median ignores outliers; mean/Gaussian average them).
-- **1 code exercise** has 4 tests with descriptive names and small bodies. One test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
-- **1 sandbox** closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and see the median's failure mode.
+- **8 sections forming 3 `[theory → widgets]` pairs** — at the floor of the new 8–14 section range (US-112). Three theory beats (*intuition* → *algorithm / complexity* → *failure modes*) split the topic into the natural why/how/when shape, and each is followed by 1–3 widgets — no two theory sections back-to-back, no lesson ending on a bare theory. Appropriate here for a 12-minute beginner lesson with a 0.4 theory/practice mix; an `intermediate` lesson on the same topic would add a `plotImage` of the histogram-sliding optimisation in pair 2 and another quiz in pair 3 to push toward the upper half of the range.
+- **Pair 1 — theory (intuition) → image → quiz.** The first theory section opens with intuition + an inline Wikimedia Commons image of salt-and-pepper noise (>300 chars of markdown justifies the visual; the alt text describes exactly what the figure shows) + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference. The image widget (hero figure) reinforces the edge-preservation claim with a stand-alone diagram comparing median vs. mean filter outputs on a step edge — `alt` detailed and specific; `caption` summarises the takeaway in one sentence; `attribution.text` follows the `Wikimedia Commons, <author>, <license>` format. The quiz uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors.
+- **Pair 2 — theory (algorithm) → code.** The second theory section pivots from *why* (intuition) to *how* (the window/sort/pick algorithm + complexity + non-separability), with KaTeX for the per-window cost and a section-level `sources` entry pointing at the Huang 1979 paper that introduced the histogram-based sliding optimisation. The code exercise has 4 tests with descriptive names and small bodies — one test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
+- **Pair 3 — theory (failure modes) → quiz → sandbox.** The third theory section pivots one final time, from *how* (the algorithm) to *when* (the regimes where the median is the *wrong* tool: Gaussian noise, dense impulse noise > 50% of the window, thin features). The follow-up quiz is multi-select and forces the learner to apply the failure-mode reasoning to three concrete scenarios; the explanation re-grounds each correct option in the rule from the preceding theory. The sandbox closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and the noise rate and see the median's failure mode for themselves.
 - **Lesson-level `sources` has 4 entries** mixing kinds (`article`, `book`, `video`) — comfortably above the ≥ 3 floor. The book entry carries `author` + `year` because for textbook chapters those are strongly preferred. The Wikipedia + scikit-image entries omit `author`/`year` (recoverable from the URL). All URLs are stable: Wikipedia, official scikit-image docs, the publisher's catalogue page, and an official Computerphile YouTube video — no medium / towardsdatascience.
 
 ---
@@ -538,8 +588,10 @@ Why this lesson works as a worked example:
 - [ ] `courseSlug` matches the directory.
 - [ ] `moduleId` matches the parent module in `course.json`.
 - [ ] `estimatedMinutes` matches `course.json`'s lesson entry.
-- [ ] **4–8 sections**.
-- [ ] At least one `theory` section.
+- [ ] **8–14 sections** (~2x the prior 4–8 baseline; US-112).
+- [ ] **At least TWO distinct `theory` sections** (US-112). A single theory block is no longer acceptable.
+- [ ] **Every `theory` section is followed by 1–3 widget sections** (any non-theory type) before the next `theory` section or the end of the lesson — i.e. `[theory → 1–3 widgets] → [theory → 1–3 widgets]` repeated, with no two `theory` sections back-to-back and no lesson ending on a bare theory section (US-112).
+- [ ] **Each `theory.markdown` is 150–400 words** (US-112) so each beat carries real weight rather than being a thin paragraph.
 - [ ] At least one of `quiz` (where conceptual checking helps).
 - [ ] At least one of `code` or `demo` (where the topic permits hands-on).
 - [ ] All `section.id` values are unique within the lesson.

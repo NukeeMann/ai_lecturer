@@ -175,7 +175,7 @@ Use `courseSpec.durationTarget` to bound the planned size of `course.json`. The 
 | `extensive`       | 4–5     | 5–7              | 20–30 lessons | 5–10 h           |
 | `comprehensive`   | 5–8     | 6–10             | 40+ lessons   | 15 h+            |
 
-- Each lesson is small enough that one agent in one `generate_lesson` invocation can author it (≈ 4–8 sections). This applies regardless of `durationTarget` — bigger courses use *more* lessons, not bigger lessons.
+- Each lesson is small enough that one agent in one `generate_lesson` invocation can author it (≈ 8–14 sections — see `generate_lesson/SKILL.md` "Section count and mix"; US-112 raised this from the older 4–8 range so each lesson covers its topic in genuine depth, with at least two `[theory → 1–3 widgets]` pairs). This applies regardless of `durationTarget` — bigger courses use *more* lessons, not bigger lessons.
 - For `comprehensive` courses (5–8 modules with 6–10 lessons each) you will be generating 40+ lesson JSON files; pace the per-lesson lessons accordingly so each one has a clear, narrow scope and the bibliography in `sources.md` covers it.
 - For `short` courses, prefer one tightly-scoped module over forcing a thin 2-module split.
 
