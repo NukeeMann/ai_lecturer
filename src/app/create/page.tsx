@@ -2463,6 +2463,7 @@ function StageLogSection({
         <pre
           ref={activeLogElRef ?? undefined}
           data-testid={`stage5-stage-log-${entry.diskName}`}
+          className="gen-log-scroll"
           style={{
             margin: 0,
             padding: '10px 12px',
