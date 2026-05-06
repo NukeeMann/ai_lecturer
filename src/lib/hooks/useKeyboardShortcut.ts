@@ -7,6 +7,12 @@ export interface KeyboardShortcutSpec {
   key: string;
   /** Require the cross-platform primary modifier (⌘ on macOS, Ctrl elsewhere). */
   mod?: boolean;
+  /**
+   * Require the literal Ctrl key (NOT ⌘) on every platform. Use this for
+   * bindings where ⌘+key would collide with an OS shortcut — notably ⌘+Q,
+   * which quits the browser on macOS. When true, `mod` is ignored.
+   */
+  ctrl?: boolean;
   /** Require Shift. */
   shift?: boolean;
   /** Require Alt / Option. */
@@ -41,9 +47,14 @@ export function matchesShortcut(
   spec: KeyboardShortcutSpec,
 ): boolean {
   if (e.key.toLowerCase() !== spec.key.toLowerCase()) return false;
-  const wantMod = spec.mod === true;
-  const hasMod = Boolean(e.metaKey || e.ctrlKey);
-  if (wantMod !== hasMod) return false;
+  if (spec.ctrl === true) {
+    if (!e.ctrlKey) return false;
+    if (e.metaKey) return false;
+  } else {
+    const wantMod = spec.mod === true;
+    const hasMod = Boolean(e.metaKey || e.ctrlKey);
+    if (wantMod !== hasMod) return false;
+  }
   if ((spec.shift === true) !== Boolean(e.shiftKey)) return false;
   if ((spec.alt === true) !== Boolean(e.altKey)) return false;
   return true;
@@ -74,6 +85,7 @@ export function useKeyboardShortcut(
   const {
     key,
     mod = false,
+    ctrl = false,
     shift = false,
     alt = false,
     enabled = true,
@@ -89,7 +101,7 @@ export function useKeyboardShortcut(
   useEffect(() => {
     if (!enabled) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (!matchesShortcut(e, { key, mod, shift, alt })) return;
+      if (!matchesShortcut(e, { key, mod, ctrl, shift, alt })) return;
       if (isEditableShortcutTarget(e.target)) return;
       if (preventDefault) e.preventDefault();
       if (stopPropagation) e.stopPropagation();
@@ -97,5 +109,5 @@ export function useKeyboardShortcut(
     }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [key, mod, shift, alt, enabled, preventDefault, stopPropagation]);
+  }, [key, mod, ctrl, shift, alt, enabled, preventDefault, stopPropagation]);
 }

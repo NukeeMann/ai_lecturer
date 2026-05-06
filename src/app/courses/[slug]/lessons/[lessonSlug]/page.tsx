@@ -36,7 +36,7 @@ import {
 } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { LessonChat } from '@/components/LessonChat';
-import { modLabel } from '@/lib/platform/platform';
+import { keyLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { SidePanel } from '@/components/SidePanel';
 import {
@@ -1471,8 +1471,8 @@ function TutorToolbarButton({
           letterSpacing: '0.02em',
         }}
       >
-        {modLabel(isMac)}
-        {isMac ? 'T' : '+T'}
+        {keyLabel('ctrl', isMac)}
+        {isMac ? 'Q' : '+Q'}
       </span>
     </ToolbarIconBtn>
   );

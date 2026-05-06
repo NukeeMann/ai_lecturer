@@ -31,7 +31,7 @@ interface LessonChatProps {
   courseSlug: string;
   lessonSlug: string;
   onClose: () => void;
-  /** Toggle the panel open/closed. Bound to Mod+T so it must work in either state. */
+  /** Toggle the panel open/closed. Bound to Ctrl+Q so it must work in either state. */
   onToggle: () => void;
 }
 
@@ -53,10 +53,11 @@ export function LessonChat({
   onToggle,
 }: LessonChatProps) {
   const isMac = useIsMacPlatform();
-  // Mod+T toggles the panel. Mounted from this component (per US-078 AC) so
+  // Ctrl+Q toggles the panel. Mounted from this component (per US-078 AC) so
   // the binding lives next to the state owner; the hook installs/removes a
   // window-level keydown listener and no-ops while the user is typing.
-  useKeyboardShortcut({ key: 't', mod: true }, onToggle);
+  // ctrl:true (not mod:true) because ⌘+Q quits the browser on macOS.
+  useKeyboardShortcut({ key: 'q', ctrl: true }, onToggle);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sending, setSending] = useState(false);
