@@ -242,6 +242,62 @@ kill_session() {
   fi
 }
 
+# Backstop for kill_session: kills any process whose cwd is inside $1
+# (a worktree dir). Catches dev servers that escaped the agent's session
+# via setsid() — Next.js dev with Turbopack does this for its workers,
+# so kill_session alone misses them. The orchestrator's own ancestry is
+# excluded so we never signal ourselves.
+kill_cwd() {
+  local target="$1"
+  local label="${2:-}"
+  [ -n "$target" ] || return 0
+  local resolved
+  resolved=$(readlink -f "$target" 2>/dev/null || echo "$target")
+  [ -n "$resolved" ] || return 0
+
+  # Build skip-set: this shell, the worker subshell, and all ancestors
+  # up to pid 1. Without this we'd kill the worker that called us.
+  local skip=" $$ $BASHPID "
+  local p=$PPID
+  while [ -n "$p" ] && [ "$p" != "1" ] && [ "$p" != "0" ]; do
+    skip="$skip$p "
+    p=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+  done
+
+  local pids=""
+  for cwd_link in /proc/[0-9]*/cwd; do
+    [ -e "$cwd_link" ] || continue
+    local pid="${cwd_link#/proc/}"; pid="${pid%/cwd}"
+    case "$skip" in *" $pid "*) continue ;; esac
+    local cwd
+    cwd=$(readlink "$cwd_link" 2>/dev/null) || continue
+    # readlink reports "<path> (deleted)" once the worktree is removed —
+    # strip the suffix so we still match those orphans.
+    cwd="${cwd% (deleted)}"
+    case "$cwd" in
+      "$resolved"|"$resolved"/*) pids="$pids $pid" ;;
+    esac
+  done
+  pids=$(echo "$pids" | tr ' ' '\n' | awk 'NF' | sort -u | tr '\n' ' ')
+  [ -n "$pids" ] || return 0
+  local n
+  n=$(echo "$pids" | wc -w | tr -d ' ')
+  if [ -n "$label" ]; then
+    log_task "$label" "Killing $n straggler process(es) rooted in $resolved"
+  else
+    log_warn "Killing $n straggler process(es) rooted in $resolved"
+  fi
+  echo "$pids" | xargs -r kill -TERM 2>/dev/null || true
+  sleep 1
+  local survivors=""
+  for pid in $pids; do
+    kill -0 "$pid" 2>/dev/null && survivors="$survivors $pid"
+  done
+  if [ -n "$survivors" ]; then
+    echo "$survivors" | xargs -r kill -KILL 2>/dev/null || true
+  fi
+}
+
 cleanup_on_interrupt() {
   trap '' INT TERM  # don't re-enter while we tear down
   echo ""
@@ -264,6 +320,15 @@ cleanup_on_interrupt() {
       sid=$(cat "$sid_file" 2>/dev/null || echo "")
       [ -n "$sid" ] && kill_session "$sid"
       rm -f "$sid_file"
+    done
+  fi
+  # Backstop: kill anything whose cwd is inside a live worktree dir.
+  # Catches dev-server children that escaped both kill_tree (reparented
+  # to PID 1) and kill_session (called setsid() themselves).
+  if [ -d "$WORKTREE_BASE" ]; then
+    for wt in "$WORKTREE_BASE"/*; do
+      [ -d "$wt" ] || continue
+      kill_cwd "$wt"
     done
   fi
   rm -rf "$LOCK_DIR" 2>/dev/null || true
@@ -1122,6 +1187,9 @@ $recent_progress")"
   if [ -n "$agent_sid" ]; then
     kill_session "$agent_sid" "$task_id"
   fi
+  # Backstop: anything still rooted in this worktree (e.g. Next.js dev
+  # workers that called setsid() themselves and escaped the agent SID).
+  kill_cwd "$worktree_dir" "$task_id"
 
   if [ $exit_code -eq 124 ]; then
     log_task "$task_id" "${RED}TIMEOUT${RST} after ${effective_timeout_sec}s — running diagnostician..."
