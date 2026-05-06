@@ -1,0 +1,42 @@
+[2026-05-07T00:04:52+0200] [rate_limit five_hour status=allowed]
+[2026-05-07T00:05:52+0200] Now let me update sources.ts — bump defaults and update inline comment.
+[2026-05-07T00:06:01+0200] Now update the heading to derive from the file extension (so .pdf shows "extracted from pdf"):
+[2026-05-07T00:06:08+0200] Now update both wizard prompt builders to derive the format label dynamically (so .pdf shows "extracted from pdf"):
+[2026-05-07T00:06:54+0200] Now add the GENERATION_DEBUG userMessage dump to both wizard routes:
+[2026-05-07T00:07:46+0200] Let me add a test that covers the new dynamic format-derivation for the PDF heading:
+[2026-05-07T00:08:06+0200] Add a regression test for the new defaults in sources.test.ts:
+[2026-05-07T00:08:49+0200] Let me start the dev server with GENERATION_DEBUG=1:
+[2026-05-07T00:11:25+0200] Let me look at the /create page to plan the playwright test:
+[2026-05-07T00:15:47+0200] The PDF extraction fails inside Next.js because pdfjs-dist can't resolve its worker via dynamic import in the bundled environment. Let me preload pdf-parse's bundled worker so `globalThis.pdfjsWorker.WorkerMessageHandler` is populated, bypassing the dynamic-import path:
+[2026-05-07T00:16:40+0200] Now restart dev server and retry:
+[2026-05-07T00:21:42+0200] Now restart the dev server. Existing extracted siblings still have null bytes — let me also clean drafts so the smoke test re-extracts:
+[2026-05-07T00:23:36+0200] Stage 3 cascade rendered this time. Let me verify the screenshot reflects management content (zarządzanie):
+[2026-05-07T00:23:39+0200] Both wizard calls returned 200, the prompt is grounded in management content, and the screenshot is saved. Let me also view the screenshot:
+[2026-05-07T00:24:01+0200] Add a unit test for the null-byte stripping in pdf.ts:
+[2026-05-07T00:24:58+0200] All 676 tests pass on a clean run (the prior run had the same flaky generation marker race). Let me also lint the touched files:
+[2026-05-07T00:25:04+0200] Lint clean. Now update prd.json and progress.txt:
+[2026-05-07T00:25:30+0200] Now append progress and commit:
+[2026-05-07T00:27:27+0200] US-128 committed. Summary:
+
+- **Budget bump:** `loadStagedSourcesForPrompt` defaults 30k/12k → 150k/60k chars (`src/lib/server/sources.ts:291-292`); inline comment carries the AC-mandated rationale.
+- **Heading derivation:** wizard prompt headings now derive `(extracted from <ext>)` from `path.extname(extractedFrom)`, so .pdf shows `(extracted from pdf)` (`src/lib/wizard/structure.ts`, `src/lib/wizard/clarify.ts`).
+- **GENERATION_DEBUG capture:** both wizard routes write the assembled `userMessage` to `os.tmpdir()/wizard-{structure,clarify}-prompt.txt` when `GENERATION_DEBUG=1`.
+- **Two smoke-test-discovered fixes:** marked `pdf-parse`/`pdfjs-dist` as `serverExternalPackages` (Turbopack was rewriting pdfjs's worker import path); strip U+0000 bytes from extracted PDF text (subprocess `spawn(argv)` rejects null bytes).
+- **Smoke evidence:**
+  - Positive prompt: 60,441 chars, contains the source heading, the Polish Q1 about funkcje zarządzania, and the Generate line in the right order.
+  - Stage 3 outline screenshot at `/tmp/us-128-wizard-outline.png` shows 6 modules / 23 lessons squarely in the management domain (Fundamenty zarządzania, Otoczenie i konkurencyjność…, Marketing i klient, etc.).
+  - Negative prompt: 327 chars, no `Learner-uploaded source materials` substring.
+- **Quality:** `npm run typecheck` clean, `npx eslint` clean on touched files, `npx vitest run` 676/676.
+- **prd.json:** US-128 `passes: true`. Committed at `0696d31`.
+[2026-05-07T00:27:27+0200] [result success turns=155 cost=$13.020904250000001] US-128 committed. Summary:
+
+- **Budget bump:** `loadStagedSourcesForPrompt` defaults 30k/12k → 150k/60k chars (`src/lib/server/sources.ts:291-292`); inline comment carries the AC-mandated rationale.
+- **Heading derivation:** wizard prompt headings now derive `(extracted from <ext>)` from `path.extname(extractedFrom)`, so .pdf shows `(extracted from pdf)` (`src/lib/wizard/structure.ts`, `src/lib/wizard/clarify.ts`).
+- **GENERATION_DEBUG capture:** both wizard routes write the assembled `userMessage` to `os.tmpdir()/wizard-{structure,clarify}-prompt.txt` when `GENERATION_DEBUG=1`.
+- **Two smoke-test-discovered fixes:** marked `pdf-parse`/`pdfjs-dist` as `serverExternalPackages` (Turbopack was rewriting pdfjs's worker import path); strip U+0000 bytes from extracted PDF text (subprocess `spawn(argv)` rejects null bytes).
+- **Smoke evidence:**
+  - Positive prompt: 60,441 chars, contains the source heading, the Polish Q1 about funkcje zarządzania, and the Generate line in the right order.
+  - Stage 3 outline screenshot at `/tmp/us-128-wizard-outline.png` shows 6 modules / 23 lessons squarely in the management domain (Fundamenty zarządzania, Otoczenie i konkurencyjność…, Marketing i klient, etc.).
+  - Negative prompt: 327 chars, no `Learner-uploaded source materials` substring.
+- **Quality:** `npm run typecheck` clean, `npx eslint` clean on touched files, `npx vitest run` 676/676.
+- **prd.json:** US-128 `passes: true`. Committed at `0696d31`.
