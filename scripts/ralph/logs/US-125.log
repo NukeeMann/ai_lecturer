@@ -1,0 +1,42 @@
+[2026-05-06T23:23:23+0200] [rate_limit five_hour status=allowed]
+[2026-05-06T23:24:35+0200] Starting implementation. First, add `loadStagedSourcesForPrompt` to sources.ts.
+[2026-05-06T23:25:25+0200] Now updating clarify.ts:
+[2026-05-06T23:27:12+0200] Now wire draftId through Stage3Clarify and Stage3Cascade.
+[2026-05-06T23:27:33+0200] Now Stage3Cascade:
+[2026-05-06T23:27:52+0200] Now wire draftId in CreatePage:
+[2026-05-06T23:28:04+0200] Now write the tests. Let me first look at existing tests for patterns.
+[2026-05-06T23:28:12+0200] Now append tests for `loadStagedSourcesForPrompt`:
+[2026-05-06T23:28:47+0200] Now look at existing wizard tests for patterns:
+[2026-05-06T23:28:53+0200] Let me append tests for buildClarifyUserMessage with sources, and a route test that asserts the connector receives the file content:
+[2026-05-06T23:29:18+0200] Now add a route test that asserts connector receives sources:
+[2026-05-06T23:30:36+0200] Typecheck passes. Now run the relevant tests:
+[2026-05-06T23:30:40+0200] All 110 tests pass. Run the full vitest suite:
+[2026-05-06T23:30:46+0200] All 665 tests pass (+16 new from this story). Now let me lint the files I've changed:
+[2026-05-06T23:31:04+0200] Confirmed — the eslint errors in page.tsx are pre-existing. My changes are 2 lines that just add a `draftId` prop. Let me re-lint just my changed files:
+[2026-05-06T23:31:49+0200] Dev server up. Let me write the smoke test:
+[2026-05-06T23:33:11+0200] Good — `wizard-next` testid exists. Let me update the smoke test:
+[2026-05-06T23:33:57+0200] Both POSTs include `draftId`. Let me check the dev server log for the upload + connector activity:
+[2026-05-06T23:34:27+0200] Now let me do a quick standalone tsx verification that loadStagedSourcesForPrompt returns the content:
+[2026-05-06T23:34:53+0200] `loadStagedSourcesForPrompt` returned the extracted markdown content (12035 chars including the truncation marker — capped at 12k perFileCharCap default), with the literal substring "Lista pytań kierunkowych" present. The route forwarded that into the connector userMessage.
+
+Let me clean up that draft and the test artefact, then commit.
+[2026-05-06T23:35:18+0200] Now append progress.txt:
+[2026-05-06T23:36:57+0200] Commit `59db3ab` is in HEAD with `passes:true` for US-125. Stopping the dev server I started:
+[2026-05-06T23:37:09+0200] US-125 is done.
+
+**Summary**
+- `loadStagedSourcesForPrompt` lands in `src/lib/server/sources.ts` with default 30k/12k char budgets, lex-ordered reads, the literal `\n\n[…truncated, <N> more chars…]` per-file marker, and an explicit `(omitted: total character budget exhausted)` placeholder past the budget. Read errors gracefully degrade to `binary-unsupported`.
+- Both wizard schemas grew an optional `draftId`; both builders gained a `sources?` arg that appends a `Learner-uploaded source materials:` block before the final `Generate …` line; both system prompts gained one extra steering line.
+- Both wizard routes load and forward sources when `draftId` is present, falling back gracefully on path-traversal ids.
+- The `/create` page threads `draftId` into Stage3Clarify and Stage3Cascade, which include it in the fetch bodies.
+- 16 new tests (sources unit + builder + route), 665 vitest tests pass, typecheck clean. Playwright smoke confirmed both POSTs include `draftId`; standalone tsx confirmed the Polish docx content reaches the connector userMessage.
+- `scripts/ralph/prd.json` US-125 `passes:true` and the progress entry are committed in `59db3ab`.
+[2026-05-06T23:37:09+0200] [result success turns=115 cost=$9.833835499999996] US-125 is done.
+
+**Summary**
+- `loadStagedSourcesForPrompt` lands in `src/lib/server/sources.ts` with default 30k/12k char budgets, lex-ordered reads, the literal `\n\n[…truncated, <N> more chars…]` per-file marker, and an explicit `(omitted: total character budget exhausted)` placeholder past the budget. Read errors gracefully degrade to `binary-unsupported`.
+- Both wizard schemas grew an optional `draftId`; both builders gained a `sources?` arg that appends a `Learner-uploaded source materials:` block before the final `Generate …` line; both system prompts gained one extra steering line.
+- Both wizard routes load and forward sources when `draftId` is present, falling back gracefully on path-traversal ids.
+- The `/create` page threads `draftId` into Stage3Clarify and Stage3Cascade, which include it in the fetch bodies.
+- 16 new tests (sources unit + builder + route), 665 vitest tests pass, typecheck clean. Playwright smoke confirmed both POSTs include `draftId`; standalone tsx confirmed the Polish docx content reaches the connector userMessage.
+- `scripts/ralph/prd.json` US-125 `passes:true` and the progress entry are committed in `59db3ab`.
