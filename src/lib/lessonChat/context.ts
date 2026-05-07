@@ -1,15 +1,13 @@
 /**
  * LessonChat prompt context builder.
  *
- * Given a lesson and (optionally) the active section the learner is reading,
- * produces a small, focused context block + system prompt that the connector
- * passes to Claude. We deliberately ship only the active section's body
- * (theory markdown / quiz question+options / code task / etc.) rather than
- * the full lesson, so prompts stay small and answers stay relevant.
+ * Ships the full lesson page (header + every section's serialized body) so the
+ * tutor can answer questions that span the whole page. When `currentSectionId`
+ * is given, that section is tagged `[ACTIVE …]` so the model knows what the
+ * learner is currently looking at.
  *
- * Total context is capped at ~CONTEXT_CHAR_LIMIT chars; if exceeded we
- * truncate the active section's serialized body first and append
- * '… [truncated]'.
+ * Total context is capped at CONTEXT_CHAR_LIMIT chars; if exceeded we truncate
+ * the assembled body tail and append '… [truncated]'.
  */
 import type { Lesson, Section } from '@/lib/schemas/lesson';
 
@@ -31,7 +29,7 @@ export const SYSTEM_PROMPT = [
   '- OVERRIDE (the learner explicitly asks for the answer or the solution — e.g. "just give me the answer", "tell me the solution", "show me the correct code", "what\'s the right option", "stop hinting, answer it"): give the direct answer immediately, then add a one- or two-sentence explanation of why. Do not refuse, do not deflect, do not lecture about learning before answering. The learner\'s explicit request always wins over the default guiding mode.',
 ].join('\n');
 
-export const CONTEXT_CHAR_LIMIT = 4000;
+export const CONTEXT_CHAR_LIMIT = 30_000;
 const TRUNCATION_SUFFIX = '… [truncated]';
 
 export function buildPromptContext(
@@ -40,18 +38,7 @@ export function buildPromptContext(
   const { lesson, currentSectionId } = input;
 
   const header = renderLessonHeader(lesson);
-
-  const activeSection =
-    currentSectionId !== undefined
-      ? lesson.sections.find((s) => s.id === currentSectionId) ?? null
-      : null;
-
-  let body: string;
-  if (activeSection) {
-    body = renderActiveSection(activeSection);
-  } else {
-    body = renderLessonOutline(lesson);
-  }
+  const body = renderAllSections(lesson, currentSectionId);
 
   const assembled = `${header}\n\n${body}`;
   const contextBlock =
@@ -71,18 +58,23 @@ function renderLessonHeader(lesson: Lesson): string {
   return lines.join('\n');
 }
 
-function renderLessonOutline(lesson: Lesson): string {
-  const lines: string[] = ['Lesson outline:'];
-  for (const s of lesson.sections) {
-    lines.push(`- [${s.type}] ${s.title}`);
+function renderAllSections(lesson: Lesson, currentSectionId?: string): string {
+  if (lesson.sections.length === 0) {
+    return 'Lesson sections: (this lesson has no sections)';
+  }
+  const lines: string[] = ['Lesson sections (full page content):'];
+  for (let i = 0; i < lesson.sections.length; i++) {
+    const s = lesson.sections[i];
+    const isActive = currentSectionId !== undefined && s.id === currentSectionId;
+    const marker = isActive ? ' [ACTIVE — learner is currently viewing this]' : '';
+    lines.push('');
+    lines.push(`Section ${i + 1} [${s.type}]: ${s.title}${marker}`);
+    const sectionBody = serializeSectionBody(s);
+    if (sectionBody.length > 0) {
+      lines.push(sectionBody);
+    }
   }
   return lines.join('\n');
-}
-
-function renderActiveSection(section: Section): string {
-  const head = `Active section (${section.type}): ${section.title}`;
-  const body = serializeSectionBody(section);
-  return body.length > 0 ? `${head}\n${body}` : head;
 }
 
 function serializeSectionBody(section: Section): string {

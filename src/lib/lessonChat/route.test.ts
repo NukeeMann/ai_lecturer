@@ -177,6 +177,33 @@ describe('POST /api/lesson-chat', () => {
     expect(captured.userMessage).toContain('User question: Explain.');
   });
 
+  it('forwards conversation history from the request body to the connector', async () => {
+    let captured:
+      | { history?: Array<{ role: 'user' | 'assistant'; content: string }> }
+      | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = { history: req.history };
+        return 'ok';
+      }),
+    );
+    await POST(
+      makeRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        message: 'follow-up',
+        history: [
+          { role: 'user', content: 'first q' },
+          { role: 'assistant', content: 'first a' },
+        ],
+      }),
+    );
+    expect(captured?.history).toEqual([
+      { role: 'user', content: 'first q' },
+      { role: 'assistant', content: 'first a' },
+    ]);
+  });
+
   it('404 when lesson file does not exist', async () => {
     vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
       fakeConnector(async () => 'unused'),

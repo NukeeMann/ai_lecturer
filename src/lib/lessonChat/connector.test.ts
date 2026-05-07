@@ -69,6 +69,37 @@ describe('assemblePrompt', () => {
     expect(out).toContain('What is gradient descent?');
     expect(out.endsWith('What is gradient descent?')).toBe(true);
   });
+
+  it('omits the conversation block when history is empty', () => {
+    const out = assemblePrompt('Q?', undefined, []);
+    expect(out).not.toContain('Previous conversation');
+    expect(out.endsWith('Q?')).toBe(true);
+  });
+
+  it('embeds prior turns above the user message when history is provided', () => {
+    const out = assemblePrompt(
+      'And what about the third one?',
+      'SYS',
+      [
+        { role: 'user', content: 'First question' },
+        { role: 'assistant', content: 'First answer' },
+        { role: 'user', content: 'Second question' },
+        { role: 'assistant', content: 'Second answer' },
+      ],
+    );
+    expect(out).toContain('SYS');
+    expect(out).toContain('Previous conversation:');
+    expect(out).toContain('User: First question');
+    expect(out).toContain('Assistant: First answer');
+    expect(out).toContain('User: Second question');
+    expect(out).toContain('Assistant: Second answer');
+    expect(out.endsWith('And what about the third one?')).toBe(true);
+    // Order: system → history → new user message.
+    expect(out.indexOf('SYS')).toBeLessThan(out.indexOf('Previous conversation:'));
+    expect(out.indexOf('Previous conversation:')).toBeLessThan(
+      out.indexOf('And what about the third one?'),
+    );
+  });
 });
 
 describe('subprocessConnector', () => {

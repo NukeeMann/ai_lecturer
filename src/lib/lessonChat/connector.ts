@@ -56,8 +56,21 @@ const DEFAULT_SYSTEM_PROMPT =
 export function assemblePrompt(
   userMessage: string,
   systemPrompt: string = DEFAULT_SYSTEM_PROMPT,
+  history?: ChatMessage[],
 ): string {
-  return `${systemPrompt}\n\n${userMessage}`;
+  if (!history || history.length === 0) {
+    return `${systemPrompt}\n\n${userMessage}`;
+  }
+  return `${systemPrompt}\n\n${formatHistory(history)}\n\n${userMessage}`;
+}
+
+function formatHistory(history: ChatMessage[]): string {
+  const lines: string[] = ['Previous conversation:'];
+  for (const m of history) {
+    const label = m.role === 'user' ? 'User' : 'Assistant';
+    lines.push(`${label}: ${m.content}`);
+  }
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -87,11 +100,11 @@ export function subprocessConnector(
   return {
     name: 'subprocess',
     chat(req) {
-      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       return runClaudeCli(spawnFn, command, prompt, req.timeoutMs ?? timeoutMs, killGraceMs);
     },
     chatStream(req, signal) {
-      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       return streamClaudeCli(spawnFn, command, prompt, signal, killGraceMs);
     },
   };
@@ -386,7 +399,7 @@ export async function agentSdkConnector(
   return {
     name: 'agent-sdk',
     async chat(req) {
-      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       let assistantText = '';
       let resultFallback = '';
       const stream = sdk.query({ prompt });
@@ -420,7 +433,7 @@ export async function agentSdkConnector(
       return text;
     },
     async *chatStream(req, signal) {
-      const prompt = assemblePrompt(req.userMessage, req.systemPrompt);
+      const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       const stream = sdk.query({ prompt });
       const iter = stream[Symbol.asyncIterator]();
       let yieldedAny = false;

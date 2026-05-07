@@ -103,7 +103,7 @@ describe('buildPromptContext', () => {
     expect(contextBlock).toContain('Estimated minutes: 18');
   });
 
-  it('renders the active theory section markdown when sectionId is given', () => {
+  it('renders the theory section markdown and tags it active when its id matches', () => {
     const lesson = baseLesson({
       sections: [
         {
@@ -118,11 +118,11 @@ describe('buildPromptContext', () => {
       lesson,
       currentSectionId: 's1',
     });
-    expect(contextBlock).toContain('Active section (theory): Intro');
+    expect(contextBlock).toContain('Section 1 [theory]: Intro [ACTIVE');
     expect(contextBlock).toContain('Convolution is a weighted sum.');
   });
 
-  it('renders the active quiz section question and options', () => {
+  it('renders the quiz section question and options', () => {
     const lesson = baseLesson({
       sections: [
         {
@@ -143,14 +143,14 @@ describe('buildPromptContext', () => {
       lesson,
       currentSectionId: 'q1',
     });
-    expect(contextBlock).toContain('Active section (quiz): Quiz 1');
+    expect(contextBlock).toContain('Section 1 [quiz]: Quiz 1 [ACTIVE');
     expect(contextBlock).toContain('Question: What is a kernel?');
     expect(contextBlock).toContain('1. A pixel');
     expect(contextBlock).toContain('2. A weight matrix');
     expect(contextBlock).toContain('3. A function');
   });
 
-  it('renders the active code section task and starter code', () => {
+  it('renders the code section task and starter code', () => {
     const lesson = baseLesson({
       sections: [
         {
@@ -169,27 +169,62 @@ describe('buildPromptContext', () => {
       lesson,
       currentSectionId: 'c1',
     });
-    expect(contextBlock).toContain('Active section (code): Implement blur');
+    expect(contextBlock).toContain('Section 1 [code]: Implement blur [ACTIVE');
     expect(contextBlock).toContain('Task:\nWrite a function `blur(img)`.');
     expect(contextBlock).toContain('Starter code:');
     expect(contextBlock).toContain('def blur(img):');
   });
 
-  it('falls back to a brief outline when currentSectionId is omitted', () => {
+  it('renders all sections with full bodies and marks the one matching currentSectionId as active', () => {
     const lesson = baseLesson({
       sections: [
         {
           id: 's1',
           title: 'Theory section',
           type: 'theory',
-          data: { markdown: 'm' },
+          data: { markdown: 'Theory body text.' },
         },
         {
           id: 'q1',
           title: 'Quiz section',
           type: 'quiz',
           data: {
-            question: 'q',
+            question: 'What?',
+            options: ['a', 'b'],
+            correct: [0],
+            explanation: 'e',
+            multiSelect: false,
+          },
+        },
+      ],
+    });
+    const { contextBlock } = buildPromptContext({
+      lesson,
+      currentSectionId: 'q1',
+    });
+    expect(contextBlock).toContain('Lesson sections (full page content):');
+    expect(contextBlock).toContain('Section 1 [theory]: Theory section');
+    expect(contextBlock).not.toContain('Section 1 [theory]: Theory section [ACTIVE');
+    expect(contextBlock).toContain('Theory body text.');
+    expect(contextBlock).toContain('Section 2 [quiz]: Quiz section [ACTIVE');
+    expect(contextBlock).toContain('Question: What?');
+  });
+
+  it('renders all sections with full bodies (no active marker) when currentSectionId is omitted', () => {
+    const lesson = baseLesson({
+      sections: [
+        {
+          id: 's1',
+          title: 'Theory section',
+          type: 'theory',
+          data: { markdown: 'Theory body text.' },
+        },
+        {
+          id: 'q1',
+          title: 'Quiz section',
+          type: 'quiz',
+          data: {
+            question: 'What?',
             options: ['a', 'b'],
             correct: [0],
             explanation: 'e',
@@ -199,14 +234,15 @@ describe('buildPromptContext', () => {
       ],
     });
     const { contextBlock } = buildPromptContext({ lesson });
-    expect(contextBlock).toContain('Lesson outline:');
-    expect(contextBlock).toContain('- [theory] Theory section');
-    expect(contextBlock).toContain('- [quiz] Quiz section');
-    // Must not include the full theory body in outline mode.
-    expect(contextBlock).not.toContain('Active section');
+    expect(contextBlock).toContain('Lesson sections (full page content):');
+    expect(contextBlock).toContain('Section 1 [theory]: Theory section');
+    expect(contextBlock).toContain('Theory body text.');
+    expect(contextBlock).toContain('Section 2 [quiz]: Quiz section');
+    expect(contextBlock).toContain('Question: What?');
+    expect(contextBlock).not.toContain('[ACTIVE');
   });
 
-  it('also falls back to outline when the sectionId is unknown', () => {
+  it('still renders all sections with no active marker when the sectionId is unknown', () => {
     const lesson = baseLesson({
       sections: [
         {
@@ -221,11 +257,11 @@ describe('buildPromptContext', () => {
       lesson,
       currentSectionId: 'does-not-exist',
     });
-    expect(contextBlock).toContain('Lesson outline:');
-    expect(contextBlock).toContain('- [theory] Only');
+    expect(contextBlock).toContain('Section 1 [theory]: Only');
+    expect(contextBlock).not.toContain('[ACTIVE');
   });
 
-  it('truncates the active section body when total exceeds the cap and appends [truncated]', () => {
+  it('truncates the body and appends [truncated] when total exceeds the cap', () => {
     const huge = 'x'.repeat(CONTEXT_CHAR_LIMIT * 2);
     const lesson = baseLesson({
       sections: [
