@@ -22,6 +22,38 @@ npm test               # vitest
 npm run build:schemas  # regenerate src/widgets/schemas/*.json from each widget's Zod schema
 ```
 
+## Quick start (Windows, clean machine)
+
+A one-shot PowerShell setup script lives at `setup.ps1` in the repo root. It installs Node.js LTS via `winget` (if missing), runs `npm install`, installs the Claude Code CLI globally, opens an interactive `claude` login prompt (you type credentials live in the terminal), and finally starts `npm run dev`.
+
+Bootstrap on a fresh Windows 10/11 box (run in PowerShell):
+
+```powershell
+# 1. Prerequisites: Git + GitHub CLI (skip any you already have)
+winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
+winget install --id GitHub.cli -e --accept-source-agreements --accept-package-agreements
+
+# 2. Authenticate to GitHub (interactive — choose HTTPS + browser login)
+gh auth login
+
+# 3. Clone the (private) repo and enter it
+gh repo clone NukeeMann/ai_lecturer
+cd ai_lecturer
+
+# 4. Run the setup script
+#    First time only: allow local scripts in this session
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\setup.ps1
+```
+
+The script is idempotent — re-run it any time. Useful flags:
+
+- `.\setup.ps1 -SkipLogin` — already logged into Claude Code
+- `.\setup.ps1 -SkipDev` — install/login only, don't start the dev server
+- `.\setup.ps1 -SkipLogin -SkipDev` — silent install only
+
+Any step that needs credentials (`gh auth login`, `claude /login`) prompts you live in the same terminal — no env-vars or secrets files required.
+
 ## Layout
 
 - `src/app/` — Next.js routes (incl. `/create` wizard) and `src/app/api/` server endpoints
