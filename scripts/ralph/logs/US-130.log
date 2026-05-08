@@ -1,0 +1,36 @@
+[2026-05-08T18:51:49+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T18:52:35+0200] Now I have everything I need. Let me make the edits.
+[2026-05-08T18:52:53+0200] Now SettingsMenu.tsx changes — add the storage key, helpers, state, and slider UI.
+[2026-05-08T18:53:07+0200] Now wire up state, mount sync, change handler, and the slider UI.
+[2026-05-08T18:53:33+0200] Now render the slider group below Font:
+[2026-05-08T18:53:39+0200] Now add the TextScaleGroup component. Append at the end of the file:
+[2026-05-08T18:53:58+0200] Now update layout.tsx boot script:
+[2026-05-08T18:54:34+0200] Typecheck passes. Now run tests.
+[2026-05-08T18:54:39+0200] All tests pass. Now browser-verify.
+[2026-05-08T18:56:56+0200] I'll wait for the dev server to come up and then run browser verification.
+[2026-05-08T18:57:46+0200] Dev server is up. Now write the playwright test.
+[2026-05-08T18:58:41+0200] The dev server is fine; the playwright test needs to use the native value setter for React controlled inputs. Let me fix the test.
+[2026-05-08T18:59:04+0200] All browser checks pass:
+- Baseline at scale 1: h1 "My courses" 22px / 33px tall.
+- After slider → 1.4: 30.8px font / 46.19px tall, readout `140%`.
+- Reload at `domcontentloaded`: inline `--text-scale=1.4` already set (no flash), h1 still enlarged, slider persists.
+- Slider back → 1.0: shrinks to 22px / 33px.
+- No console errors.
+[2026-05-08T18:59:39+0200] Now append to progress.txt.
+[2026-05-08T19:00:23+0200] Now commit. First check git status.
+[2026-05-08T19:01:17+0200] Done. Commit `4390e95` lands US-130 with `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary**
+- `src/styles/tokens.css`: added `--text-scale: 1` default (in the global `:root` block, theme-agnostic) and wrapped all 10 `--fs-*` tokens (`xs/sm/base/md/lg/xl/2xl/3xl/4xl/5xl`) in `calc(<px> * var(--text-scale))`. Existing `var(--fs-md)` consumers unchanged.
+- `src/components/SettingsMenu.tsx`: exported `TEXT_SCALE_STORAGE_KEY = 'aiLecturer.textScale'`, `readTextScale()` (clamp + `Number.isFinite` guard), `applyTextScale()` (writes `--text-scale` inline on `<html>`). New `textScale` state, `onTextScaleSelect` mirroring `onFontSelect`, and a new `<TextScaleGroup>` rendered below Font with `data-testid="settings-text-scale-slider"` / `data-testid="settings-text-scale-value"`.
+- `src/app/layout.tsx`: boot script now also reads `aiLecturer.textScale`, parses+clamps to [0.8, 1.4], and writes `--text-scale` inline before first paint — no flash on reload.
+- Quality: `tsc --noEmit` clean; `vitest run` 680/680 pass.
+- Browser-verified at 1280px: baseline h1 22px → slider→1.4 raises to 30.8px, persists across reload at `domcontentloaded` (proving boot-script applies pre-paint), slider→1.0 restores. Screenshots at `/tmp/us-130-{1-baseline,2-scale-1.4,3-after-reload,4-back-to-1}.png`.
+[2026-05-08T19:01:17+0200] [result success turns=57 cost=$3.22710775] Done. Commit `4390e95` lands US-130 with `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary**
+- `src/styles/tokens.css`: added `--text-scale: 1` default (in the global `:root` block, theme-agnostic) and wrapped all 10 `--fs-*` tokens (`xs/sm/base/md/lg/xl/2xl/3xl/4xl/5xl`) in `calc(<px> * var(--text-scale))`. Existing `var(--fs-md)` consumers unchanged.
+- `src/components/SettingsMenu.tsx`: exported `TEXT_SCALE_STORAGE_KEY = 'aiLecturer.textScale'`, `readTextScale()` (clamp + `Number.isFinite` guard), `applyTextScale()` (writes `--text-scale` inline on `<html>`). New `textScale` state, `onTextScaleSelect` mirroring `onFontSelect`, and a new `<TextScaleGroup>` rendered below Font with `data-testid="settings-text-scale-slider"` / `data-testid="settings-text-scale-value"`.
+- `src/app/layout.tsx`: boot script now also reads `aiLecturer.textScale`, parses+clamps to [0.8, 1.4], and writes `--text-scale` inline before first paint — no flash on reload.
+- Quality: `tsc --noEmit` clean; `vitest run` 680/680 pass.
+- Browser-verified at 1280px: baseline h1 22px → slider→1.4 raises to 30.8px, persists across reload at `domcontentloaded` (proving boot-script applies pre-paint), slider→1.0 restores. Screenshots at `/tmp/us-130-{1-baseline,2-scale-1.4,3-after-reload,4-back-to-1}.png`.
