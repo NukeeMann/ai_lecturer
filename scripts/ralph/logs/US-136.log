@@ -1,0 +1,37 @@
+[2026-05-08T20:34:18+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T20:34:24+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T20:35:13+0200] Now let me check the schemas and existing test patterns:
+[2026-05-08T20:35:39+0200] Now wire writes into generation.ts. Let me find the right insertion points.
+[2026-05-08T20:35:50+0200] Now wire up the state writes. The pipeline structure:
+
+1. After init success → write initial state with `initCourse.status='done'` and lessons array.
+2. On init error → write/update state with `initCourse.status='failed'`, reason.
+3. Per-lesson before spawn → status='inflight', attempts++.
+4. Per-lesson on success → status='done', finishedAt.
+5. Per-lesson after exhausted retries → status='failed', lastError.
+6. finalize done with no failures → deleteGenerationState; otherwise leave in place.
+
+Let me update the finalize and pipeline sections.
+[2026-05-08T20:36:02+0200] Now let me wire writes into the pipeline. First, I need to track a `genState` variable. Let me look at the pipeline structure more carefully:
+[2026-05-08T20:37:07+0200] Now wire init failures and init success state writes:
+[2026-05-08T20:37:28+0200] Now let me write the unit tests. Check vitest config first.
+[2026-05-08T20:37:54+0200] Now extend generation.test.ts with integration tests. Let me find the right location to add them:
+[2026-05-08T20:38:52+0200] Typecheck passes. Now run the tests:
+[2026-05-08T20:39:00+0200] All tests pass. Let me also run the full test suite to make sure nothing else regressed:
+[2026-05-08T20:39:06+0200] All 733 tests pass. Let me also run lint:
+[2026-05-08T20:39:31+0200] No lint errors in my files. The pre-existing lint errors are unrelated to US-136.
+[2026-05-08T20:39:36+0200] Now update prd.json and append progress:
+[2026-05-08T20:39:54+0200] Now find and flip the existing passes field for US-136:
+[2026-05-08T20:40:02+0200] Now append progress.txt:
+[2026-05-08T20:40:44+0200] Done. US-136 is committed on `ralph/us-136`. Summary of what landed:
+
+- **`src/lib/server/generationState.ts`** (new) — `GenerationStateSchema` (Zod), `generationStateFile`, `readGenerationState` (returns null on ENOENT or invalid content with one warn), `writeGenerationState` (stamps `lastUpdatedAt` and atomic-writes via the existing helper), `deleteGenerationState` (best-effort unlink).
+- **`src/lib/server/generation.ts`** — wired writes into `startGenerationInner`: state file is created after `course.json` is validated (init=done, lessons=pending, config from resolved retry/timeout), updated to inflight+attempts++ before each lesson spawn, advanced to done/failed after each lesson terminates, and deleted by `finalize()` only on `kind==='done'` with no failed lessons. Init failures (non-zero exit, missing/invalid course.json) write the file with `initCourse.status='failed'` and a reason.
+- **Tests** — new `generationState.test.ts` (10 unit tests) and 4 lifecycle tests appended to `generation.test.ts`. All 733 tests pass; typecheck clean.
+- **prd.json** US-136 `passes: true`; progress log appended.
+[2026-05-08T20:40:44+0200] [result success turns=51 cost=$4.71648825] Done. US-136 is committed on `ralph/us-136`. Summary of what landed:
+
+- **`src/lib/server/generationState.ts`** (new) — `GenerationStateSchema` (Zod), `generationStateFile`, `readGenerationState` (returns null on ENOENT or invalid content with one warn), `writeGenerationState` (stamps `lastUpdatedAt` and atomic-writes via the existing helper), `deleteGenerationState` (best-effort unlink).
+- **`src/lib/server/generation.ts`** — wired writes into `startGenerationInner`: state file is created after `course.json` is validated (init=done, lessons=pending, config from resolved retry/timeout), updated to inflight+attempts++ before each lesson spawn, advanced to done/failed after each lesson terminates, and deleted by `finalize()` only on `kind==='done'` with no failed lessons. Init failures (non-zero exit, missing/invalid course.json) write the file with `initCourse.status='failed'` and a reason.
+- **Tests** — new `generationState.test.ts` (10 unit tests) and 4 lifecycle tests appended to `generation.test.ts`. All 733 tests pass; typecheck clean.
+- **prd.json** US-136 `passes: true`; progress log appended.
