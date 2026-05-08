@@ -1,0 +1,36 @@
+[2026-05-08T23:35:39+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:37:03+0200] Now I have a good understanding. Let me check existing node_modules for archiver and node version:
+[2026-05-08T23:38:11+0200] Now let me write the export route:
+[2026-05-08T23:38:38+0200] Now the menu item + toast in src/app/page.tsx:
+[2026-05-08T23:38:56+0200] Now add the prop through CourseCardWithMove and CollectionSection:
+[2026-05-08T23:39:21+0200] Now wire up the page-level handler + showToast + props passed into CollectionSection / CourseCardWithMenu:
+[2026-05-08T23:39:27+0200] Now thread it through the JSX usage points:
+[2026-05-08T23:39:53+0200] Now write the test. I'll write a tiny inline ZIP central-directory parser:
+[2026-05-08T23:41:33+0200] The marker scan in `getActiveRunSummary` finds my seeded `.generating.json` and returns 409 — which is correct production behavior. Need to restructure: drop `.generating.json` from the 200 test (since its presence forces 409 by design), and add a separate 409 test for that file. Also export `isExcluded` for unit verification.
+[2026-05-08T23:42:44+0200] archiver is now a callable function as the TypeScript types expect. Re-run tests:
+[2026-05-08T23:42:48+0200] All 5 tests pass. Run typecheck + full test suite:
+[2026-05-08T23:43:22+0200] The 1 failing test is pre-existing flakiness (different errors on different runs — directory race / tmp pollution), independent of my changes. Let me re-run once to confirm:
+[2026-05-08T23:43:28+0200] All 851 tests pass. Now browser verification with playwright-skill:
+[2026-05-08T23:44:57+0200] Now write the playwright test:
+[2026-05-08T23:45:39+0200] Browser verification PASS. Clean up the seeded fixture and commit:
+[2026-05-08T23:45:51+0200] Now flip US-150 passes to true and append progress.txt:
+[2026-05-08T23:47:21+0200] US-150 done in commit `5071247`. Summary:
+
+- **Endpoint**: `GET /api/courses/[slug]/export/zip` streams `application/zip` via `archiver` (v7, pinned for `@types/archiver` compatibility), with `<slug>/` as the single ZIP root. Excludes `.generation-state.json`, `.generating.json`, `.generation-events.ndjson`, rotated `.generation-events.*.ndjson`, and `*.lesson-prev.json`. Keeps `coherence-report.md`. Returns 400 / 404 / 409 / 500 per AC.
+- **UI**: New `Export as ZIP` item in the per-course three-dots menu, placed above `Delete` (keeps destructive last). Click shows `Preparing ZIP export…` toast and sets `window.location.href` to trigger a native browser download.
+- **Tests**: 5 vitest cases on the route — 200 path with seeded excluded files asserting exact ZIP entry sets + `Content-Disposition`, 409 path with `.generating.json` marker, 404, 400, and a pure unit test on `isExcluded`.
+- **Quality**: typecheck clean, full suite 851/851 passes.
+- **Browser**: playwright-skill confirmed the download event fires with filename `us-150-export-fixture-2026-05-08.zip`, ZIP unzipped to `/tmp/us-150-extract/`, all 8 expected entries present, all 5 forbidden entries absent.
+- **prd.json**: `US-150.passes` flipped to `true` and committed.
+
+I'll exit now without killing the dev server — the orchestrator handles teardown.
+[2026-05-08T23:47:21+0200] [result success turns=89 cost=$6.197247249999998] US-150 done in commit `5071247`. Summary:
+
+- **Endpoint**: `GET /api/courses/[slug]/export/zip` streams `application/zip` via `archiver` (v7, pinned for `@types/archiver` compatibility), with `<slug>/` as the single ZIP root. Excludes `.generation-state.json`, `.generating.json`, `.generation-events.ndjson`, rotated `.generation-events.*.ndjson`, and `*.lesson-prev.json`. Keeps `coherence-report.md`. Returns 400 / 404 / 409 / 500 per AC.
+- **UI**: New `Export as ZIP` item in the per-course three-dots menu, placed above `Delete` (keeps destructive last). Click shows `Preparing ZIP export…` toast and sets `window.location.href` to trigger a native browser download.
+- **Tests**: 5 vitest cases on the route — 200 path with seeded excluded files asserting exact ZIP entry sets + `Content-Disposition`, 409 path with `.generating.json` marker, 404, 400, and a pure unit test on `isExcluded`.
+- **Quality**: typecheck clean, full suite 851/851 passes.
+- **Browser**: playwright-skill confirmed the download event fires with filename `us-150-export-fixture-2026-05-08.zip`, ZIP unzipped to `/tmp/us-150-extract/`, all 8 expected entries present, all 5 forbidden entries absent.
+- **prd.json**: `US-150.passes` flipped to `true` and committed.
+
+I'll exit now without killing the dev server — the orchestrator handles teardown.
