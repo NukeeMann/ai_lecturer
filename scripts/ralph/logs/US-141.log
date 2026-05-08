@@ -1,0 +1,50 @@
+[2026-05-08T21:40:49+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T21:42:56+0200] Let me look at existing tests to understand the patterns.
+[2026-05-08T21:43:04+0200] Let me look at the existing US-139 tests (the pre-skip pattern most relevant to our final-stage tests):
+[2026-05-08T21:43:11+0200] Now I have a complete picture. Let me check the prd.json for US-141:
+[2026-05-08T21:45:12+0200] Let me find all existing tests that would be affected by adding a final coherence stage.
+[2026-05-08T21:45:52+0200] Let me examine which existing tests exercise the success path with all lessons valid:
+[2026-05-08T21:48:07+0200] Let me check how the tests file beforeEach is structured and identify VITEST availability:
+[2026-05-08T21:49:09+0200] Let me examine the client-side stage status handling so I know what to extend:
+[2026-05-08T21:49:17+0200] Now let me start implementing. First, the skill file:
+[2026-05-08T21:50:20+0200] Now let me update generation.ts. First add the type extensions and helper:
+[2026-05-08T21:50:38+0200] Now add the `defaultCoherencePassCommand` factory after `defaultLessonCommand`:
+[2026-05-08T21:51:06+0200] Now let me extend `SpawnChildOptions` and `spawnChild` to support stdout capture, and update `finalize`:
+[2026-05-08T21:51:25+0200] Now update `finalize` to accept and emit `coherenceReportPath`:
+[2026-05-08T21:51:34+0200] Now add the coherence-pass stage at the end of the pipeline. Let me update the final part of `startGenerationInner`:
+[2026-05-08T21:51:48+0200] Now define the `runCoherencePass` closure. Let me add it near the existing helpers in `startGenerationInner`:
+[2026-05-08T21:52:13+0200] Now update the test file's beforeEach to disable coherence by default and import the new helpers:
+[2026-05-08T21:52:35+0200] Now let me add the new US-141 tests at the end of the test file:
+[2026-05-08T21:54:04+0200] Let me simplify the last RALPH test — replace the broken implementation with a cleaner version that verifies RALPH timeout via dependency injection:
+[2026-05-08T21:54:21+0200] Now rewrite the broken last test to use the timeout override:
+[2026-05-08T21:55:06+0200] Typecheck clean. Now run tests:
+[2026-05-08T21:55:42+0200] Let me debug — first check why the timeout test isn't writing the file:
+[2026-05-08T21:56:10+0200] Let me reduce the timeout to make sure it fires within waitForFinish's window:
+[2026-05-08T21:56:28+0200] All 5 coherence-pass tests pass. Now let's make sure the full test suite still passes:
+[2026-05-08T21:56:35+0200] All 766 tests pass (was 761 before, now 766 — 5 new US-141 tests). Let me run typecheck once more and then update prd.json + progress log:
+[2026-05-08T21:56:46+0200] Now flip US-141 `passes` to `true` in prd.json:
+[2026-05-08T21:56:53+0200] Now append progress log:
+[2026-05-08T21:58:33+0200] US-141 complete. Summary:
+
+**What landed (commit `578f9e2`):**
+- New `scripts/ralph/skills/coherence_pass/coherence_pass.md` skill — read-only auditor that walks `course.json` + every lesson JSON and emits a markdown report with three named sections (`## Prerequisite Order`, `## Redundancy`, `## Notation Consistency`).
+- Pipeline integration in `src/lib/server/generation.ts`: after the per-lesson loop succeeds and every lesson is on disk + valid (US-139 gate), `runCoherencePass()` spawns the skill, captures raw stdout, writes `/courses/<slug>/coherence-report.md`, and emits `stage:started` + terminal `stage:done` (or `stage:error` on failure).
+- The `done` GenerationEvent now carries `coherenceReportPath?: 'coherence-report.md'` only on success — absent when the stage fails or is skipped.
+- RALPH-mode (`RALPH_TASK_ID` / `RALPH_DEADLINE_EPOCH` / `RALPH_ITERATION` env) caps the spawn at 30s and writes the `Coherence pass timed out — re-run generation to retry.\n` placeholder when the cap trips.
+- 5 new tests covering: skill-prompt shape, happy path (3-lesson course, report written, ordering, completion summary), non-zero failure (no report, course still completes), skipped on partial coverage (any lesson failed → no spawn), RALPH timeout placeholder.
+
+**Verification:** `npm run typecheck` clean. `npm test` 766/766 (was 761; +5 for this story).
+
+`prd.json` US-141 `passes` flipped to `true`. Commit pushed onto `ralph/us-141`.
+[2026-05-08T21:58:33+0200] [result success turns=78 cost=$8.970612750000003] US-141 complete. Summary:
+
+**What landed (commit `578f9e2`):**
+- New `scripts/ralph/skills/coherence_pass/coherence_pass.md` skill — read-only auditor that walks `course.json` + every lesson JSON and emits a markdown report with three named sections (`## Prerequisite Order`, `## Redundancy`, `## Notation Consistency`).
+- Pipeline integration in `src/lib/server/generation.ts`: after the per-lesson loop succeeds and every lesson is on disk + valid (US-139 gate), `runCoherencePass()` spawns the skill, captures raw stdout, writes `/courses/<slug>/coherence-report.md`, and emits `stage:started` + terminal `stage:done` (or `stage:error` on failure).
+- The `done` GenerationEvent now carries `coherenceReportPath?: 'coherence-report.md'` only on success — absent when the stage fails or is skipped.
+- RALPH-mode (`RALPH_TASK_ID` / `RALPH_DEADLINE_EPOCH` / `RALPH_ITERATION` env) caps the spawn at 30s and writes the `Coherence pass timed out — re-run generation to retry.\n` placeholder when the cap trips.
+- 5 new tests covering: skill-prompt shape, happy path (3-lesson course, report written, ordering, completion summary), non-zero failure (no report, course still completes), skipped on partial coverage (any lesson failed → no spawn), RALPH timeout placeholder.
+
+**Verification:** `npm run typecheck` clean. `npm test` 766/766 (was 761; +5 for this story).
+
+`prd.json` US-141 `passes` flipped to `true`. Commit pushed onto `ralph/us-141`.
