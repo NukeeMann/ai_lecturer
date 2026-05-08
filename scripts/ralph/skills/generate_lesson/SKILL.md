@@ -14,6 +14,24 @@ This skill is the back half of the course-generation pipeline. The front half is
 
 ---
 
+## Your Role
+
+You are a **teacher / tutor**, not a transcriptionist. The lesson you write is the only thing standing between a learner and a working mental model of the topic — treat that responsibility seriously. A good teacher does not dump a wall of prose and walk away; they *show*, they *compare*, they *visualise*, they *check understanding*. Apply the same instinct here.
+
+Concretely, prefer **illustration over assertion** wherever the topic permits. A few techniques a strong human tutor reaches for, in rough order of leverage:
+
+- **Visual evidence over verbal claim.** If you find yourself writing *"the median filter preserves edges while the mean blurs them"*, that sentence is weaker than a side-by-side figure (input → median output → mean output) showing it. Reach for `plotImage`, the Image widget, or the `Code` widget's `inputs` / `outputMedia` fields *before* settling for prose. Inline `![alt](url)` images inside `theory` sections are cheap and compounding.
+- **Comparisons and contrasts.** "X vs Y" framings (correct vs wrong, before vs after, naive vs optimised, two competing intuitions) are how learners actually anchor new concepts. A two-column markdown table, a paired figure, or a quiz with the wrong-answer-everyone-picks as a distractor all do this work.
+- **Math where math earns its keep.** Drop into KaTeX (`$inline$` / `$$block$$`) when a formula compresses three sentences of prose into one line — but never as decoration. If the formula isn't load-bearing for the reader's understanding, it shouldn't be there.
+- **Concrete numbers, worked examples, sample I/O.** A formula plus a worked example beats either alone. Code briefs that show *one* concrete input → expected output ground the abstraction immediately.
+- **Markdown structure that helps the eye.** Headings (`##`/`###`) for genuine sub-beats, bullet lists for parallel items, fenced code blocks for code, tables for comparisons, blockquotes (`>`) sparingly for definitions or warnings. Don't ship a single 400-word paragraph when the same content as four bulleted points reads twice as fast.
+- **Diagrams, charts, kernels, masks.** When the topic is spatial / geometric / structural (a kernel layout, a network architecture, a state machine, a coordinate system), a diagram is non-negotiable — use the Image widget for hero figures and inline images for supporting ones. For quantitative figures (curves, distributions, error vs. iteration), prefer `plotImage` so axes are readable.
+- **Active checks, not just exposition.** A quiz between two theory beats is not a checklist item to satisfy — it's the moment the learner finds out whether the previous beat actually landed. Pick distractors that diagnose specific misconceptions from `research.md`, not throwaway "obviously wrong" options.
+
+Lessons that read like a textbook excerpt (long unbroken prose, no figures, no comparisons, formulas dumped without context) should be rare and only when the topic genuinely permits nothing else. The rules below (≥ 2 theory beats, `[theory → 1–3 widgets]` pairs, inline-image floor on theory ≥ 300 chars, axes-mandatory for `plotImage`, etc.) are the **floor** — meet them, then ask yourself whether the lesson actually *teaches* the topic or merely *covers* it.
+
+---
+
 ## The Job
 
 > **Before you start: read [`docs/widgets.md`](../../../../docs/widgets.md)** — the canonical widget reference. Use it to pick which widgets to compose into the lesson and to crib minimal example shapes for each `data` payload. The Zod schemas in `src/widgets/<Name>/schema.ts` (mirrored as JSON Schemas under `src/widgets/schemas/`) remain the source of truth; open them when the doc is ambiguous or you need a field the summary omits.
@@ -94,7 +112,7 @@ Open the per-widget JSON Schemas under `src/widgets/schemas/`:
 
 - `theory.json` — `{ markdown: string }`
 - `quiz.json` — `{ question, options[≥2], correct[≥1], explanation, multiSelect }`
-- `code.json` — `{ taskMarkdown, starterCode, tests: [{ name, body, hidden? }], solution? }`
+- `code.json` — `{ taskMarkdown, starterCode, tests: [{ name, body, hidden? }], solution?, inputs?: CodeInput[], outputMedia? }` — `inputs[]` is a discriminated union by `kind` (`"image"` / `"video"` / `"file"` / `"text"`); `outputMedia` is a single `{ kind: "image"|"video", src, ... }`. Use these on image / signal / file-processing exercises to render a side-by-side *input → expected output* figure above the editor.
 - `demo.json` — `{ demoType: "gauss", imageSrc, params: { sigmaMin, sigmaMax, sigmaDefault } }` — **gauss only for now**; do not invent new `demoType` values
 - `sandbox.json` — `{ starterCode, encouragement }`
 - `plotImage.json` — `{ src, alt, caption?, sourceCode?, sourceLanguage? }` — pre-rendered matplotlib PNG served from `/api/courses/<slug>/assets/plots/...`. The `sourceCode` MUST match the saved PNG byte-for-byte (re-running it must reproduce the same plot).
@@ -102,6 +120,46 @@ Open the per-widget JSON Schemas under `src/widgets/schemas/`:
 These JSON Schemas are generated from the Zod schemas in `src/widgets/<Name>/schema.ts` via `npm run build:schemas`. The Zod schemas are the runtime source of truth (`src/lib/schemas/lesson.ts → SectionSchema` is a `discriminatedUnion('type', [...])` over the section types). When in doubt, open the Zod file alongside the JSON Schema.
 
 `additionalProperties: false` everywhere — every extra field you put on a widget `data` object is a validation error. Stick to what the schema declares.
+
+---
+
+## Step 3a: Authoring a New Widget Type (when no existing widget fits)
+
+The widget set is **not closed**. If you have a concrete pedagogical idea for the lesson you're authoring and **no existing widget cleanly expresses it** — and the same shape would plausibly help future lessons too — you are allowed (and encouraged) to add a new first-class widget type rather than abusing `custom` or forcing the content into a poor-fit existing widget.
+
+### When to author a new widget vs. reuse / use `custom`
+
+Author a new widget when **all** of the following hold:
+
+- An existing widget would either silently lose information (the data doesn't fit its schema) or actively mislead the learner (you'd be using e.g. `dataTable` for something that isn't tabular).
+- The interaction or visualisation is **reusable** — at least 2–3 future lessons in this course (or related courses) could plausibly use the same widget. One-off content is `custom` territory, not a new type.
+- You can describe the widget's `data` shape in a small, concrete Zod schema (≤ ~10 fields, no open-ended JSON blobs).
+- The component is **renderable in a Next.js client component** with the dependencies already present in `package.json`. Do not pull in new heavy libraries (3D engines, video editors, ML runtimes) just to ship one widget.
+
+If any condition fails: prefer reusing the closest existing widget (and live with a slightly imperfect fit), or fall back to `custom` for genuinely one-off cases.
+
+### How to author the new widget
+
+The canonical 5-step procedure lives in [`src/widgets/README.md`](../../../../src/widgets/README.md) — read it end-to-end before you touch any file. Briefly, you must:
+
+1. Pick a `--widget-<name>` accent colour and add it to **both** light and dark blocks of `src/styles/tokens.css`.
+2. Define the Zod schema at `src/widgets/<Name>/schema.ts` (export both `<Name>DataSchema` and the inferred `<Name>Data` type).
+3. Build the React component at `src/widgets/<Name>/<Name>Widget.tsx` (props: `{ data: <Name>Data }`; the Widget chrome is provided by `Widget.tsx`).
+4. Add an editor form at `src/widgets/<Name>/<Name>Editor.tsx` and wire it into `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` (`WidgetEditPanel` import + branch). The editor lets a human edit the JSON in the side panel — without it, the new section type is read-only in the UI.
+5. Export a typed fixture from `src/widgets/<Name>/sample.ts`.
+6. Register the widget in `src/widgets/registry.ts` (add to `WidgetType` union and to `widgetRegistry`).
+7. Add the schema to `src/widgets/schemas/build.ts` and run `npm run build:schemas` so `<name>.json` is regenerated alongside the others.
+8. **Extend the lesson schema** at `src/lib/schemas/lesson.ts`: import `<Name>DataSchema`, define `<Name>SectionSchema = z.object({ ...sectionBase, type: z.literal('<name>'), data: <Name>DataSchema })`, and add it to the `SectionSchema` discriminated union. Without this step, lessons that include the new section type will be **rejected** by the API on save/load even though the renderer would handle them.
+9. Run `npm run typecheck` and `npm run test -- src/lib/schemas/schemas.test.ts` to confirm nothing is wired up half-way.
+
+After all of that, you may emit lesson JSON that uses `"type": "<name>"`. Treat the widget exactly like a built-in for the rest of this skill — the per-widget rules below also apply (descriptive titles, optional `description`, sources where appropriate, accessible alt text on any images).
+
+### What you must NOT do
+
+- Touch `scripts/ralph/` (that's the orchestrator, off-limits to this skill — same rule as the rest of generate_lesson).
+- Modify another existing widget's schema to "make room" for your case. Either add an optional field that's strictly an addition (no semantic shift), or author the new widget type — never repurpose an existing schema.
+- Skip step 8. A widget that renders but doesn't validate is a foot-gun: the first save/load round-trip will silently drop the section.
+- Add a new widget type "just in case" while authoring a numeric / quiz / theory lesson where existing widgets clearly suffice. New types must pay for themselves.
 
 ---
 
@@ -302,6 +360,7 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - Use fenced code blocks for code snippets (\`\`\`python ... \`\`\`).
 - Length: **150–400 words per theory section** (the prior 80–250-word target produced lessons that were too thin — this is the per-section half of the ~2x lesson-length increase). With ≥ 2 theory sections required (see *Section count and mix* above) this still keeps each block readable while letting the lesson cover the topic in genuine depth. Use the lower half of the range when the topic genuinely splits into many small beats; use the upper half when you have only the minimum two beats and need each to carry real weight.
 - Headings: don't open with `# `; the section's own title is already a heading. Use `##` / `###` for sub-structure if needed.
+- **Don't ship a wall of prose.** Apply the *Your Role* principles at the top of this skill: break the markdown with bullet lists for parallel items, short tables for X-vs-Y comparisons, blockquotes for definitions / warnings, and at least one `![alt](url)` inline image whenever the section is ≥ 300 chars and the topic is visualisable (almost always — kernels, signals, plots, architectures, before/after pairs, geometric layouts). KaTeX formulas and worked numeric examples beat hand-wavy prose every time the topic involves quantities. A theory section that is one unbroken 350-word paragraph with no formula, no list, no figure, and no code is a *failure mode*, not a default.
 
 #### Quiz (`type: "quiz"`)
 - `question` is a single, unambiguous prompt.
@@ -319,6 +378,12 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
   - omit `hidden` to default to `true` (hidden-with-peek), or set `hidden: false` to expose a sample test that the learner can read while solving. A common pattern: one visible "smoke test" + 1–3 hidden grading tests. (See memory: *Code widget tests hidden by default* — final UI is hidden-with-peek.)
 - Test bodies must reference the function/variable the learner is meant to define. Don't redefine helpers inside test bodies; the learner's namespace is in scope.
 - **Always populate `solution`** with a runnable reference implementation that would pass every test. The learner reaches it via the always-available *Peek solution* button (US-038); never leave `solution` empty for a code exercise. Keep the solution idiomatic and minimal — one clean implementation, not the full set of edge-case branches you'd put in production.
+- **`inputs?` and `outputMedia?` (optional)** — populate when the task acts on a concrete artefact (image, signal, video frame, sample CSV) and the learner benefits from seeing what to consume and what to produce.
+  - `inputs[]` is a discriminated union by `kind`: `"image"` (`{ src, alt?, caption? }`), `"video"` (`{ src, caption? }`), `"file"` (`{ src, filename, caption? }`, downloadable), or `"text"` (`{ content, label? }`, rendered in a monospace box for raw fixtures / sample text). Use multiple entries for multi-input tasks (e.g. two frames for stereo matching).
+  - `outputMedia` is a single image OR video showing the **expected** result the learner's code should reproduce — `{ kind: "image"|"video", src, alt?, caption? }`.
+  - Asset paths follow the same convention as `plotImage`: save under `courses/<slug>/assets/...` and reference as `/api/courses/<slug>/assets/...` (the route is content-typed correctly). External URLs work but are not cached locally for these fields.
+  - When you ship `outputMedia`, the tests should still verify the output numerically — the image is for human reference, not the grader. Don't rely on the learner eyeballing the figure.
+  - **Skip both fields** for purely numeric / algorithmic exercises (sorting, statistics, parsing) — they only add visual noise when there is no artefact to look at.
 
 #### Demo (`type: "demo"`)
 - Only `demoType: "gauss"` is registered (see `src/widgets/registry.ts`). Don't invent new types.
@@ -350,7 +415,8 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - Image-only diagrams (no quantitative axes — e.g. a kernel layout figure, a flowchart, an iconographic illustration) belong in the **Image widget**, NOT PlotImage. PlotImage is for *plots with readable values*.
 
 #### Custom (`type: "custom"`)
-- Use only when no other widget fits. `data` is a free-form record. The renderer is `CustomPlaceholder`, so this section currently displays as a stub — useful for marking "future widget here" but not for shipping content. Prefer one of the five real widgets.
+- Use only when no other widget fits AND the case is genuinely one-off (will not recur in future lessons). `data` is a free-form record. The renderer is `CustomPlaceholder`, so this section currently displays as a stub — useful for marking "future widget here" but not for shipping content.
+- **If the same shape would help 2–3 future lessons, author a new first-class widget type instead** (see *Step 3a*) rather than shipping a `custom` stub. `custom` is a placeholder, not a delivery vehicle.
 
 ### Markdown discipline
 
@@ -622,8 +688,9 @@ Why this lesson works as a worked example:
 - [ ] Every Image widget section with a Wikimedia / licensed source carries `data.attribution` in the `Wikimedia Commons, <author>, <license>` format (or the equivalent for the source) and links `attribution.url` to the source description page.
 - [ ] **Every `plotImage` section's saved PNG has visible X/Y axes, tick marks, numeric tick labels, axis labels (with units where applicable), and a title** (US-060) — never `plt.axis('off')`, `plt.xticks([])`, or hidden spines. PlotImage `sourceCode` reproduces that exact figure.
 - [ ] `LessonSchema.safeParse` returns `success: true`.
-- [ ] `npm run typecheck` passes (it should — this is a JSON-only change).
+- [ ] `npm run typecheck` passes (clean for a JSON-only change; if you authored a new widget in *Step 3a*, this is the gate that catches half-wired registry / lesson-schema imports).
 - [ ] **No file written under `scripts/ralph/`** — this skill is fully decoupled from the ralph orchestrator.
+- [ ] **If a new widget type was authored** (Step 3a): all 9 sub-steps complete — tokens.css var (light + dark), `<Name>/schema.ts`, `<Name>Widget.tsx`, `<Name>Editor.tsx` wired into the lesson page, `sample.ts`, `widgetRegistry` entry, `WidgetType` union extended, `schemas/build.ts` updated and `npm run build:schemas` run, `SectionSchema` discriminated union extended in `src/lib/schemas/lesson.ts`. `npm run test -- src/lib/schemas/schemas.test.ts` clean.
 
 ---
 
@@ -633,4 +700,5 @@ Why this lesson works as a worked example:
 - `src/lib/schemas/lesson.ts` — `LessonSchema`, `SectionSchema` (discriminated union), Zod source of truth.
 - `src/lib/schemas/course.ts` — `CourseSchema`, `ModuleSchema`, `LessonRefSchema` — describe the parent course you're authoring against.
 - `src/widgets/<Name>/schema.ts` — per-widget Zod schemas. JSON mirrors live in `src/widgets/schemas/*.json` (regenerated via `npm run build:schemas`).
-- `src/widgets/registry.ts` — the canonical list of `WidgetType` values and which component renders each. (Adding a new widget type is **out of scope** for this skill.)
+- `src/widgets/registry.ts` — the canonical list of `WidgetType` values and which component renders each.
+- [`src/widgets/README.md`](../../../../src/widgets/README.md) — the 5-step procedure for adding a new widget type. **Authoring a new widget is in scope** for this skill when no existing type fits the lesson's pedagogical need; see *Step 3a* above for the gating criteria and the build/validation steps you must run after.

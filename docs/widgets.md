@@ -25,6 +25,14 @@ The full list of registered widget types is in `src/widgets/registry.ts` and
 the discriminated union of section variants is in
 `src/lib/schemas/lesson.ts → SectionSchema`.
 
+**The widget set is not closed.** If your lesson has a clear pedagogical
+need that none of the entries below cleanly express, you may author a new
+first-class widget type rather than abuse `custom`. See
+[`src/widgets/README.md`](../src/widgets/README.md) for the 5-step procedure
+and `generate_lesson/SKILL.md → Step 3a` for the gating criteria (a new type
+must pay for itself across 2–3 future lessons; one-off content stays in
+`custom`).
+
 | Widget                | `type` literal       | Hands-on?         |
 |-----------------------|----------------------|-------------------|
 | Theory                | `theory`             | reading           |
@@ -120,12 +128,14 @@ test body in a fresh copy of the user namespace and reports per-test
 results. Tests default to hidden-with-peek (the learner can see the test
 name + brief feedback, not the body).
 
-| Field          | Type        | Required | Meaning                                                                            |
-|----------------|-------------|----------|------------------------------------------------------------------------------------|
-| `taskMarkdown` | string      | yes      | Brief in markdown — what function to define, sample I/O.                          |
-| `starterCode`  | string      | yes      | Initial Python source. Function shell + scaffolding; never the solution.           |
-| `tests`        | CodeTest[]  | yes      | 2–4 tests. Each `{ name, body, hidden? }`. `hidden` defaults to `true`.            |
-| `solution`     | string      | no       | Reference implementation. Surfaced via the always-available *Peek solution* button — populate it for every shipped exercise. |
+| Field          | Type             | Required | Meaning                                                                            |
+|----------------|------------------|----------|------------------------------------------------------------------------------------|
+| `taskMarkdown` | string           | yes      | Brief in markdown — what function to define, sample I/O.                          |
+| `starterCode`  | string           | yes      | Initial Python source. Function shell + scaffolding; never the solution.           |
+| `tests`        | CodeTest[]       | yes      | 2–4 tests. Each `{ name, body, hidden? }`. `hidden` defaults to `true`.            |
+| `solution`     | string           | no       | Reference implementation. Surfaced via the always-available *Peek solution* button — populate it for every shipped exercise. |
+| `inputs`       | CodeInput[]      | no       | Reference artefacts shown above the editor (image / video / downloadable file / raw text). Use for image-, signal-, or file-processing exercises so the learner sees the input they're operating on. |
+| `outputMedia`  | CodeOutputMedia  | no       | Single expected-output image or video, rendered alongside the editor's run output. Use it to show the learner the target their code should reproduce. Tests still verify numerically — the figure is for human reference. |
 
 Each test has fields:
 
@@ -135,7 +145,23 @@ Each test has fields:
 | `body`   | string  | yes      | One or two `assert` lines. Plain Python — no pytest.                 |
 | `hidden` | boolean | no       | Defaults to `true`. Set `false` for a visible smoke test.            |
 
-Minimal example:
+Each `inputs[]` entry is a discriminated union on `kind`:
+
+| `kind`    | Required fields           | Optional fields  | Meaning                                                                  |
+|-----------|---------------------------|------------------|--------------------------------------------------------------------------|
+| `"image"` | `src`                     | `alt`, `caption` | Inline reference image. `src` is a URL or `/api/courses/<slug>/assets/...` path. |
+| `"video"` | `src`                     | `caption`        | Inline `<video controls>` clip.                                          |
+| `"file"`  | `src`, `filename`         | `caption`        | Downloadable file card (e.g. CSV, NumPy `.npy`, audio sample).           |
+| `"text"`  | `content`                 | `label`          | Raw text fixture rendered in a monospace box (sample stdin, JSON, etc.). |
+
+`outputMedia` is a single object on `kind`:
+
+| `kind`    | Required fields | Optional fields  | Meaning                                                          |
+|-----------|-----------------|------------------|------------------------------------------------------------------|
+| `"image"` | `src`           | `alt`, `caption` | Expected-output image (e.g. denoised frame, thresholded mask).   |
+| `"video"` | `src`           | `caption`        | Expected-output video (e.g. tracker overlay, processed clip).    |
+
+Minimal example (numeric exercise — no media):
 
 ```json
 {
@@ -153,6 +179,40 @@ Minimal example:
   }
 }
 ```
+
+With input + expected-output figures (image-processing exercise):
+
+```json
+{
+  "id": "threshold-exercise",
+  "title": "Otsu threshold",
+  "type": "code",
+  "data": {
+    "taskMarkdown": "Write `binarise(img)` that returns a 0/255 mask using the global Otsu threshold.",
+    "starterCode": "import numpy as np\n\ndef binarise(img):\n    # img: 2D uint8 array, return same-shape uint8 mask of {0, 255}\n    return img\n",
+    "tests": [
+      { "name": "returns_uint8_mask", "hidden": true, "body": "import numpy as np\nout = binarise(np.array([[10, 200], [30, 220]], dtype=np.uint8))\nassert out.dtype == np.uint8 and set(out.flatten().tolist()) <= {0, 255}" }
+    ],
+    "solution": "import numpy as np\n\ndef binarise(img):\n    hist, _ = np.histogram(img, bins=256, range=(0, 256))\n    # ... Otsu's method ...\n    return ((img > 127).astype(np.uint8) * 255)\n",
+    "inputs": [
+      {
+        "kind": "image",
+        "src": "/api/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/assets/images/coins-grayscale.png",
+        "alt": "Grayscale photograph of overlapping coins on a dark surface.",
+        "caption": "Input frame — grayscale, 8-bit."
+      }
+    ],
+    "outputMedia": {
+      "kind": "image",
+      "src": "/api/courses/opencv-w-wizji-komputerowej-od-podstaw-do-sar/assets/images/coins-otsu.png",
+      "alt": "Binary mask separating the coins (white) from the background (black) using Otsu's threshold.",
+      "caption": "Expected output — Otsu binarisation."
+    }
+  }
+}
+```
+
+Skip `inputs` / `outputMedia` for purely numeric or algorithmic tasks — they only add visual noise when there's no artefact to look at.
 
 Full detail: [`src/widgets/Code/schema.ts`](../src/widgets/Code/schema.ts)
 · [`src/widgets/Code/sample.ts`](../src/widgets/Code/sample.ts).
