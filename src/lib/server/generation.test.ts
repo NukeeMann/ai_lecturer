@@ -9,17 +9,20 @@ import type { ChildProcess } from 'node:child_process';
 import {
   __getQueueForTesting,
   __resetForTesting,
+  __setEventsLogRotateBytesForTesting,
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
   defaultInitCourseCommand,
   defaultLessonCommand,
   enqueueGeneration,
+  eventsLogPath,
   formatStreamJsonLine,
   GenerationConflictError,
   GenerationStateMissingError,
   getActiveRun,
   getActiveRunSummary,
   getRunById,
+  readEventsLogSync,
   resumeGeneration,
   sseEncode,
   startGeneration,
@@ -2360,5 +2363,317 @@ describe('POST /api/courses/[slug]/resume (US-137)', () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { error?: string };
     expect(body.error).toBe('busy');
+  });
+});
+
+describe('persistent generation events ndjson + SSE replay (US-138)', () => {
+  // Writes a course.json with zero modules so the per-lesson loop is a no-op
+  // — the test is then free to drive arbitrary log events through init's
+  // stdout without spawning a chain of lesson children.
+  async function writeEmptyCourse(slug: string) {
+    const dir = path.join(coursesRoot, slug);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'course.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug,
+        title: 'Stub',
+        description: 'Empty course for ndjson tests',
+        accentColor: 'indigo',
+        icon: 'sigma',
+        modules: [],
+        createdAt: '2026-05-04T00:00:00.000Z',
+        updatedAt: '2026-05-04T00:00:00.000Z',
+      }),
+      'utf8',
+    );
+  }
+
+  it('appends every emitted event to .generation-events.ndjson with a monotonic seq', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    init.emitStdout('a\nb\nc\n');
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+
+    const raw = await fs.readFile(eventsLogPath('demo'), 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    expect(lines.length).toBe(run.events.length);
+    expect(lines.length).toBe(run.eventSeqs.length);
+    expect(run.eventSeqs[0]).toBe(1);
+    for (let i = 1; i < run.eventSeqs.length; i++) {
+      expect(run.eventSeqs[i]).toBe(run.eventSeqs[i - 1] + 1);
+    }
+    // Each line is { seq, timestamp, event } and the in-memory order
+    // matches the on-disk order.
+    const parsed = lines.map((line) => JSON.parse(line) as { seq: number; event: GenerationEvent });
+    expect(parsed.map((p) => p.seq)).toEqual(Array.from({ length: parsed.length }, (_, i) => i + 1));
+    for (let i = 0; i < parsed.length; i++) {
+      expect(parsed[i].event).toEqual(run.events[i]);
+    }
+    expect(run.lastSeq).toBe(parsed.length);
+  });
+
+  it('replays only events with seq > Last-Event-ID and never duplicates', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    // Drive enough log events that capturing seq=42 leaves a long tail to
+    // replay (and the AC's "100 events" target is comfortably exceeded).
+    const init = await scripted.nextChild();
+    let blob = '';
+    for (let i = 1; i <= 100; i++) blob += `line ${i}\n`;
+    init.emitStdout(blob);
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+    expect(run.lastSeq).toBeGreaterThanOrEqual(100);
+
+    const res = await streamGenerate(
+      new Request(`http://localhost/stream/${run.id}`, {
+        headers: { 'Last-Event-ID': '42' },
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+
+    // Frame structure: each chunk begins with `id: <seq>\n`. The first id
+    // returned must be 43; ids 1..42 must be entirely absent.
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(ids[0]).toBe(43);
+    // No duplicates and strictly monotonic.
+    for (let i = 1; i < ids.length; i++) expect(ids[i]).toBe(ids[i - 1] + 1);
+    // Tail covers every event beyond seq=42.
+    expect(ids[ids.length - 1]).toBe(run.lastSeq);
+    expect(ids.includes(42)).toBe(false);
+    expect(ids.includes(1)).toBe(false);
+  });
+
+  it('honours ?from= query when no Last-Event-ID header is present', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    init.emitStdout('one\ntwo\nthree\n');
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+
+    const res = await streamGenerate(
+      new Request(`http://localhost/stream/${run.id}?from=2`),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    const text = await res.text();
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(ids[0]).toBe(3);
+  });
+
+  it('Last-Event-ID header takes precedence over ?from= when both are present', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    init.emitStdout('a\nb\nc\nd\ne\n');
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+
+    const res = await streamGenerate(
+      new Request(`http://localhost/stream/${run.id}?from=1`, {
+        headers: { 'Last-Event-ID': '4' },
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    const text = await res.text();
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    // Header wins → first id is 5, not 2.
+    expect(ids[0]).toBe(5);
+  });
+
+  it('only replays events from the active file after rotation past 5 MB', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    // Shrink the rotation threshold so the test trips it after ~3 KB
+    // instead of ~5 MB — production-equivalent behaviour, just cheaper.
+    __setEventsLogRotateBytesForTesting(1024);
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    // ~10 events of ~200 bytes each blow past the 1 KB threshold.
+    let blob = '';
+    for (let i = 0; i < 10; i++) blob += `${'x'.repeat(200)}\n`;
+    init.emitStdout(blob);
+    // Pump a small idle so all data events drain before init exits, then
+    // fire a second batch — the rotation must have occurred by then so
+    // these later events land in the *fresh* active file.
+    await new Promise((r) => setImmediate(r));
+    init.emitStdout(`${'y'.repeat(50)}\n${'y'.repeat(50)}\n${'y'.repeat(50)}\n`);
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+
+    // A rotated file exists alongside the still-present active file.
+    const dir = path.join(coursesRoot, 'demo');
+    const entries = await fs.readdir(dir);
+    const rotated = entries.filter(
+      (n) => n.startsWith('.generation-events.') && n.endsWith('.ndjson') && n !== '.generation-events.ndjson',
+    );
+    expect(rotated.length).toBeGreaterThanOrEqual(1);
+
+    // Read the ACTIVE file directly to discover its first seq — that's the
+    // floor of what replay can return; everything below it lives only in
+    // the rotated file and is intentionally NOT surfaced to clients.
+    const activeRaw = await fs.readFile(eventsLogPath('demo'), 'utf8');
+    const activeSeqs = activeRaw
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => (JSON.parse(line) as { seq: number }).seq);
+    expect(activeSeqs.length).toBeGreaterThan(0);
+    const minActiveSeq = Math.min(...activeSeqs);
+    expect(minActiveSeq).toBeGreaterThan(1);
+
+    // Replay from a seq before the rotation. The wizard expects to see
+    // ONLY the active-file tail — older events live on disk for forensics
+    // but the rotation contract drops them from the live SSE replay.
+    const res = await streamGenerate(
+      new Request(`http://localhost/stream/${run.id}`, {
+        headers: { 'Last-Event-ID': '1' },
+      }),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    const text = await res.text();
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+    expect(ids.length).toBe(activeSeqs.length);
+    for (const id of ids) expect(id).toBeGreaterThanOrEqual(minActiveSeq);
+    // None of the rotated seqs (everything strictly below minActiveSeq) are
+    // surfaced.
+    for (let s = 2; s < minActiveSeq; s++) expect(ids.includes(s)).toBe(false);
+  });
+
+  it('skips a malformed line in the middle of the active file and continues', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init = await scripted.nextChild();
+    init.emitStdout('a\nb\nc\nd\ne\n');
+    await writeEmptyCourse('demo');
+    init.finishWithExit(0);
+    await waitForFinish(run);
+
+    // Inject a corrupt line in the middle of the active file (simulating a
+    // partial-write at crash). The parser must skip it and still surface
+    // the surrounding valid entries.
+    const filePath = eventsLogPath('demo');
+    const raw = await fs.readFile(filePath, 'utf8');
+    const lines = raw.split('\n').filter(Boolean);
+    const mid = Math.floor(lines.length / 2);
+    const corrupted = [
+      ...lines.slice(0, mid),
+      '{"seq":99,"timestamp":"oops","event":{trun', // truncated mid-write
+      ...lines.slice(mid),
+    ].join('\n') + '\n';
+    await fs.writeFile(filePath, corrupted, 'utf8');
+
+    // Direct readEventsLogSync — easier to assert than walking SSE bytes.
+    const replay = readEventsLogSync('demo', 0);
+    expect(replay.skippedMalformed).toBe(1);
+    // Valid entries flank the malformed one.
+    const seqs = replay.entries.map((e) => e.seq);
+    for (let i = 1; i < seqs.length; i++) expect(seqs[i]).toBeGreaterThan(seqs[i - 1]);
+    expect(replay.entries.length).toBe(lines.length);
+
+    // The SSE route also tolerates the malformed line and emits a single
+    // console.warn for the whole replay.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await streamGenerate(
+        new Request(`http://localhost/stream/${run.id}`),
+        { params: Promise.resolve({ id: run.id }) },
+      );
+      const text = await res.text();
+      const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+      // Malformed line had seq=99 — must be absent from the surfaced ids.
+      expect(ids.includes(99)).toBe(false);
+      expect(warn).toHaveBeenCalledWith(
+        '[gen] skipped 1 malformed lines in events log',
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('resume continues seq from where the previous run left off when ndjson is still present', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+
+    // Run #1: drive a few events then bail with a non-success finish so
+    // the .generation-state.json file persists for resume.
+    const run1 = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    const init1 = await scripted.nextChild();
+    init1.emitStdout('p\nq\nr\n');
+    // Exit non-zero so the pipeline marks init failed and finalize keeps
+    // the state file on disk for a later resume.
+    init1.finishWithExit(1);
+    await waitForFinish(run1);
+    const seqAfterRun1 = run1.lastSeq;
+    expect(seqAfterRun1).toBeGreaterThan(0);
+
+    // Run #2: a real resume can't go through here because init failed —
+    // but the AC's "resume continues incrementing from where the previous
+    // run left off when the ndjson file is still present" applies to ANY
+    // run launched on top of an existing ndjson via resumeGeneration.
+    // Seed a state file by hand so resumeGeneration has something to read,
+    // then verify the next emit's seq is seqAfterRun1 + 1.
+    await fs.writeFile(
+      path.join(coursesRoot, 'demo', '.generation-state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug: 'demo',
+        startedAt: '2026-05-08T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+        initCourse: { status: 'done' },
+        lessons: [],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+      }),
+      'utf8',
+    );
+    // Run #2 has init.status='done' so no init child is spawned; the empty
+    // lessons array means it finishes immediately with a 'done' event.
+    const run2 = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    await waitForFinish(run2);
+
+    // First event of run #2 (the 'resumed' hydration event) must carry a
+    // seq strictly greater than the last seq of run #1.
+    expect(run2.eventSeqs[0]).toBe(seqAfterRun1 + 1);
+    expect(run2.events[0].type).toBe('resumed');
   });
 });
