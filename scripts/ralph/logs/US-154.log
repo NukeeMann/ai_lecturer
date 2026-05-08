@@ -1,0 +1,33 @@
+[2026-05-09T01:29:41+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:30:45+0200] Now I have a good understanding. Let me look at the README structure and verify I understand what to add.
+[2026-05-09T01:31:00+0200] Now let me create the setup scripts.
+[2026-05-09T01:32:52+0200] Now I'll create the schemas and server libraries.
+[2026-05-09T01:32:59+0200] Now the tts-cache helper:
+[2026-05-09T01:33:13+0200] Now create `src/lib/server/tts.ts`:
+[2026-05-09T01:33:58+0200] Now create `src/lib/server/stt.ts`:
+[2026-05-09T01:34:48+0200] Now create the API routes:
+[2026-05-09T01:35:12+0200] Now create the tests. Let me set up a fake-spawn pattern that can write a fake WAV to the path passed in args.
+[2026-05-09T01:37:04+0200] Now update README:
+[2026-05-09T01:37:18+0200] Now let me run typecheck and tests to verify:
+[2026-05-09T01:37:33+0200] All 34 tests pass. Let me run the full test suite to ensure nothing else breaks:
+[2026-05-09T01:37:39+0200] All 910 tests pass. Let me also run lint quickly to verify nothing else broke:
+[2026-05-09T01:38:11+0200] No lint errors in my new files (the existing lint errors pre-date this work). Let me update the progress log, mark passes:true, and commit.
+[2026-05-09T01:38:26+0200] Append progress log:
+[2026-05-09T01:39:28+0200] US-154 is committed (95dfc5e). 
+
+Summary of what landed:
+- **Setup scripts** (manual-only): `scripts/setup-tts.sh` (Coqui XTTS into `scripts/.venv/coqui/`) and `scripts/setup-stt.sh` (whisper.cpp + ggml-base.en into `scripts/.bin/whisper.cpp/`).
+- **Server libs**: `src/lib/server/tts.ts` (Coqui subprocess + content-hash cache + WAV-header duration parser), `src/lib/server/stt.ts` (whisper.cpp subprocess + path-traversal rejection + optional segments output), `src/lib/server/tts-cache.ts` (500MB soft-cap LRU evict).
+- **API routes**: `POST /api/tts` and `POST /api/stt` with Zod validation; both return 503 with `tts-not-installed`/`stt-not-installed` when their binaries are missing — server boot never requires them.
+- **Tests**: 34 new tests with a `FakeChildProcess` that writes the expected output files in its `setImmediate(onSpawn)` hook so the route reads them as if the real engines ran. Full suite: 910/910.
+- **README**: new `Optional: TTS/STT setup` section + env var docs (`AI_LECTURER_TTS_VOICE_FEMALE/MALE`, `_TTS_BIN`, `_STT_BIN`, `_STT_MODEL`, `_HOME_OVERRIDE`).
+- `prd.json` US-154 `passes: true` is in the same commit.
+[2026-05-09T01:39:28+0200] [result success turns=53 cost=$4.47785925] US-154 is committed (95dfc5e). 
+
+Summary of what landed:
+- **Setup scripts** (manual-only): `scripts/setup-tts.sh` (Coqui XTTS into `scripts/.venv/coqui/`) and `scripts/setup-stt.sh` (whisper.cpp + ggml-base.en into `scripts/.bin/whisper.cpp/`).
+- **Server libs**: `src/lib/server/tts.ts` (Coqui subprocess + content-hash cache + WAV-header duration parser), `src/lib/server/stt.ts` (whisper.cpp subprocess + path-traversal rejection + optional segments output), `src/lib/server/tts-cache.ts` (500MB soft-cap LRU evict).
+- **API routes**: `POST /api/tts` and `POST /api/stt` with Zod validation; both return 503 with `tts-not-installed`/`stt-not-installed` when their binaries are missing — server boot never requires them.
+- **Tests**: 34 new tests with a `FakeChildProcess` that writes the expected output files in its `setImmediate(onSpawn)` hook so the route reads them as if the real engines ran. Full suite: 910/910.
+- **README**: new `Optional: TTS/STT setup` section + env var docs (`AI_LECTURER_TTS_VOICE_FEMALE/MALE`, `_TTS_BIN`, `_STT_BIN`, `_STT_MODEL`, `_HOME_OVERRIDE`).
+- `prd.json` US-154 `passes: true` is in the same commit.
