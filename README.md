@@ -68,3 +68,10 @@ Any step that needs credentials (`gh auth login`, `claude /login`) prompts you l
 - `courses/` — generated and example courses (incl. `widget-dev-guide` and a per-widget `*-test`)
 
 Generated courses live under `./courses/<slug>/`; per-user progress is stored at `~/.ai-lecturer/progress.json`.
+
+## Static HTML export
+
+A course can be exported as a self-contained ZIP of pre-rendered `.html` files via the dashboard's three-dots menu (`Export as static HTML`). The exported folder runs on any static host — there is no Node.js / Next.js server requirement. Code widgets remain interactive: a small `assets/pyodide-loader.js` shim loads Pyodide from the jsDelivr CDN on first use.
+
+**Internet access required**: viewing an exported course needs network access on first load so the browser can fetch Pyodide from `https://cdn.jsdelivr.net/pyodide/`. An offline-bundled Pyodide build is explicitly out of scope (it would balloon every export by 10 MB+).
+
