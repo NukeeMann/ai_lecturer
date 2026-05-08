@@ -14,6 +14,7 @@ import {
   ArrowRight,
   BookOpen,
   MoreHorizontal,
+  MoreVertical,
   Plus,
   Search,
   Sparkles,
@@ -668,13 +669,35 @@ function CourseCard({
   course,
   stats,
   href,
+  dimmed = false,
+  fading = false,
 }: {
   course: Course;
   stats: CourseStats;
   href: string;
+  dimmed?: boolean;
+  fading?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   const completion = stats.total === 0 ? 0 : Math.round((stats.finished / stats.total) * 100);
+  const linkStyle: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'var(--space-3)',
+    background: 'var(--bg-elevated)',
+    border: `1px solid ${hover ? 'var(--border-strong)' : 'var(--border)'}`,
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-5)',
+    boxShadow: hover ? 'var(--shadow-sm)' : 'none',
+    textDecoration: 'none',
+    color: 'inherit',
+    cursor: dimmed ? 'wait' : 'pointer',
+    transition:
+      'border-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast), opacity 200ms',
+    transform: hover && !dimmed ? 'translateY(-1px)' : 'none',
+    opacity: fading ? 0 : dimmed ? 0.55 : 1,
+    pointerEvents: dimmed ? 'none' : 'auto',
+  };
   return (
     <Link
       data-testid="course-card"
@@ -682,22 +705,8 @@ function CourseCard({
       href={href}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-3)',
-        background: 'var(--bg-elevated)',
-        border: `1px solid ${hover ? 'var(--border-strong)' : 'var(--border)'}`,
-        borderRadius: 'var(--radius-lg)',
-        padding: 'var(--space-5)',
-        boxShadow: hover ? 'var(--shadow-sm)' : 'none',
-        textDecoration: 'none',
-        color: 'inherit',
-        cursor: 'pointer',
-        transition:
-          'border-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast)',
-        transform: hover ? 'translateY(-1px)' : 'none',
-      }}
+      aria-busy={dimmed || undefined}
+      style={linkStyle}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         <AccentIcon iconName={course.icon} accent={course.accentColor} />
@@ -759,6 +768,83 @@ function CourseCard({
   );
 }
 
+// US-142: per-course three-dots overflow menu in the upper-right corner of
+// each card. Currently exposes a single `Delete` action that opens a confirm
+// AlertDialog (rendered at the page level) before firing DELETE /api/courses/<slug>.
+function CourseCardWithMenu({
+  course,
+  stats,
+  href,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
+  onRequestDelete,
+  dimmed,
+  fading,
+  rightOffset = 12,
+}: {
+  course: Course;
+  stats: CourseStats;
+  href: string;
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onCloseMenu: () => void;
+  onRequestDelete: () => void;
+  dimmed: boolean;
+  fading: boolean;
+  rightOffset?: number;
+}) {
+  return (
+    <div data-popover-host style={{ position: 'relative' }}>
+      <CourseCard course={course} stats={stats} href={href} dimmed={dimmed} fading={fading} />
+      <button
+        type="button"
+        data-testid={`course-menu-btn-${course.slug}`}
+        aria-label={`Course actions for ${course.title}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        disabled={dimmed}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleMenu();
+        }}
+        style={{
+          ...iconButtonStyle,
+          position: 'absolute',
+          top: 12,
+          right: rightOffset,
+          zIndex: 2,
+        }}
+      >
+        <MoreVertical size={16} strokeWidth={2} />
+      </button>
+      {menuOpen && (
+        <div
+          role="menu"
+          data-testid={`course-menu-${course.slug}`}
+          style={{ ...popoverStyle, top: 44, right: rightOffset }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`course-menu-delete-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onRequestDelete();
+            }}
+            style={{ ...popoverItemStyle, color: 'var(--danger)' }}
+          >
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CourseCardWithMove({
   course,
   stats,
@@ -768,6 +854,12 @@ function CourseCardWithMove({
   moveOpen,
   onToggleMove,
   onPickTarget,
+  menuOpen,
+  onToggleMenu,
+  onCloseMenu,
+  onRequestDelete,
+  dimmed,
+  fading,
 }: {
   course: Course;
   stats: CourseStats;
@@ -777,16 +869,34 @@ function CourseCardWithMove({
   moveOpen: boolean;
   onToggleMove: () => void;
   onPickTarget: (targetId: string | null) => void;
+  menuOpen: boolean;
+  onToggleMenu: () => void;
+  onCloseMenu: () => void;
+  onRequestDelete: () => void;
+  dimmed: boolean;
+  fading: boolean;
 }) {
   return (
     <div data-popover-host style={{ position: 'relative' }}>
-      <CourseCard course={course} stats={stats} href={href} />
+      <CourseCardWithMenu
+        course={course}
+        stats={stats}
+        href={href}
+        menuOpen={menuOpen}
+        onToggleMenu={onToggleMenu}
+        onCloseMenu={onCloseMenu}
+        onRequestDelete={onRequestDelete}
+        dimmed={dimmed}
+        fading={fading}
+        rightOffset={12}
+      />
       <button
         type="button"
         data-testid={`course-card-move-${course.slug}`}
         aria-label={`Move ${course.title}`}
         aria-haspopup="menu"
         aria-expanded={moveOpen}
+        disabled={dimmed}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -796,7 +906,7 @@ function CourseCardWithMove({
           ...iconButtonStyle,
           position: 'absolute',
           top: 12,
-          right: 12,
+          right: 48,
           zIndex: 2,
         }}
       >
@@ -806,7 +916,7 @@ function CourseCardWithMove({
         <div
           role="menu"
           data-testid={`course-card-move-menu-${course.slug}`}
-          style={{ ...popoverStyle, top: 44, right: 12 }}
+          style={{ ...popoverStyle, top: 44, right: 48 }}
         >
           <button
             type="button"
@@ -851,6 +961,12 @@ function CollectionSection({
   moveOpenSlug,
   onToggleMove,
   onPickMoveTarget,
+  menuOpenSlug,
+  onToggleMenu,
+  onCloseMenu,
+  onRequestDelete,
+  deletingSlug,
+  fadingSlug,
 }: {
   title: string;
   collectionId: string;
@@ -865,6 +981,12 @@ function CollectionSection({
   moveOpenSlug: string | null;
   onToggleMove: (slug: string) => void;
   onPickMoveTarget: (slug: string, targetId: string | null) => void;
+  menuOpenSlug: string | null;
+  onToggleMenu: (slug: string) => void;
+  onCloseMenu: () => void;
+  onRequestDelete: (course: Course) => void;
+  deletingSlug: string | null;
+  fadingSlug: string | null;
 }) {
   return (
     <section
@@ -927,6 +1049,12 @@ function CollectionSection({
             moveOpen={moveOpenSlug === course.slug}
             onToggleMove={() => onToggleMove(course.slug)}
             onPickTarget={(targetId) => onPickMoveTarget(course.slug, targetId)}
+            menuOpen={menuOpenSlug === course.slug}
+            onToggleMenu={() => onToggleMenu(course.slug)}
+            onCloseMenu={onCloseMenu}
+            onRequestDelete={() => onRequestDelete(course)}
+            dimmed={deletingSlug === course.slug}
+            fading={fadingSlug === course.slug}
           />
         ))}
       </div>
@@ -1048,6 +1176,11 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
   const [moveOpenSlug, setMoveOpenSlug] = useState<string | null>(null);
+  const [menuOpenSlug, setMenuOpenSlug] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ slug: string; title: string } | null>(null);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [fadingSlug, setFadingSlug] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const seedAttempted = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -1163,13 +1296,14 @@ export default function DashboardPage() {
   }, [courses, collections, loadData]);
 
   // Outside-click + Escape closure for the per-collection actions menu and
-  // per-card move popover.
+  // per-card move popover and per-card three-dots menu (US-142).
   useEffect(() => {
-    if (actionsOpenId === null && moveOpenSlug === null) return;
+    if (actionsOpenId === null && moveOpenSlug === null && menuOpenSlug === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setActionsOpenId(null);
         setMoveOpenSlug(null);
+        setMenuOpenSlug(null);
       }
     };
     const onMouseDown = (e: MouseEvent) => {
@@ -1177,6 +1311,7 @@ export default function DashboardPage() {
       if (target?.closest('[data-popover-host]')) return;
       setActionsOpenId(null);
       setMoveOpenSlug(null);
+      setMenuOpenSlug(null);
     };
     document.addEventListener('keydown', onKey);
     document.addEventListener('mousedown', onMouseDown);
@@ -1184,7 +1319,7 @@ export default function DashboardPage() {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onMouseDown);
     };
-  }, [actionsOpenId, moveOpenSlug]);
+  }, [actionsOpenId, moveOpenSlug, menuOpenSlug]);
 
   const resume = useMemo(
     () => (courses && progress ? pickResumeTarget(courses, progress) : null),
@@ -1326,6 +1461,62 @@ export default function DashboardPage() {
     [loadData],
   );
 
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    setTimeout(() => {
+      setToast((cur) => (cur === message ? null : cur));
+    }, 4500);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    setDeletingSlug(target.slug);
+    let res: Response;
+    try {
+      res = await fetch(`/api/courses/${target.slug}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'soft' }),
+      });
+    } catch (err) {
+      setDeletingSlug(null);
+      showToast(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+    if (res.status === 409) {
+      setDeletingSlug(null);
+      showToast('Cannot delete — generation in progress for this course');
+      return;
+    }
+    if (res.status === 204 || res.status === 404) {
+      setDeletingSlug(null);
+      setFadingSlug(target.slug);
+      setTimeout(() => {
+        setFadingSlug((cur) => (cur === target.slug ? null : cur));
+        void loadData();
+      }, 200);
+      return;
+    }
+    setDeletingSlug(null);
+    showToast(`Delete failed (${res.status})`);
+  }, [deleteTarget, loadData, showToast]);
+
+  const handleRequestDelete = useCallback((course: Course) => {
+    setMenuOpenSlug(null);
+    setDeleteTarget({ slug: course.slug, title: course.title });
+  }, []);
+
+  const handleToggleMenu = useCallback((slug: string) => {
+    setMoveOpenSlug(null);
+    setMenuOpenSlug((cur) => (cur === slug ? null : slug));
+  }, []);
+
+  const handleCloseMenu = useCallback(() => {
+    setMenuOpenSlug(null);
+  }, []);
+
   const searchActive = searchQuery.trim().length > 0;
   const safeCollections = collections ?? [];
 
@@ -1464,7 +1655,18 @@ export default function DashboardPage() {
           ) : (
             <div data-testid="course-grid" style={courseGridStyle}>
               {enriched.map(({ course, stats, href }) => (
-                <CourseCard key={course.slug} course={course} stats={stats} href={href} />
+                <CourseCardWithMenu
+                  key={course.slug}
+                  course={course}
+                  stats={stats}
+                  href={href}
+                  menuOpen={menuOpenSlug === course.slug}
+                  onToggleMenu={() => handleToggleMenu(course.slug)}
+                  onCloseMenu={handleCloseMenu}
+                  onRequestDelete={() => handleRequestDelete(course)}
+                  dimmed={deletingSlug === course.slug}
+                  fading={fadingSlug === course.slug}
+                />
               ))}
             </div>
           )
@@ -1489,6 +1691,12 @@ export default function DashboardPage() {
                 onPickMoveTarget={(slug, targetId) =>
                   void handleMoveCourse(slug, null, targetId)
                 }
+                menuOpenSlug={menuOpenSlug}
+                onToggleMenu={handleToggleMenu}
+                onCloseMenu={handleCloseMenu}
+                onRequestDelete={handleRequestDelete}
+                deletingSlug={deletingSlug}
+                fadingSlug={fadingSlug}
               />
             )}
             {grouped.collectionSections.map(({ collection, items }) =>
@@ -1516,12 +1724,167 @@ export default function DashboardPage() {
                   onPickMoveTarget={(slug, targetId) =>
                     void handleMoveCourse(slug, collection.id, targetId)
                   }
+                  menuOpenSlug={menuOpenSlug}
+                  onToggleMenu={handleToggleMenu}
+                  onCloseMenu={handleCloseMenu}
+                  onRequestDelete={handleRequestDelete}
+                  deletingSlug={deletingSlug}
+                  fadingSlug={fadingSlug}
                 />
               ),
             )}
           </>
         ) : null}
       </main>
+      {deleteTarget && (
+        <DeleteCourseDialog
+          courseTitle={deleteTarget.title}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => void handleConfirmDelete()}
+        />
+      )}
+      {toast && (
+        <div
+          data-testid="dashboard-toast"
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 'var(--radius-md)',
+            padding: '10px 16px',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text)',
+            boxShadow: 'var(--shadow-md)',
+            zIndex: 1000,
+            maxWidth: 'calc(100vw - 32px)',
+          }}
+        >
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeleteCourseDialog({
+  courseTitle,
+  onCancel,
+  onConfirm,
+}: {
+  courseTitle: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCancel();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onCancel]);
+
+  return (
+    <div
+      data-testid="course-delete-dialog"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="course-delete-dialog-title"
+      aria-describedby="course-delete-dialog-body"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1001,
+        padding: 'var(--space-4)',
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-md)',
+          padding: 'var(--space-5)',
+          width: '100%',
+          maxWidth: 440,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-4)',
+        }}
+      >
+        <h2
+          id="course-delete-dialog-title"
+          data-testid="course-delete-dialog-title"
+          style={{
+            margin: 0,
+            fontSize: 'var(--fs-lg)',
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Delete &ldquo;{courseTitle}&rdquo;?
+        </h2>
+        <p
+          id="course-delete-dialog-body"
+          style={{
+            margin: 0,
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text-tertiary)',
+            lineHeight: 1.5,
+          }}
+        >
+          The course folder will be moved to /courses/.trash/. Recovery requires
+          manual filesystem access.
+        </p>
+        <div
+          style={{
+            display: 'flex',
+            gap: 'var(--space-2)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <button
+            type="button"
+            ref={cancelRef}
+            data-testid="course-delete-dialog-cancel"
+            onClick={onCancel}
+            style={{
+              ...secondaryButtonStyle,
+              height: 36,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="course-delete-dialog-confirm"
+            onClick={onConfirm}
+            style={{
+              ...primaryButtonStyle,
+              height: 36,
+              background: 'var(--danger)',
+              color: 'var(--text-on-accent, #fff)',
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
