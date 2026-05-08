@@ -1,0 +1,45 @@
+[2026-05-08T21:58:57+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T22:01:30+0200] Now I have a good understanding. Let me write the DELETE handler. First let me check the courseDir path & see if .trash needs special treatment in existing list endpoints:
+[2026-05-08T22:01:54+0200] Now let me write the DELETE handler:
+[2026-05-08T22:02:03+0200] Now add the DELETE handler at the end of the route.ts:
+[2026-05-08T22:02:30+0200] Typecheck passes. Now let me check the existing GET /api/courses to ensure `.trash` is properly skipped:
+[2026-05-08T22:02:35+0200] Now let me update the home page (page.tsx) with the three-dots menu + AlertDialog. First mark first todo complete:
+[2026-05-08T22:03:30+0200] Now insert the `CourseCardWithMenu` component between CourseCard and CourseCardWithMove. Let me first refactor CourseCard to accept a `dimmed` prop for the soft delete in-flight state and a fade-out animation:
+[2026-05-08T22:03:41+0200] Now add a CourseCardWithMenu wrapper component immediately after CourseCard. Let me find the boundary:
+[2026-05-08T22:04:06+0200] Now update CollectionSection's signature to accept the new menu props and pass them through:
+[2026-05-08T22:04:25+0200] Now update DashboardPage state and the search-results path that uses CourseCard directly. Let me first wire up the new state:
+[2026-05-08T22:04:32+0200] Now update the outside-click effect to also close menuOpenSlug, and add the delete handlers:
+[2026-05-08T22:04:42+0200] Now add the delete handler. Let me find where handleMoveCourse is defined and append after it:
+[2026-05-08T22:04:55+0200] Now update the search-results path to use CourseCardWithMenu, and pass new props through CollectionSection:
+[2026-05-08T22:05:01+0200] Now find the CollectionSection usages and pass through the new props:
+[2026-05-08T22:05:16+0200] Now add the AlertDialog modal and toast at the page level. Let me find the end of the main JSX:
+[2026-05-08T22:05:44+0200] Typecheck passes. Now let me also check eslint:
+[2026-05-08T22:06:37+0200] No lint errors on my files. Let me update todo, mark UI done, and move on:
+[2026-05-08T22:06:47+0200] Now let me add DELETE tests at the end of the PUT describe block:
+[2026-05-08T22:06:51+0200] Now add DELETE tests after the PUT describe. Let me find the PUT block end:
+[2026-05-08T22:07:27+0200] All 80 tests pass including my new ones. Let me run the full test suite:
+[2026-05-08T22:07:35+0200] All 775 tests pass (was 766, added 9 new). Let me update the todos and proceed to browser testing:
+[2026-05-08T22:07:50+0200] Now let me start a dev server with the test courses dir:
+[2026-05-08T22:08:28+0200] Server is up and serving both courses. Now write the playwright test:
+[2026-05-08T22:09:19+0200] All assertions passed. Let me verify on disk:
+[2026-05-08T22:09:26+0200] The course.json moved into trash with timestamped folder name. Let me also verify screenshots exist:
+[2026-05-08T22:09:29+0200] All evidence captured. Now let me also do a quick test of the 409 (active-run) and 501 (hard mode) paths via curl since the unit tests already cover them. Let me move on to commit.
+[2026-05-08T22:09:57+0200] Now append progress.txt:
+[2026-05-08T22:11:28+0200] Now stop the dev server and commit:
+[2026-05-08T22:11:49+0200] US-142 is in HEAD with `passes: true`. Final todo update:
+[2026-05-08T22:12:02+0200] Done. US-142 is committed in HEAD as `a1dfb0b`:
+
+- **DELETE /api/courses/[slug]** soft-mode handler — moves the course dir to `/courses/.trash/<slug>-<ISO-stamp>/` via `fs.rename` (with EXDEV copy-fallback), best-effort wipes the slug from `~/.ai-lecturer/progress.json`. Returns 204/404/409/400/501 per AC.
+- **page.tsx** — new `CourseCardWithMenu` overlay (`MoreVertical` button → custom DropdownMenu with red `Delete` item → custom AlertDialog modal with `Delete "<title>"?`), Cancel/Delete buttons, dimmed-while-deleting + 200ms fade on success, page-level toast for 409.
+- **GET /api/courses** now skips `.trash/` (and any dot-prefixed dirs).
+- **9 new unit tests** in `src/lib/server/api.test.ts`. Suite: 775/775. Typecheck clean.
+- **Playwright browser test** (headless, port 3243) verified the full flow + on-disk move; screenshots at `/tmp/us142-{1-initial,2-dropdown,3-dialog,4-after-delete}.png`.
+- `scripts/ralph/prd.json` US-142 `passes: true`; progress log appended.
+[2026-05-08T22:12:02+0200] [result success turns=104 cost=$9.286974500000001] Done. US-142 is committed in HEAD as `a1dfb0b`:
+
+- **DELETE /api/courses/[slug]** soft-mode handler — moves the course dir to `/courses/.trash/<slug>-<ISO-stamp>/` via `fs.rename` (with EXDEV copy-fallback), best-effort wipes the slug from `~/.ai-lecturer/progress.json`. Returns 204/404/409/400/501 per AC.
+- **page.tsx** — new `CourseCardWithMenu` overlay (`MoreVertical` button → custom DropdownMenu with red `Delete` item → custom AlertDialog modal with `Delete "<title>"?`), Cancel/Delete buttons, dimmed-while-deleting + 200ms fade on success, page-level toast for 409.
+- **GET /api/courses** now skips `.trash/` (and any dot-prefixed dirs).
+- **9 new unit tests** in `src/lib/server/api.test.ts`. Suite: 775/775. Typecheck clean.
+- **Playwright browser test** (headless, port 3243) verified the full flow + on-disk move; screenshots at `/tmp/us142-{1-initial,2-dropdown,3-dialog,4-after-delete}.png`.
+- `scripts/ralph/prd.json` US-142 `passes: true`; progress log appended.
