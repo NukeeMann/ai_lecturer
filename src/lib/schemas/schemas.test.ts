@@ -33,6 +33,7 @@ import {
   VideoDataSchema,
   extractYouTubeId,
 } from '@/widgets/Video/schema';
+import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 
 describe('CourseSchema', () => {
   const minimal = {
@@ -208,6 +209,12 @@ describe('LessonSchema + SectionSchema', () => {
         title: 't',
         type: 'video',
         data: { kind: 'youtube', src: 'aircAruvnKk' },
+      },
+      {
+        id: 's-audio',
+        title: 't',
+        type: 'audioPlayer',
+        data: { audioPath: 'lesson-01.wav' },
       },
     ];
     for (const section of cases) {
@@ -403,6 +410,56 @@ describe('Per-widget data schemas', () => {
     expect(() =>
       PlotImageDataSchema.parse({ src: '/x.png', alt: 'a', sourceLanguage: 'js' }),
     ).toThrow();
+  });
+
+  it('AudioPlayerData: parses a minimal valid object and defaults autoplay=false (US-155)', () => {
+    const parsed = AudioPlayerDataSchema.parse({ audioPath: 'lesson-01.wav' });
+    expect(parsed.autoplay).toBe(false);
+    expect(parsed.audioPath).toBe('lesson-01.wav');
+  });
+
+  it('AudioPlayerData: parses with title, transcript, autoplay=true (US-155)', () => {
+    const parsed = AudioPlayerDataSchema.parse({
+      audioPath: 'lesson-01.mp3',
+      title: 'Lesson 1',
+      transcript: 'Hello.',
+      autoplay: true,
+    });
+    expect(parsed.title).toBe('Lesson 1');
+    expect(parsed.transcript).toBe('Hello.');
+    expect(parsed.autoplay).toBe(true);
+  });
+
+  it('AudioPlayerData: rejects missing audioPath (US-155)', () => {
+    expect(() => AudioPlayerDataSchema.parse({})).toThrow();
+  });
+
+  it('AudioPlayerData: rejects empty audioPath (US-155)', () => {
+    expect(() => AudioPlayerDataSchema.parse({ audioPath: '' })).toThrow();
+  });
+
+  it('AudioPlayerSection: discriminated union rejects an invalid kind drift (US-155)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'audio-player',
+        data: { audioPath: 'a.wav' },
+      }),
+    ).toThrow();
+  });
+
+  it('AudioPlayerSection: discriminated union accepts type=audioPlayer (US-155)', () => {
+    const parsed = SectionSchema.parse({
+      id: 's',
+      title: 't',
+      type: 'audioPlayer',
+      data: { audioPath: 'a.wav', title: 'T', autoplay: true },
+    });
+    expect(parsed.type).toBe('audioPlayer');
+    if (parsed.type === 'audioPlayer') {
+      expect(parsed.data.audioPath).toBe('a.wav');
+    }
   });
 
   it('VideoData: parses a minimal valid YouTube object', () => {

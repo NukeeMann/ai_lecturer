@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
+import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import path from 'node:path';
 
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
@@ -17,7 +19,12 @@ const CONTENT_TYPES: Record<string, string> = {
   '.gif': 'image/gif',
   '.mp4': 'video/mp4',
   '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ogg': 'audio/ogg',
 };
+
+const RANGEABLE_TYPES = new Set(['video/mp4', 'video/webm', 'audio/mpeg', 'audio/wav', 'audio/ogg']);
 
 function assertSafeAssetPath(parts: string[]): string {
   if (!Array.isArray(parts) || parts.length === 0) {
@@ -42,7 +49,38 @@ function contentTypeFor(filename: string): string {
   return CONTENT_TYPES[ext] ?? 'application/octet-stream';
 }
 
-export async function GET(_req: Request, { params }: RouteCtx) {
+interface ParsedRange {
+  start: number;
+  end: number;
+}
+
+export function parseRangeHeader(header: string, size: number): ParsedRange | 'invalid' | null {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m) return 'invalid';
+  const startStr = m[1];
+  const endStr = m[2];
+  if (startStr === '' && endStr === '') return 'invalid';
+  let start: number;
+  let end: number;
+  if (startStr === '') {
+    // Suffix range: last N bytes
+    const suffix = Number(endStr);
+    if (!Number.isFinite(suffix) || suffix <= 0) return 'invalid';
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(startStr);
+    end = endStr === '' ? size - 1 : Number(endStr);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid';
+  }
+  if (start < 0 || end < start) return 'invalid';
+  if (start >= size) return 'invalid';
+  if (end >= size) end = size - 1;
+  return { start, end };
+}
+
+export async function GET(req: Request, { params }: RouteCtx) {
   const { slug, path: relParts } = await params;
 
   let assetsDir: string;
@@ -65,9 +103,9 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: 'Invalid asset path' }, { status: 400 });
   }
 
-  let buf: Buffer;
+  let stat;
   try {
-    buf = await fs.readFile(filePath);
+    stat = await fs.stat(filePath);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return NextResponse.json({ error: 'Asset not found' }, { status: 404 });
@@ -75,12 +113,48 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     throw err;
   }
 
+  const contentType = contentTypeFor(relPath);
+  const size = stat.size;
+  const rangeHeader = req.headers.get('range');
+
+  // Honour Range requests for media (so <audio>/<video> can seek).
+  if (rangeHeader && RANGEABLE_TYPES.has(contentType)) {
+    const parsed = parseRangeHeader(rangeHeader, size);
+    if (parsed === 'invalid') {
+      return new Response(null, {
+        status: 416,
+        headers: {
+          'Content-Range': `bytes */${size}`,
+          'Accept-Ranges': 'bytes',
+        },
+      });
+    }
+    if (parsed) {
+      const { start, end } = parsed;
+      const chunkSize = end - start + 1;
+      const nodeStream = createReadStream(filePath, { start, end });
+      const webStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+      return new Response(webStream, {
+        status: 206,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(chunkSize),
+          'Content-Range': `bytes ${start}-${end}/${size}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-cache',
+        },
+      });
+    }
+  }
+
+  const buf = await fs.readFile(filePath);
   return new Response(new Uint8Array(buf), {
     status: 200,
     headers: {
-      'Content-Type': contentTypeFor(relPath),
+      'Content-Type': contentType,
       'Content-Length': String(buf.length),
       'Cache-Control': 'no-cache',
+      ...(RANGEABLE_TYPES.has(contentType) ? { 'Accept-Ranges': 'bytes' } : {}),
     },
   });
 }

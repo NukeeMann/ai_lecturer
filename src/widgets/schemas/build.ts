@@ -16,6 +16,7 @@ import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 import { VideoDataSchema } from '@/widgets/Video/schema';
+import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 
@@ -32,6 +33,7 @@ const widgets: Record<string, ZodSchema> = {
   'drag-match': DragMatchDataSchema,
   'data-table': DataTableDataSchema,
   video: VideoDataSchema,
+  'audio-player': AudioPlayerDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {

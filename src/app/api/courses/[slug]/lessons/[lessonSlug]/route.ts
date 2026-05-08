@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { LessonSchema } from '@/lib/schemas/lesson';
 import { atomicWriteJson } from '@/lib/server/atomic';
-import { InvalidSlugError, lessonFile } from '@/lib/server/paths';
+import { InvalidSlugError, courseDir, lessonFile } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,6 +68,48 @@ export async function PUT(req: Request, { params }: RouteCtx) {
       { error: 'Invalid Lesson', issues: parsed.error.issues },
       { status: 400 },
     );
+  }
+
+  // US-155: AudioPlayer audioPath must point at a file under courses/<slug>/assets/audio/
+  const audioRoot = path.join(courseDir(slug), 'assets', 'audio');
+  for (const section of parsed.data.sections) {
+    if (section.type !== 'audioPlayer') continue;
+    const rel = section.data.audioPath.replace(/^\/+/, '');
+    if (rel.includes('..') || rel.includes('\\') || rel.includes('\0') || rel.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'Invalid audioPath',
+          message: `Section ${section.id}: audioPath must be a non-empty relative path under assets/audio/`,
+        },
+        { status: 400 },
+      );
+    }
+    const filePath = path.join(audioRoot, rel);
+    const resolved = path.resolve(filePath);
+    const resolvedAudioRoot = path.resolve(audioRoot);
+    if (
+      !resolved.startsWith(resolvedAudioRoot + path.sep) &&
+      resolved !== resolvedAudioRoot
+    ) {
+      return NextResponse.json(
+        {
+          error: 'Invalid audioPath',
+          message: `Section ${section.id}: audioPath escapes assets/audio/`,
+        },
+        { status: 400 },
+      );
+    }
+    try {
+      await fs.access(filePath);
+    } catch {
+      return NextResponse.json(
+        {
+          error: 'Audio file missing',
+          message: `Section ${section.id}: audio file not found at courses/${slug}/assets/audio/${rel}`,
+        },
+        { status: 400 },
+      );
+    }
   }
 
   await atomicWriteJson(file, parsed.data);
