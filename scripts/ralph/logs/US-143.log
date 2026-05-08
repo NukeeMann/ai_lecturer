@@ -1,0 +1,35 @@
+[2026-05-08T22:12:27+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T22:13:10+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T22:13:15+0200] Now let me look at how spawnClaude is structured. Let me look for where spawn is wrapped or if there's a pattern that can be reused.
+[2026-05-08T22:13:57+0200] Now let me look at how the active-run check works:
+[2026-05-08T22:14:14+0200] Now I have enough context. Let me create the schema file first.
+[2026-05-08T22:14:24+0200] Now the skill .md:
+[2026-05-08T22:15:16+0200] Now let me look at the active-run summary check usage pattern to make sure I use it correctly:
+[2026-05-08T22:15:23+0200] Now create the extend helper module:
+[2026-05-08T22:16:24+0200] Now create the route handler:
+[2026-05-08T22:16:52+0200] Now write tests. Let me examine the test pattern and ensure I understand the `__setExtendSpawnForTesting` design:
+[2026-05-08T22:16:56+0200] Now write the test file:
+[2026-05-08T22:18:21+0200] Now let me run typecheck and tests:
+[2026-05-08T22:18:32+0200] Typecheck clean. Now run tests:
+[2026-05-08T22:18:38+0200] All 14 tests pass. Let me run the full test suite to verify nothing else broke:
+[2026-05-08T22:19:02+0200] All 789 tests pass (was 775; added 14). Let me update prd.json and progress.txt now:
+[2026-05-08T22:19:31+0200] Now append progress notes:
+[2026-05-08T22:20:39+0200] Now let me verify the prd.json change is correct, then commit:
+[2026-05-08T22:21:20+0200] US-143 done and committed. Summary:
+
+- New skill: `scripts/ralph/skills/extend_course/extend_course.md` — agent contract with strict "preserve existing IDs/titles, additions only" rules.
+- New schema: `src/lib/schemas/extend.ts` with `ExtendRequestSchema` + `ExtendResponseSchema` (reusing `CourseSchema`).
+- New helper: `src/lib/server/extend.ts` owns the `claude -p extend_course` spawn with a `__setExtendSpawnForTesting` hook.
+- New route: `POST /api/courses/[slug]/extend` — read-only, validates body, checks `getActiveRunSummary` (409 busy), reads course + lesson descriptions, spawns the agent, returns parsed response. Maps 400/404/409/422/500 per AC.
+- 14 unit tests in `src/lib/server/extend.test.ts` covering happy path, all error responses, refinements pass-through, busy state via seeded `.generating.json` marker, and on-disk no-write invariant.
+- typecheck clean; `npm test` 789/789 (was 775).
+- `prd.json` US-143 `passes: true`; commit `b402d67` on `ralph/us-143`.
+[2026-05-08T22:21:20+0200] [result success turns=62 cost=$4.1126102499999995] US-143 done and committed. Summary:
+
+- New skill: `scripts/ralph/skills/extend_course/extend_course.md` — agent contract with strict "preserve existing IDs/titles, additions only" rules.
+- New schema: `src/lib/schemas/extend.ts` with `ExtendRequestSchema` + `ExtendResponseSchema` (reusing `CourseSchema`).
+- New helper: `src/lib/server/extend.ts` owns the `claude -p extend_course` spawn with a `__setExtendSpawnForTesting` hook.
+- New route: `POST /api/courses/[slug]/extend` — read-only, validates body, checks `getActiveRunSummary` (409 busy), reads course + lesson descriptions, spawns the agent, returns parsed response. Maps 400/404/409/422/500 per AC.
+- 14 unit tests in `src/lib/server/extend.test.ts` covering happy path, all error responses, refinements pass-through, busy state via seeded `.generating.json` marker, and on-disk no-write invariant.
+- typecheck clean; `npm test` 789/789 (was 775).
+- `prd.json` US-143 `passes: true`; commit `b402d67` on `ralph/us-143`.
