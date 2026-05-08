@@ -167,6 +167,16 @@ export default function LessonShellPage({
   const [panelSectionId, setPanelSectionId] = useState<string | null>(null);
   // Section regenerate popover (US-147). At most one popover open at a time.
   const [regenSectionId, setRegenSectionId] = useState<string | null>(null);
+  // Full-lesson regenerate dialog + Undo banner (US-149).
+  const [regenLessonDialogOpen, setRegenLessonDialogOpen] = useState(false);
+  const [regenLessonInstruction, setRegenLessonInstruction] = useState('');
+  const [regenLessonSubmitting, setRegenLessonSubmitting] = useState(false);
+  const [regenLessonError, setRegenLessonError] = useState<string | null>(null);
+  const [undoBannerVisible, setUndoBannerVisible] = useState(false);
+  const [undoBannerFading, setUndoBannerFading] = useState(false);
+  const [undoBannerError, setUndoBannerError] = useState<string | null>(null);
+  const undoBannerErrorTimerRef = useRef<number | null>(null);
+  const undoBannerFadeTimerRef = useRef<number | null>(null);
   // Lesson-level sources side panel (US-040). Independent of section panel.
   const [lessonSourcesPanelOpen, setLessonSourcesPanelOpen] = useState(false);
   // LessonChat side-panel state, persisted to localStorage['lessonChat-open'].
@@ -981,6 +991,189 @@ export default function LessonShellPage({
     setRegenSectionId(null);
   }, []);
 
+  // Status check for the full-lesson Undo banner (US-149). Run on mount and
+  // after each lesson slug change. The snapshot persists across page reloads
+  // until the user invokes Undo, so reopening a lesson where the snapshot
+  // exists must surface the Undo affordance again.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/courses/${slug}/lessons/${lessonSlug}/regenerate/status`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as { hasUndo?: boolean };
+        if (cancelled) return;
+        if (body.hasUndo) {
+          setUndoBannerVisible(true);
+          setUndoBannerFading(false);
+          setUndoBannerError(null);
+        } else {
+          setUndoBannerVisible(false);
+          setUndoBannerFading(false);
+          setUndoBannerError(null);
+        }
+      } catch {
+        // Best-effort — if status fails the banner just stays hidden.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, lessonSlug]);
+
+  // Cleanup any pending banner timers on unmount.
+  useEffect(() => {
+    return () => {
+      if (undoBannerErrorTimerRef.current !== null) {
+        window.clearTimeout(undoBannerErrorTimerRef.current);
+        undoBannerErrorTimerRef.current = null;
+      }
+      if (undoBannerFadeTimerRef.current !== null) {
+        window.clearTimeout(undoBannerFadeTimerRef.current);
+        undoBannerFadeTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleOpenRegenLesson = useCallback(() => {
+    setRegenLessonInstruction('');
+    setRegenLessonError(null);
+    setRegenLessonSubmitting(false);
+    setRegenLessonDialogOpen(true);
+  }, []);
+
+  const handleCloseRegenLesson = useCallback(() => {
+    if (regenLessonSubmitting) return;
+    setRegenLessonDialogOpen(false);
+  }, [regenLessonSubmitting]);
+
+  const handleSubmitRegenLesson = useCallback(async () => {
+    const trimmed = regenLessonInstruction.trim();
+    if (trimmed.length < 1 || trimmed.length > 2000 || regenLessonSubmitting) {
+      return;
+    }
+    setRegenLessonError(null);
+    setRegenLessonSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/courses/${slug}/lessons/${lessonSlug}/regenerate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction: trimmed }),
+        },
+      );
+      if (!res.ok) {
+        let message = 'Server error — please try again.';
+        if (res.status === 422) {
+          message = 'Regeneration failed — try a different instruction.';
+        } else if (res.status === 409) {
+          message = 'Cannot regenerate while generation is active.';
+        }
+        setRegenLessonError(message);
+        setRegenLessonSubmitting(false);
+        return;
+      }
+      const body = (await res.json()) as { newLesson: Lesson };
+      setLesson(body.newLesson);
+      setRegenLessonSubmitting(false);
+      setRegenLessonDialogOpen(false);
+      setRegenLessonInstruction('');
+      // Surface the banner. Cancel any pending error-timeout from a prior
+      // failed Undo so a fresh regenerate gives the user a fresh affordance.
+      if (undoBannerErrorTimerRef.current !== null) {
+        window.clearTimeout(undoBannerErrorTimerRef.current);
+        undoBannerErrorTimerRef.current = null;
+      }
+      if (undoBannerFadeTimerRef.current !== null) {
+        window.clearTimeout(undoBannerFadeTimerRef.current);
+        undoBannerFadeTimerRef.current = null;
+      }
+      setUndoBannerError(null);
+      setUndoBannerFading(false);
+      setUndoBannerVisible(true);
+    } catch {
+      setRegenLessonError('Server error — please try again.');
+      setRegenLessonSubmitting(false);
+    }
+  }, [regenLessonInstruction, regenLessonSubmitting, slug, lessonSlug]);
+
+  const handleUndoRegenLesson = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/courses/${slug}/lessons/${lessonSlug}/regenerate/undo`,
+        { method: 'POST' },
+      );
+      if (res.status === 404) {
+        setUndoBannerError('Undo unavailable.');
+        if (undoBannerErrorTimerRef.current !== null) {
+          window.clearTimeout(undoBannerErrorTimerRef.current);
+        }
+        undoBannerErrorTimerRef.current = window.setTimeout(() => {
+          setUndoBannerVisible(false);
+          setUndoBannerError(null);
+          setUndoBannerFading(false);
+          undoBannerErrorTimerRef.current = null;
+        }, 3000);
+        return;
+      }
+      if (!res.ok) {
+        setUndoBannerError('Undo unavailable.');
+        if (undoBannerErrorTimerRef.current !== null) {
+          window.clearTimeout(undoBannerErrorTimerRef.current);
+        }
+        undoBannerErrorTimerRef.current = window.setTimeout(() => {
+          setUndoBannerVisible(false);
+          setUndoBannerError(null);
+          setUndoBannerFading(false);
+          undoBannerErrorTimerRef.current = null;
+        }, 3000);
+        return;
+      }
+      const body = (await res.json()) as { restoredLesson: Lesson };
+      setLesson(body.restoredLesson);
+      // Trigger fade then dismount.
+      setUndoBannerFading(true);
+      if (undoBannerFadeTimerRef.current !== null) {
+        window.clearTimeout(undoBannerFadeTimerRef.current);
+      }
+      undoBannerFadeTimerRef.current = window.setTimeout(() => {
+        setUndoBannerVisible(false);
+        setUndoBannerFading(false);
+        setUndoBannerError(null);
+        undoBannerFadeTimerRef.current = null;
+      }, 200);
+    } catch {
+      setUndoBannerError('Undo unavailable.');
+      if (undoBannerErrorTimerRef.current !== null) {
+        window.clearTimeout(undoBannerErrorTimerRef.current);
+      }
+      undoBannerErrorTimerRef.current = window.setTimeout(() => {
+        setUndoBannerVisible(false);
+        setUndoBannerError(null);
+        setUndoBannerFading(false);
+        undoBannerErrorTimerRef.current = null;
+      }, 3000);
+    }
+  }, [slug, lessonSlug]);
+
+  const handleDismissBanner = useCallback(() => {
+    setUndoBannerVisible(false);
+    setUndoBannerFading(false);
+    setUndoBannerError(null);
+    if (undoBannerErrorTimerRef.current !== null) {
+      window.clearTimeout(undoBannerErrorTimerRef.current);
+      undoBannerErrorTimerRef.current = null;
+    }
+    if (undoBannerFadeTimerRef.current !== null) {
+      window.clearTimeout(undoBannerFadeTimerRef.current);
+      undoBannerFadeTimerRef.current = null;
+    }
+  }, []);
+
   const handleAcceptRegen = useCallback(
     async (sectionId: string, newSection: Section) => {
       const cur = lessonRef.current;
@@ -1139,6 +1332,12 @@ export default function LessonShellPage({
             onCloseRegen={handleCloseRegen}
             onAcceptRegen={handleAcceptRegen}
             onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
+            onOpenRegenLesson={handleOpenRegenLesson}
+            undoBannerVisible={undoBannerVisible}
+            undoBannerFading={undoBannerFading}
+            undoBannerError={undoBannerError}
+            onUndoRegenLesson={handleUndoRegenLesson}
+            onDismissUndoBanner={handleDismissBanner}
             onToggleSectionManualComplete={handleToggleSectionManualComplete}
             autoDone={autoDone}
             onSectionAutoComplete={markSectionAutoDone}
@@ -1182,6 +1381,17 @@ export default function LessonShellPage({
         sources={lesson?.sources}
         onClose={() => setLessonSourcesPanelOpen(false)}
         onSave={handleSaveLessonSources}
+      />
+
+      <RegenLessonDialog
+        open={regenLessonDialogOpen}
+        lessonTitle={lesson?.title ?? ''}
+        instruction={regenLessonInstruction}
+        onInstructionChange={setRegenLessonInstruction}
+        submitting={regenLessonSubmitting}
+        errorMessage={regenLessonError}
+        onSubmit={handleSubmitRegenLesson}
+        onCancel={handleCloseRegenLesson}
       />
 
       {sessionToast && <SessionToast message={sessionToast} />}
@@ -2705,6 +2915,12 @@ interface LessonStreamProps {
   onCloseRegen: () => void;
   onAcceptRegen: (sectionId: string, newSection: Section) => Promise<void>;
   onOpenLessonSources: () => void;
+  onOpenRegenLesson: () => void;
+  undoBannerVisible: boolean;
+  undoBannerFading: boolean;
+  undoBannerError: string | null;
+  onUndoRegenLesson: () => void;
+  onDismissUndoBanner: () => void;
   onToggleSectionManualComplete: (sectionId: string, nextValue: boolean) => void;
   autoDone: Record<string, boolean>;
   onSectionAutoComplete: (sectionId: string) => void;
@@ -2727,6 +2943,12 @@ function LessonStream({
   onCloseRegen,
   onAcceptRegen,
   onOpenLessonSources,
+  onOpenRegenLesson,
+  undoBannerVisible,
+  undoBannerFading,
+  undoBannerError,
+  onUndoRegenLesson,
+  onDismissUndoBanner,
   onToggleSectionManualComplete,
   autoDone,
   onSectionAutoComplete,
@@ -2766,6 +2988,14 @@ function LessonStream({
         gap: 'var(--space-section)',
       }}
     >
+      {undoBannerVisible && (
+        <UndoRegenBanner
+          fading={undoBannerFading}
+          errorMessage={undoBannerError}
+          onUndo={onUndoRegenLesson}
+          onDismiss={onDismissUndoBanner}
+        />
+      )}
       <LessonHeader
         moduleN={moduleN}
         lessonM={lessonM}
@@ -2773,6 +3003,7 @@ function LessonStream({
         description={lesson.description}
         sourcesCount={lesson.sources?.length ?? 0}
         onOpenLessonSources={onOpenLessonSources}
+        onOpenRegenLesson={onOpenRegenLesson}
       />
       {lesson.sections.map((section, idx) => {
         const persistedDone = sectionState[section.id]?.done === true;
@@ -2822,6 +3053,7 @@ function LessonHeader({
   description,
   sourcesCount,
   onOpenLessonSources,
+  onOpenRegenLesson,
 }: {
   moduleN: number;
   lessonM: number;
@@ -2829,6 +3061,7 @@ function LessonHeader({
   description: string;
   sourcesCount: number;
   onOpenLessonSources: () => void;
+  onOpenRegenLesson: () => void;
 }) {
   return (
     <header
@@ -2903,6 +3136,31 @@ function LessonHeader({
               {sourcesCount}
             </span>
           )}
+        </button>
+        <button
+          type="button"
+          data-testid="regen-lesson-btn"
+          onClick={onOpenRegenLesson}
+          aria-label="Regenerate lesson"
+          title="Regenerate lesson"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 30,
+            padding: '0 10px',
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          <Sparkles size={14} aria-hidden />
+          Regenerate lesson
         </button>
       </div>
       {description ? (
@@ -3989,6 +4247,336 @@ function LessonNotFound({ slug, message }: { slug: string; message: string }) {
           ← Back to course
         </Link>
       </Callout>
+    </div>
+  );
+}
+
+interface RegenLessonDialogProps {
+  open: boolean;
+  lessonTitle: string;
+  instruction: string;
+  onInstructionChange: (next: string) => void;
+  submitting: boolean;
+  errorMessage: string | null;
+  onSubmit: () => void;
+  onCancel: () => void;
+}
+
+function RegenLessonDialog({
+  open,
+  lessonTitle,
+  instruction,
+  onInstructionChange,
+  submitting,
+  errorMessage,
+  onSubmit,
+  onCancel,
+}: RegenLessonDialogProps) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !submitting) {
+        e.preventDefault();
+        onCancel();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, submitting, onCancel]);
+
+  if (!open) return null;
+
+  const trimmedLen = instruction.trim().length;
+  const submitDisabled = submitting || trimmedLen < 1 || trimmedLen > 2000;
+
+  return (
+    <div
+      data-testid="regen-lesson-dialog-backdrop"
+      role="presentation"
+      onClick={() => {
+        if (!submitting) onCancel();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(4px)',
+        WebkitBackdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        paddingTop: '12vh',
+        paddingLeft: 16,
+        paddingRight: 16,
+        zIndex: 1000,
+      }}
+    >
+      <div
+        data-testid="regen-lesson-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="regen-lesson-dialog-title"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          maxWidth: 520,
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-xl)',
+          boxShadow: 'var(--shadow-lg)',
+          color: 'var(--text)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <header
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          <h2
+            id="regen-lesson-dialog-title"
+            style={{
+              margin: 0,
+              fontSize: 'var(--fs-md)',
+              fontWeight: 600,
+              letterSpacing: '-0.005em',
+              color: 'var(--text)',
+            }}
+          >
+            Regenerate &quot;{lessonTitle}&quot;
+          </h2>
+        </header>
+        <div
+          style={{
+            padding: '16px 20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
+          <p
+            data-testid="regen-lesson-dialog-body"
+            style={{
+              margin: 0,
+              fontSize: 'var(--fs-sm)',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+            }}
+          >
+            This replaces the entire lesson with a freshly generated version. The
+            previous version is kept as a one-step Undo while you stay on this
+            page.
+          </p>
+          <label
+            htmlFor="regen-lesson-instruction"
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 500,
+              color: 'var(--text)',
+            }}
+          >
+            How should this lesson change?
+          </label>
+          <textarea
+            id="regen-lesson-instruction"
+            data-testid="regen-lesson-instruction"
+            value={instruction}
+            onChange={(e) => onInstructionChange(e.target.value)}
+            disabled={submitting}
+            rows={5}
+            maxLength={2000}
+            style={{
+              width: '100%',
+              minHeight: 96,
+              maxHeight: 240,
+              resize: 'vertical',
+              fontFamily: 'var(--font-sans)',
+              fontSize: 'var(--fs-sm)',
+              lineHeight: 1.5,
+              color: 'var(--text)',
+              background: 'var(--bg)',
+              border: '1px solid var(--border-strong)',
+              borderRadius: 'var(--radius-md)',
+              padding: '8px 12px',
+              boxSizing: 'border-box',
+              outline: 'none',
+            }}
+          />
+          {errorMessage && (
+            <div
+              data-testid="regen-lesson-error"
+              role="alert"
+              style={{
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--danger-text, var(--danger))',
+                background: 'var(--danger-subtle, transparent)',
+                border: '1px solid var(--danger, var(--border-strong))',
+                borderRadius: 'var(--radius-sm)',
+                padding: '8px 10px',
+              }}
+            >
+              {errorMessage}
+            </div>
+          )}
+        </div>
+        <footer
+          style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            alignItems: 'center',
+            gap: 'var(--space-3)',
+            padding: '12px 20px',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg-subtle)',
+          }}
+        >
+          <button
+            type="button"
+            data-testid="regen-lesson-cancel"
+            onClick={onCancel}
+            disabled={submitting}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 32,
+              padding: '0 var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 500,
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              border: '1px solid transparent',
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              opacity: submitting ? 0.7 : 1,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            data-testid="regen-lesson-submit"
+            onClick={onSubmit}
+            disabled={submitDisabled}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              height: 32,
+              padding: '0 var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 500,
+              background: submitDisabled ? 'var(--bg-active)' : 'var(--accent)',
+              color: submitDisabled
+                ? 'var(--text-tertiary)'
+                : 'var(--text-on-accent)',
+              border: '1px solid transparent',
+              cursor: submitDisabled ? 'not-allowed' : 'pointer',
+              opacity: submitDisabled ? 0.7 : 1,
+            }}
+          >
+            {submitting && (
+              <Loader2
+                size={14}
+                aria-hidden
+                style={{ animation: 'spin 1s linear infinite' }}
+              />
+            )}
+            {submitting ? 'Regenerating…' : 'Submit'}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+interface UndoRegenBannerProps {
+  fading: boolean;
+  errorMessage: string | null;
+  onUndo: () => void;
+  onDismiss: () => void;
+}
+
+function UndoRegenBanner({
+  fading,
+  errorMessage,
+  onUndo,
+  onDismiss,
+}: UndoRegenBannerProps) {
+  return (
+    <div
+      data-testid="undo-regen-lesson-banner"
+      data-fading={fading ? 'true' : 'false'}
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 5,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-3)',
+        padding: '8px 14px',
+        background: 'var(--accent-subtle, var(--bg-elevated))',
+        border: '1px solid var(--accent, var(--border-strong))',
+        borderRadius: 'var(--radius-md)',
+        color: 'var(--text)',
+        fontSize: 'var(--fs-sm)',
+        opacity: fading ? 0 : 1,
+        transition: 'opacity 200ms ease',
+      }}
+    >
+      <span style={{ flex: 1 }}>
+        {errorMessage ?? 'Lesson regenerated.'}
+      </span>
+      {!errorMessage && (
+        <button
+          type="button"
+          data-testid="undo-regen-lesson-btn"
+          onClick={onUndo}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 28,
+            padding: '0 12px',
+            background: 'var(--accent)',
+            color: 'var(--text-on-accent)',
+            border: '1px solid transparent',
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 500,
+            cursor: 'pointer',
+          }}
+        >
+          Undo
+        </button>
+      )}
+      <button
+        type="button"
+        data-testid="undo-regen-lesson-dismiss"
+        aria-label="Dismiss banner"
+        onClick={onDismiss}
+        style={{
+          width: 24,
+          height: 24,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'transparent',
+          border: '1px solid transparent',
+          borderRadius: 'var(--radius-sm)',
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+        }}
+      >
+        ×
+      </button>
     </div>
   );
 }

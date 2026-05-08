@@ -8,6 +8,7 @@ import type { ChildProcess } from 'node:child_process';
 
 import { POST as postRegenerate } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/route';
 import { POST as postUndo } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/undo/route';
+import { GET as getStatus } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/status/route';
 import {
   __setRegenerateLessonSpawnForTesting,
   type RegenerateLessonSpawnDeps,
@@ -603,6 +604,55 @@ describe('POST .../lessons/[lessonSlug]/regenerate/undo (US-148)', () => {
 
   it('returns 400 on an unsafe slug', async () => {
     const res = await postUndo(undoReq(), ctx({ slug: '../escape' }));
+    expect(res.status).toBe(400);
+  });
+});
+
+function statusReq(): Request {
+  return new Request(
+    `http://x/api/courses/${COURSE_SLUG}/lessons/${LESSON_SLUG}/regenerate/status`,
+    { method: 'GET' },
+  );
+}
+
+describe('GET .../lessons/[lessonSlug]/regenerate/status (US-149)', () => {
+  it('returns hasUndo:false when no snapshot exists', async () => {
+    await seedCourseAndLesson();
+    const res = await getStatus(statusReq(), ctx());
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ hasUndo: false });
+  });
+
+  it('returns hasUndo:true after a regenerate has seeded the snapshot', async () => {
+    await seedCourseAndLesson();
+    __setRegenerateLessonSpawnForTesting({
+      spawn: makeFixedSpawn({ stdoutText: validAgentResponse() }).spawn,
+    });
+    await postRegenerate(regenReq({ instruction: 'shorter' }), ctx());
+
+    const res = await getStatus(statusReq(), ctx());
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toEqual({ hasUndo: true });
+  });
+
+  it('returns hasUndo:false again after undo consumes the snapshot', async () => {
+    await seedCourseAndLesson();
+    __setRegenerateLessonSpawnForTesting({
+      spawn: makeFixedSpawn({ stdoutText: validAgentResponse() }).spawn,
+    });
+    await postRegenerate(regenReq({ instruction: 'shorter' }), ctx());
+    expect((await getStatus(statusReq(), ctx())).status).toBe(200);
+
+    await postUndo(undoReq(), ctx());
+    const res = await getStatus(statusReq(), ctx());
+    const json = await res.json();
+    expect(json).toEqual({ hasUndo: false });
+  });
+
+  it('returns 400 on an unsafe slug', async () => {
+    const res = await getStatus(statusReq(), ctx({ slug: '../escape' }));
     expect(res.status).toBe(400);
   });
 });
