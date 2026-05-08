@@ -1,0 +1,24 @@
+[2026-05-08T19:20:34+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T19:25:05+0200] Now I have enough understanding. Let me write the updated page.tsx.
+[2026-05-08T19:27:44+0200] Now let me run the typecheck and tests.
+[2026-05-08T19:28:11+0200] Typecheck passes. Now run the tests.
+[2026-05-08T19:28:30+0200] Pre-existing flake — passed on rerun. Let me confirm with full suite.
+[2026-05-08T19:28:35+0200] All 714 tests pass. Now let me run the lint check.
+[2026-05-08T19:29:53+0200] Pre-existing lint baseline: 205 problems. My changes add 0 new lint problems. Now browser test with playwright.
+[2026-05-08T19:30:22+0200] Dev server is up. Now let me write the playwright test.
+[2026-05-08T19:32:00+0200] All checks pass. Let me confirm screenshots exist:
+[2026-05-08T19:32:21+0200] All 4 screenshots saved. Now mark PRD and commit.
+[2026-05-08T19:32:47+0200] Now flip the actual `passes` field for US-133.
+[2026-05-08T19:32:54+0200] Now append progress.
+[2026-05-08T19:34:07+0200] US-133 is committed. Quick recap:
+
+- **`src/app/page.tsx`**: extended `loadData` to also fetch `/api/collections`; replaced the single `course-grid` with grouped `course-section` blocks (Uncategorized + one per collection, hiding empty sections); added the `New collection` CTA, per-collection kebab (Rename / Delete via `window.prompt` / `window.confirm`), and per-card move popover wired to `POST` after `DELETE` to keep slugs unique. First-run seed of `Widget Demos` runs once via a `seedAttempted` ref + `localStorage['aiLecturer.collectionsSeeded']` flag so deleting the seeded collection does not bring it back. Outside-click + Escape close both popover families through a shared `[data-popover-host]` marker. Search keeps the existing flat `course-grid`.
+- **Quality**: `tsc --noEmit` clean; `vitest run` 714/714 pass; lint contributes 0 new findings.
+- **Browser verification (playwright)** — saved screenshots `/tmp/us-133-after-seed.png`, `/tmp/us-133-after-rename.png`, `/tmp/us-133-after-move.png`, `/tmp/us-133-after-delete-reload.png`. Verified seed (13 demos / 4 real), rename, move-to, persistence across reload, deletion, and that the seed does NOT re-run after delete + reload.
+- **prd.json**: `US-133.passes = true`. Commit `a98473b` is in HEAD.
+[2026-05-08T19:34:07+0200] [result success turns=70 cost=$5.580393499999998] US-133 is committed. Quick recap:
+
+- **`src/app/page.tsx`**: extended `loadData` to also fetch `/api/collections`; replaced the single `course-grid` with grouped `course-section` blocks (Uncategorized + one per collection, hiding empty sections); added the `New collection` CTA, per-collection kebab (Rename / Delete via `window.prompt` / `window.confirm`), and per-card move popover wired to `POST` after `DELETE` to keep slugs unique. First-run seed of `Widget Demos` runs once via a `seedAttempted` ref + `localStorage['aiLecturer.collectionsSeeded']` flag so deleting the seeded collection does not bring it back. Outside-click + Escape close both popover families through a shared `[data-popover-host]` marker. Search keeps the existing flat `course-grid`.
+- **Quality**: `tsc --noEmit` clean; `vitest run` 714/714 pass; lint contributes 0 new findings.
+- **Browser verification (playwright)** — saved screenshots `/tmp/us-133-after-seed.png`, `/tmp/us-133-after-rename.png`, `/tmp/us-133-after-move.png`, `/tmp/us-133-after-delete-reload.png`. Verified seed (13 demos / 4 real), rename, move-to, persistence across reload, deletion, and that the seed does NOT re-run after delete + reload.
+- **prd.json**: `US-133.passes = true`. Commit `a98473b` is in HEAD.
