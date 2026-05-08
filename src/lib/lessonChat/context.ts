@@ -134,6 +134,12 @@ function serializeSectionBody(section: Section): string {
       if (section.data.title) parts.push(`Title: ${section.data.title}`);
       return parts.join('\n');
     }
+    case 'audioPlayer': {
+      const parts: string[] = [`Audio: ${section.data.audioPath}`];
+      if (section.data.title) parts.push(`Title: ${section.data.title}`);
+      if (section.data.transcript) parts.push(`Transcript: ${section.data.transcript}`);
+      return parts.join('\n');
+    }
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {

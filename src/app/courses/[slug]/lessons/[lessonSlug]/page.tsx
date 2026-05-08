@@ -83,6 +83,8 @@ import { TheoryEditor } from '@/widgets/Theory/TheoryEditor';
 import { VideoEditor } from '@/widgets/Video/VideoEditor';
 import { VideoWidget } from '@/widgets/Video/VideoWidget';
 import type { VideoTranscriptSegment } from '@/widgets/Video/schema';
+import { AudioPlayerEditor } from '@/widgets/AudioPlayer/AudioPlayerEditor';
+import { AudioPlayerWidget } from '@/widgets/AudioPlayer/AudioPlayerWidget';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 import diffWords, { type DiffPart } from '@/lib/diff/sectionDiff';
@@ -1596,6 +1598,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'video' && (
         <VideoEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'audioPlayer' && (
+        <AudioPlayerEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3432,6 +3443,14 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit video',
       () => onOpenPanel(section.id),
       'video-edit-btn',
+    );
+  } else if (section.type === 'audioPlayer') {
+    body = <AudioPlayerWidget data={section.data} courseSlug={courseSlug} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit audio player',
+      () => onOpenPanel(section.id),
+      'audio-player-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

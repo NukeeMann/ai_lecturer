@@ -76,3 +76,34 @@ Previous log archived to: archive/progress-2026-05-09-0110.txt
   - **Coqui XTTS argv shape.** XTTS v2 uses `--speaker_idx` (not `--speaker`) for the built-in speaker name, plus `--language_idx en` (not `--language`). Defaults: `Ana Florence` (female) / `Damien Black` (male) — both are real XTTS v2 built-in speakers. Override via `AI_LECTURER_TTS_VOICE_FEMALE` / `AI_LECTURER_TTS_VOICE_MALE`.
   - **whisper.cpp binary location is unstable across versions.** Older releases produce `<repo>/main`; newer ones produce `<repo>/build/bin/main` or `<repo>/build/bin/whisper-cli`. `pickWhisperBinary` tries each candidate in order. Override via `AI_LECTURER_STT_BIN` (full path) for non-standard installs.
 ---
+
+## 2026-05-09 - US-155
+- AudioPlayer widget: schema + component + editor + registry wiring + asset-route audio support.
+- Files added:
+  - src/widgets/AudioPlayer/schema.ts (AudioPlayerDataSchema, buildAudioUrl, isSupportedAudioPath)
+  - src/widgets/AudioPlayer/schemas.ts (re-export per AC)
+  - src/widgets/AudioPlayer/AudioPlayerWidget.tsx (custom controls: play/pause, seek, volume+mute, speed dropdown, keyboard Space/←/→, collapsible <details> transcript)
+  - src/widgets/AudioPlayer/AudioPlayerEditor.tsx (path input, autoplay toggle, title, transcript textarea, sources)
+  - src/widgets/AudioPlayer/Widget.test.ts (schema + buildAudioUrl + isSupportedAudioPath tests)
+  - src/widgets/schemas/audio-player.json (committed JSON-schema artifact)
+  - courses/audio-test/{course.json,lessons/audio-demo.json,assets/audio/test.wav} (smoke fixture, 96 KB 16kHz mono 440Hz sine)
+- Files edited:
+  - src/lib/schemas/lesson.ts (AudioPlayerSectionSchema added to discriminated union)
+  - src/lib/schemas/schemas.test.ts (valid + missing audioPath + invalid kind drift tests)
+  - src/widgets/registry.ts (audioPlayer entry, Headphones icon, --widget-audio-player accent)
+  - src/widgets/schemas/build.ts (registered audio-player)
+  - src/styles/tokens.css (--widget-audio-player in light/dark/sunset)
+  - src/lib/lessonChat/context.ts (audioPlayer case in section-context formatter)
+  - src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx (WidgetEditPanel + SectionRenderer branches)
+  - src/app/api/courses/[slug]/assets/[...path]/route.ts (mp3/wav/ogg content types + Range/206 streaming via createReadStream + Readable.toWeb)
+  - src/app/api/courses/[slug]/lessons/[lessonSlug]/route.ts (server-side audioPath existence check on PUT)
+- Typecheck: passes. Tests: 925/925 pass (added 7 schema tests).
+- Browser verification: /tmp/us-155-{01-initial,02-playing,03-speed-2x,04-transcript-open}.png. Asserted audio.currentTime advances after Play, audio.playbackRate=2 after speed select, transcript <details> opens, mute toggle flips audio.muted, keyboard Space resumes playback. Range-request smoke: `curl -H 'Range: bytes=44-1043'` returns 206 + correct `Content-Range: bytes 44-1043/96044`.
+- **Learnings for future iterations:**
+  - **Discriminator naming.** AC said "kind: 'audio-player'" but the existing SectionSchema uses `type: <camelCase>` for every other widget (codeCloze, dragMatch, plotImage, parametricExplorer, ...). Implemented as `type: 'audioPlayer'` to match convention; AC's "kind 'audio-player'" was treated as conceptual. The build.ts JSON-schema export does use the dasherized name (`audio-player.json`) to match its peers (`code-cloze.json`, `drag-match.json`).
+  - **buildAudioUrl + courseSlug prop.** The widget needs courseSlug to translate a relative `audioPath` (per AC) to the asset URL. Other media widgets (Video MP4, PlotImage) sidestep this by storing absolute URLs in their data, but AC for US-155 mandates relative storage. Solution: AudioPlayerWidget takes `courseSlug` as a second prop, and the lesson page's `SectionRenderer` calls it directly (`<AudioPlayerWidget data={section.data} courseSlug={courseSlug} />`) instead of going through the registry's generic `<Body data={...}/>` path. Registry entry exists for label/icon/accent but isn't used for rendering — same shape as how `dragMatch` requires extra props (progressKey/onComplete) and the page narrows the registry component via cast. New widgets that need extra props can follow this pattern.
+  - **Range/Partial-Content streaming in Next 16 route handlers.** `new Response(readableStream, { status: 206, headers })` works with a Web ReadableStream produced by `Readable.toWeb(createReadStream(file, { start, end }))`. Must also send `Accept-Ranges: bytes` on 200 responses for media types so the browser knows seeking is allowed; Chrome's `<audio>` element issues HEAD-style probes and follows up with `Range: bytes=N-` only when the initial response advertises ranges. Suffix-form ranges (`bytes=-N`) are handled — start = max(0, size-N), end = size-1.
+  - **AC mismatch test.** Adding the section schema and not fully wiring the discriminated union still type-checks at the call sites that don't deeply destructure. The exhaustive `_exhaustive: never` ts pattern in `src/lib/lessonChat/context.ts` is what surfaces missing union arms — when typecheck flags `Type ... is not assignable to type 'never'` after extending SectionSchema, that's the file telling you to add a `case` arm. Future widget additions should grep for "_exhaustive" to find these.
+  - **`<details>` summary styling.** The default `list-style: disc` triangle marker is `display: list-item`; setting `list-style: none` on the summary removes it but can be layout-noisy. Letting the marker stay is fine, but setting `listStyle: 'none'` keeps the summary text-only (matching the AC's "labeled `Show transcript`" wording rather than a triangle prefix).
+  - **Server-side `audioPath` existence check.** Hooked into the lesson PUT route (`src/app/api/courses/[slug]/lessons/[lessonSlug]/route.ts`) rather than a hypothetical "section update route" — sections are saved as part of full-lesson PUT in this codebase. The check walks every audioPlayer section, joins `courses/<slug>/assets/audio/<audioPath>`, runs path-traversal guards, then `fs.access`. Returns 400 with a section-id-tagged error if the file is missing. Note: this also fires when handleCacheVideoTranscript writes a video transcript through the same PUT path — fine because that path doesn't add new audio sections, and existing audio files stay on disk.
+---

@@ -11,6 +11,7 @@ import { HistogramDataSchema } from '@/widgets/Histogram/schema';
 import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schema';
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 import { VideoDataSchema } from '@/widgets/Video/schema';
+import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -104,6 +105,12 @@ export const VideoSectionSchema = z.object({
   data: VideoDataSchema,
 });
 
+export const AudioPlayerSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('audioPlayer'),
+  data: AudioPlayerDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -123,6 +130,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   DragMatchSectionSchema,
   DataTableSectionSchema,
   VideoSectionSchema,
+  AudioPlayerSectionSchema,
   CustomSectionSchema,
 ]);
 

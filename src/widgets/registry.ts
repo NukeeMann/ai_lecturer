@@ -4,6 +4,7 @@ import {
   Code,
   FileText,
   FlaskConical,
+  Headphones,
   Image as ImageIcon,
   Layers,
   type LucideProps,
@@ -16,6 +17,7 @@ import {
   Video as VideoIcon,
 } from 'lucide-react';
 
+import { AudioPlayerWidget } from './AudioPlayer/AudioPlayerWidget';
 import { CodeWidget } from './Code/CodeWidget';
 import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
@@ -43,6 +45,7 @@ export type WidgetType =
   | 'dragMatch'
   | 'dataTable'
   | 'video'
+  | 'audioPlayer'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -124,6 +127,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Video',
     icon: VideoIcon,
     accentVar: '--widget-video',
+  },
+  audioPlayer: {
+    component: AudioPlayerWidget as ComponentType<{ data?: unknown }>,
+    label: 'Audio Player',
+    icon: Headphones,
+    accentVar: '--widget-audio-player',
   },
   custom: {
     component: CustomPlaceholder,
