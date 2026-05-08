@@ -1,0 +1,67 @@
+[2026-05-09T01:10:52+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:11:14+0200] Now let me explore the existing structure to understand how to add the print page and the export route.
+[2026-05-09T01:11:52+0200] Found the headless shell binary. Now let me check the existing lesson page header for the regenerate button.
+[2026-05-09T01:12:02+0200] Let me continue exploring. Now look at the existing lesson schema and section types so I know what to render.
+[2026-05-09T01:12:21+0200] Now let me look at the lesson page's main component to understand how to add the print button & toast pattern.
+[2026-05-09T01:12:27+0200] Now let me check how courses are loaded server-side and look at the existing print-friendly tooling.
+[2026-05-09T01:13:11+0200] Now let's design the print page. Looking at the existing static export module, I can adapt its widgets but cannot reuse it directly since it has different layout assumptions. Let me check the Theory and Quiz schemas for what fields they need.
+[2026-05-09T01:13:23+0200] Now let me look at the existing static-export route to understand the "createRequire" trick used to render React on the server:
+[2026-05-09T01:13:36+0200] Now let me check the existing root layout to understand global CSS:
+[2026-05-09T01:13:51+0200] Now let me create the print page. I'll keep it minimal, using react-markdown directly (no lucide), and handle each section type.
+[2026-05-09T01:14:52+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:14:54+0200] Now let me build the PDF export route + browser singleton. First, look at next.config to understand serverExternalPackages:
+[2026-05-09T01:15:01+0200] Now build the browser singleton + PDF export route:
+[2026-05-09T01:15:28+0200] Now create the export PDF route:
+[2026-05-09T01:16:01+0200] Now add the Print to PDF button to the lesson page header. The button needs to live next to the regenerate button. Let me look at the lesson page header to add it:
+[2026-05-09T01:16:11+0200] Good, `Printer` exists. Let's also look at how the regenerate button submits to the route — we need a handler that triggers a download.
+[2026-05-09T01:16:28+0200] Now let me add the Print to PDF button to the lesson page:
+[2026-05-09T01:16:31+0200] Now I'll thread an `onExportPdf` callback. First add the prop:
+[2026-05-09T01:16:43+0200] Now update the LessonHeader signature + add the button. Add a Printer icon import:
+[2026-05-09T01:16:52+0200] Now add the Print to PDF button right after the Regenerate lesson button:
+[2026-05-09T01:16:59+0200] Now I need to find where LessonStream is rendered in LessonShellPage and add the `onExportPdf` callback. Let me find the call site:
+[2026-05-09T01:17:06+0200] Now I need to add an `handleExportPdf` handler in the LessonShellPage and pass it. Let me find a good spot after `handleOpenRegenLesson`:
+[2026-05-09T01:17:31+0200] Add a dedicated PDF toast state so it stays visible during generation:
+[2026-05-09T01:17:37+0200] Now update the export handler to use the PDF toast and watch for download via visibilitychange:
+[2026-05-09T01:17:46+0200] Now wire the prop into LessonStream:
+[2026-05-09T01:17:51+0200] Now I need to render the pdfToast component. Let me find where SessionToast is rendered and add a pdf one:
+[2026-05-09T01:18:15+0200] Now let me run the typecheck to catch errors:
+[2026-05-09T01:18:39+0200] Clean. Now let me run lint and tests:
+[2026-05-09T01:19:38+0200] My new files are clean. Now let me verify the new lint issues introduced by lessonSlug page changes by checking only changes between page.tsx prior and after:
+[2026-05-09T01:19:59+0200] That error is pre-existing (formerly at line 430, line drift due to my additions). Now let's run the tests:
+[2026-05-09T01:20:07+0200] All 876 tests pass. Now let me write the integration test for the PDF route. The test needs to actually launch chromium, which is heavyweight but the AC requires it. Let me make it skippable if no chromium available:
+[2026-05-09T01:21:32+0200] All 10 tests pass. Let me also run the full test suite to make sure nothing else broke:
+[2026-05-09T01:21:40+0200] All 886 tests pass (876 prior + 10 new). Let me also write a real "live PDF" integration test that validates the actual `%PDF-` magic bytes via a real request through the dev server. This is what the AC describes. Now let me verify in the browser via playwright-skill:
+[2026-05-09T01:24:14+0200] Let me create a fixture course with all section types for our test. First check if quiz-test has all kinds:
+[2026-05-09T01:24:20+0200] Let me create a dedicated fixture course with all section types directly:
+[2026-05-09T01:24:41+0200] Now let me first verify the print page renders correctly via curl:
+[2026-05-09T01:24:55+0200] The print page renders correctly. Now let me hit the export PDF route to test the actual end-to-end PDF generation:
+[2026-05-09T01:25:02+0200] Excellent! 200 OK, 79KB application/pdf. Let me check the magic bytes and inspect content via pdf-parse:
+[2026-05-09T01:25:06+0200] Let me extract text from the PDF to verify content:
+[2026-05-09T01:25:27+0200] All content is in the PDF, exactly as expected: title, theory body, quiz with correct answer marker, code task, [Tests hidden] placeholder, sandbox prompt, demo. Now let's run a real playwright-skill test:
+[2026-05-09T01:25:57+0200] All browser verification passed. Let me also verify the print page works for a missing lesson (404):
+[2026-05-09T01:26:01+0200] 404 works. Let me also clean up the fixture course since it's not needed in the repo:
+[2026-05-09T01:26:11+0200] Let me run typecheck and tests once more before committing:
+[2026-05-09T01:26:30+0200] Both pass. Now update prd.json + progress.txt and commit. First mark passes=true:
+[2026-05-09T01:26:49+0200] Now append to progress.txt:
+[2026-05-09T01:28:21+0200] Now stage the changes and commit. First, let me kill the dev server (after the commit, but actually we need to commit FIRST per the instructions). Let me check what's staged:
+[2026-05-09T01:28:55+0200] The commit landed in HEAD with passes=true for US-153. Let me kill the dev server now (commit is done):
+[2026-05-09T01:29:14+0200] US-153 implemented and committed at `9ce83ce`. Summary of what landed:
+
+- `src/app/courses/[slug]/lessons/[lessonSlug]/print/page.tsx` — server-rendered minimal print layout (no header/sidebar/chat/regen panels). Quiz answers highlighted, Code widgets show `[Tests hidden]` placeholder, Sandbox shows only the prompt.
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/export/pdf/route.ts` — drives puppeteer-core against the print page, returns `application/pdf` with `Content-Disposition: attachment; filename="<lessonSlug>.pdf"`. ECONNREFUSED → 503 with one retry.
+- `src/lib/server/pdfBrowser.ts` — lazy browser singleton with 5min idle close; resolves Chromium from `~/.cache/ms-playwright/`.
+- `[data-testid="export-lesson-pdf-btn"]` Printer button in the lesson header next to Regenerate; "Generating PDF…" toast auto-dismisses on `visibilitychange` or after 30s.
+- 10 new vitest cases (886/886 total pass). Typecheck clean.
+- Browser verification via playwright-skill produced a 79KB PDF; pdf-parse confirmed lesson title, quiz question + correct answer marker, code block, `[Tests hidden]` placeholder, sandbox prompt, and demo all present.
+
+`scripts/ralph/prd.json` US-153 `passes: true` is in HEAD.
+[2026-05-09T01:29:14+0200] [result success turns=137 cost=$12.027556250000002] US-153 implemented and committed at `9ce83ce`. Summary of what landed:
+
+- `src/app/courses/[slug]/lessons/[lessonSlug]/print/page.tsx` — server-rendered minimal print layout (no header/sidebar/chat/regen panels). Quiz answers highlighted, Code widgets show `[Tests hidden]` placeholder, Sandbox shows only the prompt.
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/export/pdf/route.ts` — drives puppeteer-core against the print page, returns `application/pdf` with `Content-Disposition: attachment; filename="<lessonSlug>.pdf"`. ECONNREFUSED → 503 with one retry.
+- `src/lib/server/pdfBrowser.ts` — lazy browser singleton with 5min idle close; resolves Chromium from `~/.cache/ms-playwright/`.
+- `[data-testid="export-lesson-pdf-btn"]` Printer button in the lesson header next to Regenerate; "Generating PDF…" toast auto-dismisses on `visibilitychange` or after 30s.
+- 10 new vitest cases (886/886 total pass). Typecheck clean.
+- Browser verification via playwright-skill produced a 79KB PDF; pdf-parse confirmed lesson title, quiz question + correct answer marker, code block, `[Tests hidden]` placeholder, sandbox prompt, and demo all present.
+
+`scripts/ralph/prd.json` US-153 `passes: true` is in HEAD.
