@@ -37,6 +37,7 @@ import {
 import { listCourseSourceFilesSync, resolveSourcePathForPrompt } from './sources';
 import {
   deleteGenerationState,
+  readGenerationState,
   writeGenerationState,
   type GenerationState,
 } from './generationState';
@@ -51,7 +52,17 @@ export type GenerationEvent =
   | { type: 'stage'; name: string; status: 'started' | 'done' | 'error' }
   | { type: 'progress'; current: number; total: number }
   | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
-  | { type: 'error'; message: string; failedLessons?: FailedLesson[] };
+  | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+  // US-137: emitted as the FIRST event of a resumeGeneration() run so the
+  // wizard can hydrate its lesson-status panel in one round-trip — completed
+  // lessons (status='done'), the rest in source order, and the slug of the
+  // lesson currently being attempted (null when the resume starts at init).
+  | {
+      type: 'resumed';
+      completed: string[];
+      remaining: string[];
+      inflightSlug: string | null;
+    };
 
 export type GenerationListener = (event: GenerationEvent) => void;
 
@@ -129,6 +140,19 @@ export class ClaudeUnavailableError extends Error {
   constructor() {
     super('Install Claude Code CLI or sign in to Claude Max');
     this.name = 'ClaudeUnavailableError';
+  }
+}
+
+/**
+ * US-137: thrown by resumeGeneration() when the per-course
+ * `.generation-state.json` file from US-136 isn't on disk. The route handler
+ * maps this to 409 `{ error: 'no-resumable-state' }` so the UI can fall back
+ * to a fresh POST /api/courses/generate.
+ */
+export class GenerationStateMissingError extends Error {
+  constructor() {
+    super('No .generation-state.json file present for slug');
+    this.name = 'GenerationStateMissingError';
   }
 }
 
@@ -1020,11 +1044,57 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
   }
 }
 
+/**
+ * US-137: resume a partial run from a `.generation-state.json` snapshot.
+ * Skips lessons whose status is already `done`, retries `inflight` /
+ * `failed` / `pending` lessons with the remaining attempt budget computed
+ * against `state.config.lessonMaxRetries`, and skips the init spawn entirely
+ * when `initCourse.status === 'done'`.
+ *
+ * Throws `GenerationStateMissingError` when no state file is present.
+ * Throws `GenerationConflictError` when a different slug is already in
+ * flight. Same-slug already active → idempotent attach (returns the
+ * existing run), mirroring enqueueGeneration's behaviour.
+ *
+ * Resume is a separate code path from enqueueGeneration: it never appends
+ * to the FIFO queue and it skips the queue-promotion checks. The wizard
+ * banner UI (US-140) explicitly chooses between this route and POST
+ * /api/courses/generate based on whether the state file exists.
+ */
+export async function resumeGeneration(
+  slug: string,
+  depsArg: SpawnDeps = {},
+): Promise<GenerationRun> {
+  if (activeRun && !activeRun.finished && activeRun.slug === slug) {
+    return activeRun;
+  }
+  if ((activeRun && !activeRun.finished) || startingGeneration) {
+    throw new GenerationConflictError();
+  }
+
+  const state = await readGenerationState(slug);
+  if (!state) {
+    throw new GenerationStateMissingError();
+  }
+
+  startingGeneration = true;
+  startingSlug = slug;
+
+  try {
+    return await startGenerationInner(slug, depsArg, { resumeFromState: state });
+  } finally {
+    startingGeneration = false;
+    startingSlug = null;
+  }
+}
+
 async function startGenerationInner(
   slug: string,
   depsArg: SpawnDeps,
+  resumeOpts?: { resumeFromState: GenerationState },
 ): Promise<GenerationRun> {
   const deps: SpawnDeps = { ...(depsOverride ?? {}), ...depsArg };
+  const resumeFromState = resumeOpts?.resumeFromState ?? null;
 
   const isExecutable = deps.isExecutableInPath ?? defaultIsExecutableInPath;
   if (!isExecutable('claude')) {
@@ -1036,10 +1106,17 @@ async function startGenerationInner(
   const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
+  // US-137: when resuming, pull retry/timeout config from the persisted state
+  // file (the values frozen at run-1 start) so re-attempts are budgeted
+  // consistently. Tests/explicit deps still win so the existing harness can
+  // override per-test.
   const lessonMaxRetries =
-    deps.lessonMaxRetries ?? parseNonNegativeInt(process.env.LESSON_MAX_RETRIES, 2);
+    deps.lessonMaxRetries ??
+    resumeFromState?.config.lessonMaxRetries ??
+    parseNonNegativeInt(process.env.LESSON_MAX_RETRIES, 2);
   const lessonTimeoutMs =
     deps.lessonTimeoutMs ??
+    resumeFromState?.config.lessonTimeoutMs ??
     parseNonNegativeInt(process.env.LESSON_TIMEOUT_SEC, 1800) * 1000;
 
   const dir = courseDir(slug);
@@ -1384,13 +1461,14 @@ async function startGenerationInner(
 
   async function runLesson(
     lessonSlug: string,
+    opts: { maxAttemptsOverride?: number; seedRetryReason?: string } = {},
   ): Promise<{ success: boolean; attempts: number; lastError: string }> {
     const stageName = `lesson:${lessonSlug}`;
     emit({ type: 'stage', name: stageName, status: 'started' });
 
     const lessonLogPath = path.join(genLogs, `${lessonSlug}.log`);
-    const maxAttempts = lessonMaxRetries + 1;
-    let lastError = '';
+    const maxAttempts = opts.maxAttemptsOverride ?? lessonMaxRetries + 1;
+    let lastError = opts.seedRetryReason ?? '';
     let success = false;
     let attemptsRun = 0;
 
@@ -1406,6 +1484,18 @@ async function startGenerationInner(
         await fs.unlink(lessonFile(slug, lessonSlug));
       } catch {
         /* file may not exist — ignore */
+      }
+      // US-137: also drop any `<lessonSlug>.tmp` left behind by an
+      // atomic-write crash (best-effort, ignore ENOENT). The companion
+      // `<lessonSlug>.json` is handled by the unlink above; this only
+      // targets the `.tmp` variant. Sibling lesson files (other slugs) are
+      // never touched.
+      try {
+        await fs.unlink(
+          path.join(courseDir(slug), 'lessons', `${lessonSlug}.tmp`),
+        );
+      } catch {
+        /* no stale tmp — ignore */
       }
 
       // US-136: mark the lesson inflight + bump attempts BEFORE the spawn so
@@ -1510,79 +1600,115 @@ async function startGenerationInner(
   });
 
   const pipeline = (async () => {
-    // ── Stage 1: init_course ────────────────────────────────────────────────
-    emit({ type: 'stage', name: 'init_course', status: 'started' });
-    const initLogPath = path.join(genLogs, 'init_course.log');
-    const initLogStream = createWriteStream(initLogPath, { flags: 'w' });
-    initLogStream.on('error', () => {
-      /* swallow late writes */
-    });
-    const initResult = await spawnChild(initSpec, { extraLogStream: initLogStream });
-    initLogStream.end();
-    if (cancelled) {
-      emit({ type: 'stage', name: 'init_course', status: 'error' });
-      await markInitFailed('Cancelled by user');
-      finalize('error', 'Cancelled by user');
-      return;
+    // ── US-137: Resume hydration ────────────────────────────────────────────
+    // The 'resumed' event MUST be the first event the SSE consumer sees so
+    // the wizard can hydrate its lesson-status panel in one round-trip
+    // before any per-lesson stage:started events start arriving.
+    if (resumeFromState) {
+      const completed = resumeFromState.lessons
+        .filter((l) => l.status === 'done')
+        .map((l) => l.slug);
+      const remaining = resumeFromState.lessons
+        .filter((l) => l.status !== 'done')
+        .map((l) => l.slug);
+      // When init isn't done yet we restart at init, so no lesson is
+      // "currently being attempted" from the wizard's perspective. Otherwise
+      // the next non-done lesson is the one we're about to attempt.
+      const inflightSlug =
+        resumeFromState.initCourse.status === 'done' ? remaining[0] ?? null : null;
+      emit({ type: 'resumed', completed, remaining, inflightSlug });
     }
-    if (initResult.exit !== 0) {
-      emit({ type: 'stage', name: 'init_course', status: 'error' });
-      const reason = `init_course failed (exit ${initResult.exit})`;
-      await markInitFailed(reason);
-      finalize('error', reason);
-      return;
+
+    // ── Stage 1: init_course (skipped on resume when already done) ──────────
+    let lessons: { slug: string; moduleId: string }[];
+    if (resumeFromState && resumeFromState.initCourse.status === 'done') {
+      // Hydrate genState from the persisted snapshot (deep clone so per-loop
+      // mutations don't alias the caller's state object).
+      genState = JSON.parse(JSON.stringify(resumeFromState)) as GenerationState;
+      // Use the persisted lesson order — it was derived from course.json on
+      // run #1 and is the authoritative resume order per the AC.
+      lessons = resumeFromState.lessons.map((l) => ({ slug: l.slug, moduleId: '' }));
+    } else {
+      emit({ type: 'stage', name: 'init_course', status: 'started' });
+      const initLogPath = path.join(genLogs, 'init_course.log');
+      const initLogStream = createWriteStream(initLogPath, { flags: 'w' });
+      initLogStream.on('error', () => {
+        /* swallow late writes */
+      });
+      const initResult = await spawnChild(initSpec, { extraLogStream: initLogStream });
+      initLogStream.end();
+      if (cancelled) {
+        emit({ type: 'stage', name: 'init_course', status: 'error' });
+        await markInitFailed('Cancelled by user');
+        finalize('error', 'Cancelled by user');
+        return;
+      }
+      if (initResult.exit !== 0) {
+        emit({ type: 'stage', name: 'init_course', status: 'error' });
+        const reason = `init_course failed (exit ${initResult.exit})`;
+        await markInitFailed(reason);
+        finalize('error', reason);
+        return;
+      }
+      // Post-init guard: claude in -p mode silently no-ops on prompts it
+      // doesn't understand (the original bug printed "Unknown command:" and
+      // exited 0). If course.json is missing, we cannot iterate lessons —
+      // bail out before the per-lesson loop tries to read a file that's
+      // not there.
+      let courseRaw: string;
+      try {
+        courseRaw = await fs.readFile(courseFile(slug), 'utf8');
+      } catch {
+        emit({ type: 'stage', name: 'init_course', status: 'error' });
+        const reason = 'init_course did not produce course.json — check .generation.log';
+        await markInitFailed(reason);
+        finalize('error', reason);
+        return;
+      }
+      let course;
+      try {
+        course = CourseSchema.parse(JSON.parse(courseRaw));
+      } catch (err) {
+        emit({ type: 'stage', name: 'init_course', status: 'error' });
+        const detail = err instanceof Error ? err.message : String(err);
+        const reason = `init_course produced invalid course.json: ${detail}`;
+        await markInitFailed(reason);
+        finalize('error', reason);
+        return;
+      }
+      // US-136 / US-137: write/refresh the .generation-state.json now that we
+      // have a validated course.json. On resume-with-init-not-done, MERGE the
+      // existing per-lesson status by slug so attempt counts from before the
+      // crash carry over; lessons that no longer appear in course.json are
+      // dropped, and lessons newly introduced by init come in as fresh
+      // pending entries.
+      const mergedLessons = course.modules.flatMap((m) =>
+        m.lessons.map((l) => {
+          const prior = resumeFromState?.lessons.find((s) => s.slug === l.slug);
+          if (prior) {
+            return { ...prior };
+          }
+          return { slug: l.slug, status: 'pending' as const, attempts: 0 };
+        }),
+      );
+      genState = {
+        schemaVersion: 1,
+        slug,
+        startedAt: resumeFromState?.startedAt ?? new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        initCourse: { status: 'done' },
+        lessons: mergedLessons,
+        config: { lessonMaxRetries, lessonTimeoutMs },
+      };
+      await persistGenState();
+      emit({ type: 'stage', name: 'init_course', status: 'done' });
+
+      lessons = course.modules.flatMap((m) =>
+        m.lessons.map((l) => ({ slug: l.slug, moduleId: m.id })),
+      );
     }
-    // Post-init guard: claude in -p mode silently no-ops on prompts it
-    // doesn't understand (the original bug printed "Unknown command:" and
-    // exited 0). If course.json is missing, we cannot iterate lessons —
-    // bail out before the per-lesson loop tries to read a file that's
-    // not there.
-    let courseRaw: string;
-    try {
-      courseRaw = await fs.readFile(courseFile(slug), 'utf8');
-    } catch {
-      emit({ type: 'stage', name: 'init_course', status: 'error' });
-      const reason = 'init_course did not produce course.json — check .generation.log';
-      await markInitFailed(reason);
-      finalize('error', reason);
-      return;
-    }
-    let course;
-    try {
-      course = CourseSchema.parse(JSON.parse(courseRaw));
-    } catch (err) {
-      emit({ type: 'stage', name: 'init_course', status: 'error' });
-      const detail = err instanceof Error ? err.message : String(err);
-      const reason = `init_course produced invalid course.json: ${detail}`;
-      await markInitFailed(reason);
-      finalize('error', reason);
-      return;
-    }
-    // US-136: write the initial .generation-state.json now that we have a
-    // validated course.json. From this point on, every stage transition
-    // updates the file in place via persistGenState().
-    genState = {
-      schemaVersion: 1,
-      slug,
-      startedAt: new Date().toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      initCourse: { status: 'done' },
-      lessons: course.modules.flatMap((m) =>
-        m.lessons.map((l) => ({
-          slug: l.slug,
-          status: 'pending' as const,
-          attempts: 0,
-        })),
-      ),
-      config: { lessonMaxRetries, lessonTimeoutMs },
-    };
-    await persistGenState();
-    emit({ type: 'stage', name: 'init_course', status: 'done' });
 
     // ── Stage 2..N+1: one (retried) claude call per lesson, sequentially ───
-    const lessons = course.modules.flatMap((m) =>
-      m.lessons.map((l) => ({ slug: l.slug, moduleId: m.id })),
-    );
     const total = lessons.length;
     const failedLessons: FailedLesson[] = [];
     const failedReport: FailedReportEntry[] = [];
@@ -1605,7 +1731,47 @@ async function startGenerationInner(
         return;
       }
       const lesson = lessons[i];
-      const result = await runLesson(lesson.slug);
+      const existingState = findLessonState(lesson.slug);
+
+      // US-137: lessons already marked done in the persisted state are skipped
+      // entirely — no spawn, no stage events, just advance the progress bar.
+      if (existingState?.status === 'done') {
+        emit({ type: 'progress', current: i + 1, total });
+        continue;
+      }
+
+      // US-137: compute the remaining attempt budget. When 0, mark the
+      // lesson failed in state without spawning so the wizard's failed
+      // panel surfaces it like any other exhausted lesson.
+      const remaining = existingState
+        ? Math.max(0, lessonMaxRetries + 1 - existingState.attempts)
+        : lessonMaxRetries + 1;
+
+      if (remaining === 0) {
+        const reason = existingState?.lastError ?? 'Retry budget exhausted';
+        const stageName = `lesson:${lesson.slug}`;
+        emit({ type: 'stage', name: stageName, status: 'started' });
+        if (existingState) {
+          existingState.status = 'failed';
+          if (!existingState.lastError) existingState.lastError = reason;
+          await persistGenState();
+        }
+        emit({ type: 'stage', name: stageName, status: 'error' });
+        failedLessons.push({ slug: lesson.slug, reason });
+        failedReport.push({
+          lessonSlug: lesson.slug,
+          attempts: existingState?.attempts ?? 0,
+          lastError: reason,
+          logPath: `logs/${lesson.slug}.log`,
+        });
+        emit({ type: 'progress', current: i + 1, total });
+        continue;
+      }
+
+      const result = await runLesson(lesson.slug, {
+        maxAttemptsOverride: remaining,
+        seedRetryReason: existingState?.lastError,
+      });
 
       if (cancelled) {
         failedLessons.push({ slug: lesson.slug, reason: result.lastError || 'Cancelled by user' });
