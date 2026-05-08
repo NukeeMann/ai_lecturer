@@ -1,0 +1,34 @@
+[2026-05-08T21:01:31+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T21:09:16+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T21:09:24+0200] Now let me start implementing. First, update atomic.ts:
+[2026-05-08T21:09:35+0200] Now update generation.ts. First, modify the imports and add helpers:
+[2026-05-08T21:09:43+0200] Now update the GenerationListener / GenerationRun types and add seq state:
+[2026-05-08T21:09:58+0200] Now add the events log helpers + readEventsLogSync export. Let me find a good spot to insert them:
+[2026-05-08T21:10:18+0200] Now wire seq + ndjson append into `emit()` and `GenerationRun` construction:
+[2026-05-08T21:10:35+0200] Now modify the `emit()` function to append to ndjson and notify listeners with seq:
+[2026-05-08T21:11:09+0200] Now update the SSE route. First let me re-check the existing stream test to ensure my rewrite stays compatible:
+[2026-05-08T21:11:55+0200] Now add unit tests at the end of the test file:
+[2026-05-08T21:15:46+0200] Let me update the rotation filename to include the seq to avoid collisions when rotations happen in the same millisecond:
+[2026-05-08T21:16:39+0200] Now let me run typecheck:
+[2026-05-08T21:16:49+0200] Typecheck clean. Now run the tests:
+[2026-05-08T21:16:56+0200] All 84 tests pass. Let me run the full test suite:
+[2026-05-08T21:17:32+0200] No lint errors in my files. Let me mark US-138 done in prd.json and update progress:
+[2026-05-08T21:18:02+0200] Now append to progress.txt:
+[2026-05-08T21:19:10+0200] US-138 complete. Committed as `7ee34f9` with `passes: true` for US-138 in prd.json.
+
+Summary of what landed:
+- **`src/lib/server/atomic.ts`**: added sync `atomicRenameSync` so the rotator opts into atomic-rename semantics without reaching into `node:fs` directly.
+- **`src/lib/server/generation.ts`**: new `eventsLogPath`, `readEventsLogSync`, `EventsLogEntry`, `EVENTS_LOG_BASENAME` (`.generation-events.ndjson`), `EVENTS_LOG_ROTATE_BYTES_DEFAULT` (5 MB), and `__setEventsLogRotateBytesForTesting`. `GenerationListener` now `(event, seq) => void`; `GenerationRun` gained `lastSeq` + `eventSeqs`. `emit()` synchronously appends `{ seq, timestamp, event }` to the ndjson **before** notifying listeners, then `statSync` and rotates via `atomicRenameSync` past 5 MB. Resume seeds `lastSeq` from the existing log; fresh runs truncate.
+- **`src/app/api/courses/generate/stream/[id]/route.ts`**: parses `Last-Event-ID` (precedence) and `?from=`, sync replay from ndjson inside `ReadableStream#start`, race-free backstop over `run.eventSeqs[0..snapshotLen)`, listener dedupes on `seq <= lastReplayedSeq`. Each frame is `id: <seq>\nevent: <type>\ndata: <json>\n\n`. Single `console.warn` per replay if malformed lines were skipped.
+- **Tests**: 7 new tests under `describe('persistent generation events ndjson + SSE replay (US-138)')`.
+
+Verified: `npm run typecheck` clean, `npm test` 750/750.
+[2026-05-08T21:19:10+0200] [result success turns=61 cost=$6.587639500000002] US-138 complete. Committed as `7ee34f9` with `passes: true` for US-138 in prd.json.
+
+Summary of what landed:
+- **`src/lib/server/atomic.ts`**: added sync `atomicRenameSync` so the rotator opts into atomic-rename semantics without reaching into `node:fs` directly.
+- **`src/lib/server/generation.ts`**: new `eventsLogPath`, `readEventsLogSync`, `EventsLogEntry`, `EVENTS_LOG_BASENAME` (`.generation-events.ndjson`), `EVENTS_LOG_ROTATE_BYTES_DEFAULT` (5 MB), and `__setEventsLogRotateBytesForTesting`. `GenerationListener` now `(event, seq) => void`; `GenerationRun` gained `lastSeq` + `eventSeqs`. `emit()` synchronously appends `{ seq, timestamp, event }` to the ndjson **before** notifying listeners, then `statSync` and rotates via `atomicRenameSync` past 5 MB. Resume seeds `lastSeq` from the existing log; fresh runs truncate.
+- **`src/app/api/courses/generate/stream/[id]/route.ts`**: parses `Last-Event-ID` (precedence) and `?from=`, sync replay from ndjson inside `ReadableStream#start`, race-free backstop over `run.eventSeqs[0..snapshotLen)`, listener dedupes on `seq <= lastReplayedSeq`. Each frame is `id: <seq>\nevent: <type>\ndata: <json>\n\n`. Single `console.warn` per replay if malformed lines were skipped.
+- **Tests**: 7 new tests under `describe('persistent generation events ndjson + SSE replay (US-138)')`.
+
+Verified: `npm run typecheck` clean, `npm test` 750/750.
