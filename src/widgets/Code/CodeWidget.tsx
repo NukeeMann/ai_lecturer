@@ -18,6 +18,7 @@ import { python } from '@codemirror/lang-python';
 
 import { Callout } from '@/components/Callout';
 import { Confetti } from '@/components/Confetti';
+import { ZoomableImage } from '@/components/ZoomableImage';
 import {
   PyodideStopError,
   usePyodide,
@@ -628,12 +629,11 @@ function InputItem({ input, index }: { input: CodeInput; index: number }) {
         data-input-index={index}
         style={{ margin: 0 }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-codewidget-input-img
+        <ZoomableImage
           src={input.src}
           alt={input.alt ?? ''}
           style={inputMediaStyle}
+          imgProps={{ 'data-codewidget-input-img': '' }}
         />
         {input.caption && (
           <figcaption style={inputCaptionStyle}>{input.caption}</figcaption>
@@ -735,12 +735,11 @@ function OutputMediaBlock({ media }: OutputMediaProps) {
     <div data-codewidget-output-media data-media-kind={media.kind} style={outputMediaWrapStyle}>
       <span style={outputMediaLabelStyle}>Output media</span>
       {media.kind === 'image' ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          data-codewidget-output-img
+        <ZoomableImage
           src={media.src}
           alt={media.alt ?? ''}
           style={outputMediaStyle}
+          imgProps={{ 'data-codewidget-output-img': '' }}
         />
       ) : (
         <video

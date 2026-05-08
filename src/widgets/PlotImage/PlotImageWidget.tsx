@@ -30,6 +30,7 @@ import {
 } from '@codemirror/language';
 import { python } from '@codemirror/lang-python';
 
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { usePyodide } from '@/lib/pyodide/client';
 
 import {
@@ -222,13 +223,14 @@ export function PlotImageWidget({ data }: PlotImageWidgetProps) {
   return (
     <div data-plotimage-widget style={wrapStyle}>
       <figure data-plotimage-figure style={figureStyle}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-plotimage-img
-          data-plotimage-rendered={livePngUrl ? 'true' : 'false'}
+        <ZoomableImage
           src={displaySrc}
           alt={alt}
           style={imgStyle}
+          imgProps={{
+            'data-plotimage-img': '',
+            'data-plotimage-rendered': livePngUrl ? 'true' : 'false',
+          }}
         />
         {caption && (
           <figcaption data-plotimage-caption style={captionStyle}>

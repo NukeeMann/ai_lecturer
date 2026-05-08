@@ -4,6 +4,7 @@ import remarkDirective from 'remark-directive';
 import remarkMath from 'remark-math';
 
 import { Callout, type CalloutTone } from '@/components/Callout';
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 import { remarkCallout } from './remarkCallout';
 import type { TheoryData } from './schema';
@@ -29,6 +30,8 @@ function normalizeTone(raw: unknown): CalloutTone {
 }
 
 const components: Components = {
+  img: (({ src, alt }: { src?: string; alt?: string }) =>
+    src ? <ZoomableImage src={src} alt={alt ?? ''} /> : null) as Components['img'],
   // Custom directive output ('callout' is not a standard HTML tag — react-markdown
   // accepts string keys at runtime; the cast keeps TypeScript happy).
   ...({

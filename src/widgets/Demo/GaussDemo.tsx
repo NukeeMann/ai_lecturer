@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { RotateCcw } from 'lucide-react';
 
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { usePyodide } from '@/lib/pyodide/client';
 
 import type { DemoData } from './schema';
@@ -338,12 +339,11 @@ export function GaussDemo({ data }: GaussDemoProps) {
     <div data-gaussdemo style={wrapStyle}>
       <style>{SLIDER_CSS}</style>
       <div data-gaussdemo-image style={imageAreaStyle}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          data-gaussdemo-original
+        <ZoomableImage
           src={imageSrc}
           alt="Gaussian filter demo source"
           style={imageBaseStyle}
+          imgProps={{ 'data-gaussdemo-original': '' }}
         />
         <canvas
           ref={canvasRef}
