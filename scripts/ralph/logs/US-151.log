@@ -1,0 +1,27 @@
+[2026-05-08T23:47:49+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:52:56+0200] Now let me update the page to add the ImportCourseCard.
+[2026-05-08T23:53:26+0200] Now wire it into the dashboard render — at the end of both branches.
+[2026-05-08T23:53:36+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:54:02+0200] Typecheck passes. Now let me write tests for the import route.
+[2026-05-08T23:55:36+0200] All 14 tests pass. Run the full test suite and typecheck.
+[2026-05-08T23:56:06+0200] Typecheck clean and tests pass. Now browser verification with playwright.
+[2026-05-09T00:15:21+0200] Now restart the dev server.
+[2026-05-09T00:15:41+0200] All scenarios verified:
+- Import card visible with dashed 2px border in tertiary color
+- Drop course ZIP / or click to browse text visible
+- Successful import → toast `Imported US-151 Import Target`, new course card slides in
+- Duplicate import → 409 toast `A course with slug "us-151-import-target" already exists. Delete or rename it first.`
+- Non-zip file → toast `Only .zip files are supported.`
+[2026-05-09T00:15:52+0200] Now let me run typecheck and tests one more time to confirm nothing is broken.
+[2026-05-09T00:16:12+0200] All 865 tests pass and typecheck is clean. Now let me update the PRD, progress, and CLAUDE.md/MEMORY before committing.
+[2026-05-09T00:16:29+0200] Now append the progress log.
+[2026-05-09T00:18:16+0200] US-151 complete. Commit `a07e844` flips `passes:true` and ships:
+- `POST /api/courses/import` — streaming `unzipper`-based extraction with ZIP-slip / symlink / size guards, schema-validation, and 200/400/409 contract.
+- `ImportCourseCard` rendered as the final tile in the explorer (search and grouped branches), with dashed-greyed default → solid accent on hover → accent-soft on drag-over; click + drop both POST multipart and surface tailored toasts.
+- 14 new route tests (865/865 total pass) and playwright-verified happy-path + 409 + non-zip rejection on the live dev server.
+- `next.config.ts` now lists `unzipper` in `serverExternalPackages` so Turbopack stops choking on its optional `require('@aws-sdk/client-s3')`.
+[2026-05-09T00:18:16+0200] [result success turns=111 cost=$10.849025999999999] US-151 complete. Commit `a07e844` flips `passes:true` and ships:
+- `POST /api/courses/import` — streaming `unzipper`-based extraction with ZIP-slip / symlink / size guards, schema-validation, and 200/400/409 contract.
+- `ImportCourseCard` rendered as the final tile in the explorer (search and grouped branches), with dashed-greyed default → solid accent on hover → accent-soft on drag-over; click + drop both POST multipart and surface tailored toasts.
+- 14 new route tests (865/865 total pass) and playwright-verified happy-path + 409 + non-zip rejection on the live dev server.
+- `next.config.ts` now lists `unzipper` in `serverExternalPackages` so Turbopack stops choking on its optional `require('@aws-sdk/client-s3')`.
