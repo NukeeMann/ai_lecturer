@@ -28,6 +28,10 @@ import {
 
 import { POST as postGenerate, DELETE as deleteGenerate } from '@/app/api/courses/generate/route';
 import { GET as streamGenerate } from '@/app/api/courses/generate/stream/[id]/route';
+import {
+  generationStateFile,
+  readGenerationState,
+} from '@/lib/server/generationState';
 
 let coursesRoot: string;
 
@@ -1797,5 +1801,164 @@ describe('enqueueGeneration / sequential queue (US-107)', () => {
     // Allow the drainer to finish starting.
     await scripted.nextChild();
     expect(getActiveRun()?.slug).toBe('resume-me');
+  });
+});
+
+describe('.generation-state.json lifecycle (US-136)', () => {
+  it('writes the state file after init, advances each lesson through inflight→done, and DELETES on full success', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['intro', 'outro']);
+    init.finishWithExit(0);
+
+    // After init success the state file exists with both lessons pending.
+    const statePath = generationStateFile('demo');
+    let snapshot = await readGenerationState('demo');
+    // Brief poll: the state write happens just before the next stage emit.
+    for (let i = 0; i < 50 && !snapshot; i++) {
+      await new Promise((r) => setImmediate(r));
+      snapshot = await readGenerationState('demo');
+    }
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.initCourse.status).toBe('done');
+    expect(snapshot!.lessons.map((l) => l.slug)).toEqual(['intro', 'outro']);
+    expect(snapshot!.lessons.every((l) => l.status === 'pending')).toBe(true);
+    expect(snapshot!.config.lessonMaxRetries).toBe(2);
+    expect(snapshot!.config.lessonTimeoutMs).toBe(60_000);
+
+    const intro = await scripted.nextChild();
+    // After the spawn for intro the file should reflect inflight + attempts=1.
+    let inflight = await readGenerationState('demo');
+    for (let i = 0; i < 50; i++) {
+      inflight = await readGenerationState('demo');
+      if (inflight?.lessons.find((l) => l.slug === 'intro')?.status === 'inflight') break;
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(inflight!.lessons.find((l) => l.slug === 'intro')).toMatchObject({
+      status: 'inflight',
+      attempts: 1,
+    });
+    await writeStubLesson('demo', 'intro');
+    intro.finishWithExit(0);
+
+    const outro = await scripted.nextChild();
+    await writeStubLesson('demo', 'outro');
+    outro.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Full success → state file is deleted.
+    await expect(fs.access(statePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readGenerationState('demo')).toBeNull();
+  });
+
+  it('leaves the state file in place when a lesson fails after exhausting retries, with status=failed + lastError', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 1, // 2 attempts max — keeps the test short
+      lessonTimeoutMs: 60_000,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['lucky', 'doomed']);
+    init.finishWithExit(0);
+
+    const lucky = await scripted.nextChild();
+    await writeStubLesson('demo', 'lucky');
+    lucky.finishWithExit(0);
+
+    // 'doomed' fails on every attempt.
+    for (let i = 0; i < 2; i++) {
+      const attempt = await scripted.nextChild();
+      attempt.emitStderr(`boom ${i + 1}\n`);
+      attempt.finishWithExit(1);
+    }
+
+    await waitForFinish(run);
+
+    const state = await readGenerationState('demo');
+    expect(state).not.toBeNull();
+    expect(state!.initCourse.status).toBe('done');
+    const lucky2 = state!.lessons.find((l) => l.slug === 'lucky');
+    const doomed = state!.lessons.find((l) => l.slug === 'doomed');
+    expect(lucky2?.status).toBe('done');
+    expect(lucky2?.finishedAt).toMatch(/T/);
+    expect(doomed?.status).toBe('failed');
+    expect(doomed?.attempts).toBe(2);
+    expect(doomed?.lastError).toMatch(/exited with code 1/);
+  });
+
+  it('atomic write leaves no .tmp leftover even if the child is killed mid-lesson', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 0,
+      lessonTimeoutMs: 60_000,
+      sigkillGraceMs: 50,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['only']);
+    init.finishWithExit(0);
+
+    // Wait until the lesson child is alive (state file shows inflight) then
+    // simulate a SIGKILL. atomicWriteJson always renames from .tmp → final;
+    // there should never be a .tmp residue once the write completes.
+    const lesson = await scripted.nextChild();
+    for (let i = 0; i < 50; i++) {
+      const s = await readGenerationState('demo');
+      if (s?.lessons[0].status === 'inflight') break;
+      await new Promise((r) => setImmediate(r));
+    }
+
+    // Simulate kill-9: child exits 137 without writing the lesson file.
+    lesson.finishWithExit(137);
+
+    await waitForFinish(run);
+
+    // No .tmp file dangles next to the state file.
+    const dir = path.join(coursesRoot, 'demo');
+    const entries = await fs.readdir(dir);
+    const tmpLeftovers = entries.filter((n) => n.endsWith('.generation-state.json.tmp'));
+    expect(tmpLeftovers).toEqual([]);
+
+    // The state file is still readable + valid (resume target for US-137).
+    const state = await readGenerationState('demo');
+    expect(state).not.toBeNull();
+    expect(state!.lessons[0].status).toBe('failed');
+  });
+
+  it('records initCourse.status=failed on init failure (no course.json produced)', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const claude = await scripted.nextChild();
+    claude.emitStdout('Unknown command: /init_course\n');
+    claude.finishWithExit(0); // exits 0 but does NOT write course.json
+
+    await waitForFinish(run);
+
+    const state = await readGenerationState('demo');
+    expect(state).not.toBeNull();
+    expect(state!.initCourse.status).toBe('failed');
+    expect(state!.initCourse.reason).toMatch(/did not produce course\.json/i);
+    expect(state!.lessons).toEqual([]);
   });
 });

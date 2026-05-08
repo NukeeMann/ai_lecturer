@@ -35,6 +35,11 @@ import {
   lessonFile,
 } from './paths';
 import { listCourseSourceFilesSync, resolveSourcePathForPrompt } from './sources';
+import {
+  deleteGenerationState,
+  writeGenerationState,
+  type GenerationState,
+} from './generationState';
 
 export interface FailedLesson {
   slug: string;
@@ -1310,6 +1315,12 @@ async function startGenerationInner(
     // Drop the .generating.json marker so a subsequent /api/courses/active-run
     // call no longer sees this slug as in flight (US-106).
     void removeGeneratingMarker(slug);
+    // US-136: only the clean-success path removes the .generation-state.json
+    // file. A done-with-failed-lessons run or an error run leaves it on disk
+    // as the resume target (US-137 / US-140).
+    if (kind === 'done' && failedLessons.length === 0) {
+      void deleteGenerationState(slug);
+    }
     if (activeRun === run) activeRun = null;
     // US-107: pop the next queued slug (if any) and start it. Defers to a
     // microtask so the current emit() chain finishes first; the drainer is
@@ -1336,6 +1347,41 @@ async function startGenerationInner(
     }
   }
 
+  // US-136: in-memory mirror of the per-course .generation-state.json file.
+  // Mutated in lockstep with stage transitions and persisted via
+  // persistGenState() so a server restart can recover exact lesson status.
+  let genState: GenerationState | null = null;
+
+  async function persistGenState() {
+    if (!genState) return;
+    try {
+      await writeGenerationState(slug, genState);
+    } catch {
+      /* best-effort — state file is a recovery aid, not load-bearing */
+    }
+  }
+
+  function findLessonState(lessonSlug: string) {
+    return genState?.lessons.find((l) => l.slug === lessonSlug);
+  }
+
+  async function markInitFailed(reason: string) {
+    if (genState) {
+      genState.initCourse = { status: 'failed', reason };
+    } else {
+      genState = {
+        schemaVersion: 1,
+        slug,
+        startedAt: new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        initCourse: { status: 'failed', reason },
+        lessons: [],
+        config: { lessonMaxRetries, lessonTimeoutMs },
+      };
+    }
+    await persistGenState();
+  }
+
   async function runLesson(
     lessonSlug: string,
   ): Promise<{ success: boolean; attempts: number; lastError: string }> {
@@ -1360,6 +1406,16 @@ async function startGenerationInner(
         await fs.unlink(lessonFile(slug, lessonSlug));
       } catch {
         /* file may not exist — ignore */
+      }
+
+      // US-136: mark the lesson inflight + bump attempts BEFORE the spawn so
+      // a kill-9 between this point and the post-spawn validation block still
+      // leaves the state file consistent with the work that was attempted.
+      const ls = findLessonState(lessonSlug);
+      if (ls) {
+        ls.status = 'inflight';
+        ls.attempts = ls.attempts + 1;
+        await persistGenState();
       }
 
       // Open per-lesson log: truncate on attempt 1, append on retries so
@@ -1416,6 +1472,21 @@ async function startGenerationInner(
       emit({ type: 'stage', name: stageName, status: 'error' });
       return { success: false, attempts: attemptsRun, lastError: 'Cancelled by user' };
     }
+    // US-136: persist the lesson's terminal status (done | failed) before
+    // returning so the in-memory FailedReport bookkeeping and the on-disk
+    // state file agree.
+    const ls = findLessonState(lessonSlug);
+    if (ls) {
+      if (success) {
+        ls.status = 'done';
+        ls.finishedAt = new Date().toISOString();
+        delete ls.lastError;
+      } else {
+        ls.status = 'failed';
+        ls.lastError = lastError;
+      }
+      await persistGenState();
+    }
     if (success) {
       emit({ type: 'stage', name: stageName, status: 'done' });
     } else {
@@ -1450,12 +1521,15 @@ async function startGenerationInner(
     initLogStream.end();
     if (cancelled) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
+      await markInitFailed('Cancelled by user');
       finalize('error', 'Cancelled by user');
       return;
     }
     if (initResult.exit !== 0) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
-      finalize('error', `init_course failed (exit ${initResult.exit})`);
+      const reason = `init_course failed (exit ${initResult.exit})`;
+      await markInitFailed(reason);
+      finalize('error', reason);
       return;
     }
     // Post-init guard: claude in -p mode silently no-ops on prompts it
@@ -1468,10 +1542,9 @@ async function startGenerationInner(
       courseRaw = await fs.readFile(courseFile(slug), 'utf8');
     } catch {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
-      finalize(
-        'error',
-        'init_course did not produce course.json — check .generation.log',
-      );
+      const reason = 'init_course did not produce course.json — check .generation.log';
+      await markInitFailed(reason);
+      finalize('error', reason);
       return;
     }
     let course;
@@ -1479,10 +1552,31 @@ async function startGenerationInner(
       course = CourseSchema.parse(JSON.parse(courseRaw));
     } catch (err) {
       emit({ type: 'stage', name: 'init_course', status: 'error' });
-      const reason = err instanceof Error ? err.message : String(err);
-      finalize('error', `init_course produced invalid course.json: ${reason}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      const reason = `init_course produced invalid course.json: ${detail}`;
+      await markInitFailed(reason);
+      finalize('error', reason);
       return;
     }
+    // US-136: write the initial .generation-state.json now that we have a
+    // validated course.json. From this point on, every stage transition
+    // updates the file in place via persistGenState().
+    genState = {
+      schemaVersion: 1,
+      slug,
+      startedAt: new Date().toISOString(),
+      lastUpdatedAt: new Date().toISOString(),
+      initCourse: { status: 'done' },
+      lessons: course.modules.flatMap((m) =>
+        m.lessons.map((l) => ({
+          slug: l.slug,
+          status: 'pending' as const,
+          attempts: 0,
+        })),
+      ),
+      config: { lessonMaxRetries, lessonTimeoutMs },
+    };
+    await persistGenState();
     emit({ type: 'stage', name: 'init_course', status: 'done' });
 
     // ── Stage 2..N+1: one (retried) claude call per lesson, sequentially ───
