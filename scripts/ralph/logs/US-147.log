@@ -1,0 +1,55 @@
+[2026-05-08T23:05:46+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:06:29+0200] Let me check the schema, lesson types, and find the existing handlers like `onSaveTheory`, toast patterns:
+[2026-05-08T23:06:57+0200] Now let me create the diff utility. I'll implement a word-level LCS-based diff:
+[2026-05-08T23:07:27+0200] Diff util passing. Now let me explore current panel structure (the WidgetEditPanel side panel) and decide where to anchor the regenerate popover. The AC says "popover/sheet anchored to the section". Let me read the WidgetEditPanel and understand the styling, plus look at how existing popovers work:
+[2026-05-08T23:07:31+0200] Let me look at LessonStream and how page handles regenerate state. I'll also look at how SectionSourcesPopover handles popovers (as a pattern):
+[2026-05-08T23:08:28+0200] Good, theory-test course has perfect test data. Let me now design and implement the regenerate UI. First, let me look at how I'll add the regen button in pencilNode area:
+[2026-05-08T23:08:31+0200] Now let me look at the area around handleSavePanelSection and handleClosePanel to understand more about state. Let me also find how `setSessionToast` is used, since we need a similar toast pattern:
+[2026-05-08T23:08:49+0200] Now I'll implement the regenerate UI. Let me make the edits to the lesson page:
+[2026-05-08T23:08:52+0200] Now I'll add the regenerate state, handlers, and UI. Let me first add the imports:
+[2026-05-08T23:09:01+0200] Now add the state and handler for regenerate. Let me add `regenSectionId` state and `handleAcceptRegen`/`handleCloseRegen`:
+[2026-05-08T23:09:07+0200] Now add the handlers near `handleClosePanel`:
+[2026-05-08T23:09:19+0200] Good. Now wire through props from page → LessonStream → SectionRenderer:
+[2026-05-08T23:09:27+0200] Now update LessonStream props and forward to SectionRenderer:
+[2026-05-08T23:09:46+0200] Now update SectionRenderer props/signature and add the regen UI:
+[2026-05-08T23:09:59+0200] Now let me add the regen button next to the pencil button and render the popover. First, update the headerActions area:
+[2026-05-08T23:10:13+0200] Now let me add the SectionRegenAnchor component. I'll add it at the bottom of the file before LessonNotFound:
+[2026-05-08T23:11:18+0200] I used the wrong field names. Let me fix the CodeDiffBody:
+[2026-05-08T23:11:37+0200] Typecheck clean. Run the diff test now:
+[2026-05-08T23:11:40+0200] Now let me run the full test suite to ensure nothing broke:
+[2026-05-08T23:11:46+0200] 822 tests pass (including our 10 new ones, total +10 from 812). Now let me also run lint on changed files:
+[2026-05-08T23:11:52+0200] That's a pre-existing lint error unrelated to my changes. Let me verify by checking git diff context:
+[2026-05-08T23:12:01+0200] Confirmed: the lint error is pre-existing. Now let me also re-add the stash. Wait - it already popped. Let me move to browser testing.
+[2026-05-08T23:12:06+0200] Now to set up the browser test. Start dev server:
+[2026-05-08T23:12:31+0200] Now let me write the playwright test:
+[2026-05-08T23:13:23+0200] Let me verify the accent-soft token is defined:
+[2026-05-08T23:13:43+0200] The `--accent-soft` token isn't defined; existing tokens use `--accent-subtle`. Let me update the mark style to use both with a fallback so the visual works while honoring the AC token name:
+[2026-05-08T23:13:52+0200] Let me re-run the playwright test to verify the visible accent background:
+[2026-05-08T23:14:00+0200] Now the highlight has the proper accent-subtle background `rgb(234, 240, 253)` (a soft blue). All checks pass.
+
+Let me view a screenshot to confirm visually:
+[2026-05-08T23:14:06+0200] The screenshot shows the popover open with the preview body — additions are below the fold but the test confirmed they're highlighted with the accent background. Let me update todos and proceed to commit.
+[2026-05-08T23:14:11+0200] Now flip US-147 to passes: true in prd.json:
+[2026-05-08T23:14:20+0200] I added a duplicate `passes` key. Let me fix this — remove the new top-level `passes` and update the original at line 3193:
+[2026-05-08T23:14:38+0200] Now append progress.txt entry and add a learning to Codebase Patterns:
+[2026-05-08T23:15:36+0200] Now commit:
+[2026-05-08T23:16:08+0200] US-147 complete and committed (`117aaac`). 
+
+**Summary:**
+- New `src/lib/diff/sectionDiff.ts` — word-level LCS diff, 10 unit tests passing
+- Lesson page: Sparkles regen button next to each section's pencil; popover with textarea + 3 quick-pick chips + Submit/Cancel; on 200 swaps to highlighted-diff preview with Accept/Reject; Accept POSTs `.../apply`, patches lesson state, fires existing session-toast "Section regenerated"
+- Error mapping: 422 / 409 / other → distinct inline messages; textarea preserved
+- Type-specific diff bodies (theory, quiz, code, generic)
+- `npm run typecheck` clean; `npm run test` 822 passing (812 prior + 10 new)
+- Browser verified via playwright-skill — all 7 checks pass; screenshots at `/tmp/us-147-popover-open.png`, `/tmp/us-147-preview.png`, `/tmp/us-147-accepted.png`
+- `prd.json` US-147 `passes` flipped to `true`
+[2026-05-08T23:16:08+0200] [result success turns=91 cost=$6.629558499999999] US-147 complete and committed (`117aaac`). 
+
+**Summary:**
+- New `src/lib/diff/sectionDiff.ts` — word-level LCS diff, 10 unit tests passing
+- Lesson page: Sparkles regen button next to each section's pencil; popover with textarea + 3 quick-pick chips + Submit/Cancel; on 200 swaps to highlighted-diff preview with Accept/Reject; Accept POSTs `.../apply`, patches lesson state, fires existing session-toast "Section regenerated"
+- Error mapping: 422 / 409 / other → distinct inline messages; textarea preserved
+- Type-specific diff bodies (theory, quiz, code, generic)
+- `npm run typecheck` clean; `npm run test` 822 passing (812 prior + 10 new)
+- Browser verified via playwright-skill — all 7 checks pass; screenshots at `/tmp/us-147-popover-open.png`, `/tmp/us-147-preview.png`, `/tmp/us-147-accepted.png`
+- `prd.json` US-147 `passes` flipped to `true`
