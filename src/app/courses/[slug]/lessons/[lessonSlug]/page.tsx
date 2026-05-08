@@ -24,6 +24,7 @@ import {
   Library,
   Loader2,
   Pencil,
+  Printer,
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
@@ -137,6 +138,11 @@ export default function LessonShellPage({
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [sessionToast, setSessionToast] = useState<string | null>(null);
+  // US-153: separate toast for "Generating PDF…" with its own 30s lifecycle,
+  // dismissed when navigation triggers the download (visibilitychange) or
+  // after the timeout — whichever first.
+  const [pdfToast, setPdfToast] = useState<string | null>(null);
+  const pdfToastTimerRef = useRef<number | null>(null);
 
   // Sections completed in-session (Quiz correct, Code submit pass, etc.).
   // Lifted from LessonStream so the page can compute lesson-level completion
@@ -1049,6 +1055,45 @@ export default function LessonShellPage({
     setRegenLessonDialogOpen(true);
   }, []);
 
+  // US-153: Print to PDF — kicks off a native browser download by setting
+  // window.location.href to the export endpoint. The puppeteer-driven
+  // server route renders the print page and streams an application/pdf
+  // body back, which the browser saves. The toast surfaces immediate
+  // feedback; we auto-dismiss when the download begins (the browser fires
+  // `visibilitychange`/`pagehide` once it hands off to the download UI) or
+  // after a 30s timeout, whichever first.
+  const handleExportLessonPdf = useCallback(() => {
+    setPdfToast('Generating PDF…');
+    if (pdfToastTimerRef.current !== null) {
+      window.clearTimeout(pdfToastTimerRef.current);
+    }
+    pdfToastTimerRef.current = window.setTimeout(() => {
+      setPdfToast(null);
+      pdfToastTimerRef.current = null;
+    }, 30000);
+    window.location.href = `/api/courses/${encodeURIComponent(slug)}/lessons/${encodeURIComponent(lessonSlug)}/export/pdf`;
+  }, [slug, lessonSlug]);
+
+  useEffect(() => {
+    if (!pdfToast) return;
+    const dismiss = () => {
+      setPdfToast(null);
+      if (pdfToastTimerRef.current !== null) {
+        window.clearTimeout(pdfToastTimerRef.current);
+        pdfToastTimerRef.current = null;
+      }
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') dismiss();
+    };
+    window.addEventListener('pagehide', dismiss);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', dismiss);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [pdfToast]);
+
   const handleCloseRegenLesson = useCallback(() => {
     if (regenLessonSubmitting) return;
     setRegenLessonDialogOpen(false);
@@ -1337,6 +1382,7 @@ export default function LessonShellPage({
             onAcceptRegen={handleAcceptRegen}
             onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
             onOpenRegenLesson={handleOpenRegenLesson}
+            onExportPdf={handleExportLessonPdf}
             undoBannerVisible={undoBannerVisible}
             undoBannerFading={undoBannerFading}
             undoBannerError={undoBannerError}
@@ -1399,6 +1445,7 @@ export default function LessonShellPage({
       />
 
       {sessionToast && <SessionToast message={sessionToast} />}
+      {pdfToast && <PdfExportToast message={pdfToast} />}
       {autoAdvancePending && (
         <AutoAdvanceToast
           isLastLesson={advanceTarget?.kind === 'my-courses'}
@@ -1413,6 +1460,31 @@ function SessionToast({ message }: { message: string }) {
   return (
     <div
       data-testid="session-toast"
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        top: TOOLBAR_H + 12,
+        right: 16,
+        zIndex: 50,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        color: 'var(--text)',
+        fontSize: 'var(--fs-sm)',
+        padding: '8px 14px',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12))',
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function PdfExportToast({ message }: { message: string }) {
+  return (
+    <div
+      data-testid="pdf-export-toast"
       role="status"
       aria-live="polite"
       style={{
@@ -2938,6 +3010,7 @@ interface LessonStreamProps {
   onAcceptRegen: (sectionId: string, newSection: Section) => Promise<void>;
   onOpenLessonSources: () => void;
   onOpenRegenLesson: () => void;
+  onExportPdf: () => void;
   undoBannerVisible: boolean;
   undoBannerFading: boolean;
   undoBannerError: string | null;
@@ -2966,6 +3039,7 @@ function LessonStream({
   onAcceptRegen,
   onOpenLessonSources,
   onOpenRegenLesson,
+  onExportPdf,
   undoBannerVisible,
   undoBannerFading,
   undoBannerError,
@@ -3026,6 +3100,7 @@ function LessonStream({
         sourcesCount={lesson.sources?.length ?? 0}
         onOpenLessonSources={onOpenLessonSources}
         onOpenRegenLesson={onOpenRegenLesson}
+        onExportPdf={onExportPdf}
       />
       {lesson.sections.map((section, idx) => {
         const persistedDone = sectionState[section.id]?.done === true;
@@ -3076,6 +3151,7 @@ function LessonHeader({
   sourcesCount,
   onOpenLessonSources,
   onOpenRegenLesson,
+  onExportPdf,
 }: {
   moduleN: number;
   lessonM: number;
@@ -3084,6 +3160,7 @@ function LessonHeader({
   sourcesCount: number;
   onOpenLessonSources: () => void;
   onOpenRegenLesson: () => void;
+  onExportPdf: () => void;
 }) {
   return (
     <header
@@ -3183,6 +3260,31 @@ function LessonHeader({
         >
           <Sparkles size={14} aria-hidden />
           Regenerate lesson
+        </button>
+        <button
+          type="button"
+          data-testid="export-lesson-pdf-btn"
+          onClick={onExportPdf}
+          aria-label="Print to PDF"
+          title="Print to PDF"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 30,
+            padding: '0 10px',
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          <Printer size={14} aria-hidden />
+          Print to PDF
         </button>
       </div>
       {description ? (

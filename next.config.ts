@@ -10,7 +10,10 @@ const nextConfig: NextConfig = {
   // helpers (we don't use them, but Turbopack still tries to resolve the
   // require). Mark it external so it's resolved at runtime via plain Node
   // module lookup, mirroring the pdf-parse / pdfjs-dist treatment.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "unzipper"],
+  // puppeteer-core ships dynamic requires (e.g. websocket transports) that
+  // Turbopack can't statically resolve. Mark it external so it's loaded via
+  // plain Node module resolution at runtime.
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "unzipper", "puppeteer-core"],
 };
 
 export default nextConfig;
