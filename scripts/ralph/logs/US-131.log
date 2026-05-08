@@ -1,0 +1,32 @@
+[2026-05-08T19:01:42+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T19:04:07+0200] @testing-library/react and jsdom aren't installed. I'll install them as devDependencies — the AC explicitly references them and the test requires DOM rendering.
+[2026-05-08T19:04:37+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T19:05:10+0200] Now replace the img tags in widgets:
+[2026-05-08T19:05:55+0200] Now GaussDemo:
+[2026-05-08T19:06:08+0200] Now ParametricExplorer:
+[2026-05-08T19:06:20+0200] Now CodeWidget:
+[2026-05-08T19:06:55+0200] Now write the unit test. Let me check vitest config — I need to enable jsdom and update test glob to include .test.tsx:
+[2026-05-08T19:07:47+0200] Typecheck passes. Now run tests:
+[2026-05-08T19:08:50+0200] Now add a markdown image to theory-test/lessons/markdown-basics.json. Wait — modifying course content for testing isn't a great idea. Instead, let me add to an existing section's markdown that already exists, in a way that's relevant ("use Markdown image syntax `![alt](src)` to inline images"):
+[2026-05-08T19:09:08+0200] Now let me start the dev server:
+[2026-05-08T19:10:53+0200] Image renders at natural size in the modal — same dims as inline. Let me upsize by using a fixed 92vw/92vh container with object-fit contain for a clearly bigger preview:
+[2026-05-08T19:11:11+0200] Modal img is now 1177×736 (vs trigger 650×431) — clearly bigger.
+[2026-05-08T19:11:21+0200] All four screenshots look great. Let me re-run the test suite to confirm nothing regressed:
+[2026-05-08T19:11:43+0200] Now flip the passes flag in prd.json:
+[2026-05-08T19:12:05+0200] Now update progress.txt:
+[2026-05-08T19:13:44+0200] US-131 done. Commit `9aba864` flips `passes: true` and bundles:
+
+- New `src/components/ZoomableImage.tsx` (portaled lightbox with Esc / backdrop / close-button dismiss, body scroll-lock, focus return).
+- All five required `<img>` replacements (PlotImage:226, GaussDemo:342, ParametricExplorer:340, CodeWidget:632 + 739).
+- TheoryWidget `components.img` override so `![alt](src)` markdown images are zoomable.
+- Unit test (`src/components/ZoomableImage.test.tsx`) using vitest + @testing-library/react jsdom; opt-in via `// @vitest-environment jsdom`.
+- Browser-verified at 1280px on `/courses/plotimage-test/lessons/image-and-caption` and `/courses/theory-test/lessons/markdown-basics`. Modal img 1177×736 vs trigger 650×431 → visibly bigger. Screenshots: `/tmp/us-131-plotimage-modal.png`, `/tmp/us-131-plotimage-after-escape.png`, `/tmp/us-131-theory-modal.png`, `/tmp/us-131-theory-after-close.png`.
+- Quality: `tsc --noEmit` clean; `vitest run` 682/682 pass.
+[2026-05-08T19:13:44+0200] [result success turns=101 cost=$6.216607000000001] US-131 done. Commit `9aba864` flips `passes: true` and bundles:
+
+- New `src/components/ZoomableImage.tsx` (portaled lightbox with Esc / backdrop / close-button dismiss, body scroll-lock, focus return).
+- All five required `<img>` replacements (PlotImage:226, GaussDemo:342, ParametricExplorer:340, CodeWidget:632 + 739).
+- TheoryWidget `components.img` override so `![alt](src)` markdown images are zoomable.
+- Unit test (`src/components/ZoomableImage.test.tsx`) using vitest + @testing-library/react jsdom; opt-in via `// @vitest-environment jsdom`.
+- Browser-verified at 1280px on `/courses/plotimage-test/lessons/image-and-caption` and `/courses/theory-test/lessons/markdown-basics`. Modal img 1177×736 vs trigger 650×431 → visibly bigger. Screenshots: `/tmp/us-131-plotimage-modal.png`, `/tmp/us-131-plotimage-after-escape.png`, `/tmp/us-131-theory-modal.png`, `/tmp/us-131-theory-after-close.png`.
+- Quality: `tsc --noEmit` clean; `vitest run` 682/682 pass.
