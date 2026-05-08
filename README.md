@@ -69,6 +69,35 @@ Any step that needs credentials (`gh auth login`, `claude /login`) prompts you l
 
 Generated courses live under `./courses/<slug>/`; per-user progress is stored at `~/.ai-lecturer/progress.json`.
 
+## Optional: TTS/STT setup
+
+The `/api/tts` and `/api/stt` routes (US-154) wrap two open-source engines that run locally — no API keys, no cloud calls. Both are optional: the server starts fine without them, and the routes return `503 { error: 'tts-not-installed' | 'stt-not-installed' }` at request time if their binaries are missing.
+
+```bash
+# TTS — Coqui XTTS v2 (English, CPU). Installs into scripts/.venv/coqui/.
+# Downloads ~1.8GB on first run. Idempotent.
+bash scripts/setup-tts.sh
+
+# STT — whisper.cpp + ggml-base.en model. Installs into scripts/.bin/whisper.cpp/.
+# Requires gcc/clang + make. Downloads ~140MB on first run. Idempotent.
+bash scripts/setup-stt.sh
+```
+
+Both setup scripts are tested manually only (their downloads + builds are too heavy + network-dependent for CI). The integration is covered by unit tests that mock `child_process.spawn`.
+
+### Generated cache
+
+TTS audio is cached under `~/.ai-lecturer/tts-cache/<content-hash>.wav` so repeat synthesis of the same `text+voice` is free. The cache has a 500MB soft cap; oldest files are evicted on every successful TTS call.
+
+### Optional env vars
+
+- `AI_LECTURER_TTS_VOICE_FEMALE` — XTTS speaker ID used for `voice: 'en-female'` (default: `Ana Florence`).
+- `AI_LECTURER_TTS_VOICE_MALE` — XTTS speaker ID used for `voice: 'en-male'` (default: `Damien Black`).
+- `AI_LECTURER_TTS_BIN` — full path to the Coqui `tts` binary (default: `scripts/.venv/coqui/bin/tts`).
+- `AI_LECTURER_STT_BIN` — full path to the whisper.cpp binary (default: `scripts/.bin/whisper.cpp/main` or `…/build/bin/whisper-cli`).
+- `AI_LECTURER_STT_MODEL` — full path to the ggml whisper model (default: `scripts/.bin/whisper.cpp/models/ggml-base.en.bin`).
+- `AI_LECTURER_HOME_OVERRIDE` — override the user-state directory (default: `~/.ai-lecturer/`). Used by tests; unlikely to be useful in production.
+
 ## Static HTML export
 
 A course can be exported as a self-contained ZIP of pre-rendered `.html` files via the dashboard's three-dots menu (`Export as static HTML`). The exported folder runs on any static host — there is no Node.js / Next.js server requirement. Code widgets remain interactive: a small `assets/pyodide-loader.js` shim loads Pyodide from the jsDelivr CDN on first use.
