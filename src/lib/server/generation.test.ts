@@ -9,9 +9,11 @@ import type { ChildProcess } from 'node:child_process';
 import {
   __getQueueForTesting,
   __resetForTesting,
+  __setCoherencePassDisabledByDefault,
   __setEventsLogRotateBytesForTesting,
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
+  defaultCoherencePassCommand,
   defaultInitCourseCommand,
   defaultLessonCommand,
   enqueueGeneration,
@@ -205,11 +207,18 @@ beforeEach(async () => {
   // bleed into each other.
   process.env.GENERATION_QUEUE_FILE_OVERRIDE = path.join(coursesRoot, 'generation-queue.json');
   __resetForTesting();
+  // US-141: existing pipeline tests pre-date the final coherence-pass stage
+  // and assert exact spawn counts / stage event sequences that don't account
+  // for it. Default the stage to disabled for the whole suite — the new
+  // US-141 tests opt back in via `disableCoherencePass: false` (or by
+  // toggling this flag locally).
+  __setCoherencePassDisabledByDefault(true);
 });
 
 afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
+  __setCoherencePassDisabledByDefault(false);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
@@ -2976,5 +2985,273 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
     expect(skipMe!.attempts).toBe(0);
     expect(skipMe!.finishedAt).toMatch(/T/);
     expect(skipMe!.lastError).toBeUndefined();
+  });
+});
+
+describe('coherence-pass final stage (US-141)', () => {
+  it('defaultCoherencePassCommand names the coherence_pass skill in the prompt', () => {
+    const spec = defaultCoherencePassCommand('demo');
+    expect(spec.command).toBe('claude');
+    // Two slugs are spliced via assertSafeSlug — same defence-in-depth as the
+    // other command factories. The skill name and slug both appear in the
+    // prompt body so the agent can locate the SKILL file and the course dir.
+    const prompt = spec.args[1] ?? '';
+    expect(prompt).toContain('coherence_pass');
+    expect(prompt).toContain('coherence_pass.md');
+    expect(prompt).toContain('"demo"');
+    expect(prompt).toContain('/courses/demo/');
+    // The flag is still required for unattended execution.
+    expect(spec.args).toContain('--dangerously-skip-permissions');
+    // Critically — NO --output-format stream-json, because the skill emits
+    // raw markdown that we capture verbatim.
+    expect(spec.args).not.toContain('stream-json');
+  });
+
+  it('runs coherence-pass after every lesson stage and writes the report from stdout', async () => {
+    // Pre-place a 3-lesson course with all lessons valid so the per-lesson
+    // loop pre-skips every spawn (US-139) and the only post-init child is
+    // the coherence-pass spawn.
+    await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubLesson('demo', 'lesson1');
+    await writeStubLesson('demo', 'lesson2');
+    await writeStubLesson('demo', 'lesson3');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      // Opt back in to the coherence stage — the suite-wide default is
+      // disabled (see beforeEach).
+      disableCoherencePass: false,
+    });
+
+    // Init child runs but doesn't write course.json — the file is already
+    // on disk from writeStubCourse above.
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // No per-lesson children — all three lessons pre-skipped via US-139.
+    // The very next spawn must be the coherence-pass child.
+    const coherence = await scripted.nextChild();
+    expect(coherence.command).toBe('claude');
+    const args = coherence.args.join(' ');
+    expect(args).toContain('coherence_pass');
+    expect(args).toContain('coherence_pass.md');
+    // Stream-json must NOT be passed to coherence-pass (we capture raw markdown).
+    expect(args).not.toContain('stream-json');
+
+    const reportMarkdown =
+      '## Prerequisite Order\n\nNo issues found.\n\n' +
+      '## Redundancy\n\nNo issues found.\n\n' +
+      '## Notation Consistency\n\nNo issues found.\n';
+    coherence.emitStdout(reportMarkdown);
+    coherence.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Spawn count: 1 init + 1 coherence (no per-lesson children).
+    expect(scripted.children.length).toBe(2);
+
+    // The on-disk report is the captured stdout, byte-for-byte.
+    const reportPath = path.join(coursesRoot, 'demo', 'coherence-report.md');
+    const written = await fs.readFile(reportPath, 'utf8');
+    expect(written).toBe(reportMarkdown);
+
+    // stage:done for coherence-pass appears AFTER every lesson:* done event.
+    const stages = run.events.filter((e) => e.type === 'stage') as Array<{
+      type: 'stage';
+      name: string;
+      status: 'started' | 'done' | 'error';
+    }>;
+    const coherenceDoneIdx = stages.findIndex(
+      (s) => s.name === 'coherence-pass' && s.status === 'done',
+    );
+    const lastLessonStageIdx = stages
+      .map((s, i) => (s.name.startsWith('lesson:') ? i : -1))
+      .filter((i) => i >= 0)
+      .pop();
+    expect(coherenceDoneIdx).toBeGreaterThan(-1);
+    expect(lastLessonStageIdx).toBeGreaterThan(-1);
+    expect(coherenceDoneIdx).toBeGreaterThan(lastLessonStageIdx!);
+
+    // Stage events end with started + done for coherence-pass.
+    expect(stages.at(-2)).toEqual({
+      type: 'stage',
+      name: 'coherence-pass',
+      status: 'started',
+    });
+    expect(stages.at(-1)).toEqual({
+      type: 'stage',
+      name: 'coherence-pass',
+      status: 'done',
+    });
+
+    // The completion summary surfaces the relative report path.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[]; coherenceReportPath?: string }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.coherenceReportPath).toBe('coherence-report.md');
+    expect(done?.failedLessons).toEqual([]);
+  });
+
+  it('coherence-pass spawn returning non-zero emits stage:error and leaves no report on disk', async () => {
+    await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubLesson('demo', 'lesson1');
+    await writeStubLesson('demo', 'lesson2');
+    await writeStubLesson('demo', 'lesson3');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      disableCoherencePass: false,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    const coherence = await scripted.nextChild();
+    coherence.emitStderr('boom\n');
+    coherence.finishWithExit(1);
+
+    await waitForFinish(run);
+
+    // Course generation still completes — no error event, all lessons remain.
+    expect(run.events.find((e) => e.type === 'error')).toBeUndefined();
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[]; coherenceReportPath?: string }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
+    // Field is absent on failure — only the SSE event log surfaces the failure.
+    expect(done?.coherenceReportPath).toBeUndefined();
+
+    // Existing lesson files are untouched.
+    for (const slug of ['lesson1', 'lesson2', 'lesson3']) {
+      await fs.access(path.join(coursesRoot, 'demo', 'lessons', `${slug}.json`));
+    }
+
+    // Stage:error emitted for coherence-pass.
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).toContainEqual({
+      type: 'stage',
+      name: 'coherence-pass',
+      status: 'started',
+    });
+    expect(stages).toContainEqual({
+      type: 'stage',
+      name: 'coherence-pass',
+      status: 'error',
+    });
+
+    // No report on disk.
+    await expect(
+      fs.access(path.join(coursesRoot, 'demo', 'coherence-report.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('coherence-pass is skipped when any per-lesson stage fails', async () => {
+    // 2-lesson course where the second lesson fails; coherence-pass would
+    // produce a misleading audit on partial coverage and the AC requires it
+    // skip in that case.
+    await writeStubCourse('demo', ['ok-lesson', 'bad-lesson']);
+    await writeStubLesson('demo', 'ok-lesson');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      disableCoherencePass: false,
+      lessonMaxRetries: 0,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // ok-lesson is pre-skipped (US-139). bad-lesson spawns and exits non-zero.
+    const bad = await scripted.nextChild();
+    bad.emitStderr('boom\n');
+    bad.finishWithExit(2);
+
+    await waitForFinish(run);
+
+    // No coherence-pass child was spawned — only init + bad-lesson.
+    expect(scripted.children.length).toBe(2);
+
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).not.toContainEqual({
+      type: 'stage',
+      name: 'coherence-pass',
+      status: 'started',
+    });
+
+    // The done event still reports the failed lesson but has no
+    // coherenceReportPath since the stage was skipped.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[]; coherenceReportPath?: string }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.coherenceReportPath).toBeUndefined();
+    expect(done?.failedLessons.map((f) => f.slug)).toEqual(['bad-lesson']);
+  });
+
+  it('coherence-pass writes a placeholder when RALPH_TASK_ID is set and the spawn times out', async () => {
+    await writeStubCourse('demo', ['lesson1']);
+    await writeStubLesson('demo', 'lesson1');
+
+    process.env.RALPH_TASK_ID = 'US-TEST';
+    try {
+      const scripted = makeScriptedSpawn();
+      const run = await startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+        disableCoherencePass: false,
+        // Trip the RALPH-mode timeout in 1ms instead of 30s so the test
+        // doesn't have to wait wall-clock. The 1ms sigkill grace is the
+        // SIGTERM → SIGKILL escalation; FakeChildProcess#kill on SIGKILL
+        // calls finishWithExit(137) so the wrapper resolves with
+        // timedOut=true.
+        coherencePassTimeoutMs: 1,
+        sigkillGraceMs: 1,
+      });
+
+      const init = await scripted.nextChild();
+      init.finishWithExit(0);
+
+      // The coherence child is captured but NEVER calls finishWithExit on
+      // its own — the wrapper's attemptTimer must fire and SIGTERM/SIGKILL
+      // it. FakeChildProcess.kill('SIGKILL') triggers finishWithExit(137).
+      await scripted.nextChild();
+
+      // Give the timeout cascade (1ms attemptTimer → SIGTERM → 1ms
+      // killTimer → SIGKILL → close) plenty of slack to fire.
+      await new Promise((r) => setTimeout(r, 50));
+      await waitForFinish(run);
+
+      // The placeholder text was written verbatim to coherence-report.md.
+      const reportPath = path.join(coursesRoot, 'demo', 'coherence-report.md');
+      const written = await fs.readFile(reportPath, 'utf8');
+      expect(written).toBe('Coherence pass timed out — re-run generation to retry.\n');
+
+      // Stage:error was emitted (we don't promote a timed-out report to
+      // stage:done — the placeholder is a fallback, not real output).
+      const stages = run.events.filter((e) => e.type === 'stage');
+      expect(stages).toContainEqual({
+        type: 'stage',
+        name: 'coherence-pass',
+        status: 'error',
+      });
+
+      // Field is absent on completion summary — only the SSE event log
+      // surfaces the timeout.
+      const done = run.events.find((e) => e.type === 'done') as
+        | { type: 'done'; coherenceReportPath?: string }
+        | undefined;
+      expect(done).toBeDefined();
+      expect(done?.coherenceReportPath).toBeUndefined();
+    } finally {
+      delete process.env.RALPH_TASK_ID;
+    }
   });
 });
