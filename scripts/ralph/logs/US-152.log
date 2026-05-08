@@ -1,0 +1,40 @@
+[2026-05-09T00:48:35+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T00:50:41+0200] Now I have enough context. Let me investigate the export zip test to understand the test pattern.
+[2026-05-09T00:51:14+0200] Now let me create the static render module:
+[2026-05-09T00:54:13+0200] Now add the menu item to the dashboard. Let me look at the broader context:
+[2026-05-09T00:54:20+0200] Now let me add the menu item by editing CourseCardWithMenu, CourseCardWithMove, CollectionSection (their props), and the dashboard handler:
+[2026-05-09T00:54:32+0200] Now update CourseCardWithMove and CollectionSection signatures + call sites:
+[2026-05-09T00:54:52+0200] Now find the call sites in DashboardPage where `handleRequestExportZip` is wired up:
+[2026-05-09T00:55:10+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T00:55:37+0200] Typecheck passes. Let me look at the existing zip route's test for the pattern:
+[2026-05-09T00:55:46+0200] Now let me write the integration test:
+[2026-05-09T00:57:20+0200] Confirmed flaky — passes in isolation. Re-run the full suite once more:
+[2026-05-09T00:57:26+0200] All 876 tests pass. Now run typecheck once more to be safe:
+[2026-05-09T00:57:32+0200] Now update README.md with the Pyodide CDN note:
+[2026-05-09T00:57:56+0200] Now let me verify the playwright dev server detection and write a browser test:
+[2026-05-09T00:58:00+0200] Need to start dev server:
+[2026-05-09T00:59:35+0200] Now replace `Callout` usage with a local server-friendly version:
+[2026-05-09T00:59:54+0200] Route works. Let me unzip and inspect:
+[2026-05-09T01:00:02+0200] Now let me write a playwright test:
+[2026-05-09T01:00:49+0200] Let me build a minimal synthetic course and export it via the route, then run a thorough Playwright test:
+[2026-05-09T01:06:03+0200] Found the bug — the textarea/output elements need `data-section-id` to match the selectors:
+[2026-05-09T01:06:24+0200] All verified. Now let me also verify the menu item works in the dashboard:
+[2026-05-09T01:07:06+0200] All verified. Now clean up the synthetic course and update prd.json:
+[2026-05-09T01:08:12+0200] All 876 tests pass. Now update prd.json and commit:
+[2026-05-09T01:08:27+0200] Now append progress log entry:
+[2026-05-09T01:09:44+0200] Now commit:
+[2026-05-09T01:10:06+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:10:24+0200] US-152 is committed with `passes: true` for that story only. Summary:
+
+- **New** `src/lib/export/constants.ts` (`PYODIDE_VERSION = 0.27.4`) and `src/lib/export/staticRender.tsx` (renders index + per-lesson HTML via `renderToStaticMarkup`, plus inlined CSS / Pyodide loader / static-client JS).
+- **New** `GET /api/courses/[slug]/export/html` streams a ZIP with `<slug>/index.html`, `<slug>/lessons/*.html` + `.data.js`, and `<slug>/assets/{styles.css, pyodide-loader.js, static-client.js}`. Returns 200/400/404/409 per AC.
+- **Dashboard menu** gains `Export as static HTML` (`data-testid="course-menu-export-html-<slug>"`).
+- **README** documents the CDN-on-first-view requirement.
+- **Tests**: 11 vitest cases (876/876 total pass). Playwright verified theory render, quiz green-on-correct, Pyodide-backed `print(1+1)` → `'2'`, and the dashboard menu → download flow.
+[2026-05-09T01:10:24+0200] [result success turns=152 cost=$15.834261249999994] US-152 is committed with `passes: true` for that story only. Summary:
+
+- **New** `src/lib/export/constants.ts` (`PYODIDE_VERSION = 0.27.4`) and `src/lib/export/staticRender.tsx` (renders index + per-lesson HTML via `renderToStaticMarkup`, plus inlined CSS / Pyodide loader / static-client JS).
+- **New** `GET /api/courses/[slug]/export/html` streams a ZIP with `<slug>/index.html`, `<slug>/lessons/*.html` + `.data.js`, and `<slug>/assets/{styles.css, pyodide-loader.js, static-client.js}`. Returns 200/400/404/409 per AC.
+- **Dashboard menu** gains `Export as static HTML` (`data-testid="course-menu-export-html-<slug>"`).
+- **README** documents the CDN-on-first-view requirement.
+- **Tests**: 11 vitest cases (876/876 total pass). Playwright verified theory render, quiz green-on-correct, Pyodide-backed `print(1+1)` → `'2'`, and the dashboard menu → download flow.
