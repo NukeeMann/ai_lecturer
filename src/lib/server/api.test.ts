@@ -7,6 +7,7 @@ import { GET as listCourses, POST as postCourse } from '@/app/api/courses/route'
 import {
   GET as getCourse,
   PUT as putCourse,
+  DELETE as deleteCourse,
 } from '@/app/api/courses/[slug]/route';
 import {
   GET as getLesson,
@@ -238,6 +239,142 @@ describe('PUT /api/courses/[slug]', () => {
     });
     const res = await putCourse(req, { params: Promise.resolve({ slug: 'algebra' }) });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /api/courses/[slug] (US-142)', () => {
+  const buildReq = (slug: string, body: unknown = { mode: 'soft' }) =>
+    new Request(`http://x/api/courses/${slug}`, {
+      method: 'DELETE',
+      body: body === null ? undefined : JSON.stringify(body),
+      headers: body === null ? {} : { 'Content-Type': 'application/json' },
+    });
+
+  it('soft-deletes by moving the course dir to /courses/.trash/<slug>-<stamp>/', async () => {
+    await writeCourseFile('algebra', sampleCourse('algebra'));
+    const res = await deleteCourse(buildReq('algebra'), {
+      params: Promise.resolve({ slug: 'algebra' }),
+    });
+    expect(res.status).toBe(204);
+
+    // Original dir gone.
+    await expect(fs.access(path.join(coursesRoot, 'algebra'))).rejects.toBeTruthy();
+
+    // Trash entry exists with the moved course.json.
+    const trashEntries = await fs.readdir(path.join(coursesRoot, '.trash'));
+    expect(trashEntries.length).toBe(1);
+    expect(trashEntries[0]).toMatch(/^algebra-/);
+    const movedCourse = JSON.parse(
+      await fs.readFile(
+        path.join(coursesRoot, '.trash', trashEntries[0], 'course.json'),
+        'utf8',
+      ),
+    ) as { slug: string };
+    expect(movedCourse.slug).toBe('algebra');
+  });
+
+  it('defaults mode to soft when body is empty / not JSON', async () => {
+    await writeCourseFile('algebra', sampleCourse('algebra'));
+    const req = new Request('http://x/api/courses/algebra', { method: 'DELETE' });
+    const res = await deleteCourse(req, { params: Promise.resolve({ slug: 'algebra' }) });
+    expect(res.status).toBe(204);
+    const trashEntries = await fs.readdir(path.join(coursesRoot, '.trash'));
+    expect(trashEntries.length).toBe(1);
+  });
+
+  it('returns 501 when mode=hard', async () => {
+    await writeCourseFile('algebra', sampleCourse('algebra'));
+    const res = await deleteCourse(buildReq('algebra', { mode: 'hard' }), {
+      params: Promise.resolve({ slug: 'algebra' }),
+    });
+    expect(res.status).toBe(501);
+    // Course dir untouched.
+    await expect(fs.access(path.join(coursesRoot, 'algebra'))).resolves.toBeUndefined();
+  });
+
+  it('returns 404 for a missing slug', async () => {
+    const res = await deleteCourse(buildReq('nope'), {
+      params: Promise.resolve({ slug: 'nope' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 400 on slug-traversal', async () => {
+    const res = await deleteCourse(buildReq('..'), {
+      params: Promise.resolve({ slug: '..' }),
+    });
+    expect(res.status).toBe(400);
+    const res2 = await deleteCourse(buildReq('foo-bar'), {
+      params: Promise.resolve({ slug: 'foo/bar' }),
+    });
+    expect(res2.status).toBe(400);
+  });
+
+  it('returns 400 on unrecognised mode', async () => {
+    await writeCourseFile('algebra', sampleCourse('algebra'));
+    const res = await deleteCourse(buildReq('algebra', { mode: 'shred' }), {
+      params: Promise.resolve({ slug: 'algebra' }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('clears the course entry from progress.json on success (best-effort)', async () => {
+    const progressDir = await fs.mkdtemp(path.join(tmpdir(), 'ai-lecturer-progress-'));
+    const progressPath = path.join(progressDir, 'progress.json');
+    process.env.PROGRESS_FILE_OVERRIDE = progressPath;
+    try {
+      await fs.writeFile(
+        progressPath,
+        JSON.stringify({
+          courses: {
+            algebra: { lessons: { intro: { status: 'finished' } } },
+            other: { lessons: {} },
+          },
+        }),
+        'utf8',
+      );
+      await writeCourseFile('algebra', sampleCourse('algebra'));
+      const res = await deleteCourse(buildReq('algebra'), {
+        params: Promise.resolve({ slug: 'algebra' }),
+      });
+      expect(res.status).toBe(204);
+      const updated = JSON.parse(await fs.readFile(progressPath, 'utf8')) as {
+        courses: Record<string, unknown>;
+      };
+      expect(updated.courses.algebra).toBeUndefined();
+      expect(updated.courses.other).toBeDefined();
+    } finally {
+      delete process.env.PROGRESS_FILE_OVERRIDE;
+      await fs.rm(progressDir, { recursive: true, force: true });
+    }
+  });
+
+  it('soft-delete still succeeds when progress.json is missing', async () => {
+    const progressPath = path.join(coursesRoot, 'no-such-progress.json');
+    process.env.PROGRESS_FILE_OVERRIDE = progressPath;
+    try {
+      await writeCourseFile('algebra', sampleCourse('algebra'));
+      const res = await deleteCourse(buildReq('algebra'), {
+        params: Promise.resolve({ slug: 'algebra' }),
+      });
+      expect(res.status).toBe(204);
+      // No progress file should have been created.
+      await expect(fs.access(progressPath)).rejects.toBeTruthy();
+    } finally {
+      delete process.env.PROGRESS_FILE_OVERRIDE;
+    }
+  });
+
+  it('GET /api/courses skips the .trash directory after a soft-delete', async () => {
+    await writeCourseFile('algebra', sampleCourse('algebra'));
+    await writeCourseFile('beta', sampleCourse('beta'));
+    const res = await deleteCourse(buildReq('algebra'), {
+      params: Promise.resolve({ slug: 'algebra' }),
+    });
+    expect(res.status).toBe(204);
+    const list = await listCourses();
+    const body = (await list.json()) as Array<{ slug: string }>;
+    expect(body.map((c) => c.slug).sort()).toEqual(['beta']);
   });
 });
 

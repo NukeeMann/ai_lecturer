@@ -35,6 +35,7 @@ export async function GET() {
   const courses = [];
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
     const file = path.join(root, entry.name, 'course.json');
     let raw: string;
     try {
