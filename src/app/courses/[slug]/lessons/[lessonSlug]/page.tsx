@@ -22,8 +22,10 @@ import {
   ChevronRight,
   HelpCircle,
   Library,
+  Loader2,
   Pencil,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
 
 import { AppLogoLink } from '@/components/AppLogo';
@@ -83,6 +85,7 @@ import { VideoWidget } from '@/widgets/Video/VideoWidget';
 import type { VideoTranscriptSegment } from '@/widgets/Video/schema';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
+import diffWords, { type DiffPart } from '@/lib/diff/sectionDiff';
 
 const TOC_COLLAPSED_KEY = 'toc-collapsed';
 const CHAT_OPEN_KEY = 'lessonChat-open';
@@ -162,6 +165,8 @@ export default function LessonShellPage({
   // Side-panel edit (US-023): non-theory widgets open a 320px side panel
   // instead of an inline editor. At most one panel is open at a time.
   const [panelSectionId, setPanelSectionId] = useState<string | null>(null);
+  // Section regenerate popover (US-147). At most one popover open at a time.
+  const [regenSectionId, setRegenSectionId] = useState<string | null>(null);
   // Lesson-level sources side panel (US-040). Independent of section panel.
   const [lessonSourcesPanelOpen, setLessonSourcesPanelOpen] = useState(false);
   // LessonChat side-panel state, persisted to localStorage['lessonChat-open'].
@@ -968,6 +973,46 @@ export default function LessonShellPage({
     setPanelSectionId(null);
   }, []);
 
+  const handleToggleRegen = useCallback((sectionId: string) => {
+    setRegenSectionId((cur) => (cur === sectionId ? null : sectionId));
+  }, []);
+
+  const handleCloseRegen = useCallback(() => {
+    setRegenSectionId(null);
+  }, []);
+
+  const handleAcceptRegen = useCallback(
+    async (sectionId: string, newSection: Section) => {
+      const cur = lessonRef.current;
+      if (!cur) {
+        throw new Error('Lesson not loaded');
+      }
+      const res = await fetch(
+        `/api/courses/${slug}/lessons/${lessonSlug}/sections/${sectionId}/apply`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newSection }),
+        },
+      );
+      if (!res.ok) {
+        let message = `Apply failed (${res.status})`;
+        try {
+          const detail = (await res.json()) as { error?: string };
+          if (detail?.error) message = detail.error;
+        } catch {
+          // Fall through.
+        }
+        throw new Error(message);
+      }
+      const saved = (await res.json()) as Lesson;
+      setLesson(saved);
+      setRegenSectionId(null);
+      setSessionToast('Section regenerated');
+    },
+    [slug, lessonSlug],
+  );
+
   const handleToggleFocus = useCallback(() => {
     if (focusModeRef.current.active) {
       setTocCollapsed(focusModeRef.current.previousToc);
@@ -1089,6 +1134,10 @@ export default function LessonShellPage({
             onSaveTheory={handleSaveTheory}
             panelSectionId={panelSectionId}
             onOpenPanel={handleOpenPanel}
+            regenSectionId={regenSectionId}
+            onToggleRegen={handleToggleRegen}
+            onCloseRegen={handleCloseRegen}
+            onAcceptRegen={handleAcceptRegen}
             onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
             onToggleSectionManualComplete={handleToggleSectionManualComplete}
             autoDone={autoDone}
@@ -2651,6 +2700,10 @@ interface LessonStreamProps {
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
   panelSectionId: string | null;
   onOpenPanel: (sectionId: string) => void;
+  regenSectionId: string | null;
+  onToggleRegen: (sectionId: string) => void;
+  onCloseRegen: () => void;
+  onAcceptRegen: (sectionId: string, newSection: Section) => Promise<void>;
   onOpenLessonSources: () => void;
   onToggleSectionManualComplete: (sectionId: string, nextValue: boolean) => void;
   autoDone: Record<string, boolean>;
@@ -2669,6 +2722,10 @@ function LessonStream({
   onSaveTheory,
   panelSectionId,
   onOpenPanel,
+  regenSectionId,
+  onToggleRegen,
+  onCloseRegen,
+  onAcceptRegen,
   onOpenLessonSources,
   onToggleSectionManualComplete,
   autoDone,
@@ -2743,6 +2800,10 @@ function LessonStream({
             onSaveTheory={onSaveTheory}
             panelOpen={panelSectionId === section.id}
             onOpenPanel={onOpenPanel}
+            regenOpen={regenSectionId === section.id}
+            onToggleRegen={onToggleRegen}
+            onCloseRegen={onCloseRegen}
+            onAcceptRegen={onAcceptRegen}
             onCacheVideoTranscript={onCacheVideoTranscript}
           />
         );
@@ -2879,6 +2940,10 @@ interface SectionRendererProps {
   onSaveTheory: (sectionId: string, nextMarkdown: string) => Promise<void>;
   panelOpen: boolean;
   onOpenPanel: (sectionId: string) => void;
+  regenOpen: boolean;
+  onToggleRegen: (sectionId: string) => void;
+  onCloseRegen: () => void;
+  onAcceptRegen: (sectionId: string, newSection: Section) => Promise<void>;
   onCacheVideoTranscript: (sectionId: string, segments: VideoTranscriptSegment[]) => Promise<void>;
 }
 
@@ -2898,6 +2963,10 @@ function SectionRenderer({
   onSaveTheory,
   panelOpen,
   onOpenPanel,
+  regenOpen,
+  onToggleRegen,
+  onCloseRegen,
+  onAcceptRegen,
   onCacheVideoTranscript,
 }: SectionRendererProps) {
   // Runtime check guards against unknown widget types (e.g. malformed lesson
@@ -3130,9 +3199,22 @@ function SectionRenderer({
     body = <Body data={section.data} />;
   }
 
+  const regenNode: ReactNode = (
+    <SectionRegenAnchor
+      section={section}
+      open={regenOpen}
+      courseSlug={courseSlug}
+      lessonSlug={lessonSlug}
+      onToggle={() => onToggleRegen(section.id)}
+      onClose={onCloseRegen}
+      onAccept={(newSection) => onAcceptRegen(section.id, newSection)}
+    />
+  );
+
   const headerActions: ReactNode = (
     <>
       {sourcesNode}
+      {regenNode}
       {pencilNode}
     </>
   );
@@ -3143,6 +3225,7 @@ function SectionRenderer({
       data-section-id={section.id}
       data-section-type={section.type}
       data-section-editing={editing || panelOpen ? 'true' : 'false'}
+      data-section-regen-open={regenOpen ? 'true' : 'false'}
       data-section-manually-completed={manuallyCompleted ? 'true' : 'false'}
       style={
         manuallyCompleted
@@ -3174,6 +3257,713 @@ function SectionRenderer({
         {body}
       </Widget>
     </div>
+  );
+}
+
+interface SectionRegenAnchorProps {
+  section: Section;
+  open: boolean;
+  courseSlug: string;
+  lessonSlug: string;
+  onToggle: () => void;
+  onClose: () => void;
+  onAccept: (newSection: Section) => Promise<void>;
+}
+
+function SectionRegenAnchor({
+  section,
+  open,
+  courseSlug,
+  lessonSlug,
+  onToggle,
+  onClose,
+  onAccept,
+}: SectionRegenAnchorProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
+  const testId = `regen-section-btn-${section.id}`;
+  return (
+    <div
+      ref={wrapperRef}
+      style={{ position: 'relative', display: 'inline-flex' }}
+    >
+      <button
+        type="button"
+        data-testid={testId}
+        aria-label={open ? 'Close regenerate' : 'Regenerate section'}
+        aria-pressed={open}
+        onClick={onToggle}
+        title="Regenerate section"
+        style={{
+          width: 28,
+          height: 28,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid transparent',
+          background: open ? 'var(--bg-active)' : 'transparent',
+          color: open ? 'var(--text)' : 'var(--text-tertiary)',
+          cursor: 'pointer',
+        }}
+      >
+        <Sparkles size={14} strokeWidth={2} aria-hidden />
+      </button>
+      {open && (
+        <SectionRegenPopover
+          section={section}
+          courseSlug={courseSlug}
+          lessonSlug={lessonSlug}
+          onClose={onClose}
+          onAccept={onAccept}
+        />
+      )}
+    </div>
+  );
+}
+
+interface SectionRegenPopoverProps {
+  section: Section;
+  courseSlug: string;
+  lessonSlug: string;
+  onClose: () => void;
+  onAccept: (newSection: Section) => Promise<void>;
+}
+
+const QUICK_PICKS: ReadonlyArray<string> = [
+  'More code-focused',
+  'Shorter',
+  'Add a comparison',
+];
+
+function statusToErrorMessage(status: number): string {
+  if (status === 422) return 'Regeneration failed — try a different instruction.';
+  if (status === 409) return 'Cannot regenerate while generation is active.';
+  return 'Server error — please try again.';
+}
+
+function SectionRegenPopover({
+  section,
+  courseSlug,
+  lessonSlug,
+  onClose,
+  onAccept,
+}: SectionRegenPopoverProps) {
+  const [instruction, setInstruction] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<Section | null>(null);
+  const [accepting, setAccepting] = useState(false);
+  const [acceptError, setAcceptError] = useState<string | null>(null);
+
+  const handleSubmit = useCallback(async () => {
+    const trimmed = instruction.trim();
+    if (!trimmed || submitting) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${courseSlug}/lessons/${lessonSlug}/sections/${section.id}/regenerate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instruction: trimmed }),
+        },
+      );
+      if (!res.ok) {
+        setErrorMessage(statusToErrorMessage(res.status));
+        setSubmitting(false);
+        return;
+      }
+      const body = (await res.json()) as { newSection: Section };
+      setProposal(body.newSection);
+      setSubmitting(false);
+    } catch {
+      setErrorMessage('Server error — please try again.');
+      setSubmitting(false);
+    }
+  }, [instruction, submitting, courseSlug, lessonSlug, section.id]);
+
+  const handleAccept = useCallback(async () => {
+    if (!proposal || accepting) return;
+    setAccepting(true);
+    setAcceptError(null);
+    try {
+      await onAccept(proposal);
+    } catch (err) {
+      setAcceptError(err instanceof Error ? err.message : String(err));
+      setAccepting(false);
+    }
+  }, [proposal, accepting, onAccept]);
+
+  const handleReject = useCallback(() => {
+    setProposal(null);
+    onClose();
+  }, [onClose]);
+
+  return (
+    <div
+      data-testid={`regen-popover-${section.id}`}
+      role="dialog"
+      aria-label={`Regenerate "${section.title}"`}
+      style={{
+        position: 'absolute',
+        top: '100%',
+        right: 0,
+        marginTop: 6,
+        width: 480,
+        maxHeight: '70vh',
+        overflowY: 'auto',
+        zIndex: 30,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md, 0 12px 32px rgba(0,0,0,0.18))',
+        padding: 'var(--space-4)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-3)',
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {!proposal ? (
+        <>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 600,
+              color: 'var(--text)',
+            }}
+          >
+            Regenerate this section
+          </div>
+          <label
+            htmlFor={`regen-textarea-${section.id}`}
+            style={{
+              fontSize: 'var(--fs-xs)',
+              color: 'var(--text-secondary)',
+            }}
+          >
+            How should this section change?
+          </label>
+          <textarea
+            id={`regen-textarea-${section.id}`}
+            data-testid={`regen-textarea-${section.id}`}
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            disabled={submitting}
+            rows={4}
+            placeholder="e.g. add a comparison with linear regression"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              fontSize: 'var(--fs-sm)',
+              fontFamily: 'var(--font-sans)',
+              color: 'var(--text)',
+              background: 'var(--bg)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              resize: 'vertical',
+            }}
+          />
+          <div
+            data-testid="regen-quick-picks"
+            style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
+          >
+            {QUICK_PICKS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                data-testid={`regen-chip-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                onClick={() => setInstruction(label)}
+                disabled={submitting}
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  padding: '4px 10px',
+                  borderRadius: 999,
+                  border: '1px solid var(--border)',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-secondary)',
+                  cursor: submitting ? 'default' : 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {errorMessage && (
+            <div
+              data-testid="regen-error"
+              role="alert"
+              style={{
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--danger-text, #b91c1c)',
+                background: 'var(--danger-soft, rgba(239, 68, 68, 0.08))',
+                border: '1px solid var(--danger-border, rgba(239, 68, 68, 0.3))',
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {errorMessage}
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 'var(--space-2)',
+            }}
+          >
+            <button
+              type="button"
+              data-testid="regen-cancel-btn"
+              onClick={onClose}
+              disabled={submitting}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                padding: '6px 12px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-secondary)',
+                cursor: submitting ? 'default' : 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-testid="regen-submit-btn"
+              onClick={() => void handleSubmit()}
+              disabled={submitting || instruction.trim().length === 0}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                padding: '6px 12px',
+                background: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--accent-on)',
+                cursor:
+                  submitting || instruction.trim().length === 0
+                    ? 'default'
+                    : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                opacity:
+                  submitting || instruction.trim().length === 0 ? 0.7 : 1,
+              }}
+            >
+              {submitting ? (
+                <>
+                  <Loader2
+                    size={14}
+                    aria-hidden
+                    data-testid="regen-spinner"
+                    style={{ animation: 'spin 1s linear infinite' }}
+                  />
+                  Regenerating…
+                </>
+              ) : (
+                'Submit'
+              )}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 600,
+              color: 'var(--text)',
+            }}
+          >
+            Preview — additions highlighted
+          </div>
+          <div
+            data-testid={`regen-preview-${section.id}`}
+            style={{
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-sm)',
+              padding: 'var(--space-3)',
+              background: 'var(--bg)',
+              fontSize: 'var(--fs-sm)',
+              color: 'var(--text)',
+              maxHeight: '40vh',
+              overflowY: 'auto',
+            }}
+          >
+            <SectionDiffPreview oldSection={section} newSection={proposal} />
+          </div>
+          {acceptError && (
+            <div
+              data-testid="regen-accept-error"
+              role="alert"
+              style={{
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--danger-text, #b91c1c)',
+                background: 'var(--danger-soft, rgba(239, 68, 68, 0.08))',
+                border: '1px solid var(--danger-border, rgba(239, 68, 68, 0.3))',
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {acceptError}
+            </div>
+          )}
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 'var(--space-2)',
+            }}
+          >
+            <button
+              type="button"
+              data-testid="regen-reject-btn"
+              onClick={handleReject}
+              disabled={accepting}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                padding: '6px 12px',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-secondary)',
+                cursor: accepting ? 'default' : 'pointer',
+              }}
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              data-testid="regen-accept-btn"
+              onClick={() => void handleAccept()}
+              disabled={accepting}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                padding: '6px 12px',
+                background: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                borderRadius: 'var(--radius-sm)',
+                color: 'var(--accent-on)',
+                cursor: accepting ? 'default' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                opacity: accepting ? 0.7 : 1,
+              }}
+            >
+              {accepting ? (
+                <>
+                  <Loader2
+                    size={14}
+                    aria-hidden
+                    style={{ animation: 'spin 1s linear infinite' }}
+                  />
+                  Applying…
+                </>
+              ) : (
+                'Accept'
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+const REGEN_MARK_STYLE: CSSProperties = {
+  background: 'var(--accent-soft, var(--accent-subtle))',
+  borderBottom: '2px solid var(--accent)',
+  padding: '0 1px',
+  borderRadius: 2,
+  color: 'var(--text)',
+};
+
+function renderDiffParts(parts: DiffPart[]): ReactNode {
+  return parts.map((p, i) => {
+    if (p.type === 'removed') return null;
+    if (p.type === 'added') {
+      return (
+        <mark
+          key={i}
+          data-regen-added
+          style={REGEN_MARK_STYLE}
+        >
+          {p.text}
+        </mark>
+      );
+    }
+    return <span key={i}>{p.text}</span>;
+  });
+}
+
+interface SectionDiffPreviewProps {
+  oldSection: Section;
+  newSection: Section;
+}
+
+function SectionDiffPreview({ oldSection, newSection }: SectionDiffPreviewProps) {
+  const titleParts = useMemo(
+    () => diffWords(oldSection.title, newSection.title),
+    [oldSection.title, newSection.title],
+  );
+  const descParts = useMemo(
+    () =>
+      diffWords(oldSection.description ?? '', newSection.description ?? ''),
+    [oldSection.description, newSection.description],
+  );
+  return (
+    <div
+      data-testid="regen-section-preview"
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}
+    >
+      <div
+        style={{
+          fontSize: 'var(--fs-md)',
+          fontWeight: 600,
+          color: 'var(--text)',
+          lineHeight: 1.3,
+        }}
+      >
+        {renderDiffParts(titleParts)}
+      </div>
+      {newSection.description ? (
+        <div
+          style={{
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+          }}
+        >
+          {renderDiffParts(descParts)}
+        </div>
+      ) : null}
+      <SectionDiffBody oldSection={oldSection} newSection={newSection} />
+    </div>
+  );
+}
+
+function SectionDiffBody({
+  oldSection,
+  newSection,
+}: SectionDiffPreviewProps) {
+  if (newSection.type === 'theory' && oldSection.type === 'theory') {
+    return <TheoryDiffBody oldText={oldSection.data.markdown} newText={newSection.data.markdown} />;
+  }
+  if (newSection.type === 'quiz' && oldSection.type === 'quiz') {
+    return <QuizDiffBody oldData={oldSection.data} newData={newSection.data} />;
+  }
+  if (newSection.type === 'code' && oldSection.type === 'code') {
+    return (
+      <CodeDiffBody
+        oldDescription={oldSection.data.taskMarkdown ?? ''}
+        newDescription={newSection.data.taskMarkdown ?? ''}
+        oldStarter={oldSection.data.starterCode ?? ''}
+        newStarter={newSection.data.starterCode ?? ''}
+      />
+    );
+  }
+  return <GenericDiffBody oldSection={oldSection} newSection={newSection} />;
+}
+
+function TheoryDiffBody({
+  oldText,
+  newText,
+}: {
+  oldText: string;
+  newText: string;
+}) {
+  const parts = useMemo(() => diffWords(oldText, newText), [oldText, newText]);
+  return (
+    <div
+      data-testid="regen-preview-theory"
+      style={{
+        whiteSpace: 'pre-wrap',
+        fontSize: 'var(--fs-sm)',
+        lineHeight: 1.6,
+        color: 'var(--text)',
+        fontFamily: 'var(--font-prose, var(--font-sans))',
+      }}
+    >
+      {renderDiffParts(parts)}
+    </div>
+  );
+}
+
+interface QuizDiffData {
+  question: string;
+  options: string[];
+}
+
+function QuizDiffBody({
+  oldData,
+  newData,
+}: {
+  oldData: QuizDiffData;
+  newData: QuizDiffData;
+}) {
+  const questionParts = useMemo(
+    () => diffWords(oldData.question, newData.question),
+    [oldData.question, newData.question],
+  );
+  const oldOptions = oldData.options;
+  const newOptions = newData.options;
+  return (
+    <div
+      data-testid="regen-preview-quiz"
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+    >
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 500 }}>
+        {renderDiffParts(questionParts)}
+      </div>
+      <ol
+        style={{
+          margin: 0,
+          paddingLeft: 18,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+        }}
+      >
+        {newOptions.map((opt, idx) => {
+          const oldOpt = oldOptions[idx];
+          const isAdded = oldOpt === undefined;
+          const isChanged = !isAdded && oldOpt !== opt;
+          const optParts = diffWords(oldOpt ?? '', opt);
+          return (
+            <li
+              key={idx}
+              data-testid={`regen-preview-quiz-option-${idx}`}
+              data-regen-state={isAdded ? 'added' : isChanged ? 'changed' : 'same'}
+              style={{
+                fontSize: 'var(--fs-sm)',
+                lineHeight: 1.5,
+                ...(isAdded
+                  ? {
+                      background: 'var(--accent-soft, var(--accent-subtle))',
+                      borderRadius: 4,
+                      padding: '2px 6px',
+                    }
+                  : isChanged
+                    ? {
+                        borderLeft: '2px solid var(--accent)',
+                        paddingLeft: 6,
+                      }
+                    : null),
+              }}
+            >
+              {isAdded ? opt : renderDiffParts(optParts)}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function CodeDiffBody({
+  oldDescription,
+  newDescription,
+  oldStarter,
+  newStarter,
+}: {
+  oldDescription: string;
+  newDescription: string;
+  oldStarter: string;
+  newStarter: string;
+}) {
+  const descParts = useMemo(
+    () => diffWords(oldDescription, newDescription),
+    [oldDescription, newDescription],
+  );
+  const starterParts = useMemo(
+    () => diffWords(oldStarter, newStarter),
+    [oldStarter, newStarter],
+  );
+  return (
+    <div
+      data-testid="regen-preview-code"
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+    >
+      {newDescription && (
+        <div
+          style={{
+            fontSize: 'var(--fs-sm)',
+            lineHeight: 1.5,
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          {renderDiffParts(descParts)}
+        </div>
+      )}
+      {newStarter && (
+        <pre
+          style={{
+            margin: 0,
+            padding: 8,
+            background: 'var(--bg-subtle)',
+            borderRadius: 'var(--radius-sm)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 'var(--fs-xs)',
+            whiteSpace: 'pre-wrap',
+            overflowX: 'auto',
+          }}
+        >
+          {renderDiffParts(starterParts)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function GenericDiffBody({
+  oldSection,
+  newSection,
+}: {
+  oldSection: Section;
+  newSection: Section;
+}) {
+  const oldText = useMemo(
+    () => JSON.stringify(oldSection.data ?? {}, null, 2),
+    [oldSection],
+  );
+  const newText = useMemo(
+    () => JSON.stringify(newSection.data ?? {}, null, 2),
+    [newSection],
+  );
+  const parts = useMemo(() => diffWords(oldText, newText), [oldText, newText]);
+  return (
+    <pre
+      data-testid="regen-preview-generic"
+      style={{
+        margin: 0,
+        padding: 8,
+        background: 'var(--bg-subtle)',
+        borderRadius: 'var(--radius-sm)',
+        fontFamily: 'var(--font-mono)',
+        fontSize: 'var(--fs-xs)',
+        whiteSpace: 'pre-wrap',
+        overflowX: 'auto',
+      }}
+    >
+      {renderDiffParts(parts)}
+    </pre>
   );
 }
 
