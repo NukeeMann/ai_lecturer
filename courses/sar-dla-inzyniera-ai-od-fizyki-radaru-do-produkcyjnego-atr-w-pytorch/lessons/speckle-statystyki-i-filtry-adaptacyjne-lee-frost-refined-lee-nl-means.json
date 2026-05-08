@@ -1,0 +1,309 @@
+{
+  "schemaVersion": 1,
+  "slug": "speckle-statystyki-i-filtry-adaptacyjne-lee-frost-refined-lee-nl-means",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m1",
+  "title": "Speckle: statystyki i filtry adaptacyjne (Lee, Frost, Refined Lee, NL-means)",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Skąd się bierze ziarnistość na obrazach Sentinel-1, dlaczego nie jest to szum gaussowski i jak cztery klasyczne filtry adaptacyjne (Lee, Frost, Refined Lee, NL-means) walczą z nim, zachowując krawędzie statków, dróg i pól.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "speckle-fizyka",
+      "title": "Speckle: koherentne obrazowanie i multiplikatywny szum",
+      "type": "theory",
+      "data": {
+        "markdown": "**Speckle** to nie jest klasyczny szum sensoryczny — to **fizyczna konsekwencja koherentnego obrazowania**. Każda komórka rozdzielczości na obrazie SAR zawiera setki *sub-rozdzielczościowych* rozpraszaczy: kamieni, kęp trawy, fal, dachówek. Każdy z nich odbija część fali z **losową fazą**, a antena rejestruje **koherentną sumę** wszystkich tych ech:\n\n$$ E(x, y) \\;=\\; \\sum_{k=1}^{N} a_k\\, e^{i \\phi_k}. $$\n\nGdy fazy $\\phi_k$ są niezależne i równomiernie rozłożone w $[0, 2\\pi)$, suma jest **błądzeniem losowym w płaszczyźnie zespolonej**. Z centralnego twierdzenia granicznego część rzeczywista i urojona są niezależne i normalne o zerowej średniej, więc **amplituda** $|E|$ ma rozkład **Rayleigha**, a **intensywność** $I = |E|^2$ — rozkład **eksponencjalny**:\n\n$$ p_I(I) \\;=\\; \\frac{1}{\\bar I}\\, e^{-I/\\bar I}, \\qquad I \\ge 0. $$\n\nZ tego wzoru wynika natychmiast najbardziej irytująca własność speckle dla osoby przesiadającej się z optyki: **wariancja jest równa kwadratowi średniej**, $\\sigma_I^2 = \\bar I^2$. Współczynnik zmienności $\\sigma_I / \\bar I = 1$ — czyli na każdym pikselu jednorodnej powierzchni szum jest tak samo silny jak sam sygnał. Stąd ziarnistości, które widzisz na każdym surowym obrazie Sentinel-1.\n\nTo wprost prowadzi do **najczęstszej pułapki**: spojrzysz na *salt-and-pepper*-podobną teksturę i sięgniesz po `cv2.GaussianBlur`. **Nie rób tego.** Speckle jest **multiplikatywny** — losowa składowa **mnoży się** przez prawdziwy backscatter, więc jasne piksele mają proporcjonalnie większy szum niż ciemne. Filtr Gaussa zakłada szum **addytywny i jednorodny** — na SAR wyrównuje średnie, ale **nie respektuje fizyki** i niszczy krawędzie dokładnie tam, gdzie były ostre. Cała ta lekcja zbudowana jest wokół tej zasady: filtry, które zaraz pokażemy (Lee, Frost, Refined Lee, NL-means), zaczynają od **modelu multiplikatywnego** i ważą jego wkład lokalnym kontrastem, a nie zwykłym jądrem konwolucyjnym.\n\n![Klasyczny wzór speckle: jasne i ciemne ziarnistości pokrywające obraz koherentnie oświetlonej powierzchni — każdy ziarnisty punkt to losowa interferencja sub-rozdzielczościowych rozpraszaczy, a nie szum addytywny detektora](https://commons.wikimedia.org/wiki/Special:FilePath/Laser_speckle.jpg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*"
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Speckle_(interference)",
+          "title": "Speckle (interference) — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-multiplikatywny",
+      "title": "Sprawdź intuicję: szum multiplikatywny czy addytywny?",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na świeży, nieprzetworzony obraz Sentinel-1 GRDH. Widzisz drobne ziarnistości pokrywające jednorodny fragment morza. Który model najlepiej opisuje tę 'teksturę' i pociąga za sobą poprawny wybór filtra?",
+        "options": [
+          "To addytywny szum gaussowski wbudowany w sensor — najlepiej rozmyć obraz jądrem $3 \\times 3$ Gaussa.",
+          "To **multiplikatywny speckle** wynikający z koherentnego obrazowania — wymaga filtra adaptacyjnego (Lee, Frost, Refined Lee) lub CNN despeckler.",
+          "To impulsowy szum *salt-and-pepper* od pojedynczych bitów — mediana $3 \\times 3$ rozwiąże problem.",
+          "To artefakt downsamplingu w GRD — wystarczy wrócić do produktu SLC, gdzie ziarnistości nie ma."
+        ],
+        "correct": [1],
+        "explanation": "Speckle jest **multiplikatywny** ($I = R \\cdot v$, gdzie $v$ ma rozkład o średniej 1 i wariancji $1/L$) i wynika wprost z koherentnego sumowania ech od sub-rozdzielczościowych rozpraszaczy — to nie sensoryczne ziarno detektora. Odpowiedź 1 jest klasyczną pułapką: filtr Gaussa zakłada szum **addytywny** i niszczy krawędzie statków/dróg, gdzie wariancja jest naturalnie wysoka. Odpowiedź 3 myli rozkład eksponencjalny intensywności z impulsową naturą salt-and-pepper. Odpowiedź 4 jest odwrotnością prawdy — SLC jest *single-look* (ENL = 1), więc speckle jest tam **silniejszy**, nie słabszy; multilooking w GRD już tę zmienność redukuje 4-krotnie.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "l-look-statystyka",
+      "title": "Statystyka L-look, ENL i multilooking",
+      "type": "theory",
+      "data": {
+        "markdown": "Co się dzieje, gdy uśrednimy `L` niezależnych obserwacji intensywności tej samej powierzchni? To dokładnie operacja **multilookingu** — zamiast jednego *single-look* piksela bierzemy okno $N_r \\times N_a$ niezależnych pikseli z tej samej kalibrowanej sceny i liczymy ich **średnią intensywność**:\n\n$$ I_L \\;=\\; \\frac{1}{L}\\, \\sum_{k=1}^{L} I_k. $$\n\nZ własności sumy niezależnych zmiennych eksponencjalnych — to dokładnie **rozkład Gamma** o parametrze kształtu $L$ i skali $\\bar I / L$:\n\n$$ p_{I_L}(I) \\;=\\; \\frac{L^L}{\\Gamma(L)\\, \\bar I^L}\\, I^{L-1}\\, e^{-L I / \\bar I}. $$\n\nŚrednia pozostaje $\\bar I$ (nadal nieobciążony estymator), ale **wariancja maleje liniowo**: $\\sigma_{I_L}^2 = \\bar I^2 / L$. Stąd współczynnik zmienności $\\sigma / \\bar I = 1/\\sqrt{L}$ i klasyczna metryka jakości despecklingu — **Equivalent Number of Looks**:\n\n$$ \\mathrm{ENL} \\;=\\; \\left(\\frac{\\bar I}{\\sigma_I}\\right)^2. $$\n\nENL jest **empirycznym estymatorem** efektywnej liczby looków. Po idealnym multilookingu $N_r \\times N_a$ niezależnych próbek wyjdzie $\\mathrm{ENL} \\approx N_r \\cdot N_a$; po zastosowaniu filtra adaptacyjnego (Lee, Frost, Refined Lee) ENL rośnie do kilkudziesięciu, a w skrajnych przypadkach — niestety — do setek, gdy filtr nadmiernie wygładził scenę. Dlatego ENL **musi być raportowany razem z metryką zachowania krawędzi** (EPI), inaczej nagradza po prostu rozmycie.\n\nKrytyczna pułapka: **ENL wolno liczyć tylko na patchu jednorodnym** — kalibrowanym fragmencie wody, pasie startowym, świeżo zaoranym polu. Na heterogenicznym fragmencie sceny wariancja w mianowniku zawiera **wariancję samej sceny** (między różnymi pokryciami terenu), a nie tylko speckle — i wynik staje się bezużyteczny. W kodzie: zaznaczasz ROI nad spokojną wodą, liczysz `mean/std` na intensywności w **liniowych jednostkach** (nie dB!), i dopiero potem porównujesz filtry.\n\nMultilook nie jest jednak darmowy. Jeśli uśrednimy $4$ piksele w azymucie, **rozdzielczość azymutalna spada $4$-krotnie** — typowy IW GRDH (4-look) ma piksel $\\approx 20$ m vs $\\approx 5$ m w SLC. To świadomy *trade-off*: tracisz szczegół, zyskujesz radiometryczną gładkość pod amplitude-domain ML.\n\n![Schematyczne zestawienie: po lewej single-look intensywność z silnym ziarnistym wzorem, w środku obraz po multilookingu 2x2 z czterokrotnie mniejszą wariancją ale podwojonym pikselem, po prawej obraz po 4x4 multilookingu z gładką teksturą i ośmiokrotnie większym pikselem — wszystkie trzy mają tę samą średnią jasność](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz pomocniczy: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*"
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Speckle_(interference)",
+          "title": "Speckle (interference) — sekcja o statystyce L-look",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "code-enl-multilook",
+      "title": "Implementacja ENL i multilookingu 2×2 w NumPy",
+      "type": "code",
+      "description": "Dwie krótkie funkcje w NumPy — empiryczny ENL i deterministyczny multilook 2×2. Razem dają numeryczną intuicję do wzoru wariancja ∝ 1/L.",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje pracujące na intensywności (jednostki liniowe, nie dB):\n\n- `enl(patch)` — Equivalent Number of Looks dla patcha **jednorodnego**: $(\\bar I / \\sigma_I)^2$ (użyj odchylenia z `ddof=0`).\n- `multilook_2x2(image)` — uśrednianie po **rozłącznych blokach $2 \\times 2$**: dla obrazu $H \\times W$ (zakładamy parzyste wymiary) zwraca obraz $H/2 \\times W/2$ z średnią z każdego bloku.\n\nObie funkcje przyjmują `numpy.ndarray` i zwracają — odpowiednio — `float` oraz `numpy.ndarray` typu `float64`. Nie zaokrąglaj.\n\n```\n# Sanity check\n>>> img = np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]], dtype=float)\n>>> multilook_2x2(img)\narray([[ 3.5,  5.5],\n       [11.5, 13.5]])\n```",
+        "starterCode": "import numpy as np\n\n\ndef enl(patch):\n    \"\"\"Equivalent Number of Looks na patchu jednorodnym: (mean / std)^2.\"\"\"\n    # TODO: rzutuj na float64, policz mean i std (ddof=0), zwroc (mean/std)**2\n    return 0.0\n\n\ndef multilook_2x2(image):\n    \"\"\"Usrednianie po rozlacznych blokach 2x2; wyjscie ksztaltu (H/2, W/2).\"\"\"\n    # TODO: zsumuj cztery offsety [0::2, 0::2], [1::2, 0::2], [0::2, 1::2], [1::2, 1::2]\n    # i podziel przez 4 - to deterministyczny multilook 2x2.\n    return image\n",
+        "tests": [
+          {
+            "name": "enl_single_look_exponential_close_to_one",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nsamples = rng.exponential(scale=10.0, size=10000)\ne = enl(samples)\nassert 0.85 < e < 1.15, f'expected ENL ~ 1 for single-look exponential, got {e}'",
+            "hidden": false
+          },
+          {
+            "name": "multilook_2x2_simple_4x4",
+            "body": "import numpy as np\nimg = np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]], dtype=float)\nml = multilook_2x2(img)\nexpected = np.array([[3.5, 5.5], [11.5, 13.5]])\nassert np.allclose(ml, expected)"
+          },
+          {
+            "name": "multilook_2x2_increases_enl_roughly_4x",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nsamples = rng.exponential(scale=5.0, size=(64, 64))\ne1 = enl(samples)\ne4 = enl(multilook_2x2(samples))\nassert e4 > 2.5 * e1, f'4-look ENL {e4} should be roughly 4x single-look {e1}'"
+          },
+          {
+            "name": "multilook_preserves_mean",
+            "body": "import numpy as np\nrng = np.random.default_rng(2)\nsamples = rng.exponential(scale=7.0, size=(32, 32))\nml = multilook_2x2(samples)\nassert abs(ml.mean() - samples.mean()) < 0.5, 'multilook musi zachowywac srednia'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef enl(patch):\n    a = np.asarray(patch, dtype=np.float64)\n    s = a.std(ddof=0)\n    return float((a.mean() / s) ** 2)\n\n\ndef multilook_2x2(image):\n    a = np.asarray(image, dtype=np.float64)\n    H, W = a.shape\n    return (a[0:H:2, 0:W:2] + a[1:H:2, 0:W:2] + a[0:H:2, 1:W:2] + a[1:H:2, 1:W:2]) / 4.0\n"
+      }
+    },
+    {
+      "id": "explorer-enl-vs-multilook",
+      "title": "ENL vs rozmiar okna multilooka — teoria vs Monte Carlo",
+      "type": "parametricExplorer",
+      "description": "Suwak rozmiaru okna L pokazuje, jak empiryczny ENL liczony na syntetycznej scenie speckle goni teoretyczną krzywą $L \\cdot L$.",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(42)\nSINGLE_LOOK = rng.exponential(scale=1.0, size=(512, 512))\n\n\ndef _measured_enl(L_int):\n    H, W = SINGLE_LOOK.shape\n    H2 = (H // L_int) * L_int\n    W2 = (W // L_int) * L_int\n    img = SINGLE_LOOK[:H2, :W2]\n    img = img.reshape(H2 // L_int, L_int, W2 // L_int, L_int).mean(axis=(1, 3))\n    m = float(img.mean())\n    s = float(img.std(ddof=0))\n    return (m / s) ** 2 if s > 0 else float('inf')\n\n\nL_GRID = np.array([1, 2, 3, 4, 5, 6, 8, 10, 12])\nENL_THEORY = (L_GRID * L_GRID).astype(float)\nENL_MEASURED = np.array([_measured_enl(int(L)) for L in L_GRID])\n",
+        "renderCode": "L_user = int(L_factor)\nH, W = SINGLE_LOOK.shape\nH2 = (H // L_user) * L_user\nW2 = (W // L_user) * L_user\nimg = SINGLE_LOOK[:H2, :W2].reshape(H2 // L_user, L_user, W2 // L_user, L_user).mean(axis=(1, 3))\nm_user = float(img.mean())\ns_user = float(img.std(ddof=0))\ne_user = (m_user / s_user) ** 2 if s_user > 0 else 0.0\ne_theory = float(L_user * L_user)\n\nplt.figure(figsize=(7.5, 4.4))\nplt.plot(L_GRID, ENL_THEORY, color='#cc4444', lw=2.0, marker='o', label='teoria: ENL = L * L')\nplt.plot(L_GRID, ENL_MEASURED, color='#1d4ed8', lw=2.0, marker='s', label='pomiar Monte Carlo')\nplt.axvline(L_user, color='gray', ls='--', alpha=0.7)\nplt.scatter([L_user], [e_user], color='black', s=100, zorder=5,\n            label=f'wybrane L = {L_user}, pomiar = {e_user:.2f}')\nplt.xlabel('rozmiar okna multilooka L (okno L x L)')\nplt.ylabel('ENL = (mean / std)^2')\nplt.title(f'L = {L_user}: teoria = {e_theory:.0f}, pomiar = {e_user:.2f}')\nplt.legend(loc='upper left')\nplt.grid(True, alpha=0.3)\n",
+        "params": [
+          {
+            "name": "L_factor",
+            "label": "L (rozmiar okna multilooka, piksele)",
+            "type": "slider",
+            "min": 1,
+            "max": 12,
+            "step": 1,
+            "default": 4
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "filtr-lee-teoria",
+      "title": "Filtr Lee — adaptacyjny estymator MMSE",
+      "type": "theory",
+      "data": {
+        "markdown": "Filtr **Lee** (Jong-Sen Lee, 1980) to historyczny i wciąż żywy fundament adaptacyjnego despecklingu SAR. Jego idea jest piękna w swojej prostocie: zastosować **lokalny estymator MMSE** (*minimum mean-square error*), który automatycznie balansuje między *agresywnym uśrednianiem* na płaskich obszarach a *konserwatywnym zachowaniem oryginału* na krawędziach.\n\nDla okna $N \\times N$ wokół piksela $(i, j)$ liczymy lokalną średnią $\\bar I_{\\text{loc}}$ i wariancję $s^2_{\\text{loc}}$ obserwowanej intensywności. Z modelu multiplikatywnego $I = R \\cdot v$ (gdzie $R$ to nieznany prawdziwy backscatter, a $v$ to multiplikatywny speckle o średniej $1$ i wariancji $\\sigma_v^2 = 1/L$) wynika **estymator wariancji sceny**:\n\n$$ \\hat\\sigma_R^2 \\;=\\; \\max\\!\\left(0,\\; \\frac{s^2_{\\text{loc}} - \\bar I_{\\text{loc}}^2 \\, \\sigma_v^2}{1 + \\sigma_v^2}\\right). $$\n\nDalej liczymy **wagę Lee**:\n\n$$ W \\;=\\; \\frac{\\hat\\sigma_R^2}{\\hat\\sigma_R^2 \\;+\\; \\bar I_{\\text{loc}}^2\\, \\sigma_v^2}, $$\n\na wyjście filtra to:\n\n$$ \\hat R(i, j) \\;=\\; \\bar I_{\\text{loc}} \\;+\\; W\\, \\bigl(I(i, j) - \\bar I_{\\text{loc}}\\bigr). $$\n\nCzytaj ten wzór uważnie: **na płaskim obszarze** (jednorodna woda) lokalna wariancja jest zdominowana przez speckle, więc $\\hat\\sigma_R^2 \\to 0$, $W \\to 0$ i wyjście to **lokalna średnia** — pełne wygładzanie. **Na krawędzi** (granica statek/morze) wariancja sceny dominuje, $W \\to 1$ i wyjście to **oryginalny piksel** — żadnego wygładzania, krawędź zachowana. Filtr Lee jest więc adaptacyjnym kompromisem: tam, gdzie speckle, uśredniamy; tam, gdzie sygnał, nie ruszamy.\n\nDlaczego to nie jest perfekcyjne? Po pierwsze, $W$ zależy od $\\bar I_{\\text{loc}}$ podniesionej do kwadratu — filtr **przeszacowuje wariancję sceny** w jasnych obszarach i podszacowuje w ciemnych, co daje subtelną stronniczość. Po drugie, okno jest **izotropowe** — nie rozróżnia kierunku krawędzi. Te dwa ograniczenia pchnęły społeczność SAR ku **Refined Lee** i **NL-means**, które omówimy za chwilę. Zanim jednak przejdziemy do następców, warto raz w życiu **napisać Lee samodzielnie** — kilka linijek NumPy, jeden zagnieżdżony loop i nagle widać, dlaczego ten wzór z 1980 roku tak długo trzymał się jako standard."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4767017",
+          "title": "Digital Image Enhancement and Noise Filtering by Use of Local Statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ]
+    },
+    {
+      "id": "code-lee-filter",
+      "title": "Implementacja kernela Lee w NumPy",
+      "type": "code",
+      "description": "Klasyczny filtr Lee w 10 linijkach NumPy — jeden loop po pikselach, lokalne mean/var w oknie i waga MMSE.",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `lee_filter(image, window=5, num_looks=1)`:\n\n- **Argumenty**: `image` — `numpy.ndarray` 2D w jednostkach intensywności; `window` — nieparzysta liczba całkowita (rozmiar okna); `num_looks` — liczba looków $L$ (wariancja szumu $\\sigma_v^2 = 1/L$).\n- **Brzeg**: paduj `'edge'` (replikacja krawędzi) — dzięki temu okno na brzegu nadal ma `window x window` próbek.\n- **Wzór**: $\\hat R(i,j) = \\bar I_{\\text{loc}} + W\\,(I(i,j) - \\bar I_{\\text{loc}})$ z $W$ jak w teorii powyżej; $\\hat\\sigma_R^2$ uciąć od dołu do zera.\n- **Zwrot**: tablica tego samego kształtu, dtype `float64`.\n\nFiltr ma działać deterministycznie: na obrazie stałym zwraca dokładnie ten sam stały obraz; na czystej krawędzi (lewa połowa = 0, prawa = 100) **nie miesza** wartości po dwóch stronach.",
+        "starterCode": "import numpy as np\n\n\ndef lee_filter(image, window=5, num_looks=1):\n    \"\"\"Adaptacyjny filtr Lee na intensywnosci SAR.\n\n    Krok po kroku dla kazdego piksela (i, j):\n      1. m  = lokalna srednia w oknie window x window (z paddingiem 'edge')\n      2. v  = lokalna wariancja w tym samym oknie\n      3. sigma_v2 = 1 / num_looks\n      4. sigma_R2 = max(0, (v - m**2 * sigma_v2) / (1 + sigma_v2))\n      5. W = sigma_R2 / (sigma_R2 + m**2 * sigma_v2), 0 jesli mianownik = 0\n      6. out[i, j] = m + W * (image[i, j] - m)\n    \"\"\"\n    # TODO: zaimplementuj algorytm Lee zgodnie z opisem powyzej.\n    return image\n",
+        "tests": [
+          {
+            "name": "constant_input_returns_constant",
+            "body": "import numpy as np\nimg = np.full((20, 20), 5.0)\nout = lee_filter(img, window=5, num_looks=1)\nassert np.allclose(out, 5.0), 'na stalym obrazie filtr nie ma czego usredniac'",
+            "hidden": false
+          },
+          {
+            "name": "preserves_strong_step_edge",
+            "body": "import numpy as np\nimg = np.zeros((20, 20))\nimg[:, 10:] = 100.0\nout = lee_filter(img, window=5, num_looks=1)\nassert out[10, 9] < 50.0, f'lewa strona krawedzi powinna zostac ciemna, dostalem {out[10, 9]}'\nassert out[10, 11] > 50.0, f'prawa strona krawedzi powinna zostac jasna, dostalem {out[10, 11]}'"
+          },
+          {
+            "name": "smooths_homogeneous_speckle",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = rng.exponential(scale=10.0, size=(32, 32))\nout = lee_filter(img, window=7, num_looks=1)\nassert out.std() < img.std() * 0.7, 'filtr ma znaczaco zredukowac wariancje na speckle'"
+          },
+          {
+            "name": "more_looks_means_filter_trusts_data",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nimg = rng.exponential(scale=10.0, size=(32, 32))\nout_1 = lee_filter(img, window=5, num_looks=1)\nout_8 = lee_filter(img, window=5, num_looks=8)\nassert np.linalg.norm(out_8 - img) < np.linalg.norm(out_1 - img), 'wiecej lookow -> mniejsza sigma_v2 -> wyjscie blizsze oryginalu'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef lee_filter(image, window=5, num_looks=1):\n    img = np.asarray(image, dtype=np.float64)\n    H, W = img.shape\n    half = window // 2\n    sigma_v2 = 1.0 / num_looks\n    padded = np.pad(img, half, mode='edge')\n    out = np.empty_like(img)\n    for i in range(H):\n        for j in range(W):\n            patch = padded[i:i + window, j:j + window]\n            m = float(patch.mean())\n            v = float(patch.var())\n            sigma_R2 = max(0.0, (v - m * m * sigma_v2) / (1.0 + sigma_v2))\n            denom = sigma_R2 + m * m * sigma_v2\n            w = sigma_R2 / denom if denom > 0 else 0.0\n            out[i, j] = m + w * (img[i, j] - m)\n    return out\n"
+      }
+    },
+    {
+      "id": "frost-refined-nlmeans-teoria",
+      "title": "Frost, Refined Lee i NL-means — następcy klasyka",
+      "type": "theory",
+      "data": {
+        "markdown": "Filtr **Frost** (Frost et al., 1982) wychodzi z tej samej intuicji co Lee, ale zamiast jednej liczby $W$ używa **eksponencjalnie zanikającego jądra**, którego stała czasowa zależy od lokalnego współczynnika zmienności. Dla okna o współrzędnych względnych $(d_x, d_y)$ od piksela centralnego waga wynosi:\n\n$$ w(d_x, d_y) \\;=\\; \\exp\\!\\bigl(-K\\, C^2\\, \\sqrt{d_x^2 + d_y^2}\\bigr), $$\n\ngdzie $C = s_{\\text{loc}} / \\bar I_{\\text{loc}}$ to lokalny CoV, a $K$ to tunowalny parametr tłumienia. Na płaskim obszarze ($C \\approx \\sigma_v$) jądro jest niemal jednolite — uśredniamy mocno; na krawędzi ($C \\gg \\sigma_v$) jądro zwija się do delty Diraca — nie ruszamy oryginalnego piksela. Frost daje subtelnie **lepsze zachowanie krawędzi** niż klasyczny Lee, ale nadal jest izotropowy.\n\n**Refined Lee** (Lee, 1981) rozwiązuje problem izotropii przez zestaw **8 ukierunkowanych masek krawędzi** (poziom, pion, dwie diagonale i ich odbicia). Algorytm dla każdego piksela wybiera **najbardziej dopasowaną maskę** na podstawie gradientów Sobela na lokalnym oknie, a następnie liczy wagę Lee **tylko na pikselach po jednej stronie krawędzi**. Efekt: krawędzie statku są ostre, tekstura morza jest gładka. To **referencyjny filtr SAR** — każdy nowy CNN despeckler porównuje swoje PSNR/ENL/EPI względem Refined Lee. Cena: niejednostajne zachowanie na płaskich obszarach (charakterystyczna **dyrekcyjna stronniczość** na spokojnej wodzie, którą doświadczone oko rozpoznaje od razu jako *podpis Refined Lee*).\n\n**NL-means** (Buades, Coll, Morel, 2005, zaadaptowany do SAR) rzuca lokalność do kosza: wagę piksela $j$ przy filtracji piksela $i$ liczy z **podobieństwa całych otoczeń**, a nie z odległości euklidesowej. Wzór:\n\n$$ \\hat I(i) \\;=\\; \\frac{1}{Z(i)} \\sum_{j \\in \\Omega} \\exp\\!\\bigl(-\\|P(i) - P(j)\\|^2 / h^2\\bigr)\\, I(j), $$\n\ngdzie $P(i)$ to patch wokół piksela $i$, $\\Omega$ to okno przeszukiwania (lub cały obraz), a $h$ kontroluje stopień wygładzania. NL-means **nie jest filtracją sąsiedztwa**, tylko *non-local* — może uśredniać dwa odległe piksele, jeśli ich otoczenia są podobne. Najlepsze PSNR w benchmarkach, ale koszt $O(N^2)$ na patch (są szybsze warianty z lookup-tablicami i blok-matchingiem). W SAR używa się go z **logarytmicznym dekorelatorem** lub miarą Kullbacka-Leiblera dopasowaną do statystyk Gamma — naiwna wersja euklidesowa traktuje speckle jak szum addytywny i traci edge preservation."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+          "title": "A Model for Radar Images and Its Application to Adaptive Digital Filtering of Multiplicative Noise",
+          "kind": "paper",
+          "author": "Victor S. Frost, Josephine Abbott Stiles, K. Sam Shanmugan, Julian C. Holtzman",
+          "year": 1982
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+          "title": "skimage.restoration.denoise_nl_means — scikit-image documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-filtrow",
+      "title": "Cztery filtry adaptacyjne head-to-head",
+      "type": "dataTable",
+      "description": "Te cztery filtry pojawią się w każdej recenzji SAR despecklingu — wraz z SRAD jako bonusowym punktem odniesienia. Sortuj po roku, by zobaczyć linię ewolucji.",
+      "data": {
+        "columns": [
+          { "key": "filter", "label": "Filtr", "type": "string", "sortable": true },
+          { "key": "year", "label": "Rok", "type": "number", "sortable": true },
+          { "key": "idea", "label": "Kluczowa idea", "type": "string" },
+          { "key": "edge", "label": "Zachowanie krawędzi", "type": "string" },
+          { "key": "enl_gain", "label": "Typowy zysk ENL na 1-look", "type": "string" },
+          { "key": "cost", "label": "Złożoność (na piksel)", "type": "string" },
+          { "key": "use_case", "label": "Kiedy sięgnąć", "type": "string" }
+        ],
+        "rows": [
+          {
+            "filter": "Lee",
+            "year": 1980,
+            "idea": "Adaptacyjna waga MMSE z lokalnej średniej i wariancji.",
+            "edge": "Średnie — izotropowe okno.",
+            "enl_gain": "× 5–10 (okno 5×5)",
+            "cost": "O(W²)",
+            "use_case": "Szybki baseline, prototyp pipeline'u."
+          },
+          {
+            "filter": "Frost",
+            "year": 1982,
+            "idea": "Eksponencjalne jądro z tłumieniem zależnym od CoV.",
+            "edge": "Lepsze niż Lee — wciąż izotropowe.",
+            "enl_gain": "× 6–12 (K = 1.0)",
+            "cost": "O(W²)",
+            "use_case": "Gdy Lee zostawia 'aureole' wokół jasnych celów."
+          },
+          {
+            "filter": "Refined Lee",
+            "year": 1981,
+            "idea": "8 ukierunkowanych masek krawędzi + Lee na wybranej połowie.",
+            "edge": "Najlepsze z klasycznych — wyraźne krawędzie.",
+            "enl_gain": "× 10–20",
+            "cost": "O(W² · 8)",
+            "use_case": "Referencyjny baseline w benchmarkach SAR despecklingu."
+          },
+          {
+            "filter": "NL-means (SAR)",
+            "year": 2005,
+            "idea": "Wagi z podobieństwa CAŁYCH otoczeń, nie pikseli; non-local.",
+            "edge": "Bardzo dobre, ale wrażliwe na dobór h i metryki.",
+            "enl_gain": "× 15–40",
+            "cost": "O(N²) bez optymalizacji",
+            "use_case": "Maksymalne PSNR offline; w czasie rzeczywistym — nie."
+          },
+          {
+            "filter": "SRAD (bonus)",
+            "year": 2002,
+            "idea": "Anizotropowa dyfuzja zorientowana na CoV.",
+            "edge": "Dobre — iteracyjnie wyostrza krawędzie.",
+            "enl_gain": "× 8–15 (po 30 iteracjach)",
+            "cost": "O(W² · iters)",
+            "use_case": "Gdy iteracja jest ok, np. preprocessing offline."
+          }
+        ],
+        "initialSort": { "key": "year", "dir": "asc" }
+      }
+    },
+    {
+      "id": "quiz-filtry-multi",
+      "title": "Quiz: co jest prawdą o speckle i filtrach adaptacyjnych?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o **speckle** i **filtrach adaptacyjnych** są prawdziwe? Zaznacz wszystkie pasujące.",
+        "options": [
+          "ENL można policzyć na całej scenie Sentinel-1 — średnia i odchylenie po wszystkich pikselach zwracają wiarygodną liczbę.",
+          "Waga $W$ filtra Lee dąży do **1** w obszarach krawędziowych i do **0** w jednorodnych — dlatego krawędzie są zachowywane.",
+          "Refined Lee zawsze przewyższa klasyczny Lee — dlatego zastąpił go jako wybór domyślny w *każdym* pipelinie SAR.",
+          "Multilooking $4$-look obniża rozdzielczość $4$-krotnie, ale podnosi ENL z $\\approx 1$ do $\\approx 4$ — to jawny *trade-off* rozdzielczość ↔ gładkość radiometryczna."
+        ],
+        "correct": [1, 3],
+        "explanation": "Stwierdzenie 0 jest fałszywe — ENL trzeba liczyć na **patchu jednorodnym** (woda, pas startowy), inaczej wariancja sceny zafałszowuje pomiar. Stwierdzenie 1 jest prawdziwe i jest to *istota* filtra Lee: na krawędzi $\\hat\\sigma_R^2 \\gg \\bar I^2 \\sigma_v^2$ więc $W \\to 1$ (zostaw oryginał); na płaskim obszarze $\\hat\\sigma_R^2 \\to 0$, więc $W \\to 0$ (uśrednij do lokalnej średniej). Stwierdzenie 2 jest fałszywe — Refined Lee jest **referencyjnym baseline**, ale jego dyrekcyjna stronniczość na spokojnej wodzie (charakterystyczne 'paski' wzdłuż wybranych masek) sprawia, że doświadczeni operatorzy często wracają do plain Lee na obszarach hydrograficznych. Stwierdzenie 3 jest prawdziwe i jest podstawowym *trade-off* multilooka: zysk ENL $= N_r \\cdot N_a$ kosztem proporcjonalnej utraty rozdzielczości.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-eksperyment",
+      "title": "Sandbox: pobaw się oknem, liczbą looków i Pfa",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Synteza patcha SAR z krawedzia statek/morze:\nrng = np.random.default_rng(7)\nclean = np.zeros((96, 96))\nclean[20:50, 30:70] = 80.0  # 'statek' o jasnym backscatter\nclean[60:80, 10:40] = 30.0  # 'pole' o sredniej jasnosci\nspeckle = rng.exponential(scale=1.0, size=clean.shape)\nnoisy = clean * speckle\n\n\ndef lee_filter(image, window=5, num_looks=1):\n    img = np.asarray(image, dtype=np.float64)\n    H, W = img.shape\n    half = window // 2\n    sigma_v2 = 1.0 / num_looks\n    padded = np.pad(img, half, mode='edge')\n    out = np.empty_like(img)\n    for i in range(H):\n        for j in range(W):\n            patch = padded[i:i + window, j:j + window]\n            m = float(patch.mean())\n            v = float(patch.var())\n            sigma_R2 = max(0.0, (v - m * m * sigma_v2) / (1.0 + sigma_v2))\n            denom = sigma_R2 + m * m * sigma_v2\n            w = sigma_R2 / denom if denom > 0 else 0.0\n            out[i, j] = m + w * (img[i, j] - m)\n    return out\n\n\n# Pokrec parametrami: window 3/5/7/11, num_looks 1/4/8\nfiltered = lee_filter(noisy, window=5, num_looks=1)\n\n# Zwroc uwage, jak ENL na fragmencie 'morza' (lewa-gorna 20x20) zmienia sie z parametrami:\nsea_patch_noisy = noisy[0:20, 0:20]\nsea_patch_filt = filtered[0:20, 0:20]\nenl_noisy = (sea_patch_noisy.mean() / sea_patch_noisy.std(ddof=0)) ** 2\nenl_filt = (sea_patch_filt.mean() / sea_patch_filt.std(ddof=0)) ** 2\nprint(f'ENL przed filtracja: {enl_noisy:.2f}, po: {enl_filt:.2f}')\n",
+        "encouragement": "Spróbuj większych okien i większej liczby looków — i sprawdź, kiedy 'statek' przestaje mieć ostrą krawędź."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Speckle_(interference)",
+      "title": "Speckle (interference) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4767017",
+      "title": "Digital Image Enhancement and Noise Filtering by Use of Local Statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+      "title": "A Model for Radar Images and Its Application to Adaptive Digital Filtering of Multiplicative Noise",
+      "kind": "paper",
+      "author": "Victor S. Frost, Josephine Abbott Stiles, K. Sam Shanmugan, Julian C. Holtzman",
+      "year": 1982
+    },
+    {
+      "url": "https://doi.org/10.1109/TIP.2002.804276",
+      "title": "Speckle Reducing Anisotropic Diffusion",
+      "kind": "paper",
+      "author": "Yongjian Yu and Scott T. Acton",
+      "year": 2002
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+      "title": "skimage.restoration.denoise_nl_means — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.sar.tools.ui/operators/SpeckleFilterOp.html",
+      "title": "ESA SNAP — Speckle Filtering operator (Lee, Frost, Refined Lee, IDAN, Lee Sigma)",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,341 @@
+{
+  "schemaVersion": 1,
+  "slug": "terrain-correction-i-geokodowanie-scen-sentinel-1",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m1",
+  "title": "Terrain correction i geokodowanie scen Sentinel-1",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Range-Doppler terrain correction krok po kroku: dlaczego radar bocznopatrzący generuje layover, foreshortening i shadow, jak DEM (Copernicus 30 m, SRTM) prostuje siatkę radarową na siatkę EPSG:4326 i jak wywołać operator Terrain-Correction w snappy nad Tatrami albo Alpami.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "geometria-i-dystorsje",
+      "title": "Geometria SAR a topografia: layover, foreshortening, shadow",
+      "type": "theory",
+      "data": {
+        "markdown": "Sentinel-1 obrazuje Ziemię **bocznie** (side-looking) — antena C-SAR jest skierowana mniej więcej prostopadle do kierunku lotu pod kątem $\\theta_i \\in [29°, 46°]$ względem nadiru w trybie **IW**. Geometria akwizycji jest dwuwymiarowa: oś **range** mierzy czas powrotu echa (czyli odległość radar–ziemia po linii widoczności), oś **azimuth** — pozycję wzdłuż orbity. **Pikseli sceny nie indeksuje pozycja geograficzna**, tylko `(slant_range_time, azimuth_time)` — dlatego naiwne wrzucenie GRDH na mapę kończy się obrazem przesuniętym o kilka kilometrów względem prawdziwego brzegu.\n\n![Wizualizacja artystyczna satelity Sentinel-1 na orbicie: prostokątna antena C-SAR rozłożona prostopadle do kierunku lotu, panele słoneczne wzdłuż osi orbity, świetlna wiązka odbicia z powierzchni Ziemi w stronę instrumentu](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel_1-IMG_5874-white.jpg)\n\nDopóki teren jest **płaski**, mapowanie `slant_range_time → ground_range_distance` jest deterministyczne: $R_g = R_s \\sin(\\theta_i)$ przekłada zasięg ślizgowy na odległość po elipsoidzie. **Górki, doliny i strome zbocza** wszystko psują, bo to samo $R_s$ może odpowiadać dwóm różnym punktom na powierzchni terenu, a jedno zbocze potrafi wygenerować trzy różne dystorsje:\n\n- **Foreshortening (skrócenie)** — zbocze wznoszące się ku radarowi „kompresuje się\" w range, bo szczyt ma krótszy czas echa niż podstawa, mimo realnie długiego stoku. Cała ściana doliny mieści się w 5 pikselach mimo długości 200 m. Im bardziej $\\alpha$ (lokalne nachylenie do radaru) zbliża się do $90° - \\theta_i$, tym silniejsze skrócenie.\n- **Layover (nakładanie)** — gdy zbocze jest **stromsze** niż kąt padania ($\\alpha > 90° - \\theta_i$), szczyt zwraca echo *szybciej* niż podstawa. W obrazie wygląda to tak, jakby góra „opadła\" na dolinę: szczyt i podstawa mieszają się w tych samych pikselach range. Layover jest **niemożliwy do odzyskania** — informacja jest stracona.\n- **Shadow (cień)** — zbocze odwrócone od radaru jest niewidoczne ($\\alpha_{back} > \\theta_i$), bo echo nie ma jak wrócić. Tam, gdzie był cień, w obrazie jest pasek bardzo niskiego (~szumowego) backscatteru.\n\nKażda z dystorsji jest funkcją lokalnego nachylenia terenu i kąta padania. **Terrain correction** jest dokładnie tym etapem, który tę zależność rozplątuje — używa modelu wysokości terenu (DEM), żeby z geometrii radaru zrobić poprawną siatkę kartograficzną."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "dopasuj-dystorsje",
+      "title": "Dopasuj dystorsję do geometrii zbocza",
+      "type": "dragMatch",
+      "description": "Cztery typowe sytuacje terenowe, cztery typy dystorsji. Dopasuj każdą do warunku, który ją wywołuje.",
+      "data": {
+        "prompt": "Sentinel-1 przelatuje nad terenem górskim z kątem padania θ_i = 35°. Każdej geometrii zbocza przypisz dokładnie jeden typ dystorsji w obrazie radarowym.",
+        "items": [
+          { "id": "foreshortening", "label": "Foreshortening (skrócenie)" },
+          { "id": "layover", "label": "Layover (nakładanie)" },
+          { "id": "shadow", "label": "Shadow (cień)" },
+          { "id": "brak", "label": "Brak dystorsji geometrycznej" }
+        ],
+        "zones": [
+          {
+            "id": "zbocze-lagodne-do-radaru",
+            "label": "Łagodne zbocze (α = 15°) skierowane KU radarowi — szczyt bliżej satelity niż podstawa",
+            "accepts": ["foreshortening"]
+          },
+          {
+            "id": "zbocze-strome-do-radaru",
+            "label": "Strome zbocze (α = 70°) skierowane KU radarowi — szczyt zwraca echo szybciej niż podstawa",
+            "accepts": ["layover"]
+          },
+          {
+            "id": "zbocze-strome-od-radaru",
+            "label": "Strome zbocze (α = 60°) skierowane OD radaru — kąt schowania > θ_i",
+            "accepts": ["shadow"]
+          },
+          {
+            "id": "teren-plaski",
+            "label": "Płaski teren (α = 0°), poziom morza — odwzorowanie 1:1 z R_s · sin(θ_i)",
+            "accepts": ["brak"]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Foreshortening pojawia się dla zboczy łagodnych skierowanych ku radarowi — szczyt jest bliżej, więc zbocze 'kompresuje się' w range. Layover występuje, gdy nachylenie zbocza ku radarowi przekracza próg $90° - \\theta_i = 55°$ dla $\\theta_i = 35°$ — szczyt zwraca echo wcześniej niż podstawa i nakłada się na nią w obrazie. Shadow pojawia się, gdy zbocze odwrócone od radaru ma nachylenie większe niż $\\theta_i$ — wiązka po prostu nie dociera do gruntu. Płaski teren jest jedyną sytuacją, w której prosta zależność $R_g = R_s \\sin(\\theta_i)$ wystarcza."
+      }
+    },
+    {
+      "id": "quiz-progi-dystorsji",
+      "title": "Sprawdź: progi layover i shadow dla θ_i = 35°",
+      "type": "quiz",
+      "data": {
+        "question": "Sentinel-1 leci nad Tatrami w trybie IW z kątem padania θ_i = 35°. Geolog pokazuje ci cztery zbocza. Które z nich na pewno wygenerują **layover** w obrazie GRDH?",
+        "options": [
+          "Zbocze ku radarowi o nachyleniu α = 20° — typowy stok narciarski",
+          "Zbocze ku radarowi o nachyleniu α = 60° — strome ściany w paśmie głównym Tatr",
+          "Zbocze odwrócone od radaru o nachyleniu α = 40° — północne stoki",
+          "Pionowa skalna ściana (α = 90°) skierowana ku radarowi — np. urwisko Mnicha"
+        ],
+        "correct": [1, 3],
+        "explanation": "Layover występuje, gdy nachylenie zbocza skierowanego KU radarowi spełnia warunek $\\alpha > 90° - \\theta_i$. Dla $\\theta_i = 35°$ próg to $55°$. Zbocze 60° (opcja 1) i pionowe urwisko 90° (opcja 3) oba spełniają warunek $\\alpha > 55°$ i wygenerują layover. Opcja 0 ($\\alpha = 20° < 55°$) da foreshortening, nie layover. Opcja 2 (zbocze odwrócone od radaru) jest kandydatem na **shadow**, nie layover — szczyt nie zwraca echa wcześniej, bo cała ściana jest niewidoczna dla radaru.",
+        "multiSelect": true
+      },
+      "sources": [
+        {
+          "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.sar.tools.ui/operators/RangeDopplerGeocodingOp.html",
+          "title": "Range-Doppler terrain correction — SNAP help",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "range-doppler-z-dem",
+      "title": "Range-Doppler i geokodowanie z DEM-em",
+      "type": "theory",
+      "data": {
+        "markdown": "**Range-Doppler Terrain Correction** (RD TC) jest standardowym algorytmem geokodowania scen SAR — ten sam, którego używa SNAP, GAMMA i większość komercyjnych pipeline'ów. Idea jest prosta: zamiast próbować odwracać operację obrazowania (czyli iść z radaru do mapy), **idziemy w drugą stronę** — dla każdego piksela siatki kartograficznej wyznaczamy, w którym pikselu radarowym powinien wylądować, i z niego pobieramy wartość σ⁰.\n\n![Schemat Sentinel-1 i jego wiązki C-SAR — instrument boczny patrzący na powierzchnię Ziemi w geometrii range-azimuth, satelita porusza się wzdłuż orbity z prędkością ok. 7.5 km/s](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n\nFormalnie: dla każdej krotki $(\\lambda, \\varphi)$ w docelowej siatce (zwykle EPSG:4326 lub UTM) rekonstruujemy współrzędne 3D punktu gruntu jako $(x, y, z)$ z DEM-em jako $z = \\text{DEM}(\\lambda, \\varphi)$. Następnie szukamy chwili akwizycji $t_a$ (azimuth time), w której satelita widzi ten punkt. Wynika ona z **równania Dopplera zerowego**:\n\n$$f_D(t_a) \\;=\\; \\frac{2}{\\lambda}\\, \\bigl(\\mathbf{v}_{sat}(t_a) - \\mathbf{v}_{ground}\\bigr) \\cdot \\frac{\\mathbf{r}(t_a) - \\mathbf{p}}{\\lVert \\mathbf{r}(t_a) - \\mathbf{p} \\rVert} \\;=\\; 0,$$\n\ngdzie $\\mathbf{r}(t_a)$ to pozycja satelity z wektorów stanu orbity, $\\mathbf{p}$ — pozycja punktu gruntu, $\\mathbf{v}_{sat}$ — prędkość satelity, $\\lambda$ — długość fali (5.55 cm dla C-band). Po znalezieniu $t_a$ liczymy zasięg ślizgowy $R_s = \\lVert \\mathbf{r}(t_a) - \\mathbf{p} \\rVert$, przeliczamy na slant-range time $t_r = 2 R_s / c$ i dostajemy parę `(t_a, t_r)` — czyli pozycję w geometrii radaru. Z tej pozycji **bilinearna interpolacja** (lub bicubic) wyciąga wartość σ⁰.\n\nKluczowe konsekwencje algorytmu:\n\n- Bez **DEM-u** $z(\\lambda, \\varphi)$ algorytm degeneruje się do prostego rzutu ortograficznego z założeniem `z = 0`. Wynik dla dowolnego terenu z reliefem > 50 m jest niepoprawny (ten sam problem co naiwna kalibracja bez LUT-u).\n- Bez **wektorów stanu orbity** (Precise Orbit Files od ESA, ~2 dni opóźnienia) używamy szybkich Restituted Orbits — geokodowanie jest wtedy gorsze o ~10–30 m. Dla ATR statków na otwartym morzu to nie ma znaczenia; dla rejestracji z optyką nad lądem — owszem.\n- **Layover i shadow** zostają **wykryte i zamaskowane** jako oddzielna binarna mapa — pikseli, które według DEM-u są niewidzialne lub nakładają się, nie geokodujemy w ogóle, tylko oznaczamy `NaN` / 0 z flagą."
+      },
+      "sources": [
+        {
+          "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.sar.tools.ui/operators/RangeDopplerGeocodingOp.html",
+          "title": "Range-Doppler terrain correction — SNAP help",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.wichmann-verlag.de/en/buecher/buchreihen/sar-geocoding-data-and-systems-de.html",
+          "title": "SAR Geocoding: Data and Systems",
+          "kind": "book",
+          "author": "Gunter Schreier (ed.)",
+          "year": 1993
+        }
+      ]
+    },
+    {
+      "id": "tabela-dem",
+      "title": "DEM-y dla Sentinel-1: rozdzielczość, pokrycie, kiedy używać",
+      "type": "dataTable",
+      "description": "Cztery DEM-y dostępne w SNAP-ie do RD TC. Sortuj po 'rozdzielczości' żeby zobaczyć, który jest najgęstszy, albo po 'roku publikacji' żeby zobaczyć, który jest najświeższy.",
+      "data": {
+        "columns": [
+          { "key": "dem", "label": "DEM", "type": "string", "sortable": true, "filterable": true },
+          { "key": "rozdzielczosc_m", "label": "Rozdzielczość [m]", "type": "number", "sortable": true, "filterable": false },
+          { "key": "pokrycie", "label": "Pokrycie geograficzne", "type": "string", "sortable": false, "filterable": false },
+          { "key": "rok", "label": "Rok publikacji", "type": "number", "sortable": true, "filterable": false },
+          { "key": "rekomendacja", "label": "Kiedy wybrać", "type": "string", "sortable": false, "filterable": false }
+        ],
+        "rows": [
+          {
+            "dem": "Copernicus DEM GLO-30",
+            "rozdzielczosc_m": 30,
+            "pokrycie": "Globalny (60°S do 84°N), oparty na TanDEM-X",
+            "rok": 2020,
+            "rekomendacja": "Domyślny wybór dla S-1 w 2024+ — najlepsza ostrość krawędzi i spójność globalna"
+          },
+          {
+            "dem": "Copernicus DEM GLO-90",
+            "rozdzielczosc_m": 90,
+            "pokrycie": "Globalny (60°S do 84°N), wersja 90 m TanDEM-X",
+            "rok": 2020,
+            "rekomendacja": "Lekka wersja GLO-30 — gdy GRDH 20 m wystarczy i chcesz mniejszych plików"
+          },
+          {
+            "dem": "SRTM 1Sec HGT (NASA)",
+            "rozdzielczosc_m": 30,
+            "pokrycie": "Tylko między ±60° szerokości — brak Antarktydy i Grenlandii",
+            "rok": 2014,
+            "rekomendacja": "Backward compatibility i sprawdzone w SNAP defaultach; gorszy nad bardzo stromymi pasmami"
+          },
+          {
+            "dem": "ASTER GDEM v3",
+            "rozdzielczosc_m": 30,
+            "pokrycie": "Globalny (83°S do 83°N), oparty na stereo ASTER",
+            "rok": 2019,
+            "rekomendacja": "Plan B gdy SRTM ma luki w wysokich szerokościach; wyższe artefakty stereo nad chmurami"
+          }
+        ],
+        "initialSort": { "key": "rozdzielczosc_m", "dir": "asc" },
+        "pageSize": 10
+      },
+      "sources": [
+        {
+          "url": "https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model",
+          "title": "Copernicus DEM — official product description (ESA)",
+          "kind": "article"
+        },
+        {
+          "url": "https://www2.jpl.nasa.gov/srtm/",
+          "title": "SRTM — NASA JPL mission page",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "code-classify-distortion",
+      "title": "Klasyfikuj typ dystorsji per piksel",
+      "type": "code",
+      "description": "Zaimplementuj prostą regułę decyzyjną opartą na kącie padania i lokalnym nachyleniu — to dokładnie ten warunek, którego używa SNAP do generowania maski layover/shadow.",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `classify_distortion(slope_deg, incidence_deg, slope_facing_radar)` która klasyfikuje typ dystorsji geometrycznej dla pojedynczego piksela. Argumenty:\n\n- `slope_deg` (float, ≥ 0): wartość lokalnego nachylenia terenu w stopniach.\n- `incidence_deg` (float, w [0, 90]): kąt padania θ_i w stopniach.\n- `slope_facing_radar` (bool): `True` jeśli zbocze wznosi się **ku** radarowi, `False` jeśli odwraca się **od** radaru.\n\nFunkcja zwraca jeden z czterech łańcuchów: `'none'`, `'foreshortening'`, `'layover'`, `'shadow'`.\n\nZasady (te same co w SNAP-owej masce):\n\n- Jeśli zbocze jest **ku** radarowi i `slope_deg >= incidence_deg` → `'layover'`. (Próg nakładania wynosi $90° - (90° - \\theta_i) = \\theta_i$ przy konwencji nachylenia liczonego od poziomu — ten sam warunek co w pliku `RangeDopplerGeocodingOp.html`.)\n- Jeśli zbocze jest **ku** radarowi i `slope_deg > 0` (ale poniżej progu layover) → `'foreshortening'`.\n- Jeśli zbocze jest **od** radaru i `slope_deg > 90 - incidence_deg` → `'shadow'`.\n- W każdej innej sytuacji → `'none'`.\n\n```\n>>> classify_distortion(20, 35, slope_facing_radar=True)\n'foreshortening'\n>>> classify_distortion(40, 35, slope_facing_radar=True)\n'layover'\n>>> classify_distortion(60, 35, slope_facing_radar=False)\n'shadow'\n>>> classify_distortion(0, 35, slope_facing_radar=True)\n'none'\n```",
+        "starterCode": "def classify_distortion(slope_deg, incidence_deg, slope_facing_radar):\n    \"\"\"Zwroc 'none' / 'foreshortening' / 'layover' / 'shadow'.\"\"\"\n    # TODO: zaimplementuj reguly z opisu zadania\n    return 'none'\n",
+        "tests": [
+          {
+            "name": "lagodne_zbocze_do_radaru_to_foreshortening",
+            "body": "assert classify_distortion(20.0, 35.0, slope_facing_radar=True) == 'foreshortening'",
+            "hidden": false
+          },
+          {
+            "name": "strome_zbocze_do_radaru_to_layover",
+            "body": "assert classify_distortion(40.0, 35.0, slope_facing_radar=True) == 'layover'\nassert classify_distortion(60.0, 35.0, slope_facing_radar=True) == 'layover'\nassert classify_distortion(35.0, 35.0, slope_facing_radar=True) == 'layover'"
+          },
+          {
+            "name": "strome_zbocze_od_radaru_to_shadow",
+            "body": "assert classify_distortion(60.0, 35.0, slope_facing_radar=False) == 'shadow'\nassert classify_distortion(56.0, 35.0, slope_facing_radar=False) == 'shadow'"
+          },
+          {
+            "name": "plaski_teren_i_subprogowe_zbocza_to_none",
+            "body": "assert classify_distortion(0.0, 35.0, slope_facing_radar=True) == 'none'\nassert classify_distortion(0.0, 35.0, slope_facing_radar=False) == 'none'\nassert classify_distortion(40.0, 35.0, slope_facing_radar=False) == 'none'"
+          }
+        ],
+        "solution": "def classify_distortion(slope_deg, incidence_deg, slope_facing_radar):\n    if slope_facing_radar:\n        if slope_deg >= incidence_deg:\n            return 'layover'\n        if slope_deg > 0:\n            return 'foreshortening'\n        return 'none'\n    else:\n        if slope_deg > 90.0 - incidence_deg:\n            return 'shadow'\n        return 'none'\n"
+      }
+    },
+    {
+      "id": "snappy-operator",
+      "title": "snappy: operator Range-Doppler Terrain Correction krok po kroku",
+      "type": "theory",
+      "data": {
+        "markdown": "Po stronie kodu cały RD TC sprowadza się do jednego operatora SNAP-a — `Terrain-Correction` — opakowanego w `snappy.GPF.createProduct(...)`. Po wcześniejszej kalibracji i (opcjonalnie) filtracji speckle pipeline ma stałą formę:\n\n```python\nfrom snappy import GPF, HashMap, ProductIO\n\nsource = ProductIO.readProduct('S1A_IW_GRDH_1SDV_..._calibrated.dim')\n\nparams = HashMap()\nparams.put('demName', 'Copernicus 30m Global DEM')\nparams.put('demResamplingMethod', 'BILINEAR_INTERPOLATION')\nparams.put('imgResamplingMethod', 'BILINEAR_INTERPOLATION')\nparams.put('mapProjection', 'EPSG:4326')\nparams.put('pixelSpacingInMeter', 10.0)\nparams.put('saveLayoverShadowMask', True)\n\ncorrected = GPF.createProduct('Terrain-Correction', params, source)\nProductIO.writeProduct(corrected, 'S1A_IW_GRDH_TC.tif', 'GeoTIFF-BigTIFF')\n```\n\nKilka konwencji, które warto utrwalić przed pierwszym uruchomieniem:\n\n- **`demName`** — łańcuch z dokładnie tą nazwą, którą SNAP rozumie (`'Copernicus 30m Global DEM'`, `'Copernicus 90m Global DEM'`, `'SRTM 1Sec HGT'`, `'ASTER 1sec GDEM'`). Literówki kończą się błędem `Unknown DEM`. Jeśli DEM nie jest jeszcze pobrany lokalnie, SNAP ściąga go automatycznie przy pierwszym uruchomieniu.\n- **`mapProjection`** — `'EPSG:4326'` (WGS84 lat/lon, wygodny dla globalnych analiz) albo konkretny UTM (`'EPSG:32634'` dla strefy 34N nad Polską). Dla downstream-owych ML pipeline'ów UTM jest zwykle lepszy: rozdzielczość pixela jest izotropowa w metrach, więc patche kwadratowe są kwadratowe w terenie.\n- **`pixelSpacingInMeter`** — domyślnie SNAP dopasowuje go do natywnej rozdzielczości produktu (10 m dla GRDH IW), ale można go zmienić — np. 30 m, jeśli DEM ma 30 m, żeby nie tworzyć fałszywej impresji wyższej rozdzielczości po geokodowaniu.\n- **`saveLayoverShadowMask`** — ustaw `True`. Po geokodowaniu dostaniesz dodatkowy band binarny ze znacznikami pikseli zniekształconych — to jest dokładnie ta maska, która powinna trafić do downstream'owego loadera jako `ignore_index` przy treningu segmentacji.\n\nGotcha praktyczny: **najpierw kalibracja, dopiero potem terrain correction**. Jeśli zrobisz TC na nieskalibrowanych intensywnościach, gradient AGC wzdłuż range zostanie wmieszany w gradient terenu i nie da się ich już rozdzielić."
+      },
+      "sources": [
+        {
+          "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.sar.tools.ui/operators/RangeDopplerGeocodingOp.html",
+          "title": "Range-Doppler terrain correction — SNAP help",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+          "title": "Flattening Gamma: Radiometric Terrain Correction for SAR Imagery",
+          "kind": "paper",
+          "author": "David Small",
+          "year": 2011
+        }
+      ]
+    },
+    {
+      "id": "cloze-snappy-tc",
+      "title": "Skonfiguruj snappy.GPF dla terrain correction nad Tatrami",
+      "type": "codeCloze",
+      "description": "Cztery wartości w wywołaniu operatora Terrain-Correction: nazwa DEM-u, projekcja, rozdzielczość docelowa i maska layover/shadow.",
+      "data": {
+        "taskMarkdown": "Uzupełnij parametry operatora `Terrain-Correction` dla GRDH nad Tatrami: użyj **Copernicus 30 m** jako DEM-u, projekcji **WGS84 lat/lon** (kod EPSG dla geodezyjnego WGS-84), rozdzielczości docelowej **10 m** (zgodnej z natywną rozdzielczością GRDH IW) i włącz zapis maski layover/shadow (parametr boolean).\n\n**Uwaga:** wartości stringowe muszą być dokładnie takie, jakich SNAP oczekuje (literówki w nazwie DEM-u kończą się błędem `Unknown DEM`).",
+        "language": "python",
+        "template": "from snappy import GPF, HashMap, ProductIO\n\nsource = ProductIO.readProduct('S1A_IW_GRDH_1SDV_calibrated.dim')\n\nparams = HashMap()\nparams.put('demName', {{dem_name}})\nparams.put('demResamplingMethod', 'BILINEAR_INTERPOLATION')\nparams.put('imgResamplingMethod', 'BILINEAR_INTERPOLATION')\nparams.put('mapProjection', {{projection}})\nparams.put('pixelSpacingInMeter', {{pixel_spacing}})\nparams.put('saveLayoverShadowMask', {{layover_mask}})\n\ncorrected = GPF.createProduct('Terrain-Correction', params, source)\nProductIO.writeProduct(corrected, 'S1A_IW_GRDH_TC.tif', 'GeoTIFF-BigTIFF')\n",
+        "slots": [
+          {
+            "id": "dem_name",
+            "hint": "Dokładny ciąg znaków którego SNAP wymaga dla globalnego DEM-u Copernicus 30 m",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "'Copernicus 30m Global DEM'",
+                "\"Copernicus 30m Global DEM\""
+              ]
+            }
+          },
+          {
+            "id": "projection",
+            "hint": "Standardowy kod EPSG dla WGS84 geodezyjnego (lat/lon)",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "'EPSG:4326'",
+                "\"EPSG:4326\""
+              ]
+            }
+          },
+          {
+            "id": "pixel_spacing",
+            "hint": "Liczba w metrach — zgodna z natywną rozdzielczością GRDH IW",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "10.0",
+                "10"
+              ]
+            }
+          },
+          {
+            "id": "layover_mask",
+            "hint": "Boolean Pythona — chcemy zapisać maskę",
+            "validation": {
+              "kind": "exact",
+              "value": "True"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-wybor-dem",
+      "title": "Sprawdź: który DEM dla S-1 nad Antarktydą",
+      "type": "quiz",
+      "data": {
+        "question": "Robisz pipeline ATR statków na wodach przybrzeżnych Antarktydy (~70°S). Wybór DEM-u dla operatora Terrain-Correction. Który DEM jest **niezalecany** dla tej sceny?",
+        "options": [
+          "Copernicus DEM GLO-30 — globalny, 30 m, oparty o TanDEM-X",
+          "Copernicus DEM GLO-90 — globalny, 90 m, oparty o TanDEM-X",
+          "SRTM 1Sec HGT — 30 m, zasięg ±60° szerokości geograficznej",
+          "ASTER GDEM v3 — globalny, 30 m, oparty o stereo ASTER"
+        ],
+        "correct": [2],
+        "explanation": "SRTM ma fizyczne ograniczenie zasięgu do **±60° szerokości geograficznej** — misja shuttle'a NASA z lutego 2000 roku po prostu nie pokrywała szerokości polarnych. Scena na 70°S jest **poza pokryciem SRTM** i operator Terrain-Correction zwróci błąd lub wpadnie w `z = 0`, generując poprawne geometrycznie, ale fizycznie kompletnie błędne σ⁰ nad lodem. Copernicus DEM (oba GLO-30 i GLO-90) sięgają do 84°N i 60°S+ z pełnym pokryciem TanDEM-X aż po Antarktydę. ASTER GDEM v3 (83°S do 83°N) też pokrywa te szerokości. Domyślny wybór dla nowoczesnych pipeline'ów S-1 to GLO-30 — najświeższy, najgęstszy, globalny.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "sandbox-incydencja",
+      "title": "Pobaw się: kąt padania, nachylenie i progi layover/shadow",
+      "type": "sandbox",
+      "description": "Mała symulacja Monte Carlo na losowym profilu zboczy: ile procent pikseli IW (θ_i ≈ 35°) wpadnie w layover lub shadow, gdy ustawisz różne rozkłady nachylenia.",
+      "data": {
+        "starterCode": "import random\n\nrandom.seed(2024)\n\n# Symulujemy 10 000 pikseli losowych zboczy.\n# - slope_deg: nachylenie z rozkladem trojkatnym (low, mode, high)\n# - facing_radar: 50/50 czy zbocze wznosi sie ku radarowi\nN = 10_000\nINCIDENCE_DEG = 35.0  # typowy IW S-1\n\n\ndef classify_distortion(slope_deg, incidence_deg, slope_facing_radar):\n    if slope_facing_radar:\n        if slope_deg >= incidence_deg:\n            return 'layover'\n        if slope_deg > 0:\n            return 'foreshortening'\n        return 'none'\n    else:\n        if slope_deg > 90.0 - incidence_deg:\n            return 'shadow'\n        return 'none'\n\n\nlayover = foreshortening = shadow = none = 0\nfor _ in range(N):\n    # Trojkatny rozklad: laskotki nizinne -> wysokie pasma gorskie\n    slope = random.triangular(low=0.0, mode=10.0, high=80.0)\n    facing = random.random() < 0.5\n    klasa = classify_distortion(slope, INCIDENCE_DEG, facing)\n    if klasa == 'layover':\n        layover += 1\n    elif klasa == 'foreshortening':\n        foreshortening += 1\n    elif klasa == 'shadow':\n        shadow += 1\n    else:\n        none += 1\n\nprint(f'Layover:        {layover/N*100:5.1f}%')\nprint(f'Foreshortening: {foreshortening/N*100:5.1f}%')\nprint(f'Shadow:         {shadow/N*100:5.1f}%')\nprint(f'Bez dystorsji:  {none/N*100:5.1f}%')\n\n# Sproboj: zmien INCIDENCE_DEG na 29 (skraj IW1) albo 46 (IW3) i zobacz, jak\n# rozne czesci swathu reaguja na ten sam profil terenu. Albo zmien parametry\n# random.triangular() na (0, 5, 30) zeby zasymulowac plaskowyz zamiast Tatr.\n",
+        "encouragement": "Zmień θ_i z 29° (skraj IW1) na 46° (IW3) i zobacz, dlaczego nad Tatrami wybór sub-swathu wpływa na procent pikseli zniszczonych przez layover."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.sar.tools.ui/operators/RangeDopplerGeocodingOp.html",
+      "title": "Range-Doppler terrain correction — SNAP help",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.wichmann-verlag.de/en/buecher/buchreihen/sar-geocoding-data-and-systems-de.html",
+      "title": "SAR Geocoding: Data and Systems",
+      "kind": "book",
+      "author": "Gunter Schreier (ed.)",
+      "year": 1993
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+      "title": "Flattening Gamma: Radiometric Terrain Correction for SAR Imagery",
+      "kind": "paper",
+      "author": "David Small",
+      "year": 2011
+    },
+    {
+      "url": "https://spacedata.copernicus.eu/collections/copernicus-digital-elevation-model",
+      "title": "Copernicus DEM — official product description (ESA)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www2.jpl.nasa.gov/srtm/",
+      "title": "SRTM — NASA JPL mission page",
+      "kind": "article"
+    },
+    {
+      "url": "https://rasterio.readthedocs.io/en/stable/",
+      "title": "rasterio — official documentation",
+      "kind": "article"
+    }
+  ]
+}

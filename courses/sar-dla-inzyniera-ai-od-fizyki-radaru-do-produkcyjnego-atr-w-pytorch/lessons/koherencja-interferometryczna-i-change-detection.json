@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 1,
+  "slug": "koherencja-interferometryczna-i-change-detection",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m2",
+  "title": "Koherencja interferometryczna i change detection",
+  "eyebrow": "KLASYCZNE BASELINE'Y",
+  "description": "Zespolony termometr stabilności fazy między dwoma SLC plus statystycznie odporny na speckle log-ratio amplitudy — komplementarna para klasycznych baseline'ów dla osi czasowej, którą deep learning z Modułu 3 musi pobić.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intuicja",
+      "title": "Koherencja jako moduł zespolonej korelacji dwóch SLC",
+      "type": "theory",
+      "data": {
+        "markdown": "Mając dwie sceny SLC tego samego obszaru, $s_1$ i $s_2$, **dokładnie ko-zarejestrowane** (sub-piksel piksel-do-piksela), pytamy nie o ich amplitudę, lecz o **stabilność fazy** między nimi. Jeśli powierzchnia między akwizycjami nie zmieniła się, lokalna konfiguracja rozpraszaczy w obrębie piksela jest taka sama i różnica faz między $s_1$ i $s_2$ ma deterministyczną wartość, niezależnie od tego, że bezwzględna faza każdej sceny z osobna jest losowa (speckle). To stałe przesunięcie fazowe, niesione przez **zespoloną korelację**, jest informatywne o terenie i jego deformacji — i to mierzymy.\n\n![Sentinel-1 SAR — przykład sceny z konstelacji Sentinel-1 używanej rutynowo w analizie InSAR i change detection nad lądem; widoczna struktura amplitudy z charakterystycznym ziarnistym speckle'em rozpraszania koherentnego, na której wyznacza się parę SLC do liczenia koherencji](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel_1-IMG_5874-white.jpg)\n*(Obraz poglądowy: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\n**Koherencja interferometryczna** $\\gamma$ to zespolona korelacja dwóch SLC po lokalnym oknie, znormalizowana energiami:\n\n$$ \\gamma \\;=\\; \\frac{\\mathbb{E}\\!\\left[\\, s_1 \\,\\overline{s_2}\\,\\right]}{\\sqrt{\\mathbb{E}[|s_1|^2]\\,\\cdot\\,\\mathbb{E}[|s_2|^2]}}\\;\\in\\;\\mathbb{C}, \\qquad |\\gamma|\\in[0,1]. $$\n\nW change detection interesuje nas **moduł** $|\\gamma|$:\n\n- $|\\gamma| \\to 1$: faza zachowana — **stabilna** powierzchnia (gołe skały, miasto, pustynia, lotniskowy beton).\n- $|\\gamma| \\to 0$: **dekorelacja** — losowa rekonfiguracja rozpraszaczy między dwiema akwizycjami (orka, powódź, las pod wiatrem, świeży śnieg, deformacja sejsmiczna o dużym gradiencie).\n\nDekorelacja kradnie koherencję trzema niezależnymi kanałami i każdy z nich mnoży: $|\\gamma| = |\\gamma_\\text{temp}| \\cdot |\\gamma_\\text{geom}| \\cdot |\\gamma_\\text{SNR}|$. Każdy składnik jest $\\le 1$, więc realna koherencja jest zawsze poniżej **najsłabszego ogniwa** budżetu — tę tabelę przeanalizujemy za chwilę. To jest **jakościowo inna** informacja niż amplituda: $|\\gamma|$ widzi *czy* coś się zmieniło fazowo, $\\sigma^0$ widzi *jak mocno* zmieniło się odbicie. Dlatego koherencja i log-ratio (dalej w lekcji) są **komplementarne**, nie konkurencyjne."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1088/0266-5611/14/4/001",
+          "title": "Synthetic Aperture Radar Interferometry",
+          "kind": "paper",
+          "author": "Richard Bamler, Philipp Hartl",
+          "year": 1998
+        }
+      ]
+    },
+    {
+      "id": "budzet-dekorelacji-tabela",
+      "title": "Budżet dekorelacji — trzy mnożące się składniki $|\\gamma|$",
+      "description": "Z czego składa się realna koherencja sceny i które ogniwo zwykle dominuje w pracy z parą SLC Sentinel-1.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "kanal", "label": "Kanał dekorelacji", "type": "string", "sortable": true, "filterable": true },
+          { "key": "co_psuje", "label": "Co fizycznie psuje fazę", "type": "string", "sortable": false, "filterable": false },
+          { "key": "limit", "label": "Wzór / limit", "type": "string", "sortable": false, "filterable": false },
+          { "key": "dominujacy", "label": "Kiedy dominuje na S-1", "type": "string", "sortable": true, "filterable": true }
+        ],
+        "rows": [
+          {
+            "kanal": "$|\\gamma_\\text{temp}|$ — temporalna",
+            "co_psuje": "zmiana mikrostruktury rozpraszaczy między akwizycjami (wegetacja, woda, śnieg, orka, deformacja niehomogeniczna)",
+            "limit": "modelowo eksponencjalny zanik z odstępem czasu $\\Delta t$: $|\\gamma_\\text{temp}| \\approx \\exp(-\\Delta t / \\tau)$, $\\tau$ rzędu dni-tygodni dla wegetacji, lat dla skał",
+            "dominujacy": "para 6/12-dniowa nad lądem zmiennym (rolnictwo, las)"
+          },
+          {
+            "kanal": "$|\\gamma_\\text{geom}|$ — geometryczna (baseline)",
+            "co_psuje": "różnica kąta patrzenia z dwóch przejść satelity (perpendicular baseline $B_\\perp$)",
+            "limit": "$|\\gamma_\\text{geom}| = 1 - B_\\perp / B_\\perp^\\text{crit}$; krytyczna baseline $B_\\perp^\\text{crit} \\approx \\lambda r \\tan\\theta_i / R_\\text{rg}$, dla S-1 IW typowo ~5 km",
+            "dominujacy": "rzadko na S-1 (orbity blisko, $B_\\perp \\ll B_\\perp^\\text{crit}$); częściej na ERS/ENVISAT"
+          },
+          {
+            "kanal": "$|\\gamma_\\text{SNR}|$ — szumowa (termiczna)",
+            "co_psuje": "termiczny szum instrumentu w stosunku do sygnału — gdy $\\sigma^0$ sceny zbliża się do NESZ",
+            "limit": "$|\\gamma_\\text{SNR}| = \\text{SNR}/(\\text{SNR}+1)$; dla S-1 NESZ $\\approx -22$ dB, więc nad ciemną wodą $\\sigma^0 \\approx -25$ dB SNR < 1 i koherencja kolapsuje",
+            "dominujacy": "akweny w ciszy morskiej, ciemne lasy borealne, mokra gleba"
+          },
+          {
+            "kanal": "$|\\gamma_\\text{vol}|$ — wolumetryczna (objętościowa)",
+            "co_psuje": "rozpraszanie w głębi ośrodka (las, śnieg, sucha gleba) — wiele warstw rozpraszaczy",
+            "limit": "zanikająca z głębokością penetracji; składa się z $|\\gamma_\\text{temp}|$ — często liczona jako jego część",
+            "dominujacy": "las iglasty, suchy piasek przy paśmie L; mniej istotna na C-band Sentinel-1"
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "quiz-co-mierzy-koherencja",
+      "title": "Sprawdź intuicję: co mierzy $|\\gamma|$?",
+      "type": "quiz",
+      "data": {
+        "question": "Masz dwie SLC Sentinel-1 IW nad tym samym fragmentem miasta, odstęp 12 dni, ten sam track i ramka. Dla większości pikseli tła miejskiego $|\\hat\\gamma|$ wychodzi w okolicach $0.85$. Co najlepiej opisuje, **co właśnie zmierzyłeś**?",
+        "options": [
+          "Średnią intensywność $\\sigma^0$ tła miejskiego — ok. 85% maksymalnej.",
+          "Stosunek sygnał/szum (SNR) na pikselach miejskich — ok. 5.7 (czyli $0.85/0.15$).",
+          "Stabilność konfiguracji rozpraszaczy w obrębie piksela między akwizycjami — wysoka, więc miasto pomiędzy 12 dniami w mikrostrukturze prawie się nie zmieniło.",
+          "Średni log-ratio amplitudy $\\log_{10}(A_1/A_2)$ na pikselach miejskich — ok. $0.85$."
+        ],
+        "correct": [2],
+        "explanation": "$|\\gamma|$ to **moduł zespolonej korelacji** dwóch SLC po oknie — mierzy, **na ile spójnie zachowuje się faza** między akwizycjami, niezależnie od tego, jak jasna jest scena. Na ustabilizowanym tle miejskim mikrostruktura piksela (dachy, ściany, ściółka asfaltowa) między 12 dniami praktycznie się nie zmienia, więc faza zachowuje swoją losową, ale **deterministyczną** wartość — stąd $|\\hat\\gamma| \\approx 0.85$ (resztę zjada $|\\gamma_\\text{SNR}|$ i drobna dekorelacja temporalna). Opcja 1 myli koherencję ze średnim $\\sigma^0$ (są niezależne — można mieć ciemną a wysoce koherentną scenę nad asfaltową drogą). Opcja 2 bierze formułę $|\\gamma_\\text{SNR}| = \\text{SNR}/(\\text{SNR}+1)$ za $|\\gamma|$ całkowite — to pomija pozostałe składniki budżetu i sugeruje, że $|\\gamma|$ jest tylko o szumie. Opcja 4 myli koherencję z log-ratio amplitudy — to dwa zupełnie różne statystyki (i log-ratio nie ma zakresu $[0,1]$).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "estymator-bias",
+      "title": "Estymator $|\\hat\\gamma|$ z ruchomego okna i jego obciążenie",
+      "type": "theory",
+      "data": {
+        "markdown": "W praktyce nie znamy oczekiwań — zastępujemy je średnimi po **lokalnym oknie** $N$ pikseli. Empiryczny (maximum-likelihood) estymator koherencji to:\n\n$$ |\\hat\\gamma|\\;=\\;\\frac{\\left|\\;\\sum_{n=1}^{N} s_1[n]\\,\\overline{s_2[n]}\\;\\right|}{\\sqrt{\\sum_{n=1}^{N}|s_1[n]|^2\\;\\cdot\\;\\sum_{n=1}^{N}|s_2[n]|^2}}. $$\n\nDwie własności tego estymatora trzeba znać, żeby nie czytać z mapy koherencji nieprawdy:\n\n![Pole speckle interferencyjnego — ziarnista struktura jasnych i ciemnych plam powstała w wyniku koherentnego sumowania fal odbitych od chropowatej powierzchni; dokładnie ten sam mechanizm losowego dodawania zespolonych amplitud psuje pojedynczo-pikselowe oszacowanie koherencji i wymaga uśrednienia po oknie](https://commons.wikimedia.org/wiki/Special:FilePath/Laser_speckle.jpg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\n**Pierwsza pułapka: bias dodatni przy małym $N$.** Gdy prawdziwa koherencja jest niska (np. $|\\gamma| = 0$ — czysta dekorelacja), pojedyncze okno $N=9$ wciąż daje $\\mathbb{E}[|\\hat\\gamma|]\\approx 0.30$, a nie $0$. Touzi et al. (1999) podali zamknięte wyrażenie na ten bias; w granicy $|\\gamma|=0$ przybliżenie pierwszego rzędu to $\\mathbb{E}[|\\hat\\gamma|]\\approx\\sqrt{\\pi/(4N)}$. Numerycznie:\n\n| $N$ (looki) | $\\mathbb{E}[|\\hat\\gamma|]$ przy $|\\gamma|=0$ |\n|---|---|\n| 9   | ≈ 0.30 |\n| 25  | ≈ 0.18 |\n| 49  | ≈ 0.13 |\n| 121 | ≈ 0.08 |\n\nDlatego wstępne progi typu *„koherencja > 0.3 = stabilne”* są **bezsensowne** bez podania $N$. Dla $N=9$ to odpowiada szumowi; dla $N=121$ to faktycznie znaczące.\n\n**Druga pułapka: kompromis okna $N$.** Większe okno → mniejszy bias, ale **gorsza rozdzielczość** mapy koherencji — krawędź lasu/wody przemieszana z lasem zaburzy estymator (założenie homogeniczności okna jest złamane). Mniejsze okno → ostre krawędzie, ale szum bias-u dominuje. Praktycznie używa się $N \\in \\{25, 49\\}$ (okna $5{\\times}5$ lub $7{\\times}7$). W kolejnym widgecie zobaczysz ten kompromis na żywo na syntetycznych SLC."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.752212",
+          "title": "Coherence Estimation for SAR Imagery",
+          "kind": "paper",
+          "author": "Ridha Touzi, Armand Lopes, Jérôme Bruniquel, Paris W. Vachon",
+          "year": 1999
+        }
+      ]
+    },
+    {
+      "id": "code-koherencja-okno",
+      "title": "Implementacja estymatora $|\\hat\\gamma|$ z oknem prostokątnym",
+      "description": "Maksymalno-wiarygodnościowy estymator koherencji w czystym NumPy — pętla po centrach okna, zespolona arytmetyka, brzegi zostają zerowe.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `coherence_window(s1, s2, half)` zwracającą mapę $|\\hat\\gamma|$ tej samej rozdzielczości co `s1`/`s2`. Reguły:\n\n- `s1`, `s2` — `numpy.ndarray` typu `complex` (np. `complex64`/`complex128`), o tym samym kształcie $H \\times W$.\n- `half` — nieujemny `int`. Okno ma rozmiar $(2\\,\\text{half}+1) \\times (2\\,\\text{half}+1)$ wokół każdego piksela centralnego.\n- Funkcja zwraca `numpy.ndarray` `float` o kształcie $H \\times W$, z wartościami w $[0,1]$.\n- Dla pikseli $(y, x)$ takich, że $y \\in [\\text{half},\\, H-\\text{half})$ i $x \\in [\\text{half},\\, W-\\text{half})$ liczysz:\n\n  $$ |\\hat\\gamma|(y,x)\\;=\\;\\frac{\\left|\\,\\sum_{(p,q)\\in W(y,x)} s_1[p,q]\\,\\overline{s_2[p,q]}\\,\\right|}{\\sqrt{\\sum |s_1|^2 \\cdot \\sum |s_2|^2}}, $$\n  gdzie $W(y,x)$ to okno $(2\\,\\text{half}+1) \\times (2\\,\\text{half}+1)$ wokół $(y,x)$.\n- Brzegowe piksele (gdzie nie ma pełnego okna) zostają z wartością $0.0$.\n- Gdy mianownik wynosi $0$, zwróć $0.0$ dla tego piksela (nie dziel przez zero).\n\n```\n# Sanity check\n>>> s1 = np.ones((5, 5), dtype=complex)\n>>> coherence_window(s1, s1, half=1)[2, 2]\n1.0\n```",
+        "starterCode": "import numpy as np\n\n\ndef coherence_window(s1, s2, half):\n    \"\"\"|hat gamma| z okna (2*half+1) x (2*half+1) na ko-zarejestrowanej parze SLC.\"\"\"\n    s1 = np.asarray(s1, dtype=complex)\n    s2 = np.asarray(s2, dtype=complex)\n    H, W = s1.shape\n    out = np.zeros((H, W), dtype=float)\n    # TODO: dla kazdego (y, x) z pelnym oknem policz licznik\n    # |sum(s1 * conj(s2))| oraz mianownik\n    # sqrt(sum(|s1|^2) * sum(|s2|^2)) i podziel jezeli mianownik > 0.\n    return out\n",
+        "tests": [
+          {
+            "name": "smoke_identical_pair_is_one",
+            "body": "import numpy as np\ns1 = (np.arange(25).reshape(5, 5) + 1).astype(complex)\nout = coherence_window(s1, s1, half=1)\nassert out.shape == (5, 5), f'spodziewany shape (5, 5), mam {out.shape}'\nassert out.dtype == np.float64 or out.dtype == np.float32, f'oczekuje float, mam {out.dtype}'\n# pelne okno tylko w (1..3, 1..3) — brzegi pozostaja 0\ninner = out[1:4, 1:4]\nassert np.allclose(inner, 1.0, atol=1e-9), f's1 == s2 musi dac |gamma|=1, mam {inner}'\n# brzegi sa zerowe\nassert out[0, 0] == 0.0 and out[4, 4] == 0.0",
+            "hidden": false
+          },
+          {
+            "name": "borders_without_full_window_are_zero",
+            "body": "import numpy as np\nrng = np.random.default_rng(7)\ns1 = (rng.standard_normal((6, 6)) + 1j * rng.standard_normal((6, 6))).astype(complex)\nout = coherence_window(s1, s1, half=2)\n# pelne okno 5x5 mieci sie tylko w (2..3, 2..3)\nfor y in range(6):\n    for x in range(6):\n        if y < 2 or y > 3 or x < 2 or x > 3:\n            assert out[y, x] == 0.0, f'brzeg ({y},{x}) musi byc 0, mam {out[y,x]}'"
+          },
+          {
+            "name": "independent_pair_estimates_below_identity",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nN_eff = 49  # okno 7x7\nhalf = 3\nH, W = 32, 32\ns1 = (rng.standard_normal((H, W)) + 1j * rng.standard_normal((H, W))) / np.sqrt(2)\ns2 = (rng.standard_normal((H, W)) + 1j * rng.standard_normal((H, W))) / np.sqrt(2)\nout = coherence_window(s1, s2, half=half)\ninner = out[half:H-half, half:W-half]\n# estymator dla |gamma|=0 w oknie N=49 ma srednia ~ sqrt(pi/(4N)) ~ 0.13\nm = float(inner.mean())\nassert 0.0 < m < 0.30, f'srednia |hat gamma| dla niezaleznej pary i N=49 powinna byc miedzy 0 a 0.30, mam {m:.3f}'"
+          },
+          {
+            "name": "phase_shift_does_not_change_modulus",
+            "body": "import numpy as np\nrng = np.random.default_rng(11)\ns1 = (rng.standard_normal((9, 9)) + 1j * rng.standard_normal((9, 9))).astype(complex)\n# globalna stala faza nie zmienia |gamma| — to jest kluczowe dla InSAR\ns2 = s1 * np.exp(1j * 0.7)\nout = coherence_window(s1, s2, half=2)\ninner = out[2:7, 2:7]\nassert np.allclose(inner, 1.0, atol=1e-9), f'globalna faza nie powinna ruszyc |gamma|, mam {inner}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef coherence_window(s1, s2, half):\n    s1 = np.asarray(s1, dtype=complex)\n    s2 = np.asarray(s2, dtype=complex)\n    H, W = s1.shape\n    out = np.zeros((H, W), dtype=float)\n    for y in range(half, H - half):\n        for x in range(half, W - half):\n            a = s1[y - half:y + half + 1, x - half:x + half + 1]\n            b = s2[y - half:y + half + 1, x - half:x + half + 1]\n            num = abs((a * np.conj(b)).sum())\n            den = float(np.sqrt((np.abs(a) ** 2).sum() * (np.abs(b) ** 2).sum()))\n            out[y, x] = num / den if den > 0 else 0.0\n    return out\n"
+      }
+    },
+    {
+      "id": "explorer-okno-vs-bias",
+      "title": "Bias estymatora $|\\hat\\gamma|$: rozkład estymat dla zadanej prawdy",
+      "description": "Suwaki $N$ (rozmiar okna w pikselach) i prawdziwego $|\\gamma|$ na 2000 niezależnych okien — patrz, jak przesuwa się średnia względem prawdy w funkcji $N$.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(0)\n\n\ndef make_pair(N_samples, gamma_true, n_trials):\n    \"\"\"n_trials niezaleznych okien po N_samples pikseli zespolonych z prawdziwa koherencja.\"\"\"\n    g = float(gamma_true)\n    X = (rng.standard_normal((n_trials, N_samples)) + 1j * rng.standard_normal((n_trials, N_samples))) / np.sqrt(2)\n    Y = (rng.standard_normal((n_trials, N_samples)) + 1j * rng.standard_normal((n_trials, N_samples))) / np.sqrt(2)\n    s1 = X\n    s2 = g * X + np.sqrt(max(0.0, 1.0 - g * g)) * Y\n    return s1, s2\n\n\ndef coherence_estimate(s1, s2):\n    num = np.abs((s1 * np.conj(s2)).sum(axis=1))\n    den = np.sqrt((np.abs(s1) ** 2).sum(axis=1) * (np.abs(s2) ** 2).sum(axis=1))\n    return num / np.maximum(den, 1e-12)\n",
+        "renderCode": "N = int(window_n)\ng_true = float(gamma_true)\nn_trials = 2000\n\ns1, s2 = make_pair(N, g_true, n_trials)\nghat = coherence_estimate(s1, s2)\n\nm = float(ghat.mean())\nbias = m - g_true\n\nfig, ax = plt.subplots(figsize=(7.5, 4.0))\nax.hist(ghat, bins=40, range=(0.0, 1.0), color='#1d4ed8', alpha=0.85, edgecolor='white')\nax.axvline(g_true, color='#16a34a', linewidth=2, label=f'prawda |gamma| = {g_true:.2f}')\nax.axvline(m, color='#cc4444', linewidth=2, label=f'srednia |hat gamma| = {m:.3f}')\nax.set_xlim(0.0, 1.0)\nax.set_xlabel('|hat gamma|')\nax.set_ylabel('liczba okien (z 2000)')\nax.set_title(f'Rozklad estymatora dla N = {N} pikseli, bias = {bias:+.3f}')\nax.grid(True, alpha=0.3)\nax.legend(loc='upper right')\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "window_n",
+            "label": "Liczba pikseli w oknie N",
+            "type": "slider",
+            "min": 4,
+            "max": 121,
+            "step": 1,
+            "default": 25
+          },
+          {
+            "name": "gamma_true",
+            "label": "Prawdziwe |γ|",
+            "type": "slider",
+            "min": 0.0,
+            "max": 0.95,
+            "step": 0.05,
+            "default": 0.0
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 200
+      }
+    },
+    {
+      "id": "log-ratio-teoria",
+      "title": "Log-ratio amplitudy — detektor zmian odporny na speckle",
+      "type": "theory",
+      "data": {
+        "markdown": "Drugi statystyczny detektor zmian patrzy nie na fazę, lecz na **amplitudę**. Mając dwie ko-zarejestrowane sceny intensywności $I_1, I_2$ (każda jest $L$-look, GRD lub po multilooku), klasyczny detektor (Rignot i van Zyl, 1993) to **log-ratio**:\n\n$$ r \\;=\\; 10\\,\\log_{10}\\!\\frac{I_1}{I_2} \\;=\\; 10\\log_{10} I_1 \\;-\\; 10\\log_{10} I_2 \\quad [\\text{dB}]. $$\n\n![Synthetic Aperture Radar — przykład sceny SAR z widocznym ziarnistym speckle'em multyplikatywnym; dwie takie sceny, ko-zarejestrowane, dają wejście do log-ratio i wymagają, żeby detektor był odporny na pomnożeniowy rozkład intensywności](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\n**Dlaczego iloraz, nie różnica?** Speckle jest **multyplikatywny**: $I = \\sigma^0\\cdot v$, gdzie $v$ jest losowym mnożnikiem (Gamma dla intensywności $L$-look). Różnica $I_1 - I_2$ ma wariancję rosnącą liniowo z $\\sigma^0$ — heteroscedastyczna, więc próg trzeba dostosowywać do poziomu klatki, dokładnie ten sam problem co u CFAR. Iloraz $I_1/I_2 = (\\sigma^0_1/\\sigma^0_2)\\cdot(v_1/v_2)$ **kasuje** poziom $\\sigma^0$ z wariancji szumu — pozostaje statystyka zależna tylko od $L$.\n\n**Rozkład pod hipotezą zerową** (no-change, $\\sigma^0_1 = \\sigma^0_2$) dla $L$-look intensywności jest klasyczny: stosunek $q = I_1/I_2$ ma rozkład **Fishera-Snedecora** $F(2L,\\,2L)$. W skali log iloraz jest **symetryczny wokół zera**, niezależny od poziomu $\\sigma^0$ — to ta sama logika, która daje CFAR jego *constant* false-alarm rate.\n\nW praktyce próg ustawiamy w dB: zmiana to $|r| > \\tau$, gdzie $\\tau$ wybiera się tak, by stopa fałszywych alarmów na pikselach niezmienionych była zadana (typowo $\\tau \\in [3, 6]$ dB dla $L \\ge 5$, agresywniej dla wysoce-multilookowanych produktów). **Znak** $r$ rozróżnia zmianę „w górę” (np. zalanie lasu wodą — ciemniejsza scena $\\Rightarrow r > 0$ przy $I_1$/$I_2$, $r < 0$ przy $I_2$/$I_1$) od zmiany „w dół”."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.297979",
+          "title": "Change Detection Techniques for ERS-1 SAR Data",
+          "kind": "paper",
+          "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+          "year": 1993
+        }
+      ]
+    },
+    {
+      "id": "code-log-ratio",
+      "title": "Implementacja log-ratio + binarna maska zmian",
+      "description": "Numerycznie odporny detektor log-ratio z ochroną przed dzieleniem przez zero plus binarna maska |r| > τ.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **dwie** funkcje pracujące na liniowej intensywności (nie w dB):\n\n1. `log_ratio_db(I1, I2, eps=1e-8)` — zwraca $r = 10\\,\\log_{10}\\!\\frac{I_1+\\varepsilon}{I_2+\\varepsilon}$ jako `numpy.ndarray` typu `float` o kształcie wejścia. `eps` chroni przed $\\log(0)$ na pikselach z zerową intensywnością.\n2. `change_mask(I1, I2, threshold_db, eps=1e-8)` — zwraca `numpy.ndarray` typu `bool`, gdzie `True` oznacza $|r| > \\text{threshold\\_db}$.\n\nZałożenia:\n\n- `I1`, `I2` to `numpy.ndarray` o tym samym kształcie, z wartościami $\\ge 0$.\n- `threshold_db` to liczba dodatnia (np. $3.0$).\n- `eps` to mała liczba dodatnia (domyślnie $10^{-8}$).\n\nFunkcje muszą działać na 1-D, 2-D, dowolnym kształcie tablicy NumPy (broadcasting nie jest wymagany, ale **ten sam shape** wejść jest gwarantowany).",
+        "starterCode": "import numpy as np\n\n\ndef log_ratio_db(I1, I2, eps=1e-8):\n    \"\"\"r = 10 * log10((I1 + eps) / (I2 + eps)) — odporne na zero.\"\"\"\n    I1 = np.asarray(I1, dtype=float)\n    I2 = np.asarray(I2, dtype=float)\n    # TODO: zwroc 10 * log10 ((I1 + eps) / (I2 + eps))\n    return np.zeros_like(I1)\n\n\ndef change_mask(I1, I2, threshold_db, eps=1e-8):\n    \"\"\"True wszedzie, gdzie |log-ratio| > threshold_db.\"\"\"\n    # TODO: skorzystaj z log_ratio_db i porownaj wartosc bezwzgledna z progiem\n    return np.zeros_like(np.asarray(I1, dtype=float), dtype=bool)\n",
+        "tests": [
+          {
+            "name": "smoke_no_change_is_zero_log_ratio",
+            "body": "import numpy as np\nI = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])\nr = log_ratio_db(I, I, eps=1e-8)\nassert r.shape == I.shape\nassert np.allclose(r, 0.0, atol=1e-6), f'I1==I2 musi dac r=0, mam {r}'\nm = change_mask(I, I, threshold_db=3.0)\nassert m.dtype == np.bool_\nassert not m.any(), 'maska zmian dla I1==I2 musi byc cala False'",
+            "hidden": false
+          },
+          {
+            "name": "factor_of_ten_gives_ten_db",
+            "body": "import numpy as np\nI2 = np.array([1.0, 2.0, 5.0])\nI1 = 10.0 * I2\nr = log_ratio_db(I1, I2)\nassert np.allclose(r, 10.0, atol=1e-3), f'I1 = 10*I2 musi dac r ~ 10 dB, mam {r}'"
+          },
+          {
+            "name": "sign_distinguishes_up_from_down",
+            "body": "import numpy as np\nI2 = np.array([2.0, 2.0])\nI1 = np.array([8.0, 0.5])  # +6 dB i -6 dB\nr = log_ratio_db(I1, I2)\nassert r[0] > 5.5, f'wzrost x4 ~ +6 dB, mam {r[0]}'\nassert r[1] < -5.5, f'spadek x4 ~ -6 dB, mam {r[1]}'",
+            "hidden": false
+          },
+          {
+            "name": "threshold_filters_correctly",
+            "body": "import numpy as np\nI1 = np.array([1.0, 2.0, 4.0, 8.0])\nI2 = np.array([1.0, 1.0, 1.0, 1.0])\n# r ~ [0, 3.01, 6.02, 9.03] dB\nm3 = change_mask(I1, I2, threshold_db=3.0)\nassert list(m3.tolist()) == [False, True, True, True], f'prog 3 dB powinien zlapac drugi i dalsze, mam {m3.tolist()}'\nm5 = change_mask(I1, I2, threshold_db=5.0)\nassert list(m5.tolist()) == [False, False, True, True], f'prog 5 dB powinien zlapac trzeci i czwarty, mam {m5.tolist()}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef log_ratio_db(I1, I2, eps=1e-8):\n    I1 = np.asarray(I1, dtype=float)\n    I2 = np.asarray(I2, dtype=float)\n    return 10.0 * np.log10((I1 + eps) / (I2 + eps))\n\n\ndef change_mask(I1, I2, threshold_db, eps=1e-8):\n    r = log_ratio_db(I1, I2, eps=eps)\n    return np.abs(r) > float(threshold_db)\n"
+      }
+    },
+    {
+      "id": "drag-match-scenariusze",
+      "title": "Sześć scenariuszy — który detektor jest właściwy?",
+      "description": "Przyporządkuj scenariusz operacyjny do detektora, którym **najlepiej** zaczniesz pracę (zakładając typowe ograniczenia danych Sentinel-1).",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każdy scenariusz wrzuć do detektora, którym najsensowniej zacząć analizę.",
+        "items": [
+          { "id": "s1", "label": "Powódź zalewa pola — masz tylko produkty GRD Sentinel-1, brak SLC" },
+          { "id": "s2", "label": "Lokalna orka pól: średni $\\sigma^0$ prawie się nie ruszył, ale powierzchnia mikrostrukturalnie inna" },
+          { "id": "s3", "label": "Wycinka lasu borealnego: gęsty bór → goła ziemia, $\\sigma^0$ spada o 6–8 dB" },
+          { "id": "s4", "label": "Mapa stabilności miasta na 30 dni — które piksele NIC nie zmieniły" },
+          { "id": "s5", "label": "Operacyjny pipeline Copernicus EMS rapid mapping powodzi z dwóch GRD-ek" },
+          { "id": "s6", "label": "Detekcja krótkotrwałej zmiany konfiguracji rozpraszaczy bez zmiany średniego $\\sigma^0$ (np. zaparkowane → puste miejsca parkingowe)" }
+        ],
+        "zones": [
+          {
+            "id": "log-ratio",
+            "label": "Log-ratio amplitudy",
+            "accepts": ["s1", "s3", "s5"]
+          },
+          {
+            "id": "koherencja",
+            "label": "Koherencja interferometryczna $|\\gamma|$",
+            "accepts": ["s2", "s4", "s6"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "requireAll": true,
+        "explanation": "Log-ratio działa na **amplitudzie/intensywności** GRD i nie wymaga SLC ani ko-rejestracji fazowej — dlatego pasuje do scenariusza powodzi z samymi GRD-kami (**s1, s5**) i scenariusza wycinki, gdzie $\\sigma^0$ leci o ≥6 dB (**s3**). Koherencja **wymaga** SLC i jest czuła na **fazową** stabilność, a nie na średnią amplitudę — dlatego widzi orkę (**s2**, $\\sigma^0$ stabilne, faza zdekorelowana), pomaga zidentyfikować obszary niezmienione w mieście (**s4**, $|\\gamma|$ wysokie = stabilne) i łapie krótkotrwałe rotacje rozpraszaczy bez zmiany $\\sigma^0$ (**s6**). Reguła kciuka: jeśli masz tylko GRD i interesuje cię *zmiana mocy* — log-ratio. Jeśli masz parę SLC i interesuje cię *czy faza się trzyma* — koherencja."
+      }
+    },
+    {
+      "id": "fuzja-i-produkcja",
+      "title": "Fuzja $|\\gamma|$ + log-ratio i kontekst produkcyjny",
+      "type": "theory",
+      "data": {
+        "markdown": "Koherencja i log-ratio mierzą **różne rzeczy** — i razem dają tabelę 2×2, która zwykle jest finalnym wynikiem klasycznego pipeline'u change detection na Sentinel-1:\n\n![Sentinel-1 — fragment konstelacji obrazującej Sentinel-1; rutynowo 6/12-dniowy odstęp daje pary scen, na których działają operacyjne pipeline'y EMS rapid mapping i które stanowią materiał wejściowy fuzji koherencji z log-ratio](https://commons.wikimedia.org/wiki/Special:FilePath/English_Channel_-_Flickr_-_europeanspaceagency.jpg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\n| | $|r| < \\tau$ (amplituda OK) | $|r| > \\tau$ (zmiana amplitudy) |\n|---|---|---|\n| $|\\hat\\gamma| > \\gamma_0$ (faza stabilna) | **Brak zmiany** — ignoruj | **Punkt-rozpraszacz włączony/wyłączony**: rzadkie, ale realne (np. samochód) |\n| $|\\hat\\gamma| < \\gamma_0$ (faza zdekorelowana) | **Zmiana mikrostrukturalna**: orka, świeży śnieg, wegetacja | **Zmiana strukturalna**: powódź, wycinka, pożar, budowa |\n\nW pipeline'ach **Copernicus EMS rapid mapping** (powodzie, pożary, trzęsienia) log-ratio dominuje nad koherencją z dwóch praktycznych powodów: (1) produkty są najczęściej GRD (mniejsze, szybsze do pobrania), więc koherencja w ogóle nie jest dostępna; (2) rapid mapping potrzebuje *szybkiej* statystyki, a zbudowanie pary SLC z ko-rejestracją zajmuje minuty zamiast sekund. Koherencja z kolei **dominuje** w długoterminowym monitoringu obszarów zabudowanych (kiedy coś *przestało* być stabilne) i w pipeline'ach DInSAR mierzących milimetrowe deformacje (osiadanie, wulkany, sejsmika).\n\nWreszcie: oba detektory są **klasycznym baseline'em**. W Module 3 zrobimy podejścia oparte na CNN do despecklingu i segmentacji — i to dokładnie te dwie statystyki będą w testowych metrykach progiem, który DL musi pobić, a nie zastąpić."
+      },
+      "sources": [
+        {
+          "url": "https://emergency.copernicus.eu/mapping/list-of-components/EMSR",
+          "title": "Copernicus Emergency Management Service — Rapid Mapping (komponenty EMSR)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quiz-pulapki",
+      "title": "Pułapki: które stwierdzenia są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o koherencji i change detection są **poprawne**? Zaznacz wszystkie.",
+        "options": [
+          "Na produktach GRD Sentinel-1 (bez SLC) **nie da się** policzyć koherencji $|\\gamma|$ — koherencja wymaga zachowanej fazy zespolonej.",
+          "Próg „$|\\hat\\gamma| > 0.3$ = stabilne” jest wartościowy niezależnie od rozmiaru okna $N$ użytego do estymacji.",
+          "Log-ratio jest detektorem zmian odpornym na multyplikatywny charakter speckle'a, bo iloraz kasuje multyplikatywną składową szumu — w przeciwieństwie do różnicy $I_1 - I_2$, której wariancja rośnie liniowo z $\\sigma^0$.",
+          "Koherencja i log-ratio mierzą to samo — wystarczy użyć jednego z nich."
+        ],
+        "correct": [0, 2],
+        "explanation": "Opcja 0 jest prawdziwa: GRD to multilookowana, real-valued amplituda — faza już zniknęła w detekcji, więc nie ma czego korelować zespolono. Koherencja **wymaga** pary SLC (`complex64`) ko-zarejestrowanej co do podpiksela. Opcja 2 jest prawdziwa: dokładnie ta sama logika, która daje CFAR jego *constant false alarm rate*, daje log-ratio jego niezależność od poziomu $\\sigma^0$ — multyplikatywny szum kasuje się w stosunku, addytywna różnica nie. Opcja 1 jest **mitem** — bias estymatora przy małym $N$ jest tak duży, że dla $N=9$ średnia $|\\hat\\gamma|$ przy zerowej prawdziwej koherencji to ~0.30. Próg 0.3 dla okna $5\\times5$ łapie szum; dla okna $11\\times11$ łapie realną stabilność — bez podania $N$ próg jest nieinformatywny. Opcja 3 jest błędna — koherencja widzi **zmianę fazową** (mikrostruktura rozpraszaczy), log-ratio widzi **zmianę amplitudy** ($\\sigma^0$); są komplementarne, nie zamienne, co pokazuje tabela 2×2 w sekcji o fuzji.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Eksploracja: progi $\\gamma_0$ i $\\tau$ na syntetycznej parze",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\nrng = np.random.default_rng(0)\n\n# --- Synteza pary intensywnosci z 4 strefami ---\nH, W = 64, 64\nL = 5  # liczba lookow\n\n# Strefa A (lewy gorny): brak zmiany — ten sam sigma0, tylko niezalezny speckle\n# Strefa B (prawy gorny): orka — sigma0 prawie ten sam, faza zdekorelowana (tu nie liczymy fazy, tylko intensywnosc)\n# Strefa C (lewy dolny): powodz — sigma0 spada o 8 dB (czynnik 10**0.8)\n# Strefa D (prawy dolny): wycinka — sigma0 spada o 5 dB\nsigma0_2 = np.full((H, W), 0.1)  # poziom tla\nsigma0_1 = sigma0_2.copy()\nsigma0_1[H//2:, :W//2] = 0.1 / 10 ** 0.8  # spadek 8 dB (powodz)\nsigma0_1[H//2:, W//2:] = 0.1 / 10 ** 0.5  # spadek 5 dB (wycinka)\n# strefy A i B maja ten sam sigma0_1 = sigma0_2\n\n\ndef speckle_intensity(sigma0, L, rng):\n    g = rng.gamma(shape=L, scale=1.0 / L, size=sigma0.shape)\n    return sigma0 * g\n\n\nI1 = speckle_intensity(sigma0_1, L, rng)\nI2 = speckle_intensity(sigma0_2, L, rng)\n\n\n# --- Detektor log-ratio (z poprzedniej sekcji) ---\ndef log_ratio_db(I1, I2, eps=1e-8):\n    return 10.0 * np.log10((I1 + eps) / (I2 + eps))\n\n\n# Spróbuj różnych progów: 2, 3, 5, 8 dB i policz odsetek 'detekcji' w każdej strefie.\nthreshold_db = 3.0\nr = log_ratio_db(I1, I2)\nmask = np.abs(r) > threshold_db\n\nzones = {\n    'A — brak zmiany (lewy gorny)': mask[:H//2, :W//2],\n    'B — orka, sigma0 stabilne (prawy gorny)': mask[:H//2, W//2:],\n    'C — powodz -8 dB (lewy dolny)': mask[H//2:, :W//2],\n    'D — wycinka -5 dB (prawy dolny)': mask[H//2:, W//2:],\n}\nfor name, m in zones.items():\n    print(f'{name}: detekcje {100*m.mean():.1f}%')\n\n# Zauwaz: log-ratio nie odrozni A od B — w obu sigma0 jest stabilne.\n# To dokladnie te scenariusze, gdzie potrzebujesz koherencji (tu nie liczymy jej, bo I1/I2 sa real-valued).\n",
+        "encouragement": "Pokrec progiem od 2 do 8 dB i obserwuj, kiedy strefa C zaczyna znikac, a strefy A/B nadal sa puste — to twoja krzywa ROC w jednym suwaku."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1088/0266-5611/14/4/001",
+      "title": "Synthetic Aperture Radar Interferometry",
+      "kind": "paper",
+      "author": "Richard Bamler, Philipp Hartl",
+      "year": 1998
+    },
+    {
+      "url": "https://doi.org/10.1109/36.752212",
+      "title": "Coherence Estimation for SAR Imagery",
+      "kind": "paper",
+      "author": "Ridha Touzi, Armand Lopes, Jérôme Bruniquel, Paris W. Vachon",
+      "year": 1999
+    },
+    {
+      "url": "https://doi.org/10.1109/36.297979",
+      "title": "Change Detection Techniques for ERS-1 SAR Data",
+      "kind": "paper",
+      "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+      "year": 1993
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2006.885408",
+      "title": "A Theoretical Framework for Unsupervised Change Detection Based on Change Vector Analysis in the Polar Domain",
+      "kind": "paper",
+      "author": "Francesca Bovolo, Lorenzo Bruzzone",
+      "year": 2007
+    },
+    {
+      "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.insar.ui/operators/CoherenceOp.html",
+      "title": "SNAP — InSAR Coherence operator documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://emergency.copernicus.eu/mapping/list-of-components/EMSR",
+      "title": "Copernicus Emergency Management Service — Rapid Mapping (komponenty EMSR)",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,305 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-statkow-klasycznym-cfar-i-morfologia",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m2",
+  "title": "Detekcja statków klasycznym CFAR i morfologią",
+  "eyebrow": "KLASYCZNE BASELINE'Y",
+  "description": "Adaptacyjny próg, który utrzymuje stałą stopę fałszywych alarmów na klatce morza, plus prosta morfologia binarna — kanoniczny pre-DL baseline ATR statków, który YOLOv8 z Modułu 3 musi pobić.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "po-co-cfar",
+      "title": "Globalny próg vs. CFAR — czemu klatka morza wymaga adaptacji",
+      "type": "theory",
+      "data": {
+        "markdown": "Po klasycznym pipeline z Modułu 1 (kalibracja → despeckling → terrain correction) masz scenę σ⁰ w dB i pierwsze ATR-zadanie: **wykryj na niej statki**. Najprostsze podejście to globalny próg — odetnij wszystko powyżej, powiedzmy, $-12\\,\\text{dB}$ i wypisz piksele. To **nie zadziała** w produkcji z dwóch powodów.\n\n![Sentinel-1 GRDH nad portem morskim — ciemne tło wody, jaśniejsze pierzaste artefakty fal i wyraźnie jasne, prawie punktowe odbicia kadłubów statków o intensywnościach kilkanaście dB powyżej tła; lokalna jasność tła zmienia się jednak silnie wzdłuż obrazu wraz ze stanem morza i odległością slant-range, więc pojedynczy globalny próg nie odróżnia kontenerowca od grzbietu fali](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz poglądowy: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\nPo pierwsze: **stan morza** zmienia średnią σ⁰ tła nawet o 8–10 dB między sceną z gładkim akwenem (Beaufort 0–1) a sceną z falowaniem 4 m (Beaufort 5+). Próg dobrany w jeden dzień daje 0 fałszywych alarmów, w drugi — tysiące.\n\nPo drugie: nawet **w obrębie tej samej sceny** σ⁰ tła rośnie ku bliskiemu zasięgowi (mniejszy kąt incidence, więcej energii odbitej z powrotem do anteny). Globalny próg, który łapie statki w *near range*, w *far range* przepuszcza wszystko poniżej szumu termicznego.\n\n**CFAR** (*Constant False-Alarm Rate*) rozwiązuje oba problemy w ten sam sposób: próg jest **lokalny i adaptacyjny** — szacowany w pierścieniu sąsiadujących pikseli wokół testowanego punktu — tak dobierany, by **prawdopodobieństwo fałszywego alarmu** $P_\\text{fa}$ pozostawało stałe niezależnie od poziomu klatki morza. Stąd nazwa: *constant false alarm rate*. Dla wykładniczego rozkładu intensywności (a takiego oczekuje speckle pojedynczego looka na gładkim akwenie) możesz wyprowadzić **zamkniętą formułę** na multiplikator $\\alpha$ taki, że $T = \\alpha \\cdot \\bar{X}_\\text{train}$ daje dokładnie żądaną stopę pomyłek — to zrobimy w następnej sekcji.\n\nCFAR plus prosta morfologia binarna (otwarcie + zamknięcie) jest **kanonicznym baseline'em** każdej pracy o wykrywaniu statków w SAR (Crisp 2004); to jest poprzeczka, którą musi pobić każdy detektor głęboki w Module 3."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+          "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery (DSTO-RR-0272)",
+          "kind": "paper",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ]
+    },
+    {
+      "id": "warianty-cfar",
+      "title": "Cztery warianty CFAR — co dobrać dla różnych klatek morza",
+      "description": "Tabela pomocnicza: estymata szumu i scenariusze, w których każdy z wariantów wygrywa lub psuje detekcję.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "wariant", "label": "Wariant", "type": "string", "sortable": true, "filterable": true },
+          { "key": "estymata", "label": "Estymata $\\bar{X}_\\text{train}$", "type": "string", "sortable": false, "filterable": false },
+          { "key": "interferent", "label": "Drugi statek w pasie treningowym?", "type": "string", "sortable": true, "filterable": true },
+          { "key": "krawedz", "label": "Krawędź klatki (woda → ląd)?", "type": "string", "sortable": true, "filterable": true },
+          { "key": "koszt", "label": "Koszt obliczeniowy (1–5)", "type": "number", "sortable": true, "filterable": false },
+          { "key": "api", "label": "Pythonowy odpowiednik", "type": "string", "sortable": false, "filterable": false }
+        ],
+        "rows": [
+          {
+            "wariant": "CA-CFAR (cell-averaging)",
+            "estymata": "średnia arytmetyczna komórek treningowych",
+            "interferent": "PSUJE — drugi statek zawyża próg, prawdziwy statek znika",
+            "krawedz": "PSUJE — średnia z dwóch reżimów daje próg między",
+            "koszt": 1,
+            "api": "ręczne np.mean lub scipy.ndimage.uniform_filter"
+          },
+          {
+            "wariant": "OS-CFAR (ordered-statistics, k-ta statystyka pozycyjna)",
+            "estymata": "k-ta wartość po posortowaniu (typowo k = 0.75·N)",
+            "interferent": "ODPORNY — pojedynczy interferent nie wpływa na percentyl",
+            "krawedz": "ZNOSI — percentyl ignoruje skrajne wartości",
+            "koszt": 4,
+            "api": "scipy.ndimage.percentile_filter"
+          },
+          {
+            "wariant": "GO-CFAR (greatest-of: max ze średnich L i R)",
+            "estymata": "$\\max(\\bar{X}_L, \\bar{X}_R)$",
+            "interferent": "PSUJE jak CA, ale po jednej stronie",
+            "krawedz": "ODPORNY — bierze stronę z wyższym tłem (ląd)",
+            "koszt": 2,
+            "api": "ręcznie z dwoma uniform_filter + max"
+          },
+          {
+            "wariant": "SO-CFAR (smallest-of: min ze średnich L i R)",
+            "estymata": "$\\min(\\bar{X}_L, \\bar{X}_R)$",
+            "interferent": "ODPORNY — wybiera czystszą połowę okna",
+            "krawedz": "PSUJE — wybiera stronę morską, na granicy podaje za niski próg",
+            "koszt": 2,
+            "api": "ręcznie z dwoma uniform_filter + min"
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "quiz-globalny-prog",
+      "title": "Sprawdź intuicję: kiedy globalny próg zawodzi?",
+      "type": "quiz",
+      "data": {
+        "question": "Masz dwie sceny Sentinel-1 GRDH nad tym samym portem, zrobione w różnych dniach. Scena A jest w warunkach Beaufort 1 (akwen prawie gładki), scena B — Beaufort 5 (mocne falowanie). Dobrałeś globalny próg σ⁰ na scenie A tak, że daje on 50 detekcji (40 prawdziwych statków + 10 fałszywych alarmów). Co stanie się, gdy zastosujesz **dokładnie ten sam** próg na scenie B?",
+        "options": [
+          "Dostanę te same ~50 detekcji, bo próg jest niezależny od stanu morza.",
+          "Dostanę znacząco więcej fałszywych alarmów (rzędu setek do tysięcy), bo średnia σ⁰ klatki morza w Beaufort 5 podchodzi nawet o 8–10 dB względem Beaufort 1.",
+          "Dostanę 0 detekcji, bo speckle uśrednia się w wyższym stanie morza i wszystko gaśnie poniżej progu.",
+          "Dostanę tę samą liczbę detekcji, ale z większym recall — silniejsze morze podświetli wcześniej niewidoczne kutry."
+        ],
+        "correct": [1],
+        "explanation": "To dokładnie ten przypadek, w którym CFAR wygrywa z globalnym progiem. W Beaufort 5 średnia intensywność klatki morza rośnie kilka rzędów wielkości w skali liniowej (≈ 8–10 dB), a wraz z nią rośnie liczba pikseli klatki, które samym speckle przekraczają próg ustawiony pod gładki akwen. Dostajesz **lawinę fałszywych alarmów** — setki do tysięcy detekcji-duszków na 5000 × 5000 px scenie. Opcja 1 ignoruje, że σ⁰ tła **zmienia się** silnie ze stanem morza. Opcja 3 jest mitem — speckle nie 'gaśnie' w wyższym stanie morza, on tylko nakłada się na wyższą średnią. Opcja 4 jest odwrotna do prawdy: kutry przy Beaufort 5 są **trudniejsze** do wykrycia, bo ich kontrast względem grzbietów fal spada.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "wyprowadzenie-cfar",
+      "title": "Próg CA-CFAR — wyprowadzenie α(P_fa, N) dla wykładniczej klatki",
+      "type": "theory",
+      "data": {
+        "markdown": "Skąd wzięła się formuła $T = \\alpha \\cdot \\bar{X}_\\text{train}$? Wyprowadzimy $\\alpha$ dla wariantu **CA-CFAR** (cell-averaging) na **wykładniczym** modelu intensywności speckle'a — czyli klasycznym założeniu Goldsteina dla pojedynczego looka gładkiej powierzchni morza. Schemat okna 1-D wygląda tak:\n\n```\n... [   training cells L  ] [guard L] [ CUT ] [guard R] [   training cells R  ] ...\n```\n\nCUT to *cell under test* — piksel testowany. Komórki straży izolują rozmazany ogon celu (ship smearing wzdłuż kierunku azymutu), żeby nie zatruł estymaty klatki. Komórki treningowe (po obu stronach, łącznie $N$ próbek) służą do estymowania średniej intensywności tła.\n\n**Założenie (Rayleigh w amplitudzie ≡ wykładnicze w intensywności)**: jeśli $X$ to intensywność piksela tła z parametrem skali $\\mu$, to $X \\sim \\text{Exp}(\\mu)$ z gęstością\n\n$$ f(x) = \\mu^{-1} e^{-x / \\mu}, \\qquad x \\ge 0. $$\n\nŚrednia $\\bar{X} = \\frac{1}{N} \\sum_{k=1}^{N} X_k$ z $N$ niezależnych komórek treningowych ma rozkład Gamma o parametrach $(N,\\, \\mu/N)$, a stosunek $T / \\bar{X}$ ma rozkład **niezależny od $\\mu$**. To jest cała magia CFAR — dobierając $\\alpha$ raz, dostajesz tę samą stopę fałszywych alarmów na każdej klatce morza, niezależnie od tego, czy $\\mu$ to $-20$ dB czy $-10$ dB.\n\nLiczymy $\\alpha$ tak, by\n\n$$ P\\bigl(\\,X_\\text{CUT} > \\alpha \\bar{X} \\;\\big|\\; X_\\text{CUT} \\sim \\text{Exp}(\\mu)\\,\\bigr) \\;=\\; P_\\text{fa}. $$\n\nKlasyczny wynik (Skolnik, *Introduction to Radar Systems*, rozdz. 16) brzmi:\n\n$$ \\boxed{\\;\\alpha \\;=\\; N \\left( P_\\text{fa}^{-1/N} \\,-\\, 1 \\right)\\;} $$\n\nNumeryka: $N = 32$, $P_\\text{fa} = 10^{-4}$ → $\\alpha \\approx 32 \\cdot (10^{4/32} - 1) \\approx 32 \\cdot 1.331 \\cdot ... $ — policz w głowie albo w `np.power(10, 4/32) - 1` — wychodzi $\\alpha \\approx 10.6$. Próg to ~10× średnia tła; w dB to przesunięcie o $10 \\log_{10}(10.6) \\approx 10.3$ dB powyżej średniego σ⁰ klatki morza.\n\nCztery niezależne parametry wpływają na pipeline detekcji — z każdym przyjdzie ci żyć:\n\n- **$P_\\text{fa}$** — żądana stopa fałszywych alarmów (typowo $10^{-3}$ do $10^{-6}$). Niżej = mniej fałszywych, ale i mniej prawdziwych detekcji.\n- **liczba komórek treningowych $N$** — typowo 16–64. Mniej = bardziej responsywne (radzi sobie z lokalną zmiennością), więcej = stabilniejsza estymata (ale gorzej znosi krawędzie klatki).\n- **liczba komórek straży $G$** — typowo 1–4 z każdej strony. Tyle, ile zajmuje rozmazany ogon statku w azymucie po despecklingu.\n- **wariant CFAR** (CA / OS / GO / SO) — patrz tabela powyżej."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/LGRS.2017.2713462",
+          "title": "An Intensity-Space Domain CFAR Method for Ship Detection in HR SAR Images",
+          "kind": "paper",
+          "author": "Chao Wang, Fukun Bi, Wenjie Zhang, Liang Chen",
+          "year": 2017
+        }
+      ]
+    },
+    {
+      "id": "code-ca-cfar-1d",
+      "title": "Implementacja CA-CFAR 1D w NumPy",
+      "description": "Z liczbami z formuły α(P_fa, N) — własna implementacja na 1-D przekroju, którą za chwilę popchniemy w sandbox 2-D.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `ca_cfar_1d(signal, num_train, num_guard, pfa)` realizującą **CA-CFAR** (cell-averaging) na 1-D przekroju **liniowej intensywności**. Reguły:\n\n- `signal` — `numpy.ndarray` (`float`), długość $n \\ge 2(\\text{num\\_train} + \\text{num\\_guard}) + 1$.\n- `num_train` — liczba komórek treningowych **z każdej strony** CUT (tzn. łącznie $N = 2 \\cdot \\text{num\\_train}$ komórek treningowych).\n- `num_guard` — liczba komórek straży z każdej strony CUT.\n- `pfa` — żądane prawdopodobieństwo fałszywego alarmu, $0 < \\text{pfa} < 1$.\n\nFunkcja zwraca `numpy.ndarray` typu `bool` o długości `n`. Piksel `i` ma `True`, jeżeli zarówno (a) okno $[\\,i - \\text{num\\_guard} - \\text{num\\_train},\\, i + \\text{num\\_guard} + \\text{num\\_train}\\,]$ mieści się w sygnale, **jak i** (b) `signal[i]` przekracza próg $T_i = \\alpha \\cdot \\bar{X}_\\text{train}$, gdzie $\\alpha = N (\\text{pfa}^{-1/N} - 1)$, a $\\bar{X}_\\text{train}$ to średnia z $N = 2 \\cdot \\text{num\\_train}$ komórek treningowych po obu stronach CUT (z pominięciem strażników).\n\nPiksele bliżej brzegu niż `num_train + num_guard` zostawiamy z wartością `False` (brak pełnego okna).\n\n```\n# Sanity check\n>>> sig = np.array([1.0]*40 + [50.0] + [1.0]*40, dtype=float)\n>>> out = ca_cfar_1d(sig, num_train=10, num_guard=2, pfa=1e-4)\n>>> out.dtype == np.bool_  # lub bool\nTrue\n>>> bool(out[40])\nTrue\n```",
+        "starterCode": "import numpy as np\n\n\ndef ca_cfar_1d(signal, num_train, num_guard, pfa):\n    \"\"\"CA-CFAR 1D na liniowej intensywnosci. Zwraca maske bool.\"\"\"\n    signal = np.asarray(signal, dtype=float)\n    n = len(signal)\n    mask = np.zeros(n, dtype=bool)\n    # TODO: policz N = 2 * num_train oraz alpha = N * (pfa ** (-1/N) - 1)\n    # TODO: dla kazdego i takiego, ze i - num_guard - num_train >= 0 oraz\n    # i + num_guard + num_train < n: zbuduj wektor komorek treningowych\n    # (z lewa: signal[i-num_guard-num_train : i-num_guard], z prawa:\n    # signal[i+num_guard+1 : i+num_guard+1+num_train]),\n    # policz srednia i porownaj signal[i] > alpha * srednia.\n    return mask\n",
+        "tests": [
+          {
+            "name": "smoke_strong_target_in_flat_clutter",
+            "body": "import numpy as np\nsig = np.array([1.0] * 40 + [50.0] + [1.0] * 40, dtype=float)\nout = ca_cfar_1d(sig, num_train=10, num_guard=2, pfa=1e-4)\nassert out.dtype == np.bool_, f'spodziewany dtype bool, mam {out.dtype}'\nassert out.shape == (81,), f'spodziewany shape (81,), mam {out.shape}'\nassert bool(out[40]) is True, 'silny cel w plaskim tle musi byc wykryty'\n# brzegi (gdzie nie ma pelnego okna) sa False\nassert bool(out[0]) is False and bool(out[-1]) is False",
+            "hidden": false
+          },
+          {
+            "name": "edges_below_full_window_are_false",
+            "body": "import numpy as np\nsig = np.full(60, 1.0, dtype=float)\nsig[5] = 100.0  # cel w 'martwej strefie' przy brzegu (5 < num_train+num_guard)\nout = ca_cfar_1d(sig, num_train=10, num_guard=2, pfa=1e-4)\nassert bool(out[5]) is False, 'piksel bez pelnego okna nie powinien byc detekcja'\n# wszystkie piksele < num_train+num_guard musza byc False\nfor i in range(0, 12):\n    assert bool(out[i]) is False"
+          },
+          {
+            "name": "false_alarm_rate_low_for_pure_clutter",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nclutter = rng.exponential(scale=1.0, size=400)\nout = ca_cfar_1d(clutter, num_train=16, num_guard=2, pfa=1e-3)\ndet = int(out.sum())\n# Pfa = 1e-3 na ~360 testowanych pikseli daje E[FA] ~ 0.36, oczekuj <= 8\nassert det <= 8, f'oczekuje <= 8 falszywych alarmow przy Pfa=1e-3, mam {det}'"
+          },
+          {
+            "name": "alpha_grows_with_lower_pfa",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nclutter = rng.exponential(scale=1.0, size=400)\ndet_high_pfa = int(ca_cfar_1d(clutter, num_train=16, num_guard=2, pfa=1e-2).sum())\ndet_low_pfa = int(ca_cfar_1d(clutter, num_train=16, num_guard=2, pfa=1e-5).sum())\nassert det_low_pfa <= det_high_pfa, 'nizsze Pfa powinno dawac NIE WIECEJ detekcji niz wyzsze Pfa'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef ca_cfar_1d(signal, num_train, num_guard, pfa):\n    signal = np.asarray(signal, dtype=float)\n    n = len(signal)\n    mask = np.zeros(n, dtype=bool)\n    if num_train <= 0 or pfa <= 0 or pfa >= 1:\n        return mask\n    N = 2 * num_train\n    alpha = N * (pfa ** (-1.0 / N) - 1.0)\n    half = num_train + num_guard\n    for i in range(half, n - half):\n        left = signal[i - num_guard - num_train:i - num_guard]\n        right = signal[i + num_guard + 1:i + num_guard + 1 + num_train]\n        noise = float(np.concatenate([left, right]).mean())\n        if signal[i] > alpha * noise:\n            mask[i] = True\n    return mask\n"
+      }
+    },
+    {
+      "id": "explorer-cfar-pfa",
+      "title": "CA-CFAR — wpływ P_fa, N i G na próg i detekcje",
+      "description": "Suwaki Pfa (10^k), liczby komórek treningowych i strażniczych. Trzy wstrzyknięte cele o różnej sile — patrz, kiedy najsłabszy znika.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(42)\n\nN_PIX = 256\nCLUTTER_LEVEL = 1.0\nSIG = rng.exponential(scale=CLUTTER_LEVEL, size=N_PIX)\n\nTARGET_IDX = [60, 130, 200]\nTARGET_GAIN = [3.5, 12.0, 35.0]  # slaby, sredni, mocny cel\nfor idx, gain in zip(TARGET_IDX, TARGET_GAIN):\n    SIG[idx] += gain\n\n\ndef _ca_cfar_1d(x, num_train, num_guard, pfa):\n    n = len(x)\n    mask = np.zeros(n, dtype=bool)\n    th = np.full(n, np.nan)\n    if num_train <= 0 or pfa <= 0 or pfa >= 1:\n        return mask, th, 0.0\n    N = 2 * num_train\n    alpha = N * (pfa ** (-1.0 / N) - 1.0)\n    half = num_train + num_guard\n    for i in range(half, n - half):\n        L = x[i - num_guard - num_train:i - num_guard]\n        R = x[i + num_guard + 1:i + num_guard + 1 + num_train]\n        noise = float(np.concatenate([L, R]).mean())\n        thr = alpha * noise\n        th[i] = thr\n        if x[i] > thr:\n            mask[i] = True\n    return mask, th, alpha\n",
+        "renderCode": "pfa_exp = int(pfa_exp)\nnum_train = int(num_train)\nnum_guard = int(num_guard)\npfa = 10.0 ** pfa_exp\n\nmask, th, alpha = _ca_cfar_1d(SIG, num_train, num_guard, pfa)\n\nfig, ax = plt.subplots(1, 1, figsize=(8.8, 4.2))\nax.plot(SIG, color='#1d4ed8', lw=0.9, label='intensywnosc (j.u.)')\nax.plot(th, color='#cc4444', lw=1.2, ls='--', label='prog CFAR T(i)')\ndet = np.flatnonzero(mask)\nax.scatter(det, SIG[det], s=28, color='#16a34a', zorder=3, label='detekcje')\nfor idx, g in zip(TARGET_IDX, TARGET_GAIN):\n    ax.axvline(idx, color='gray', alpha=0.35, ls=':')\n    ax.text(idx + 1.5, SIG[idx] * 0.95, f'cel +{g:.0f}', fontsize=8, color='gray')\n\nax.set_xlabel('indeks piksela')\nax.set_ylabel('intensywnosc (jednostki umowne)')\nax.set_title(f'CA-CFAR 1D: Pfa=1e{pfa_exp}, N=2x{num_train}={2*num_train}, G={num_guard}, alpha={alpha:.2f}')\nax.legend(loc='upper right')\nax.grid(True, alpha=0.3)\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "pfa_exp",
+            "label": "log10(P_fa) — żądana stopa fałszywych alarmów",
+            "type": "slider",
+            "min": -6,
+            "max": -2,
+            "step": 1,
+            "default": -4
+          },
+          {
+            "name": "num_train",
+            "label": "Komórki treningowe z każdej strony (½ N)",
+            "type": "slider",
+            "min": 4,
+            "max": 32,
+            "step": 2,
+            "default": 16
+          },
+          {
+            "name": "num_guard",
+            "label": "Komórki straży z każdej strony (G)",
+            "type": "slider",
+            "min": 0,
+            "max": 8,
+            "step": 1,
+            "default": 2
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 200
+      }
+    },
+    {
+      "id": "morfologia",
+      "title": "Morfologia binarna po CFAR — z pikseli w obiekty",
+      "type": "theory",
+      "data": {
+        "markdown": "Mamy maskę binarną z CFAR — niestety, jeszcze nie listę statków. Trzy typowe artefakty:\n\n- **fałszywe alarmy 1-pikselowe** rozsiane po obrazie (z $P_\\text{fa}$ rzędu $10^{-4}$ na scenie 5000 × 5000 px masz statystycznie ok. 2500 pojedynczych fałszywych pikseli),\n- **statek 'rozbity' na kilka osobnych klastrów** (CFAR osobno wykrył dziób, kadłub i nadbudówkę),\n- **dziury wewnątrz dużych odbić** (cień radarowy na pokładzie, lokalne minimum kontrastu).\n\n![scikit-image — przykład binarnego obrazu poddanego operacjom otwarcia (erosion -> dilation), zamknięcia (dilation -> erosion) oraz pełnego pipeline'u; otwarcie usuwa drobne plamki, zamknięcie scala bliskie obiekty i wypełnia szczeliny — dokładnie te same operacje stosujemy do maski po CFAR](https://scikit-image.org/docs/stable/_images/sphx_glr_plot_morphology_001.png)\n*(Obraz: dokumentacja scikit-image — galeria morfologii)*\n\nWszystkie trzy artefakty czyści **morfologia binarna** (Serra 1982, Sternberg 1986). Operatory definiuje element strukturalny (*structuring element*, SE) — typowo prostokąt $k \\times k$ lub dysk o promieniu $r$:\n\n- **Erozja** $A \\ominus B$: piksel zostaje, gdy **cały** SE wokół niego mieści się w masce. Topi małe obiekty.\n- **Dylatacja** $A \\oplus B$: piksel zostaje, gdy **jakikolwiek** piksel SE wokół niego trafia w maskę. Powiększa obiekty.\n- **Otwarcie** $A \\circ B = (A \\ominus B) \\oplus B$: erozja, potem dylatacja. Usuwa drobne plamki **mniejsze** niż SE, zachowując rozmiar większych obiektów. Idealne na fałszywe alarmy 1-pikselowe.\n- **Zamknięcie** $A \\bullet B = (A \\oplus B) \\ominus B$: dylatacja, potem erozja. Wypełnia szczeliny i dziury **mniejsze** niż SE. Idealne na 'rozbite' statki i dziury w kadłubie.\n\nKanoniczny **pipeline detekcji statków** w SAR po CFAR (Crisp 2004):\n\n1. **Otwarcie** SE 3×3 — usuwa pojedyncze fałszywe alarmy.\n2. **Zamknięcie** SE 5×5 — skleja statek z 2–3 osobnych klastrów w jedną składową.\n3. **Connected components** (`scipy.ndimage.label`) — etykietowanie obiektów.\n4. **Filtr rozmiaru** — odrzuć komponenty < `min_pixels` (typowo 5 px na ~10 m rozdzielczości GRDH; statek ~50 m to przynajmniej 5×3 piksele).\n\nPo tych krokach masz listę kandydatów-statków z bbox + masą piksela (proxy długości i szerokości). To jest twój **klasyczny baseline** — porównaj z nim mAP YOLOv8 fine-tuned na OpenSARShip z lekcji 3 Modułu 3."
+      },
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+          "title": "Mathematical morphology — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.scipy.org/doc/scipy/reference/ndimage.html#morphology",
+          "title": "scipy.ndimage — morphology reference",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "code-morfologia",
+      "title": "Czyszczenie maski CFAR — otwarcie + zamknięcie",
+      "description": "Połącz binary_opening i binary_closing ze scipy.ndimage we właściwej kolejności. Dwa parametry: rozmiar SE dla każdego kroku.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `clean_mask(mask, opening_size, closing_size)`, która:\n\n1. Najpierw wykonuje **otwarcie** (`scipy.ndimage.binary_opening`) z elementem strukturalnym `numpy.ones((opening_size, opening_size), dtype=bool)` — usuwa drobne fałszywe alarmy.\n2. Następnie wykonuje **zamknięcie** (`scipy.ndimage.binary_closing`) z elementem strukturalnym `numpy.ones((closing_size, closing_size), dtype=bool)` — skleja rozbite statki i wypełnia drobne dziury.\n3. Zwraca wynik **typu `bool`** o tym samym kształcie co `mask`.\n\n**Kolejność jest istotna** — odwrócona dawałaby najpierw scalanie fałszywych alarmów w grubsze klastry, a dopiero potem usuwanie ich (czyli za późno).\n\n```python\nfrom scipy.ndimage import binary_opening, binary_closing\n```\n\nObie funkcje są dostępne w środowisku Pyodide (zgodnie z dokumentacją scipy.ndimage).",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing\n\n\ndef clean_mask(mask, opening_size, closing_size):\n    \"\"\"Otwarcie (usun drobne FA) -> zamkniecie (sklej rozbite statki).\"\"\"\n    mask = np.asarray(mask, dtype=bool)\n    # TODO: zbuduj se_open = np.ones((opening_size, opening_size), dtype=bool)\n    # TODO: zbuduj se_close = np.ones((closing_size, closing_size), dtype=bool)\n    # TODO: opened = binary_opening(mask, structure=se_open)\n    # TODO: closed = binary_closing(opened, structure=se_close)\n    # TODO: zwroc closed.astype(bool)\n    return mask.copy()\n",
+        "tests": [
+          {
+            "name": "smoke_returns_bool_same_shape_and_removes_isolated",
+            "body": "import numpy as np\nm = np.zeros((10, 10), dtype=bool)\nm[2, 3] = True   # izolowany piksel\nm[8, 8] = True   # drugi izolowany\nout = clean_mask(m, opening_size=3, closing_size=3)\nassert out.dtype == np.bool_, f'oczekiwany dtype bool, mam {out.dtype}'\nassert out.shape == (10, 10), f'oczekiwany shape (10, 10), mam {out.shape}'\nassert not out.any(), 'pojedyncze piksele powinny zniknac po opening 3x3'",
+            "hidden": false
+          },
+          {
+            "name": "preserves_solid_cluster",
+            "body": "import numpy as np\nm = np.zeros((10, 10), dtype=bool)\nm[3:7, 3:7] = True  # zwarty klaster 4x4\nout = clean_mask(m, opening_size=3, closing_size=3)\n# 4x4 klaster po opening 3x3 powinien przetrwac\nassert bool(out[4, 4]) is True\nassert bool(out[5, 5]) is True\n# rogi oryginalnego klastra tez powinny byc True (po zamknieciu)\nassert bool(out[3, 3]) is True\nassert bool(out[6, 6]) is True\n# poza klastrem False\nassert bool(out[0, 0]) is False\nassert bool(out[9, 9]) is False"
+          },
+          {
+            "name": "closing_fills_small_hole",
+            "body": "import numpy as np\nm = np.zeros((11, 11), dtype=bool)\nm[2:9, 2:9] = True  # 7x7 klaster\nm[5, 5] = False     # dziura 1-pikselowa w srodku\nout = clean_mask(m, opening_size=3, closing_size=3)\nassert bool(out[5, 5]) is True, 'closing 3x3 powinien wypelnic dziure 1-pikselowa'\nassert bool(out[4, 5]) is True\nassert bool(out[5, 4]) is True"
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing\n\n\ndef clean_mask(mask, opening_size, closing_size):\n    mask = np.asarray(mask, dtype=bool)\n    se_open = np.ones((opening_size, opening_size), dtype=bool)\n    se_close = np.ones((closing_size, closing_size), dtype=bool)\n    opened = binary_opening(mask, structure=se_open)\n    closed = binary_closing(opened, structure=se_close)\n    return closed.astype(bool)\n"
+      }
+    },
+    {
+      "id": "quiz-pulapki",
+      "title": "Pułapki CFAR i morfologii — które stwierdzenia są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o pipeline CFAR + morfologia w detekcji statków SAR **są prawdziwe**? Zaznacz wszystkie poprawne.",
+        "options": [
+          "Próg $T = \\alpha \\bar{X}_\\text{train}$ z $\\alpha$ wyprowadzonym dla rozkładu wykładniczego utrzymuje **stałą stopę fałszywych alarmów niezależnie od poziomu klatki morza** $\\mu$ — to jest cała magia CFAR.",
+          "CA-CFAR jest najlepszym wyborem, gdy okno może przejść przez krawędź typu woda → ląd, bo średnia jest robust na heterogeniczne tło.",
+          "Komórki straży (*guard cells*) są niepotrzebne na typowo 1-pikselowych celach — ich zadaniem jest izolacja **rozmazanego ogona** statku, którego po despecklingu może nie być.",
+          "OS-CFAR (ordered-statistics) jest odporny na **interferenty w pasie treningowym** (drugi statek w sąsiedztwie), bo używa percentyla zamiast średniej.",
+          "Kolejność operacji morfologicznych jest istotna: **otwarcie → zamknięcie** czyści fałszywe alarmy *przed* sklejaniem, podczas gdy **zamknięcie → otwarcie** najpierw zlepiłoby fałszywe alarmy w grubsze klastry, a dopiero potem próbowało je rozdzielić.",
+          "Po pipeline CFAR + morfologia można pominąć krok `connected components` i bezpośrednio zliczać piksele True — i tak każdy statek jest jedną składową."
+        ],
+        "correct": [0, 3, 4],
+        "explanation": "Opcja 0 (poprawna) — to dokładnie wynik z wyprowadzenia: stosunek $T / \\bar{X}$ ma rozkład **niezależny od $\\mu$**, więc prawdopodobieństwo fałszywego alarmu zależy tylko od $\\alpha$ i $N$. Opcja 1 (BŁĘDNA) — CA jest **najgorszy** na krawędzi: średnia z dwóch reżimów (morze + ląd) daje próg w środku, czego skutkiem jest morze nadprogowe (lawina FA) lub ląd podprogowy (utrata statków przy brzegu). Na krawędzie chcesz GO-CFAR (greatest-of). Opcja 2 (BŁĘDNA) — komórki straży właśnie są **niezbędne**: nawet po despecklingu statek smaże się w azymucie 2–4 piksele, a brak straży oznacza, że ogon celu trafia do estymaty klatki, sztucznie podnosi $\\bar{X}$ i blokuje detekcję samego celu. Opcja 3 (poprawna) — pojedynczy interferent w treningu zmienia średnią, ale 75-percentyl tylko o jeden próg w sortowaniu; OS-CFAR jest empirycznie najodporniejszy na sąsiednie statki (Crisp 2004, Wang et al. 2017). Opcja 4 (poprawna) — to jest reguła pamięciowa: 'najpierw posprzątaj, potem sklej'. Odwrotna kolejność wzmacnia fałszywe alarmy zamiast je usuwać. Opcja 5 (BŁĘDNA) — to klasyczny mit: nawet po zamknięciu, dwa blisko stojące statki w porcie pozostają osobnymi obiektami i bez `connected components` (`scipy.ndimage.label`) zliczasz piksele, nie obiekty; bbox per-obiekt potrzebuje etykietowania.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Sandbox: dostrój pipeline CFAR + morfologia na 2-D scence",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing, label, find_objects\n\nrng = np.random.default_rng(0)\n\n# Syntetyczna scena 128 x 128 px: wykladnicza klatka morza + 5 statkow.\nH, W = 128, 128\nscene = rng.exponential(scale=1.0, size=(H, W))\n\n# Statki: jasne prostokaty 3 x 5 px (azymut x range), o roznej sile.\nSHIPS = [\n    (20, 30, 3, 5, 25.0),\n    (60, 80, 4, 6, 8.0),    # slabszy kuter\n    (90, 40, 3, 7, 35.0),\n    (50, 110, 2, 4, 5.0),   # bardzo slaby - czesto ginie\n    (110, 100, 5, 8, 50.0), # bardzo silny\n]\nfor y, x, h, w, gain in SHIPS:\n    scene[y:y + h, x:x + w] += gain\n\n\ndef ca_cfar_2d(img, train_half, guard_half, pfa):\n    \"\"\"Bardzo prosty CA-CFAR 2D — kwadratowe okno, brak optymalizacji.\"\"\"\n    H, W = img.shape\n    mask = np.zeros((H, W), dtype=bool)\n    side = 2 * train_half + 2 * guard_half + 1\n    inner = 2 * guard_half + 1\n    N = side * side - inner * inner\n    if N <= 0 or pfa <= 0 or pfa >= 1:\n        return mask\n    alpha = N * (pfa ** (-1.0 / N) - 1.0)\n    half = train_half + guard_half\n    for y in range(half, H - half):\n        for x in range(half, W - half):\n            window = img[y - half:y + half + 1, x - half:x + half + 1].copy()\n            window[guard_half + train_half - guard_half:guard_half + train_half + guard_half + 1,\n                   guard_half + train_half - guard_half:guard_half + train_half + guard_half + 1] = np.nan\n            noise = float(np.nanmean(window))\n            if img[y, x] > alpha * noise:\n                mask[y, x] = True\n    return mask\n\n\n# TODO 1: Zmieniaj pfa (np. 1e-3 vs 1e-5) i patrz, ktore statki znikaja jako pierwsze.\n# TODO 2: Przepuscic mask przez clean_mask z poprzedniego cwiczenia\n#         (binary_opening 3x3 -> binary_closing 5x5) i policzyc obiekty.\n# TODO 3: Sprawdzic, ktore z 5 statkow zostaly wykryte (TP) - dla kazdego\n#         policz srodek bbox z find_objects i porownaj z lista SHIPS.\n\nmask_raw = ca_cfar_2d(scene, train_half=8, guard_half=2, pfa=1e-4)\nprint('detekcje surowe:', int(mask_raw.sum()))\n\n# Tu wpisz wlasna implementacje clean_mask lub zaimportuj z pamieci sesji.\n",
+        "encouragement": "Spróbuj obniżyć Pfa do 1e-6 i zobacz, kiedy słaby kuter (5,4) znika; potem podkręć closing_size do 7×7 i sprawdź, czy dwa statki w porcie się skleją w jeden obiekt — kanoniczny problem CFAR-baseline ATR."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+      "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery (DSTO-RR-0272)",
+      "kind": "paper",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/LGRS.2017.2713462",
+      "title": "An Intensity-Space Domain CFAR Method for Ship Detection in HR SAR Images",
+      "kind": "paper",
+      "author": "Chao Wang, Fukun Bi, Wenjie Zhang, Liang Chen",
+      "year": 2017
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+      "title": "Mathematical morphology — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.scipy.org/doc/scipy/reference/ndimage.html#morphology",
+      "title": "scipy.ndimage — morphology reference",
+      "kind": "article"
+    },
+    {
+      "url": "https://emwlab.fudan.edu.cn/resources/",
+      "title": "OpenSARShip 2.0 dataset — official page",
+      "kind": "article"
+    }
+  ]
+}

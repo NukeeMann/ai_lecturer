@@ -1,0 +1,146 @@
+{
+  "topic": "SAR dla inżyniera AI: praktyczne przetwarzanie i deep learning na obrazach radarowych w Pythonie",
+  "description": "Praktyczny, zaawansowany kurs przygotowujący doświadczonych inżynierów Computer Vision do roli Senior AI Specialist w projektach ATR i analizy obrazów SAR (np. SATIM, ICEYE, Capella, Sentinel‑1). Przechodzisz pełen pipeline w Pythonie: pobieranie i pre-processing danych Sentinel‑1 SLC/GRD (sentinelsat, ASF, SNAP/snappy, xarray‑sentinel, sarpy), kalibracja radiometryczna, redukcja speckle (Lee, Frost, Refined Lee, NL‑means), geokodowanie i terrain correction, a także pracę z danymi zespolonymi, polarymetrią (PolSAR) i podstawami InSAR. Drugi blok to klasyczna ekstrakcja cech z OpenCV i NumPy - GLCM i tekstura Haralicka, detektory krawędzi, morfologia, koherencja interferometryczna, change detection, statystyki backscattera — używane do feature engineeringu i baseline’ów. Trzeci blok to deep learning na SAR w PyTorch: despeckling (ID‑CNN, SAR‑DRN, Speckle2Void), segmentacja semantyczna, detekcja obiektów oraz Automatic Target Recognition statków, pojazdów i samolotów na zbiorach MSTAR, OpenSARShip, SEN12MS i BigEarthNet, wraz z augmentacją specyficzną dla SAR, transfer learningiem z modeli optycznych i optymalizacją inferencji (ONNX, mixed precision). Kurs kończy projekt end‑to‑end: pipeline detekcji i klasyfikacji obiektów na surowych scenach SAR — bezpośrednio mapujący się na zakres obowiązków w ofercie.\n\nSugerowana struktura modułów (do wykorzystania w kreatorze):\n- SAR foundations dla inżyniera AI — fizyka radaru, dlaczego SAR ≠ Doppler, SLC vs GRD, polarymetria, speckle jako szum multiplikatywny. arxiv\n- Pre-processing pipeline w Pythonie — sentinelsat/ASF, SNAP + snappy, xarray‑sentinel, sarpy; kalibracja, multilooking, speckle filtering, terrain correction, geokodowanie. Remote-sensing\n- Klasyczna ekstrakcja informacji (OpenCV + matematyka) — GLCM, Haralick, LBP, krawędzie/morfologia, statystyki backscattera, koherencja, change detection metodami klasycznymi.\n- Deep learning na SAR — despeckling (CNN/U‑Net, self‑supervised), segmentacja, detekcja (YOLO/DETR adaptowane do SAR), ATR na MSTAR/OpenSARShip, multi‑modal SEN12MS.\n- Production & optymalizacja — ONNX, kwantyzacja, batching, eksperymenty na GPU, ewaluacja domain‑specific (PSNR, ENL, mAP w warunkach speckle).\n- Capstone — end‑to‑end pipeline „SAR scene → detekcje + klasyfikacje obiektów” na realnych danych Sentinel‑1 / próbkach komercyjnych (ICEYE/Capella demo).",
+  "level": "intermediate",
+  "durationTarget": "standard",
+  "theoryPracticeRatio": 0.62,
+  "clarification": {
+    "q1: Jakie masz konkretne cele zawodowe po kursie — aplikujesz na rolę w SATIM/ICEYE/Capella, czy raczej budujesz kompetencje pod własny projekt SAR?": "Przygotowuje sie do roli AI Specialist w SATIM.",
+    "q2: Z jakimi danymi SAR pracowałeś dotąd (Sentinel‑1, MSTAR, komercyjne) i które formaty (SLC, GRD, CPHD) są dla Ciebie nowe?": "Nie pracowałem z żadnymi",
+    "q3: Jaki jest Twój obecny poziom w PyTorch i czy korzystałeś już z bibliotek typu sarpy, snappy, SNAP, xarray‑sentinel?": "PyTorch na codziec, bibliotek wymienionych nie znam",
+    "q4: Które zadanie końcowe ma największy priorytet — ATR statków, detekcja pojazdów lądowych, change detection, czy despeckling jako odrębny produkt?": "Zalezy co ma dostepny dataset fajny, ale jak wszystko to statki/samoloty/pojazdy",
+    "q5: Czy chcesz, żeby kurs traktował polarymetrię (PolSAR) i InSAR jako pełnoprawne moduły, czy tylko jako wprowadzenie sygnalizacyjne?": "sam zdecyduj jak istotne",
+    "q6: Jakim sprzętem dysponujesz do treningu (lokalne GPU, Colab, klaster) — to wpłynie na rozmiar modeli i datasetów w ćwiczeniach?": "lokalne GPU lub Kaggle Colab czy Google Colab",
+    "q7: Czy zależy Ci bardziej na głębokim zrozumieniu fizyki radaru i matematyki sygnału, czy na szybkim dojściu do działających modeli DL?": "działajace modele DL i insight z danych jak wydobyć i co mówi",
+    "q8: Czy chcesz pracować z surowymi scenami Sentinel‑1 od pobierania przez ASF/sentinelsat, czy zaczynać od już przygotowanych wycinków?": "jak uważasz",
+    "q9: Jakie metryki ewaluacji są dla Ciebie najważniejsze w projekcie capstone — mAP, PSNR/ENL, F1 per‑class, czy odporność na różne kąty padania i pory roku?": "Raczej metryki mierzalne jak mAp PSNR F1",
+    "q10: Czy w pracy będziesz wdrażał modele do produkcji (ONNX, kwantyzacja, inference na edge), czy raczej zostają w fazie badawczej w notebookach?": "będę dlatego taka skecja jest potrzebna"
+  },
+  "draftStructure": {
+    "courseTitle": "SAR dla inżyniera AI: od fizyki radaru do produkcyjnego ATR w PyTorch",
+    "courseDescription": "Praktyczny kurs prowadzący doświadczonego inżyniera CV przez pełen pipeline SAR — od fizyki sygnału i pre-processingu Sentinel-1, przez klasyczne cechy (GLCM, koherencja, change detection), po deep learning (despeckling, segmentacja, ATR statków/pojazdów/samolotów na MSTAR i OpenSARShip) z optymalizacją ONNX i capstone end-to-end na realnej scenie SAR. Mapuje się 1:1 na zakres roli Senior AI Specialist w SATIM.",
+    "modules": [
+      {
+        "title": "SAR foundations dla inżyniera AI",
+        "lessons": [
+          {
+            "title": "Fizyka radaru i geometria SAR w 20 minut",
+            "summary": "Zrozumiesz, dlaczego SAR to apertura syntetyczna a nie Doppler, oraz jak range/azimuth, look angle i rozdzielczość wpływają na obraz.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "SLC vs GRD, dane zespolone i polarymetria",
+            "summary": "Porównasz produkty Sentinel-1 SLC i GRD, zobaczysz amplitudę/fazę w NumPy i poznasz kanały HH/HV/VV/VH oraz dekompozycję Pauliego.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Speckle jako szum multiplikatywny",
+            "summary": "Zbadasz statystyki speckle (rozkład Rayleigha/Gamma, ENL) na realnym kafelku Sentinel-1 i zrozumiesz, dlaczego psuje klasyczne CNN-y optyczne.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Pre-processing pipeline w Pythonie",
+        "lessons": [
+          {
+            "title": "Pobieranie scen z ASF i Copernicus",
+            "summary": "Skonfigurujesz sentinelsat i asf_search, pobierzesz scenę Sentinel-1 SLC nad portem i zorganizujesz katalog danych pod eksperymenty.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "SNAP/snappy i xarray-sentinel w praktyce",
+            "summary": "Wykonasz kalibrację radiometryczną, multilooking i konwersję do sigma0 w snappy, a metadane zindeksujesz przez xarray-sentinel.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Speckle filtering: Lee, Frost, Refined Lee, NL-means",
+            "summary": "Zaimplementujesz cztery filtry w NumPy/OpenCV, porównasz ENL i zachowanie krawędzi oraz wybierzesz filtr pod późniejsze ATR.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Terrain correction i geokodowanie",
+            "summary": "Wykonasz Range-Doppler terrain correction z DEM SRTM, zgeokodujesz scenę do EPSG:4326 i zwizualizujesz ją na tle OSM.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "Klasyczne cechy i baseline'y",
+        "lessons": [
+          {
+            "title": "GLCM, Haralick i LBP na obrazach SAR",
+            "summary": "Policzysz macierze GLCM i deskryptory Haralicka w scikit-image, zbudujesz wektory cech tekstury i baseline klasyfikacji land-cover.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Krawędzie, morfologia i statystyki backscattera",
+            "summary": "Wykryjesz statki na morzu metodą CFAR + morfologii w OpenCV i porównasz wyniki ze statystykami backscattera w oknach przesuwnych.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Koherencja interferometryczna i change detection",
+            "summary": "Z pary SLC policzysz koherencję, wykryjesz zmiany (log-ratio, CVA) i zinterpretujesz mapę zmian po powodzi lub w porcie.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "Deep learning na SAR",
+        "lessons": [
+          {
+            "title": "Despeckling siecią CNN: ID-CNN i SAR-DRN",
+            "summary": "Wytrenujesz w PyTorch ID-CNN na syntetycznym speckle, ocenisz PSNR/ENL i porównasz z klasycznym Refined Lee na realnych kafelkach.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Self-supervised despeckling: Speckle2Void",
+            "summary": "Zaimplementujesz blind-spot network bez czystych referencji, wytrenujesz na nieanotowanych scenach i ocenisz przeniesienie na inny sensor.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Segmentacja semantyczna na SEN12MS",
+            "summary": "Adaptujesz U-Net do wejścia SAR+optyka z SEN12MS, użyjesz transfer learningu z ImageNet i zmierzysz mIoU na klasach land-cover.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Detekcja statków na OpenSARShip i ATR na MSTAR",
+            "summary": "Dostroisz YOLOv8 do wykrywania statków na OpenSARShip oraz wytrenujesz klasyfikator pojazdów/samolotów na MSTAR z augmentacją specyficzną dla SAR.",
+            "estimatedMinutes": 20
+          }
+        ]
+      },
+      {
+        "title": "Production i optymalizacja inferencji",
+        "lessons": [
+          {
+            "title": "Eksport do ONNX, mixed precision i kwantyzacja",
+            "summary": "Wyeksportujesz model detekcji do ONNX, włączysz FP16/INT8 i porównasz latencję oraz mAP na lokalnym GPU i w Colabie.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Ewaluacja domain-specific: PSNR, ENL, mAP pod speckle",
+            "summary": "Zbudujesz pipeline ewaluacyjny liczący PSNR, ENL, F1 i mAP w warunkach speckle oraz zaprojektujesz raport dla stakeholderów.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Capstone: end-to-end ATR na scenie Sentinel-1",
+        "lessons": [
+          {
+            "title": "Pipeline SAR scene → detekcje + klasyfikacje obiektów",
+            "summary": "Złożysz pre-processing, despeckling, detektor i klasyfikator w jeden skrypt CLI działający na surowej scenie Sentinel-1 oraz próbce ICEYE/Capella.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Insighty z danych i prezentacja wyników",
+            "summary": "Wygenerujesz mapy detekcji, statystyki per-klasa i krótki raport interpretacyjny mapujący wyniki na zakres roli AI Specialist w SATIM.",
+            "estimatedMinutes": 15
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-05-08T09:24:53.647Z"
+}

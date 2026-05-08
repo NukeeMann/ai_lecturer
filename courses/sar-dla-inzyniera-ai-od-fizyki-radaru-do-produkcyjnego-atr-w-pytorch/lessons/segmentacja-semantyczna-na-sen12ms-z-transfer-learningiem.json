@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "slug": "segmentacja-semantyczna-na-sen12ms-z-transfer-learningiem",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m3",
+  "title": "Segmentacja semantyczna na SEN12MS z transfer learningiem",
+  "eyebrow": "DEEP LEARNING I ATR",
+  "description": "U-Net z ImageNet-pretrenowanym backbonem na 2-kanałowym Sentinel-1 dual-pol VV+VH — adapter wejścia, normalizacja dB, focal/Dice loss i mIoU per-klasa na zbiorze SEN12MS.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "po-co-segmentacja-na-sar",
+      "title": "Po co semantyczna segmentacja na SAR — i czym jest SEN12MS",
+      "type": "theory",
+      "data": {
+        "markdown": "W Module 2 widziałeś GLCM, CFAR i koherencję — klasyczne baseline'y, które wyciągają cechy lokalne z pojedynczej sceny. Semantyczna segmentacja to inne zadanie: każdy piksel sceny dostaje jedną etykietę z $N$ klas (las, woda, miasto, pole). Na zdjęciach optycznych Sentinel-2 jest to gładki problem, ale ma jeden brutalny ogranicznik — chmury. Średnio ok. 55% scen optycznych nad Europą Środkową w okresie wiosna–jesień ma cloud cover > 20%, a w strefie równikowej ten odsetek przekracza 90%. SAR przebija chmurę i działa w nocy — i właśnie dlatego operacyjne mapowanie pokrycia terenu (deforestacja, monitoring powodzi, służby kryzysowe) wymaga modelu, który czyta VV/VH w dB, a nie RGB.\n\n![Wycinek sceny SAR Sentinel-1 nad terenem mieszanym z widoczną granicą pole–las i drobnymi elementami zabudowy — typowy patch 256×256 pikseli, na jakim trenuje się klasyfikator pikselowy SEN12MS](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n\n**SEN12MS** (Schmitt, Hughes, Qiu, Zhu — 2019) to *de facto* benchmark do tego problemu. Zbiór zawiera 180 662 patche $256 \\times 256$ pikseli, każdy zarejestrowany w trzech modalnościach:\n\n- **Sentinel-1 GRD** — 2 kanały dual-pol VV+VH, zlogarytmowane do dB.\n- **Sentinel-2 L1C** — 13 pasm spektralnych zarejestrowanych w tej samej geometrii.\n- **MODIS Land Cover (MCD12Q1)** — etykiety pokrycia terenu w schemacie IGBP (17 klas, w praktyce projekty redukują do prostszego zbioru ok. 10 klas: las iglasty, las liściasty, sawanna, mokradła, miasto, pole uprawne, gołoziem, woda, śnieg, pozostałe).\n\nTrzy rzeczy, których SEN12MS *nie jest*, a które łatwo pomylić:\n\n1. **Etykiety nie są ręczne.** Pochodzą z grubego rastra MCD12Q1 MODIS o rozdzielczości 500 m i są upsamplowane do siatki 10 m. To **weak supervision** — twoje mIoU rzadko przebije ok. 0.7 niezależnie od architektury, bo etykiety mają niedopasowanie geometryczne na poziomie pikseli.\n2. **Sentinel-1 jest dual-pol, nie quad-pol.** Zapomnij o pełnej dekompozycji Pauliego z Modułu 1 — dostajesz 2 kanały, nie 4.\n3. **Patche są zbalansowane geograficznie i sezonowo.** Oficjalny split (`train/val/test`) jest podzielony po regionach, więc *nigdy* nie waliduj losowym patch-shufflem — model nauczy się na geo-wycieku i pokaże mIoU > 0.85, które natychmiast spadnie na nowej scenie."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.5194/isprs-annals-IV-2-W7-153-2019",
+          "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery for Deep Learning and Data Fusion",
+          "kind": "paper",
+          "author": "Michael Schmitt, Lloyd H. Hughes, Chunping Qiu, Xiao Xiang Zhu",
+          "year": 2019
+        },
+        {
+          "url": "https://mediatum.ub.tum.de/1474000",
+          "title": "SEN12MS dataset — TUM mediaTUM repository",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-benchmarkow",
+      "title": "SEN12MS i sąsiedzi — co wybrać do segmentacji SAR",
+      "description": "Mapa najpopularniejszych zbiorów do segmentacji opartej (lub współwykorzystującej) Sentinel-1; trzymaj otwartą, gdy będziesz wybierać benchmark dla własnego eksperymentu.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "dataset", "label": "Zbiór", "type": "string", "sortable": true, "filterable": true },
+          { "key": "modal", "label": "Modalności", "type": "string", "sortable": false, "filterable": true },
+          { "key": "patches", "label": "Liczba patchy", "type": "number", "sortable": true, "filterable": false },
+          { "key": "rozmiar", "label": "Rozmiar patcha", "type": "string", "sortable": false, "filterable": false },
+          { "key": "klasy", "label": "Klasy", "type": "string", "sortable": false, "filterable": false },
+          { "key": "etykiety", "label": "Źródło etykiet", "type": "string", "sortable": false, "filterable": true }
+        ],
+        "rows": [
+          {
+            "dataset": "SEN12MS",
+            "modal": "S1 GRD (VV+VH) + S2 L1C + MODIS LC",
+            "patches": 180662,
+            "rozmiar": "256×256 @ 10 m",
+            "klasy": "17 IGBP (typowo zredukowane do 10)",
+            "etykiety": "MODIS MCD12Q1 (weak supervision)"
+          },
+          {
+            "dataset": "DFC2020 (IEEE GRSS)",
+            "modal": "S1 GRD (VV+VH) + S2 L1C",
+            "patches": 6114,
+            "rozmiar": "256×256 @ 10 m",
+            "klasy": "8 (uproszczony IGBP)",
+            "etykiety": "MODIS + manualna walidacja zestawu testowego"
+          },
+          {
+            "dataset": "BigEarthNet-MM",
+            "modal": "S1 GRD + S2 L2A",
+            "patches": 590326,
+            "rozmiar": "120×120 @ 10 m",
+            "klasy": "19 (CORINE 2018, multi-label)",
+            "etykiety": "CORINE Land Cover (multi-label klasyfikacja, nie pikselowa)"
+          },
+          {
+            "dataset": "OpenEarthMap-SAR",
+            "modal": "S1 GRD + manualne maski",
+            "patches": 1500,
+            "rozmiar": "1024×1024 @ 6 m",
+            "klasy": "8",
+            "etykiety": "ręczne (pixel-perfect, drogi/budynki)"
+          },
+          {
+            "dataset": "SEN12-FLOOD",
+            "modal": "S1 GRD (VV+VH), wieloczasowy",
+            "patches": 4242,
+            "rozmiar": "512×512 @ 10 m",
+            "klasy": "2 (powódź / brak)",
+            "etykiety": "Copernicus EMS rapid mapping"
+          },
+          {
+            "dataset": "SeasoNet",
+            "modal": "S2 L2A (bez SAR — referencja)",
+            "patches": 1759830,
+            "rozmiar": "120×120 @ 10 m",
+            "klasy": "33 (CORINE 2018)",
+            "etykiety": "CORINE Land Cover, pikselowa"
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "quiz-czym-jest-sen12ms",
+      "title": "Sprawdź intuicję: co tak naprawdę dostajesz w SEN12MS",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o zbiorze SEN12MS są **prawdziwe**? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "Etykiety pokrycia terenu są ręcznie odrysowane piksel po pikselu i mają niepewność < 1 px.",
+          "Każdy patch zawiera dual-pol Sentinel-1 (VV+VH) — nie pełny quad-pol.",
+          "Każdy patch jest zarejestrowany czasowo i geometrycznie z patchem Sentinel-2 i z mapą pokrycia MODIS na tej samej siatce.",
+          "Oficjalny split train/val/test jest losowym patch-shufflem, więc walidacja na losowym 10% zbioru jest reprezentatywna."
+        ],
+        "correct": [1, 2],
+        "explanation": "Opcja 1 jest fałszywa — etykiety pochodzą z MCD12Q1 MODIS o rozdzielczości 500 m, upsamplowanych do siatki 10 m. To weak supervision, nie pixel-perfect, dlatego mIoU > 0.7 jest rzadkością niezależnie od architektury. Opcja 2 jest prawdziwa: Sentinel-1 nad lądem ślizga się w dual-pol VV+VH; pełny quad-pol nie istnieje na tym sensorze. Opcja 3 jest prawdziwa: koregistracja S1/S2/MODIS to główna wartość zbioru — wszystkie modalności są na wspólnej siatce 10 m. Opcja 4 jest fałszywa: split SEN12MS jest podzielony **po regionach geograficznych**, żeby uniknąć geo-wycieku; losowy shuffle wewnątrz tej samej sceny daje fałszywie zawyżone metryki, bo sąsiadujące patche są praktycznie identyczne.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "u-net-i-transfer-z-imagenet",
+      "title": "U-Net + transfer learning z ImageNet — co naprawdę przenosi się na SAR",
+      "type": "theory",
+      "data": {
+        "markdown": "Architektura **U-Net** (Ronneberger, Fischer, Brox — 2015) ma dwie symetryczne gałęzie: enkoder (konwolucje + max-pooling) zmniejsza rozdzielczość 4–5 razy, dekoder (upsampling + konwolucje) wraca do oryginału, a *skip connections* na każdej skali łączą cechy z enkodera bezpośrednio z dekoderem. Dekoder potrzebuje *jednocześnie* kontekstu globalnego (z dna U) i precyzji lokalnej krawędzi (ze skipów) — bez skipów segmentacja gubi cienkie struktury.\n\n![Diagram architektury U-Net — symetryczny enkoder po lewej, dekoder po prawej, poziome strzałki skip connections łączące cechy o tej samej rozdzielczości z gałęzi schodzącej i wstępującej; każdy poziom opisany liczbą kanałów cech](https://commons.wikimedia.org/wiki/Special:FilePath/Example_architecture_of_U-Net_for_producing_k_256-by-256_image_masks_for_a_256-by-256_RGB_image.png)\n\nPraktyczny stack to `segmentation_models_pytorch` (SMP), który eksponuje U-Net z wymiennym enkoderem (ResNet-34, EfficientNet-B0, MobileNetV3) i opcją inicjalizacji z ImageNetu. Boilerplate ma cztery linijki:\n\n```python\nimport segmentation_models_pytorch as smp\nmodel = smp.Unet(encoder_name=\"resnet34\", encoder_weights=\"imagenet\",\n                 in_channels=3, classes=10)\n```\n\nProblem: SAR ma **2 kanały** (VV+VH), a ResNet-34 oczekuje **3**. Dwie strategie:\n\n- **Stem 2→3 z konwolucją 1×1** — `nn.Conv2d(2, 3, kernel_size=1, bias=False)` przed enkoderem. Sieć uczy się sama miksować VV i VH w 3-kanałową reprezentację, której pierwsze warstwy ResNetu się spodziewają. Pretrenowane wagi pozostają nietknięte — to zwykle lepszy wybór.\n- **Podmiana pierwszej warstwy** — `model.encoder.conv1 = nn.Conv2d(2, 64, kernel_size=7, stride=2, padding=3, bias=False)`. Tracisz pretrenowane wagi tej warstwy, a właśnie one uczą się detektorów krawędzi i gradientu, które *transferują się* z RGB na SAR.\n\nDrugi krok to **normalizacja dB**. Sentinel-1 GRDH ma typowo $VV \\in [-25, 0]$ dB i $VH \\in [-30, -5]$ dB. ImageNet używa średnich $[0.485, 0.456, 0.406]$ na pikselach $[0, 1]$ — kompletnie inna skala. Standardem jest per-kanałowy z-score $z = (x - \\mu) / \\sigma$ z empirycznymi statystykami zbioru; dla Europy szacunkowe $\\mu_{VV} \\approx -12$, $\\sigma_{VV} \\approx 5$, $\\mu_{VH} \\approx -18$, $\\sigma_{VH} \\approx 5$ to dobry punkt startowy.\n\nCo *nie* transferuje z RGB: **augmentacje koloru**. ColorJitter, RGB-shift i hue rotation są bzdurne na SAR — dB nie są kanałami koloru. Zostają flipy i obroty (które muszą szanować geometrię range/azimuth) oraz resampling multilooku jako stosunkowo bezpieczna augmentacja speckle."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/978-3-319-24574-4_28",
+          "title": "U-Net: Convolutional Networks for Biomedical Image Segmentation",
+          "kind": "paper",
+          "author": "Olaf Ronneberger, Philipp Fischer, Thomas Brox",
+          "year": 2015
+        },
+        {
+          "url": "https://smp.readthedocs.io/en/latest/",
+          "title": "segmentation_models_pytorch — official documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "stem-i-normalizacja",
+      "title": "Adapter wejścia 2→3 i normalizacja dB",
+      "description": "Uzupełnij stub adaptera SMP, który dopasowuje 2 kanały dual-pol do 3-kanałowego enkodera ImageNet i normalizuje dB do z-score per-kanał.",
+      "type": "codeCloze",
+      "data": {
+        "language": "python",
+        "template": "import torch\nimport torch.nn as nn\n\n\nclass SARStem(nn.Module):\n    \"\"\"Adapter 2→3 dla 1. warstwy enkodera ResNet z ImageNetu.\"\"\"\n\n    def __init__(self, encoder: nn.Module):\n        super().__init__()\n        # 1×1 konwolucja miksuje VV+VH w 3 kanały — pretrenowane wagi enkodera nietknięte.\n        self.adapt = nn.{{conv_layer}}(2, 3, kernel_size=1, bias=False)\n        self.encoder = encoder\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        return self.encoder(self.adapt(x))\n\n\ndef db_normalize(vv_db: torch.Tensor, vh_db: torch.Tensor) -> torch.Tensor:\n    \"\"\"Per-kanał z-score: empiryczne mu/sigma dla Europy w dB.\"\"\"\n    vv_mean, vv_std = {{vv_mean}}, 5.0\n    vh_mean, vh_std = -18.0, 5.0\n    vv = (vv_db - vv_mean) / vv_std\n    vh = (vh_db - vh_mean) / vh_std\n    # Zwróć tensor [B, C, H, W] — kanały na wymiarze {{stack_dim}}.\n    return torch.stack([vv, vh], dim={{stack_dim}})\n",
+        "slots": [
+          {
+            "id": "conv_layer",
+            "hint": "Klasa konwolucji 2D z torch.nn (CamelCase, taka sama jak w boilerplate SMP).",
+            "validation": { "kind": "exact", "value": "Conv2d" }
+          },
+          {
+            "id": "vv_mean",
+            "hint": "Empiryczna średnia VV w dB dla Europy (z lekcji teoretycznej).",
+            "validation": { "kind": "oneOf", "values": ["-12.0", "-12", "(-12.0)", "(-12)"] }
+          },
+          {
+            "id": "stack_dim",
+            "hint": "Wymiar kanałów w konwencji PyTorcha [B, C, H, W] — dim 0 to batch.",
+            "validation": { "kind": "exact", "value": "1" }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 2,
+            "markdown": "Konwolucja 2D w `torch.nn` to `Conv2d`; w PyTorch tensor obrazów ma kształt `[batch, channels, height, width]`, czyli kanały siedzą na wymiarze `1`."
+          }
+        ]
+      }
+    },
+    {
+      "id": "implementacja-miou",
+      "title": "Zaimplementuj per-class IoU",
+      "description": "Klasyczna metryka segmentacji — własna implementacja w NumPy, którą możesz potem podpiąć pod confusion matrix z `torchmetrics`.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `per_class_iou(y_true, y_pred, num_classes)`, która zwraca **listę długości `num_classes`** z IoU dla każdej klasy.\n\nDefinicja per-class IoU dla klasy $c$:\n\n$$\\text{IoU}_c = \\frac{|\\{y_{\\text{true}} = c\\} \\cap \\{y_{\\text{pred}} = c\\}|}{|\\{y_{\\text{true}} = c\\} \\cup \\{y_{\\text{pred}} = c\\}|}$$\n\nGdy klasa $c$ jest **nieobecna w obu** `y_true` i `y_pred` (mianownik = 0), zwróć `float('nan')` w jej miejscu — model nie miał szans jej przewidzieć i nie chcemy, żeby ta klasa wpadała do późniejszego `nanmean(...)` jako 0.\n\n```\nper_class_iou([0, 0, 1, 1], [0, 1, 1, 1], num_classes=2) == [1/3, 2/3]\n```\n\n`y_true` i `y_pred` to spłaszczone 1-D listy / tablice integerów. Możesz zakładać `0 <= y_true < num_classes` i `0 <= y_pred < num_classes`.",
+        "starterCode": "import numpy as np\n\n\ndef per_class_iou(y_true, y_pred, num_classes):\n    # y_true, y_pred: 1-D listy/np.ndarray etykiet integerowych.\n    # num_classes: int.\n    # Zwróć listę długości num_classes z IoU per klasa; nan dla klas nieobecnych.\n    raise NotImplementedError\n",
+        "tests": [
+          {
+            "name": "smoke_dwie_klasy",
+            "body": "import math\nresult = per_class_iou([0, 0, 1, 1], [0, 1, 1, 1], num_classes=2)\nassert math.isclose(result[0], 1/3, rel_tol=1e-6)\nassert math.isclose(result[1], 2/3, rel_tol=1e-6)",
+            "hidden": false
+          },
+          {
+            "name": "perfekcyjna_predykcja_zwraca_jedynki",
+            "body": "result = per_class_iou([0, 1, 2, 2, 1, 0], [0, 1, 2, 2, 1, 0], num_classes=3)\nassert result == [1.0, 1.0, 1.0]"
+          },
+          {
+            "name": "nieobecna_klasa_to_nan",
+            "body": "import math\nresult = per_class_iou([0, 0, 0, 0], [0, 0, 0, 0], num_classes=2)\nassert result[0] == 1.0\nassert math.isnan(result[1])"
+          },
+          {
+            "name": "calkowity_blad_to_zero",
+            "body": "result = per_class_iou([0, 0, 1, 1], [1, 1, 0, 0], num_classes=2)\nassert result == [0.0, 0.0]"
+          }
+        ],
+        "solution": "import numpy as np\nimport math\n\n\ndef per_class_iou(y_true, y_pred, num_classes):\n    y_true = np.asarray(y_true)\n    y_pred = np.asarray(y_pred)\n    ious = []\n    for c in range(num_classes):\n        in_true = (y_true == c)\n        in_pred = (y_pred == c)\n        intersection = int(np.logical_and(in_true, in_pred).sum())\n        union = int(np.logical_or(in_true, in_pred).sum())\n        if union == 0:\n            ious.append(float('nan'))\n        else:\n            ious.append(intersection / union)\n    return ious\n"
+      }
+    },
+    {
+      "id": "strata-i-imbalans",
+      "title": "Strata i nierównowaga klas — focal loss, Dice i ważona CE",
+      "type": "theory",
+      "data": {
+        "markdown": "Po wybraniu architektury wybór **straty** decyduje o tym, czy sieć wyłapie rzadkie klasy. SEN12MS jest skrajnie niezbalansowany: mokradła i miasto stanowią < 3% pikseli, podczas gdy las i pole > 60%. Naiwna *cross-entropy* uczy klasyfikatora, że odpowiedź \"las\" jest globalnie bezpieczna — efektem jest mIoU zawyżone przez dwie klasy dominujące, podczas gdy reszta ma per-class IoU < 0.1.\n\nTrzy skuteczne odpowiedzi:\n\n- **Ważona CE** — przemnaża stratę dla klasy $c$ przez wagę $w_c$ obliczoną z odwrotnej częstości w trening secie. Heurystyka $w_c \\propto 1 / \\sqrt{f_c}$ działa dobrze; pełna inwersja $w_c = 1 / f_c$ często destabilizuje trening, bo skrajnie rzadkie klasy dostają wagi rzędu $10^3$, które przeważają gradienty.\n- **Focal loss** (Lin i in., 2017): $\\mathcal{L}_{\\text{focal}} = -\\alpha\\, (1 - p_t)^{\\gamma} \\log p_t$. Czynnik $(1 - p_t)^{\\gamma}$ z $\\gamma \\in [1, 5]$ tłumi wpływ łatwych przykładów (gdzie $p_t \\to 1$) i wzmacnia trudne. Dla $\\gamma = 0$ redukuje się do CE.\n- **Dice / IoU loss** — bezpośrednio optymalizuje miarę ewaluacji: $\\mathcal{L}_{\\text{Dice}} = 1 - \\frac{2 \\sum p \\cdot y + \\epsilon}{\\sum p + \\sum y + \\epsilon}$. Naturalnie odporny na imbalans, ale bywa niestabilny na początku treningu, gdy $\\sum p$ jest bliskie zeru.\n\nPraktyczny standard w SMP / PyTorch dla SAR to **kompozyt**: $\\mathcal{L} = 0.5 \\cdot \\text{CE} + 0.5 \\cdot \\text{Dice}$. Focal loss używa się raczej w detekcji niż w segmentacji wieloklasowej, ale w skrajnym imbalansie (np. binarna detekcja miasta) potrafi pomóc.\n\nNiezależnie od straty — **mierz mIoU per-klasa**, nie tylko uśrednione. Dwa modele o tym samym mIoU = 0.62 mogą mieć kompletnie różne profile: jeden dobrze radzi sobie z lasem (0.9) i fatalnie z miastem (0.05), drugi jest równo niepoprawny (0.6 wszędzie). Drugi jest zwykle bardziej użyteczny operacyjnie, bo żadnej klasy nie zawodzi katastrofalnie — a SATIM-grade ATR potrzebuje robustności na wszystkich klasach docelowych, nie tylko na większościowych."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICCV.2017.324",
+          "title": "Focal Loss for Dense Object Detection",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollár",
+          "year": 2017
+        }
+      ]
+    },
+    {
+      "id": "quiz-pulapki-transferu",
+      "title": "Sprawdź intuicję: pułapki transferu ImageNet → SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Trenujesz U-Net z enkoderem ResNet-34 inicjalizowanym z ImageNetu na SEN12MS. Które z poniższych decyzji projektowych są **bezpieczne** dla transferu?",
+        "options": [
+          "Replikujesz jeden kanał (np. VV) trzy razy, żeby symulować RGB i karmić enkoder bez modyfikacji.",
+          "Dodajesz 1×1 konwolucję `Conv2d(2, 3)` przed enkoderem i trenujesz tylko ją w pierwszej epoce, potem unfreeze enkodera.",
+          "Stosujesz `torchvision.transforms.ColorJitter(brightness=0.4, hue=0.2)` jako augmentację SAR — działa na RGB, więc zadziała i tu.",
+          "Normalizujesz VV/VH per-kanał z-scorem z empirycznych $\\mu/\\sigma$ trening setu, a nie z ImageNetowych $[0.485, 0.456, 0.406]$."
+        ],
+        "correct": [1, 3],
+        "explanation": "Opcja 1 jest złym kompromisem: tracisz informację z VH (krzyż-pol — zwykle silniejszy sygnał z roślinności i miast niż VV) i de facto trenujesz model na 1-kanałowym sygnale z 3× redundancją. Stem 2→3 z konwolucją 1×1 (opcja 2) lub bezpośrednia podmiana z reinicjalizacją *poprawnie* korzysta z obu polaryzacji. Opcja 3 jest klasycznym błędem przeniesienia recepty optycznej: dB nie są kanałami koloru i ColorJitter nie ma sensu fizycznego — przesuwa wartości w sposób, którego sieć nie zobaczy w testowej dystrybucji. Opcja 4 jest poprawna: ImageNet $\\mu/\\sigma$ są dla pikseli $[0, 1]$ na obrazach RGB; SAR w dB ma kompletnie inną dystrybucję i wymaga własnych statystyk. Opcja 2 jest poprawną realizacją strategii \"freeze + unfreeze\" — klasyczny patternik SMP, który pozwala adapterowi 2→3 znaleźć dobry punkt startowy zanim cały enkoder zacznie się aktualizować.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-statystyki-db",
+      "title": "Sandbox: oblicz własne statystyki normalizacji dB",
+      "description": "Wczytaj symulowany tile VV/VH, policz $\\mu/\\sigma$ per-kanał i sprawdź, jak różnią się od europejskich szacunków z lekcji.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Symulujemy tile 256×256 dual-pol Sentinel-1 nad terenem mieszanym (Polska, lato).\n# Wartości są w dB; rozkład inspirowany zbiorem SEN12MS (north summer split).\nrng = np.random.default_rng(seed=2026)\nn = 256\n\n# 60% lasu (~ -10 dB VV, -16 dB VH), 25% pola (~ -14, -19), 10% wody (~ -22, -27),\n# 5% miasta (~ -3, -8). Każda klasa ma własną wariancję.\nmask = rng.choice([0, 1, 2, 3], size=(n, n), p=[0.60, 0.25, 0.10, 0.05])\nvv_means = np.array([-10.0, -14.0, -22.0, -3.0])\nvh_means = np.array([-16.0, -19.0, -27.0, -8.0])\nstds     = np.array([3.0, 3.0, 2.0, 4.0])\n\nvv_db = rng.normal(vv_means[mask], stds[mask])\nvh_db = rng.normal(vh_means[mask], stds[mask])\n\nprint(f\"VV: mu={vv_db.mean():.2f} sigma={vv_db.std():.2f}\")\nprint(f\"VH: mu={vh_db.mean():.2f} sigma={vh_db.std():.2f}\")\n\n# TODO: porównaj z europejskimi szacunkami (mu_VV ≈ -12, mu_VH ≈ -18, sigma ≈ 5).\n# TODO: zmień proporcje p=[...] (np. zwiększ frakcję miasta), zobacz jak ucieka mu_VV.\n# TODO: licz statystyki tylko na polu (mask == 1) — czy mu jest wtedy bliższe ImageNet-style stałej dla klasy?\n",
+        "encouragement": "Pobaw się proporcjami klas i sprawdź, jak szybko empiryczne $\\mu/\\sigma$ odjeżdżają od europejskich szacunków — to argument za tym, żeby normalizować na trening secie, a nie kopiować stałą z czyjegoś repo."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.5194/isprs-annals-IV-2-W7-153-2019",
+      "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery for Deep Learning and Data Fusion",
+      "kind": "paper",
+      "author": "Michael Schmitt, Lloyd H. Hughes, Chunping Qiu, Xiao Xiang Zhu",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.1007/978-3-319-24574-4_28",
+      "title": "U-Net: Convolutional Networks for Biomedical Image Segmentation",
+      "kind": "paper",
+      "author": "Olaf Ronneberger, Philipp Fischer, Thomas Brox",
+      "year": 2015
+    },
+    {
+      "url": "https://mediatum.ub.tum.de/1474000",
+      "title": "SEN12MS dataset — TUM mediaTUM repository",
+      "kind": "article"
+    },
+    {
+      "url": "https://smp.readthedocs.io/en/latest/",
+      "title": "segmentation_models_pytorch — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.3390/rs13152965",
+      "title": "Effect of Attention Mechanism in Deep Learning-Based Remote Sensing Image Processing: A Systematic Literature Review",
+      "kind": "paper",
+      "author": "Saman Ghaffarian, João Valente, Mariska van der Voort, Bedir Tekinerdogan",
+      "year": 2021
+    },
+    {
+      "url": "https://doi.org/10.1109/LGRS.2018.2799232",
+      "title": "Identifying Corresponding Patches in SAR and Optical Images with a Pseudo-Siamese CNN",
+      "kind": "paper",
+      "author": "Lloyd H. Hughes, Michael Schmitt, Lichao Mou, Yuanyuan Wang, Xiao Xiang Zhu",
+      "year": 2018
+    },
+    {
+      "url": "https://doi.org/10.1109/ICCV.2017.324",
+      "title": "Focal Loss for Dense Object Detection",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollár",
+      "year": 2017
+    }
+  ]
+}

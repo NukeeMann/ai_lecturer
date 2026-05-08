@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "slug": "atr-statkow-i-pojazdow-opensarship-i-mstar-w-pytorch",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m3",
+  "title": "ATR statków i pojazdów: OpenSARShip i MSTAR w PyTorch",
+  "eyebrow": "DEEP LEARNING I ATR",
+  "description": "Dwa benchmarki ATR pod jednym sufitem: A-ConvNet na MSTAR (X-band, ~0.3 m, pojazdy) i fine-tuning YOLOv8 na OpenSARShip (C-band Sentinel-1, ~10 m, statki) z augmentacją SAR-specific, dB-normalizacją i focal loss.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "czym-jest-atr-i-czemu-sar-jest-inny",
+      "title": "Czym jest ATR i czemu SAR ATR rzadko jest tym samym co klasyfikacja RGB",
+      "type": "theory",
+      "data": {
+        "markdown": "**ATR — Automatic Target Recognition** to radarowy parasol nad trzema połączonymi zadaniami: *zlokalizuj* obiekt na scenie, *sklasyfikuj* go i — jeśli sensor pozwala — *oszacuj jego pozę* (azymut, depresję). To dokładnie ten zakres, który SATIM wymienia w opisie roli Senior AI Specialist i który definiuje ostatnie 60% materiału w tym kursie.\n\nDwa otwarte benchmarki dominują w społeczności i z daleka wyglądają na to samo zadanie — *to są dwa różne problemy*:\n\n- **OpenSARShip** (Huang i in., 2018) — **C-band Sentinel-1** (5.4 GHz), GRD chipy ok. 256×256 px, **rozdzielczość ~10 m** na ziemi, **dual-pol VV+VH**, statki w portach (Szanghaj, Singapur, Rotterdam). Klasy są komercyjne: cargo / tanker / dredging / fishing / passenger / other. Imbalans jest brutalny — cargo to ok. 60–70% każdego splita.\n- **MSTAR** (AFRL, od 1996) — **X-band** (9.6 GHz) lotniczy SAR (sensor STARLOS), **HH-pol**, **rozdzielczość ~0.3 m**, dziesięć klas pojazdów (BMP-2, BTR-70, T-72, ZIL-131, 2S1, BRDM-2, D7, ZSU-23/4, T-62, SLICY) zarejestrowanych pod wieloma kątami azymutu przy stałej depresji 15°. Balans klas jest przyzwoity.\n\n![Wycinek sceny SAR Sentinel-1 nad mieszanym terenem przedstawiający porty, akwen i zabudowę — geometria i dynamika dB typowa dla wejścia do detektora statków](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n\nTrzy konsekwencje praktyczne, które zmieniają podejście inżynierskie:\n\n1. **Model wytrenowany na MSTAR nie przenosi się na OpenSARShip i vice versa.** Pasmo jest inne (X- vs C-band wpływa na penetrację burty, dno chmur, chropowatość morza), rozdzielczość różni się ~30×, polaryzacja jest inna, i klasy są inne. To nie jest *fine-tuning*; to inna domena z innym sensorem.\n2. **Backbone z ImageNet pomaga, ale tylko częściowo.** Niskopoziomowe filtry krawędzi/blobów przenoszą się; głowica FC i normalizacja wejścia — nie. Naiwny ResNet-50 + dB-normalizacja przegrywa z A-ConvNet (Chen i in., 2016) o 2–3 pkt mAP na MSTAR i potrafi zawyżyć metryki na OpenSARShip przez geo-leakage (te same porty w train/val).\n3. **W pipeline danych SAR ≠ RGB.** Speckle, skala dB, kąt azymutu — wszystko liczy się w *forward()* i w augmentacji. Operacje, które są dziedzictwem optycznym (color jitter, hue/saturation, RGB shifts) są fizycznym nonsensem na obrazie, w którym piksel to moc rozproszona, nie luminancja.\n\nDalej w lekcji potraktujemy oba zbiory równolegle: A-ConvNet na MSTAR dla klasyfikacji pojazdów i fine-tuning YOLOv8 na OpenSARShip dla detekcji + klasyfikacji statków."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/JSTARS.2017.2755672",
+          "title": "OpenSARShip: A Dataset Dedicated to Sentinel-1 Ship Interpretation",
+          "kind": "paper",
+          "author": "Lanqing Huang, Bin Liu, Boying Li, Weiwei Guo, Wenhao Yu, Zenghui Zhang, Wenxian Yu",
+          "year": 2018
+        },
+        {
+          "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+          "title": "MSTAR Public Targets — Sensor Data Management System (AFRL)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-benchmarkow-atr",
+      "title": "OpenSARShip, MSTAR i sąsiedzi — co wybrać do ATR",
+      "description": "Trzymaj otwartą obok edytora — różnice w paśmie, rozdzielczości i polaryzacji decydują o tym, czy fine-tuning ma w ogóle sens.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "dataset", "label": "Zbiór", "type": "string", "sortable": true, "filterable": true },
+          { "key": "sensor", "label": "Sensor / pasmo", "type": "string", "sortable": false, "filterable": true },
+          { "key": "rozdz", "label": "Rozdzielczość", "type": "string", "sortable": false, "filterable": false },
+          { "key": "pol", "label": "Polaryzacja", "type": "string", "sortable": false, "filterable": true },
+          { "key": "klasy", "label": "Klasy", "type": "string", "sortable": false, "filterable": false },
+          { "key": "chipy", "label": "Liczba chipów", "type": "number", "sortable": true, "filterable": false },
+          { "key": "zadanie", "label": "Typowe zadanie", "type": "string", "sortable": false, "filterable": true }
+        ],
+        "rows": [
+          {
+            "dataset": "MSTAR (Public Targets)",
+            "sensor": "Lotniczy SAR / X-band 9.6 GHz",
+            "rozdz": "~0.3 m",
+            "pol": "HH",
+            "klasy": "10 (BMP-2, BTR-70, T-72, ZIL-131, 2S1, BRDM-2, D7, ZSU-23/4, T-62, SLICY)",
+            "chipy": 6874,
+            "zadanie": "Klasyfikacja pojazdów + estymacja azymutu"
+          },
+          {
+            "dataset": "OpenSARShip 2.0",
+            "sensor": "Sentinel-1 / C-band 5.4 GHz",
+            "rozdz": "~10 m (IW GRD)",
+            "pol": "VV+VH (dual)",
+            "klasy": "6 (cargo / tanker / fishing / passenger / dredging / other)",
+            "chipy": 11346,
+            "zadanie": "Klasyfikacja statków na chipach AIS-zalabelowanych"
+          },
+          {
+            "dataset": "SSDD (SAR Ship Detection)",
+            "sensor": "Sentinel-1 / RadarSat-2 / TerraSAR-X (mix)",
+            "rozdz": "1–15 m (mieszane)",
+            "pol": "HH / VV / dual",
+            "klasy": "1 (statek / nie-statek)",
+            "chipy": 1160,
+            "zadanie": "Detekcja statków (bbox)"
+          },
+          {
+            "dataset": "HRSID (High-Res SAR Image)",
+            "sensor": "Sentinel-1 / TerraSAR-X / TanDEM-X",
+            "rozdz": "0.5–3 m",
+            "pol": "HH / VV / HV",
+            "klasy": "1 (statek)",
+            "chipy": 5604,
+            "zadanie": "Detekcja statków z polygonem (instance segmentation)"
+          },
+          {
+            "dataset": "SAR-AIRcraft-1.0",
+            "sensor": "GaoFen-3 / C-band",
+            "rozdz": "1 m",
+            "pol": "Single-pol",
+            "klasy": "7 (typy samolotów)",
+            "chipy": 4368,
+            "zadanie": "Detekcja + klasyfikacja samolotów na lotniskach"
+          },
+          {
+            "dataset": "FUSAR-Ship",
+            "sensor": "GaoFen-3 / C-band",
+            "rozdz": "1 m",
+            "pol": "Dual-pol",
+            "klasy": "15 (rozszerzona taksonomia statków)",
+            "chipy": 5243,
+            "zadanie": "Klasyfikacja statków drobnoziarnista"
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "quiz-mstar-vs-opensarship",
+      "title": "Sprawdź intuicję: MSTAR vs OpenSARShip",
+      "type": "quiz",
+      "data": {
+        "question": "Trenujesz klasyfikator A-ConvNet na MSTAR i osiągasz 96% accuracy w 10 klas. Twój manager prosi „odpal to na OpenSARShip, mamy chipy z portu w Gdańsku”. Które stwierdzenia są **prawdziwe**?",
+        "options": [
+          "Wagi A-ConvNet z MSTAR są dobrym punktem startu — wystarczy dotrenować ostatnią warstwę przez kilka epok i klasyfikator pojedzie po porcie.",
+          "MSTAR i OpenSARShip różnią się pasmem (X- vs C-band), rozdzielczością (~30×), polaryzacją (HH vs VV+VH) i klasami (pojazdy vs statki) — to praktycznie inne domeny i transfer wag z MSTAR daje słaby baseline.",
+          "Backbone wytrenowany na ImageNet i dotrenowany na OpenSARShip z dB-normalizacją zwykle daje lepszy punkt startu niż wagi z MSTAR, mimo że ImageNet jest RGB.",
+          "Można użyć tych samych metryk (top-1 accuracy) bez modyfikacji, bo oba zbiory to klasyfikacja w stałej liczbie klas."
+        ],
+        "correct": [1, 2],
+        "explanation": "Opcja 1 jest fałszywa — różnica pasma, rozdzielczości i typu obiektu sprawia, że to nie jest klasyczny domain shift, tylko inna domena. Wagi MSTAR koduje cechy pojazdów ~0.3 m HH, nie statków ~10 m VV+VH. Opcja 2 to dokładnie ta różnica: model trenowany na jednym zbiorze nie generalizuje na drugi bez gruntownego retreningu. Opcja 3 jest poprawna i kontrintuicyjna (misconception #11 z course-research): backbone ImageNet uczy uniwersalnych filtrów krawędzi i blobów, które przy odpowiedniej normalizacji wejścia przenoszą się lepiej niż feature mapy z innego sensora SAR. Opcja 4 jest fałszywa — OpenSARShip ma ostry imbalans klas (cargo dominuje), więc top-1 jest mylące; trzeba per-class F1 i mAP@0.5, gdy zadaniem jest detekcja.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "a-convnet-i-augmentacja-sar-specific",
+      "title": "A-ConvNet, augmentacja SAR-specific i normalizacja w dB",
+      "type": "theory",
+      "data": {
+        "markdown": "**A-ConvNet** (Chen i in., 2016) to do dziś referencja w klasyfikacji MSTAR. Architektura ma trzy decyzje, które celowo różnią się od optycznych klasyfikatorów:\n\n1. **All-conv stack — bez warstwy FC.** Pięć bloków `Conv2d → ReLU → MaxPool` zakończonych globalnym `AdaptiveAvgPool2d(1)`. Sieć ma ~300 tys. parametrów. Powód: MSTAR-train ma ~3000 chipów na klasę i FC łatwo overfittuje.\n2. **Wejście znormalizowane w dB, a nie w `[0, 1]` z amplitudy.** Konkretnie: $x_{\\text{dB}} = 10\\log_{10}(\\max(I, \\varepsilon))$, potem clip do `[-30, 0]` i mapowanie liniowe do `[0, 1]`. To rozciąga niski koniec dynamiki (gdzie żyje większość pikseli SAR) i ściska saturację bright-target.\n3. **Dropout 0.5 między blokami konwolucyjnymi.** MSTAR ma stały kąt depresji 15°; bez agresywnego dropoutu sieć uczy się speckle jako podpisu klasy.\n\n![Schematyczny diagram klasyfikatora konwolucyjnego: stos Conv → ReLU → Pool, zwężający rozdzielczość przestrzenną przy zwiększaniu liczby kanałów, zakończony pełnym uśrednianiem do wektora cech](https://commons.wikimedia.org/wiki/Special:FilePath/Typical_cnn.png)\n\n**Augmentacja SAR-specific** to drugi obszar, w którym intuicja optyczna prowadzi w przepaść. Co jest fizycznie poprawne:\n\n- **Rotacje 90°/180°/270°** — permutacja azymutu, w MSTAR równoważna zmianie kierunku najazdu, w OpenSARShip dodaje wariancji statku w porcie.\n- **Flip horyzontalny** dla MSTAR — obrót o 180° wokół osi azymutu, fizycznie poprawny.\n- **Flip wertykalny** — *uważaj*. Odbija oś range, czyli odwraca kierunek foreshortening; dla MSTAR (stała depresja) to fałszywa próbka.\n- **Speckle-resampling** — pomnóż każdy piksel przez niezależną próbkę z $\\Gamma(L, 1/L)$ (multilook L). To *fizycznie umotywowana* augmentacja danych SAR.\n- **Random crop** wewnątrz chipa MSTAR — zwiększa wariancję pozycji targetu.\n\nCo łamie geometrię radarową:\n\n- **Color jitter, hue/saturation, RGB shifts** — w SAR nie ma koloru; piksel to moc, nie luminancja (misconception #11).\n- **Affine shears** — deformują geometrię range-Doppler, to nie jest właściwość Sentinel-1 chipa.\n- **Gaussian blur jako odszumianie** — speckle to mnożenie, nie addycyjny szum (misconception #2). Blur smaruje krawędzie i fałszuje teksturę, na której opiera się ATR.\n\nW PyTorch wszystko to składa się w `Compose([RandomRotation90, RandomHFlip, SpeckleResample, DBNormalize])` — pierwsze trzy w przestrzeni amplitudy/intensywności, dB-normalizacja na samym końcu, tuż przed przekazaniem do `Conv2d`."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target Classification Using the Deep Convolutional Networks for SAR Images (A-ConvNet)",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        }
+      ]
+    },
+    {
+      "id": "drag-augmentacje",
+      "title": "Dopasuj augmentację do tego, co robi z fizyką SAR",
+      "description": "Każdą operację z banku przeciągnij do strefy „fizycznie poprawna” lub „łamie geometrię SAR”. Decyzję podejmij na podstawie modelu mnożącego się speckla i geometrii range-azymut.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Klasyfikuj operacje augmentacji dla pipeline'u ATR na MSTAR / OpenSARShip.",
+        "items": [
+          { "id": "rot90", "label": "Rotacja o 90° / 180° / 270°" },
+          { "id": "hflip", "label": "Flip horyzontalny chipa" },
+          { "id": "speckle", "label": "Resampling speckla (mnożenie przez próbkę Γ(L, 1/L))" },
+          { "id": "rcrop", "label": "Random crop wewnątrz chipa" },
+          { "id": "color", "label": "Color jitter / hue / saturation" },
+          { "id": "shear", "label": "Affine shear" },
+          { "id": "gblur", "label": "Gaussian blur jako odszumianie" },
+          { "id": "rgbshift", "label": "RGB channel shift" }
+        ],
+        "zones": [
+          {
+            "id": "ok",
+            "label": "Fizycznie poprawne — możesz włączyć w pipeline'ie",
+            "accepts": ["rot90", "hflip", "speckle", "rcrop"]
+          },
+          {
+            "id": "bad",
+            "label": "Łamie geometrię SAR lub fizykę speckla — pomiń",
+            "accepts": ["color", "shear", "gblur", "rgbshift"]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "explanation": "Rotacje 90°, flip horyzontalny i random crop to permutacje azymutu/pozycji, które nie naruszają range-Doppler. Speckle-resampling z rozkładu Γ(L, 1/L) jest fizycznie umotywowany — symuluje inną realizację multiplikatywnego szumu na tym samym podłożu (i zwiększa odporność modelu na speckle). Color jitter i RGB shift są bez sensu, bo SAR nie ma kanałów RGB — piksel to moc, nie luminancja. Affine shear deformuje geometrię range-Doppler — rzadko spotykany przekształcenie w realnym Sentinel-1. Gaussian blur jako odszumianie traktuje speckle jak addycyjny Gaussa, co jest klasycznym misconception (speckle jest multiplikatywny, Γ-rozkładowy)."
+      }
+    },
+    {
+      "id": "kod-db-normalize",
+      "title": "Zaimplementuj dB-normalizację dla PyTorch Dataset",
+      "description": "Mała funkcja, która stoi w `__getitem__` Twojego MSTAR Dataseta. Tylko NumPy — w pyodide nie ma `torch`, więc liczymy na arrayach.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `db_normalize(intensity, db_min=-30.0, db_max=0.0)`, która:\n\n1. Przyjmuje `intensity` — array `numpy` z amplitudami w skali liniowej (intensywność, $\\sigma^0$ w jednostkach naturalnych, $\\geq 0$).\n2. Oblicza dB jako $10\\log_{10}(\\max(\\text{intensity}, \\varepsilon))$ z $\\varepsilon = 10^{-8}$ dla bezpieczeństwa numerycznego.\n3. Klipuje wynik do `[db_min, db_max]`.\n4. Mapuje liniowo do `[0, 1]`.\n5. Zwraca array `np.float32` o tej samej formie co wejście.\n\nPrzykład:\n\n```\ndb_normalize(np.array([1.0]))  # 1.0  (0 dB → 1.0)\ndb_normalize(np.array([1e-3])) # 0.0  (-30 dB → 0.0)\ndb_normalize(np.array([1e-9])) # 0.0  (poniżej dolnego progu)\n```",
+        "starterCode": "import numpy as np\n\ndef db_normalize(intensity, db_min=-30.0, db_max=0.0):\n    \"\"\"Convert SAR intensity (linear) to dB and rescale to [0, 1].\n\n    intensity : np.ndarray of non-negative floats (linear intensity)\n    Returns   : np.ndarray, same shape, dtype float32, values in [0, 1]\n    \"\"\"\n    # TODO: zaimplementuj zgodnie z opisem zadania\n    return intensity\n",
+        "tests": [
+          {
+            "name": "maps_zero_db_to_one",
+            "body": "import numpy as np\nout = db_normalize(np.array([1.0]))\nassert np.isclose(out[0], 1.0, atol=1e-6)",
+            "hidden": false
+          },
+          {
+            "name": "floors_below_min_db",
+            "body": "import numpy as np\nout = db_normalize(np.array([1e-9]))\nassert np.isclose(out[0], 0.0, atol=1e-6)"
+          },
+          {
+            "name": "preserves_2d_shape",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nx = rng.uniform(1e-6, 1.0, size=(7, 11))\nout = db_normalize(x)\nassert out.shape == (7, 11)\nassert out.min() >= 0.0 and out.max() <= 1.0"
+          },
+          {
+            "name": "returns_float32",
+            "body": "import numpy as np\nout = db_normalize(np.array([0.5, 0.1, 1.0]))\nassert out.dtype == np.float32"
+          }
+        ],
+        "solution": "import numpy as np\n\ndef db_normalize(intensity, db_min=-30.0, db_max=0.0):\n    eps = 1e-8\n    arr = np.asarray(intensity, dtype=np.float64)\n    db = 10.0 * np.log10(np.maximum(arr, eps))\n    db = np.clip(db, db_min, db_max)\n    out = (db - db_min) / (db_max - db_min)\n    return out.astype(np.float32)\n"
+      }
+    },
+    {
+      "id": "opensarship-yolov8-imbalans",
+      "title": "OpenSARShip + YOLOv8: imbalans i focal loss",
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyfikacja statków w OpenSARShip rzadko jest zadaniem akademickim w izolacji — pojawia się jako *głowa* nad detektorem, który najpierw lokalizuje statki na morzu (CFAR z Modułu 2 albo nowoczesny detektor neuronowy), a potem przypisuje klasę chipowi. To dwa zadania zszyte w jedno:\n\n1. **Detekcja** — binarne „statek vs sea-clutter” na tle morza. Trudne, gdy stan morza jest wysoki, bo plamki cumulonimbusa-na-morzu wyglądają jak małe statki.\n2. **Klasyfikacja** — `cargo / tanker / fishing / passenger / dredging / other`. Tutaj zaczyna się problem.\n\nRozkład klas OpenSARShip-2.0 jest brutalnie asymetryczny: cargo dominuje ~60–70% chipów, tanker daje ~15%, reszta razem walczy o pozostałe ~15–25%. Naiwna cross-entropy zbiega do „zawsze przewiduj cargo” i raportuje 70% accuracy z F1-per-class wynoszącym 0.0 dla rzadkich klas.\n\nKanoniczne rozwiązanie to **focal loss** (Lin i in., 2017):\n\n$$ \\mathrm{FL}(p_t) = -\\alpha_t (1 - p_t)^\\gamma \\log p_t $$\n\ngdzie $p_t = p$ dla $y=1$ i $p_t = 1 - p$ w przeciwnym razie. Czynnik $(1 - p_t)^\\gamma$ tłumi *łatwe* przykłady (gdzie model jest pewny) i podnosi gradient na *trudnych* — w praktyce na rzadkich klasach. Współczynnik $\\alpha_t$ rebalansuje częstość. Z $\\gamma = 2$ i $\\alpha$ dostrojonym do częstości klas mAP@0.5 typowo skacze z ~0.45 (CE-baseline) do ~0.62 na OpenSARShip-2.0.\n\n![Mapa skończonego kawałka SAR Sentinel-1 z widocznymi sygnaturami statków na morzu — typowy wycinek wejściowy YOLOv8 fine-tunowanego na OpenSARShip](https://commons.wikimedia.org/wiki/Special:FilePath/English_Channel_-_Flickr_-_europeanspaceagency.jpg)\n\n**YOLOv8** (Ultralytics) jest praktycznym detektorem dla tego zadania. Cztery rzeczy, na które uważać przy fine-tuningu z COCO:\n\n- **Normalizacja wejścia** — COCO oczekuje RGB w `[0, 1]`. Twój pipeline musi powtarzalnie mapować dB do `[0, 1]` *przed* przekazaniem do sieci.\n- **Augmentacje** — wyłącz `hsv_h`, `hsv_s`, `hsv_v` (color jitter); zostaw mosaic + scale.\n- **Anchor-free head** — YOLOv8 nie potrzebuje priorów bbox; to ratuje życie przy aspekcie 1:10 dla tankowca.\n- **Ewaluacja** — raportuj mAP@0.5 *plus* krzywą per-incidence-angle (Sentinel-1 IW kąt padania 29°–46° wzdłuż swatu); detektor potrafi mieć mAP 0.7 na 35° i 0.5 na 45°."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICCV.2017.324",
+          "title": "Focal Loss for Dense Object Detection",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollár",
+          "year": 2017
+        },
+        {
+          "url": "https://docs.ultralytics.com/",
+          "title": "Ultralytics YOLOv8 documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cloze-aconvnet",
+      "title": "Uzupełnij blok klasyfikatora A-ConvNet w PyTorch",
+      "description": "Klucz to: `nn.ReLU` jako aktywacja, `nn.Dropout` z prawdopodobieństwem zgodnym z papierem, i globalne uśrednianie zamiast warstwy w pełni połączonej.",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Klasyczny A-ConvNet (Chen i in., 2016) używa 5 bloków konwolucyjnych zakończonych globalnym uśrednianiem — bez warstwy `Linear`. Uzupełnij brakujące elementy w szkielecie PyTorch.",
+        "language": "python",
+        "template": "import torch\nimport torch.nn as nn\n\nclass AConvNet(nn.Module):\n    def __init__(self, num_classes: int = 10):\n        super().__init__()\n        self.features = nn.Sequential(\n            nn.Conv2d(1, 16, kernel_size=5),\n            nn.{{act}}(inplace=True),\n            nn.MaxPool2d(2),\n            nn.Conv2d(16, 32, kernel_size=5),\n            nn.ReLU(inplace=True),\n            nn.MaxPool2d(2),\n            nn.Conv2d(32, 64, kernel_size=6),\n            nn.ReLU(inplace=True),\n            nn.{{reg}}({{p}}),\n            nn.Conv2d(64, num_classes, kernel_size=3),\n        )\n        self.pool = nn.{{pool}}(1)\n\n    def forward(self, x: torch.Tensor) -> torch.Tensor:\n        x = self.features(x)\n        x = self.pool(x)\n        return x.flatten(1)\n",
+        "slots": [
+          {
+            "id": "act",
+            "hint": "Aktywacja używana w A-ConvNet — ta sama co w pozostałych blokach.",
+            "validation": { "kind": "exact", "value": "ReLU" }
+          },
+          {
+            "id": "reg",
+            "hint": "Regularyzacja, którą Chen i in. (2016) ustawiają tuż przed ostatnim Conv — tłumi memorizację speckla.",
+            "validation": { "kind": "exact", "value": "Dropout" }
+          },
+          {
+            "id": "p",
+            "hint": "Prawdopodobieństwo dropoutu w oryginale to liczba zmiennoprzecinkowa.",
+            "validation": { "kind": "oneOf", "values": ["0.5", "0.5,"] }
+          },
+          {
+            "id": "pool",
+            "hint": "A-ConvNet zastępuje warstwę FC globalnym uśrednianiem — w PyTorch jest jedna warstwa, która zawsze daje wyjście 1×1 niezależnie od wejścia.",
+            "validation": { "kind": "exact", "value": "AdaptiveAvgPool2d" }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-ewaluacja",
+      "title": "Sprawdź intuicję: jak ewaluować ATR na OpenSARShip?",
+      "type": "quiz",
+      "data": {
+        "question": "Twój YOLOv8 fine-tunowany na OpenSARShip raportuje 89% top-1 accuracy. Które stwierdzenia o tej liczbie są **prawdziwe**?",
+        "options": [
+          "89% top-1 jest dobrym wskaźnikiem jakości — można puścić model do produkcji.",
+          "OpenSARShip ma cargo na poziomie ~70% chipów, więc model „zawsze cargo” ma już 70% top-1 — sama metryka top-1 niewiele mówi.",
+          "Należy zaraportować mAP@0.5 (detekcja + klasyfikacja) plus per-class F1, żeby zobaczyć, jak model radzi sobie na rzadkich klasach (tanker / fishing / passenger).",
+          "Należy zaraportować krzywą per-incidence-angle, bo Sentinel-1 IW przeskakuje od ~29° do ~46° i jakość detektora zwykle pada na większych kątach."
+        ],
+        "correct": [1, 2, 3],
+        "explanation": "Opcja 1 jest fałszywa, bo top-1 na bardzo niezbalansowanym zbiorze potrafi zwracać dużą liczbę przy katastrofalnym F1 dla rzadkich klas. Opcja 2 to bezpośrednia obserwacja imbalansu OpenSARShip (~70% cargo) — metryka top-1 może tylko powtarzać prior klasy. Opcja 3 jest standardowym domain-specific wymogiem (research-notes Module 3 lesson 4): dla detektora SAR mierzymy mAP@0.5 oraz F1 per-class. Opcja 4 odzwierciedla geometrię Sentinel-1: kąt padania zmienia statystyki sea-clutter i geometrię chipa, więc mAP uśredniony po swacie maskuje gigantyczne różnice po kącie — operacyjnie SATIM-grade ATR raportuje obie metryki.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-db-normalize",
+      "title": "Pobaw się dB-normalizacją i progowaniem",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\nrng = np.random.default_rng(42)\n\n# Symulacja chipa SAR: jednorodne morze + jasny statek pośrodku.\nchip = rng.gamma(shape=1.0, scale=0.05, size=(64, 64))   # speckle 1-look na morzu\nchip[28:36, 28:36] += rng.gamma(shape=1.0, scale=2.0, size=(8, 8))  # statek\n\n# def db_normalize(intensity, db_min=-30.0, db_max=0.0): ...\n\n# Spróbuj różnych zakresów dB i zobacz, jak zmienia się kontrast statek-vs-tło.\n# Eksperymenty:\n#   1. db_min = -30, db_max = 0   (typowy default Sentinel-1 GRD)\n#   2. db_min = -25, db_max = 5   (rozszerzony górny zakres dla bright targets)\n#   3. db_min = -40, db_max = -5  (uwypukla cienie i obszary o niskiej rozproszności)\n",
+        "encouragement": "Przesuń `db_min` i `db_max` i obserwuj, jak rozciąga się kontrast między tłem a sygnaturą statku — to jest dokładnie ten knob, który dostraja się raz na pasmo i sensor."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/JSTARS.2017.2755672",
+      "title": "OpenSARShip: A Dataset Dedicated to Sentinel-1 Ship Interpretation",
+      "kind": "paper",
+      "author": "Lanqing Huang, Bin Liu, Boying Li, Weiwei Guo, Wenhao Yu, Zenghui Zhang, Wenxian Yu",
+      "year": 2018
+    },
+    {
+      "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+      "title": "MSTAR Public Targets — Sensor Data Management System (AFRL)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+      "title": "Target Classification Using the Deep Convolutional Networks for SAR Images (A-ConvNet)",
+      "kind": "paper",
+      "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+      "year": 2016
+    },
+    {
+      "url": "https://doi.org/10.1109/ICCV.2017.324",
+      "title": "Focal Loss for Dense Object Detection",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollár",
+      "year": 2017
+    },
+    {
+      "url": "https://docs.ultralytics.com/",
+      "title": "Ultralytics YOLOv8 documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/LGRS.2016.2531085",
+      "title": "Synthetic Aperture Radar Ship Detection Using Haar-like Features",
+      "kind": "paper",
+      "author": "Colin P. Schwegmann, Waldo Kleynhans, Brian P. Salmon, Lizwe W. Mdakane, Rory G. V. Meyer",
+      "year": 2016
+    }
+  ]
+}

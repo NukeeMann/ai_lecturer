@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 1,
+  "slug": "fizyka-sar-geometria-i-produkty-sentinel-1",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m1",
+  "title": "Fizyka SAR, geometria i produkty Sentinel-1",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Wszystko, co inżynier CV musi wiedzieć, zanim załaduje pierwszą scenę Sentinel-1: dlaczego SAR to nie radar Dopplera, jak działa synteza apertury, czym różnią się SLC i GRD oraz po co Sentinel-1 ma dual-pol zamiast quad-pol.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "wstep-czym-jest-sar",
+      "title": "Co to jest SAR i dlaczego to nie radar Dopplera",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "**SAR** — *Synthetic Aperture Radar*, czyli radar z **syntetyczną aperturą** — to aktywny system mikrofalowy, który z bocznie skierowanej anteny satelity oświetla powierzchnię Ziemi krótkimi impulsami chirp i nagrywa **amplitudę i fazę** echa wracającego z każdego rozpraszacza. Wynikiem nie jest pole prędkości, jak w radarze pulse-Doppler na samolocie, lecz **dwuwymiarowy obraz** sceny — z osią `range` (poprzecznie do toru orbity) i osią `azimuth` (wzdłuż toru). Ponieważ Sentinel-1 pracuje w paśmie C ($\\approx 5.405$ GHz, $\\lambda \\approx 5.55$ cm), obrazuje przez chmury, w nocy i nad strefami arktycznymi — tam, gdzie zdjęcie optyczne nigdy nie dotrze.\n\nNajczęstsza pomyłka inżyniera CV przesiadającego się na SAR brzmi: *\"SAR to przecież radar Dopplera, mierzy prędkość celu\"*. **To nieprawda.** Efekt Dopplera jest narzędziem **przetwarzania** — z historii częstotliwości Dopplera echa z każdego punktu gruntu ekstrahuje się jego pozycję w azymucie — ale produkt na wyjściu jest obrazem **natężenia rozpraszania wstecznego** $\\sigma^0(x, y)$, a nie polem prędkości. Pulsacyjny radar Dopplera (np. samolotowy, w samochodach autonomicznych) podaje wektory $\\vec v$ celów; SAR rysuje statyczny obraz krajobrazu, w którym ruch (jeśli w ogóle widać) objawia się jako artefakt typu *azimuth shift* — i jest niechcianym efektem ubocznym, nie produktem.\n\nDruga niespodzianka: SAR jest **systemem koherentnym** — rejestruje fazę. Z koherencji wynika natychmiast specyficzny rodzaj szumu, **speckle** — multiplikatywne ziarnistości, które zobaczysz wprost na każdym surowym obrazie Sentinel-1. To temat osobnej lekcji; tu wystarczy zapamiętać, że nie da się go usunąć rozmyciem Gaussa, bo nie jest to szum addytywny.\n\n![Sentinel-1 widziany z orbity: satelita patrzy w bok i w dół na powierzchnię Ziemi pod kątem incidence theta; antena SAR po prawej stronie kadłuba oświetla pas swath o szerokości 250 km na powierzchni gruntu, oś range biegnie poprzecznie do toru orbity, oś azimuth wzdłuż orbity](https://commons.wikimedia.org/wiki/Special:FilePath/English_Channel_-_Flickr_-_europeanspaceagency.jpg)\n*(Obraz: Wikimedia Commons / ESA, przypisanie zgodnie ze stroną pliku)*"
+      }
+    },
+    {
+      "id": "esa-anchor-video",
+      "title": "ESA Copernicus — wprowadzenie do Sentinel-1 i SAR",
+      "description": "Oficjalny materiał ESA pokazujący geometrię Sentinel-1, modes akwizycji i intuicję, dlaczego SAR widzi przez chmury — anchor video do całej lekcji.",
+      "sources": [
+        {
+          "url": "https://www.youtube.com/watch?v=WKsPRRmyFWw",
+          "title": "Copernicus Sentinel-1: radar vision for Copernicus (ESA YouTube)",
+          "kind": "video"
+        }
+      ],
+      "type": "video",
+      "data": {
+        "kind": "youtube",
+        "src": "https://www.youtube.com/watch?v=WKsPRRmyFWw",
+        "title": "Copernicus Sentinel-1: radar vision for Copernicus",
+        "transcript": [
+          {
+            "tStart": 0,
+            "text": "Meet Copernicus Sentinel-1 – this ground-breaking mission delivers continuous, all-weather, day-and-night imaging for land, ice and maritime monitoring.\n\nEquipped with state-of-the-art C-band synthetic aperture radar (SAR), Sentinel-1 captures high-resolution data around the clock, in any weather, making it indispensable for detecting the subtle changes on Earth’s surface that remain hidden from the human eye.\n\nSentinel-1 data serves a multitude of critical applications: from ensuring the safety and efficiency of maritime traffic, tracking sea ice and icebergs, to monitoring structural integrity and natural hazards, such as earthquakes, landslides and volcanic activity.\n\nIts enhanced radar technology provides precises precise information on ground movement, which is critical for urban planning, infrastructure resilience, subsidence risk assessment and geohazard monitoring.\n\nThrough consistent, long-term data collection, Sentinel-1 serves as a global asset, essential for environmental and safety monitoring worldwide. The mission is a beacon of innovation, advancing our understanding of our planet’s dynamic landscape.\n\nThis video features interviews with Mark Drinkwater, Head of Mission Sciences Division at ESA, Ramon Torres Cuesta, Sentinel-1 Project Manager at ESA and Julia Kubanek, Sentinel-1 Mission Scientist at ESA.\n\nCredit: ESA - European Space Agency\n\n★ Subscribe: http://bit.ly/ESAsubscribe and click twice on the bell button to receive our notifications.\n\nCheck out our full video catalog: http://bit.ly/SpaceInVideos\nFollow us on Twitter: http://bit.ly/ESAonTwitter\nOn Facebook: http://bit.ly/ESAonFacebook\nOn Instagram: http://bit.ly/ESAonInstagram\nOn LinkedIn: https://bit.ly/ESAonLinkedIn\nOn Pinterest: https://bit.ly/ESAonPinterest\nOn Flickr: http://bit.ly/ESAonFlickr\n\nWe are Europe's gateway to space. Our mission is to shape the development of Europe's space capability and ensure that investment in space continues to deliver benefits to the citizens of Europe and the world. Check out https://www.esa.int/ to get up to speed on everything space related.\n\nCopyright information about our videos is available here: https://www.esa.int/ESA_Multimedia/Terms_and_Conditions\n\n#ESA #Sentinel-1 #Satellite"
+          }
+        ],
+        "autoplay": false
+      }
+    },
+    {
+      "id": "quiz-sar-vs-doppler",
+      "title": "Sprawdź intuicję: SAR vs radar Dopplera",
+      "type": "quiz",
+      "data": {
+        "question": "Czym fundamentalnie różni się produkt na wyjściu SAR od produktu klasycznego pulse-Doppler radaru samolotowego?",
+        "options": [
+          "SAR mierzy prędkość każdego rozpraszacza, a pulse-Doppler oddaje statyczny obraz sceny.",
+          "SAR oddaje statyczny dwuwymiarowy obraz $\\sigma^0(x, y)$ sceny; pulse-Doppler oddaje wektory prędkości celów.",
+          "Oba systemy oddają to samo — różnią się tylko częstotliwością nośną i polaryzacją.",
+          "SAR działa wyłącznie nocą, a pulse-Doppler tylko w dzień — różnica jest między aktywnym a pasywnym sensorem."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Pulsacyjny radar Dopplera (samolotowy, automotive) zwraca wektory prędkości celów. SAR korzysta z efektu Dopplera **w przetwarzaniu** (do syntezy apertury w azymucie), ale jego produkt to dwuwymiarowy obraz natężenia rozpraszania wstecznego $\\sigma^0(x, y)$. Mieszanie tych dwóch jest klasyczną pułapką dla osób przesiadających się z optyki/radaru lotniczego — i w pierwszym tygodniu w SATIM łatwo na nią wpaść, jeśli ktoś nie odróżnia *narzędzia obliczeniowego* (Doppler) od *produktu wyjściowego* (obraz).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "geometria-i-synteza",
+      "title": "Range, azimuth i magia syntezy apertury",
+      "sources": [
+        {
+          "url": "https://descanso.jpl.nasa.gov/monograph/series2/Descanso2_4_DonaldEvans.pdf",
+          "title": "Synthetic Aperture Radar Polarimetry — Ch. 1, Basic principles of synthetic aperture radar",
+          "kind": "book",
+          "author": "Jakob van Zyl and Yunjin Kim",
+          "year": 2011
+        },
+        {
+          "url": "https://sentinels.copernicus.eu/web/sentinel/technical-guides/sentinel-1-sar/sar-instrument",
+          "title": "ESA — Sentinel-1 SAR Definitions and Geometry",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "SAR pisze obraz na dwóch osiach o **różnej fizyce**. **Range** (oś poprzeczna) pochodzi z czasu przelotu impulsu: mierzymy, ile pikosekund minęło między wysłaniem chirpu a odebraniem echa, i z prędkości światła odzyskujemy odległość radialną. Rozdzielczość w slant range zależy wyłącznie od szerokości pasma chirpu $B$:\n\n$$ \\delta_r \\;=\\; \\frac{c}{2 B}. $$\n\nDla Sentinel-1 IW (Interferometric Wide swath) $B \\approx 56\\ \\mathrm{MHz}$, więc $\\delta_r \\approx 2.7\\ \\mathrm{m}$ w slant range — niezależnie od wysokości satelity. Po projekcji na ground range rośnie do ~5 m, bo pochyłej linii widzenia odpowiada większy odcinek na płaskim gruncie.\n\n**Azimuth** (oś wzdłuż toru) jest zupełnie inna. Gdyby zostawić ją na zwykłej, niezsyntezowanej antenie (\"real aperture\"), rozdzielczość byłaby:\n\n$$ \\delta_a^{\\text{real}} \\;=\\; \\frac{R \\lambda}{L}, $$\n\ngdzie $R$ to odległość ślizgowa (slant range), $\\lambda$ długość fali, a $L$ fizyczna długość anteny. Dla Sentinel-1 ($R \\approx 800\\ \\mathrm{km}$, $\\lambda \\approx 5.55\\ \\mathrm{cm}$, $L \\approx 12.3\\ \\mathrm{m}$) wychodzi $\\delta_a^{\\text{real}} \\approx 3.6\\ \\mathrm{km}$ — **kompletnie bezużyteczne** dla obrazowania szczegółów. Klasyczna antena na orbicie to po prostu zła droga.\n\n**Trick syntetycznej apertury** polega na tym, że satelita poruszając się wzdłuż orbity oświetla każdy punkt gruntu z wielu kolejnych pozycji w czasie integracji $T$. Przetwarzanie range-Doppler **koherentnie sumuje** te impulsy tak, jakby pochodziły z jednej, długiej anteny syntetycznej o długości $L_{\\text{syn}} = v T$. Po focusowaniu rozdzielczość azymutalna spada do **niezależnej od odległości**:\n\n$$ \\delta_a^{\\text{syn}} \\;=\\; \\frac{L}{2}. $$\n\nTak — Sentinel-1 z anteną o długości 12.3 m osiąga teoretycznie ~6 m w azymucie, a praktycznie ~22 m w trybie IW po multilookingu. Co więcej $\\delta_a^{\\text{syn}}$ **maleje, gdy antenę robimy *krótszą*** — odwrotnie niż w radarach klasycznych, bo krótsza antena oznacza szerszą wiązkę i dłuższy czas integracji $T$.\n\nKąt **incidence** $\\theta$ — między linią widzenia a normalną do gruntu — decyduje, ile sygnału wraca: gęsta roślinność pod $\\theta = 45°$ jest jasna, gładka woda pod $\\theta = 30°$ niemal czarna. Sentinel-1 IW zmienia $\\theta$ od ~30° w near range do ~46° w far range — ten gradient widać wprost na każdym GRD jako wstęga jasności.\n\n![Zasada syntetycznej apertury: pojedyncza fizyczna antena długości L podczas przelotu satelity w czasie T koherentnie nagrywa echa z każdego punktu gruntu, tworząc wirtualną aperturę o długości L_syn = v razy T; rozdzielczość w azymucie po focusowaniu wynosi delta_a = L / 2 niezależnie od odległości R](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*"
+      }
+    },
+    {
+      "id": "explorer-rozdzielczosc-azymutalna",
+      "title": "Antena rzeczywista vs syntetyczna — pobaw się długością L",
+      "description": "Suwak długości anteny L pokazuje rozdzielczość azymutalną w obu modelach: real-aperture rośnie do kilometrów, synthetic-aperture spada do metrów — i odwracają się względem L.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Stale Sentinel-1 IW (przyblizenie)\nLAMBDA_M = 0.0555         # dlugosc fali pasma C [m]\nR_SLANT_M = 8.0e5         # slizgowa odleglosc do gruntu [m] (~800 km)\n\nL_GRID = np.linspace(0.5, 25.0, 400)\nREAL_CURVE = R_SLANT_M * LAMBDA_M / L_GRID\nSYNTH_CURVE = L_GRID / 2.0\n",
+        "renderCode": "L = float(L_phys)\nreal_res = R_SLANT_M * LAMBDA_M / L\nsynth_res = L / 2.0\n\nplt.figure(figsize=(7.5, 4.4))\nplt.plot(L_GRID, REAL_CURVE, color='#cc4444', lw=2.2,\n         label='real aperture: R*lambda / L')\nplt.plot(L_GRID, SYNTH_CURVE, color='#1d4ed8', lw=2.2,\n         label='synthetic aperture: L / 2')\nplt.axvline(L, color='gray', ls='--', alpha=0.7)\nplt.scatter([L], [real_res], color='#cc4444', s=70, zorder=5)\nplt.scatter([L], [synth_res], color='#1d4ed8', s=70, zorder=5)\nplt.yscale('log')\nplt.xlabel('dlugosc anteny L [m]')\nplt.ylabel('rozdzielczosc azymutalna [m] (skala log)')\nplt.title(f'L = {L:.1f} m  ->  real ~ {real_res:,.0f} m,  synth = {synth_res:.2f} m')\nplt.legend(loc='upper right')\nplt.grid(True, which='both', alpha=0.3)\n",
+        "params": [
+          {
+            "name": "L_phys",
+            "label": "L (długość fizycznej anteny SAR, m)",
+            "type": "slider",
+            "min": 0.5,
+            "max": 25,
+            "step": 0.1,
+            "default": 12.3
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "code-resolution",
+      "title": "Policz rozdzielczość Sentinel-1 IW",
+      "description": "Dwa wzory geometryczne w 4 linijkach Pythona — i pierwsza intuicja, dlaczego krótsza antena daje LEPSZĄ rozdzielczość w SAR.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje liczące rozdzielczość azymutalną SAR z parametrów geometrii:\n\n- `azimuth_resolution_real(R_slant_m, lambda_m, L_m)` — wzór dla anteny rzeczywistej $\\delta_a = R \\lambda / L$.\n- `azimuth_resolution_synthetic(L_m)` — wzór dla anteny syntetycznej $\\delta_a = L / 2$.\n\nArgumenty są w **metrach**, wynik również w metrach (typ `float`). Nie zaokrąglaj — testy porównają wartości z tolerancją na tyle wąską, że zaokrąglenie wyłoży test.\n\nDla Sentinel-1 IW ($R \\approx 8\\cdot 10^5$ m, $\\lambda \\approx 0.0555$ m, $L = 12.3$ m) `real` powinno wyjść $\\approx 3609.76$ m, a `synthetic` dokładnie $6.15$ m.",
+        "starterCode": "def azimuth_resolution_real(R_slant_m: float, lambda_m: float, L_m: float) -> float:\n    \"\"\"Rozdzielczosc azymutalna anteny rzeczywistej: delta_a = R * lambda / L.\"\"\"\n    # TODO: zaimplementuj wzor R * lambda / L\n    return 0.0\n\n\ndef azimuth_resolution_synthetic(L_m: float) -> float:\n    \"\"\"Rozdzielczosc azymutalna anteny syntetycznej: delta_a = L / 2.\"\"\"\n    # TODO: zaimplementuj wzor L / 2\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "real_aperture_sentinel_1_iw",
+            "body": "r = azimuth_resolution_real(8.0e5, 0.0555, 12.3)\nassert abs(r - 3609.756) < 1.0, f'expected ~3609.76, got {r}'",
+            "hidden": false
+          },
+          {
+            "name": "synthetic_is_half_antenna_exact",
+            "body": "assert azimuth_resolution_synthetic(12.3) == 6.15",
+            "hidden": true
+          },
+          {
+            "name": "shorter_antenna_better_synthetic",
+            "body": "assert azimuth_resolution_synthetic(2.0) < azimuth_resolution_synthetic(12.3)",
+            "hidden": true
+          },
+          {
+            "name": "real_scales_linearly_with_range",
+            "body": "r1 = azimuth_resolution_real(4.0e5, 0.0555, 12.3)\nr2 = azimuth_resolution_real(8.0e5, 0.0555, 12.3)\nassert abs(r2 - 2 * r1) < 1e-6",
+            "hidden": true
+          }
+        ],
+        "solution": "def azimuth_resolution_real(R_slant_m: float, lambda_m: float, L_m: float) -> float:\n    return R_slant_m * lambda_m / L_m\n\n\ndef azimuth_resolution_synthetic(L_m: float) -> float:\n    return L_m / 2.0\n"
+      }
+    },
+    {
+      "id": "polaryzacja-i-dual-pol",
+      "title": "Polaryzacja w SAR i dlaczego Sentinel-1 to nie quad-pol",
+      "sources": [
+        {
+          "url": "https://descanso.jpl.nasa.gov/monograph/series2/Descanso2_4_DonaldEvans.pdf",
+          "title": "Synthetic Aperture Radar Polarimetry — chapters on dual-pol vs quad-pol Pauli",
+          "kind": "book",
+          "author": "Jakob van Zyl and Yunjin Kim",
+          "year": 2011
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy radar nadaje i odbiera fale o określonej **polaryzacji** — dla SAR Sentinel-1 są to dwa stany liniowe oznaczane wielkimi literami: pierwsza to nadanie, druga to odbiór. Poznajmy je w kolejności rosnącej egzotyki:\n\n- **HH** — nadanie i odbiór poziomy. Czuły na powierzchnie chropowate (gleba, asfalt), słaby na liście.\n- **VV** — nadanie i odbiór pionowy. Czuły na pionowe struktury — pnie drzew, fale na wodzie. **Domyślny tryb Sentinel-1 nad lądem.**\n- **HV / VH** — *cross-pol*: nadanie poziome, odbiór pionowy (lub odwrotnie). Sygnał wraca tu tylko, gdy rozpraszacz **depolaryzuje** falę — dachy, wnętrza koron drzew, narożniki budynków. **Ciemniejszy o ~10–15 dB** od co-pol, ale niesie inną informację fizyczną — i często to właśnie cross-pol pokazuje strukturę wegetacyjną, której co-pol nie widzi.\n\nSentinel-1 nad lądem domyślnie nadaje **VV** i odbiera jednocześnie **VV i VH** — to **dual-pol VV+VH**. Nad obszarami arktycznymi i strefami morskimi konfiguracja zmienia się na **HH+HV**. Każdy GRD/SLC ma więc **dwa kanały**, a nie cztery jak quad-pol z misji RADARSAT-2 czy ALOS-2 PALSAR.\n\nStąd ważna pułapka: **Pauli decomposition** (RGB-owe $|HH-VV|$, $|HV+VH|$, $|HH+VV|$) jest zdefiniowana dla **quad-pol** i wymaga pełnej macierzy rozpraszania $2 \\times 2$. Sentinel-1 jej nie ma. To, co czasem pokazują tutoriale jako \"Pauli RGB Sentinel-1\" (np. trójka `[VV, VH, VV/VH]`), jest **dual-pol composite**, a nie Pauli — nazywanie tego \"Pauli\" wprowadza w błąd na review w środowisku polarymetrycznym i jest jedną z pierwszych rzeczy, które wytknie ci recenzent z SATIM-grade pipeline'u.\n\nPraktyczna konsekwencja dla ATR: model wytrenowany na pełnym Pauli-RGB z RADARSAT-2 **nie przeniesie się** wprost na Sentinel-1 — kanały i ich semantyka są inne. Transfer wymaga retreningu (lub przynajmniej fine-tuningu) na docelowych parach polaryzacyjnych, oraz **normalizacji świadomej cross-pol gap** (typowo skalujemy oddzielnie kanały VV i VH, bo mają inne dynamiki).\n\n![Polaryzacja liniowa fali elektromagnetycznej: pole elektryczne oscyluje wzdłuz osi pionowej (V-pol) lub poziomej (H-pol) prostopadle do kierunku propagacji; SAR Sentinel-1 nadaje jedna polaryzacje (V lub H) i odbiera jednoczesnie dwie — co-pol i cross-pol — co daje dwa kanaly na piksel](https://commons.wikimedia.org/wiki/Special:FilePath/Linear_Polarization_Linearly_Polarized_Light_plane_wave.svg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*"
+      }
+    },
+    {
+      "id": "quiz-polaryzacja-multi",
+      "title": "Quiz: co jest prawdą o polaryzacji Sentinel-1?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o polaryzacji w Sentinel-1 są **prawdziwe**? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Sentinel-1 nad lądem domyślnie nadaje VV, a odbiera jednocześnie VV i VH — to konfiguracja dual-pol VV+VH.",
+          "Sentinel-1 dostarcza pełną quad-pol macierz rozpraszania, więc Pauli RGB można policzyć bezpośrednio z każdego SLC.",
+          "Cross-pol (HV/VH) jest typowo o 10–15 dB ciemniejszy od co-pol i wraca głównie z rozpraszaczy depolaryzujących, np. wnętrz koron drzew.",
+          "Trójka kanałów `[VV, VH, VV/VH]` to dual-pol composite, a nie prawdziwy Pauli — różnica jest istotna dla review polarymetrycznego."
+        ],
+        "correct": [
+          0,
+          2,
+          3
+        ],
+        "explanation": "Stwierdzenie 1 jest fałszywe — Sentinel-1 jest **dual-pol**, nie quad-pol; bez pełnej macierzy 2×2 Pauli decomposition nie da się policzyć w prawidłowej formie. Pozostałe trzy są kanonicznie prawdziwe — to dokładnie ta lista pułapek, na które łapie się każdy nowy użytkownik Sentinel-1, gdy próbuje przenieść recepty z RADARSAT-2 lub ALOS-2 PALSAR. Asymetria cross-pol (~10–15 dB) jest kluczowa przy normalizacji pod ML — jeśli ją zignorujesz, sieć zobaczy 'puste' kanały HV/VH i przestanie z nich korzystać.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "produkty-i-tryby",
+      "title": "Produkty Sentinel-1: SLC, GRD i tryby IW/EW/SM/WV",
+      "sources": [
+        {
+          "url": "https://sentinels.copernicus.eu/documents/247904/1877131/Sentinel-1-Product-Definition.pdf",
+          "title": "Sentinel-1 Product Definition (ESA, 2016, rev. 3.7)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Sentinel-1 nie publikuje jednego produktu — publikuje **trzy poziomy przetwarzania** i **kilka geometrii**, każde do innego zastosowania. Inżynier ML musi wybrać świadomie, bo różnice nie są kosmetyczne.\n\n**Level-0** to surowe pakiety telemetrii sprzed focusowania. Praktycznie nigdy ich nie tykasz — ich miejsce jest w archiwum lub w łańcuchu reprocessingu ESA.\n\n**Level-1 SLC** (*Single Look Complex*) to obraz w **geometrii radarowej**, per-piksel **`complex64`** (`float32` real + `float32` imag), z zachowaną fazą. Wymagany dla każdej pracy fazowej: interferometria (InSAR), koherencja, polarymetria, super-resolution. Cena: rozmiar plików (gigabajty), brak georeferencji w sensie map (musisz najpierw zrobić terrain correction), specyficzny krok kalibracji do $\\sigma^0$. Pamiętaj: $|\\text{SLC}|^2$ to **uncalibrated intensity**, nie $\\sigma^0$.\n\n**Level-1 GRD** (*Ground Range Detected*) to obraz **multi-looked** (4-look dla GRDH = High Resolution), real-valued amplitude (zwykle `uint16`), zresampleowany do **ground range**. Gotowy pod ML: jednolite piksele, mniejszy speckle, łatwy mosaicking. Tracisz fazę — czyli **żadnego InSAR ani koherencji**. Dla amplitudowego ATR (statki, pojazdy, change detection log-ratio) GRD jest kanonicznym wyborem, i to jest produkt, na którym spędzisz większość Modułu 3.\n\n**Level-2 OCN** to **produkty oceaniczne** — wektory wiatru (OWI), spectrum fal (OSW), prędkość radialna (RVL). Nie są obrazem do CV; są danymi geofizycznymi w siatce kilkukilometrowej, używanymi w meteorologii morskiej.\n\nTryby akwizycji to osobna oś: **IW** (Interferometric Wide, 250 km swath, ~5×20 m), **EW** (Extra Wide, 400 km swath, ~20×40 m, polarne), **SM** (StripMap, 80 km, najlepsza rozdzielczość ~5×5 m, na żądanie), **WV** (Wave, vinietki 20×20 km, monitoring oceanu, jednopolaryzacyjne). Dla 95% użytkowników lądowych właściwy wybór to **IW + GRDH + dual-pol VV+VH** — szczegóły porównawcze są w tabeli niżej."
+      }
+    },
+    {
+      "id": "dragmatch-produkty",
+      "title": "Dopasuj produkt Sentinel-1 do jego cech",
+      "description": "Cztery produkty, cztery różne miejsca w pipeline'ie — w razie pomyłki zwróć szczególną uwagę na różnicę SLC ↔ GRD, bo to ona decyduje, czy InSAR w ogóle wchodzi w grę.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przeciągnij każdy produkt Sentinel-1 do strefy opisującej jego rolę w pipelinie SAR. Wskazówka: obecność **fazy** dzieli pierwszą decyzję na pół.",
+        "items": [
+          {
+            "id": "slc",
+            "label": "SLC (Single Look Complex)"
+          },
+          {
+            "id": "grd",
+            "label": "GRD (Ground Range Detected)"
+          },
+          {
+            "id": "ocn",
+            "label": "OCN (Ocean, Level-2)"
+          },
+          {
+            "id": "raw",
+            "label": "Level-0 (raw)"
+          }
+        ],
+        "zones": [
+          {
+            "id": "phase",
+            "label": "complex64 z zachowaną fazą; geometria radarowa; do InSAR i polarymetrii",
+            "accepts": [
+              "slc"
+            ]
+          },
+          {
+            "id": "amp",
+            "label": "real-valued amplitude w ground range; multi-looked; gotowy pod CNN/ATR",
+            "accepts": [
+              "grd"
+            ]
+          },
+          {
+            "id": "geo",
+            "label": "Level-2: wektory wiatru, spektrum fal, prędkość radialna w siatce kilometrowej",
+            "accepts": [
+              "ocn"
+            ]
+          },
+          {
+            "id": "raw_pkg",
+            "label": "Surowe pakiety telemetrii sprzed focusowania — miejsce w archiwum, nie w pipelinie ML",
+            "accepts": [
+              "raw"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "SLC zachowuje fazę i wymaga jej każdy krok InSAR/polarymetryczny; GRD wyrzuca fazę w zamian za jednolitą siatkę ground-range gotową pod sieci CNN; OCN to produkt level-2 — geofizyczne wektory, nie obrazy CV; Level-0 to pakiety przed focusowaniem, w praktyce ML nigdy się ich nie tyka. Pomyłka SLC ↔ GRD jest klasyczna: praca fazowa wymaga SLC, a wyciąganie 'fazy z GRD' jest niemożliwe — multilooking + detekcja amplitudy w GRD są nieodwracalne."
+      }
+    },
+    {
+      "id": "tabela-trybow",
+      "title": "Tryby akwizycji Sentinel-1: IW, EW, SM, WV",
+      "description": "Cztery tryby, cztery role. 95% użytkowników lądowych zostaje przy IW + GRDH + VV+VH; pozostałe 5% wie, dlaczego.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "tryb",
+            "label": "Tryb",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "swath_km",
+            "label": "Swath [km]",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "range_res_m",
+            "label": "δ_range [m]",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "azimuth_res_m",
+            "label": "δ_azimuth [m]",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "default_pols",
+            "label": "Domyślne polaryzacje",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "zastosowanie",
+            "label": "Typowe zastosowanie",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "tryb": "IW (Interferometric Wide)",
+            "swath_km": 250,
+            "range_res_m": 5,
+            "azimuth_res_m": 20,
+            "default_pols": "VV+VH (ląd) / HH+HV (polarne)",
+            "zastosowanie": "Główny tryb monitoringu lądu — domyślny wybór dla ATR i change detection."
+          },
+          {
+            "tryb": "EW (Extra Wide)",
+            "swath_km": 400,
+            "range_res_m": 20,
+            "azimuth_res_m": 40,
+            "default_pols": "HH+HV / VV+VH (zmiennie)",
+            "zastosowanie": "Lód morski, regiony polarne, monitoring rozległych obszarów."
+          },
+          {
+            "tryb": "SM (StripMap)",
+            "swath_km": 80,
+            "range_res_m": 5,
+            "azimuth_res_m": 5,
+            "default_pols": "VV / HH lub dual-pol",
+            "zastosowanie": "Kampanie kryzysowe na żądanie — najlepsza rozdzielczość, mały swath."
+          },
+          {
+            "tryb": "WV (Wave)",
+            "swath_km": 20,
+            "range_res_m": 5,
+            "azimuth_res_m": 5,
+            "default_pols": "VV lub HH (jednopolaryzacyjne)",
+            "zastosowanie": "Vinietki 20×20 km — spektrum fal oceanicznych, monitoring meteo."
+          }
+        ],
+        "initialSort": {
+          "key": "swath_km",
+          "dir": "desc"
+        },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "quiz-slc-vs-grd",
+      "title": "Quiz końcowy: SLC vs GRD",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o **SLC** i **GRD** Sentinel-1 są prawdziwe? Zaznacz wszystkie pasujące.",
+        "options": [
+          "SLC jest per-piksel `complex64` z zachowaną fazą; GRD jest real-valued amplitude w ground range po multilookingu.",
+          "Z GRD można policzyć interferometryczną koherencję, jeśli mamy dwie kolejne sceny tej samej orbity.",
+          "Multilooking jest wbudowany w GRD — typowo 4 looks dla GRD-High — co redukuje speckle kosztem rozdzielczości.",
+          "`np.abs(slc_pixel)` daje już skalibrowane backscatter $\\sigma^0$ i można go wprost używać do treningu."
+        ],
+        "correct": [
+          0,
+          2
+        ],
+        "explanation": "Stwierdzenia 0 i 2 są prawdziwe i kanoniczne. **Stwierdzenie 1 jest fałszywe** — koherencja InSAR wymaga **fazy**, której GRD już nie ma; do koherencji **musisz** zacząć od pary SLC ko-rejestrowanych. **Stwierdzenie 3 jest fałszywe** — $|\\text{SLC}|^2$ to surowa intensywność (DN, *digital number*), a nie $\\sigma^0$; kalibracja do $\\sigma^0$ wymaga LUT-a kalibracyjnego z metadanych produktu (operator `Calibration` w SNAP, lub równoważnik w `xarray-sentinel`). Pominięcie kalibracji jest klasyczną przyczyną 'modelu, który widzi piksele kamery zamiast fizycznego backscatter' — i wpadkę widać dopiero, gdy próbujesz przenieść model na inną orbitę o innej geometrii.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/web/sentinel/technical-guides/sentinel-1-sar/sar-instrument",
+      "title": "ESA — Sentinel-1 SAR Definitions and Geometry",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/documents/247904/1877131/Sentinel-1-Product-Definition.pdf",
+      "title": "Sentinel-1 Product Definition (ESA, 2016, rev. 3.7)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=WKsPRRmyFWw",
+      "title": "Copernicus Sentinel-1: radar vision for Copernicus (ESA YouTube)",
+      "kind": "video"
+    },
+    {
+      "url": "https://descanso.jpl.nasa.gov/monograph/series2/Descanso2_4_DonaldEvans.pdf",
+      "title": "Synthetic Aperture Radar Polarimetry — Ch. 1, Basic principles of synthetic aperture radar",
+      "kind": "book",
+      "author": "Jakob van Zyl and Yunjin Kim",
+      "year": 2011
+    }
+  ]
+}

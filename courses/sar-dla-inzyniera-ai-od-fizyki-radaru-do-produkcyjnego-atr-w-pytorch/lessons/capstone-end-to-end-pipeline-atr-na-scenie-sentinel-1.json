@@ -1,0 +1,281 @@
+{
+  "schemaVersion": 1,
+  "slug": "capstone-end-to-end-pipeline-atr-na-scenie-sentinel-1",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m3",
+  "title": "Capstone: end-to-end pipeline ATR na scenie Sentinel-1",
+  "eyebrow": "CAPSTONE",
+  "description": "Połącz 9 wcześniejszych lekcji w jeden CLI sar_atr.py: od surowego GRD Sentinel-1, przez kalibrację σ⁰, despeckler SAR-DRN i detektor YOLOv8 ONNX FP16, po raport JSON z (lat, lon) detekcji i mapowaniem na rolę Senior AI Specialist w SATIM.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "po-co-capstone",
+      "title": "Po co capstone i jak to spina się w jeden CLI",
+      "type": "theory",
+      "data": {
+        "markdown": "Dotąd każda lekcja kończyła się osobnym artefaktem: skalibrowany σ⁰ patch w lekcji 3, mapa koherencji w M2L3, wagi despecklera SAR-DRN w M3L1, detektor YOLOv8 fine-tunowany na OpenSARShip w M3L3, plik `.onnx` z FP16 w M3L4. **Capstone scala je w jeden CLI**, który radarowy analityk SATIM-u uruchamia jednym poleceniem nad nową sceną:\n\n```\npython sar_atr.py --scene S1A_IW_GRDH_1SDV_20240612T044211.zip --weights detector_fp16.onnx --out report.json\n```\n\nPipeline ma **pięć etapów** i każdy z nich pochodzi z konkretnej wcześniejszej lekcji — capstone nie wnosi nowej fizyki ani nowej architektury, **wnosi inżynierski klej**:\n\n1. **Wczytanie sceny** (M1L1 + M1L3): rozpakowanie ZIP-a, indeksowanie SAFE-a przez `xarray-sentinel` / `rasterio`, wybór polaryzacji (VV+VH dla Sentinel-1 IW dual-pol).\n2. **Kalibracja do σ⁰ i multilook** (M1L3 + M1L4): aplikacja LUT-a kalibracyjnego, opcjonalny multilook (Nr × Na) jeśli docelowy model był trenowany na 2× zmultilookowanych chipach, terrain correction tam, gdzie potrzebne `(lat, lon)`.\n3. **Despeckling** (M3L1): SAR-DRN albo Speckle2Void wczytany z `.onnx` i puszczony przez ONNX Runtime na GRD-zie tile-by-tile (256×256 z 16-pikselowym overlapem).\n4. **Detekcja + klasyfikacja** (M3L3 + M3L4): YOLOv8 fine-tunowany na OpenSARShip, eksportowany do ONNX z opset 17 i skwantyzowany do FP16 — ten sam plik `.onnx`, który zewaluowaliśmy w M3L4.\n5. **Geokodowanie i raport** (nowe w capstonie): bbox-y w pikselach mapowane na `(lat, lon)` przez macierz afiniczną sceny, opakowane w deterministyczny JSON z metadanymi modelu i sceny.\n\n![Wycinek sceny radarowej Sentinel-1 GRD nad zatoką portową w skali dB — typowe wejście pipeline'u: jasne plamy statków na ciemnym tle morza, w którym widać speckle](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n\nKlejem, który robi z tego *artefakt produkcyjny* a nie research notebook, jest twardy kontrakt I/O (jeden CLI, jeden JSON), pinowane wersje (`onnxruntime`, `opset_version`, hash wag), deterministyczny seed (`np.random.seed`, `torch.manual_seed`) i log audytowy każdego etapu. Następna lekcja kursu już nie istnieje — capstone domyka materiał i mapuje się **bezpośrednio** na opis stanowiska Senior AI Specialist w SATIM, do którego ten kurs jest przygotowaniem."
+      },
+      "sources": [
+        {
+          "url": "https://satim.co/",
+          "title": "SATIM — official company site",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "etapy-pipelinu-dragmatch",
+      "title": "Etapy pipeline'u sar_atr.py — dopasuj krok do operatora",
+      "description": "Każdy etap pochodzi z konkretnej wcześniejszej lekcji i ma jednego kanonicznego wykonawcę w stosie SAR/Python.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przeciągnij operator/bibliotekę na etap pipeline'u, w którym jest kanonicznym wyborem.",
+        "items": [
+          { "id": "xarray_sentinel", "label": "xarray-sentinel + rasterio" },
+          { "id": "snappy_calib", "label": "snappy Calibration → σ⁰" },
+          { "id": "sar_drn_onnx", "label": "SAR-DRN .onnx (ONNX Runtime)" },
+          { "id": "yolov8_fp16", "label": "YOLOv8 .onnx FP16" },
+          { "id": "affine_transform", "label": "rasterio.transform.Affine" }
+        ],
+        "zones": [
+          {
+            "id": "wczytanie",
+            "label": "1. Wczytanie sceny i indeksowanie SAFE",
+            "accepts": ["xarray_sentinel"]
+          },
+          {
+            "id": "kalibracja",
+            "label": "2. Kalibracja radiometryczna do σ⁰",
+            "accepts": ["snappy_calib"]
+          },
+          {
+            "id": "despeckling",
+            "label": "3. Despeckling tile-by-tile",
+            "accepts": ["sar_drn_onnx"]
+          },
+          {
+            "id": "detekcja",
+            "label": "4. Detekcja + klasyfikacja statków",
+            "accepts": ["yolov8_fp16"]
+          },
+          {
+            "id": "geokodowanie",
+            "label": "5. Bbox w pikselach → (lat, lon)",
+            "accepts": ["affine_transform"]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Wczytanie i indeksowanie SAFE-a Sentinel-1 najczystiej robi `xarray-sentinel` (oficjalny xarray-native reader, bez SNAP) razem z `rasterio` do tile'owania GeoTIFF-a. Kalibracja radiometryczna do σ⁰ to operator `Calibration` w `snappy` (albo równoważne LUT-y wystawiane przez `xarray-sentinel`) — to ten sam operator, którego użyliśmy w M1L3. Despeckling po fine-tuningu wczytujemy z `.onnx` przez ONNX Runtime, bo `.pt` w produkcji byłby uzależnieniem od PyTorch + CUDA toolkitu (M3L4 pokazał dlaczego). Detektor YOLOv8 fine-tunowany na OpenSARShip eksportujemy do `.onnx` z FP16 (M3L4) — w capstonie jedziemy z gotowym artefaktem, a nie z `model.predict()`. Geokodowanie bbox-ów w pikselach do (lat, lon) wykonuje afiniczna macierz georeferencji terrain-corrected GRD-a — w stosie Pythona to `rasterio.transform.Affine`."
+      }
+    },
+    {
+      "id": "anatomia-cli",
+      "title": "Anatomia CLI: argparse, deterministyczny seed, audytowalny JSON",
+      "type": "theory",
+      "data": {
+        "markdown": "Co odróżnia *research notebook* od *artefaktu produkcyjnego*? Trzy rzeczy, i wszystkie mieszczą się w nagłówku CLI.\n\n**Twardy kontrakt I/O.** Jedno wejście (`--scene path/to/S1*.zip`), jedno wyjście (`--out report.json`), zero ukrytych zależności od $CWD i magicznych ścieżek `data/`. Argumenty pomocnicze opisują *runtime*, nie zmieniają semantyki: `--device cuda:0|cpu`, `--weights detector_fp16.onnx`, `--despeckler sar_drn.onnx`, `--threshold-conf 0.25`, `--threshold-iou 0.45`. Ten sam CLI puszczasz na laptopie, na Colab T4, na serwerze klienta — wynik jest bit-w-bit ten sam (modulo niedeterminizm CUDA, którego nie unikniemy).\n\n**Deterministyczny seed.** Wszystkie biblioteki, które generują liczby losowe w forward pass — `numpy`, `torch`, `random`, `cv2.setRNGSeed` — pinujemy na starcie:\n\n```python\nimport numpy as np, torch, random\nSEED = 42\nnp.random.seed(SEED); torch.manual_seed(SEED); random.seed(SEED)\ntorch.use_deterministic_algorithms(True, warn_only=True)\n```\n\nDla detekcji YOLOv8 to ma znaczenie tylko w augmentacji TTA (test-time aug); jeśli jej nie używasz, model jest deterministyczny bez seeda. Ale jeden seed na dnie pipeline'u to *tani audyt*: SATIM audytor zobaczy `seed=42` w `report.json` i będzie wiedział, że jeśli odpali ten sam CLI na tej samej scenie, dostanie ten sam wynik.\n\n**Audytowalny JSON.** Top-level summary: `{scene_id, scene_acquisition_time, n_detections, model_versions: {despeckler, detector}, opset_version, onnxruntime_version, runtime_ms, seed}`. Pod nim lista `detections: [{class, score, lat, lon, bbox_pixels: [x1, y1, x2, y2], incidence_angle}]`. Każda sekunda spędzona na *strukturze* JSON-a oszczędza godziny późniejszego debugowania regresji modelu — jeśli mAP@0.5 spada o 2 pkt, audytor diff-uje dwa raporty i widzi, że zmienił się hash detektora, a nie scena."
+      },
+      "sources": [
+        {
+          "url": "https://docs.python.org/3/library/argparse.html",
+          "title": "argparse — Python standard library",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "wczytaj-i-kalibruj-codecloze",
+      "title": "Wczytaj GRD i kalibruj do σ⁰: rasterio + LUT",
+      "description": "Uzupełnij dwie linijki, które najczęściej się psują w produkcji: tryb otwarcia GeoTIFF-a i konwersję σ⁰ liniowego do dB.",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Wczytujemy zterrain-corrected GRD Sentinel-1 (po snappy `Calibration` → σ⁰ liniowe) i konwertujemy do dB do dalszej inferencji. **Slot 1** to tryb otwarcia `rasterio.open(...)` — w produkcji zawsze tylko-do-odczytu, żeby skrypt nie nadpisał wejścia. **Slot 2** to konwersja σ⁰ liniowego do dB — kanoniczne `10·log10(σ⁰)`, które każda lekcja w Module 1 powtarzała.",
+        "language": "python",
+        "template": "import numpy as np\nimport rasterio\n\n\ndef load_sigma0_db(path: str) -> np.ndarray:\n    \"\"\"Wczytaj juz skalibrowany sigma0 (linear) GeoTIFF i zwroc dB.\"\"\"\n    with rasterio.open(path, mode={{open_mode}}) as src:\n        sigma0_lin = src.read(1).astype(np.float32)\n    # Drobny clamp, zeby uniknac log(0):\n    sigma0_lin = np.clip(sigma0_lin, 1e-12, None)\n    sigma0_db = {{db_factor}} * np.log10(sigma0_lin)\n    return sigma0_db\n",
+        "slots": [
+          {
+            "id": "open_mode",
+            "hint": "Tryb tylko-do-odczytu — zapis na wejściowym GRD-zie byłby błędem.",
+            "validation": {
+              "kind": "oneOf",
+              "values": ["\"r\"", "'r'"]
+            }
+          },
+          {
+            "id": "db_factor",
+            "hint": "σ⁰ jest stosunkiem mocy — kanoniczna konwersja do dB to 10·log10(σ⁰).",
+            "validation": {
+              "kind": "oneOf",
+              "values": ["10", "10.0"]
+            }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 1,
+            "markdown": "Oba pola to pojedyncze tokeny: literał stringowy w pierwszym, liczba w drugim."
+          },
+          {
+            "revealAfterAttempts": 3,
+            "markdown": "Mode = `\"r\"`. Współczynnik dB = `10` (nie `20` — to dla amplitudy, a my mamy intensywność σ⁰)."
+          }
+        ]
+      }
+    },
+    {
+      "id": "assemble-detection-record-code",
+      "title": "Złóż rekord detekcji: piksele → (lat, lon)",
+      "description": "Pipeline kończy się jednym wpisem w report.json — zaimplementuj funkcję, która z surowego wyjścia detektora składa rekord audytowalny.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `assemble_detection_record(class_id, score, bbox_pixels, transform, classes)` produkujący rekord JSON-owalny:\n\n```\n{\n  \"class\": \"cargo\",\n  \"score\": 0.83,\n  \"lat\": 54.401,\n  \"lon\": 18.671,\n  \"bbox_pixels\": [120, 200, 180, 260]\n}\n```\n\nGdzie:\n\n- `class_id: int` — indeks w `classes: list[str]`,\n- `score: float` — confidence z detektora (zaokrąglij do 4 miejsc),\n- `bbox_pixels: tuple[int, int, int, int]` — `(x1, y1, x2, y2)` w pikselach GRD-a,\n- `transform: tuple[float, ...]` — sześć współczynników macierzy afinicznej `(a, b, c, d, e, f)` w konwencji `rasterio.transform.Affine`, takiej że `lon = a*x + b*y + c` i `lat = d*x + e*y + f`,\n- `classes: list[str]` — np. `[\"cargo\", \"tanker\", \"fishing\", \"passenger\", \"dredging\", \"other\"]`.\n\nReportujemy **środek bbox-a** jako kanoniczny punkt detekcji (`(x1+x2)/2`, `(y1+y2)/2`). Obie współrzędne zaokrąglij do 6 miejsc po przecinku (typowa precyzja ~10 cm na poziomie georeferencji Sentinel-1 IW). Tytuł klasy spoza zakresu `classes` ma rzucić `IndexError` — to *nie* jest sytuacja, którą cicho połykamy.\n\n```\nrec = assemble_detection_record(\n    class_id=0,\n    score=0.8312,\n    bbox_pixels=(120, 200, 180, 260),\n    transform=(0.0001, 0.0, 18.6, 0.0, -0.0001, 54.42),\n    classes=[\"cargo\", \"tanker\"],\n)\nrec[\"class\"] == \"cargo\"  # True\nrec[\"lat\"] == 54.397                # True\nrec[\"lon\"] == 18.615                # True\n```",
+        "starterCode": "def assemble_detection_record(class_id, score, bbox_pixels, transform, classes):\n    \"\"\"Build a single JSON-serialisable detection record for report.json.\n\n    Returns: dict with keys {class, score, lat, lon, bbox_pixels}.\n    Raises IndexError if class_id is out of range of `classes`.\n    \"\"\"\n    # TODO: zaimplementuj.\n    return {}\n",
+        "tests": [
+          {
+            "name": "smoke_basic_record_shape",
+            "body": "rec = assemble_detection_record(\n    class_id=0,\n    score=0.8312,\n    bbox_pixels=(120, 200, 180, 260),\n    transform=(0.0001, 0.0, 18.6, 0.0, -0.0001, 54.42),\n    classes=[\"cargo\", \"tanker\"],\n)\nassert set(rec.keys()) == {\"class\", \"score\", \"lat\", \"lon\", \"bbox_pixels\"}\nassert rec[\"class\"] == \"cargo\"\nassert rec[\"score\"] == 0.8312\nassert rec[\"bbox_pixels\"] == [120, 200, 180, 260]",
+            "hidden": false
+          },
+          {
+            "name": "lat_lon_use_bbox_center_with_affine",
+            "body": "rec = assemble_detection_record(\n    class_id=1,\n    score=0.5,\n    bbox_pixels=(100, 100, 200, 200),\n    transform=(0.0001, 0.0, 18.6, 0.0, -0.0001, 54.42),\n    classes=[\"cargo\", \"tanker\"],\n)\nassert abs(rec[\"lon\"] - 18.615) < 1e-6\nassert abs(rec[\"lat\"] - 54.405) < 1e-6"
+          },
+          {
+            "name": "score_rounded_to_four_decimals",
+            "body": "rec = assemble_detection_record(\n    class_id=0,\n    score=0.123456789,\n    bbox_pixels=(0, 0, 10, 10),\n    transform=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),\n    classes=[\"a\"],\n)\nassert rec[\"score\"] == 0.1235"
+          },
+          {
+            "name": "out_of_range_class_id_raises",
+            "body": "raised = False\ntry:\n    assemble_detection_record(\n        class_id=7,\n        score=0.5,\n        bbox_pixels=(0, 0, 10, 10),\n        transform=(1.0, 0.0, 0.0, 0.0, 1.0, 0.0),\n        classes=[\"a\", \"b\"],\n    )\nexcept IndexError:\n    raised = True\nassert raised"
+          }
+        ],
+        "solution": "def assemble_detection_record(class_id, score, bbox_pixels, transform, classes):\n    if class_id < 0 or class_id >= len(classes):\n        raise IndexError(f\"class_id {class_id} out of range for {len(classes)} classes\")\n    x1, y1, x2, y2 = bbox_pixels\n    cx = (x1 + x2) / 2.0\n    cy = (y1 + y2) / 2.0\n    a, b, c, d, e, f = transform\n    lon = a * cx + b * cy + c\n    lat = d * cx + e * cy + f\n    return {\n        \"class\": classes[class_id],\n        \"score\": round(float(score), 4),\n        \"lat\": round(float(lat), 6),\n        \"lon\": round(float(lon), 6),\n        \"bbox_pixels\": [int(x1), int(y1), int(x2), int(y2)],\n    }\n"
+      }
+    },
+    {
+      "id": "geokodowanie-theory",
+      "title": "Geokodowanie detekcji: macierz afiniczna i pułapki Sentinel-1 IW",
+      "type": "theory",
+      "data": {
+        "markdown": "Dlaczego z bbox-a $(x_1, y_1, x_2, y_2)$ w pikselach robi się `(lat, lon)` jednym mnożeniem, a w praktyce regularnie wychodzą detekcje na środku Bałtyku, gdy statek stoi w porcie?\n\nGeoTIFF (i każdy inny zterrain-corrected raster GDAL) niesie w nagłówku **macierz afiniczną** $T$ o sześciu parametrach $(a, b, c, d, e, f)$ — tę samą, którą zwraca `rasterio.transform.Affine`. Mapowanie piksela $(x, y)$ na świat $(\\mathrm{lon}, \\mathrm{lat})$ to:\n\n$$ \\begin{bmatrix} \\mathrm{lon} \\\\ \\mathrm{lat} \\end{bmatrix} = \\begin{bmatrix} a & b \\\\ d & e \\end{bmatrix} \\begin{bmatrix} x \\\\ y \\end{bmatrix} + \\begin{bmatrix} c \\\\ f \\end{bmatrix} $$\n\nDla zterrain-corrected GRD-a Sentinel-1 IW w EPSG:4326 typowo $a \\approx 10^{-4}$, $e \\approx -10^{-4}$ (północ na górze, więc $y$ rośnie w dół a `lat` maleje), $b = d = 0$ (brak rotacji), $c, f$ to lewy-górny róg w `lon, lat`. Reportujemy **środek bbox-a** jako kanoniczny punkt detekcji — narożniki kompromituje się dwiema sytuacjami: statek wystający częściowo poza chip i bbox o nieparzystej szerokości, w którym \"prawy górny róg\" to off-by-one piksel.\n\n![Schemat georeferencji Sentinel-1 IW: piramida sceny w geometrii radarowej (range, azimuth) projektowana przez Range-Doppler Terrain Correction na siatkę EPSG:4326 z DEM-em Copernicus](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-09-26.jpg)\n\n**Trzy pułapki**, na które wpadają nawet doświadczeni inżynierowie SAR:\n\n1. **Wykonujesz capstone na *nie*-zterrain-corrected GRD-zie.** Bez Range-Doppler Terrain Correction (M1L4) `transform` pochodzi z radarowej siatki azimuth × range — `(lat, lon)` z mnożenia macierzą będą poprawne *jako rzut na powierzchnię odniesienia*, ale wszystko, co stoi na wzniesieniu (statek na falującym morzu, dźwig portowy), będzie miało layover/foreshortening biases rzędu *kilkudziesięciu metrów*. Capstone **wymaga** terrain-corrected wejścia.\n2. **Mylenie kolejności (lon, lat) ↔ (lat, lon).** Konwencja GIS to `(lon, lat)` (X, Y), konwencja \"WGS-84 ulicznie\" to `(lat, lon)`. W `report.json` reportujemy **osobne klucze** `lat` i `lon`, żeby konsument nie musiał zgadywać.\n3. **Próbkowanie heightmapy DEM-a.** Jeśli klient potrzebuje nie tylko `(lat, lon)`, ale i `elevation_m`, próbkujesz Copernicus DEM tym samym `transform`-em na `(cx, cy)`. Bez DEM-a wpis `elevation` powinien być `null`, **nie** `0.0` — `0.0` jest interpretowane jako poziom morza i klient wpadnie w cichy bug w downstream pipeline."
+      },
+      "sources": [
+        {
+          "url": "https://rasterio.readthedocs.io/en/stable/",
+          "title": "rasterio — official documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+          "title": "Flattening Gamma: Radiometric Terrain Correction for SAR Imagery",
+          "kind": "paper",
+          "author": "David Small",
+          "year": 2011
+        }
+      ]
+    },
+    {
+      "id": "map-incidence-angle-plot",
+      "title": "Per-incidence-angle mAP detektora w capstonie",
+      "description": "Krzywa mAP@0.5 vs kąt incydencji — to dokładnie ten wykres, który audytor SATIM-u zobaczy obok report.json.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch/assets/plots/capstone-end-to-end-pipeline-atr-na-scenie-sentinel-1-1.png",
+        "alt": "Wykres liniowy mAP@0.5 (oś Y, zakres 0.68-0.82) w funkcji kata incydencji Sentinel-1 IW (oś X, kosze 30-34, 34-38, 38-42, 42-44, 44-46 stopni). Niebieska linia z markerami pokazuje wartości 0.742, 0.781, 0.788, 0.769, 0.731 dla kolejnych koszy. Czerwona przerywana linia pozioma na poziomie 0.762 oznacza średnią mAP. Tytuł: Capstone: mAP@0.5 detektora vs kat incydencji Sentinel-1 IW. Siatka na tle wykresu, legenda w dolnym środku.",
+        "caption": "Rys. 1. Per-incidence-angle mAP@0.5 detektora YOLOv8 (FP16 ONNX) capstone'owego pipeline'u na holdoutowym splicie OpenSARShip podzielonym na 5 koszy kąta incydencji w paśmie Sentinel-1 IW (30–46°). Model wyraźnie tonie na brzegach przedziału — tę krzywą reportujemy razem z mAP@0.5 jako *jedną* metrykę produkcyjną.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Reprezentatywne wyniki capstone'owego pipeline'u SAR ATR (despeckler + YOLOv8\n# fine-tunowany na OpenSARShip, eksport ONNX FP16) ewaluowanego na holdoutowym\n# splicie podzielonym na 5 koszy katu incydencji w przedziale 30 - 46 stopni.\n# Liczby ilustracyjne, zgodne rzedu z zakresem mAP@0.5 raportowanym w\n# Huang et al. 2018 (OpenSARShip) i dokumentacji Ultralytics YOLOv8.\nincidence_bin_centers = np.array([32.0, 36.0, 40.0, 43.0, 45.5])\nincidence_bin_labels = [\"30-34\", \"34-38\", \"38-42\", \"42-44\", \"44-46\"]\nmap50_per_bin = np.array([0.742, 0.781, 0.788, 0.769, 0.731])\noverall_map50 = float(np.mean(map50_per_bin))\n\nfig, ax = plt.subplots(figsize=(7.2, 4.4))\nax.plot(\n    incidence_bin_centers,\n    map50_per_bin,\n    color=\"#4c72b0\",\n    marker=\"o\",\n    markersize=8,\n    linewidth=2.0,\n    label=\"mAP@0.5 per kosz\",\n)\nfor x, m in zip(incidence_bin_centers, map50_per_bin):\n    ax.text(x, m + 0.005, f\"{m:.3f}\", ha=\"center\", va=\"bottom\", fontsize=9)\n\nax.axhline(\n    overall_map50,\n    color=\"#c44e52\",\n    linestyle=\"--\",\n    linewidth=1.5,\n    label=f\"Srednia mAP@0.5 = {overall_map50:.3f}\",\n)\n\nax.set_xticks(incidence_bin_centers)\nax.set_xticklabels(incidence_bin_labels)\nax.set_xlabel(\"Kat incydencji [stopnie]\")\nax.set_ylabel(\"mAP@0.5 (OpenSARShip val)\")\nax.set_ylim(0.68, 0.82)\nax.set_xlim(30.5, 46.5)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower center\", framealpha=0.9)\nax.set_title(\"Capstone: mAP@0.5 detektora vs kat incydencji Sentinel-1 IW\")\n\nplt.savefig(\n    \"capstone-end-to-end-pipeline-atr-na-scenie-sentinel-1-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "capstone-quiz",
+      "title": "Quiz: które praktyki są obowiązkowe w produkcyjnym sar_atr.py?",
+      "type": "quiz",
+      "data": {
+        "question": "Twój capstone'owy CLI `sar_atr.py` ma pójść w produkcję u klienta SATIM-owego. Które z poniższych praktyk są **obowiązkowe** (audytor odrzuci pipeline bez nich)? Wybierz wszystkie pasujące.",
+        "options": [
+          "Wpis `model_versions: {despeckler: <hash>, detector: <hash>}` i `opset_version` w `report.json`, żeby regresję mAP można było zdiagnozować przez diff dwóch raportów.",
+          "Wymóg, żeby wejście było zterrain-corrected GRD-em (a nie surowym SLC w geometrii radarowej) — w przeciwnym razie `(lat, lon)` w raporcie obarczone są layover/foreshortening biases.",
+          "Re-trening detektora YOLOv8 *od zera* przy każdym uruchomieniu CLI, żeby model był zawsze \"świeży\" względem aktualnej sceny.",
+          "Pinowane wersje `onnxruntime`, `numpy` i `rasterio` (np. w `requirements.txt` z `==`), bo nieskoordynowany upgrade ONNX Runtime potrafi przesunąć mAP o pełny punkt bez zmiany wag."
+        ],
+        "correct": [0, 1, 3],
+        "explanation": "Opcje 1, 2 i 4 są obowiązkowe. Hash modeli i opset w raporcie to *jedyny* sposób, żeby audytor odróżnił regresję modelu od regresji sceny — bez tego diff dwóch raportów nie ma znaczenia. Terrain correction jest twardym wymogiem geometrycznym: `transform` z radarowej siatki nie daje sensownych `(lat, lon)` w terenie nieprzpłaskim (M1L4 i misconception #9 z course-research). Pinowane wersje runtime'u to zwykła higiena reprodukowalności — fused jądra w nowszym `onnxruntime` mogą zmienić INT8 mAP o ~1 pkt bez zmiany wag (M3L4). Opcja 3 (re-trening na każde uruchomienie) jest natomiast antywzorcem produkcyjnym: trenujemy *raz*, deployujemy `.onnx`, a CLI tylko wczytuje i puszcza forward — re-trening na inferencji byłby niedeterministyczny, kosztowny i niebadalny.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "mapowanie-na-satim",
+      "title": "Mapowanie pipeline'u na opis stanowiska Senior AI Specialist w SATIM",
+      "type": "theory",
+      "data": {
+        "markdown": "Capstone domyka kurs i zamiast \"co dalej\" warto zrobić jedną rzecz: zmapować to, co właśnie stoi w `sar_atr.py`, na konkretne punkty z opisu roli Senior AI Specialist w SATIM. Ten kurs był pisany **pod nią** — jeśli przeszedłeś przez wszystkie 9 lekcji + capstone, masz w portfolio dokładnie to, czego SATIM oczekuje.\n\n**Pre-processing scen Sentinel-1 (ASF, snappy, xarray-sentinel, σ⁰ kalibracja, terrain correction).** To Moduł 1 (lekcje 1–4) i pierwsze dwa etapy capstone'a. SATIM-owy bullet *„praca z surowymi produktami SAR komercyjnymi i otwartymi (Sentinel-1, ICEYE, Capella)”* mapuje się 1:1 — ten sam stack `xarray-sentinel` + `rasterio` + macierz afiniczna działa na ICEYE/Capella tile-y po podmianie LUT-a kalibracyjnego.\n\n**Klasyczne baseline'y (GLCM, CFAR, koherencja, log-ratio).** Moduł 2. SATIM oczekuje, że kandydat *rozumie* baseline, względem którego deep learning ma się obronić — bullet *„umiejętność uzasadnienia wyboru architektury wobec klasycznego SAR-procesingu”* jest dokładnie tym. CFAR + morfologia z M2L2 jest tym, czego YOLOv8 z M3L3 musi pobić mAP-em.\n\n**Deep learning na SAR (despeckling, segmentacja, ATR statków/pojazdów).** Moduł 3 lekcje 1–3. To rdzeń stanowiska. Despeckling SAR-DRN (M3L1), segmentacja SEN12MS z transferem (M3L2) i fine-tuning YOLOv8 na OpenSARShip + A-ConvNet na MSTAR (M3L3) pokrywają trzy główne zadania ATR — odpowiednio *clean → train*, *land cover → context*, *target → class + bbox*.\n\n**Produkcyjna inferencja (ONNX, FP16/INT8).** M3L4 + krok 4 capstone'a. SATIM-owy bullet *„doświadczenie w deploymencie modeli AI na ograniczonych zasobach (Jetson, embedded)”* to dokładnie eksport ONNX z pinowanym opsetem, FP16/INT8 z kalibracją SAR-aware i pomiar mAP per kąt incydencji.\n\n**Ewaluacja domain-specific.** Krzywa mAP@0.5 z Rys. 1 powyżej + PSNR/ENL/EPI dla despecklera (M3L4) + per-class F1 dla segmentacji. To mapuje się na bullet *„formułowanie i raportowanie metryk jakości adekwatnych do zadania radarowego, a nie generycznego CV”*.\n\nKurs się tu kończy. Następny ruch nie jest „kolejna lekcja w playerze\" — jest „skopiuj capstone-owy CLI do swojego repo, podmień scenę i wagi, dołącz do CV”."
+      },
+      "sources": [
+        {
+          "url": "https://satim.co/",
+          "title": "SATIM — official company site",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2017.2762307",
+          "title": "Deep Learning in Remote Sensing: A Comprehensive Review and List of Resources",
+          "kind": "paper",
+          "author": "Xiao Xiang Zhu, Devis Tuia, Lichao Mou, Gui-Song Xia, Liangpei Zhang, Feng Xu, Friedrich Fraundorfer",
+          "year": 2017
+        }
+      ]
+    },
+    {
+      "id": "capstone-sandbox",
+      "title": "Sandbox: tweakuj progi confidence i NMS w kontrakcie raportu",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Symulacja capstone'owej post-processingowej czesci CLI:\n# detector zwrocil 8 surowych detekcji jako (cx, cy, w, h, score, class_id),\n# stosujemy threshold confidence + NMS i skladamy report.json.\n\nrng = np.random.default_rng(0)\nraw = np.array([\n    # cx,   cy,   w,   h,   score, class\n    [125, 210, 60,  55, 0.91, 0],   # cargo - mocny hit\n    [127, 212, 62,  57, 0.83, 0],   # ten sam statek, slabsze przewidywanie\n    [340, 410, 40,  90, 0.74, 1],   # tanker\n    [342, 415, 42,  88, 0.31, 1],   # ten sam tanker, ponizej confidence\n    [510,  80, 25,  20, 0.62, 4],   # dredging\n    [620, 600, 18,  18, 0.27, 5],   # other - na granicy confidence\n    [705, 305, 35,  30, 0.55, 2],   # fishing\n    [120, 600, 22,  22, 0.18, 5],   # szum\n], dtype=np.float32)\n\nCONF_THRESHOLD = 0.25\nIOU_THRESHOLD = 0.45\nCLASSES = [\"cargo\", \"tanker\", \"fishing\", \"passenger\", \"dredging\", \"other\"]\n\n\ndef iou_xywh(a, b):\n    ax1, ay1 = a[0] - a[2] / 2, a[1] - a[3] / 2\n    ax2, ay2 = a[0] + a[2] / 2, a[1] + a[3] / 2\n    bx1, by1 = b[0] - b[2] / 2, b[1] - b[3] / 2\n    bx2, by2 = b[0] + b[2] / 2, b[1] + b[3] / 2\n    inter = max(0.0, min(ax2, bx2) - max(ax1, bx1)) * max(0.0, min(ay2, by2) - max(ay1, by1))\n    union = a[2] * a[3] + b[2] * b[3] - inter\n    return inter / union if union > 0 else 0.0\n\n\ndef nms(dets, iou_thr):\n    keep = []\n    order = sorted(range(len(dets)), key=lambda i: -dets[i][4])\n    while order:\n        i = order.pop(0)\n        keep.append(i)\n        order = [j for j in order if int(dets[i][5]) != int(dets[j][5]) or iou_xywh(dets[i], dets[j]) < iou_thr]\n    return [dets[i] for i in keep]\n\n\nfiltered = [d for d in raw if d[4] >= CONF_THRESHOLD]\nkept = nms(filtered, IOU_THRESHOLD)\n\nprint(f\"raw: {len(raw)} -> conf>={CONF_THRESHOLD}: {len(filtered)} -> NMS@{IOU_THRESHOLD}: {len(kept)}\")\nfor d in kept:\n    print(f\"  {CLASSES[int(d[5])]:>10} score={d[4]:.2f} bbox=({d[0]:.0f},{d[1]:.0f},{d[2]:.0f},{d[3]:.0f})\")\n\n# Pomysly do eksperymentu:\n# - Zmien CONF_THRESHOLD na 0.15 i zobacz, ile szumu wpada do raportu.\n# - Zmien IOU_THRESHOLD na 0.7 (luzny NMS) - duplikat \"cargo\" na (125,210) i (127,212) zostanie?\n# - Co sie stanie, gdy polaczysz NMS po wszystkich klasach (class-agnostic) zamiast per-class?\n",
+        "encouragement": "Zmieniaj progi i obserwuj, jak zmienia się liczba detekcji w raporcie — to dokładnie ten parametr, który operator SATIM-u tweakuje na żywo, gdy false-positive rate na danym akwenie jest za wysoki."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://satim.co/",
+      "title": "SATIM — official company site",
+      "kind": "article"
+    },
+    {
+      "url": "https://xarray-sentinel.readthedocs.io/en/stable/notebooks/sentinel-1-tutorial.html",
+      "title": "xarray-sentinel — Sentinel-1 IO tutorial (official notebook)",
+      "kind": "article"
+    },
+    {
+      "url": "https://rasterio.readthedocs.io/en/stable/",
+      "title": "rasterio — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2017.2762307",
+      "title": "Deep Learning in Remote Sensing: A Comprehensive Review and List of Resources",
+      "kind": "paper",
+      "author": "Xiao Xiang Zhu, Devis Tuia, Lichao Mou, Gui-Song Xia, Liangpei Zhang, Feng Xu, Friedrich Fraundorfer",
+      "year": 2017
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2016.2561021",
+      "title": "Data Fusion and Remote Sensing — An Ever-Growing Relationship",
+      "kind": "paper",
+      "author": "Michael Schmitt, Xiao Xiang Zhu",
+      "year": 2016
+    },
+    {
+      "url": "https://step.esa.int/main/doc/tutorials/",
+      "title": "Sentinel-1 Toolbox (S1TBX) tutorials — ESA STEP",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/",
+      "title": "Ultralytics YOLOv8 documentation",
+      "kind": "article"
+    }
+  ]
+}

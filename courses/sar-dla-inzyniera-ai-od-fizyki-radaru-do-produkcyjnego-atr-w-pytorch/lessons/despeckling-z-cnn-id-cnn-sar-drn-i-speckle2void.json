@@ -1,0 +1,311 @@
+{
+  "schemaVersion": 1,
+  "slug": "despeckling-z-cnn-id-cnn-sar-drn-i-speckle2void",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m3",
+  "title": "Despeckling z CNN: ID-CNN, SAR-DRN i Speckle2Void",
+  "eyebrow": "DEEP LEARNING I ATR",
+  "description": "Trzy architektury, które zdominowały despeckling SAR od 2017 — dwie supervised (ID-CNN, SAR-DRN) i jedna self-supervised (Speckle2Void) — w ujęciu intuicji, forward passu i straty. Nauczysz się, kiedy CNN faktycznie pobija Refined Lee, a kiedy tylko ładnie wygładza obraz w sposób, który zniszczy późniejsze ATR.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "po-co-cnn-do-despecklingu",
+      "title": "Po co CNN do despecklingu — czego nie umie Refined Lee",
+      "type": "theory",
+      "data": {
+        "markdown": "W Module 1 zobaczyłeś klasyczne adaptacyjne filtry — Lee, Frost, Refined Lee, NL-means. Każdy z nich szanuje multiplikatywny model szumu i każdy ma ten sam strukturalny limit: **lokalna decyzja oparta na statystyce sąsiedztwa**. Refined Lee patrzy na 7×7 albo 11×11 pikseli wokół środka i wybiera kierunek najmniejszej wariancji; NL-means porównuje patche w obrębie 21×21 okna. To wystarcza, gdy struktura sceny jest *lokalnie samopodobna*, ale przegrywa, gdy informacja o krawędziach mieszka w **kontekście znacznie szerszym niż okno filtra** — cienka linia kolejowa biegnąca przez 200 pikseli, geometria portu, regularna sieć dachów małego osiedla.\n\n![Patch SAR Sentinel-1 GRDH nad terenem mieszanym — drobnoziarnisty speckle nakłada się na strukturę sceny tak, że krawędź pola, brzeg drogi i pojedyncze obiekty stają się trudne do odczytania bez despecklingu](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz poglądowy: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\nCNN zamiast okna $11 \\times 11$ zbiera kontekst z dziesięciu warstw konwolucyjnych — efektywne pole recepcyjne (*receptive field*) sieci typu DnCNN to ok. $35 \\times 35$ pikseli, a SAR-DRN z dylatowanymi konwolucjami osiąga $41 \\times 41$ przy podobnej liczbie parametrów. To jest **strukturalna przewaga**: im szerszy kontekst, tym łatwiej odróżnić pojedyncze ziarno speckle od liniowej struktury terenu.\n\nTrzy architektury, które zdominowały tę przestrzeń od 2017 roku i które przerobimy w tej lekcji:\n\n- **ID-CNN** (Wang, Zhang, Patel 2017) — pierwszy supervised despeckler dla SAR; 8 warstw `Conv-BN-ReLU` plus końcowe odgałęzienie residualne; trenowany na **syntetycznym** Gamma-speckle nakładanym na obrazy optyczne.\n- **SAR-DRN** (Zhang, Yuan i in. 2018) — 7 bloków rezydualnych z **dylatowanymi** konwolucjami $r \\in \\{1, 2, 3, 4\\}$, dzięki czemu jedna sieć obejmuje wiele skal naraz; lepsza ENL przy mniejszej liczbie parametrów niż ID-CNN.\n- **Speckle2Void** (Molini, Valsesia i in. 2022) — *self-supervised*: sieć blind-spot uczy się odszumiać **prawdziwe sceny SAR bez czystej referencji**, korzystając z założenia o przestrzennej niezależności speckle.\n\nKażdą zobaczysz w ujęciu *jak wygląda forward pass i jaką stratą trenujemy*. Pełny trening wymaga PyTorcha — Pyodide go nie uruchomi, więc Code i Sandbox tej lekcji budują intuicję na NumPy, a właściwy notatnik treningowy jest w pakiecie domowym."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/LSP.2017.2758203",
+          "title": "SAR Image Despeckling Using a Convolutional Neural Network (ID-CNN)",
+          "kind": "paper",
+          "author": "Puyang Wang, He Zhang, Vishal M. Patel",
+          "year": 2017
+        }
+      ]
+    },
+    {
+      "id": "porownanie-architektur",
+      "title": "Trzy architektury z lotu ptaka",
+      "description": "Jedna tabela, którą warto trzymać otwartą podczas reszty lekcji — szybka mapa supervision/loss/skali receptywnej dla ID-CNN, SAR-DRN i Speckle2Void.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "model", "label": "Model", "type": "string", "sortable": true, "filterable": true },
+          { "key": "rok", "label": "Rok", "type": "number", "sortable": true, "filterable": false },
+          { "key": "supervision", "label": "Supervision", "type": "string", "sortable": true, "filterable": true },
+          { "key": "architektura", "label": "Architektura (skrót)", "type": "string", "sortable": false, "filterable": false },
+          { "key": "trening_na", "label": "Trenowane na", "type": "string", "sortable": false, "filterable": true },
+          { "key": "loss", "label": "Strata", "type": "string", "sortable": false, "filterable": false },
+          { "key": "rf", "label": "Pole recepcyjne (px)", "type": "number", "sortable": true, "filterable": false }
+        ],
+        "rows": [
+          {
+            "model": "ID-CNN",
+            "rok": 2017,
+            "supervision": "supervised",
+            "architektura": "8× Conv-BN-ReLU + residual bypass",
+            "trening_na": "syntetyczny Gamma speckle na obrazach optycznych (UC Merced + BSDS500)",
+            "loss": "Euclidean (MSE) + total-variation (TV) regularizer w domenie logarytmicznej",
+            "rf": 17
+          },
+          {
+            "model": "SAR-DRN",
+            "rok": 2018,
+            "supervision": "supervised",
+            "architektura": "7 bloków residualnych z dylatowanymi konwolucjami r ∈ {1,2,3,4}",
+            "trening_na": "syntetyczny multilook Gamma speckle (L = 1, 2, 4) na obrazach optycznych",
+            "loss": "Euclidean (MSE) między czystym a wyjściem residualnym",
+            "rf": 41
+          },
+          {
+            "model": "Speckle2Void",
+            "rok": 2022,
+            "supervision": "self-supervised",
+            "architektura": "blind-spot CNN (asymetryczne maski konwolucji) na bazie U-Net / Noise2Void",
+            "trening_na": "prawdziwe sceny SAR (Sentinel-1 / TerraSAR-X) — bez czystej referencji",
+            "loss": "Negative log-likelihood Gamma na pikselach blind-spot",
+            "rf": 33
+          },
+          {
+            "model": "DnCNN (referencja, nie-SAR)",
+            "rok": 2017,
+            "supervision": "supervised",
+            "architektura": "17× Conv-BN-ReLU + residual learning",
+            "trening_na": "syntetyczny addytywny Gauss σ ∈ [0, 55] na obrazach naturalnych",
+            "loss": "Euclidean (MSE) na predykcji szumu (residual)",
+            "rf": 35
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "quiz-cnn-vs-classical",
+      "title": "Sprawdź intuicję: kiedy CNN faktycznie pobije Refined Lee?",
+      "type": "quiz",
+      "data": {
+        "question": "Masz patch Sentinel-1 GRDH 256×256 nad portem morskim, na którym widać molo, kilka cumujących statków, plamę cienia radarowego i otwartą wodę. Który scenariusz **najlepiej** uzasadnia użycie CNN-despecklera (ID-CNN/SAR-DRN) zamiast Refined Lee 7×7?",
+        "options": [
+          "Patch jest jednorodny radiometrycznie (sama woda) i potrzebujesz wyłącznie obniżyć wariancję dla obliczenia ENL.",
+          "Patch zawiera długie, cienkie struktury (molo, lina cumownicza), których krawędzie biegną przez ponad 30 pikseli i które Refined Lee rozmywa do tła.",
+          "Po prostu chcesz wynik z większą PSNR liczonym względem wygładzonej, log-skalowanej referencji.",
+          "Procesujesz scenę offline i nie zależy ci na czasie, więc CNN jest 'darmowy'."
+        ],
+        "correct": [1],
+        "explanation": "Opcja 1 jest źle uzasadniona — na jednorodnej wodzie wystarczy multilooking lub Refined Lee i nic więcej; CNN bywa wręcz gorszy, bo wprowadza haluciacje na 'zbyt' wygładzonej teksturze (efekt znany z Speckle2Void paper). Opcja 3 to klasyczna pułapka: PSNR rośnie monotonicznie wraz z wygładzeniem, więc model który wszystko zbliża do średniej bije Refined Lee w PSNR, a niszczy każde późniejsze ATR. Opcja 4 to nie-uzasadnienie — wybór architektury nie powinien zależeć od luźnego budżetu czasowego. Opcja 2 jest poprawna: efektywne pole recepcyjne CNN (35–41 px) obejmuje całe długie struktury, więc sieć nauczy się rozróżnić ziarno speckle od koherentnej linii o szerokości 1–2 piksele i długości > 30 px. Refined Lee w oknie 7×7 widzi 49 pikseli sąsiadujących z centrum i **z definicji** nie odróżni 200-pikselowej liny cumowniczej od regularnego paska speckle.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "id-cnn-i-sar-drn",
+      "title": "ID-CNN i SAR-DRN — residual learning + dylatowane konwolucje",
+      "type": "theory",
+      "data": {
+        "markdown": "Obie sieci supervised dziedziczą **kluczowy trik** z DnCNN (Zhang et al. 2017): zamiast bezpośredniej regresji $\\hat{x} = f_\\theta(y)$ uczymy sieć **predykować szum residualny** $\\hat{r} = f_\\theta(y)$, a czysty obraz odzyskujemy odejmowaniem:\n\n$$ \\hat{x} \\;=\\; y - f_\\theta(y). $$\n\n![Schematyczny diagram głębokiej sieci konwolucyjnej z kolejnymi warstwami Conv-BN-ReLU — odpowiednik szkieletu, z którego zbudowane są ID-CNN (8 warstw) i SAR-DRN (7 bloków residualnych)](https://commons.wikimedia.org/wiki/Special:FilePath/Typical_cnn.png)\n*(Obraz: Wikimedia Commons — typowa architektura CNN; ID-CNN/SAR-DRN budują na takim samym szkielecie z dodatkowymi połączeniami residualnymi)*\n\nDla addytywnego szumu (DnCNN: $y = x + n$) ten sam model uczy się $f_\\theta \\approx n$. Dla **multiplikatywnego** speckle SAR ($y = x \\cdot s$, gdzie $s \\sim \\Gamma(L, 1/L)$) ID-CNN robi sztuczkę: pracuje w **domenie logarytmicznej** ($\\log y = \\log x + \\log s$), gdzie szum staje się addytywny, i tam stosuje residual learning. SAR-DRN idzie krok dalej i pracuje wprost w intensywności, ale wymusza nieujemność wyjścia bramką ReLU.\n\n**ID-CNN** (Wang 2017) — 8 warstw `Conv-BN-ReLU` z 64 kanałami i jądrami $3 \\times 3$, plus końcowe **odgałęzienie residualne** które dodaje wejście do wyjścia warstwy 8. Strata to suma MSE i regularyzatora total-variation na predykowanym obrazie:\n\n$$ \\mathcal{L}_{\\text{ID-CNN}} \\;=\\; \\| \\hat{x} - x \\|_2^2 \\;+\\; \\lambda \\cdot \\bigl( \\| \\nabla_x \\hat{x} \\|_1 + \\| \\nabla_y \\hat{x} \\|_1 \\bigr). $$\n\nTV reguluje gradient i karze 'piaszczyste' artefakty residualnej sieci.\n\n**SAR-DRN** (Zhang 2018) zastępuje 8 warstw 7 **blokami rezydualnymi** z **dylatowanymi** konwolucjami. Dylatacja $r$ rozszerza jądro $3 \\times 3$ tak, jakby między wagami stały $r-1$ zer — efektywny rozmiar to $(2r + 1) \\times (2r + 1)$ przy tej samej liczbie parametrów. Receptive field rośnie wykładniczo:\n\n$$ \\text{RF} \\;=\\; 1 + 2 \\sum_{l=1}^{L} r_l. $$\n\nDla SAR-DRN z $r = (1, 2, 3, 4, 3, 2, 1)$ pole recepcyjne to $1 + 2 \\cdot 16 = 33$, a po zewnętrznym `Conv 3×3` dochodzi do $\\sim 41$ — i wszystko to **bez** poolingu (czyli bez utraty rozdzielczości przestrzennej). Strata to czysty MSE na predykowanym obrazie."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs10020196",
+          "title": "Learning a Dilated Residual Network for SAR Image Despeckling (SAR-DRN)",
+          "kind": "paper",
+          "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+          "year": 2018
+        },
+        {
+          "url": "https://doi.org/10.1109/TIP.2017.2662206",
+          "title": "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising (DnCNN)",
+          "kind": "paper",
+          "author": "Kai Zhang, Wangmeng Zuo, Yunjin Chen, Deyu Meng, Lei Zhang",
+          "year": 2017
+        }
+      ]
+    },
+    {
+      "id": "code-residual-i-tv",
+      "title": "Residual update + Total-Variation w NumPy",
+      "description": "Hand-rollowy odpowiednik dwóch elementów ID-CNN: odejmowania residualu od wejścia oraz regularyzatora TV — żeby liczby z formuł stały się konkretne.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje, na które składają się oba kluczowe elementy ID-CNN/DnCNN:\n\n- `residual_predict(noisy, predicted_residual)` — bierze wejściowy obraz `noisy` (np. log-amplituda SAR) oraz predykcję residualną zwróconą przez sieć i zwraca *odszumioną* estymatę zgodnie z $\\hat{x} = y - \\hat{r}$. Oba wejścia to dwuwymiarowe tablice `numpy.ndarray` o tym samym kształcie.\n- `total_variation(image)` — anizotropowy regularyzator TV, czyli $\\sum |\\nabla_x I| + \\sum |\\nabla_y I|$ liczone z różnic skończonych pierwszego rzędu (`image[:, 1:] - image[:, :-1]` i analogicznie po osi y). Zwraca skalar `float`.\n\n```\n>>> import numpy as np\n>>> y = np.array([[1.0, 2.0], [3.0, 4.0]])\n>>> r = np.zeros_like(y)\n>>> residual_predict(y, r)\narray([[1., 2.], [3., 4.]])\n>>> total_variation(np.zeros((4, 4)))\n0.0\n```",
+        "starterCode": "import numpy as np\n\n\ndef residual_predict(noisy, predicted_residual):\n    \"\"\"DnCNN-style: clean = noisy - learned_residual.\"\"\"\n    # TODO: zwroc tablice o tym samym ksztalcie co `noisy`\n    return noisy\n\n\ndef total_variation(image):\n    \"\"\"Anizotropowy TV: sum |dI/dx| + sum |dI/dy|.\"\"\"\n    # TODO: oblicz roznice skonczone pierwszego rzedu po obu osiach\n    # TODO: zwroc skalar typu float\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "residual_zero_returns_input",
+            "body": "import numpy as np\ny = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])\nout = residual_predict(y, np.zeros_like(y))\nassert np.allclose(out, y), 'zerowy residual powinien zostawic obraz bez zmian'\nassert out.shape == y.shape",
+            "hidden": false
+          },
+          {
+            "name": "residual_subtracts_correctly",
+            "body": "import numpy as np\ny = np.full((3, 3), 5.0)\nr = np.full((3, 3), 1.5)\nout = residual_predict(y, r)\nassert np.allclose(out, 3.5), f'oczekiwane 3.5, mam {out}'"
+          },
+          {
+            "name": "tv_zero_for_constant_image",
+            "body": "import numpy as np\nimg = np.full((6, 6), 2.5)\nassert total_variation(img) == 0.0, 'staly obraz ma TV = 0'"
+          },
+          {
+            "name": "tv_correct_for_known_step",
+            "body": "import numpy as np\n# 2x4 obraz: [[0, 0, 5, 5], [0, 0, 5, 5]]\n# dx: |0-0|+|5-0|+|5-5| = 5 na rzad, 2 rzedy -> 10\n# dy: 0 (kolumny stale)\nimg = np.array([[0.0, 0.0, 5.0, 5.0], [0.0, 0.0, 5.0, 5.0]])\nassert abs(total_variation(img) - 10.0) < 1e-9, f'oczekiwane 10.0, mam {total_variation(img)}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef residual_predict(noisy, predicted_residual):\n    return np.asarray(noisy, dtype=np.float64) - np.asarray(predicted_residual, dtype=np.float64)\n\n\ndef total_variation(image):\n    img = np.asarray(image, dtype=np.float64)\n    dx = img[:, 1:] - img[:, :-1]\n    dy = img[1:, :] - img[:-1, :]\n    return float(np.abs(dx).sum() + np.abs(dy).sum())\n"
+      }
+    },
+    {
+      "id": "explorer-receptive-field",
+      "title": "Pole recepcyjne vs ENL — jak okno CNN wymienia szczegół na gładkość",
+      "description": "Symulujemy 1-look Gamma speckle na patchu z krawędzią pola, drobnym obiektem i jednorodną wodą; uniform_filter o promieniu W mimikuje rosnące pole recepcyjne CNN — zobacz, jak rośnie ENL i jak topi się krawędź.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\n\n\ndef _make_clean_patch(size=96):\n    img = np.full((size, size), 0.10, dtype=np.float64)  # spokojna woda po lewej\n    img[:, size // 2:] = 0.55                              # jasniejsze pole po prawej\n    img[44:50, 24:34] = 1.0                                # 'statek' na wodzie\n    img[20:21, :] = 0.35                                   # cienka horyzontalna struktura\n    return img\n\n\nCLEAN = _make_clean_patch()\n\n\ndef _add_speckle(clean, L, rng_local):\n    # Multiplicative Gamma speckle: mean = 1, var = 1/L (L looks)\n    s = rng_local.gamma(shape=L, scale=1.0 / L, size=clean.shape)\n    return clean * s\n\n\ndef _enl(patch):\n    m = float(patch.mean())\n    s = float(patch.std())\n    return (m / s) ** 2 if s > 0 else float('inf')\n",
+        "renderCode": "L = int(looks)\nW = int(window)\nrng_local = np.random.default_rng(0)\n\nnoisy = _add_speckle(CLEAN, L, rng_local)\ndenoised = uniform_filter(noisy, size=W, mode='reflect')\nresidual = noisy - denoised\n\n# Homogeniczny patch po prawej (jasne pole) -> sluzy do ENL\nhomo_noisy = noisy[60:90, 60:90]\nhomo_den = denoised[60:90, 60:90]\n\nfig, axes = plt.subplots(1, 4, figsize=(11.5, 3.2))\nvmax = 1.4\n\naxes[0].imshow(CLEAN, cmap='gray', vmin=0, vmax=vmax)\naxes[0].set_title('Czysty patch (referencja)', fontsize=9)\naxes[0].set_xlabel('x [px]'); axes[0].set_ylabel('y [px]')\n\naxes[1].imshow(noisy, cmap='gray', vmin=0, vmax=vmax)\naxes[1].set_title(f'Z speckle L={L}, ENL_woda={_enl(homo_noisy):.2f}', fontsize=9)\naxes[1].set_xlabel('x [px]'); axes[1].set_ylabel('y [px]')\n\naxes[2].imshow(denoised, cmap='gray', vmin=0, vmax=vmax)\naxes[2].set_title(f'Po despecklingu W={W}, ENL_woda={_enl(homo_den):.2f}', fontsize=9)\naxes[2].set_xlabel('x [px]'); axes[2].set_ylabel('y [px]')\n\nim3 = axes[3].imshow(residual, cmap='coolwarm', vmin=-0.5, vmax=0.5)\naxes[3].set_title('Residual (noisy - denoised)', fontsize=9)\naxes[3].set_xlabel('x [px]'); axes[3].set_ylabel('y [px]')\n\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "looks",
+            "label": "Liczba looków L (im wyższe, tym mniej speckle)",
+            "type": "slider",
+            "min": 1,
+            "max": 8,
+            "step": 1,
+            "default": 1
+          },
+          {
+            "name": "window",
+            "label": "Pole recepcyjne W (px) — analog promienia CNN",
+            "type": "slider",
+            "min": 1,
+            "max": 21,
+            "step": 2,
+            "default": 5
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 200
+      }
+    },
+    {
+      "id": "speckle2void-blind-spot",
+      "title": "Speckle2Void i sieci blind-spot — despeckling bez czystej referencji",
+      "type": "theory",
+      "data": {
+        "markdown": "Oba poprzednie modele wymagają par `(czysty, zaszumiony)`. Dla SAR **nie ma czystego oryginału** — multilookowanie daje surogat (wielokrotnie uśrednione looki), który sam jest rozmyty, a syntetyczny Gamma-speckle nakładany na obrazy optyczne rodzi *domain gap*. Speckle2Void (Molini et al. 2022) rozwiązuje to wprost: trenuje na **prawdziwych scenach Sentinel-1 / TerraSAR-X bez żadnej referencji**, korzystając z trzech założeń, które dla SAR są spełnione:\n\n1. **Speckle jest przestrzennie niezależny** (po właściwym pre-processingu i zachowaniu rozdzielczości).\n2. **Średnia speckle wynosi 1** w intensywności (Gamma o jednostkowej średniej).\n3. **Czysty sygnał ma silne przestrzenne korelacje** — dwa sąsiednie piksele tej samej klasy terenu mają niemal identyczne $x$.\n\n![Galeria scikit-image porównująca filtry odszumiania na klasycznym obrazie testowym — ilustruje, dlaczego model uczony bez czystej referencji potrzebuje *strukturalnego* założenia o sąsiedztwie zamiast porównania z ground-truth](https://scikit-image.org/docs/stable/_images/sphx_glr_plot_denoise_001.png)\n*(Obraz: dokumentacja scikit-image — galeria odszumiania)*\n\nTrik **blind-spot** (Krull et al. 2019, *Noise2Void*): podczas treningu sieć $f_\\theta$ nigdy nie widzi piksela centralnego — pole recepcyjne na każdej pozycji jest *dziurawe* dokładnie w punkcie, którego wartość trzeba przewidzieć. Realizuje się to albo asymetrycznymi maskami konwolucji (Speckle2Void), albo przez podstawienie wartości piksela centralnego losowym sąsiadem przed forward passem (Noise2Void). Dzięki dziurze sieć nie może *skopiować* wejścia w wyjście — **musi** odzyskać $x$ z otoczenia.\n\nStrata Speckle2Void to **negatywna log-likelihood Gamma** liczona tylko na pikselach blind-spot:\n\n$$ \\mathcal{L}_{\\text{S2V}} \\;=\\; -\\sum_{i \\in \\mathcal{B}} \\log p_\\Gamma\\bigl(y_i \\,\\big|\\, \\hat{x}_i, L\\bigr), $$\n\ngdzie $\\mathcal{B}$ to zbiór pozycji blind-spot, $L$ — założona liczba looków, a $p_\\Gamma(y \\mid \\hat{x}, L)$ to gęstość Gamma o średniej $\\hat{x}$ i parametrze kształtu $L$. Ta strata **zna** model szumu (nie wymaga żadnej zewnętrznej etykiety), więc cały trening sprowadza się do `forward → mask → loss → backprop`. Cena: jeden hyperparametr $L$ (zwykle szacowany z ENL na jednorodnym patchu sceny treningowej) oraz wrażliwość na założenie o niezależności speckle — multilookowane GRD często łamie je i wymaga dodatkowej dekorelacji."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2021.3065461",
+          "title": "Speckle2Void: Deep Self-Supervised SAR Despeckling with Blind-Spot Convolutional Neural Networks",
+          "kind": "paper",
+          "author": "Andrea Bordone Molini, Diego Valsesia, Giulia Fracastoro, Enrico Magli",
+          "year": 2022
+        },
+        {
+          "url": "https://doi.org/10.1109/CVPR.2019.00223",
+          "title": "Noise2Void — Learning Denoising from Single Noisy Images",
+          "kind": "paper",
+          "author": "Alexander Krull, Tim-Oliver Buchholz, Florian Jug",
+          "year": 2019
+        }
+      ]
+    },
+    {
+      "id": "code-blind-spot-mask",
+      "title": "Implementacja blind-spot perturbacji w stylu Noise2Void",
+      "description": "Najbardziej przystępna realizacja blind-spot: podstaw wartość losowego sąsiada w n_points pozycjach treningowych — to Noise2Void-owy preprocessing, na bazie którego stoi cały trening Speckle2Void.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `blind_spot_perturb(image, n_points, rng)`, który:\n\n1. Wybiera **bez powtórzeń** `n_points` losowych pozycji wewnętrznych obrazu (czyli takich, że każdy z 4 sąsiadów N/S/E/W istnieje — pomijaj brzegi szerokości 1 piksela).\n2. Dla każdej wybranej pozycji **zastępuje** jej wartość wartością losowo wybranego z 4 najbliższych sąsiadów (góra, dół, lewo, prawo). Sąsiada losuj `rng.integers(0, 4)`.\n3. Zwraca krotkę `(perturbed, mask)`, gdzie `perturbed` to kopia `image` z podmienionymi wartościami w wybranych pozycjach, a `mask` to tablica `bool` o tym samym kształcie z `True` dokładnie w tych pozycjach.\n\nUwagi:\n\n- Nie modyfikuj `image` w miejscu — zwracane `perturbed` musi być nową tablicą (`image.copy()`).\n- `rng` to `np.random.Generator` (np. `np.random.default_rng(0)`); wykorzystaj jego `choice` lub `integers`.\n- Możesz założyć, że `n_points` ≤ liczba dostępnych pozycji wewnętrznych.",
+        "starterCode": "import numpy as np\n\n\ndef blind_spot_perturb(image, n_points, rng):\n    \"\"\"Noise2Void-style perturbation: replace value at n_points random interior positions\n    with a value from a random 4-neighbor. Returns (perturbed, mask).\"\"\"\n    image = np.asarray(image)\n    H, W = image.shape\n    perturbed = image.copy()\n    mask = np.zeros((H, W), dtype=bool)\n    # TODO: zbuduj liste pozycji wewnetrznych (1 <= y < H-1, 1 <= x < W-1)\n    # TODO: wybierz n_points pozycji bez powtorzen z `rng`\n    # TODO: dla kazdej pozycji wylosuj sasiada (0=N, 1=S, 2=W, 3=E) i podmien wartosc\n    # TODO: ustaw odpowiadajacy wpis w `mask` na True\n    return perturbed, mask\n",
+        "tests": [
+          {
+            "name": "mask_has_exactly_n_points",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg = np.arange(8 * 8, dtype=float).reshape(8, 8)\np, m = blind_spot_perturb(img, n_points=10, rng=rng)\nassert m.shape == img.shape\nassert m.dtype == bool\nassert int(m.sum()) == 10, f'mask powinna miec dokladnie 10 True, ma {int(m.sum())}'",
+            "hidden": false
+          },
+          {
+            "name": "no_border_positions_in_mask",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nimg = np.zeros((6, 6), dtype=float)\np, m = blind_spot_perturb(img, n_points=8, rng=rng)\nassert not m[0, :].any() and not m[-1, :].any(), 'brzegi nie moga byc blind-spot'\nassert not m[:, 0].any() and not m[:, -1].any(), 'brzegi nie moga byc blind-spot'"
+          },
+          {
+            "name": "non_mask_positions_unchanged",
+            "body": "import numpy as np\nrng = np.random.default_rng(2)\nimg = np.arange(7 * 7, dtype=float).reshape(7, 7) * 1.5\np, m = blind_spot_perturb(img, n_points=5, rng=rng)\nassert np.allclose(p[~m], img[~m]), 'pozycje poza mask powinny zostac niezmienione'"
+          },
+          {
+            "name": "perturbed_values_come_from_4_neighborhood",
+            "body": "import numpy as np\nrng = np.random.default_rng(3)\n# Dwie odrebne wartosci: piksele wewnetrzne = 100, brzegi = 0; po podmianie\n# wartosc piksela blind-spot musi pochodzic od sasiada (czyli byc 0 lub 100).\nimg = np.full((6, 6), 100.0)\nimg[0, :] = 0; img[-1, :] = 0; img[:, 0] = 0; img[:, -1] = 0\np, m = blind_spot_perturb(img, n_points=4, rng=rng)\nassert np.all((p[m] == 100.0) | (p[m] == 0.0)), 'kazdy blind-spot musi miec wartosc jednego z 4 sasiadow'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef blind_spot_perturb(image, n_points, rng):\n    image = np.asarray(image)\n    H, W = image.shape\n    perturbed = image.copy()\n    mask = np.zeros((H, W), dtype=bool)\n    interior = np.array([(y, x) for y in range(1, H - 1) for x in range(1, W - 1)], dtype=int)\n    if n_points > len(interior):\n        n_points = len(interior)\n    idx = rng.choice(len(interior), size=n_points, replace=False)\n    chosen = interior[idx]\n    offsets = np.array([(-1, 0), (1, 0), (0, -1), (0, 1)], dtype=int)  # N, S, W, E\n    for (y, x) in chosen:\n        dy, dx = offsets[rng.integers(0, 4)]\n        perturbed[y, x] = image[y + dy, x + dx]\n        mask[y, x] = True\n    return perturbed, mask\n"
+      }
+    },
+    {
+      "id": "quiz-pulapki-cnn-despeckling",
+      "title": "Pułapki: które stwierdzenia o CNN-despecklerach są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o ID-CNN, SAR-DRN i Speckle2Void **są prawdziwe**? Zaznacz wszystkie poprawne.",
+        "options": [
+          "PSNR liczone na obrazie despecklowanym pełni rolę kompletnej metryki jakości — model o wyższym PSNR jest zawsze lepszym despecklerem dla późniejszego ATR.",
+          "Dylatowane konwolucje w SAR-DRN powiększają pole recepcyjne **bez** dodawania parametrów względem zwykłej konwolucji 3×3 z tym samym jądrem.",
+          "Speckle2Void wymaga par (zaszumiony, czysty) podczas treningu — to dlatego nazywany jest 'self-supervised'.",
+          "ID-CNN trenowany na syntetycznym Gamma speckle nakładanym na obrazy optyczne (UC Merced/BSDS500) ma niezerowy *domain gap* przy zastosowaniu na surowych Sentinel-1 GRDH.",
+          "Sieć blind-spot bez 'dziury' w polu recepcyjnym uczyłaby się funkcji identyczności i loss spadałby trywialnie do zera bez nauczenia czegokolwiek."
+        ],
+        "correct": [1, 3, 4],
+        "explanation": "Opcja 1 jest **klasyczną pułapką** (omawiana w `Common misconceptions` z Modułu 1): PSNR rośnie monotonicznie wraz z wygładzeniem, więc model który zbliża wszystko do średniej bije baseline w PSNR i jednocześnie niszczy każde późniejsze ATR. Standard w literaturze to raportowanie PSNR **razem z** ENL (na jednorodnym patchu) i Edge-Preservation Index (EPI). Opcja 2 jest poprawna — to definicyjna własność dylatacji: jądro $3 \\times 3$ z dilation $r$ ma tę samą liczbę wag co zwykłe $3 \\times 3$, ale 'patrzy' na obszar $(2r+1) \\times (2r+1)$. Opcja 3 jest **odwrotna**: cała wartość Speckle2Void polega na tym, że trenuje **bez** czystej referencji, używając samej zaszumionej sceny + założenia o multiplikatywnym Gamma. Opcja 4 jest poprawna i to **uznany** problem — Speckle2Void paper motywuje swoje istnienie właśnie tym: ID-CNN/SAR-DRN trenowane na syntetyce nie generalizują idealnie na realny SAR, bo nakładany Gamma-speckle nie odtwarza pełnej statystyki realnych scen (korelacje przestrzenne, efekty antenowe, multilooking). Opcja 5 jest poprawna i to mechaniczna intuicja blind-spot: bez dziury sieć po prostu *kopiuje* piksel centralny (loss = 0, nic się nie nauczy); dziura **wymusza** rekonstrukcję z otoczenia.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-eksperyment",
+      "title": "Sandbox: porównaj despeckling klasyczny vs CNN-imitację",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter, median_filter\n\nrng = np.random.default_rng(11)\n\n# Czysty patch z drobnoskalowa krawedzia + jednorodnym tlem\nclean = np.full((96, 96), 0.15, dtype=np.float64)\nclean[:, 48:] = 0.55\nclean[40:42, :] = 0.95          # cienka linia (np. linia kolejowa)\nclean[60:65, 20:30] = 1.0       # 'budynek' / silny reflektor\n\n# Symulacja 1-look Gamma speckle\nL = 1\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=clean.shape)\nnoisy = clean * speckle\n\n# 'Klasyczny' Lee-imitujacy filtr: srednia ruchoma w oknie WxW\nW = 7\ndenoised_mean = uniform_filter(noisy, size=W, mode='reflect')\ndenoised_median = median_filter(noisy, size=W, mode='reflect')\n\n# Imitacja efektywnego pola recepcyjnego CNN: \"glebokie\" stosowanie sredniej\n# (kazda iteracja efektywnie sumuje dwa kolejne uniform_filtery -> wieksze RF)\ndenoised_deep = noisy.copy()\nfor _ in range(3):\n    denoised_deep = uniform_filter(denoised_deep, size=3, mode='reflect')\n\n\ndef enl(patch):\n    m = patch.mean(); s = patch.std()\n    return (m / s) ** 2 if s > 0 else float('inf')\n\n\n# Eksploracja: zmieniaj L (1, 2, 4, 8), W (3, 5, 7, 11) i liczbe iteracji\n# 'CNN'. Porownaj ENL na jednolitym fragmencie (np. clean[60:80, 60:90])\n# z ostroscia krawedzi w okolicach kolumny 48 (np. clean[:, 46:52]).\nhomo_slice = (slice(60, 80), slice(60, 90))\nedge_slice = (slice(None), slice(46, 52))\n\nfor name, img in [('noisy', noisy), ('mean', denoised_mean), ('median', denoised_median), ('deep', denoised_deep)]:\n    print(f\"{name:>7}: ENL_homo = {enl(img[homo_slice]):6.2f}\")\n",
+        "encouragement": "Zmieniaj L oraz W i obserwuj, kiedy ENL zaczyna rosnąć szybciej niż znika krawędź — tam właśnie siedzi sweet-spot CNN despecklerów."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/LSP.2017.2758203",
+      "title": "SAR Image Despeckling Using a Convolutional Neural Network (ID-CNN)",
+      "kind": "paper",
+      "author": "Puyang Wang, He Zhang, Vishal M. Patel",
+      "year": 2017
+    },
+    {
+      "url": "https://doi.org/10.3390/rs10020196",
+      "title": "Learning a Dilated Residual Network for SAR Image Despeckling (SAR-DRN)",
+      "kind": "paper",
+      "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+      "year": 2018
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2021.3065461",
+      "title": "Speckle2Void: Deep Self-Supervised SAR Despeckling with Blind-Spot Convolutional Neural Networks",
+      "kind": "paper",
+      "author": "Andrea Bordone Molini, Diego Valsesia, Giulia Fracastoro, Enrico Magli",
+      "year": 2022
+    },
+    {
+      "url": "https://doi.org/10.1109/CVPR.2019.00223",
+      "title": "Noise2Void — Learning Denoising from Single Noisy Images",
+      "kind": "paper",
+      "author": "Alexander Krull, Tim-Oliver Buchholz, Florian Jug",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.1109/TIP.2017.2662206",
+      "title": "Beyond a Gaussian Denoiser: Residual Learning of Deep CNN for Image Denoising (DnCNN)",
+      "kind": "paper",
+      "author": "Kai Zhang, Wangmeng Zuo, Yunjin Chen, Deyu Meng, Lei Zhang",
+      "year": 2017
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/nn.html#convolution-layers",
+      "title": "PyTorch — Convolution layers (torch.nn) reference",
+      "kind": "article"
+    }
+  ]
+}

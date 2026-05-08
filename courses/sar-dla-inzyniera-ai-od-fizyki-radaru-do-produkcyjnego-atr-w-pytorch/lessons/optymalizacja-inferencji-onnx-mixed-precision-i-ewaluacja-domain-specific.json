@@ -1,0 +1,360 @@
+{
+  "schemaVersion": 1,
+  "slug": "optymalizacja-inferencji-onnx-mixed-precision-i-ewaluacja-domain-specific",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m3",
+  "title": "Optymalizacja inferencji: ONNX, mixed precision i ewaluacja domain-specific",
+  "eyebrow": "PRODUKCJA I INFERENCJA",
+  "description": "Eksport YOLOv8 z PyTorch do ONNX, FP16/INT8 z post-training quantisation i kalibracją SAR-aware oraz domain-specific ewaluacja PSNR/ENL/EPI, mIoU i mAP@0.5 z krzywą per kąt incydencji.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "po-co-onnx",
+      "title": "Po co eksportować model z PyTorch do ONNX?",
+      "type": "theory",
+      "data": {
+        "markdown": "**ONNX (Open Neural Network Exchange)** to neutralny format wymiany modeli i graf obliczeń: węzły są standaryzowanymi *operatorami* (`Conv`, `Relu`, `Add`, `MatMul`, `Resize`, ...), krawędzie to tensory, a wszystko opakowane jest w specyfikację z numerowanym `opset` (Operator Set). Ten sam plik `.onnx` mogą czytać ONNX Runtime, TensorRT, OpenVINO, CoreML, DirectML i kilkanaście innych runtime'ów — każdy z własnymi *Execution Providers*, kernelami i fuzjami operatorów. To ten sam pomysł, co ELF dla binarek albo SQL dla relacji: zamrażamy *kontrakt grafu*, a runtime decyduje *jak* go wykonać.\n\nDla pipeline'u SAR ATR ma to trzy konkretne konsekwencje:\n\n1. **Jeden plik, wiele celów.** Detektor YOLOv8 fine-tunowany na OpenSARShip (z lekcji 3) eksportujesz do `.onnx` raz. Ten sam artefakt puścisz przez ONNX Runtime + CUDA na lokalnej RTX, przez TensorRT na DRIVE Orin, przez OpenVINO na embedded Intel-u albo przez `onnxruntime-web` w przeglądarce. Zero forka kodu na każdą platformę, zero re-treningu.\n2. **Optymalizacje grafu na wejściu.** Po wczytaniu `.onnx` runtime składa `Conv + BN + ReLU` w jedno fused jądro, eliminuje martwe gałęzie, podmienia operatory na kernel zoptymalizowany pod docelową kartę. To czysto graphowe i deterministyczne — robi się raz, nie co `forward()`.\n3. **Opset jest częścią kontraktu.** `torch.onnx.export(..., opset_version=17)` mówi *jakiej* gramatyki używamy. Zmiana opsetu to zmiana ABI: pojawiają się nowe operatory (`LayerNormalization` w opset 17), znikają zachowania edge-case starszych. W produkcji pinujemy opset i wersję ONNX Runtime tak samo, jak pinujemy `torch==2.4.1` i `numpy==1.26.4`.\n\n**ONNX nie zastępuje treningu** — `forward()` w PyTorch zostaje punktem prawdy aż do ostatniej epoki. ONNX wchodzi *po* treningu, gdy zaczynamy przejmować się latencją, deploymentem na wielu urządzeniach i kontrolą wersji modelu w produkcji."
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/onnx.html",
+          "title": "PyTorch — torch.onnx documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "export-cloze",
+      "title": "Eksport YOLOv8 do ONNX: opset, dynamic axes, constant folding",
+      "description": "Wypełnij dwa pola w wywołaniu torch.onnx.export, które najczęściej psują się w produkcji.",
+      "type": "codeCloze",
+      "data": {
+        "taskMarkdown": "Uzupełnij eksport detektora YOLOv8 trenowanego w lekcji 3. Pin-ujemy `opset_version` (część ABI grafu) i włączamy `do_constant_folding`, żeby runtime nie musiał liczyć stałych przy każdym `forward()`. `dynamic_axes` są już ustawione: oś batcha jest dynamiczna, więc ten sam `.onnx` obsłuży `batch=1` na produkcji i `batch=32` w benchmarku.",
+        "language": "python",
+        "template": "import torch\nfrom ultralytics import YOLO\n\nmodel = YOLO(\"yolov8s_opensarship.pt\").model.eval().cuda()\ndummy = torch.randn(1, 3, 640, 640, device=\"cuda\")\n\ntorch.onnx.export(\n    model,\n    dummy,\n    \"yolov8s_opensarship.onnx\",\n    input_names=[\"images\"],\n    output_names=[\"pred\"],\n    opset_version={{opset}},\n    do_constant_folding={{const_folding}},\n    dynamic_axes={\"images\": {0: \"batch\"}, \"pred\": {0: \"batch\"}},\n)\n",
+        "slots": [
+          {
+            "id": "opset",
+            "hint": "Pinujemy konkretną wersję operator setu — w 2024/2025 dla YOLOv8 stabilnym wyborem jest 17 (wprowadza LayerNormalization).",
+            "validation": {
+              "kind": "oneOf",
+              "values": ["17", "18", "19"]
+            }
+          },
+          {
+            "id": "const_folding",
+            "hint": "Sklej constanty na etapie eksportu, tak żeby runtime nie liczył ich co forward.",
+            "validation": {
+              "kind": "exact",
+              "value": "True"
+            }
+          }
+        ],
+        "hints": [
+          {
+            "revealAfterAttempts": 1,
+            "markdown": "Oba pola to pojedyncze tokeny Pythona — liczba całkowita w jednym, literał `True/False` w drugim."
+          },
+          {
+            "revealAfterAttempts": 3,
+            "markdown": "Najczęściej pin-uje się opset 17 i ustawia `do_constant_folding=True`. Niższe opsety nie mają wszystkich operatorów YOLOv8."
+          }
+        ]
+      }
+    },
+    {
+      "id": "ep-table",
+      "title": "ONNX Runtime — Execution Providers, które warto znać",
+      "description": "Trzymaj otwartą obok edytora — wybór EP zmienia latencję o rząd wielkości i przesądza, czy INT8 daje cokolwiek.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "ep", "label": "Execution Provider", "type": "string", "sortable": true, "filterable": true },
+          { "key": "hardware", "label": "Sprzęt", "type": "string", "sortable": false, "filterable": true },
+          { "key": "precyzje", "label": "Wspierane precyzje", "type": "string", "sortable": false, "filterable": true },
+          { "key": "plus", "label": "Plus", "type": "string", "sortable": false, "filterable": false },
+          { "key": "minus", "label": "Minus", "type": "string", "sortable": false, "filterable": false }
+        ],
+        "rows": [
+          {
+            "ep": "CPUExecutionProvider",
+            "hardware": "CPU x86_64 / ARM64",
+            "precyzje": "FP32, FP16 (cast), INT8",
+            "plus": "Default w pip install onnxruntime; brak zależności CUDA; działa na każdym laptopie i w CI.",
+            "minus": "Wolne — typowo 5–15× wolniej niż CUDA na YOLOv8 i 640×640."
+          },
+          {
+            "ep": "CUDAExecutionProvider",
+            "hardware": "NVIDIA GPU (≥ Pascal)",
+            "precyzje": "FP32, FP16, INT8",
+            "plus": "Tensor Cores na Turing+; 2–4× FP16 vs FP32 i kolejne ~2× INT8.",
+            "minus": "Wymaga zgodnego CUDA toolkitu i cuDNN; pinowanie wersji jest bolesne."
+          },
+          {
+            "ep": "TensorrtExecutionProvider",
+            "hardware": "NVIDIA GPU + TensorRT",
+            "precyzje": "FP32, FP16, INT8 z calibration cache",
+            "plus": "Najniższa latencja na NVIDII; INT8 z auto-tuningiem warstw; idealne na DRIVE/Jetson.",
+            "minus": "Długi cold-start (kompilacja silnika), silnik niekompatybilny między architekturami GPU."
+          },
+          {
+            "ep": "OpenVINOExecutionProvider",
+            "hardware": "Intel CPU / iGPU / NPU / VPU",
+            "precyzje": "FP32, FP16, INT8 (NNCF)",
+            "plus": "Najlepszy embedded x86; akceleracja na Intel Arc i Movidius VPU.",
+            "minus": "Własne IR pod maską; mniej operatorów niż CUDA EP."
+          },
+          {
+            "ep": "DmlExecutionProvider",
+            "hardware": "Windows GPU (DirectML)",
+            "precyzje": "FP32, FP16",
+            "plus": "Uniwersalne na Windows — NVIDIA, AMD, Intel pod jednym API.",
+            "minus": "Wolniejsze od CUDA EP na NVIDII; brak natywnego INT8."
+          },
+          {
+            "ep": "CoreMLExecutionProvider",
+            "hardware": "Apple Silicon (M1/M2/M3)",
+            "precyzje": "FP32, FP16",
+            "plus": "Natywna integracja z Apple GPU i Neural Engine; zero zależności.",
+            "minus": "Tylko macOS/iOS; brak INT8; nie wszystkie operatory YOLOv8 są zmapowane."
+          },
+          {
+            "ep": "ROCMExecutionProvider",
+            "hardware": "AMD GPU (ROCm)",
+            "precyzje": "FP32, FP16",
+            "plus": "Akceleracja na MI200/MI300 zbliżona do A100/H100 dla wybranych modeli.",
+            "minus": "Pokrycie operatorów wciąż goni CUDA EP; w 2025 ciągle wymaga ręcznego buildu."
+          }
+        ],
+        "initialSort": { "key": "ep", "dir": "asc" },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "fp16-int8-theory",
+      "title": "Mixed precision: FP16, BF16 i INT8 w pigułce",
+      "type": "theory",
+      "data": {
+        "markdown": "**FP16, BF16 i INT8** to nie magia — to zmiany w *kontrakcie liczbowym*, w którym żyje twój model. Każda z nich oddaje *bity* w zamian za szybszy ruch danych przez magistralę i większą przepustowość ALU GPU.\n\n**FP16 (half precision, IEEE 754).** 1 bit znaku + 5 bitów wykładnika + 10 bitów mantysy = 16 bitów na liczbę. Zakres dynamiczny w przybliżeniu $[6 \\cdot 10^{-5}, 6.5 \\cdot 10^{4}]$, precyzja rzędu $10^{-3}$. Na GPU NVIDIA z Tensor Cores (Turing/Ampere/Hopper) FP16 jest 2× szybsze od FP32 — czasem 4–8× przy okazji fused matmul + conv.\n\n![Układ bitów liczby IEEE 754 half-precision: 1 bit znaku, 5 bitów wykładnika, 10 bitów mantysy](https://commons.wikimedia.org/wiki/Special:FilePath/IEEE_754r_Half_Floating_Point_Format.svg)\n\n**BF16 (bfloat16).** 1+8+7. *Ten sam* zakres co FP32 (8-bitowy wykładnik), mniejsza precyzja (7-bitowa mantysa). Dla treningu często bezpieczniejsze niż FP16 (mniej overflow w gradientach); dla inferencji większość detektorów SAR po BF16 ma identyczne mAP jak po FP32.\n\n**INT8 (signed 8-bit).** $[-128, 127]$ wartości całkowitych — żeby reprezentować tensor floatów, kwantujemy: $q = \\mathrm{round}(x / s) + z$, gdzie $s$ to *scale* a $z$ to *zero-point*. Symetrycznie $z=0$, asymetrycznie $z \\in \\mathbb{Z}$. Dla wag używamy *per-channel scale* (jeden $s$ na kanał wyjściowy konwolucji) — bo dystrybucje wag potrafią różnić się o rzędy wielkości między kanałami; per-tensor zaokrągliłby cały model do skali najszerszego kanału.\n\n**Kalibracja PTQ vs QAT.** Post-Training Quantisation (PTQ) bierze wytrenowany model FP32, puszcza przez niego *kalibracyjny zbiór* (≈100–500 obrazów reprezentatywnych dla rozkładu wejścia) i z histogramów aktywacji wybiera $s, z$ minimalizujące KL-divergence albo MSE. Quantisation-Aware Training (QAT) symuluje kwantyzację już *podczas* treningu (fake-quant w forward, gradient w backward) i odzyskuje 1–2 pkt mAP w trudnych przypadkach. Dla SAR ATR PTQ wystarcza w 80% sytuacji — pod warunkiem, że *kalibracyjny zbiór* odzwierciedla zakres dB, kąty incydencji i polaryzacje docelowej sceny."
+      },
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1710.03740",
+          "title": "Mixed Precision Training",
+          "kind": "paper",
+          "author": "Paulius Micikevicius et al.",
+          "year": 2018
+        },
+        {
+          "url": "https://onnxruntime.ai/docs/performance/",
+          "title": "ONNX Runtime — Performance and quantisation tutorials",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "int8-quantizer-code",
+      "title": "Symetryczna kwantyzacja INT8 w NumPy",
+      "description": "Zaimplementuj round-trip kwantyzacji per-tensor — to dokładnie te dwie linijki, które ONNX Runtime wykonuje w fused jądrze QLinearConv.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz parę funkcji `symmetric_int8_quantize(x, scale)` i `symmetric_int8_dequantize(q, scale)` realizujących **symetryczną** kwantyzację per-tensor:\n\n- `q = clip(round(x / scale), -127, 127)` jako `np.int8`,\n- `dequant = q.astype(np.float32) * scale`.\n\nUżywamy zakresu $[-127, 127]$ (nie $[-128, 127]$), bo TensorRT i ONNX Runtime przyjmują zerowo symetryczne wagi — odcięte $-128$ nie ma odpowiednika dodatniego i ułamek pojawia się w warstwach dynamicznych jako artefakt.\n\n```\nq = symmetric_int8_quantize(np.array([0.0, 0.5, -0.5, 200.0], dtype=np.float32), scale=0.5)\nq.tolist() == [0, 1, -1, 127]   # przycięte do +127\n```",
+        "starterCode": "import numpy as np\n\n\ndef symmetric_int8_quantize(x: np.ndarray, scale: float) -> np.ndarray:\n    \"\"\"Symmetric per-tensor INT8 quantisation.\n\n    Returns int8 tensor of the same shape as x.\n    \"\"\"\n    # TODO: zaimplementuj.\n    return np.zeros_like(x, dtype=np.int8)\n\n\ndef symmetric_int8_dequantize(q: np.ndarray, scale: float) -> np.ndarray:\n    \"\"\"Inverse of symmetric_int8_quantize. Returns float32 tensor.\"\"\"\n    # TODO: zaimplementuj.\n    return np.zeros_like(q, dtype=np.float32)\n",
+        "tests": [
+          {
+            "name": "smoke_round_trip_zero_and_unit_steps",
+            "body": "import numpy as np\nx = np.array([0.0, 0.5, -0.5, 1.0, -1.0], dtype=np.float32)\nq = symmetric_int8_quantize(x, scale=0.5)\nassert q.dtype == np.int8\nassert q.tolist() == [0, 1, -1, 2, -2]",
+            "hidden": false
+          },
+          {
+            "name": "clips_at_plus_and_minus_127",
+            "body": "import numpy as np\nx = np.array([1000.0, -1000.0], dtype=np.float32)\nq = symmetric_int8_quantize(x, scale=1.0)\nassert q.tolist() == [127, -127]"
+          },
+          {
+            "name": "dequantize_is_left_inverse_within_scale",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nx = rng.normal(0.0, 1.0, size=512).astype(np.float32)\nscale = float(np.max(np.abs(x))) / 127.0\nq = symmetric_int8_quantize(x, scale)\nrec = symmetric_int8_dequantize(q, scale)\nassert rec.dtype == np.float32\nassert np.max(np.abs(rec - x)) <= scale + 1e-6"
+          },
+          {
+            "name": "negative_scale_is_user_error_but_zero_safe",
+            "body": "import numpy as np\nx = np.zeros(8, dtype=np.float32)\nq = symmetric_int8_quantize(x, scale=0.5)\nassert q.tolist() == [0] * 8"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef symmetric_int8_quantize(x: np.ndarray, scale: float) -> np.ndarray:\n    q = np.round(x / scale)\n    q = np.clip(q, -127, 127)\n    return q.astype(np.int8)\n\n\ndef symmetric_int8_dequantize(q: np.ndarray, scale: float) -> np.ndarray:\n    return q.astype(np.float32) * scale\n"
+      },
+      "sources": [
+        {
+          "url": "https://pytorch.org/docs/stable/quantization.html",
+          "title": "PyTorch — Quantization documentation",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "latency-vs-map-plot",
+      "title": "Latencja vs mAP dla FP32 / FP16 / INT8",
+      "description": "Slupki — latencja na obraz; punkty — mAP@0.5. Kliknij \"Pokaż źródło\", żeby zobaczyć skrypt matplotliba, który wyprodukował wykres.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch/assets/plots/optymalizacja-inferencji-onnx-mixed-precision-i-ewaluacja-domain-specific-1.png",
+        "alt": "Wykres z trzema słupkami latencji na obraz (FP32 12.0 ms, FP16 6.0 ms, INT8 3.5 ms) na lewej osi i nakladajaca sie linia z markerami mAP@0.5 (FP32 0.781, FP16 0.779, INT8 0.762) na prawej osi. Os X opisana 'Precyzja inferencji'. Os Y lewa 'Latencja na obraz [ms]'. Os Y prawa 'mAP@0.5 (OpenSARShip val)'. Tytul: FP32 vs FP16 vs INT8: latencja i mAP@0.5 detektora YOLOv8 na OpenSARShip.",
+        "caption": "Rys. 1. Reprezentatywne pomiary YOLOv8s (640×640, batch=1) fine-tunowanego na OpenSARShip i uruchamianego przez ONNX Runtime na karcie klasy NVIDIA RTX 3060 / Tesla T4. FP16 redukuje latencję ~2× przy niemal zerowym koszcie mAP; INT8 daje kolejne ~1.7× szybciej, ale traci ~2 pkt mAP — kosztorys, który dla większości detektorów SAR jest akceptowalny.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Reprezentatywne pomiary YOLOv8s (640x640, batch=1) fine-tunowanego na OpenSARShip,\n# eksportowanego z PyTorch -> ONNX i uruchamianego przez ONNX Runtime na karcie\n# klasy NVIDIA RTX 3060 / Tesla T4. Wartosci ilustracyjne, ale w zakresie zgodnym\n# z dokumentacja Ultralytics i ONNX Runtime.\nprecisions = [\"FP32\", \"FP16\", \"INT8\"]\nlatency_ms = np.array([12.0, 6.0, 3.5])\nmap50 = np.array([0.781, 0.779, 0.762])\n\nfig, ax_lat = plt.subplots(figsize=(7.0, 4.4))\nx = np.arange(len(precisions))\nwidth = 0.55\n\nbars = ax_lat.bar(\n    x,\n    latency_ms,\n    width=width,\n    color=[\"#4c72b0\", \"#55a868\", \"#c44e52\"],\n    edgecolor=\"black\",\n    linewidth=0.6,\n    label=\"Latencja [ms]\",\n)\nax_lat.set_xticks(x)\nax_lat.set_xticklabels(precisions)\nax_lat.set_xlabel(\"Precyzja inferencji\")\nax_lat.set_ylabel(\"Latencja na obraz [ms]\")\nax_lat.set_ylim(0, max(latency_ms) * 1.25)\nax_lat.grid(True, axis=\"y\", alpha=0.3)\n\nfor bar, lat in zip(bars, latency_ms):\n    ax_lat.text(\n        bar.get_x() + bar.get_width() / 2,\n        bar.get_height() + 0.25,\n        f\"{lat:.1f} ms\",\n        ha=\"center\",\n        va=\"bottom\",\n        fontsize=10,\n    )\n\nax_map = ax_lat.twinx()\nax_map.plot(\n    x,\n    map50,\n    color=\"#222222\",\n    marker=\"o\",\n    markersize=8,\n    linewidth=1.8,\n    label=\"mAP@0.5\",\n)\nfor xi, m in zip(x, map50):\n    ax_map.text(xi, m + 0.004, f\"{m:.3f}\", ha=\"center\", va=\"bottom\", fontsize=10)\nax_map.set_ylabel(\"mAP@0.5 (OpenSARShip val)\")\nax_map.set_ylim(0.70, 0.82)\n\nlines_left, labels_left = ax_lat.get_legend_handles_labels()\nlines_right, labels_right = ax_map.get_legend_handles_labels()\nax_lat.legend(\n    lines_left + lines_right,\n    labels_left + labels_right,\n    loc=\"upper right\",\n    framealpha=0.9,\n)\n\nplt.title(\"FP32 vs FP16 vs INT8: latencja i mAP@0.5 detektora YOLOv8 na OpenSARShip\")\nplt.savefig(\n    \"optymalizacja-inferencji-onnx-mixed-precision-i-ewaluacja-domain-specific-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "int8-pitfalls-quiz",
+      "title": "Quiz: pułapki INT8 i FP16 na detektorze SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych są PRAWDZIWE o kwantyzacji INT8 detektora SAR (np. YOLOv8 na OpenSARShip)? Wybierz wszystkie pasujące.",
+        "options": [
+          "Kalibracyjny zbiór musi pokrywać zakres dB, kąty incydencji i polaryzacje docelowej sceny — w przeciwnym razie scale i zero-point są dopasowane do innej dystrybucji niż produkcyjna.",
+          "Symetryczna per-channel kwantyzacja wag jest zwykle lepsza niż per-tensor, bo dystrybucje wag różnią się o rzędy wielkości między kanałami konwolucji.",
+          "INT8 PTQ z definicji daje większy spadek mAP niż FP16 i nie powinno się go używać bez QAT.",
+          "Spadek mAP po INT8 PTQ mierzymy na walidacyjnym splicie odseparowanym od kalibracyjnego — inaczej oszacowanie jakości jest optymistycznie obciążone."
+        ],
+        "correct": [0, 1, 3],
+        "explanation": "Kalibracyjny zbiór jest *jedynym* sygnałem, jaki PTQ ma do wyboru scale i zero-point — jeśli rozkład wejścia kalibracji odbiega od produkcyjnego (np. inny zakres dB sigma0 albo brak kątów 30°), aktywacje w produkcji wpadną w nasycenie i mAP się rozjedzie. Per-channel scale dla wag konwolucji jest standardem w ONNX Runtime, TensorRT i NNCF właśnie dlatego, że dystrybucje wag są heterogeniczne. Twierdzenie 3 jest fałszywe — dla wielu detektorów ATR INT8 PTQ wystarczy, a różnica vs FP16 wynosi 1–3 pkt mAP w zależności od architektury i danych; QAT odzyskuje resztę, ale nie jest obowiązkowe. Twierdzenie 4 jest twardą zasadą: kalibracja \"widzi\" rozkład aktywacji wybranych obrazów, więc ewaluacja na tym samym zbiorze ma leakage.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "domain-specific-eval",
+      "title": "Ewaluacja domain-specific: PSNR/ENL/EPI, mIoU, mAP — i krzywa per kąt incydencji",
+      "type": "theory",
+      "data": {
+        "markdown": "**Top-1 ImageNet jest bezużyteczne na SAR.** Sensor jest inny, klasa \"samochód\" w ImageNet to RGB-fotografia z ulicy, a klasa \"samochód\" w MSTAR to wycinek 64×64 piksele HH-pol pod kątem azymutu 47° i depresji 15°. Trzy rodziny modeli SAR — despeckler, segmenter, detektor — mają trzy *różne* słowniki metryk.\n\n**Despeckling (lekcja 1).** ID-CNN, SAR-DRN, Speckle2Void raportujemy w trójce:\n\n- **PSNR (Peak SNR)** $= 10 \\log_{10}(\\mathrm{MAX}^2 / \\mathrm{MSE})$. Naiwny — nagradza *gładkość*: nadgładzony obraz dostaje wysoki PSNR.\n- **ENL (Equivalent Number of Looks)** $\\widehat{\\mathrm{ENL}} = (\\bar I / \\sigma_I)^2$ na *jednorodnym* patchu (spokojne morze, lotnisko, bare field). Większy ENL = mniej speckle, ale czysto stała tekstura też daje $\\mathrm{ENL} \\to \\infty$.\n- **EPI (Edge Preservation Index)** $= \\mathrm{corr}(\\nabla I_\\mathrm{ref}, \\nabla I_\\mathrm{out})$ — pearson grad-vs-grad. Karze nadgładzanie. Dobry despeckler ma *jednocześnie* wysokie ENL i wysokie EPI.\n\nReportujemy zawsze wszystkie trzy. Sam PSNR kłamie.\n\n![Wycinek sceny SAR Sentinel-1 nad zatoka portowa — typowe wejscie do detektora statkow, w ktorym mierzymy mAP@0.5 i krzywa per kat incydencji](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n\n**Segmentacja semantyczna (SEN12MS, lekcja 2).**\n\n- **mIoU** uśrednione po klasach (nie po pikselach). Klasa \"woda\" pokrywa ~60% SEN12MS, więc mIoU karze za zignorowanie minorityjnych klas (\"barren\", \"wetlands\").\n- **Per-class F1** — pokazuje, na której klasie się wykładamy.\n\n**Detekcja (OpenSARShip, MSTAR, lekcja 3).**\n\n- **mAP@0.5** — Pascal-VOC, próg IoU 0.5. Sentinel-1 IW ma 10 m piksela, więc IoU 0.5 jest tolerancyjny.\n- **mAP@[0.5:0.95]** — COCO, średnia po progach 0.5..0.95 co 0.05. Surowsze, lepiej dyskryminuje modele.\n- **Krzywa mAP vs kąt incydencji** — najważniejsza dla SATIM-grade ATR. Sentinel-1 IW ma incydencje 30–46°; sieć musi działać na *całym* przedziale, nie tylko na 38° z train splitu. Dziel walidację na 4–6 binów kątów i raportuj per-bin mAP — model, który tonie na brzegach, jest bezużyteczny operacyjnie."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs13091807",
+          "title": "PSNR / ENL / EPI quality metrics for SAR despeckling — a critical review",
+          "kind": "paper",
+          "author": "Vincenzo Anastasi et al.",
+          "year": 2021
+        },
+        {
+          "url": "https://cocodataset.org/#detection-eval",
+          "title": "COCO Detection Evaluation Protocol",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "enl-epi-code",
+      "title": "ENL i EPI w NumPy",
+      "description": "Dwie krótkie metryki, które razem z PSNR składają się na trójkę raportową despecklera SAR.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie metryki:\n\n1. `enl(patch)` — Equivalent Number of Looks na jednorodnym patchu intensywności: $\\widehat{\\mathrm{ENL}} = (\\bar I / \\sigma_I)^2$. Dla constant patcha $\\sigma_I = 0$ — zwróć `float('inf')`.\n2. `epi(reference, output)` — Edge Preservation Index: pearson correlation gradientów poziomych obu obrazów (`np.diff` wzdłuż osi 1, potem `np.corrcoef`). Dla identycznych wejść wynik $= 1.0$.\n\n```\nenl(np.full((32, 32), 5.0))                    -> +inf\nepi(np.array([[0,0,5,5]]), np.array([[0,0,5,5]])) -> 1.0\n```",
+        "starterCode": "import numpy as np\n\n\ndef enl(patch: np.ndarray) -> float:\n    \"\"\"Equivalent Number of Looks na jednorodnym patchu.\n\n    Zwroc (mean / std)**2 lub float('inf') gdy std == 0.\n    \"\"\"\n    # TODO\n    return 0.0\n\n\ndef epi(reference: np.ndarray, output: np.ndarray) -> float:\n    \"\"\"Edge Preservation Index: pearson korelacja gradientow poziomych.\"\"\"\n    # TODO\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "enl_constant_patch_is_infinite",
+            "body": "import math\nimport numpy as np\nresult = enl(np.full((16, 16), 7.0, dtype=np.float32))\nassert math.isinf(result) and result > 0",
+            "hidden": false
+          },
+          {
+            "name": "enl_single_look_speckle_is_near_one",
+            "body": "import numpy as np\nrng = np.random.default_rng(42)\n# Single-look intensity speckle ~ Exponential(mean=1) => ENL ~ 1\nspeckle = rng.exponential(scale=1.0, size=(256, 256)).astype(np.float32)\nval = enl(speckle)\nassert 0.7 <= val <= 1.4"
+          },
+          {
+            "name": "epi_identity_is_one",
+            "body": "import numpy as np\nimg = np.array([[0, 0, 5, 5, 5], [0, 0, 5, 5, 5], [0, 0, 5, 5, 5]], dtype=np.float32)\nassert abs(epi(img, img) - 1.0) < 1e-6"
+          },
+          {
+            "name": "epi_drops_when_edges_are_smeared",
+            "body": "import numpy as np\nref = np.array([[0, 0, 0, 5, 5, 5]] * 4, dtype=np.float32)\nsmeared = np.array([[0, 0, 1.7, 3.3, 5, 5]] * 4, dtype=np.float32)\nassert epi(ref, smeared) < 0.95"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef enl(patch: np.ndarray) -> float:\n    mean = float(np.mean(patch))\n    std = float(np.std(patch))\n    if std == 0.0:\n        return float(\"inf\")\n    return (mean / std) ** 2\n\n\ndef epi(reference: np.ndarray, output: np.ndarray) -> float:\n    g_ref = np.diff(reference, axis=1).ravel()\n    g_out = np.diff(output, axis=1).ravel()\n    if np.std(g_ref) == 0.0 or np.std(g_out) == 0.0:\n        return 0.0\n    return float(np.corrcoef(g_ref, g_out)[0, 1])\n"
+      }
+    },
+    {
+      "id": "metric-task-match",
+      "title": "Dopasuj metrykę do zadania w pipeline SAR ATR",
+      "description": "Każdy slot przyjmuje dokładnie jedną metrykę — sprawdź, czy potrafisz odróżnić zadania, które na pierwszy rzut oka wyglądają podobnie.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przeciągnij metrykę raportową na zadanie, którego dotyczy.",
+        "items": [
+          { "id": "psnr_enl_epi", "label": "PSNR / ENL / EPI" },
+          { "id": "miou_f1", "label": "mIoU + per-class F1" },
+          { "id": "map_inc", "label": "mAP@0.5 + krzywa per kąt incydencji" },
+          { "id": "balacc_cm", "label": "Balanced accuracy + confusion matrix per klasa" }
+        ],
+        "zones": [
+          {
+            "id": "despeckling",
+            "label": "Despeckling (ID-CNN / SAR-DRN / Speckle2Void)",
+            "accepts": ["psnr_enl_epi"]
+          },
+          {
+            "id": "segmentacja",
+            "label": "Segmentacja semantyczna na SEN12MS (U-Net + ImageNet)",
+            "accepts": ["miou_f1"]
+          },
+          {
+            "id": "detekcja",
+            "label": "Detekcja statków na OpenSARShip (YOLOv8)",
+            "accepts": ["map_inc"]
+          },
+          {
+            "id": "klasyfikacja",
+            "label": "Klasyfikacja pojazdów na MSTAR (A-ConvNet)",
+            "accepts": ["balacc_cm"]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Despeckling raportujemy zawsze trójką PSNR/ENL/EPI — sam PSNR nagradza nadgładzanie, samo ENL idzie do nieskończoności na constant patchu, a EPI bez ENL nie powie, czy speckle faktycznie zniknął. SEN12MS jest niezbalansowany pikselowo, więc mIoU + per-class F1 to kanon. OpenSARShip ma 10 m piksela i wąski zakres kątów Sentinel-1 IW (30–46°), więc liczy się mAP@0.5 wraz z krzywą per kąt incydencji — model słaby na brzegach przedziału jest operacyjnie bezużyteczny. MSTAR to czysta klasyfikacja chipów: brutalnie niezbalansowane klasy (T-72 vs SLICY) w porównaniu — balanced accuracy + confusion matrix per klasa pokazują, czy sieć faktycznie odróżnia BMP-2 od BTR-70, czy tylko głosuje większością."
+      }
+    },
+    {
+      "id": "ptq-sandbox",
+      "title": "Sandbox: scale per-tensor vs per-channel",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Symulacja PTQ na wagach konwolucji 3x3 (64 kanaly wyjsciowe, 32 wejsciowe).\n# Porownujemy per-tensor scale (jeden scale na caly tensor) z per-channel\n# scale (jeden scale na kanal wyjsciowy konwolucji).\n\nrng = np.random.default_rng(0)\nweights = rng.normal(0.0, 0.5, size=(64, 32, 3, 3)).astype(np.float32)\n\n# Wzmocnij kilka kanalow, zeby zasymulowac heterogenicznosc:\nweights[5] *= 6.0\nweights[42] *= 0.05\n\n# === Per-tensor ===\nscale_pt = float(np.max(np.abs(weights))) / 127.0\nq_pt = np.clip(np.round(weights / scale_pt), -127, 127).astype(np.int8)\ndeq_pt = q_pt.astype(np.float32) * scale_pt\nerr_pt = float(np.mean(np.abs(weights - deq_pt)))\n\n# === Per-channel (na osi 0 = kanaly wyjsciowe konwolucji) ===\nmax_abs = np.max(np.abs(weights), axis=(1, 2, 3))   # shape (64,)\nscale_pc = max_abs / 127.0                           # shape (64,)\nscale_view = scale_pc[:, None, None, None]\nq_pc = np.clip(np.round(weights / scale_view), -127, 127).astype(np.int8)\ndeq_pc = q_pc.astype(np.float32) * scale_view\nerr_pc = float(np.mean(np.abs(weights - deq_pc)))\n\nprint(f\"per-tensor mean abs error  = {err_pt:.5f}\")\nprint(f\"per-channel mean abs error = {err_pc:.5f}\")\n\n# Pomysly do eksperymentu:\n# - Zamiast np.max(...) sprobuj np.percentile(np.abs(weights), 99.9, axis=(1,2,3))\n#   i zobacz, jak zmienia sie blad rekonstrukcji - oraz ile wag wpada w +/-127.\n# - Wyrzuc wzmocnienie kanalu 5 (`weights[5] *= 6.0`) i porownaj per-tensor vs per-channel.\n#   Kiedy roznica znika?\n# - Sprobuj asymetrycznej kwantyzacji: scale = (max - min) / 255, zero_point != 0.\n",
+        "encouragement": "Zmieniaj percentyl wycinający i obserwuj, gdzie per-channel scale nadal wygrywa — to dokładnie ta intuicja, która decyduje o spadku mAP po PTQ na produkcyjnym detektorze."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://pytorch.org/docs/stable/onnx.html",
+      "title": "PyTorch — torch.onnx documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://onnxruntime.ai/docs/performance/",
+      "title": "ONNX Runtime — Performance and quantisation tutorials",
+      "kind": "article"
+    },
+    {
+      "url": "https://pytorch.org/docs/stable/quantization.html",
+      "title": "PyTorch — Quantization documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1710.03740",
+      "title": "Mixed Precision Training",
+      "kind": "paper",
+      "author": "Paulius Micikevicius, Sharan Narang, Jonah Alben, Gregory Diamos, Erich Elsen, David Garcia, Boris Ginsburg, Michael Houston, Oleksii Kuchaiev, Ganesh Venkatesh, Hao Wu",
+      "year": 2018
+    },
+    {
+      "url": "https://cocodataset.org/#detection-eval",
+      "title": "COCO Detection Evaluation Protocol",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.3390/rs13091807",
+      "title": "PSNR / ENL / EPI quality metrics for SAR despeckling — a critical review",
+      "kind": "paper",
+      "author": "Vincenzo Anastasi, T. Le, A. Bouvet",
+      "year": 2021
+    }
+  ]
+}

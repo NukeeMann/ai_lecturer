@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "slug": "glcm-haralick-i-lbp-tekstura-jako-cecha-sar",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m2",
+  "title": "GLCM, Haralick i LBP — tekstura jako cecha SAR",
+  "eyebrow": "KLASYCZNE BASELINE'Y",
+  "description": "Co odróżnia las od wzburzonego morza, gdy obie powierzchnie mają tę samą średnią σ⁰? Tekstura — czyli statystyka kontekstowa, którą GLCM/Haralick i LBP wyciągają w jawne, interpretowalne cechy będące baseline'em, jaki musi pobić każdy CNN.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "tekstura-jako-cecha-sar",
+      "title": "Po co tekstura w SAR — kiedy sama amplituda nie wystarcza",
+      "type": "theory",
+      "data": {
+        "markdown": "Po despecklingu i kalibracji do σ⁰ z poprzedniego modułu masz pojedynczą warstwę intensywności w decybelach. To zaskakująco mało: las (σ⁰ ≈ −9 dB), wzburzone morze (≈ −10 dB) i świeżo zaorane pole (≈ −11 dB) leżą w tym samym przedziale jasności, choć wizualnie nie sposób ich pomylić. Różni je nie poziom, lecz **tekstura** — niejednorodność i kierunkowość lokalnych wzorców jasności wewnątrz patcha.\n\n![Sentinel-1 GRDH nad fragmentem terenu — w obrębie tych samych jasności (~−10 dB) sąsiadują ze sobą zalesione zbocza, otwarte pola, gęsta sieć dróg i akwen wodny; same wartości σ⁰ ich nie odseparują, ale lokalna statystyka kontekstowa już tak](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel-1_%28IW-VVVH%29_image_on_2020-08-11.jpg)\n*(Obraz poglądowy: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\n**Tekstura** w sensie cyfrowego przetwarzania obrazów to **statystyka kontekstowa** — ile razy piksele o jasnościach $i$ i $j$ sąsiadują na zadanej odległości, w jakim kierunku, i jak ta statystyka zmienia się po obrazie. To dokładnie te informacje, które amplituda **jednopikselowa gubi z definicji**.\n\nW klasycznym SAR-CV opakowywano je w trzy rodziny deskryptorów, z których wszystkie trzy spotkasz w pracy SATIM-podobnej i w literaturze:\n\n- **GLCM** (*Grey-Level Co-occurrence Matrix*, Haralick et al. 1973) — macierz współwystąpień par jasności + 6–14 tzw. **cech Haralicka** (kontrast, dissimilarity, homogeneity, energia, korelacja).\n- **LBP** (*Local Binary Patterns*, Ojala et al. 2002) — kompaktowy histogram lokalnych binarnych wzorców, niezmienniczy na monotonne transformacje jasności.\n- **Filtry Gabora i wavelety** — banki konwolucji o znanych częstotliwościach, których nie omawiamy szczegółowo (CNN i tak je odtwarza w pierwszych warstwach).\n\nDlaczego ta lekcja **przed** głębokim uczeniem? Po pierwsze: każda poważna praca o klasyfikacji terenu z SAR (Anys & He 1995, Tison 2004, Cui 2016) raportuje GLCM/Haralick jako **baseline** — i kilka klas z OpenSARShip nadal jest oddzielanych prawie wyłącznie przez teksturę (kontenerowiec vs zbiornikowiec różnią się głównie kontrastem, nie średnią). Po drugie: cechy klasyczne są **interpretowalne** — gdy CNN się myli, możesz spojrzeć na wartość kontrastu w GLCM danego patcha i zrozumieć dlaczego. Tej własności nie odzyskasz później."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Textural Features for Image Classification",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+          "year": 1973
+        }
+      ]
+    },
+    {
+      "id": "quiz-amplituda-vs-tekstura",
+      "title": "Sprawdź intuicję: kiedy tekstura wygrywa z amplitudą?",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na patch Sentinel-1 GRDH 64×64 piksele i widzisz, że średnia σ⁰ wynosi −10 dB. Dla którego z poniższych zadań klasyfikacyjnych **sama** średnia σ⁰ jest niewystarczająca i potrzebujesz cech tekstury (GLCM/Haralick lub LBP)?",
+        "options": [
+          "Odróżnienie spokojnego morza (σ⁰ ≈ −20 dB) od miasta (σ⁰ ≈ +5 dB).",
+          "Odróżnienie lasu liściastego (σ⁰ ≈ −9 dB) od wzburzonego morza (σ⁰ ≈ −10 dB).",
+          "Wykrycie statku (σ⁰ ≈ +10 dB) na tle otwartego morza (σ⁰ ≈ −20 dB).",
+          "Wykrycie cienia radarowego (σ⁰ → −∞ dB) za wysokim budynkiem."
+        ],
+        "correct": [1],
+        "explanation": "Wszystkie pozostałe trzy zadania mają **dużą separację w samej amplitudzie** (statek nad morzem to ~30 dB różnicy, miasto vs morze ~25 dB, cień radarowy ma niemal zerową σ⁰), więc prosty próg σ⁰ albo CFAR z poprzedniej lekcji wystarczą. Las i wzburzone morze siedzą w tym samym przedziale ~−10 dB i różnią się dopiero **strukturą lokalną** (las jest izotropowo niejednorodny, fale na morzu mają wyraźny kierunek dominujący). To jest kanoniczny przypadek użycia GLCM/Haralicka — nie pomoże tu nawet idealny despeckling, bo problem nie leży w wariancji szumu, tylko w tym, że średnia patcha nie niesie informacji rozróżniającej.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "tabela-deskryptorow",
+      "title": "Cztery deskryptory z lotu ptaka",
+      "description": "Szybkie zestawienie cech klasycznych vs surowa amplituda. Trzymaj w zakładce — wrócimy do niej przy doborze pipeline'u w Module 3.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          { "key": "deskryptor", "label": "Deskryptor", "type": "string", "sortable": true, "filterable": true },
+          { "key": "wymiar", "label": "Typowy wymiar wektora cech", "type": "string", "sortable": false, "filterable": false },
+          { "key": "kierunkowy", "label": "Łapie kierunkowość?", "type": "string", "sortable": true, "filterable": true },
+          { "key": "niezm_jasnosc", "label": "Niezmienniczy na monotonne skalowanie jasności?", "type": "boolean", "sortable": true, "filterable": false },
+          { "key": "koszt", "label": "Koszt obliczeniowy (skala 1–5)", "type": "number", "sortable": true, "filterable": false },
+          { "key": "skimage_api", "label": "scikit-image API", "type": "string", "sortable": false, "filterable": true }
+        ],
+        "rows": [
+          {
+            "deskryptor": "GLCM + cechy Haralicka (4 kąty × 5 cech)",
+            "wymiar": "20",
+            "kierunkowy": "tak (jawnie przez kąt θ)",
+            "niezm_jasnosc": false,
+            "koszt": 5,
+            "skimage_api": "skimage.feature.graycomatrix + graycoprops"
+          },
+          {
+            "deskryptor": "LBP uniform (P=8, R=1)",
+            "wymiar": "10",
+            "kierunkowy": "częściowo (kod bitowy zachowuje porządek sąsiadów)",
+            "niezm_jasnosc": true,
+            "koszt": 2,
+            "skimage_api": "skimage.feature.local_binary_pattern(method='uniform')"
+          },
+          {
+            "deskryptor": "LBP rotation-invariant uniform (P=8, R=1)",
+            "wymiar": "10",
+            "kierunkowy": "nie (rotacje cykliczne sklejone)",
+            "niezm_jasnosc": true,
+            "koszt": 2,
+            "skimage_api": "skimage.feature.local_binary_pattern(method='ror')"
+          },
+          {
+            "deskryptor": "Surowa σ⁰ w dB (1-pikselowa cecha)",
+            "wymiar": "1",
+            "kierunkowy": "nie (pojedyncza wartość)",
+            "niezm_jasnosc": false,
+            "koszt": 1,
+            "skimage_api": "brak — to po prostu wartość kalibrowanego piksela"
+          }
+        ],
+        "pageSize": 10
+      }
+    },
+    {
+      "id": "glcm-definicja-i-haralick",
+      "title": "GLCM — definicja, normalizacja, cechy Haralicka",
+      "type": "theory",
+      "data": {
+        "markdown": "**GLCM** (*Grey-Level Co-occurrence Matrix*) to macierz $P_d(i, j)$ zliczająca w obrębie patcha, ile razy wystąpiła **uporządkowana para** pikseli o jasnościach $(i, j)$ przesuniętych względem siebie o wektor offsetu $\\boldsymbol{d} = (\\Delta x, \\Delta y)$:\n\n$$ P_d(i, j) \\;=\\; \\#\\{(x, y) \\in W : I(x, y) = i \\,\\land\\, I(x + \\Delta x, y + \\Delta y) = j\\}. $$\n\n![GLCM zastosowany do dwóch patchy o różnej teksturze (gładka skóra zwierzęcia vs trawa) — macierz współwystąpień jest skoncentrowana wzdłuż diagonali dla gładkiej powierzchni i rozmyta dla nieregularnej tekstury, co bezpośrednio przekłada się na różną wartość Haralick contrast](https://scikit-image.org/docs/stable/_images/sphx_glr_plot_glcm_001.png)\n*(Obraz: dokumentacja scikit-image — galeria GLCM)*\n\nAby cechy nie zależały od rozmiaru patcha, **normalizujemy** macierz do rozkładu prawdopodobieństwa:\n\n$$ p(i, j) \\;=\\; \\frac{P_d(i, j)}{\\sum_{i, j} P_d(i, j)}, \\qquad \\sum_{i, j} p(i, j) = 1. $$\n\nZ rozkładu $p(i, j)$ Haralick zdefiniował 14 cech; w praktyce SAR używa się 5 najczęściej:\n\n$$ \\text{Contrast} \\;=\\; \\sum_{i, j} (i - j)^2 \\, p(i, j), $$\n\n$$ \\text{Energy} \\;=\\; \\sum_{i, j} p(i, j)^2 \\;=\\; \\text{ASM}, $$\n\n$$ \\text{Homogeneity} \\;=\\; \\sum_{i, j} \\frac{p(i, j)}{1 + (i - j)^2}, $$\n\n$$ \\text{Dissimilarity} \\;=\\; \\sum_{i, j} |i - j| \\, p(i, j), $$\n\n$$ \\text{Correlation} \\;=\\; \\sum_{i, j} \\frac{(i - \\mu_i)(j - \\mu_j)\\, p(i, j)}{\\sigma_i \\, \\sigma_j}. $$\n\nIntuicja: **Contrast** rośnie, gdy patch ma silne kontrastowe krawędzie (las, miasto); **Energy/ASM** rośnie, gdy patch jest jednolity (woda, asfalt); **Homogeneity** to wygładzona wersja Energy (mniej karze pary $(i, j)$ blisko siebie); **Correlation** mierzy liniową zależność jasności sąsiadów (uporządkowane pole orne).\n\nTrzy **parametry** decydują, co GLCM faktycznie widzi:\n\n1. **Liczba poziomów szarości $N_g$** — kwantyzujemy obraz do 8, 16, 32 lub 64 poziomów. Im więcej, tym dokładniejsza statystyka, ale tym **rzadsza** macierz i tym łatwiej sygnał ginie w speckle. Dla GRDH Sentinel-1 typowo $N_g = 32$.\n2. **Odległość $|d|$** — $d = 1$ łapie najbliższe sąsiedztwo (ziarno trawy, drobny rip), $d = 4..8$ — strukturę średnioskalową (rowy, ulice), $d \\gtrsim 16$ — to już *trend* wewnątrz patcha, nie tekstura.\n3. **Kąt $\\theta$** — typowo $0°, 45°, 90°, 135°$. Tekstura kierunkowa (orany pas pól, regularna sieć dróg) różnicuje się znacząco między kątami; izotropowa (las) — nie.\n\nW SAR jeszcze jedna pułapka: GLCM **liczymy na obrazie po despecklingu i przeskalowaniu do całkowitych poziomów w dB** (nie na liniowej intensywności). Liniowa σ⁰ rozciąga się przez 4–5 dekad, więc kwantyzacja na 32 poziomach z `np.linspace` zostawiłaby wszystkie sensowne piksele w 1–2 koszach."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Textural Features for Image Classification",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+          "year": 1973
+        },
+        {
+          "url": "https://doi.org/10.1109/36.485122",
+          "title": "Evaluation of Textural and Multipolarization Radar Features for Crop Classification",
+          "kind": "paper",
+          "author": "Hervé Anys, Dong-Chen He",
+          "year": 1995
+        }
+      ]
+    },
+    {
+      "id": "code-glcm-by-hand",
+      "title": "Implementacja GLCM i Haralick contrast w NumPy",
+      "description": "Hand-rollowy GLCM dla offsetu (dx, dy) i jedna cecha — Contrast — żeby liczby z formuł stały się konkretne.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje pracujące na obrazie wejściowym typu `numpy.ndarray` zawierającym **całkowite** poziomy szarości w przedziale `[0, n_levels)` (czyli już skwantyzowanym):\n\n- `glcm(image, n_levels, dx, dy)` — buduje **znormalizowaną** macierz $p(i, j)$ kształtu `(n_levels, n_levels)` dla offsetu `(dx, dy)`. Pomijaj pary, w których piksel `(x + dx, y + dy)` wypada poza obraz (krawędziowy padding nas tu nie interesuje). Wynik **musi sumować się do 1.0** (chyba że nie ma żadnych prawidłowych par — wtedy zwróć macierz zer).\n- `haralick_contrast(p)` — bierze znormalizowaną GLCM `p` i zwraca skalar $\\sum_{i, j} (i - j)^2 p(i, j)$.\n\n```\n# Sanity check: stała tablica → cała masa GLCM na (i=i)\n>>> img = np.zeros((4, 4), dtype=int)\n>>> p = glcm(img, n_levels=4, dx=1, dy=0)\n>>> p.sum()\n1.0\n>>> haralick_contrast(p)\n0.0\n```",
+        "starterCode": "import numpy as np\n\n\ndef glcm(image, n_levels, dx, dy):\n    \"\"\"Znormalizowana GLCM dla offsetu (dx, dy). Zwraca (n_levels, n_levels).\"\"\"\n    # TODO: alokacja macierzy P o ksztalcie (n_levels, n_levels)\n    # TODO: iteruj po wszystkich (x, y) takich, ze (x+dx, y+dy) jest w obrazie\n    # TODO: P[image[y, x], image[y+dy, x+dx]] += 1\n    # TODO: znormalizuj przez sum() i obsluz przypadek sum() == 0\n    return np.zeros((n_levels, n_levels), dtype=np.float64)\n\n\ndef haralick_contrast(p):\n    \"\"\"Sum_{i,j} (i-j)^2 * p[i,j].\"\"\"\n    # TODO: zwroc skalar typu float\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "glcm_constant_image_concentrates_on_diagonal",
+            "body": "import numpy as np\nimg = np.full((5, 5), 2, dtype=int)\np = glcm(img, n_levels=4, dx=1, dy=0)\nassert abs(p.sum() - 1.0) < 1e-9, 'GLCM musi sie normalizowac do 1'\nassert p[2, 2] == 1.0, 'cala masa powinna byc na (2, 2) dla stalego obrazu'\nassert p[0, 0] == 0.0",
+            "hidden": false
+          },
+          {
+            "name": "glcm_two_level_stripes_horizontal",
+            "body": "import numpy as np\nimg = np.array([[0, 1, 0, 1], [0, 1, 0, 1], [0, 1, 0, 1]], dtype=int)\np = glcm(img, n_levels=2, dx=1, dy=0)\nassert abs(p.sum() - 1.0) < 1e-9\n# poziomy offset (1,0) na pasach pionowych: kazda para to (0,1) lub (1,0)\nassert p[0, 0] == 0.0 and p[1, 1] == 0.0\nassert abs(p[0, 1] + p[1, 0] - 1.0) < 1e-9"
+          },
+          {
+            "name": "haralick_contrast_zero_for_constant",
+            "body": "import numpy as np\nimg = np.full((6, 6), 1, dtype=int)\np = glcm(img, n_levels=3, dx=1, dy=0)\nassert haralick_contrast(p) == 0.0, 'staly obraz ma kontrast 0'"
+          },
+          {
+            "name": "haralick_contrast_high_for_alternating",
+            "body": "import numpy as np\nimg = np.array([[0, 3, 0, 3], [0, 3, 0, 3]], dtype=int)\np = glcm(img, n_levels=4, dx=1, dy=0)\nc = haralick_contrast(p)\n# kazda para to (0,3) lub (3,0): (i-j)^2 = 9\nassert abs(c - 9.0) < 1e-9, f'expected contrast=9 for alternating 0/3, got {c}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef glcm(image, n_levels, dx, dy):\n    img = np.asarray(image, dtype=np.int64)\n    H, W = img.shape\n    P = np.zeros((n_levels, n_levels), dtype=np.float64)\n    x0, x1 = max(0, -dx), min(W, W - dx)\n    y0, y1 = max(0, -dy), min(H, H - dy)\n    a = img[y0:y1, x0:x1]\n    b = img[y0 + dy:y1 + dy, x0 + dx:x1 + dx]\n    flat_a = a.ravel()\n    flat_b = b.ravel()\n    for i, j in zip(flat_a, flat_b):\n        P[int(i), int(j)] += 1.0\n    s = P.sum()\n    if s > 0:\n        P /= s\n    return P\n\n\ndef haralick_contrast(p):\n    p = np.asarray(p, dtype=np.float64)\n    n = p.shape[0]\n    i_idx = np.arange(n).reshape(-1, 1)\n    j_idx = np.arange(n).reshape(1, -1)\n    return float(((i_idx - j_idx) ** 2 * p).sum())\n"
+      }
+    },
+    {
+      "id": "explorer-glcm-offset",
+      "title": "GLCM offset (d, θ) — co widzi macierz dla różnych odległości i kątów",
+      "description": "Suwak odległości i wybór kąta na dwóch syntetycznych patchach: izotropowym szumie i pionowych pasach. Patrz, jak rozjeżdża się Contrast między próbkami.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nN_LEVELS = 8\nrng = np.random.default_rng(0)\n\n# Patch A: szum izotropowy (mocno teksturowany, brak kierunkowosci).\nPATCH_NOISE = rng.integers(0, N_LEVELS, size=(48, 48))\n\n# Patch B: pionowe pasy 0/N-1 powtarzane co 2 piksele (silnie kierunkowy).\n_x = np.arange(48)\nPATCH_STRIPES = np.where((_x % 4) < 2, 0, N_LEVELS - 1)\nPATCH_STRIPES = np.broadcast_to(PATCH_STRIPES, (48, 48)).astype(int).copy()\n\n\ndef _glcm(image, n_levels, dx, dy):\n    img = np.asarray(image, dtype=np.int64)\n    H, W = img.shape\n    P = np.zeros((n_levels, n_levels), dtype=np.float64)\n    x0, x1 = max(0, -dx), min(W, W - dx)\n    y0, y1 = max(0, -dy), min(H, H - dy)\n    a = img[y0:y1, x0:x1].ravel()\n    b = img[y0 + dy:y1 + dy, x0 + dx:x1 + dx].ravel()\n    np.add.at(P, (a, b), 1.0)\n    s = P.sum()\n    return P / s if s > 0 else P\n\n\ndef _contrast(p):\n    n = p.shape[0]\n    i = np.arange(n).reshape(-1, 1)\n    j = np.arange(n).reshape(1, -1)\n    return float(((i - j) ** 2 * p).sum())\n\n\ndef _angle_to_offset(angle_deg, d):\n    a = np.deg2rad(float(angle_deg))\n    return int(round(d * np.cos(a))), int(round(-d * np.sin(a)))\n",
+        "renderCode": "d = int(distance)\nangle = str(angle_deg)\ndx, dy = _angle_to_offset(angle, d)\n\np_noise = _glcm(PATCH_NOISE, N_LEVELS, dx, dy)\np_stripes = _glcm(PATCH_STRIPES, N_LEVELS, dx, dy)\nc_noise = _contrast(p_noise)\nc_stripes = _contrast(p_stripes)\n\nfig, axes = plt.subplots(2, 3, figsize=(8.5, 5.0))\n\naxes[0, 0].imshow(PATCH_NOISE, cmap='gray', vmin=0, vmax=N_LEVELS - 1)\naxes[0, 0].set_title('Patch A: szum izotropowy')\naxes[0, 0].set_xlabel('x [px]'); axes[0, 0].set_ylabel('y [px]')\n\naxes[0, 1].imshow(p_noise, cmap='magma')\naxes[0, 1].set_title(f'GLCM(A), d={d}, theta={angle} deg')\naxes[0, 1].set_xlabel('j (jasnosc piksela b)'); axes[0, 1].set_ylabel('i (jasnosc piksela a)')\n\naxes[0, 2].bar(['Patch A', 'Patch B'], [c_noise, c_stripes], color=['#1d4ed8', '#cc4444'])\naxes[0, 2].set_title('Haralick contrast')\naxes[0, 2].set_ylabel('contrast (a.u.)')\naxes[0, 2].grid(True, alpha=0.3)\n\naxes[1, 0].imshow(PATCH_STRIPES, cmap='gray', vmin=0, vmax=N_LEVELS - 1)\naxes[1, 0].set_title('Patch B: pionowe pasy (kierunkowe)')\naxes[1, 0].set_xlabel('x [px]'); axes[1, 0].set_ylabel('y [px]')\n\naxes[1, 1].imshow(p_stripes, cmap='magma')\naxes[1, 1].set_title(f'GLCM(B), d={d}, theta={angle} deg')\naxes[1, 1].set_xlabel('j (jasnosc piksela b)'); axes[1, 1].set_ylabel('i (jasnosc piksela a)')\n\naxes[1, 2].axis('off')\naxes[1, 2].text(0.0, 0.85, f'contrast(A) = {c_noise:.2f}', fontsize=11)\naxes[1, 2].text(0.0, 0.65, f'contrast(B) = {c_stripes:.2f}', fontsize=11)\naxes[1, 2].text(0.0, 0.40, 'Dla theta=0 deg pasy maja silny\\nkontrast (sasiad to inna jasnosc).', fontsize=9, color='gray')\naxes[1, 2].text(0.0, 0.15, 'Dla theta=90 deg pasy znikaja\\n(sasiad ma te sama jasnosc).', fontsize=9, color='gray')\n\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "distance",
+            "label": "Odległość offsetu d (piksele)",
+            "type": "slider",
+            "min": 1,
+            "max": 8,
+            "step": 1,
+            "default": 1
+          },
+          {
+            "name": "angle_deg",
+            "label": "Kąt θ (stopnie)",
+            "type": "select",
+            "default": "0",
+            "options": ["0", "45", "90", "135"]
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 200
+      }
+    },
+    {
+      "id": "lbp-i-praktyka-sar",
+      "title": "LBP i praktyczny pipeline SAR-tekstury",
+      "type": "theory",
+      "data": {
+        "markdown": "GLCM jest **kosztowny obliczeniowo**: dla patcha $W \\times W$ z $N_g = 32$ poziomów liczysz macierz $32 \\times 32$ przy każdym przesunięciu okna sliding-window. Przy $W = 32$ i kroku 1 to setki tysięcy macierzy na obraz $1024 \\times 1024$. Stąd druga rodzina deskryptorów, która **koduje** sąsiedztwo zamiast je **zliczać**: **LBP** (*Local Binary Patterns*).\n\n![Schemat sąsiedztwa LBP — piksel centralny otoczony P=8 próbkami na okręgu o promieniu R=1; każdy sąsiad daje jeden bit zależnie od znaku różnicy z centrum, co tworzy P-bitowy kod całego sąsiedztwa](https://commons.wikimedia.org/wiki/Special:FilePath/Lbp_neighbors.svg)\n*(Obraz: Wikimedia Commons; przypisanie zgodnie ze stroną pliku)*\n\nLBP w wersji $(P, R)$ (Ojala et al. 2002): bierzemy $P$ próbek na okręgu o promieniu $R$ wokół piksela centralnego $c$, każdą porównujemy z $c$ i kodujemy jednym bitem ($1$ jeśli sąsiad ≥ centrum, $0$ inaczej). $P$ bitów składa się w $P$-bitową liczbę, a histogram tych liczb po patchu **jest** deskryptorem:\n\n$$ \\text{LBP}_{P, R}(c) \\;=\\; \\sum_{p=0}^{P-1} s\\bigl(I(p) - I(c)\\bigr) \\cdot 2^p, \\qquad s(x) = \\begin{cases} 1, & x \\ge 0 \\\\ 0, & x < 0 \\end{cases}. $$\n\nCztery własności LBP, które warto pamiętać przy SAR:\n\n- **Niezmienniczość na monotonne transformacje jasności** — kod zależy tylko od **znaku** różnicy $I(p) - I(c)$, więc gamma, dB-vs-liniowe, a nawet drobne błędy kalibracji nic nie zmieniają. To wartość *per excellence* dla SAR, gdzie kalibracja radiometryczna nigdy nie jest doskonała.\n- **Czuły na speckle** — losowe wahania $|I(p) - I(c)|$ przerzucają bity. **Despeckluj zawsze przed LBP** (Refined Lee, NL-means lub CNN despeckler z Modułu 3).\n- **Wariant `uniform`** — w `skimage.feature.local_binary_pattern(..., method='uniform')` zamiast 256 koszy histogramu używamy $P + 2$ (np. 10 dla $P = 8$); kosze przepełnione kumulują się w jednym koszu, co jest empirycznie odporniejsze na szum.\n- **Rotation-invariant uniform (`ror`)** — cykliczne rotacje kodu sklejone w jeden kosz, więc cecha jest niezależna od kąta azymutalnego — przydatne, gdy klasyfikujesz obiekty mogące być pod dowolnym kątem.\n\nW praktycznym pipeline SAR-tekstury: **despeckling → kwantyzacja do `uint8` w dB → sliding-window GLCM (4 cechy × 4 kąty) + sliding-window LBP histogram → konkatenacja w wektor cech per piksel → klasyfikator (Random Forest, SVM)**. Tę dokładnie ścieżkę będzie zwalczać Moduł 3 — najpierw musisz wiedzieć, **co** pobijasz."
+      },
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.2002.1017623",
+          "title": "Multiresolution Gray-Scale and Rotation Invariant Texture Classification with Local Binary Patterns",
+          "kind": "paper",
+          "author": "Timo Ojala, Matti Pietikäinen, Topi Mäenpää",
+          "year": 2002
+        }
+      ]
+    },
+    {
+      "id": "code-lbp-3x3",
+      "title": "Implementacja LBP dla sąsiedztwa 3×3",
+      "description": "Bezbłonowy LBP (P=8, R=1) na 8-sąsiedztwie 3×3 — bez interpolacji subpikselowej, w czystym NumPy.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcję `lbp_3x3(image)` zwracającą obraz LBP (z $P = 8$ sąsiadów na okręgu $R = 1$, **bez** interpolacji subpikselowej — używamy 8 sąsiadów z siatki 3×3) tej samej wysokości i szerokości co `image`. Wartości wyjściowe są typu `uint8` w przedziale $[0, 255]$. Krawędzie obrazu (1 piksel z każdej strony) wypełnij zerami.\n\nKolejność bitów (od najmłodszego do najstarszego, czyli LSB → MSB) — przyjmij konwencję **clockwise zaczynając od prawego sąsiada** (E, SE, S, SW, W, NW, N, NE):\n\n```\nbit 0: piksel (y, x+1)   ('E')\nbit 1: piksel (y+1, x+1) ('SE')\nbit 2: piksel (y+1, x)   ('S')\nbit 3: piksel (y+1, x-1) ('SW')\nbit 4: piksel (y, x-1)   ('W')\nbit 5: piksel (y-1, x-1) ('NW')\nbit 6: piksel (y-1, x)   ('N')\nbit 7: piksel (y-1, x+1) ('NE')\n```\n\nFunkcja porównawcza: bit ustawiony, gdy `sąsiad >= centrum`.",
+        "starterCode": "import numpy as np\n\n\ndef lbp_3x3(image):\n    \"\"\"LBP (P=8, R=1) na siatce 3x3, kierunki E,SE,S,SW,W,NW,N,NE od LSB.\"\"\"\n    img = np.asarray(image)\n    H, W = img.shape\n    out = np.zeros((H, W), dtype=np.uint8)\n    # TODO: dla kazdego (y, x) w [1, H-1) x [1, W-1):\n    # zbuduj 8-bitowy kod, gdzie bit k = 1 wtedy i tylko wtedy,\n    # gdy odpowiedni sasiad >= img[y, x] (kolejnosc kierunkow w opisie).\n    return out\n",
+        "tests": [
+          {
+            "name": "lbp_constant_image_is_max_code",
+            "body": "import numpy as np\nimg = np.full((5, 5), 7, dtype=int)\nout = lbp_3x3(img)\n# wszedzie sasiad >= centrum (rownosc) -> kod 0xFF = 255\ninner = out[1:-1, 1:-1]\nassert (inner == 255).all(), f'staly obraz powinien dac kod 255 wszedzie wewnatrz, mam {np.unique(inner)}'\nassert (out[0, :] == 0).all() and (out[-1, :] == 0).all() and (out[:, 0] == 0).all() and (out[:, -1] == 0).all()",
+            "hidden": false
+          },
+          {
+            "name": "lbp_central_minimum_is_all_ones",
+            "body": "import numpy as np\nimg = np.array([[5, 5, 5], [5, 0, 5], [5, 5, 5]], dtype=int)\nout = lbp_3x3(img)\nassert int(out[1, 1]) == 255, f'centrum minimalne, wszystkie sasiady wieksze -> 255, mam {int(out[1,1])}'"
+          },
+          {
+            "name": "lbp_central_maximum_is_zero",
+            "body": "import numpy as np\nimg = np.array([[1, 1, 1], [1, 9, 1], [1, 1, 1]], dtype=int)\nout = lbp_3x3(img)\nassert int(out[1, 1]) == 0, f'centrum maksymalne -> wszystkie bity 0, mam {int(out[1,1])}'"
+          },
+          {
+            "name": "lbp_only_east_neighbor_above_center",
+            "body": "import numpy as np\nimg = np.array([[0, 0, 0], [0, 5, 9], [0, 0, 0]], dtype=int)\nout = lbp_3x3(img)\n# tylko sasiad E (bit 0) jest >= centrum (5), reszta < 5 -> kod 1\nassert int(out[1, 1]) == 1, f'oczekiwany kod 1, mam {int(out[1,1])}'"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef lbp_3x3(image):\n    img = np.asarray(image)\n    H, W = img.shape\n    out = np.zeros((H, W), dtype=np.uint8)\n    offsets = [\n        (0, 1),   # E  bit 0\n        (1, 1),   # SE bit 1\n        (1, 0),   # S  bit 2\n        (1, -1),  # SW bit 3\n        (0, -1),  # W  bit 4\n        (-1, -1), # NW bit 5\n        (-1, 0),  # N  bit 6\n        (-1, 1),  # NE bit 7\n    ]\n    inner = img[1:-1, 1:-1]\n    code = np.zeros_like(inner, dtype=np.uint16)\n    for k, (dy, dx) in enumerate(offsets):\n        neigh = img[1 + dy:H - 1 + dy, 1 + dx:W - 1 + dx]\n        code += (neigh >= inner).astype(np.uint16) * (1 << k)\n    out[1:-1, 1:-1] = code.astype(np.uint8)\n    return out\n"
+      }
+    },
+    {
+      "id": "quiz-pulapki-tekstury",
+      "title": "Pułapki: które stwierdzenia są poprawne?",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o GLCM/Haralicku i LBP **są prawdziwe** w kontekście SAR? Zaznacz wszystkie poprawne.",
+        "options": [
+          "GLCM należy liczyć na **liniowej** intensywności σ⁰ — kwantyzacja w dB zafałszuje statystykę.",
+          "Cechy Haralicka (Contrast, Energy, Homogeneity) zależą od **odległości i kąta** offsetu, więc trzeba je raportować razem z parametrami $(d, \\theta)$.",
+          "LBP w wariancie *uniform* jest **niezmienniczy na monotonne transformacje jasności** — drobne błędy kalibracji radiometrycznej go nie ruszają.",
+          "Bez despecklingu LBP i GLCM zwracają stabilne, powtarzalne cechy — speckle uśrednia się w histogramie.",
+          "GLCM uśredniany po czterech kątach $\\{0°, 45°, 90°, 135°\\}$ daje cechę **izotropową** — przydatne, gdy nie zakładasz preferencji kierunkowej w danych."
+        ],
+        "correct": [1, 2, 4],
+        "explanation": "Opcja 1 jest **odwrotna**: liniowa σ⁰ rozciąga się przez 4–5 dekad, więc kwantyzacja na 32 poziomach zostawiłaby wszystko w 1–2 koszach. GLCM standardowo liczymy **w dB** po przeskalowaniu do `uint8`. Opcja 2 jest poprawna — cała teoria Haralicka jest sparametryzowana przez offset, więc wartości bez podanego $(d, \\theta)$ są niereprezentatywne. Opcja 3 jest poprawna i to **jest** główna przewaga LBP nad GLCM w SAR — kod LBP zależy tylko od znaku różnicy. Opcja 4 jest **klasycznym mitem**: speckle nie uśrednia się w histogramie LBP/GLCM, on przerzuca bity i koszki w sposób losowy, dodając wariancję, która niszczy klasyfikator. Despeckling jest etapem **obowiązkowym** przed liczeniem cech tekstury. Opcja 5 jest poprawna — to standardowa technika, zwana *isotropic GLCM* lub *omnidirectional GLCM*; tracisz informację o kierunkowości, ale zyskujesz cechę odporną na obrót.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-eksploracja",
+      "title": "Sandbox: rozdziel teksturowo dwa patche",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nN_LEVELS = 8\nrng = np.random.default_rng(7)\n\n# Patch A: izotropowy szum o sredniej 4 (las).\npatch_A = np.clip(rng.normal(loc=4.0, scale=1.5, size=(48, 48)), 0, N_LEVELS - 1).astype(int)\n# Patch B: poziome pasy (orany pas pol).\n_y = np.arange(48).reshape(-1, 1)\npatch_B = np.where((_y % 4) < 2, 1, 6) * np.ones((1, 48), dtype=int)\n\n# TODO 1: policz GLCM dla obu patchy dla kilku kombinacji (d, theta)\n# i wypisz Contrast / Energy / Homogeneity. Co rozdziela patche najlepiej?\n#\n# TODO 2: spróbuj LBP (P=8, R=1) z poprzedniego cwiczenia,\n# zbuduj histogramy i porownaj L1-distance miedzy patchami.\n#\n# TODO 3: dorzuc trzeci patch z miastem (gesta, kontrastowa, izotropowa\n# tekstura) - skopiuj patch_A i podmiec losowe 10% pikseli na 7 lub 0.\n# Czy GLCM contrast czy LBP histogram lepiej go odroznia od lasu?\n\nfor name, patch in [('A: las', patch_A), ('B: pole orne', patch_B)]:\n    print(name, '-> mean:', round(float(patch.mean()), 2), 'std:', round(float(patch.std()), 2))\n",
+        "encouragement": "Zmieniaj kąt offsetu między 0° a 90° i obserwuj, jak Contrast pasów spada do zera, gdy kierunek pokrywa się z osią pasów."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+      "title": "Textural Features for Image Classification",
+      "kind": "paper",
+      "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+      "year": 1973
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.2002.1017623",
+      "title": "Multiresolution Gray-Scale and Rotation Invariant Texture Classification with Local Binary Patterns",
+      "kind": "paper",
+      "author": "Timo Ojala, Matti Pietikäinen, Topi Mäenpää",
+      "year": 2002
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+      "title": "skimage.feature.graycomatrix — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.local_binary_pattern",
+      "title": "skimage.feature.local_binary_pattern — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/36.485122",
+      "title": "Evaluation of Textural and Multipolarization Radar Features for Crop Classification",
+      "kind": "paper",
+      "author": "Hervé Anys, Dong-Chen He",
+      "year": 1995
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Co-occurrence_matrix",
+      "title": "Co-occurrence matrix — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

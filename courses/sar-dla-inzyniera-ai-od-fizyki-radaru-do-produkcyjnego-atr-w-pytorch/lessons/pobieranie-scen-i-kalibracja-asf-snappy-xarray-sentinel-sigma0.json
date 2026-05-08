@@ -1,0 +1,365 @@
+{
+  "schemaVersion": 1,
+  "slug": "pobieranie-scen-i-kalibracja-asf-snappy-xarray-sentinel-sigma0",
+  "courseSlug": "sar-dla-inzyniera-ai-od-fizyki-radaru-do-produkcyjnego-atr-w-pytorch",
+  "moduleId": "m1",
+  "title": "Pobieranie scen i kalibracja: ASF, snappy, xarray-sentinel, sigma0",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Pełen pythonowy pipeline od surowego archiwum S-1 z ASF do kalibrowanego sigma0: asf_search dla katalogu, xarray-sentinel dla metadanych, wzór |DN|^2 / A^2 z LUT-em ESA, dB jako finalna jednostka — bez instalacji SNAP, gotowe pod ML.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "pipeline-od-zip-do-sigma0",
+      "title": "Od archiwum .zip do kalibrowanego sigma0 — co budujemy",
+      "type": "theory",
+      "data": {
+        "markdown": "Każda historia z Sentinel-1 zaczyna się tym samym: archiwum **`.zip`** o rozmiarze 0.5–1.5 GB, w środku katalog `S1*.SAFE/` z TIFF-ami (intensywności dla GRD, complex dla SLC), XML-ami orbity i — co dla nas dziś najważniejsze — **kalibracyjnym LUT-em** w `annotation/calibration/`. Cel lekcji: doprowadzić ten plik do postaci kalibrowanego $\\sigma^0$ jako `xarray.DataArray`, gotowego do dalszego ML — **bez instalacji SNAP**, bez 12 GB Javy w środowisku.\n\n![Wizualizacja artystyczna satelity Sentinel-1 na orbicie nad Ziemią — widoczna prostokątna antena C-SAR rozłożona prostopadle do osi orbity, panele słoneczne wzdłuż osi obrotu](https://commons.wikimedia.org/wiki/Special:FilePath/Sentinel_1-IMG_5874-white.jpg)\n*(Obraz: Wikimedia Commons / ESA — przypisanie zgodnie ze stroną pliku)*\n\nPipeline jest minimalny i deterministyczny: **(1)** wyszukiwanie i pobieranie sceny z katalogu **ASF DAAC** za pomocą `asf_search`, **(2)** indeksowanie produktu jako `xr.Dataset` przez `xarray-sentinel` (czysty Python — żadnego SNAP-a), **(3)** zastosowanie wzoru kalibracyjnego $|DN|^2 / A^2$ z LUT-em ESA i konwersja do dB. Dopiero kolejna lekcja (terrain correction i geokodowanie) zaprosi z powrotem `snappy` — tam `xarray-sentinel` już nie wystarczy.\n\nDlaczego nie poprzestać na `np.abs(slc)`? Bo surowy $|DN|$ to **nie** backscatter — to liczba całkowita w skali instrumentu, zależna od PRF, czasu echa i ustawienia AGC. Każdy IW GRDH dostaje od ESA per-produkt LUT $A(i, j)$, który tę zależność zdejmuje:\n\n$$ \\sigma^0(i, j) \\;=\\; \\frac{|DN(i, j)|^2}{A_{\\sigma}(i, j)^2}. $$\n\nBez tego kroku histogramy intensywności **między** scenami z różnych orbit nie są porównywalne, a model ML, który nakarmisz surowymi `uint16`, nauczy się **różnic w kalibracji**, a nie w fizyce sceny.\n\nDrugi katalog wart wzmianki to **CDSE / Copernicus Data Space Ecosystem** (klient: `sentinelsat` lub bezpośrednio API CDSE). Pokrywa się treścią z ASF, ale ma inne polityki rate-limit, inne quoty i — okazjonalnie — inną świeżość. **W tym kursie ASF jest pierwszą ścieżką, CDSE fallbackiem.**"
+      },
+      "sources": [
+        {
+          "url": "https://docs.asf.alaska.edu/asf_search/basics/",
+          "title": "asf_search — ASF Python API documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://sentinels.copernicus.eu/documents/247904/685163/S1-Radiometric-Calibration-V1.0.pdf",
+          "title": "Sentinel-1 Radiometric Calibration of Level-1 Products (ESA)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "match-pipeline",
+      "title": "Dopasuj bibliotekę do roli w pipeline",
+      "type": "dragMatch",
+      "description": "Każda z czterech bibliotek odpowiada za jeden, ścisły kawałek pipeline'u. Przeciągnij każdą do właściwej roli.",
+      "data": {
+        "prompt": "Zbuduj minimalny pipeline od archiwum S-1 do kalibrowanego sigma0 jako xarray.DataArray. Każda biblioteka pasuje do dokładnie jednego kroku — przeciągnij ją do właściwej kratki.",
+        "items": [
+          { "id": "asf-search", "label": "asf_search" },
+          { "id": "xarray-sentinel", "label": "xarray-sentinel" },
+          { "id": "snappy", "label": "snappy (SNAP via Python)" },
+          { "id": "rasterio", "label": "rasterio" }
+        ],
+        "zones": [
+          {
+            "id": "krok-pobranie",
+            "label": "Krok 1 — wyszukiwanie i pobieranie sceny S-1 z katalogu DAAC",
+            "accepts": ["asf-search"]
+          },
+          {
+            "id": "krok-metadane",
+            "label": "Krok 2 — indeksowanie SAFE jako xr.Dataset bez Javy",
+            "accepts": ["xarray-sentinel"]
+          },
+          {
+            "id": "krok-snap",
+            "label": "Krok 3 — operacje wymagające pełnego SNAP (terrain correction, ortorektyfikacja)",
+            "accepts": ["snappy"]
+          },
+          {
+            "id": "krok-io",
+            "label": "Krok 4 — IO georeferencyjnego GeoTIFF po geokodowaniu",
+            "accepts": ["rasterio"]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "asf_search jest oficjalnym pythonowym klientem ASF DAAC do wyszukiwania i pobierania scen Sentinel-1. xarray-sentinel czyta SAFE jako natywny xr.Dataset bez SNAP-a — wystarczy w ogromnej większości codziennych zadań radiometrycznych. snappy wciąż jest niezbędny tam, gdzie potrzebujemy operatorów Java SNAP-a (Range-Doppler terrain correction, deburst SLC, dokładne polarymetryczne dekompozycje). rasterio przejmuje pałeczkę po geokodowaniu — czyta i zapisuje GeoTIFF z pełną georeferencją do dalszego stackowania w QGIS lub xarray + rioxarray."
+      }
+    },
+    {
+      "id": "asf-search-katalog",
+      "title": "asf_search: katalog ASF, autoryzacja Earthdata, geo + temporal filtry",
+      "type": "theory",
+      "data": {
+        "markdown": "**ASF (Alaska Satellite Facility)** to NASA-finansowany ośrodek dystrybucyjny, który mirroruje katalog Sentinel-1 (i Sentinel-1B, ALOS-2, UAVSAR, NISAR…) z natywnym pythonowym klientem `asf_search`. W praktyce: szybki, stabilny i z czystym REST-em pod spodem — żadnego konsola WMS-a, żadnego XML-a do parsowania.\n\nAutoryzacja działa przez konto **NASA Earthdata Login** (`urs.earthdata.nasa.gov`). Dla samego *wyszukiwania* konto nie jest wymagane; do *pobierania* — tak. W skrypcie podajemy `session = asf.ASFSession().auth_with_creds(user, pwd)` lub używamy `~/.netrc`. Bez tego krok download zwróci 401.\n\nWyszukiwanie jest jedną funkcją: `asf.search(...)`. Filtry, które nas interesują w tej lekcji:\n\n- `platform` — `'SENTINEL-1'` (oba satelity), `'SENTINEL-1A'`, `'SENTINEL-1B'`. Po wycofaniu S-1B w 2022 wszystkie świeże akwizycje to S-1A; w archiwum znajdziemy obie.\n- `processingLevel` — `'GRD_HD'` (Ground Range Detected, High resolution, Dual-pol — typowy IW GRDH 20 m, gotowy pod amplitude-domain ML), `'SLC'` (Single-Look Complex, complex64, niezbędny do InSAR i polarymetrii), `'METADATA_GRD'` (sam manifest do rekonesansu).\n- `intersectsWith` — geometria w **WKT** (POLYGON, POINT, LINESTRING). Najprostszy AOI to prostokąt: `'POLYGON((lon1 lat1, lon2 lat1, lon2 lat2, lon1 lat2, lon1 lat1))'`.\n- `start`, `end` — daty ISO-8601 lub obiekty `datetime`. Sentinel-1 ma 6-dniowy revisit nad Europą — jeden tydzień daje zwykle 2 akwizycje wstępujące i 2 zstępujące.\n- `maxResults` — twardy limit; bez niego API zwróci całą paginację.\n\nWynik to lista `ASFProduct`. Każdy obiekt ma `.properties` (manifest produktu) i `.download(path, session=...)` do faktycznego ściągnięcia archiwum. Sentinel-1 GRDH waży ~900 MB — zaplanuj cache i nie pobieraj tej samej sceny dwa razy."
+      },
+      "sources": [
+        {
+          "url": "https://docs.asf.alaska.edu/asf_search/basics/",
+          "title": "asf_search — ASF Python API documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://asf.alaska.edu/datasets/daac/sentinel-1/",
+          "title": "Alaska Satellite Facility — Sentinel-1 data search and tutorials",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "cloze-asf-query",
+      "title": "Uzupełnij wywołanie asf_search nad portem Gdańsk",
+      "type": "codeCloze",
+      "description": "Klasyczne zapytanie: GRDH dwóch tygodni nad portem, z limitem wyników i geometrią w WKT.",
+      "data": {
+        "taskMarkdown": "Wpisz cztery wartości w wywołanie `asf.search(...)` tak, aby zapytanie zwracało **produkty Sentinel-1 GRDH** nad **portem Gdańsk** (geometria `GDANSK_WKT` zdefiniowana w szablonie), w **kwietniu 2024**, z limitem 20 wyników.\n\nDla `processingLevel` ASF używa łańcucha `'GRD_HD'`. Dla `platform` użyj nazwy obu satelitów (`SENTINEL-1`, oba `1A` i `1B`).",
+        "language": "python",
+        "template": "import asf_search as asf\n\nGDANSK_WKT = 'POLYGON((18.55 54.30, 18.85 54.30, 18.85 54.45, 18.55 54.45, 18.55 54.30))'\n\nresults = asf.search(\n    platform={{platform}},\n    processingLevel={{level}},\n    intersectsWith={{aoi}},\n    start='2024-04-01',\n    end='2024-04-15',\n    maxResults={{max_results}},\n)\n\nprint(f'Znaleziono {len(results)} produktow Sentinel-1 GRDH nad portem Gdansk.')\n",
+        "slots": [
+          {
+            "id": "platform",
+            "hint": "Stała stringowa albo enum asf.PLATFORM dla obu satelitów Sentinel-1",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "asf.PLATFORM.SENTINEL1",
+                "'SENTINEL-1'",
+                "\"SENTINEL-1\""
+              ]
+            }
+          },
+          {
+            "id": "level",
+            "hint": "Pełna nazwa GRD-High-Resolution-Dual-pol w konwencji ASF",
+            "validation": {
+              "kind": "oneOf",
+              "values": [
+                "'GRD_HD'",
+                "\"GRD_HD\""
+              ]
+            }
+          },
+          {
+            "id": "aoi",
+            "hint": "Nazwa zdefiniowanej wyżej zmiennej z geometrią",
+            "validation": {
+              "kind": "exact",
+              "value": "GDANSK_WKT"
+            }
+          },
+          {
+            "id": "max_results",
+            "hint": "Twarde 20 — typowy limit eksploracyjny",
+            "validation": {
+              "kind": "exact",
+              "value": "20"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-asf-vs-cdse",
+      "title": "Sprawdź: ASF vs CDSE i gdzie zaczyna się autoryzacja",
+      "type": "quiz",
+      "data": {
+        "question": "Pracujesz z poziomu Pythona poza Europą i chcesz zautomatyzować pobieranie GRDH dla 50 portów Bałtyku. Wybierasz `asf_search`. Które stwierdzenie najlepiej oddaje konsekwencje tego wyboru?",
+        "options": [
+          "asf_search i sentinelsat zwracają **identyczny** zbiór produktów S-1 i tylko polityki rate-limit się różnią; mogę używać ich wymiennie.",
+          "ASF mirroruje katalog S-1 z CDSE, a dostęp do *pobierania* wymaga konta **NASA Earthdata Login**; do samego *wyszukiwania* — nie. Spoza Europy ASF jest typowo bardziej przepustowy niż CDSE.",
+          "asf_search nie wymaga w ogóle autoryzacji, bo ASF dystrybuuje wszystkie dane Sentinel-1 jako Open Government Data NASA.",
+          "CDSE i ASF to ten sam katalog z dwoma frontendami; każda biblioteka uderza w to samo API, więc nie ma sensu mieć fallbacku."
+        ],
+        "correct": [1],
+        "explanation": "ASF i CDSE/Copernicus indeksują **nakładający się, ale nie identyczny** katalog Sentinel-1 (różne polityki retencji starszych akwizycji, różna świeżość po awariach), więc zalecany schemat to ASF jako pierwsza ścieżka, CDSE jako fallback. Pobieranie z ASF wymaga **NASA Earthdata Login** (`asf.ASFSession().auth_with_creds(...)` albo `~/.netrc`); samo wyszukiwanie — nie. Odpowiedź 0 i 3 mylą się co do równoważności katalogów (różne quoty, różna kompletność). Odpowiedź 2 jest klasyczną pułapką — fakt, że dane są free-and-open, nie zwalnia z konta Earthdata, które ASF traktuje jako podstawę traceability i rate-limitów.",
+        "multiSelect": false
+      },
+      "sources": [
+        {
+          "url": "https://sentinelsat.readthedocs.io/en/stable/",
+          "title": "sentinelsat — Copernicus Open Hub Python client",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "xarray-sentinel-sigma0",
+      "title": "xarray-sentinel + LUT kalibracyjny: od |DN|^2 do sigma0",
+      "type": "theory",
+      "data": {
+        "markdown": "Pobrane archiwum to katalog `S1*.SAFE/`. Wewnątrz, w `measurement/`, leżą TIFF-y z surowymi pikselami (`uint16` dla GRDH, `complex16` po reinterpretacji dla SLC). W `annotation/calibration/calibration-*.xml` — **LUT-y kalibracyjne** $A_\\sigma$, $A_\\beta$, $A_\\gamma$, próbkowane na regularnej siatce w przestrzeni line/pixel z liniową interpolacją.\n\n`xarray-sentinel` indeksuje cały SAFE jednym wywołaniem — bez Javy, bez SNAP-a:\n\n```python\nimport xarray_sentinel as xs\n\n# Lista subdatasetów: 'IW1/VV', 'IW2/VV', kalibracja, orbita...\nsubsets = xs.open_sentinel1_dataset('S1A_IW_GRDH_*.SAFE')\nimg = xs.open_sentinel1_dataset('S1A_IW_GRDH_*.SAFE', group='IW/VV')\nlut = xs.open_sentinel1_dataset('S1A_IW_GRDH_*.SAFE', group='IW/VV/calibration')\n```\n\nObiekt `img` to natywny `xr.DataArray` z osiami `azimuth_time` i `slant_range_time`; `lut` zawiera zmienne `sigmaNought`, `betaNought`, `gammaNought` oraz `dn`, każda na siatce `(line, pixel)` ESA. Dalej liczymy $\\sigma^0$ jednym wektoryzowanym wzorem:\n\n$$ \\sigma^0(i, j) \\;=\\; \\frac{|DN(i, j)|^2}{A_\\sigma(i, j)^2}. $$\n\nKluczowy szczegół, który łatwo przeoczyć: $A_\\sigma$ **zmienia się wzdłuż range** — instrument koryguje *spreading loss*, *antenna pattern* i *incidence-angle gain* właśnie przez ten LUT. Dlatego naiwna stała kalibracja (`sigma0 = |DN|^2 / const`) zawsze zostawia gradient ciemność→jasność wzdłuż swathu. Trzeba interpolować LUT na pełną siatkę pikseli (`xarray-sentinel` robi to przez `Dataset.interp(...)` na siatce `azimuth_time × slant_range_time`).\n\nFinalna konwersja **na dB** ($\\sigma^0_{dB} = 10\\log_{10}(\\sigma^0)$) jest **nieliniowa** — i właśnie dlatego **wszystko, co radiometryczne (filtracja speckle, multilook, średnia ENL), liczymy na liniowych jednostkach**, a do dB konwertujemy dopiero do wizualizacji albo jako wejście do sieci CNN. Logarytm **przed** uśrednianiem dałby obciążony estymator backscatteru i Refined Lee przestałby być nieobciążony."
+      },
+      "sources": [
+        {
+          "url": "https://xarray-sentinel.readthedocs.io/en/stable/",
+          "title": "xarray-sentinel — official documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://sentinels.copernicus.eu/documents/247904/685163/S1-Radiometric-Calibration-V1.0.pdf",
+          "title": "Sentinel-1 Radiometric Calibration of Level-1 Products (ESA)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "code-sigma0",
+      "title": "Implementuj kalibrację sigma0 i konwersję do dB",
+      "type": "code",
+      "description": "Dwie deterministyczne funkcje: |DN|^2/A^2 jako liniowy sigma0, plus 10*log10 z dolnym klampem przeciw -inf.",
+      "data": {
+        "taskMarkdown": "Zaimplementuj dwie funkcje pracujące na intensywności w **liniowych jednostkach**:\n\n- `sigma0_linear(dn, lut)` — przyjmuje `dn` (np.ndarray, surowe DN, dowolny dtype numeryczny) i `lut` (np.ndarray tej samej shape, wartości $A_\\sigma$ z LUT-u kalibracyjnego). Zwraca `np.ndarray` typu `float64` z wartościami $\\sigma^0 = |DN|^2 / A_\\sigma^2$.\n- `to_db(sigma0, eps=1e-10)` — konwersja liniowy sigma0 → dB: $10 \\log_{10}(\\max(\\sigma^0, \\varepsilon))$. Klamp jest po to, żeby zera w masce land/water nie wybuchały na `-inf`.\n\nZałóż wektoryzację po pełnej macierzy (żadnych pętli for). LUT i DN mają tę samą shape — kalibracja musi być per-piksel, bo $A_\\sigma$ zmienia się wzdłuż range.\n\n```\n>>> dn = np.array([[100, 200], [150, 50]], dtype=float)\n>>> lut = np.array([[10, 10], [10, 10]], dtype=float)\n>>> sigma0_linear(dn, lut)\narray([[100., 400.],\n       [225.,  25.]])\n>>> np.round(to_db(sigma0_linear(dn, lut)), 2)\narray([[20.  , 26.02],\n       [23.52, 13.98]])\n```",
+        "starterCode": "import numpy as np\n\n\ndef sigma0_linear(dn, lut):\n    \"\"\"|DN|^2 / A_sigma^2; obie tablice musza miec ta sama shape.\"\"\"\n    # TODO: rzutuj na float64, policz |dn|^2 / lut^2 wektorowo\n    return dn\n\n\ndef to_db(sigma0, eps=1e-10):\n    \"\"\"Liniowy sigma0 -> dB: 10 * log10(max(sigma0, eps)).\"\"\"\n    # TODO: clamp od dolu epsilonem, potem 10*log10\n    return sigma0\n",
+        "tests": [
+          {
+            "name": "sigma0_simple_known_values",
+            "body": "import numpy as np\ndn = np.array([[100.0, 200.0], [150.0, 50.0]])\nlut = np.array([[10.0, 10.0], [10.0, 10.0]])\nout = sigma0_linear(dn, lut)\nassert np.allclose(out, [[100.0, 400.0], [225.0, 25.0]])",
+            "hidden": false
+          },
+          {
+            "name": "sigma0_lut_varies_along_range",
+            "body": "import numpy as np\ndn = np.full((4, 8), 200.0)\nlut = np.broadcast_to(np.linspace(10.0, 40.0, 8), (4, 8)).copy()\nout = sigma0_linear(dn, lut)\nexpected_first_col = (200.0 ** 2) / (10.0 ** 2)\nexpected_last_col = (200.0 ** 2) / (40.0 ** 2)\nassert np.allclose(out[:, 0], expected_first_col)\nassert np.allclose(out[:, -1], expected_last_col)\nassert out[0, 0] > out[0, -1]"
+          },
+          {
+            "name": "to_db_roundtrip_for_unit_intensity",
+            "body": "import numpy as np\nassert abs(float(to_db(np.array([1.0]))[0]) - 0.0) < 1e-9\nassert abs(float(to_db(np.array([10.0]))[0]) - 10.0) < 1e-9\nassert abs(float(to_db(np.array([100.0]))[0]) - 20.0) < 1e-9"
+          },
+          {
+            "name": "to_db_clamps_zero_to_finite",
+            "body": "import numpy as np\nout = to_db(np.array([0.0, 1e-15]))\nassert np.all(np.isfinite(out)), 'epsilon clamp ma chronic przed -inf'\nassert out[0] < -90.0"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef sigma0_linear(dn, lut):\n    dn = np.asarray(dn, dtype=np.float64)\n    lut = np.asarray(lut, dtype=np.float64)\n    return (np.abs(dn) ** 2) / (lut ** 2)\n\n\ndef to_db(sigma0, eps=1e-10):\n    s = np.asarray(sigma0, dtype=np.float64)\n    return 10.0 * np.log10(np.maximum(s, eps))\n"
+      }
+    },
+    {
+      "id": "explorer-lut-vs-range",
+      "title": "Range-zależny LUT a histogram sigma0 dB",
+      "type": "parametricExplorer",
+      "description": "Suwakami sterujesz nachyleniem LUT-u kalibracyjnego wzdłuż range i kontrastem sceny. Wykres pokazuje, dlaczego pominięcie LUT-u zostawia gradient dB wzdłuż swathu.",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(7)\n\n# Syntetyczna scena: jednorodny morski backscatter -15 dB w liniowych jednostkach\n# z multiplikatywnym specklem o rozkladzie wykladniczym (1-look)\nH, W = 256, 512\nTRUE_SIGMA0_LIN = np.full((H, W), 10 ** (-15.0 / 10.0))\nSPECKLE = rng.exponential(scale=1.0, size=(H, W))\nTRUE_INTENSITY = TRUE_SIGMA0_LIN * SPECKLE\n\n# Range na osi x; LUT typu 'wzrost wzdluz range' o nachyleniu lut_slope\nRANGE_INDEX = np.arange(W)\n",
+        "renderCode": "lut_baseline = 1000.0\nlut_per_pixel = float(lut_slope)\nA = lut_baseline + lut_per_pixel * RANGE_INDEX\nA = np.broadcast_to(A, (H, W))\n\n# Sztuczne DN: |DN|^2 = sigma0_lin * A^2 (czyli odwrotnosc kalibracji)\nDN = np.sqrt(TRUE_INTENSITY) * A\n\n# Kalibracja poprawna (per-piksel) vs naiwna (stala A_const)\nsigma0_correct = (np.abs(DN) ** 2) / (A ** 2)\nA_const = float(naiwny_const)\nsigma0_naive = (np.abs(DN) ** 2) / (A_const ** 2)\n\nsigma0_correct_db = 10 * np.log10(np.maximum(sigma0_correct, 1e-10))\nsigma0_naive_db = 10 * np.log10(np.maximum(sigma0_naive, 1e-10))\n\n# Profil wzdluz range (srednia po azymucie)\nprofil_correct = sigma0_correct_db.mean(axis=0)\nprofil_naive = sigma0_naive_db.mean(axis=0)\n\nplt.figure(figsize=(7.8, 4.6))\nplt.plot(RANGE_INDEX, profil_correct, color='#1d4ed8', lw=2.2, label='kalibracja per-piksel (LUT)')\nplt.plot(RANGE_INDEX, profil_naive, color='#cc4444', lw=2.2, ls='--', label=f'naiwna stala A={A_const:.0f}')\nplt.axhline(-15.0, color='black', lw=1.0, alpha=0.5, label='prawdziwy sigma0 = -15 dB')\nplt.xlabel('range (indeks piksela wzdluz swathu)')\nplt.ylabel('sredni sigma0 [dB]')\nplt.title(f'LUT slope = {lut_per_pixel:.1f} / pix; profil dB wzdluz range')\nplt.legend(loc='best')\nplt.grid(True, alpha=0.3)\n",
+        "params": [
+          {
+            "name": "lut_slope",
+            "label": "Nachylenie LUT wzdluz range (jednostek na piksel)",
+            "type": "slider",
+            "min": 0.0,
+            "max": 5.0,
+            "step": 0.25,
+            "default": 2.0
+          },
+          {
+            "name": "naiwny_const",
+            "label": "Naiwna stala A_const (zignorowany LUT)",
+            "type": "slider",
+            "min": 800.0,
+            "max": 2400.0,
+            "step": 50.0,
+            "default": 1000.0
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "snappy-kiedy-potrzebny",
+      "title": "Kiedy snappy jest niezbędny — i kiedy lepiej go ominąć",
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro `xarray-sentinel` daje nam metadane i kalibrację bez Javy, po co w ogóle wracać do `snappy`? Bo część operatorów SNAP nadal **nie ma** czystego pythonowego ekwiwalentu i każdy reverse-engineering byłby walką z setkami stron dokumentacji ESA.\n\nKonkretnie potrzebujesz `snappy`, gdy:\n\n- **Robisz Range-Doppler terrain correction** z DEM-em (Copernicus 30 m, SRTM). To kolejna lekcja kursu — `xarray-sentinel` zatrzymuje się na metadanych, nie projektuje radarowej siatki na mapę.\n- **Pracujesz na SLC** i potrzebujesz operatora **TOPSAR-Deburst** dla IW SLC. SLC dla IW składa się z trzech *bursts* na sub-swath z lukami azymutalnymi — bez deburstu nie da się wykonać InSAR ani spójnej koherencji.\n- **Liczysz pełnowymiarową dekompozycję polarymetryczną** (Cloude-Pottier, Yamaguchi) na quad-pol. Sentinel-1 jest dual-pol, więc ten przypadek dla naszego kursu jest *out-of-scope*, ale w innych misjach (RADARSAT-2, ALOS-2) `snappy` jest bezalternatywny.\n- **Walidujesz swój własny pipeline** względem operatorów SNAP-a (Calibration, Speckle-Filter, Multilook). To dobre BHP raz na początku projektu — jeśli histogramy się rozjeżdżają, prawie zawsze winna jest kolejność operacji albo logarytm zastosowany zbyt wcześnie.\n\nKiedy `snappy` **nie** jest potrzebny:\n\n- Calibration → σ⁰ na GRDH: `xarray-sentinel` + nasz wzór $|DN|^2 / A^2$ wystarczają.\n- Filtry speckle (Lee, Frost, Refined Lee, NL-means): SciPy / `skimage.restoration` + własny kod.\n- Klasyczne cechy GLCM / LBP, CFAR, log-ratio: czysty NumPy + `scikit-image`.\n\nGotcha instalacyjny, którego nie pominę: `snappy` historycznie wymagał **Pythona 3.4–3.6** i ręcznej konfiguracji `JPY_JVM_LIBRARY`. Aktualne wersje SNAP 9 / 10 obsługują 3.9+, ale wciąż przez bridge `jpy`. Jeśli twój projekt nie potrzebuje terrain correction, **zostań na xarray-sentinel** — zaoszczędzisz sobie godziny debugowania JVM."
+      },
+      "sources": [
+        {
+          "url": "https://senbox.atlassian.net/wiki/spaces/SNAP/pages/50855941/Configure+Python+to+use+the+SNAP-Python+snappy+interface",
+          "title": "snappy — ESA STEP: Configure Python to use the SNAP-Python interface",
+          "kind": "article"
+        },
+        {
+          "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.calibration.ui/operators/CalibrationOp.html",
+          "title": "SNAP — Sentinel-1 Calibration operator (sigma0/beta0/gamma0)",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "tabela-bibliotek",
+      "title": "Mapa narzędzi: która biblioteka, do czego",
+      "type": "dataTable",
+      "description": "Pięć bibliotek z pipeline'u zestawionych według roli, instalacyjnych zależności i typu zwracanego obiektu. Sortuj po kolumnie 'wymaga SNAP' żeby zobaczyć, co da się zrobić bez Javy.",
+      "data": {
+        "columns": [
+          { "key": "library", "label": "Biblioteka", "type": "string", "sortable": true, "filterable": true },
+          { "key": "role", "label": "Rola w pipeline", "type": "string", "sortable": false, "filterable": false },
+          { "key": "wymaga_snap", "label": "Wymaga SNAP", "type": "boolean", "sortable": true, "filterable": false },
+          { "key": "wymaga_auth", "label": "Wymaga autoryzacji", "type": "boolean", "sortable": true, "filterable": false },
+          { "key": "zwraca", "label": "Typ wyjścia", "type": "string", "sortable": false, "filterable": false }
+        ],
+        "rows": [
+          {
+            "library": "asf_search",
+            "role": "Wyszukiwanie i pobieranie scen z katalogu ASF DAAC (mirror NASA dla Sentinel-1)",
+            "wymaga_snap": false,
+            "wymaga_auth": true,
+            "zwraca": "ASFProduct (manifest + metoda .download)"
+          },
+          {
+            "library": "sentinelsat",
+            "role": "Alternatywny katalog Copernicus / CDSE; dobry fallback gdy ASF jest niedostępny",
+            "wymaga_snap": false,
+            "wymaga_auth": true,
+            "zwraca": "OrderedDict produktów + .download_all"
+          },
+          {
+            "library": "xarray-sentinel",
+            "role": "Indeksowanie SAFE jako xr.Dataset bez Javy; metadane + kalibracyjny LUT",
+            "wymaga_snap": false,
+            "wymaga_auth": false,
+            "zwraca": "xarray.Dataset z osiami azimuth_time × slant_range_time"
+          },
+          {
+            "library": "snappy",
+            "role": "Most do operatorów Java SNAP-a: Calibration, Terrain Correction, TOPSAR-Deburst",
+            "wymaga_snap": true,
+            "wymaga_auth": false,
+            "zwraca": "Java Product (przez jpy bridge)"
+          },
+          {
+            "library": "rasterio",
+            "role": "IO georeferencyjnego GeoTIFF po geokodowaniu: zapis sigma0 dB jako Cloud-Optimized GeoTIFF",
+            "wymaga_snap": false,
+            "wymaga_auth": false,
+            "zwraca": "rasterio.DatasetReader / numpy.ndarray + transform"
+          }
+        ],
+        "initialSort": { "key": "wymaga_snap", "dir": "asc" },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "sandbox-eksploracja-db",
+      "title": "Pobaw się: liniowy sigma0 vs dB i pułapka logu przed średnią",
+      "type": "sandbox",
+      "description": "Eksperyment Monte Carlo na syntetycznym specklu jednorodnej powierzchni morskiej — dwa porządki obliczeń, dwa różne wyniki.",
+      "data": {
+        "starterCode": "import numpy as np\n\nrng = np.random.default_rng(2024)\n\n# Jednorodny patch morza, prawdziwy sigma0 = -15 dB\nTRUE_SIGMA0_LIN = 10 ** (-15.0 / 10.0)\nspeckle = rng.exponential(scale=1.0, size=(64, 64))\nintensity = TRUE_SIGMA0_LIN * speckle\n\n# Sciezka A: u sredniaj w liniowych, potem konwertuj do dB\nmean_lin = float(intensity.mean())\nestymator_A_db = 10 * np.log10(mean_lin)\n\n# Sciezka B: konwertuj do dB pierwszej, potem usrednij (tak NIE rob)\ndb = 10 * np.log10(np.maximum(intensity, 1e-10))\nestymator_B_db = float(db.mean())\n\nprint(f'Prawdziwy sigma0:        -15.000 dB')\nprint(f'A) srednia w lin -> dB:  {estymator_A_db:7.3f} dB  (nieobciazony)')\nprint(f'B) dB -> srednia w dB:   {estymator_B_db:7.3f} dB  (obciazony, log dziala wczesniej)')\nprint(f'Roznica:                  {estymator_A_db - estymator_B_db:+7.3f} dB')\n\n# Eksperyment: zmien rozmiar patcha, true sigma0, kszalt sceny.\n# Zwroc uwage, ze obciazenie roznicy jest niezalezne od TRUE_SIGMA0 i wynosi ~2.5 dB\n# dla single-look exponential -- to slynna 'logarithmic correction' Wagnera/Cumminga.\n",
+        "encouragement": "Zmień rozmiar patcha i prawdziwy sigma0 — różnica między średnią-w-dB a dB-średniej zostanie ta sama (~2.5 dB dla single-look)."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.asf.alaska.edu/asf_search/basics/",
+      "title": "asf_search — ASF Python API documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinelsat.readthedocs.io/en/stable/",
+      "title": "sentinelsat — Copernicus Open Hub Python client documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://xarray-sentinel.readthedocs.io/en/stable/",
+      "title": "xarray-sentinel — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://step.esa.int/main/wp-content/help/versions/9.0.0/snap-toolboxes/org.esa.s1tbx.s1tbx.op.calibration.ui/operators/CalibrationOp.html",
+      "title": "SNAP — Sentinel-1 Calibration operator (sigma0/beta0/gamma0)",
+      "kind": "article"
+    },
+    {
+      "url": "https://senbox.atlassian.net/wiki/spaces/SNAP/pages/50855941/Configure+Python+to+use+the+SNAP-Python+snappy+interface",
+      "title": "snappy — ESA STEP: Configure Python to use the SNAP-Python interface",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentinels.copernicus.eu/documents/247904/685163/S1-Radiometric-Calibration-V1.0.pdf",
+      "title": "Sentinel-1 Radiometric Calibration of Level-1 Products (technical note, ESA)",
+      "kind": "article"
+    }
+  ]
+}
