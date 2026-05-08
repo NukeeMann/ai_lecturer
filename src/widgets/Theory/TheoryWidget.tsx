@@ -17,7 +17,8 @@ const VALID_TONES: ReadonlySet<CalloutTone> = new Set(['info', 'insight', 'warni
 function preprocessMath(markdown: string): string {
   return markdown
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, body: string) => `$${body}$`)
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `$$${body}$$`);
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `$$\n${body}\n$$`)
+    .replace(/\$\$([^\n$]+?)\$\$/g, (_, body: string) => `$$\n${body}\n$$`);
 }
 
 function normalizeTone(raw: unknown): CalloutTone {
