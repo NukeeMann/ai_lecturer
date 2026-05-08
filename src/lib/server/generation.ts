@@ -32,7 +32,7 @@ import {
 import os from 'node:os';
 import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
-import { LessonSchema } from '@/lib/schemas/lesson';
+import { LessonSchema, type Lesson } from '@/lib/schemas/lesson';
 import { atomicRenameSync } from './atomic';
 import {
   assertSafeSlug,
@@ -183,6 +183,49 @@ export class GenerationStateMissingError extends Error {
     super('No .generation-state.json file present for slug');
     this.name = 'GenerationStateMissingError';
   }
+}
+
+/**
+ * US-139: defensive idempotency guard for the per-lesson stage. Returns
+ * `{ valid: true }` when `/courses/<slug>/lessons/<lessonSlug>.json` already
+ * parses + validates against `LessonSchema` (the same schema enforced by the
+ * per-lesson API route handler). Used by `startGenerationInner` to skip the
+ * `claude -p generate_lesson` spawn entirely when prior work — a US-137
+ * resume, a manual file copy, or a previous successful run — has already
+ * landed a valid lesson on disk. Cheap protection against wasted token spend.
+ *
+ * Rejects are normalised to a `{ valid: false, reason }` discriminator so
+ * callers can branch on cause (e.g. for telemetry); current callers treat
+ * every false case the same — re-spawn.
+ */
+export type IsLessonAlreadyValidResult =
+  | { valid: true; lesson: Lesson }
+  | { valid: false; reason: 'missing' | 'parse-error' | 'schema-error' };
+
+export async function isLessonAlreadyValid(
+  slug: string,
+  lessonSlug: string,
+): Promise<IsLessonAlreadyValidResult> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(lessonFile(slug, lessonSlug), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { valid: false, reason: 'missing' };
+    }
+    return { valid: false, reason: 'parse-error' };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { valid: false, reason: 'parse-error' };
+  }
+  const result = LessonSchema.safeParse(parsed);
+  if (!result.success) {
+    return { valid: false, reason: 'schema-error' };
+  }
+  return { valid: true, lesson: result.data };
 }
 
 // ── US-138: persistent generation events log ─────────────────────────────────
@@ -1936,8 +1979,44 @@ async function startGenerationInner(
       const lesson = lessons[i];
       const existingState = findLessonState(lesson.slug);
 
-      // US-137: lessons already marked done in the persisted state are skipped
-      // entirely — no spawn, no stage events, just advance the progress bar.
+      // US-139: stale-tmp cleanup runs on every iteration regardless of
+      // validity outcome. Covers the case where both `<lessonSlug>.json`
+      // (valid) AND `<lessonSlug>.tmp` exist — the .tmp is dropped no matter
+      // what the validity check returns.
+      try {
+        await fs.unlink(
+          path.join(courseDir(slug), 'lessons', `${lesson.slug}.tmp`),
+        );
+      } catch {
+        /* no stale tmp — ignore */
+      }
+
+      // US-139: defensive idempotency guard. If the lesson file already
+      // parses + validates against LessonSchema, mark it done and skip the
+      // claude -p spawn entirely. Protects against wasted token spend on
+      // resumes (US-137), manual file copies, partial-success replays, or
+      // any other case where the file already represents valid work.
+      const validity = await isLessonAlreadyValid(slug, lesson.slug);
+      if (validity.valid) {
+        const stageName = `lesson:${lesson.slug}`;
+        emit({ type: 'stage', name: stageName, status: 'started' });
+        if (existingState) {
+          existingState.status = 'done';
+          existingState.attempts = 0;
+          existingState.finishedAt = new Date().toISOString();
+          delete existingState.lastError;
+          await persistGenState();
+        }
+        emit({ type: 'stage', name: stageName, status: 'done' });
+        emit({ type: 'progress', current: i + 1, total });
+        continue;
+      }
+
+      // US-137: legacy fallback for state that claims `done` while the lesson
+      // file is missing/corrupt — preserve the pre-US-139 silent-skip behaviour
+      // rather than silently re-spawning. In practice US-139's validity check
+      // above will already have returned `{valid:true}` when the file is
+      // healthy, so this branch only fires for a state-vs-disk mismatch.
       if (existingState?.status === 'done') {
         emit({ type: 'progress', current: i + 1, total });
         continue;
