@@ -2214,7 +2214,19 @@ function DeleteCourseDialog({
 // US-144 — Extend modal. Two-phase: free-text instruction → schema preview
 // → Apply/Discard. Mid-flight close aborts the in-flight fetch via an
 // AbortController; late responses are ignored.
+// US-145 — adds an in-modal refinement chat below the schema preview. The
+// `messages` array holds (in order) the original instruction as the first
+// user msg, the agent's first rationale as the first agent reply, and any
+// follow-up user/agent/system entries from refinements. `originalInstruction`
+// is frozen on first submit and forwarded as the `instruction` field of every
+// subsequent /extend POST; user-side follow-ups become the `refinements`
+// array. Chat is in-memory only; closing the modal discards everything.
 type ExtendDialogPhase = 'input' | 'submitting' | 'preview' | 'applying';
+
+type ExtendChatMessage =
+  | { role: 'user'; content: string }
+  | { role: 'agent'; content: string }
+  | { role: 'system'; content: string };
 
 function ExtendCourseDialog({
   courseSlug,
@@ -2231,15 +2243,25 @@ function ExtendCourseDialog({
   const [instruction, setInstruction] = useState('');
   const [response, setResponse] = useState<ExtendResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [originalInstruction, setOriginalInstruction] = useState<string>('');
+  const [messages, setMessages] = useState<ExtendChatMessage[]>([]);
+  const [refinementInput, setRefinementInput] = useState('');
+  const [isRefining, setIsRefining] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const refineAbortRef = useRef<AbortController | null>(null);
   const phaseRef = useRef(phase);
+  const messagesRef = useRef(messages);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
 
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
   // Escape closes — but never mid-flight (AC: "no escape-to-close" while
-  // submit is in flight; same rule applies during apply).
+  // submit is in flight; same rule applies during apply or refinement).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
@@ -2258,6 +2280,7 @@ function ExtendCourseDialog({
   useEffect(() => {
     return () => {
       abortRef.current?.abort();
+      refineAbortRef.current?.abort();
     };
   }, []);
 
@@ -2301,6 +2324,11 @@ function ExtendCourseDialog({
       const data = (await res.json()) as ExtendResponse;
       if (ctrl.signal.aborted) return;
       setResponse(data);
+      setOriginalInstruction(trimmed);
+      setMessages([
+        { role: 'user', content: trimmed },
+        { role: 'agent', content: data.additions.rationale },
+      ]);
       setPhase('preview');
     } catch (err) {
       if ((err as Error).name === 'AbortError') return;
@@ -2308,6 +2336,72 @@ function ExtendCourseDialog({
       setPhase('input');
     }
   }, [courseSlug, instruction]);
+
+  const handleRefine = useCallback(async () => {
+    const trimmed = refinementInput.trim();
+    if (trimmed.length === 0) return;
+    if (isRefining) return;
+    setRefinementInput('');
+    const nextUserMsg: ExtendChatMessage = { role: 'user', content: trimmed };
+    setMessages((prev) => [...prev, nextUserMsg]);
+    setIsRefining(true);
+    const ctrl = new AbortController();
+    refineAbortRef.current = ctrl;
+
+    // Build refinements payload from the message-list-as-it-will-be after
+    // appending nextUserMsg. We deliberately read messagesRef rather than
+    // closing over the stale `messages` value (handler captures from when
+    // the user *typed* the refinement).
+    const userMessages = [...messagesRef.current, nextUserMsg].filter(
+      (m): m is { role: 'user'; content: string } => m.role === 'user',
+    );
+    // Drop the first user message (= originalInstruction) — that goes into
+    // the `instruction` field instead. The remainder is the refinement chat.
+    const refinements = userMessages.slice(1).map((m) => ({
+      role: 'user' as const,
+      content: m.content,
+    }));
+
+    try {
+      const res = await fetch(`/api/courses/${courseSlug}/extend`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          instruction: originalInstruction,
+          refinements,
+        }),
+        signal: ctrl.signal,
+      });
+      if (ctrl.signal.aborted) return;
+      if (!res.ok) {
+        let systemMsg: string;
+        if (res.status === 422) {
+          systemMsg = 'Refinement failed — please rephrase.';
+        } else if (res.status === 409) {
+          systemMsg = 'Cannot refine while generation is active.';
+        } else {
+          systemMsg = 'Server error — please try again.';
+        }
+        setMessages((prev) => [...prev, { role: 'system', content: systemMsg }]);
+        return;
+      }
+      const data = (await res.json()) as ExtendResponse;
+      if (ctrl.signal.aborted) return;
+      setResponse(data);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'agent', content: data.additions.rationale },
+      ]);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      setMessages((prev) => [
+        ...prev,
+        { role: 'system', content: 'Server error — please try again.' },
+      ]);
+    } finally {
+      if (!ctrl.signal.aborted) setIsRefining(false);
+    }
+  }, [courseSlug, originalInstruction, refinementInput, isRefining]);
 
   const handleApply = useCallback(async () => {
     if (!response) return;
@@ -2373,7 +2467,7 @@ function ExtendCourseDialog({
           boxShadow: 'var(--shadow-md)',
           padding: 'var(--space-5)',
           width: '100%',
-          maxWidth: 560,
+          maxWidth: 720,
           maxHeight: 'calc(100vh - 64px)',
           overflowY: 'auto',
           display: 'flex',
@@ -2398,11 +2492,16 @@ function ExtendCourseDialog({
           ? response && (
               <ExtendPreview
                 response={response}
-                disabled={inFlight}
+                disabled={inFlight || isRefining}
                 onApply={() => void handleApply()}
                 onDiscard={onClose}
                 error={error}
                 applying={phase === 'applying'}
+                messages={messages}
+                refinementInput={refinementInput}
+                onRefinementChange={setRefinementInput}
+                onSendRefinement={() => void handleRefine()}
+                isRefining={isRefining}
               />
             )
           : (
@@ -2562,6 +2661,11 @@ function ExtendPreview({
   onDiscard,
   error,
   applying,
+  messages,
+  refinementInput,
+  onRefinementChange,
+  onSendRefinement,
+  isRefining,
 }: {
   response: ExtendResponse;
   disabled: boolean;
@@ -2569,32 +2673,31 @@ function ExtendPreview({
   onDiscard: () => void;
   error: string | null;
   applying: boolean;
+  messages: ExtendChatMessage[];
+  refinementInput: string;
+  onRefinementChange: (next: string) => void;
+  onSendRefinement: () => void;
+  isRefining: boolean;
 }) {
   const newModuleIds = new Set(response.additions.newModuleIds);
   const newLessonSlugs = new Set(
     response.additions.newLessonIds.map((l) => l.lessonSlug),
   );
+  const trimmedRefinement = refinementInput.trim();
 
   return (
     <>
       <div
-        data-testid="extend-rationale"
-        style={{
-          padding: '10px 12px',
-          borderRadius: 'var(--radius-md)',
-          background: 'var(--bg-subtle)',
-          border: '1px solid var(--border)',
-          color: 'var(--text-secondary)',
-          fontSize: 'var(--fs-sm)',
-          lineHeight: 1.5,
-          whiteSpace: 'pre-wrap',
-        }}
-      >
-        {response.additions.rationale}
-      </div>
-      <div
         data-testid="extend-preview-tree"
-        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}
+        data-stale={isRefining ? 'true' : undefined}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-2)',
+          opacity: isRefining ? 0.6 : 1,
+          pointerEvents: isRefining ? 'none' : undefined,
+          transition: 'opacity 120ms ease',
+        }}
       >
         {response.proposedSchema.modules.map((mod) => {
           const moduleIsNew = newModuleIds.has(mod.id);
@@ -2666,6 +2769,14 @@ function ExtendPreview({
           );
         })}
       </div>
+      <ExtendChatPanel
+        messages={messages}
+        refinementInput={refinementInput}
+        onRefinementChange={onRefinementChange}
+        onSend={onSendRefinement}
+        isRefining={isRefining}
+        canSend={trimmedRefinement.length > 0}
+      />
       {error && (
         <div
           data-testid="extend-apply-error"
@@ -2743,5 +2854,222 @@ function ExtendPreview({
         )}
       </div>
     </>
+  );
+}
+
+// US-145 — Refinement chat panel rendered inside the Extend modal preview.
+// Append-only message list (user / agent / system) + textarea + Send button.
+// Sending is gated on a non-empty trimmed input AND `isRefining === false`;
+// while a refinement is in flight, the input is disabled and the Send button
+// is replaced with an inline spinner so the user knows the proposal above is
+// stale.
+function ExtendChatPanel({
+  messages,
+  refinementInput,
+  onRefinementChange,
+  onSend,
+  isRefining,
+  canSend,
+}: {
+  messages: ExtendChatMessage[];
+  refinementInput: string;
+  onRefinementChange: (next: string) => void;
+  onSend: () => void;
+  isRefining: boolean;
+  canSend: boolean;
+}) {
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll the message list to the bottom when new messages arrive.
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter sends, Shift+Enter inserts newline. Standard chat behaviour.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isRefining && canSend) onSend();
+    }
+  };
+
+  return (
+    <div
+      data-testid="extend-chat-panel"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-2)',
+        borderTop: '1px solid var(--border)',
+        paddingTop: 'var(--space-3)',
+      }}
+    >
+      <div
+        ref={listRef}
+        data-testid="extend-chat-messages"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          maxHeight: 220,
+          overflowY: 'auto',
+          padding: '4px 2px',
+        }}
+      >
+        {messages.map((msg, idx) => {
+          if (msg.role === 'user') {
+            return (
+              <div
+                key={idx}
+                data-testid="extend-chat-msg-user"
+                data-role="user"
+                style={{
+                  alignSelf: 'flex-end',
+                  maxWidth: '80%',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--accent-soft)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--fs-sm)',
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {msg.content}
+              </div>
+            );
+          }
+          if (msg.role === 'agent') {
+            return (
+              <div
+                key={idx}
+                data-testid="extend-chat-msg-agent"
+                data-role="agent"
+                style={{
+                  alignSelf: 'flex-start',
+                  maxWidth: '80%',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 'var(--fs-sm)',
+                  lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {msg.content}
+              </div>
+            );
+          }
+          return (
+            <div
+              key={idx}
+              data-testid="extend-chat-msg-system"
+              data-role="system"
+              role="alert"
+              style={{
+                alignSelf: 'center',
+                maxWidth: '90%',
+                padding: '6px 10px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--danger-subtle)',
+                border: '1px solid var(--danger-border)',
+                color: 'var(--danger)',
+                fontSize: 'var(--fs-xs)',
+                lineHeight: 1.4,
+                fontStyle: 'italic',
+              }}
+            >
+              {msg.content}
+            </div>
+          );
+        })}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--space-2)',
+          alignItems: 'flex-end',
+        }}
+      >
+        <textarea
+          data-testid="extend-chat-input"
+          value={refinementInput}
+          onChange={(e) => onRefinementChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={isRefining}
+          placeholder='Refine the proposal — e.g., "split the new module into two"'
+          rows={2}
+          style={{
+            flex: 1,
+            padding: '8px 10px',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--bg-subtle)',
+            color: 'var(--text)',
+            fontSize: 'var(--fs-sm)',
+            fontFamily: 'inherit',
+            resize: 'vertical',
+            outline: 'none',
+            minHeight: 40,
+            maxHeight: 120,
+          }}
+        />
+        {isRefining ? (
+          <div
+            data-testid="extend-chat-spinner"
+            aria-label="Refining"
+            role="status"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 36,
+              minWidth: 72,
+              padding: '0 14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--accent)',
+              color: 'var(--text-on-accent)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid currentColor',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'extend-spin 0.8s linear infinite',
+                display: 'inline-block',
+              }}
+            />
+            <style>{`@keyframes extend-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="extend-chat-send"
+            onClick={onSend}
+            disabled={!canSend}
+            style={{
+              ...primaryButtonStyle,
+              height: 36,
+              minWidth: 72,
+              opacity: canSend ? 1 : 0.5,
+              cursor: canSend ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Send
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
