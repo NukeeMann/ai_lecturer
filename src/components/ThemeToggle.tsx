@@ -1,19 +1,27 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Moon, Sun } from 'lucide-react';
+import { Moon, Sun, Sunrise } from 'lucide-react';
 
 import {
   SETTINGS_CHANGE_EVENT,
   THEME_STORAGE_KEY,
 } from '@/components/SettingsMenu';
 
-type Theme = 'light' | 'dark';
+type Theme = 'light' | 'dark' | 'sunset';
 
 function readTheme(): Theme {
   if (typeof document === 'undefined') return 'light';
   const attr = document.documentElement.getAttribute('data-theme');
+  if (attr === 'sunset') return 'sunset';
   return attr === 'dark' ? 'dark' : 'light';
+}
+
+function nextTheme(t: Theme): Theme {
+  // light → sunset → dark → light
+  if (t === 'light') return 'sunset';
+  if (t === 'sunset') return 'dark';
+  return 'light';
 }
 
 export function ThemeToggle() {
@@ -41,7 +49,7 @@ export function ThemeToggle() {
   }, []);
 
   const toggle = () => {
-    const next: Theme = theme === 'light' ? 'dark' : 'light';
+    const next = nextTheme(theme);
     document.documentElement.setAttribute('data-theme', next);
     try {
       window.localStorage.setItem(THEME_STORAGE_KEY, next);
@@ -52,8 +60,12 @@ export function ThemeToggle() {
     window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   };
 
-  const isDark = theme === 'dark';
-  const ariaLabel = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+  const ariaLabel =
+    theme === 'light'
+      ? 'Switch to sunset mode'
+      : theme === 'sunset'
+        ? 'Switch to dark mode'
+        : 'Switch to light mode';
 
   const buttonStyle: CSSProperties = {
     width: 28,
@@ -74,7 +86,7 @@ export function ThemeToggle() {
     width: 16,
     height: 16,
     display: 'inline-block',
-    // Hide both icons until we've read the actual theme to avoid a one-frame
+    // Hide all icons until we've read the actual theme to avoid a one-frame
     // mismatch between SSR (always 'light') and the post-script DOM.
     opacity: mounted ? 1 : 0,
   };
@@ -84,6 +96,12 @@ export function ThemeToggle() {
     inset: 0,
     transition: 'opacity 120ms ease, transform 120ms ease',
   };
+
+  // Visible icon per state: light → Moon (next-state hint),
+  // sunset → Sunrise, dark → Sun.
+  const showMoon = theme === 'light';
+  const showSunrise = theme === 'sunset';
+  const showSun = theme === 'dark';
 
   return (
     <button
@@ -100,8 +118,17 @@ export function ThemeToggle() {
           strokeWidth={2}
           style={{
             ...layeredIcon,
-            opacity: isDark ? 1 : 0,
-            transform: isDark ? 'rotate(0deg)' : 'rotate(-180deg)',
+            opacity: showSun ? 1 : 0,
+            transform: showSun ? 'rotate(0deg)' : 'rotate(-180deg)',
+          }}
+        />
+        <Sunrise
+          size={16}
+          strokeWidth={2}
+          style={{
+            ...layeredIcon,
+            opacity: showSunrise ? 1 : 0,
+            transform: showSunrise ? 'rotate(0deg)' : 'rotate(-90deg)',
           }}
         />
         <Moon
@@ -109,8 +136,8 @@ export function ThemeToggle() {
           strokeWidth={2}
           style={{
             ...layeredIcon,
-            opacity: isDark ? 0 : 1,
-            transform: isDark ? 'rotate(180deg)' : 'rotate(0deg)',
+            opacity: showMoon ? 1 : 0,
+            transform: showMoon ? 'rotate(0deg)' : 'rotate(180deg)',
           }}
         />
       </span>

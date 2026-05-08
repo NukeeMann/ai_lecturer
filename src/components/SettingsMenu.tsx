@@ -16,7 +16,7 @@ import {
   type KeyboardShortcut,
 } from '@/lib/hooks/useKeyboardShortcuts';
 
-type ThemePref = 'light' | 'dark' | 'system';
+type ThemePref = 'light' | 'dark' | 'sunset' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
 type Accent = 'default' | 'black' | 'indigo' | 'terracotta' | 'emerald';
 type FontFamily = 'geist' | 'ibm-plex' | 'source-serif';
@@ -74,7 +74,7 @@ function readThemePref(): ThemePref {
   if (typeof window === 'undefined') return 'system';
   try {
     const v = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (v === 'light' || v === 'dark' || v === 'system') return v;
+    if (v === 'light' || v === 'dark' || v === 'sunset' || v === 'system') return v;
   } catch {
     // localStorage may be unavailable; fall through to default.
   }
@@ -157,6 +157,7 @@ function applyFont(f: FontFamily): void {
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+  { value: 'sunset', label: 'Sunset' },
   { value: 'system', label: 'System' },
 ];
 
