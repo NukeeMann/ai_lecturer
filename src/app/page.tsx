@@ -18,6 +18,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Upload,
 } from 'lucide-react';
 import { DynamicIcon, iconNames, type IconName } from 'lucide-react/dynamic';
 
@@ -1084,6 +1085,174 @@ function CollectionSection({
   );
 }
 
+// US-151 — drag-and-drop import card. Always rendered as the final tile in
+// the explorer so users can drop a US-150 export ZIP onto it. The click path
+// opens the native file picker (accept=".zip"). The drag-drop path POSTs
+// directly to /api/courses/import.
+function ImportCourseCard({
+  onImported,
+  showToast,
+}: {
+  onImported: () => Promise<void> | void;
+  showToast: (message: string) => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleFile = useCallback(
+    async (file: File) => {
+      if (!file.name.toLowerCase().endsWith('.zip')) {
+        showToast('Only .zip files are supported.');
+        return;
+      }
+      setLoading(true);
+      const fd = new FormData();
+      fd.append('file', file);
+      let res: Response;
+      try {
+        res = await fetch('/api/courses/import', { method: 'POST', body: fd });
+      } catch (err) {
+        setLoading(false);
+        showToast(
+          `Import failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return;
+      }
+      if (res.status === 200) {
+        let body: { slug?: string; lessonCount?: number; title?: string } = {};
+        try {
+          body = (await res.json()) as typeof body;
+        } catch {
+          /* ignore */
+        }
+        const title = body.title ?? body.slug ?? 'course';
+        showToast(`Imported ${title}`);
+        await onImported();
+        setLoading(false);
+        return;
+      }
+      setLoading(false);
+      if (res.status === 409) {
+        let body: { existingSlug?: string } = {};
+        try {
+          body = (await res.json()) as typeof body;
+        } catch {
+          /* ignore */
+        }
+        const slug = body.existingSlug ?? '';
+        showToast(
+          `A course with slug "${slug}" already exists. Delete or rename it first.`,
+        );
+        return;
+      }
+      if (res.status === 400) {
+        let body: { reason?: string } = {};
+        try {
+          body = (await res.json()) as typeof body;
+        } catch {
+          /* ignore */
+        }
+        showToast(`Invalid course archive: ${body.reason ?? 'unknown'}`);
+        return;
+      }
+      showToast(`Import failed (${res.status})`);
+    },
+    [onImported, showToast],
+  );
+
+  const onPick = () => {
+    if (loading) return;
+    inputRef.current?.click();
+  };
+
+  const baseBg = 'var(--bg-muted, var(--bg-subtle))';
+  const dragBg = 'var(--accent-soft, var(--accent-subtle))';
+  const borderColor =
+    dragOver || hover ? 'var(--accent)' : 'var(--text-tertiary)';
+  const borderStyle: CSSProperties['borderStyle'] = dragOver || hover ? 'solid' : 'dashed';
+  const opacity = hover && !dragOver ? 0.8 : 1;
+  const background = dragOver ? dragBg : baseBg;
+
+  return (
+    <div
+      data-testid="import-course-card"
+      data-drag-over={dragOver || undefined}
+      role="button"
+      tabIndex={0}
+      aria-label="Import course from ZIP"
+      aria-busy={loading || undefined}
+      onClick={onPick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onPick();
+        }
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) void handleFile(file);
+      }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 'var(--space-2)',
+        background,
+        borderWidth: 2,
+        borderStyle,
+        borderColor,
+        borderRadius: 'var(--radius-lg)',
+        padding: 'var(--space-5)',
+        cursor: loading ? 'wait' : 'pointer',
+        transition:
+          'border-color var(--t-fast), background var(--t-fast), opacity var(--t-fast)',
+        opacity,
+        textAlign: 'center',
+        minHeight: 168,
+      }}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".zip,application/zip"
+        data-testid="import-course-input"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleFile(file);
+          e.target.value = '';
+        }}
+      />
+      <Upload size={28} strokeWidth={2} aria-hidden style={{ color: 'var(--text-tertiary)' }} />
+      <div style={{ fontSize: 'var(--fs-md)', fontWeight: 500, color: 'var(--text)' }}>
+        Drop course ZIP here
+      </div>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+        or click to browse
+      </div>
+    </div>
+  );
+}
+
 function EmptyState() {
   return (
     <div
@@ -1703,6 +1872,7 @@ export default function DashboardPage() {
                   fading={fadingSlug === course.slug}
                 />
               ))}
+              <ImportCourseCard onImported={loadData} showToast={showToast} />
             </div>
           )
         ) : grouped !== null ? (
@@ -1770,6 +1940,9 @@ export default function DashboardPage() {
                 />
               ),
             )}
+            <div style={courseGridStyle}>
+              <ImportCourseCard onImported={loadData} showToast={showToast} />
+            </div>
           </>
         ) : null}
       </main>
