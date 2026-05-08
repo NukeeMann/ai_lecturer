@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
+import { ZoomableImage } from '@/components/ZoomableImage';
 import { usePyodide } from '@/lib/pyodide/client';
 
 import { formatValueOutput } from './formatValue';
@@ -336,12 +337,11 @@ export function ParametricExplorerWidget({ data }: ParametricExplorerWidgetProps
         <div style={stackStyle}>
           {showPlot &&
             (pngUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                data-testid="pexp-plot"
+              <ZoomableImage
                 src={pngUrl}
                 alt="Parametric explorer plot"
                 style={plotImgStyle}
+                imgProps={{ 'data-testid': 'pexp-plot' }}
               />
             ) : (
               <div style={plotPlaceholderStyle} data-testid="pexp-plot-placeholder">
