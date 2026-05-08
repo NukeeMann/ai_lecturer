@@ -60,7 +60,16 @@ export type GenerationEvent =
   | { type: 'log'; line: string }
   | { type: 'stage'; name: string; status: 'started' | 'done' | 'error' }
   | { type: 'progress'; current: number; total: number }
-  | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+  // US-141: `coherenceReportPath` is set on the completion summary only when
+  // the final coherence-pass stage produced a report on disk (relative path
+  // under /courses/<slug>/). Absent when the stage was skipped or failed —
+  // surfaces only via the SSE event log in those cases per AC.
+  | {
+      type: 'done';
+      courseSlug: string;
+      failedLessons: FailedLesson[];
+      coherenceReportPath?: string;
+    }
   | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
   // US-137: emitted as the FIRST event of a resumeGeneration() run so the
   // wizard can hydrate its lesson-status panel in one round-trip — completed
@@ -179,6 +188,21 @@ export interface SpawnDeps {
     lessonSlug: string,
     previousAttemptReason?: string,
   ) => { command: string; args: string[] };
+  /** US-141: factory for the final coherence-pass spawn. Same shape as the
+   * other command factories — defaults to `defaultCoherencePassCommand`. */
+  coherencePassCommand?: (slug: string) => { command: string; args: string[] };
+  /** US-141: when true, the final coherence-pass stage is skipped entirely.
+   * Used by tests that don't want to script a coherence child. The default
+   * is `false` in production; the vitest setup flips it to `true` globally
+   * via `__setCoherencePassDisabledByDefault` so existing pipeline tests
+   * don't have to be updated. */
+  disableCoherencePass?: boolean;
+  /** US-141: override the per-spawn timeout applied to the coherence-pass
+   * child when running headless inside a ralph orchestrator iteration.
+   * Defaults to 30000ms (30s) per AC; tests pass a small value to drive
+   * the timeout path without waiting wall-clock seconds. Ignored when
+   * `isRalphOrchestrated()` returns false. */
+  coherencePassTimeoutMs?: number;
   cwd?: string;
   sigkillGraceMs?: number;
   /** Number of retries per lesson (additional attempts after the first). */
@@ -996,6 +1020,68 @@ console.log('[mock generate_lesson] done ${lessonSlug}');
   };
 }
 
+/**
+ * US-141: build the spawn spec for the final coherence-pass stage. Mirrors
+ * `defaultLessonCommand` but invokes the `coherence_pass` skill instead, runs
+ * without `--output-format stream-json` so the agent's stdout is plain
+ * markdown ready to be written verbatim to `coherence-report.md`, and asks
+ * the agent for the report's three named sections only — no preamble, no
+ * JSON wrapper, no closing remarks.
+ */
+export function defaultCoherencePassCommand(slug: string): {
+  command: string;
+  args: string[];
+} {
+  assertSafeSlug(slug);
+  if (process.env.GENERATION_MOCK === '1') {
+    // Test-only fast path: emit a static, valid coherence report so the
+    // playwright browser test exercises the post-generation flow without
+    // depending on a real `claude` CLI. Three sections matching the AC.
+    const stub =
+      '## Prerequisite Order\n\nNo issues found.\n\n' +
+      '## Redundancy\n\nNo issues found.\n\n' +
+      '## Notation Consistency\n\nNo issues found.\n';
+    const script = `process.stdout.write(${JSON.stringify(stub)});`;
+    return { command: process.execPath, args: ['-e', script] };
+  }
+  const prompt =
+    `Run the coherence_pass skill defined in scripts/ralph/skills/coherence_pass/coherence_pass.md. ` +
+    `Argument: slug = "${slug}". ` +
+    `Read that file and execute its steps end-to-end against /courses/${slug}/course.json and every file under /courses/${slug}/lessons/. ` +
+    `Output ONLY the markdown report — three sections (## Prerequisite Order, ## Redundancy, ## Notation Consistency) — with NO preamble, NO JSON wrapper, NO closing remarks. ` +
+    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any lesson file. Read-only audit.`;
+  return {
+    command: 'claude',
+    args: ['-p', prompt, '--dangerously-skip-permissions'],
+  };
+}
+
+/**
+ * US-141: detect whether we're running headless inside a ralph orchestrator
+ * iteration. When true the coherence-pass spawn is capped with a 30s timeout
+ * to protect iteration token / wall-time budgets — and on timeout a
+ * placeholder string is written to the report so the failure is visible
+ * rather than silently dropped.
+ */
+function isRalphOrchestrated(): boolean {
+  return Boolean(
+    process.env.RALPH_TASK_ID ||
+      process.env.RALPH_DEADLINE_EPOCH ||
+      process.env.RALPH_ITERATION,
+  );
+}
+
+// US-141: module-level test toggle that flips the `disableCoherencePass`
+// default for the duration of a test file. Production keeps the default as
+// `false` (coherence-pass runs); the vitest setup calls
+// `__setCoherencePassDisabledByDefault(true)` so existing pipeline tests can
+// continue asserting their original spawn counts and stage event sequences
+// without having to script an additional coherence-pass child.
+let coherencePassDisabledByDefault = false;
+export function __setCoherencePassDisabledByDefault(disabled: boolean): void {
+  coherencePassDisabledByDefault = disabled;
+}
+
 function makeRunId(): string {
   return `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -1124,6 +1210,12 @@ interface SpawnChildOptions {
   timeoutMs?: number;
   /** Optional secondary stream to receive every captured line in addition to the master log. */
   extraLogStream?: WriteStream | null;
+  /**
+   * US-141: when set, every raw stdout chunk is forwarded to this callback in
+   * addition to the existing pumpStream pipeline. Used by the coherence-pass
+   * stage to buffer the full markdown report alongside the live SSE log.
+   */
+  onStdoutChunk?: (chunk: string) => void;
 }
 
 interface SpawnChildResult {
@@ -1638,6 +1730,16 @@ async function startGenerationInner(
         stage: run.currentStage,
         startedAt: new Date().toISOString(),
       });
+      // US-141: attach the raw-stdout-chunk listener BEFORE pumpStream so the
+      // coherence-pass stage can buffer the full markdown report alongside the
+      // existing line-buffered SSE log pipeline. Multiple `data` listeners on
+      // a Node Readable all receive each chunk — fan-out is safe.
+      if (opts.onStdoutChunk) {
+        const cb = opts.onStdoutChunk;
+        child.stdout?.on('data', (chunk: Buffer | string) => {
+          cb(typeof chunk === 'string' ? chunk : chunk.toString('utf8'));
+        });
+      }
       pumpStream(child, {
         extraStream: opts.extraLogStream ?? null,
         onStderrLine: (line) => {
@@ -1703,6 +1805,7 @@ async function startGenerationInner(
     kind: 'done' | 'error',
     message?: string,
     failedLessons: FailedLesson[] = [],
+    coherenceReportPath?: string,
   ) {
     if (run.finished) return;
     run.finished = true;
@@ -1711,7 +1814,12 @@ async function startGenerationInner(
       killTimer = null;
     }
     if (kind === 'done') {
-      emit({ type: 'done', courseSlug: slug, failedLessons });
+      const ev: GenerationEvent = { type: 'done', courseSlug: slug, failedLessons };
+      // US-141: attach the coherence-report path only when the stage actually
+      // produced one. AC: when coherence-pass fails the field is absent and
+      // the failure is visible only in the SSE event log.
+      if (coherenceReportPath) ev.coherenceReportPath = coherenceReportPath;
+      emit(ev);
     } else {
       const ev: GenerationEvent = {
         type: 'error',
@@ -1920,6 +2028,85 @@ async function startGenerationInner(
       emit({ type: 'stage', name: stageName, status: 'error' });
     }
     return { success, attempts: attemptsRun, lastError };
+  }
+
+  /**
+   * US-141: run the final coherence-pass stage. Returns the relative path
+   * (`'coherence-report.md'`) on success, `undefined` on failure / timeout
+   * (with the placeholder text on disk only in the RALPH-orchestrated
+   * timeout case). Always emits stage:started + a terminal stage:done /
+   * stage:error so the live log surfaces the pass.
+   */
+  async function runCoherencePass(): Promise<string | undefined> {
+    const stageName = 'coherence-pass';
+    emit({ type: 'stage', name: stageName, status: 'started' });
+
+    const factory = deps.coherencePassCommand ?? defaultCoherencePassCommand;
+    const spec = factory(slug);
+
+    const ralphMode = isRalphOrchestrated();
+    const reportPath = path.join(courseDir(slug), 'coherence-report.md');
+    const coherenceLogPath = path.join(genLogs, 'coherence-pass.log');
+    const coherenceLogStream = createWriteStream(coherenceLogPath, { flags: 'w' });
+    coherenceLogStream.on('error', () => {
+      /* swallow late writes */
+    });
+
+    let stdoutBuf = '';
+    const ralphTimeoutMs = deps.coherencePassTimeoutMs ?? 30_000;
+    const result = await spawnChild(spec, {
+      // 30s cap when running headless inside a ralph orchestrator iteration
+      // so we never blow the iteration budget on a stuck claude. No cap in
+      // user-driven mode — the report can take whatever it takes. Tests can
+      // override the cap via deps.coherencePassTimeoutMs to exercise the
+      // placeholder path without waiting wall-clock seconds.
+      timeoutMs: ralphMode ? ralphTimeoutMs : undefined,
+      extraLogStream: coherenceLogStream,
+      onStdoutChunk: (chunk) => {
+        stdoutBuf += chunk;
+      },
+    });
+    coherenceLogStream.end();
+
+    if (cancelled) {
+      // Run was cancelled while the coherence stage was in flight; emit a
+      // terminal error and skip the file write — the SSE error event will
+      // surface the cancellation.
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return undefined;
+    }
+
+    if (result.timedOut) {
+      // RALPH mode only — no other code path sets a timeout. Write the
+      // placeholder text per AC so the failure is visible without forcing a
+      // re-run; emit stage:error so the live log shows it.
+      const placeholder = 'Coherence pass timed out — re-run generation to retry.\n';
+      try {
+        await fs.writeFile(reportPath, placeholder, 'utf8');
+      } catch {
+        /* best-effort */
+      }
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return undefined;
+    }
+
+    if (result.exit !== 0 || stdoutBuf.trim().length === 0) {
+      // Non-zero exit OR an empty stdout (claude printed nothing). Either
+      // way the report would be useless; emit stage:error and skip the
+      // file write. No `coherenceReportPath` is returned so the `done`
+      // event omits the field per AC.
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return undefined;
+    }
+
+    try {
+      await fs.writeFile(reportPath, stdoutBuf, 'utf8');
+    } catch {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return undefined;
+    }
+    emit({ type: 'stage', name: stageName, status: 'done' });
+    return 'coherence-report.md';
   }
 
   activeRun = run;
@@ -2184,7 +2371,32 @@ async function startGenerationInner(
       );
       return;
     }
-    finalize('done', undefined, failedLessons);
+
+    // ── US-141: Final stage — coherence pass ───────────────────────────────
+    // Best-effort cross-lesson audit AFTER every per-lesson generate_lesson
+    // succeeded AND each lesson is on disk + valid (the existing US-139
+    // logic is the gate that brought us here without entries in
+    // failedLessons). Failure of this stage does NOT mark the course
+    // generation as failed — the report is best-effort. Skipped entirely
+    // when:
+    //   - the run was cancelled mid-loop (cancelled flag),
+    //   - any per-lesson stage failed (failedLessons non-empty — partial
+    //     coverage would produce a misleading audit),
+    //   - the course has zero lessons,
+    //   - the caller explicitly disabled it via SpawnDeps.disableCoherencePass
+    //     (used by tests that don't want to script another child).
+    let coherenceReportPath: string | undefined;
+    const disableCoherence =
+      deps.disableCoherencePass ?? coherencePassDisabledByDefault;
+    if (
+      !cancelled &&
+      !disableCoherence &&
+      failedLessons.length === 0 &&
+      total > 0
+    ) {
+      coherenceReportPath = await runCoherencePass();
+    }
+    finalize('done', undefined, failedLessons, coherenceReportPath);
   })();
 
   pipeline.catch((err) => {
