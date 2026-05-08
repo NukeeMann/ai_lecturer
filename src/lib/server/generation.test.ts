@@ -22,6 +22,7 @@ import {
   getActiveRun,
   getActiveRunSummary,
   getRunById,
+  isLessonAlreadyValid,
   readEventsLogSync,
   resumeGeneration,
   sseEncode,
@@ -2675,5 +2676,305 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
     // seq strictly greater than the last seq of run #1.
     expect(run2.eventSeqs[0]).toBe(seqAfterRun1 + 1);
     expect(run2.events[0].type).toBe('resumed');
+  });
+});
+
+describe('isLessonAlreadyValid (US-139)', () => {
+  it('returns missing when no lesson file is on disk', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const result = await isLessonAlreadyValid('demo', 'absent');
+    expect(result).toEqual({ valid: false, reason: 'missing' });
+  });
+
+  it('returns parse-error on truncated json', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'broken.json'), '{"slug":"broken"', 'utf8');
+    const result = await isLessonAlreadyValid('demo', 'broken');
+    expect(result).toEqual({ valid: false, reason: 'parse-error' });
+  });
+
+  it('returns schema-error when required fields are missing', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'partial.json'),
+      JSON.stringify({ slug: 'partial' }),
+      'utf8',
+    );
+    const result = await isLessonAlreadyValid('demo', 'partial');
+    expect(result).toEqual({ valid: false, reason: 'schema-error' });
+  });
+
+  it('returns valid + the parsed lesson on a healthy file', async () => {
+    await writeStubLesson('demo', 'good');
+    const result = await isLessonAlreadyValid('demo', 'good');
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.lesson.slug).toBe('good');
+      expect(result.lesson.sections.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('pre-skip when lesson is already valid (US-139)', () => {
+  it('pre-placed valid lesson skips the spawn — only init child observed', async () => {
+    await writeStubCourse('demo', ['lesson-a']);
+    await writeStubLesson('demo', 'lesson-a');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    // Init child runs but doesn't need to write course.json — it already
+    // exists on disk from writeStubCourse above.
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // ONLY init was spawned; the per-lesson stage was satisfied by the
+    // pre-existing valid file.
+    expect(scripted.children.length).toBe(1);
+
+    // Stage events: init + lesson:lesson-a (started + done).
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).toEqual([
+      { type: 'stage', name: 'init_course', status: 'started' },
+      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'lesson:lesson-a', status: 'started' },
+      { type: 'stage', name: 'lesson:lesson-a', status: 'done' },
+    ]);
+
+    // Progress reaches 1/1 and a `done` event closes the run cleanly.
+    const progress = run.events.filter((e) => e.type === 'progress');
+    expect(progress).toEqual([
+      { type: 'progress', current: 0, total: 1 },
+      { type: 'progress', current: 1, total: 1 },
+    ]);
+    const done = run.events.find((e) => e.type === 'done');
+    expect(done).toEqual({ type: 'done', courseSlug: 'demo', failedLessons: [] });
+  });
+
+  it('truncated lesson JSON falls through to a normal spawn and is overwritten', async () => {
+    await writeStubCourse('demo', ['lesson-a']);
+    const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(lessonsDir, { recursive: true });
+    // Truncated mid-write — JSON.parse will throw → reason: 'parse-error'.
+    await fs.writeFile(
+      path.join(lessonsDir, 'lesson-a.json'),
+      '{"slug":"lesson-a"',
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 0,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // The bad file does NOT short-circuit the iteration — claude is invoked
+    // for lesson-a and overwrites the file with valid output.
+    const lessonChild = await scripted.nextChild();
+    await writeStubLesson('demo', 'lesson-a');
+    lessonChild.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    expect(scripted.children.length).toBe(2);
+
+    // The bad truncated file was overwritten with the valid one.
+    const raw = await fs.readFile(path.join(lessonsDir, 'lesson-a.json'), 'utf8');
+    const parsed = JSON.parse(raw) as { slug: string; sections: unknown[] };
+    expect(parsed.slug).toBe('lesson-a');
+    expect(parsed.sections.length).toBeGreaterThan(0);
+  });
+
+  it('lesson JSON missing required fields falls through to a normal spawn', async () => {
+    await writeStubCourse('demo', ['lesson-a']);
+    const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(lessonsDir, { recursive: true });
+    // Valid JSON but LessonSchema.safeParse will fail (missing courseSlug,
+    // moduleId, title, eyebrow, description, estimatedMinutes, sections).
+    await fs.writeFile(
+      path.join(lessonsDir, 'lesson-a.json'),
+      JSON.stringify({ slug: 'lesson-a' }),
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 0,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    const lessonChild = await scripted.nextChild();
+    await writeStubLesson('demo', 'lesson-a');
+    lessonChild.finishWithExit(0);
+
+    await waitForFinish(run);
+    expect(scripted.children.length).toBe(2);
+  });
+
+  it('stale .tmp alongside valid .json: tmp removed and no spawn', async () => {
+    await writeStubCourse('demo', ['lesson-a']);
+    await writeStubLesson('demo', 'lesson-a');
+    const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.writeFile(
+      path.join(lessonsDir, 'lesson-a.tmp'),
+      'partial garbage from a prior crash',
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // No per-lesson spawn — pre-existing valid .json still wins.
+    expect(scripted.children.length).toBe(1);
+    // The stale .tmp is dropped regardless of validity.
+    await expect(
+      fs.access(path.join(lessonsDir, 'lesson-a.tmp')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    // The valid .json is untouched.
+    await fs.access(path.join(lessonsDir, 'lesson-a.json'));
+  });
+
+  it('stale .tmp only (no .json): tmp removed and spawn proceeds', async () => {
+    await writeStubCourse('demo', ['lesson-b']);
+    const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(lessonsDir, { recursive: true });
+    await fs.writeFile(
+      path.join(lessonsDir, 'lesson-b.tmp'),
+      'partial garbage',
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // The unlink runs at the start of the iteration BEFORE the spawn — by the
+    // time the lesson child exists on the test side, the stale .tmp must
+    // already be gone.
+    const lessonChild = await scripted.nextChild();
+    await expect(
+      fs.access(path.join(lessonsDir, 'lesson-b.tmp')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+
+    await writeStubLesson('demo', 'lesson-b');
+    lessonChild.finishWithExit(0);
+
+    await waitForFinish(run);
+    expect(scripted.children.length).toBe(2);
+  });
+
+  it('integration: 3-lesson course with lessons 1+3 valid pre-placed → only lesson 2 spawns, progress reaches 3/3', async () => {
+    await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubLesson('demo', 'lesson1');
+    await writeStubLesson('demo', 'lesson3');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // ONLY lesson2 spawns — lesson1 and lesson3 are pre-skipped via
+    // isLessonAlreadyValid.
+    const lesson2 = await scripted.nextChild();
+    await writeStubLesson('demo', 'lesson2');
+    lesson2.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Spawn count: 1 init + 1 lesson 2 = 2 total children.
+    expect(scripted.children.length).toBe(2);
+
+    // Progress walks every lesson in order.
+    const progress = run.events.filter((e) => e.type === 'progress');
+    expect(progress).toEqual([
+      { type: 'progress', current: 0, total: 3 },
+      { type: 'progress', current: 1, total: 3 },
+      { type: 'progress', current: 2, total: 3 },
+      { type: 'progress', current: 3, total: 3 },
+    ]);
+
+    // Stage events: every lesson emits started+done in order, regardless of
+    // whether it was pre-skipped or actually spawned.
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).toEqual([
+      { type: 'stage', name: 'init_course', status: 'started' },
+      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'lesson:lesson1', status: 'started' },
+      { type: 'stage', name: 'lesson:lesson1', status: 'done' },
+      { type: 'stage', name: 'lesson:lesson2', status: 'started' },
+      { type: 'stage', name: 'lesson:lesson2', status: 'done' },
+      { type: 'stage', name: 'lesson:lesson3', status: 'started' },
+      { type: 'stage', name: 'lesson:lesson3', status: 'done' },
+    ]);
+
+    // Run finishes cleanly with no failed lessons.
+    const done = run.events.find((e) => e.type === 'done');
+    expect(done).toEqual({ type: 'done', courseSlug: 'demo', failedLessons: [] });
+  });
+
+  it('pre-skip path writes status=done + attempts=0 + finishedAt to .generation-state.json when state file exists', async () => {
+    // 2-lesson course where the first lesson is pre-skipped and the second
+    // fails — the failure keeps the state file on disk so we can assert the
+    // skipped lesson's state was persisted as `done` with attempts=0.
+    await writeStubCourse('demo', ['skip-me', 'fail-me']);
+    await writeStubLesson('demo', 'skip-me');
+
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 0, // single attempt for fail-me
+    });
+
+    const init = await scripted.nextChild();
+    init.finishWithExit(0);
+
+    // fail-me spawns and exits non-zero so the state file persists.
+    const failChild = await scripted.nextChild();
+    failChild.emitStderr('boom\n');
+    failChild.finishWithExit(1);
+
+    await waitForFinish(run);
+
+    const state = await readGenerationState('demo');
+    expect(state).not.toBeNull();
+    const skipMe = state!.lessons.find((l) => l.slug === 'skip-me');
+    expect(skipMe).toBeDefined();
+    expect(skipMe!.status).toBe('done');
+    expect(skipMe!.attempts).toBe(0);
+    expect(skipMe!.finishedAt).toMatch(/T/);
+    expect(skipMe!.lastError).toBeUndefined();
   });
 });
