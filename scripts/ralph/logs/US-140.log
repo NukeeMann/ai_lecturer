@@ -1,0 +1,53 @@
+[2026-05-08T21:29:21+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T21:30:35+0200] Now let me check the existing routes for patterns to follow.
+[2026-05-08T21:30:45+0200] Now let's check the Course schema and look at what `course.json` looks like:
+[2026-05-08T21:30:55+0200] Now let me extend the `ActiveRunSummary` type and update `computeActiveRunSummary` to load progress from `.generation-state.json`:
+[2026-05-08T21:31:06+0200] Now update `computeActiveRunSummary` to populate progress:
+[2026-05-08T21:31:17+0200] Now update the cold-start branch and add the `readProgressForActiveRun` helper:
+[2026-05-08T21:31:32+0200] The import already exists at line 47-52 and includes `type GenerationState`. Now mark progress and move to the DELETE route:
+[2026-05-08T21:31:39+0200] Now I need to understand "currently active" check for the DELETE route. Let me look at how the active check works:
+[2026-05-08T21:31:52+0200] Let me look at where eventsLogPath and `.generation-events.*.ndjson` rotated files live:
+[2026-05-08T21:32:06+0200] Now create the DELETE route:
+[2026-05-08T21:32:28+0200] Now also passing through `progress` in the active-run route — this happens automatically via `NextResponse.json(summary)`. Let me verify nothing strips it:
+[2026-05-08T21:32:32+0200] The route at active-run/route.ts already does `NextResponse.json(summary)` — passes everything through.
+[2026-05-08T21:32:37+0200] Now update the /create page. Let me look at current ResumeBanner and surrounding code to understand the existing patterns:
+[2026-05-08T21:32:43+0200] Now let me update the page with the new types, banner state, and fetch handler. First, update the types and state:
+[2026-05-08T21:32:52+0200] Now update the active-run fetch effect to capture progress:
+[2026-05-08T21:32:59+0200] Now I need to update the ResumeBanner. Let me look at the toast/error mechanism in the page and see what else is around:
+[2026-05-08T21:33:59+0200] Now let me write the updated ResumeBanner. First, let me see what's left of the existing banner for context:
+[2026-05-08T21:34:05+0200] Now let me update the banner integration. First let me update the call site to pass new callbacks:
+[2026-05-08T21:34:10+0200] Now let me rewrite the entire ResumeBanner. Let me look at its full extent first:
+[2026-05-08T21:34:16+0200] Now I'll rewrite the entire ResumeBanner with the new behavior:
+[2026-05-08T21:35:17+0200] Let me verify the type imports for CSSProperties exists at top of file:
+[2026-05-08T21:35:20+0200] Now let me run typecheck:
+[2026-05-08T21:35:30+0200] Typecheck passes. Now run tests:
+[2026-05-08T21:35:43+0200] All 761 tests pass on the second run. The failure was a known test flake (ENOTEMPTY race in the temp dir cleanup), unrelated to my changes.
+[2026-05-08T21:35:54+0200] Now let me do browser testing. First detect dev servers:
+[2026-05-08T21:36:59+0200] Let me check the dev server is accessible and check if claude CLI is available:
+[2026-05-08T21:37:15+0200] Let me start the dev server with a custom courses root and the generation mock:
+[2026-05-08T21:37:35+0200] Now write the playwright test. I need to seed test data and test the banner:
+[2026-05-08T21:38:21+0200] The browser test passes. Both screenshots saved. Let me verify them:
+[2026-05-08T21:38:29+0200] The screenshot confirms: banner shows "Generating course US-140 Demo Course — lesson:theory", subtitle "1 of 4 lessons · theory", and four dots (green, blue, gray, gray) for [done, inflight, pending, pending]. Both `Back to generation` and `Cancel and restart` buttons are visible.
+[2026-05-08T21:38:34+0200] Both screenshots confirm the AC: post-cancel the banner is gone (now on Stage 6) and `lessons/` is empty on disk. Let me now mark passes:true, update progress.txt, and commit.
+[2026-05-08T21:39:05+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T21:39:10+0200] Now append progress.txt:
+[2026-05-08T21:40:23+0200] Commit landed in HEAD with `passes: true` for US-140. Final summary:
+
+**US-140 implemented and committed.**
+
+Changes:
+- `src/lib/server/generation.ts` — extended `ActiveRunSummary` with optional `progress` field; new `readProgressForActiveRun(slug)` helper reads `.generation-state.json` and cross-references `course.json` for lesson titles.
+- `src/app/api/courses/[slug]/generation-state/route.ts` — new DELETE route wiping state + marker + active/rotated ndjson logs + every file under `lessons/`. 409 on live in-memory run, 400 on slug traversal.
+- `src/app/create/page.tsx` — ResumeBanner now renders a 10px-dot strip with status colors + reduced-motion-aware pulse, "<n> of <m> lessons · <slug>" subtitle, and a `cancel-and-restart-btn` ghost button. Resume button POSTs `/resume` (with `/generate` fallback on 409 `no-resumable-state`); 409 `busy` disables the button.
+
+Verified: typecheck clean; 761/761 tests pass; playwright browser test confirms `1 of 4 lessons · theory` with dots `[done, inflight, pending, pending]`, cancel-and-restart wipes `lessons/` and the state file (`/tmp/us140-banner-progress.png`, `/tmp/us140-after-cancel.png`).
+[2026-05-08T21:40:23+0200] [result success turns=89 cost=$6.630408000000002] Commit landed in HEAD with `passes: true` for US-140. Final summary:
+
+**US-140 implemented and committed.**
+
+Changes:
+- `src/lib/server/generation.ts` — extended `ActiveRunSummary` with optional `progress` field; new `readProgressForActiveRun(slug)` helper reads `.generation-state.json` and cross-references `course.json` for lesson titles.
+- `src/app/api/courses/[slug]/generation-state/route.ts` — new DELETE route wiping state + marker + active/rotated ndjson logs + every file under `lessons/`. 409 on live in-memory run, 400 on slug traversal.
+- `src/app/create/page.tsx` — ResumeBanner now renders a 10px-dot strip with status colors + reduced-motion-aware pulse, "<n> of <m> lessons · <slug>" subtitle, and a `cancel-and-restart-btn` ghost button. Resume button POSTs `/resume` (with `/generate` fallback on 409 `no-resumable-state`); 409 `busy` disables the button.
+
+Verified: typecheck clean; 761/761 tests pass; playwright browser test confirms `1 of 4 lessons · theory` with dots `[done, inflight, pending, pending]`, cancel-and-restart wipes `lessons/` and the state file (`/tmp/us140-banner-progress.png`, `/tmp/us140-after-cancel.png`).
