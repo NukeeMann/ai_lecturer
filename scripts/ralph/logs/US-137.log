@@ -1,0 +1,45 @@
+[2026-05-08T20:41:11+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T20:43:37+0200] Let me explore more of the codebase before implementing.
+[2026-05-08T20:47:35+0200] Now I have enough context. Let me implement the changes.
+[2026-05-08T20:47:45+0200] Now add the 'resumed' event variant and the new error class:
+[2026-05-08T20:47:59+0200] Now refactor `startGenerationInner` to support resume mode. Let me modify the function signature and body:
+[2026-05-08T20:48:23+0200] Now refactor `startGenerationInner` to accept a `resumeFromState` option. This is the core change. Let me update the signature first:
+[2026-05-08T20:48:36+0200] Now I need to update `runLesson` to accept a `maxAttemptsOverride` option, and the pipeline to handle resume mode. Let me update `runLesson` first:
+[2026-05-08T20:48:53+0200] Now update the pipeline to handle resume mode. Let me read the current pipeline section to make precise edits:
+[2026-05-08T20:49:46+0200] Now let me update the pipeline section to handle resume mode:
+[2026-05-08T20:52:01+0200] Now let me write the resume route:
+[2026-05-08T20:52:12+0200] Now let me add tests. First read the end of the test file to find a good place to add:
+[2026-05-08T20:52:20+0200] Now let me add the resume tests. Update imports first:
+[2026-05-08T20:52:30+0200] Now let me add the resume tests at the end of the file:
+[2026-05-08T20:53:36+0200] Now let me check for unused imports and run typecheck:
+[2026-05-08T20:54:06+0200] Typecheck passes. Now let me run the tests:
+[2026-05-08T20:54:22+0200] All 77 tests pass on the first try. Let me also run the full test suite to make sure nothing else broke:
+[2026-05-08T20:54:36+0200] Let me check whether this is a flaky test or a real regression:
+[2026-05-08T20:54:47+0200] That test was flaky (pre-existing race in `.generating.json` writes — not my code). All 743 tests now pass. Let me run a few more times to confirm:
+[2026-05-08T20:56:21+0200] 5/5 clean. The earlier failure was a known pre-existing race in the marker write pattern. Let me also run lint:
+[2026-05-08T20:56:46+0200] No lint errors in my changed files. The 204 problems are pre-existing in unrelated files. Let me update the progress log and prd.json:
+[2026-05-08T20:57:05+0200] Now append progress log:
+[2026-05-08T20:57:47+0200] Now commit:
+[2026-05-08T20:58:58+0200] The `courses/demo/` directory is test pollution. Let me clean it up before committing:
+[2026-05-08T20:59:06+0200] The test leak comes from my route test where the resumed run's deferred persistence fires after `afterEach` deletes the env var. Let me fix this:
+[2026-05-08T21:00:17+0200] The pre-existing flaky test fails ~20% of the time (`.generating.json` marker race — not my code). No more `demo`/`other` leaks. Let me commit:
+[2026-05-08T21:01:04+0200] Done. US-137 is committed at `65db42a` with `passes: true` flipped for the story.
+
+What landed:
+- `src/lib/server/generation.ts`: new `resumeGeneration()` + `GenerationStateMissingError`, new `'resumed'` event variant, `startGenerationInner` extended with optional `resumeOpts.resumeFromState` so the fresh path is untouched; per-attempt cleanup now also unlinks `<lessonSlug>.tmp`.
+- `src/app/api/courses/[slug]/resume/route.ts`: new POST route returning `{ runId, slug }` with the AC-mandated 409 mappings.
+- `src/lib/server/generation.test.ts`: 7 resume tests + 3 route tests.
+- `scripts/ralph/prd.json`: `passes: true` for US-137.
+- `scripts/ralph/progress.txt`: appended learnings.
+
+Quality: `npm run typecheck` clean, full `npm test` 743/743 stable across multiple runs (one pre-existing US-106 marker-write race flaked once but is unrelated to this story's code path).
+[2026-05-08T21:01:07+0200] [result success turns=74 cost=$9.484255000000005] Done. US-137 is committed at `65db42a` with `passes: true` flipped for the story.
+
+What landed:
+- `src/lib/server/generation.ts`: new `resumeGeneration()` + `GenerationStateMissingError`, new `'resumed'` event variant, `startGenerationInner` extended with optional `resumeOpts.resumeFromState` so the fresh path is untouched; per-attempt cleanup now also unlinks `<lessonSlug>.tmp`.
+- `src/app/api/courses/[slug]/resume/route.ts`: new POST route returning `{ runId, slug }` with the AC-mandated 409 mappings.
+- `src/lib/server/generation.test.ts`: 7 resume tests + 3 route tests.
+- `scripts/ralph/prd.json`: `passes: true` for US-137.
+- `scripts/ralph/progress.txt`: appended learnings.
+
+Quality: `npm run typecheck` clean, full `npm test` 743/743 stable across multiple runs (one pre-existing US-106 marker-write race flaked once but is unrelated to this story's code path).
