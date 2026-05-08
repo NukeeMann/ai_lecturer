@@ -6,7 +6,11 @@ const nextConfig: NextConfig = {
   // path against the bundled chunks dir and the lookup fails at runtime.
   // Marking these packages external keeps the imports as plain Node
   // resolutions so the worker module is found in node_modules.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
+  // unzipper has conditional `require('@aws-sdk/client-s3')` inside its s3
+  // helpers (we don't use them, but Turbopack still tries to resolve the
+  // require). Mark it external so it's resolved at runtime via plain Node
+  // module lookup, mirroring the pdf-parse / pdfjs-dist treatment.
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "unzipper"],
 };
 
 export default nextConfig;
