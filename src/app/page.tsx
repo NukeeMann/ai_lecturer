@@ -27,6 +27,7 @@ import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
+import type { ExtendResponse } from '@/lib/schemas/extend';
 import type { Progress } from '@/lib/schemas/progress';
 import type { Collection } from '@/lib/schemas/collection';
 import { allCoursesComplete, searchEnterTarget } from '@/lib/dashboard';
@@ -772,6 +773,7 @@ function CourseCard({
 // US-142: per-course three-dots overflow menu in the upper-right corner of
 // each card. US-150 added the `Export as ZIP` action above the destructive
 // `Delete` action.
+// each card. US-144 added the `Extend` action below `Delete`.
 function CourseCardWithMenu({
   course,
   stats,
@@ -782,6 +784,7 @@ function CourseCardWithMenu({
   onRequestDelete,
   onRequestExportZip,
   onRequestExportHtml,
+  onRequestExtend,
   dimmed,
   fading,
   rightOffset = 12,
@@ -795,6 +798,7 @@ function CourseCardWithMenu({
   onRequestDelete: () => void;
   onRequestExportZip: () => void;
   onRequestExportHtml: () => void;
+  onRequestExtend: () => void;
   dimmed: boolean;
   fading: boolean;
   rightOffset?: number;
@@ -872,6 +876,20 @@ function CourseCardWithMenu({
           >
             Delete
           </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`course-menu-extend-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onRequestExtend();
+            }}
+            style={popoverItemStyle}
+          >
+            Extend
+          </button>
         </div>
       )}
     </div>
@@ -893,6 +911,7 @@ function CourseCardWithMove({
   onRequestDelete,
   onRequestExportZip,
   onRequestExportHtml,
+  onRequestExtend,
   dimmed,
   fading,
 }: {
@@ -910,6 +929,7 @@ function CourseCardWithMove({
   onRequestDelete: () => void;
   onRequestExportZip: () => void;
   onRequestExportHtml: () => void;
+  onRequestExtend: () => void;
   dimmed: boolean;
   fading: boolean;
 }) {
@@ -925,6 +945,7 @@ function CourseCardWithMove({
         onRequestDelete={onRequestDelete}
         onRequestExportZip={onRequestExportZip}
         onRequestExportHtml={onRequestExportHtml}
+        onRequestExtend={onRequestExtend}
         dimmed={dimmed}
         fading={fading}
         rightOffset={12}
@@ -1006,6 +1027,7 @@ function CollectionSection({
   onRequestDelete,
   onRequestExportZip,
   onRequestExportHtml,
+  onRequestExtend,
   deletingSlug,
   fadingSlug,
 }: {
@@ -1028,6 +1050,7 @@ function CollectionSection({
   onRequestDelete: (course: Course) => void;
   onRequestExportZip: (course: Course) => void;
   onRequestExportHtml: (course: Course) => void;
+  onRequestExtend: (course: Course) => void;
   deletingSlug: string | null;
   fadingSlug: string | null;
 }) {
@@ -1098,6 +1121,7 @@ function CollectionSection({
             onRequestDelete={() => onRequestDelete(course)}
             onRequestExportZip={() => onRequestExportZip(course)}
             onRequestExportHtml={() => onRequestExportHtml(course)}
+            onRequestExtend={() => onRequestExtend(course)}
             dimmed={deletingSlug === course.slug}
             fading={fadingSlug === course.slug}
           />
@@ -1391,9 +1415,14 @@ export default function DashboardPage() {
   const [moveOpenSlug, setMoveOpenSlug] = useState<string | null>(null);
   const [menuOpenSlug, setMenuOpenSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ slug: string; title: string } | null>(null);
+  const [extendTarget, setExtendTarget] = useState<{ slug: string; title: string } | null>(null);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [fadingSlug, setFadingSlug] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    href?: string;
+    linkLabel?: string;
+  } | null>(null);
   const seedAttempted = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -1674,12 +1703,16 @@ export default function DashboardPage() {
     [loadData],
   );
 
-  const showToast = useCallback((message: string) => {
-    setToast(message);
-    setTimeout(() => {
-      setToast((cur) => (cur === message ? null : cur));
-    }, 4500);
-  }, []);
+  const showToast = useCallback(
+    (message: string, opts?: { href?: string; linkLabel?: string }) => {
+      const next = { message, href: opts?.href, linkLabel: opts?.linkLabel };
+      setToast(next);
+      setTimeout(() => {
+        setToast((cur) => (cur && cur.message === message ? null : cur));
+      }, 4500);
+    },
+    [],
+  );
 
   const handleConfirmDelete = useCallback(async () => {
     const target = deleteTarget;
@@ -1743,6 +1776,25 @@ export default function DashboardPage() {
       window.location.href = `/api/courses/${course.slug}/export/html`;
     },
     [showToast],
+  );
+
+  const handleRequestExtend = useCallback((course: Course) => {
+    setMenuOpenSlug(null);
+    setExtendTarget({ slug: course.slug, title: course.title });
+  }, []);
+
+  const handleExtendApplied = useCallback(
+    (lessonCount: number) => {
+      setExtendTarget(null);
+      const noun = lessonCount === 1 ? 'lesson' : 'lessons';
+      const message =
+        lessonCount > 0
+          ? `Extension applied — generating ${lessonCount} new ${noun}`
+          : 'Extension applied';
+      showToast(message, lessonCount > 0 ? { href: '/create', linkLabel: 'View' } : undefined);
+      void loadData();
+    },
+    [showToast, loadData],
   );
 
   const handleToggleMenu = useCallback((slug: string) => {
@@ -1903,6 +1955,7 @@ export default function DashboardPage() {
                   onRequestDelete={() => handleRequestDelete(course)}
                   onRequestExportZip={() => handleRequestExportZip(course)}
                   onRequestExportHtml={() => handleRequestExportHtml(course)}
+                  onRequestExtend={() => handleRequestExtend(course)}
                   dimmed={deletingSlug === course.slug}
                   fading={fadingSlug === course.slug}
                 />
@@ -1937,6 +1990,7 @@ export default function DashboardPage() {
                 onRequestDelete={handleRequestDelete}
                 onRequestExportZip={handleRequestExportZip}
                 onRequestExportHtml={handleRequestExportHtml}
+                onRequestExtend={handleRequestExtend}
                 deletingSlug={deletingSlug}
                 fadingSlug={fadingSlug}
               />
@@ -1972,6 +2026,7 @@ export default function DashboardPage() {
                   onRequestDelete={handleRequestDelete}
                   onRequestExportZip={handleRequestExportZip}
                   onRequestExportHtml={handleRequestExportHtml}
+                  onRequestExtend={handleRequestExtend}
                   deletingSlug={deletingSlug}
                   fadingSlug={fadingSlug}
                 />
@@ -1988,6 +2043,14 @@ export default function DashboardPage() {
           courseTitle={deleteTarget.title}
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => void handleConfirmDelete()}
+        />
+      )}
+      {extendTarget && (
+        <ExtendCourseDialog
+          courseSlug={extendTarget.slug}
+          courseTitle={extendTarget.title}
+          onClose={() => setExtendTarget(null)}
+          onApplied={handleExtendApplied}
         />
       )}
       {toast && (
@@ -2008,9 +2071,21 @@ export default function DashboardPage() {
             boxShadow: 'var(--shadow-md)',
             zIndex: 1000,
             maxWidth: 'calc(100vw - 32px)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
           }}
         >
-          {toast}
+          <span>{toast.message}</span>
+          {toast.href && (
+            <Link
+              data-testid="dashboard-toast-link"
+              href={toast.href}
+              style={{ color: 'var(--accent-text)', fontWeight: 500 }}
+            >
+              {toast.linkLabel ?? 'Open'}
+            </Link>
+          )}
         </div>
       )}
     </div>
@@ -2133,5 +2208,540 @@ function DeleteCourseDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+// US-144 — Extend modal. Two-phase: free-text instruction → schema preview
+// → Apply/Discard. Mid-flight close aborts the in-flight fetch via an
+// AbortController; late responses are ignored.
+type ExtendDialogPhase = 'input' | 'submitting' | 'preview' | 'applying';
+
+function ExtendCourseDialog({
+  courseSlug,
+  courseTitle,
+  onClose,
+  onApplied,
+}: {
+  courseSlug: string;
+  courseTitle: string;
+  onClose: () => void;
+  onApplied: (lessonCount: number) => void;
+}) {
+  const [phase, setPhase] = useState<ExtendDialogPhase>('input');
+  const [instruction, setInstruction] = useState('');
+  const [response, setResponse] = useState<ExtendResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const phaseRef = useRef(phase);
+
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  // Escape closes — but never mid-flight (AC: "no escape-to-close" while
+  // submit is in flight; same rule applies during apply).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const p = phaseRef.current;
+      if (p === 'submitting' || p === 'applying') return;
+      e.stopPropagation();
+      onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // Aborting on unmount handles backdrop-click + Cancel + parent-driven
+  // close — any of which sets `extendTarget = null` and tears down this
+  // component. Late responses then see `signal.aborted` and bail.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  const handleBackdropClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget) return;
+      const p = phaseRef.current;
+      if (p === 'submitting' || p === 'applying') return;
+      onClose();
+    },
+    [onClose],
+  );
+
+  const handleSubmit = useCallback(async () => {
+    const trimmed = instruction.trim();
+    if (trimmed.length === 0) return;
+    setError(null);
+    setPhase('submitting');
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const res = await fetch(`/api/courses/${courseSlug}/extend`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ instruction: trimmed }),
+        signal: ctrl.signal,
+      });
+      if (ctrl.signal.aborted) return;
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const json = (await res.json()) as { error?: string; message?: string };
+          if (json.error) detail = json.message ?? json.error;
+        } catch {
+          /* ignore */
+        }
+        setError(detail);
+        setPhase('input');
+        return;
+      }
+      const data = (await res.json()) as ExtendResponse;
+      if (ctrl.signal.aborted) return;
+      setResponse(data);
+      setPhase('preview');
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : String(err));
+      setPhase('input');
+    }
+  }, [courseSlug, instruction]);
+
+  const handleApply = useCallback(async () => {
+    if (!response) return;
+    setError(null);
+    setPhase('applying');
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    try {
+      const res = await fetch(`/api/courses/${courseSlug}/extend/apply`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ proposedSchema: response.proposedSchema }),
+        signal: ctrl.signal,
+      });
+      if (ctrl.signal.aborted) return;
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try {
+          const json = (await res.json()) as { error?: string; message?: string };
+          if (json.error) detail = json.message ?? json.error;
+        } catch {
+          /* ignore */
+        }
+        setError(detail);
+        setPhase('preview');
+        return;
+      }
+      const data = (await res.json()) as { enqueuedLessonSlugs: string[] };
+      if (ctrl.signal.aborted) return;
+      onApplied(data.enqueuedLessonSlugs.length);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : String(err));
+      setPhase('preview');
+    }
+  }, [courseSlug, response, onApplied]);
+
+  const inFlight = phase === 'submitting' || phase === 'applying';
+
+  return (
+    <div
+      data-testid="extend-course-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="extend-course-dialog-title"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0, 0, 0, 0.45)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1001,
+        padding: 'var(--space-4)',
+      }}
+      onClick={handleBackdropClick}
+    >
+      <div
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: 'var(--shadow-md)',
+          padding: 'var(--space-5)',
+          width: '100%',
+          maxWidth: 560,
+          maxHeight: 'calc(100vh - 64px)',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--space-4)',
+        }}
+      >
+        <h2
+          id="extend-course-dialog-title"
+          data-testid="extend-course-dialog-title"
+          style={{
+            margin: 0,
+            fontSize: 'var(--fs-lg)',
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Extend &ldquo;{courseTitle}&rdquo;
+        </h2>
+
+        {phase === 'preview' || phase === 'applying'
+          ? response && (
+              <ExtendPreview
+                response={response}
+                disabled={inFlight}
+                onApply={() => void handleApply()}
+                onDiscard={onClose}
+                error={error}
+                applying={phase === 'applying'}
+              />
+            )
+          : (
+              <ExtendInputForm
+                instruction={instruction}
+                onChange={setInstruction}
+                onSubmit={() => void handleSubmit()}
+                onCancel={onClose}
+                submitting={phase === 'submitting'}
+                error={error}
+              />
+            )}
+      </div>
+    </div>
+  );
+}
+
+function ExtendInputForm({
+  instruction,
+  onChange,
+  onSubmit,
+  onCancel,
+  submitting,
+  error,
+}: {
+  instruction: string;
+  onChange: (next: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+  submitting: boolean;
+  error: string | null;
+}) {
+  const trimmed = instruction.trim();
+  return (
+    <>
+      <label
+        htmlFor="extend-instruction"
+        style={{
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 500,
+          color: 'var(--text)',
+        }}
+      >
+        What would you like to add?
+      </label>
+      <textarea
+        id="extend-instruction"
+        data-testid="extend-instruction-input"
+        value={instruction}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={submitting}
+        placeholder='e.g., "add a module on advanced indexing techniques with two practice lessons"'
+        rows={5}
+        style={{
+          width: '100%',
+          padding: '10px 12px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-subtle)',
+          color: 'var(--text)',
+          fontSize: 'var(--fs-sm)',
+          fontFamily: 'inherit',
+          resize: 'vertical',
+          outline: 'none',
+          minHeight: 96,
+        }}
+      />
+      {error && (
+        <div
+          data-testid="extend-error"
+          role="alert"
+          style={{
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--danger-subtle)',
+            border: '1px solid var(--danger-border)',
+            color: 'var(--danger)',
+            fontSize: 'var(--fs-sm)',
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--space-2)',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          type="button"
+          data-testid="extend-cancel"
+          onClick={onCancel}
+          disabled={submitting}
+          style={{ ...secondaryButtonStyle, height: 36 }}
+        >
+          Cancel
+        </button>
+        {submitting ? (
+          <div
+            data-testid="extend-submit-spinner"
+            aria-label="Submitting"
+            role="status"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 36,
+              minWidth: 96,
+              padding: '0 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--accent)',
+              color: 'var(--text-on-accent)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid currentColor',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'extend-spin 0.8s linear infinite',
+                display: 'inline-block',
+              }}
+            />
+            <style>{`@keyframes extend-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="extend-submit"
+            onClick={onSubmit}
+            disabled={trimmed.length === 0}
+            style={{
+              ...primaryButtonStyle,
+              height: 36,
+              opacity: trimmed.length === 0 ? 0.5 : 1,
+              cursor: trimmed.length === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Submit
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ExtendPreview({
+  response,
+  disabled,
+  onApply,
+  onDiscard,
+  error,
+  applying,
+}: {
+  response: ExtendResponse;
+  disabled: boolean;
+  onApply: () => void;
+  onDiscard: () => void;
+  error: string | null;
+  applying: boolean;
+}) {
+  const newModuleIds = new Set(response.additions.newModuleIds);
+  const newLessonSlugs = new Set(
+    response.additions.newLessonIds.map((l) => l.lessonSlug),
+  );
+
+  return (
+    <>
+      <div
+        data-testid="extend-rationale"
+        style={{
+          padding: '10px 12px',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-subtle)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-secondary)',
+          fontSize: 'var(--fs-sm)',
+          lineHeight: 1.5,
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {response.additions.rationale}
+      </div>
+      <div
+        data-testid="extend-preview-tree"
+        style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}
+      >
+        {response.proposedSchema.modules.map((mod) => {
+          const moduleIsNew = newModuleIds.has(mod.id);
+          return (
+            <div
+              key={mod.id}
+              data-testid={`extend-preview-module-${mod.id}`}
+              data-new={moduleIsNew ? 'true' : undefined}
+              style={{
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-md)',
+                background: moduleIsNew ? 'var(--accent-soft)' : 'var(--bg-subtle)',
+                // Longhand only — combining shorthand `border` with a separate
+                // `borderLeft` lets the shorthand stomp the 3px accent rail.
+                borderTopWidth: 1,
+                borderRightWidth: 1,
+                borderBottomWidth: 1,
+                borderLeftWidth: 3,
+                borderStyle: 'solid',
+                borderTopColor: 'var(--border)',
+                borderRightColor: 'var(--border)',
+                borderBottomColor: 'var(--border)',
+                borderLeftColor: moduleIsNew ? 'var(--accent)' : 'transparent',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--text)',
+                }}
+              >
+                {mod.title}
+              </div>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingLeft: 12 }}
+              >
+                {mod.lessons.map((lesson) => {
+                  const lessonIsNew = newLessonSlugs.has(lesson.slug);
+                  return (
+                    <div
+                      key={lesson.slug}
+                      data-testid={`extend-preview-lesson-${lesson.slug}`}
+                      data-new={lessonIsNew ? 'true' : undefined}
+                      style={{
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: lessonIsNew
+                          ? 'var(--accent-soft)'
+                          : 'transparent',
+                        borderLeftWidth: 3,
+                        borderLeftStyle: 'solid',
+                        borderLeftColor: lessonIsNew
+                          ? 'var(--accent)'
+                          : 'transparent',
+                        fontSize: 'var(--fs-sm)',
+                        color: 'var(--text-secondary)',
+                      }}
+                    >
+                      {lesson.title}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {error && (
+        <div
+          data-testid="extend-apply-error"
+          role="alert"
+          style={{
+            padding: '8px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--danger-subtle)',
+            border: '1px solid var(--danger-border)',
+            color: 'var(--danger)',
+            fontSize: 'var(--fs-sm)',
+          }}
+        >
+          {error}
+        </div>
+      )}
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--space-2)',
+          justifyContent: 'flex-end',
+        }}
+      >
+        <button
+          type="button"
+          data-testid="extend-discard"
+          onClick={onDiscard}
+          disabled={disabled}
+          style={{ ...secondaryButtonStyle, height: 36 }}
+        >
+          Discard
+        </button>
+        {applying ? (
+          <div
+            data-testid="extend-apply-spinner"
+            aria-label="Applying"
+            role="status"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: 36,
+              minWidth: 96,
+              padding: '0 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--accent)',
+              color: 'var(--text-on-accent)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 14,
+                height: 14,
+                border: '2px solid currentColor',
+                borderTopColor: 'transparent',
+                borderRadius: '50%',
+                animation: 'extend-spin 0.8s linear infinite',
+                display: 'inline-block',
+              }}
+            />
+            <style>{`@keyframes extend-spin { to { transform: rotate(360deg); } }`}</style>
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="extend-apply"
+            onClick={onApply}
+            disabled={disabled}
+            style={{ ...primaryButtonStyle, height: 36 }}
+          >
+            Apply
+          </button>
+        )}
+      </div>
+    </>
   );
 }
