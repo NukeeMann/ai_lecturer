@@ -1,0 +1,24 @@
+[2026-05-08T23:25:37+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:27:08+0200] Now I'll create the status endpoint and then the UI. Let me start:
+[2026-05-08T23:27:24+0200] Let me check existing lucide imports and then plan the page edits:
+[2026-05-08T23:27:42+0200] Now I'll implement the lesson page changes. Starting with state and handlers:
+[2026-05-08T23:27:50+0200] Now, add the status-fetch effect and handlers. First find a good insertion point near the regen section handlers:
+[2026-05-08T23:28:15+0200] Now wire the LessonStream prop and pass through to LessonHeader. First, find the JSX render section to add the dialog and banner:
+[2026-05-08T23:28:25+0200] Now add the `RegenLessonDialog` rendering at the end of the LessonShellPage JSX (near LessonSourcesEditPanel):
+[2026-05-08T23:28:32+0200] Now update the LessonStream interface and pass the props down:
+[2026-05-08T23:28:44+0200] Now find the LessonStream's JSX (with `<LessonHeader />`) and add the Banner + pass `onOpenRegenLesson` prop to LessonHeader:
+[2026-05-08T23:28:50+0200] Now update LessonHeader to add the Regenerate button. Let me edit it:
+[2026-05-08T23:28:55+0200] Now add the regenerate button next to the Lesson sources button:
+[2026-05-08T23:29:06+0200] Now I need to add the `RegenLessonDialog` and `UndoRegenBanner` components. Let me find a good place to insert them — at the end of the file, after other helper components:
+[2026-05-08T23:30:03+0200] Typecheck clean. Now let me also add a unit test for the status route to follow the project pattern, then run tests:
+[2026-05-08T23:30:16+0200] Now let me append a status route test to that test file:
+[2026-05-08T23:30:47+0200] All 846 tests pass (842 prior + 4 new status route tests). Now run the browser verification with playwright:
+[2026-05-08T23:31:12+0200] Now I'll write the playwright test:
+[2026-05-08T23:32:21+0200] Let me rewrite my test to follow the correct pattern:
+[2026-05-08T23:33:06+0200] All checks pass. Now let me update progress.txt, mark prd.json, then commit.
+[2026-05-08T23:33:34+0200] Now flip passes:false → passes:true for US-149 specifically:
+[2026-05-08T23:33:39+0200] Now append progress notes:
+[2026-05-08T23:34:46+0200] Now commit:
+[2026-05-08T23:35:07+0200] US-149 commit landed in HEAD with `passes: true`. Now I'll stop the dev server by PID and exit:
+[2026-05-08T23:35:12+0200] US-149 done. Implemented the per-lesson Regenerate dialog (`data-testid="regen-lesson-btn"` in the lesson header), the sticky Undo banner with 200ms fade and 3s "Undo unavailable" auto-hide, and the new `GET /api/courses/[slug]/lessons/[lessonSlug]/regenerate/status` endpoint. Typecheck clean, 846/846 tests pass, browser verified with playwright (screenshots at `/tmp/us-149-dialog-open.png`, `/tmp/us-149-banner-after-submit.png`, `/tmp/us-149-after-undo.png`). `passes: true` flipped and committed as `9a6fbb0`.
+[2026-05-08T23:35:12+0200] [result success turns=82 cost=$7.386523499999999] US-149 done. Implemented the per-lesson Regenerate dialog (`data-testid="regen-lesson-btn"` in the lesson header), the sticky Undo banner with 200ms fade and 3s "Undo unavailable" auto-hide, and the new `GET /api/courses/[slug]/lessons/[lessonSlug]/regenerate/status` endpoint. Typecheck clean, 846/846 tests pass, browser verified with playwright (screenshots at `/tmp/us-149-dialog-open.png`, `/tmp/us-149-banner-after-submit.png`, `/tmp/us-149-after-undo.png`). `passes: true` flipped and committed as `9a6fbb0`.
