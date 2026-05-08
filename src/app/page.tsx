@@ -781,6 +781,7 @@ function CourseCardWithMenu({
   onCloseMenu,
   onRequestDelete,
   onRequestExportZip,
+  onRequestExportHtml,
   dimmed,
   fading,
   rightOffset = 12,
@@ -793,6 +794,7 @@ function CourseCardWithMenu({
   onCloseMenu: () => void;
   onRequestDelete: () => void;
   onRequestExportZip: () => void;
+  onRequestExportHtml: () => void;
   dimmed: boolean;
   fading: boolean;
   rightOffset?: number;
@@ -845,6 +847,20 @@ function CourseCardWithMenu({
           <button
             type="button"
             role="menuitem"
+            data-testid={`course-menu-export-html-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onRequestExportHtml();
+            }}
+            style={popoverItemStyle}
+          >
+            Export as static HTML
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             data-testid={`course-menu-delete-${course.slug}`}
             onClick={(e) => {
               e.preventDefault();
@@ -876,6 +892,7 @@ function CourseCardWithMove({
   onCloseMenu,
   onRequestDelete,
   onRequestExportZip,
+  onRequestExportHtml,
   dimmed,
   fading,
 }: {
@@ -892,6 +909,7 @@ function CourseCardWithMove({
   onCloseMenu: () => void;
   onRequestDelete: () => void;
   onRequestExportZip: () => void;
+  onRequestExportHtml: () => void;
   dimmed: boolean;
   fading: boolean;
 }) {
@@ -906,6 +924,7 @@ function CourseCardWithMove({
         onCloseMenu={onCloseMenu}
         onRequestDelete={onRequestDelete}
         onRequestExportZip={onRequestExportZip}
+        onRequestExportHtml={onRequestExportHtml}
         dimmed={dimmed}
         fading={fading}
         rightOffset={12}
@@ -986,6 +1005,7 @@ function CollectionSection({
   onCloseMenu,
   onRequestDelete,
   onRequestExportZip,
+  onRequestExportHtml,
   deletingSlug,
   fadingSlug,
 }: {
@@ -1007,6 +1027,7 @@ function CollectionSection({
   onCloseMenu: () => void;
   onRequestDelete: (course: Course) => void;
   onRequestExportZip: (course: Course) => void;
+  onRequestExportHtml: (course: Course) => void;
   deletingSlug: string | null;
   fadingSlug: string | null;
 }) {
@@ -1076,6 +1097,7 @@ function CollectionSection({
             onCloseMenu={onCloseMenu}
             onRequestDelete={() => onRequestDelete(course)}
             onRequestExportZip={() => onRequestExportZip(course)}
+            onRequestExportHtml={() => onRequestExportHtml(course)}
             dimmed={deletingSlug === course.slug}
             fading={fadingSlug === course.slug}
           />
@@ -1711,6 +1733,18 @@ export default function DashboardPage() {
     [showToast],
   );
 
+  // US-152: Export as static HTML — same browser-handled download path,
+  // different endpoint that emits a self-contained ZIP of pre-rendered
+  // HTML/CSS/JS suitable for hosting on any static host.
+  const handleRequestExportHtml = useCallback(
+    (course: Course) => {
+      setMenuOpenSlug(null);
+      showToast('Preparing static HTML export…');
+      window.location.href = `/api/courses/${course.slug}/export/html`;
+    },
+    [showToast],
+  );
+
   const handleToggleMenu = useCallback((slug: string) => {
     setMoveOpenSlug(null);
     setMenuOpenSlug((cur) => (cur === slug ? null : slug));
@@ -1868,6 +1902,7 @@ export default function DashboardPage() {
                   onCloseMenu={handleCloseMenu}
                   onRequestDelete={() => handleRequestDelete(course)}
                   onRequestExportZip={() => handleRequestExportZip(course)}
+                  onRequestExportHtml={() => handleRequestExportHtml(course)}
                   dimmed={deletingSlug === course.slug}
                   fading={fadingSlug === course.slug}
                 />
@@ -1901,6 +1936,7 @@ export default function DashboardPage() {
                 onCloseMenu={handleCloseMenu}
                 onRequestDelete={handleRequestDelete}
                 onRequestExportZip={handleRequestExportZip}
+                onRequestExportHtml={handleRequestExportHtml}
                 deletingSlug={deletingSlug}
                 fadingSlug={fadingSlug}
               />
@@ -1935,6 +1971,7 @@ export default function DashboardPage() {
                   onCloseMenu={handleCloseMenu}
                   onRequestDelete={handleRequestDelete}
                   onRequestExportZip={handleRequestExportZip}
+                  onRequestExportHtml={handleRequestExportHtml}
                   deletingSlug={deletingSlug}
                   fadingSlug={fadingSlug}
                 />
