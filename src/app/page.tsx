@@ -1,11 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   BookOpen,
+  MoreHorizontal,
   Plus,
   Search,
   Sparkles,
@@ -18,6 +26,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
+import type { Collection } from '@/lib/schemas/collection';
 import { allCoursesComplete, searchEnterTarget } from '@/lib/dashboard';
 import { strings } from '@/lib/i18n/strings';
 
@@ -39,6 +48,28 @@ const STARTER_TOPICS = [
   'Computer vision basics',
   'Bayesian statistics',
 ] as const;
+
+// US-133 — first-run seed. These slugs name the bundled widget-demo courses;
+// on a fresh dashboard they get tucked into a "Widget Demos" collection so the
+// real courses sit at the top of the list. Once the seed has run (or has been
+// deliberately skipped), the localStorage flag below prevents it ever
+// running again, including after the user deletes the collection.
+const DEMO_COURSE_SLUGS: ReadonlySet<string> = new Set([
+  'cloze-test',
+  'datatable-test',
+  'dragmatch-test',
+  'gauss-basics',
+  'histogram-test',
+  'image-test',
+  'pexp-test',
+  'plotimage-test',
+  'quiz-test',
+  'smoke-test',
+  'theory-test',
+  'video-test',
+  'widget-dev-guide',
+]);
+const SEED_FLAG_KEY = 'aiLecturer.collectionsSeeded';
 
 // ------- helpers --------------------------------------------------------------
 
@@ -164,6 +195,7 @@ const topRowStyle: CSSProperties = {
   alignItems: 'flex-end',
   justifyContent: 'space-between',
   gap: 'var(--space-4)',
+  flexWrap: 'wrap',
 };
 
 const pageTitleStyle: CSSProperties = {
@@ -195,6 +227,96 @@ const primaryButtonStyle: CSSProperties = {
   fontFamily: 'inherit',
   cursor: 'pointer',
   textDecoration: 'none',
+  whiteSpace: 'nowrap',
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  height: 36,
+  padding: '0 16px',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--bg-subtle)',
+  color: 'var(--text)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 500,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  textDecoration: 'none',
+  whiteSpace: 'nowrap',
+};
+
+const courseGridStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+  gap: 'var(--space-5)',
+};
+
+const sectionStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-4)',
+};
+
+const sectionHeaderRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 'var(--space-3)',
+};
+
+const sectionHeadingStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 'var(--fs-lg)',
+  fontWeight: 600,
+  letterSpacing: '-0.01em',
+  fontFamily: 'var(--font-display)',
+};
+
+const iconButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 28,
+  height: 28,
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--bg-elevated)',
+  color: 'var(--text-secondary)',
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const popoverStyle: CSSProperties = {
+  position: 'absolute',
+  zIndex: 5,
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-md)',
+  boxShadow: 'var(--shadow-md)',
+  padding: 'var(--space-2)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 2,
+  minWidth: 180,
+};
+
+const popoverItemStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  height: 32,
+  padding: '0 10px',
+  border: 'none',
+  borderRadius: 'var(--radius-sm)',
+  background: 'transparent',
+  color: 'var(--text)',
+  fontSize: 'var(--fs-sm)',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  textAlign: 'left',
   whiteSpace: 'nowrap',
 };
 
@@ -637,6 +759,181 @@ function CourseCard({
   );
 }
 
+function CourseCardWithMove({
+  course,
+  stats,
+  href,
+  collections,
+  sourceCollectionId,
+  moveOpen,
+  onToggleMove,
+  onPickTarget,
+}: {
+  course: Course;
+  stats: CourseStats;
+  href: string;
+  collections: Collection[];
+  sourceCollectionId: string | null;
+  moveOpen: boolean;
+  onToggleMove: () => void;
+  onPickTarget: (targetId: string | null) => void;
+}) {
+  return (
+    <div data-popover-host style={{ position: 'relative' }}>
+      <CourseCard course={course} stats={stats} href={href} />
+      <button
+        type="button"
+        data-testid={`course-card-move-${course.slug}`}
+        aria-label={`Move ${course.title}`}
+        aria-haspopup="menu"
+        aria-expanded={moveOpen}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleMove();
+        }}
+        style={{
+          ...iconButtonStyle,
+          position: 'absolute',
+          top: 12,
+          right: 12,
+          zIndex: 2,
+        }}
+      >
+        <MoreHorizontal size={16} strokeWidth={2} />
+      </button>
+      {moveOpen && (
+        <div
+          role="menu"
+          data-testid={`course-card-move-menu-${course.slug}`}
+          style={{ ...popoverStyle, top: 44, right: 12 }}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`move-target-uncategorized-${course.slug}`}
+            onClick={() => onPickTarget(null)}
+            style={popoverItemStyle}
+            disabled={sourceCollectionId === null}
+          >
+            Uncategorized
+          </button>
+          {collections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="menuitem"
+              data-testid={`move-target-${c.id}-${course.slug}`}
+              onClick={() => onPickTarget(c.id)}
+              style={popoverItemStyle}
+              disabled={sourceCollectionId === c.id}
+            >
+              {c.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollectionSection({
+  title,
+  collectionId,
+  items,
+  collections,
+  sourceCollectionId,
+  collection,
+  actionsOpen,
+  onToggleActions,
+  onRename,
+  onDelete,
+  moveOpenSlug,
+  onToggleMove,
+  onPickMoveTarget,
+}: {
+  title: string;
+  collectionId: string;
+  items: Array<{ course: Course; stats: CourseStats; href: string }>;
+  collections: Collection[];
+  sourceCollectionId: string | null;
+  collection: Collection | null;
+  actionsOpen: boolean;
+  onToggleActions: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+  moveOpenSlug: string | null;
+  onToggleMove: (slug: string) => void;
+  onPickMoveTarget: (slug: string, targetId: string | null) => void;
+}) {
+  return (
+    <section
+      data-testid="course-section"
+      data-collection-id={collectionId}
+      style={sectionStyle}
+    >
+      <div style={sectionHeaderRowStyle}>
+        <h2 style={sectionHeadingStyle}>{title}</h2>
+        {collection && (
+          <div data-popover-host style={{ position: 'relative' }}>
+            <button
+              type="button"
+              data-testid={`collection-actions-${collection.id}`}
+              aria-label={`Actions for ${collection.name}`}
+              aria-haspopup="menu"
+              aria-expanded={actionsOpen}
+              onClick={onToggleActions}
+              style={iconButtonStyle}
+            >
+              <MoreHorizontal size={16} strokeWidth={2} />
+            </button>
+            {actionsOpen && (
+              <div
+                role="menu"
+                style={{ ...popoverStyle, top: 36, right: 0 }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`collection-rename-${collection.id}`}
+                  onClick={onRename}
+                  style={popoverItemStyle}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid={`collection-delete-${collection.id}`}
+                  onClick={onDelete}
+                  style={{ ...popoverItemStyle, color: 'var(--danger)' }}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={courseGridStyle}>
+        {items.map(({ course, stats, href }) => (
+          <CourseCardWithMove
+            key={course.slug}
+            course={course}
+            stats={stats}
+            href={href}
+            collections={collections}
+            sourceCollectionId={sourceCollectionId}
+            moveOpen={moveOpenSlug === course.slug}
+            onToggleMove={() => onToggleMove(course.slug)}
+            onPickTarget={(targetId) => onPickMoveTarget(course.slug, targetId)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function EmptyState() {
   return (
     <div
@@ -746,21 +1043,32 @@ export default function DashboardPage() {
   const router = useRouter();
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [collections, setCollections] = useState<Collection[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
+  const [moveOpenSlug, setMoveOpenSlug] = useState<string | null>(null);
+  const seedAttempted = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [coursesRes, progressRes] = await Promise.all([
+      const [coursesRes, progressRes, collectionsRes] = await Promise.all([
         fetch('/api/courses', { cache: 'no-store' }),
         fetch('/api/progress', { cache: 'no-store' }),
+        fetch('/api/collections', { cache: 'no-store' }),
       ]);
       if (!coursesRes.ok) throw new Error(`GET /api/courses → ${coursesRes.status}`);
       if (!progressRes.ok) throw new Error(`GET /api/progress → ${progressRes.status}`);
+      if (!collectionsRes.ok)
+        throw new Error(`GET /api/collections → ${collectionsRes.status}`);
       const coursesJson = (await coursesRes.json()) as Course[];
       const progressJson = (await progressRes.json()) as Progress;
+      const collectionsJson = (await collectionsRes.json()) as {
+        collections: Collection[];
+      };
       setCourses(coursesJson);
       setProgress(progressJson);
+      setCollections(collectionsJson.collections);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -785,6 +1093,98 @@ export default function DashboardPage() {
   useEffect(() => {
     applyAccent('default');
   }, []);
+
+  // First-run seed: tucks bundled widget-demo courses into a "Widget Demos"
+  // collection so a brand-new install isn't dominated by demo material. Once
+  // the seed has run (or is determined unnecessary) we set a localStorage
+  // flag so that even a later delete + reload won't bring it back — that
+  // matches the AC for US-133.
+  useEffect(() => {
+    if (seedAttempted.current) return;
+    if (courses === null || collections === null) return;
+    seedAttempted.current = true;
+
+    let alreadySeeded = false;
+    try {
+      alreadySeeded = window.localStorage.getItem(SEED_FLAG_KEY) === '1';
+    } catch {
+      // ignore — non-secure contexts, etc.
+    }
+
+    if (alreadySeeded) return;
+
+    if (collections.length > 0) {
+      try {
+        window.localStorage.setItem(SEED_FLAG_KEY, '1');
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    const presentDemos = courses.filter((c) => DEMO_COURSE_SLUGS.has(c.slug));
+    if (presentDemos.length === 0) {
+      try {
+        window.localStorage.setItem(SEED_FLAG_KEY, '1');
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    void (async () => {
+      try {
+        const createRes = await fetch('/api/collections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: 'Widget Demos' }),
+        });
+        if (!createRes.ok) return;
+        const created = (await createRes.json()) as Collection;
+        for (const c of presentDemos) {
+          await fetch(`/api/collections/${created.id}/courses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ courseSlug: c.slug }),
+          });
+        }
+        try {
+          window.localStorage.setItem(SEED_FLAG_KEY, '1');
+        } catch {
+          // ignore
+        }
+        await loadData();
+      } catch {
+        // ignore — leaving the flag unset means we'd retry on the next
+        // mount, but only while the store is still empty AND demos are
+        // still present, so this is intentional.
+      }
+    })();
+  }, [courses, collections, loadData]);
+
+  // Outside-click + Escape closure for the per-collection actions menu and
+  // per-card move popover.
+  useEffect(() => {
+    if (actionsOpenId === null && moveOpenSlug === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActionsOpenId(null);
+        setMoveOpenSlug(null);
+      }
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Element | null;
+      if (target?.closest('[data-popover-host]')) return;
+      setActionsOpenId(null);
+      setMoveOpenSlug(null);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onMouseDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onMouseDown);
+    };
+  }, [actionsOpenId, moveOpenSlug]);
 
   const resume = useMemo(
     () => (courses && progress ? pickResumeTarget(courses, progress) : null),
@@ -817,6 +1217,117 @@ export default function DashboardPage() {
       return false;
     });
   }, [courses, progress, searchQuery]);
+
+  const grouped = useMemo(() => {
+    if (!courses || collections === null) return null;
+    const enrichedBySlug = new Map(
+      courses.map((c) => [
+        c.slug,
+        { course: c, stats: statsFor(c, progress), href: cardHref(c, progress) },
+      ]),
+    );
+    const slugsInCollections = new Set<string>();
+    for (const col of collections) {
+      for (const slug of col.courseSlugs) slugsInCollections.add(slug);
+    }
+    const uncategorized = courses
+      .filter((c) => !slugsInCollections.has(c.slug))
+      .map((c) => enrichedBySlug.get(c.slug)!)
+      .filter(Boolean);
+    const collectionSections = collections.map((col) => ({
+      collection: col,
+      items: col.courseSlugs
+        .map((slug) => enrichedBySlug.get(slug))
+        .filter((it): it is NonNullable<typeof it> => Boolean(it)),
+    }));
+    return { uncategorized, collectionSections };
+  }, [courses, progress, collections]);
+
+  const handleNewCollection = useCallback(async () => {
+    const raw = window.prompt('Name for the new collection');
+    if (raw === null) return;
+    const name = raw.trim();
+    if (name.length === 0) return;
+    try {
+      const res = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) return;
+    } catch {
+      return;
+    }
+    await loadData();
+  }, [loadData]);
+
+  const handleRenameCollection = useCallback(
+    async (col: Collection) => {
+      setActionsOpenId(null);
+      const raw = window.prompt('Rename collection', col.name);
+      if (raw === null) return;
+      const name = raw.trim();
+      if (name.length === 0) return;
+      try {
+        const res = await fetch(`/api/collections/${col.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) return;
+      } catch {
+        return;
+      }
+      await loadData();
+    },
+    [loadData],
+  );
+
+  const handleDeleteCollection = useCallback(
+    async (col: Collection) => {
+      setActionsOpenId(null);
+      const ok = window.confirm(`Delete collection "${col.name}"?`);
+      if (!ok) return;
+      try {
+        const res = await fetch(`/api/collections/${col.id}`, { method: 'DELETE' });
+        if (!res.ok) return;
+      } catch {
+        return;
+      }
+      await loadData();
+    },
+    [loadData],
+  );
+
+  const handleMoveCourse = useCallback(
+    async (slug: string, sourceId: string | null, targetId: string | null) => {
+      setMoveOpenSlug(null);
+      if (sourceId === targetId) return;
+      try {
+        if (sourceId !== null) {
+          await fetch(`/api/collections/${sourceId}/courses`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ courseSlug: slug }),
+          });
+        }
+        if (targetId !== null) {
+          await fetch(`/api/collections/${targetId}/courses`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ courseSlug: slug }),
+          });
+        }
+      } catch {
+        return;
+      }
+      await loadData();
+    },
+    [loadData],
+  );
+
+  const searchActive = searchQuery.trim().length > 0;
+  const safeCollections = collections ?? [];
 
   return (
     <div style={pageStyle}>
@@ -902,48 +1413,114 @@ export default function DashboardPage() {
             </p>
           </div>
           {courses && courses.length > 0 && (
-            <Link
-              data-testid="new-course-cta"
-              href="/create"
-              style={primaryButtonStyle}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                justifyContent: 'flex-end',
+              }}
             >
-              <Plus size={16} strokeWidth={2} />
-              {strings.dashboard.newCourse}
-            </Link>
+              <button
+                type="button"
+                data-testid="new-collection-cta"
+                onClick={handleNewCollection}
+                style={secondaryButtonStyle}
+              >
+                <Plus size={16} strokeWidth={2} />
+                New collection
+              </button>
+              <Link
+                data-testid="new-course-cta"
+                href="/create"
+                style={primaryButtonStyle}
+              >
+                <Plus size={16} strokeWidth={2} />
+                {strings.dashboard.newCourse}
+              </Link>
+            </div>
           )}
         </div>
 
         {courses === null ? null : courses.length === 0 ? (
           <EmptyState />
-        ) : enriched.length === 0 ? (
-          <div
-            data-testid="course-grid-empty"
-            style={{
-              padding: 'var(--space-7) var(--space-6)',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-xl)',
-              color: 'var(--text-tertiary)',
-              fontSize: 'var(--fs-sm)',
-              textAlign: 'center',
-            }}
-          >
-            No matches for &ldquo;{searchQuery.trim()}&rdquo;.
-          </div>
-        ) : (
-          <div
-            data-testid="course-grid"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-              gap: 'var(--space-5)',
-            }}
-          >
-            {enriched.map(({ course, stats, href }) => (
-              <CourseCard key={course.slug} course={course} stats={stats} href={href} />
-            ))}
-          </div>
-        )}
+        ) : searchActive ? (
+          enriched.length === 0 ? (
+            <div
+              data-testid="course-grid-empty"
+              style={{
+                padding: 'var(--space-7) var(--space-6)',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-xl)',
+                color: 'var(--text-tertiary)',
+                fontSize: 'var(--fs-sm)',
+                textAlign: 'center',
+              }}
+            >
+              No matches for &ldquo;{searchQuery.trim()}&rdquo;.
+            </div>
+          ) : (
+            <div data-testid="course-grid" style={courseGridStyle}>
+              {enriched.map(({ course, stats, href }) => (
+                <CourseCard key={course.slug} course={course} stats={stats} href={href} />
+              ))}
+            </div>
+          )
+        ) : grouped !== null ? (
+          <>
+            {grouped.uncategorized.length > 0 && (
+              <CollectionSection
+                title="Uncategorized"
+                collectionId="uncategorized"
+                items={grouped.uncategorized}
+                collections={safeCollections}
+                sourceCollectionId={null}
+                collection={null}
+                actionsOpen={false}
+                onToggleActions={() => undefined}
+                onRename={() => undefined}
+                onDelete={() => undefined}
+                moveOpenSlug={moveOpenSlug}
+                onToggleMove={(slug) =>
+                  setMoveOpenSlug((cur) => (cur === slug ? null : slug))
+                }
+                onPickMoveTarget={(slug, targetId) =>
+                  void handleMoveCourse(slug, null, targetId)
+                }
+              />
+            )}
+            {grouped.collectionSections.map(({ collection, items }) =>
+              items.length === 0 ? null : (
+                <CollectionSection
+                  key={collection.id}
+                  title={collection.name}
+                  collectionId={collection.id}
+                  items={items}
+                  collections={safeCollections}
+                  sourceCollectionId={collection.id}
+                  collection={collection}
+                  actionsOpen={actionsOpenId === collection.id}
+                  onToggleActions={() =>
+                    setActionsOpenId((cur) =>
+                      cur === collection.id ? null : collection.id,
+                    )
+                  }
+                  onRename={() => void handleRenameCollection(collection)}
+                  onDelete={() => void handleDeleteCollection(collection)}
+                  moveOpenSlug={moveOpenSlug}
+                  onToggleMove={(slug) =>
+                    setMoveOpenSlug((cur) => (cur === slug ? null : slug))
+                  }
+                  onPickMoveTarget={(slug, targetId) =>
+                    void handleMoveCourse(slug, collection.id, targetId)
+                  }
+                />
+              ),
+            )}
+          </>
+        ) : null}
       </main>
     </div>
   );
