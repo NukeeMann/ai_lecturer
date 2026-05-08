@@ -86,6 +86,7 @@ import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 
 const TOC_COLLAPSED_KEY = 'toc-collapsed';
 const CHAT_OPEN_KEY = 'lessonChat-open';
+const CHAT_WIDTH_KEY = 'lessonChat-width';
 
 interface RouteParams {
   slug: string;
@@ -94,9 +95,25 @@ interface RouteParams {
 
 const TOC_EXPANDED = 276;
 const TOC_COLLAPSED = 52;
-const CHAT_OPEN = 320;
+const CHAT_DEFAULT_WIDTH = 320;
+const CHAT_MIN_WIDTH = 280;
+const CHAT_MAX_WIDTH = 720;
+const CHAT_NARROW_WINDOW_THRESHOLD = 600;
+const CHAT_MIN_LESSON_WIDTH = 320;
 const TOOLBAR_H = 52;
 const BOTTOM_H = 56;
+
+function readChatWidth(): number {
+  try {
+    const stored = window.localStorage.getItem(CHAT_WIDTH_KEY);
+    if (stored === null) return CHAT_DEFAULT_WIDTH;
+    const parsed = parseInt(stored, 10);
+    if (!Number.isFinite(parsed)) return CHAT_DEFAULT_WIDTH;
+    return Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, parsed));
+  } catch {
+    return CHAT_DEFAULT_WIDTH;
+  }
+}
 
 export default function LessonShellPage({
   params,
@@ -150,6 +167,21 @@ export default function LessonShellPage({
   // LessonChat side-panel state, persisted to localStorage['lessonChat-open'].
   // Hydrated from storage in the same effect that hydrates TOC collapse below.
   const [chatOpen, setChatOpen] = useState(false);
+  // Chat panel width, persisted to localStorage['lessonChat-width']. Default
+  // 320 keeps the legacy fixed width unchanged on first paint; hydrated below.
+  const [chatWidth, setChatWidth] = useState<number>(CHAT_DEFAULT_WIDTH);
+  // Live-drag flag: while dragging, the grid's column transition is disabled
+  // so the chat tracks the pointer 1:1; restored on pointer-up so close/open
+  // animations keep their easing.
+  const [chatDragging, setChatDragging] = useState(false);
+  // Mirrors current window width for the narrow-viewport clamp described in
+  // US-135 AC. Initial render uses 1280 to stay SSR-safe; the resize effect
+  // below replaces it with the real value on mount.
+  const [chatWindowWidth, setChatWindowWidth] = useState<number>(1280);
+  const chatWidthRef = useRef<number>(CHAT_DEFAULT_WIDTH);
+  useEffect(() => {
+    chatWidthRef.current = chatWidth;
+  }, [chatWidth]);
   // Focus mode (US-021 'f'): when on, both side panels are collapsed; when
   // toggled off, the previous TOC-collapsed state is restored.
   const focusModeRef = useRef<{ active: boolean; previousToc: boolean }>({
@@ -168,12 +200,26 @@ export default function LessonShellPage({
       }
       const chatStored = window.localStorage.getItem(CHAT_OPEN_KEY);
       if (chatStored === 'true') {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setChatOpen(true);
       }
+      const hydratedWidth = readChatWidth();
+      if (hydratedWidth !== CHAT_DEFAULT_WIDTH) {
+        setChatWidth(hydratedWidth);
+      }
+      setChatWindowWidth(window.innerWidth);
     } catch {
       // localStorage unavailable (SSR / privacy mode) — fall back to default.
     }
+  }, []);
+
+  // Track viewport width so we can clamp the effective chat width on narrow
+  // windows without persisting that clamp (the user's preferred width is
+  // restored when the window widens again).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => setChatWindowWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
   }, []);
 
   const toggleToc = useCallback(() => {
@@ -208,6 +254,31 @@ export default function LessonShellPage({
       // Persistence unavailable — close still works for the session.
     }
   }, []);
+
+  const persistChatWidth = useCallback((w: number) => {
+    try {
+      window.localStorage.setItem(CHAT_WIDTH_KEY, String(Math.round(w)));
+    } catch {
+      // Persistence unavailable — in-memory width still works.
+    }
+  }, []);
+
+  const handleChatResize = useCallback((w: number) => {
+    setChatWidth(w);
+  }, []);
+
+  const handleChatResizeStart = useCallback(() => {
+    setChatDragging(true);
+  }, []);
+
+  const handleChatResizeEnd = useCallback(
+    (finalWidth: number) => {
+      setChatDragging(false);
+      setChatWidth(finalWidth);
+      persistChatWidth(finalWidth);
+    },
+    [persistChatWidth],
+  );
 
   const toggleModule = useCallback((moduleId: string) => {
     setOpenModules((prev) => ({
@@ -389,7 +460,14 @@ export default function LessonShellPage({
   }, [lesson, progress, slug, lessonSlug, autoDone]);
 
   const tocCol = tocCollapsed ? TOC_COLLAPSED : TOC_EXPANDED;
-  const chatCol = chatOpen ? CHAT_OPEN : 0;
+  // Clamp the effective chat width when the window is narrow enough that
+  // honouring the user's persisted width would squeeze the lesson column
+  // below 320px. Persistence is intentionally not touched here.
+  const effectiveChatWidth =
+    chatWindowWidth < CHAT_NARROW_WINDOW_THRESHOLD
+      ? Math.max(0, Math.min(chatWidth, chatWindowWidth - CHAT_MIN_LESSON_WIDTH))
+      : chatWidth;
+  const chatCol = chatOpen ? effectiveChatWidth : 0;
 
   const shellStyle: CSSProperties = {
     display: 'grid',
@@ -400,7 +478,7 @@ export default function LessonShellPage({
     overflow: 'hidden',
     background: 'var(--bg)',
     color: 'var(--text)',
-    transition: 'grid-template-columns 180ms ease',
+    transition: chatDragging ? 'none' : 'grid-template-columns 180ms ease',
   };
 
   const flatLessons = useMemo(() => {
@@ -1026,6 +1104,12 @@ export default function LessonShellPage({
         lessonSlug={lessonSlug}
         onClose={closeChat}
         onToggle={toggleChat}
+        chatWidth={chatWidth}
+        minWidth={CHAT_MIN_WIDTH}
+        maxWidth={CHAT_MAX_WIDTH}
+        onResize={handleChatResize}
+        onResizeStart={handleChatResizeStart}
+        onResizeEnd={handleChatResizeEnd}
       />
 
       <BottomBar

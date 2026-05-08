@@ -9,6 +9,7 @@ import {
   useState,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Maximize2, Minimize2, Square, X } from 'lucide-react';
 
@@ -33,6 +34,13 @@ interface LessonChatProps {
   onClose: () => void;
   /** Toggle the panel open/closed. Bound to Ctrl+Q so it must work in either state. */
   onToggle: () => void;
+  /** Current panel width in px — used for aria-valuenow and as the keyboard step base. */
+  chatWidth?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  onResize?: (w: number) => void;
+  onResizeStart?: () => void;
+  onResizeEnd?: (finalWidth: number) => void;
 }
 
 const LINE_HEIGHT_PX = 20;
@@ -51,6 +59,12 @@ export function LessonChat({
   lessonSlug,
   onClose,
   onToggle,
+  chatWidth = 320,
+  minWidth = 280,
+  maxWidth = 720,
+  onResize,
+  onResizeStart,
+  onResizeEnd,
 }: LessonChatProps) {
   const isMac = useIsMacPlatform();
   // Ctrl+Q toggles the panel. Mounted from this component (per US-078 AC) so
@@ -66,6 +80,11 @@ export function LessonChat({
   // does NOT unmount this component, so messages, draft, and an in-flight
   // streaming request all survive the round-trip back to the side panel.
   const [expanded, setExpanded] = useState(false);
+  // Resize-handle visual state. `hovered` paints a faint accent strip;
+  // `dragging` paints the full accent and is set while a pointer drag is in
+  // flight (also reported upstream so the parent can drop the grid transition).
+  const [handleHovered, setHandleHovered] = useState(false);
+  const [handleDragging, setHandleDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -478,6 +497,65 @@ export function LessonChat({
     [handleSend],
   );
 
+  // Track the latest width inside event closures so onResizeEnd reports the
+  // final value even when the React-prop chatWidth would still be stale.
+  const dragWidthRef = useRef<number>(chatWidth);
+  useEffect(() => {
+    dragWidthRef.current = chatWidth;
+  }, [chatWidth]);
+
+  const clampWidth = useCallback(
+    (w: number) => Math.min(maxWidth, Math.max(minWidth, w)),
+    [minWidth, maxWidth],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setHandleDragging(true);
+      onResizeStart?.();
+    },
+    [onResizeStart],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+      const newWidth = clampWidth(window.innerWidth - e.clientX);
+      dragWidthRef.current = newWidth;
+      onResize?.(newWidth);
+    },
+    [clampWidth, onResize],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setHandleDragging(false);
+      onResizeEnd?.(dragWidthRef.current);
+    },
+    [onResizeEnd],
+  );
+
+  const handleHandleKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault();
+      const step = e.shiftKey ? 64 : 16;
+      // Handle is on the LEFT edge of the chat: arrow-left moves the edge
+      // outwards (panel widens), arrow-right moves it inwards (panel narrows).
+      const delta = e.key === 'ArrowLeft' ? step : -step;
+      const newWidth = clampWidth(dragWidthRef.current + delta);
+      dragWidthRef.current = newWidth;
+      onResize?.(newWidth);
+      onResizeEnd?.(newWidth);
+    },
+    [clampWidth, onResize, onResizeEnd],
+  );
+
   if (!open) {
     return (
       <aside
@@ -502,15 +580,54 @@ export function LessonChat({
     ? { ...composerControlsStyle, ...composerControlsExpandedStyle }
     : composerControlsStyle;
 
+  const resizeHandleStyle: CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: 6,
+    cursor: 'col-resize',
+    background: handleDragging
+      ? 'var(--accent)'
+      : handleHovered
+        ? 'var(--accent-subtle)'
+        : 'transparent',
+    zIndex: 1,
+    touchAction: 'none',
+    transition: 'background 120ms ease',
+  };
+
   return (
     <aside
       data-testid="lesson-chat"
       data-open="true"
       data-expanded={expanded ? 'true' : 'false'}
       data-active-section-id={activeSectionId ?? ''}
-      style={composedAsideStyle}
+      style={{ ...composedAsideStyle, position: expanded ? 'fixed' : 'relative' }}
     >
       <style>{lessonChatGlobalKeyframes}</style>
+      {!expanded ? (
+        <div
+          data-testid="lesson-chat-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize AI tutor panel"
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
+          aria-valuenow={chatWidth}
+          tabIndex={0}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onKeyDown={handleHandleKeyDown}
+          onMouseEnter={() => setHandleHovered(true)}
+          onMouseLeave={() => setHandleHovered(false)}
+          onFocus={() => setHandleHovered(true)}
+          onBlur={() => setHandleHovered(false)}
+          style={resizeHandleStyle}
+        />
+      ) : null}
       <header style={headerStyle}>
         <h2 style={titleStyle}>AI Tutor</h2>
         <div style={headerActionsStyle}>
