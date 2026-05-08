@@ -74,22 +74,45 @@ interface UploadedMaterial {
 
 // US-106 / US-107 — shape of GET /api/courses/active-run. Queue context was
 // added in US-107 so the resume banner can show "X in queue" alongside the
-// active run.
+// active run. US-140 adds an optional per-lesson `progress` block when
+// `.generation-state.json` (US-136) is on disk.
 interface QueueEntry {
   slug: string;
   name: string;
   position: number;
 }
 
+interface ActiveRunProgressLessonResp {
+  slug: string;
+  title: string;
+  status: 'pending' | 'inflight' | 'done' | 'failed';
+}
+
+interface ActiveRunProgressResp {
+  initStatus: 'pending' | 'done' | 'failed';
+  lessonsDone: number;
+  lessonsTotal: number;
+  currentLessonSlug: string | null;
+  lessons: ActiveRunProgressLessonResp[];
+}
+
 type ActiveRunResponse =
   | { active: false; queue: QueueEntry[] }
-  | { active: true; slug: string; name: string; stage: string; queue: QueueEntry[] };
+  | {
+      active: true;
+      slug: string;
+      name: string;
+      stage: string;
+      queue: QueueEntry[];
+      progress?: ActiveRunProgressResp;
+    };
 
 interface ActiveRun {
   slug: string;
   name: string;
   stage: string;
   queueLength: number;
+  progress?: ActiveRunProgressResp;
 }
 
 // Surfaced both to the route and the UI so they stay in sync.
@@ -214,7 +237,13 @@ export default function CreatePage() {
         if (body && body.active === true) {
           const ql = Array.isArray(body.queue) ? body.queue.length : 0;
           // eslint-disable-next-line react-hooks/set-state-in-effect
-          setActiveRun({ slug: body.slug, name: body.name, stage: body.stage, queueLength: ql });
+          setActiveRun({
+            slug: body.slug,
+            name: body.name,
+            stage: body.stage,
+            queueLength: ql,
+            progress: body.progress,
+          });
         } else {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setActiveRun(null);
@@ -355,10 +384,11 @@ export default function CreatePage() {
       {showResumeBanner && activeRun && (
         <ResumeBanner
           activeRun={activeRun}
-          onResume={() => {
-            setSubmittedSlug(activeRun.slug);
+          onNavigateToGeneration={(targetSlug) => {
+            setSubmittedSlug(targetSlug);
             setStage(6);
           }}
+          onClearActive={() => setActiveRun(null)}
           onDismiss={() => setBannerDismissed(true)}
         />
       )}
@@ -1123,18 +1153,160 @@ function StageMaterials({
   );
 }
 
-// US-106 — sticky top banner shown when a generation run is detected on
-// /create mount. Lets the user one-click back into the live generation panel
-// (Stage 6) for the running slug, or dismiss to start a new course flow.
+// US-106 / US-140 — sticky top banner shown when a generation run is
+// detected on /create mount. Surfaces concrete per-lesson progress (US-140)
+// when `.generation-state.json` from US-136 is on disk; lets the user
+// resume the live run, or wipe the partial run + restart from scratch.
 function ResumeBanner({
   activeRun,
-  onResume,
+  onNavigateToGeneration,
+  onClearActive,
   onDismiss,
 }: {
   activeRun: ActiveRun;
-  onResume: () => void;
+  onNavigateToGeneration: (slug: string) => void;
+  onClearActive: () => void;
   onDismiss: () => void;
 }) {
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  // Set when /resume returns 409 `busy`: a different course is mid-flight,
+  // so the resume button is disabled with an explanatory tooltip until the
+  // page reloads / activeRun changes.
+  const [busyConflict, setBusyConflict] = useState(false);
+
+  const showToast = useCallback((message: string) => {
+    setErrorMessage(message);
+    setTimeout(() => setErrorMessage((curr) => (curr === message ? null : curr)), 4500);
+  }, []);
+
+  const postFreshGenerate = useCallback(async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/courses/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug: activeRun.slug }),
+      });
+      if (!res.ok) {
+        let message = `Server returned ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body && typeof body.error === 'string') message = body.error;
+        } catch {
+          /* non-JSON body */
+        }
+        showToast(message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }, [activeRun.slug, showToast]);
+
+  const handleResume = useCallback(async () => {
+    if (busy || busyConflict) return;
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      const hasProgress = !!activeRun.progress;
+      if (hasProgress) {
+        const res = await fetch(
+          `/api/courses/${encodeURIComponent(activeRun.slug)}/resume`,
+          { method: 'POST' },
+        );
+        if (res.ok) {
+          onNavigateToGeneration(activeRun.slug);
+          return;
+        }
+        if (res.status === 409) {
+          let code: string | undefined;
+          try {
+            const body = (await res.json()) as { error?: string };
+            if (body && typeof body.error === 'string') code = body.error;
+          } catch {
+            /* non-JSON */
+          }
+          if (code === 'no-resumable-state') {
+            // Race: state file vanished between the active-run summary and
+            // this click. Brief delay so any in-flight cleanup finishes,
+            // then fall through to a fresh /generate.
+            await new Promise((r) => setTimeout(r, 250));
+            const ok = await postFreshGenerate();
+            if (ok) onNavigateToGeneration(activeRun.slug);
+            return;
+          }
+          if (code === 'busy') {
+            setBusyConflict(true);
+            showToast('Another course generation is in flight — try again once it finishes.');
+            return;
+          }
+        }
+        let message = `Server returned ${res.status}`;
+        try {
+          const body = (await res.json()) as { error?: string };
+          if (body && typeof body.error === 'string') message = body.error;
+        } catch {
+          /* non-JSON */
+        }
+        showToast(message);
+        return;
+      }
+      // No progress on disk → server has no resumable state. Just kick off
+      // a fresh /generate (idempotent for the same slug per US-105).
+      const ok = await postFreshGenerate();
+      if (ok) onNavigateToGeneration(activeRun.slug);
+    } finally {
+      setBusy(false);
+    }
+  }, [activeRun.progress, activeRun.slug, busy, busyConflict, onNavigateToGeneration, postFreshGenerate, showToast]);
+
+  const handleCancelAndRestart = useCallback(async () => {
+    if (busy) return;
+    const ok = window.confirm(
+      `This will delete the partial generation and any lessons already produced for ${activeRun.name}. Continue?`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      const del = await fetch(
+        `/api/courses/${encodeURIComponent(activeRun.slug)}/generation-state`,
+        { method: 'DELETE' },
+      );
+      if (del.status !== 204) {
+        let message = `Server returned ${del.status}`;
+        try {
+          const body = (await del.json()) as { error?: string };
+          if (body && typeof body.error === 'string') message = body.error;
+        } catch {
+          /* non-JSON */
+        }
+        showToast(message);
+        return;
+      }
+      // Fresh run for the same slug.
+      const started = await postFreshGenerate();
+      if (started) {
+        onNavigateToGeneration(activeRun.slug);
+      } else {
+        // DELETE succeeded but POST failed — clear the local active run
+        // so the banner doesn't stick around pointing at deleted state.
+        onClearActive();
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [activeRun.name, activeRun.slug, busy, onClearActive, onNavigateToGeneration, postFreshGenerate, showToast]);
+
+  const progress = activeRun.progress;
+  const resumeTitle = busyConflict
+    ? 'Another course is currently being generated; try again once it finishes.'
+    : undefined;
+
   return (
     <div
       data-testid="resume-banner"
@@ -1146,8 +1318,8 @@ function ResumeBanner({
         zIndex: 20,
         flexShrink: 0,
         display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--space-3)',
+        flexDirection: 'column',
+        gap: 'var(--space-1)',
         padding: '10px var(--space-6)',
         background: 'var(--accent-subtle)',
         color: 'var(--accent-text)',
@@ -1155,65 +1327,197 @@ function ResumeBanner({
         fontSize: 'var(--fs-sm)',
       }}
     >
-      <Sparkles size={14} strokeWidth={2} />
-      <span data-testid="resume-banner-text" style={{ flex: 1 }}>
-        {strings.resumeBanner.generatingPrefix}{' '}
-        <strong data-testid="resume-banner-name">{activeRun.name}</strong>
-        {' — '}
-        <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
-          {activeRun.stage}
+      <style>{`
+        @keyframes resumeBannerDotPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.45; transform: scale(0.85); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .resume-banner-dot--inflight {
+            animation: none !important;
+          }
+        }
+      `}</style>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}
+      >
+        <Sparkles size={14} strokeWidth={2} />
+        <span data-testid="resume-banner-text" style={{ flex: 1 }}>
+          {strings.resumeBanner.generatingPrefix}{' '}
+          <strong data-testid="resume-banner-name">{activeRun.name}</strong>
+          {' — '}
+          <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
+            {activeRun.stage}
+          </span>
+          {activeRun.queueLength > 0 && (
+            <>
+              {' · '}
+              <span data-testid="resume-banner-queue">
+                {activeRun.queueLength} {strings.resumeBanner.inQueueSuffix}
+              </span>
+            </>
+          )}
         </span>
-        {activeRun.queueLength > 0 && (
-          <>
-            {' · '}
-            <span data-testid="resume-banner-queue">
-              {activeRun.queueLength} {strings.resumeBanner.inQueueSuffix}
-            </span>
-          </>
-        )}
-      </span>
-      <button
-        type="button"
-        data-testid="resume-banner-resume"
-        onClick={onResume}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 30,
-          padding: '0 14px',
-          background: 'var(--accent)',
-          color: 'var(--text-on-accent)',
-          border: 'none',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--fs-sm)',
-          fontWeight: 500,
-          fontFamily: 'inherit',
-          cursor: 'pointer',
-        }}
-      >
-        {strings.resumeBanner.resumeCta}
-        <ArrowRight size={12} strokeWidth={2} />
-      </button>
-      <button
-        type="button"
-        data-testid="resume-banner-dismiss"
-        aria-label="Dismiss"
-        onClick={onDismiss}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--accent-text)',
-          cursor: 'pointer',
-          padding: 4,
-          borderRadius: 'var(--radius-sm)',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <X size={14} strokeWidth={2} />
-      </button>
+        <button
+          type="button"
+          data-testid="resume-banner-resume"
+          onClick={() => void handleResume()}
+          disabled={busy || busyConflict}
+          title={resumeTitle}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 30,
+            padding: '0 14px',
+            background: 'var(--accent)',
+            color: 'var(--text-on-accent)',
+            border: 'none',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            cursor: busy || busyConflict ? 'not-allowed' : 'pointer',
+            opacity: busy || busyConflict ? 0.55 : 1,
+          }}
+        >
+          {strings.resumeBanner.resumeCta}
+          <ArrowRight size={12} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          data-testid="cancel-and-restart-btn"
+          onClick={() => void handleCancelAndRestart()}
+          disabled={busy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 30,
+            padding: '0 12px',
+            background: 'transparent',
+            color: 'var(--accent-text)',
+            border: '1px solid var(--accent)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            cursor: busy ? 'not-allowed' : 'pointer',
+            opacity: busy ? 0.55 : 1,
+          }}
+        >
+          Cancel and restart
+        </button>
+        <button
+          type="button"
+          data-testid="resume-banner-dismiss"
+          aria-label="Dismiss"
+          onClick={onDismiss}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--accent-text)',
+            cursor: 'pointer',
+            padding: 4,
+            borderRadius: 'var(--radius-sm)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <X size={14} strokeWidth={2} />
+        </button>
+      </div>
+      {progress && (
+        <div
+          data-testid="resume-banner-progress"
+          style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}
+        >
+          <span
+            data-testid="resume-banner-progress-text"
+            style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}
+          >
+            {progress.lessonsDone} of {progress.lessonsTotal} lessons ·{' '}
+            {progress.currentLessonSlug ?? '—'}
+          </span>
+          <div
+            data-testid="resume-banner-dots"
+            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            {progress.lessons.map((lesson) => {
+              const color =
+                lesson.status === 'done'
+                  ? 'var(--success)'
+                  : lesson.status === 'failed'
+                    ? 'var(--danger)'
+                    : lesson.status === 'inflight'
+                      ? 'var(--accent)'
+                      : 'var(--text-tertiary)';
+              const isDone = lesson.status === 'done';
+              const inflight = lesson.status === 'inflight';
+              const dotProps: {
+                title: string;
+                'data-testid': string;
+                'data-status': string;
+                'data-lesson-slug': string;
+                style: CSSProperties;
+                className?: string;
+              } = {
+                title: lesson.title,
+                'data-testid': 'resume-banner-dot',
+                'data-status': lesson.status,
+                'data-lesson-slug': lesson.slug,
+                style: {
+                  display: 'inline-block',
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  background: color,
+                  flexShrink: 0,
+                  ...(inflight
+                    ? {
+                        animation: 'resumeBannerDotPulse 1.4s linear infinite',
+                      }
+                    : {}),
+                },
+                ...(inflight ? { className: 'resume-banner-dot--inflight' } : {}),
+              };
+              if (isDone) {
+                return (
+                  <a
+                    key={lesson.slug}
+                    href={`/courses/${encodeURIComponent(activeRun.slug)}/lessons/${encodeURIComponent(lesson.slug)}`}
+                    target="_blank"
+                    rel="noopener"
+                    aria-label={lesson.title}
+                    {...dotProps}
+                  />
+                );
+              }
+              return <span key={lesson.slug} {...dotProps} />;
+            })}
+          </div>
+        </div>
+      )}
+      {errorMessage && (
+        <div
+          data-testid="resume-banner-toast"
+          role="status"
+          style={{
+            marginTop: 6,
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--danger)',
+            color: 'var(--text-on-accent)',
+            fontSize: 'var(--fs-sm)',
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
     </div>
   );
 }
