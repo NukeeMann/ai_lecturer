@@ -122,14 +122,43 @@ export interface QueueSummaryEntry {
 }
 
 /**
+ * US-140: per-lesson progress snapshot derived from the persisted
+ * `.generation-state.json` (US-136). Surfaced by the resume banner so the
+ * user sees how many lessons are done, which one is mid-flight, and which
+ * are pending — and can cross-link directly to any already-finished lesson.
+ */
+export interface ActiveRunProgressLesson {
+  slug: string;
+  title: string;
+  status: 'pending' | 'inflight' | 'done' | 'failed';
+}
+
+export interface ActiveRunProgress {
+  initStatus: 'pending' | 'done' | 'failed';
+  lessonsDone: number;
+  lessonsTotal: number;
+  currentLessonSlug: string | null;
+  lessons: ActiveRunProgressLesson[];
+}
+
+/**
  * Summary returned by GET /api/courses/active-run (US-106). Lets the /create
  * page detect a still-running generation after a tab/server reload and offer
  * the user a one-click resume. As of US-107 the response also carries the
- * pending queue so callers can show "X in queue" context.
+ * pending queue so callers can show "X in queue" context. US-140 adds an
+ * optional `progress` block (only present when `.generation-state.json`
+ * from US-136 exists) so the banner can render concrete per-lesson status.
  */
 export type ActiveRunSummary =
   | { active: false; queue: QueueSummaryEntry[] }
-  | { active: true; slug: string; name: string; stage: string; queue: QueueSummaryEntry[] };
+  | {
+      active: true;
+      slug: string;
+      name: string;
+      stage: string;
+      queue: QueueSummaryEntry[];
+      progress?: ActiveRunProgress;
+    };
 
 /**
  * Result of POST /api/courses/generate (US-107). Either we started the run
@@ -548,7 +577,10 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
     const stage = activeRun.currentStage ?? 'init_course';
     const name = await resolveCourseName(slug);
     const queueSummary = await getQueueSummary();
-    return { active: true, slug, name, stage, queue: queueSummary };
+    const progress = await readProgressForActiveRun(slug);
+    return progress
+      ? { active: true, slug, name, stage, queue: queueSummary, progress }
+      : { active: true, slug, name, stage, queue: queueSummary };
   }
 
   // Cold-start reconciliation. Scan for `.generating.json` markers — each
@@ -598,9 +630,68 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
       (await deriveStageFromLogs(slug)) ??
       'init_course';
     const name = await resolveCourseName(slug);
-    return { active: true, slug, name, stage, queue: await getQueueSummary() };
+    const progress = await readProgressForActiveRun(slug);
+    const queueSummary = await getQueueSummary();
+    return progress
+      ? { active: true, slug, name, stage, queue: queueSummary, progress }
+      : { active: true, slug, name, stage, queue: queueSummary };
   }
   return { active: false, queue: await getQueueSummary() };
+}
+
+/**
+ * US-140: build the per-lesson progress block surfaced by GET
+ * /api/courses/active-run for the resume banner. Returns `null` when
+ * `.generation-state.json` is absent (older runs predate US-136 — the banner
+ * silently falls back to its US-106 single-line label) or unreadable; never
+ * throws.
+ */
+async function readProgressForActiveRun(slug: string): Promise<ActiveRunProgress | null> {
+  let state: GenerationState | null = null;
+  try {
+    state = await readGenerationState(slug);
+  } catch {
+    return null;
+  }
+  if (!state) return null;
+
+  // Map lesson slug → human title via course.json. course.json lands after
+  // init_course completes; before then we fall back to the slug itself.
+  const titleBySlug = new Map<string, string>();
+  try {
+    const raw = await fs.readFile(courseFile(slug), 'utf8');
+    const json = JSON.parse(raw) as {
+      modules?: Array<{ lessons?: Array<{ slug?: unknown; title?: unknown }> }>;
+    };
+    if (Array.isArray(json.modules)) {
+      for (const m of json.modules) {
+        if (!m || !Array.isArray(m.lessons)) continue;
+        for (const l of m.lessons) {
+          if (!l) continue;
+          if (typeof l.slug === 'string' && typeof l.title === 'string') {
+            titleBySlug.set(l.slug, l.title);
+          }
+        }
+      }
+    }
+  } catch {
+    /* best-effort — fall back to slug as title */
+  }
+
+  const lessons: ActiveRunProgressLesson[] = state.lessons.map((l) => ({
+    slug: l.slug,
+    title: titleBySlug.get(l.slug) ?? l.slug,
+    status: l.status,
+  }));
+  const lessonsDone = lessons.filter((l) => l.status === 'done').length;
+  const inflight = lessons.find((l) => l.status === 'inflight');
+  return {
+    initStatus: state.initCourse.status,
+    lessonsDone,
+    lessonsTotal: lessons.length,
+    currentLessonSlug: inflight ? inflight.slug : null,
+    lessons,
+  };
 }
 
 export function getRunById(id: string): GenerationRun | undefined {
