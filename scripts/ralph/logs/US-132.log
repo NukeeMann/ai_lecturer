@@ -1,0 +1,15 @@
+[2026-05-08T19:14:09+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T19:20:11+0200] US-132 done and committed (149206b). 
+
+- New schema `src/lib/schemas/collection.ts` (`CollectionSchema`, `CollectionsFileSchema`, inferred types).
+- New server module `src/lib/server/collections.ts`: atomic `~/.ai-lecturer/collections.json` r/w (tmp+rename, utf-8), ENOENT/corrupt → empty + single stderr warn, plus `createCollection` / `renameCollection` / `deleteCollection` / `addCourseToCollection` / `removeCourseFromCollection` (typed `CollectionNotFoundError` for renames/adds/removes; deletes are silent no-ops).
+- New REST endpoints: `GET`/`POST /api/collections` (201 + `Cache-Control: no-store`), `PATCH`/`DELETE /api/collections/[id]`, `POST`/`DELETE /api/collections/[id]/courses`. `id` validated against `/^[A-Za-z0-9-]{8,}$/`, `courseSlug` against `/^[a-z0-9-]+$/`; both → 400 on miss.
+- 32 new tests (16 unit, 16 route) using `process.env.HOME` override → suite 682 → 714 passing. `tsc --noEmit` clean. Lint clean on touched files.
+- `prd.json` US-132 flipped to `passes: true`; progress log appended.
+[2026-05-08T19:20:11+0200] [result success turns=48 cost=$2.9648742499999994] US-132 done and committed (149206b). 
+
+- New schema `src/lib/schemas/collection.ts` (`CollectionSchema`, `CollectionsFileSchema`, inferred types).
+- New server module `src/lib/server/collections.ts`: atomic `~/.ai-lecturer/collections.json` r/w (tmp+rename, utf-8), ENOENT/corrupt → empty + single stderr warn, plus `createCollection` / `renameCollection` / `deleteCollection` / `addCourseToCollection` / `removeCourseFromCollection` (typed `CollectionNotFoundError` for renames/adds/removes; deletes are silent no-ops).
+- New REST endpoints: `GET`/`POST /api/collections` (201 + `Cache-Control: no-store`), `PATCH`/`DELETE /api/collections/[id]`, `POST`/`DELETE /api/collections/[id]/courses`. `id` validated against `/^[A-Za-z0-9-]{8,}$/`, `courseSlug` against `/^[a-z0-9-]+$/`; both → 400 on miss.
+- 32 new tests (16 unit, 16 route) using `process.env.HOME` override → suite 682 → 714 passing. `tsc --noEmit` clean. Lint clean on touched files.
+- `prd.json` US-132 flipped to `passes: true`; progress log appended.
