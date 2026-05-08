@@ -25,14 +25,16 @@ export const metadata: Metadata = {
 };
 
 // Runs synchronously in <head> before paint to prevent a flash of the wrong
-// theme/density/accent/font. Reads localStorage['aiLecturer.theme']
+// theme/density/accent/font/text-scale. Reads localStorage['aiLecturer.theme']
 // (light|dark|system; missing/system falls back to prefers-color-scheme),
 // localStorage['aiLecturer.density'] (compact|comfortable|spacious),
-// localStorage['aiLecturer.font'] (geist|ibm-plex|source-serif), and — when
-// on a /courses/<slug>/... route — localStorage['aiLecturer.accent.<slug>']
-// for any user accent override (course defaults declared in course.json
-// apply later via the lesson page once the JSON loads).
-const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}var f=localStorage.getItem('aiLecturer.font');if(f==='geist'||f==='ibm-plex'||f==='source-serif'){d.setAttribute('data-font',f);}var m=location.pathname.match(/^\\/courses\\/([^\\/]+)/);if(m){var a=localStorage.getItem('aiLecturer.accent.'+m[1]);if(a==='default'||a==='black'||a==='indigo'||a==='terracotta'||a==='emerald'){d.setAttribute('data-accent',a);}}}catch(e){}})();`;
+// localStorage['aiLecturer.font'] (geist|ibm-plex|source-serif),
+// localStorage['aiLecturer.textScale'] (float clamped to [0.8, 1.4] applied as
+// inline style --text-scale), and — when on a /courses/<slug>/... route —
+// localStorage['aiLecturer.accent.<slug>'] for any user accent override
+// (course defaults declared in course.json apply later via the lesson page
+// once the JSON loads).
+const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}var f=localStorage.getItem('aiLecturer.font');if(f==='geist'||f==='ibm-plex'||f==='source-serif'){d.setAttribute('data-font',f);}var ts=localStorage.getItem('aiLecturer.textScale');if(ts!==null){var n=parseFloat(ts);if(isFinite(n)){if(n<0.8){n=0.8;}else if(n>1.4){n=1.4;}d.style.setProperty('--text-scale',String(n));}}var m=location.pathname.match(/^\\/courses\\/([^\\/]+)/);if(m){var a=localStorage.getItem('aiLecturer.accent.'+m[1]);if(a==='default'||a==='black'||a==='indigo'||a==='terracotta'||a==='emerald'){d.setAttribute('data-accent',a);}}}catch(e){}})();`;
 
 export default function RootLayout({
   children,

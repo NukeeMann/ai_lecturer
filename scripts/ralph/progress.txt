@@ -67,3 +67,25 @@ Previous log archived to: archive/progress-2026-05-07-0027.txt
   - Density variants override --space-N tokens, so bumping space-7→space-8 changes per-side delta from +16px (default) to +24px (spacious). Both stay within the 12–24/side band the AC requested, but a wider spread isn't free — verify against the densest preset if a future story bumps the multiplier.
   - On this WSL2 box port :3000 sometimes already has a Next dev-server running from a prior worktree (PID held in `.next/dev/logs/next-development.log`). `detectDevServers()` may miss it — `curl` :3000 first; if 200, reuse it instead of spawning a second instance on :3001.
 ---
+
+## 2026-05-08 - US-130 - Settings — font-scale slider (80%–140%)
+- New "Text size" group in SettingsMenu rendered as a single `<input type="range" min=0.8 max=1.4 step=0.05>` plus a `%` readout, writing a `--text-scale` multiplier to <html> inline style. Type-scale tokens (`--fs-xs`..`--fs-5xl`) wrapped via `calc(<px> * var(--text-scale))` so every existing `font-size: var(--fs-md)` consumer scales without touching call sites. Persistence + flash-free first paint via the existing layout.tsx boot script.
+- Files changed:
+  - src/styles/tokens.css (added `--text-scale: 1` default + wrapped 10 type-scale vars in `calc(* var(--text-scale))`)
+  - src/components/SettingsMenu.tsx (new exported `TEXT_SCALE_STORAGE_KEY`, `TEXT_SCALE_MIN/MAX/STEP/DEFAULT`, `readTextScale()`, `applyTextScale()`, `clampTextScale`; new `textScale` state wired into mount/refresh effects; new `onTextScaleSelect` mirroring `onFontSelect`; new internal `<TextScaleGroup/>` component rendering the slider + readout with `data-testid="settings-text-scale-slider"` and `data-testid="settings-text-scale-value"`)
+  - src/app/layout.tsx (boot script reads `aiLecturer.textScale`, parseFloat + clamp [0.8, 1.4], applies via `documentElement.style.setProperty('--text-scale', n)` before paint)
+  - scripts/ralph/prd.json (US-130.passes = true)
+- Browser verification (playwright-skill, headless, viewport 1280×800):
+  - Baseline at scale=1: h1 "My courses" → fontSize 22px, height 33px, --text-scale resolves to 1, no inline override.
+  - Slider → 1.4: readout flips to "140%", h1 fontSize 30.8px (= 22 × 1.4), height 46.19px → visibly larger. Inline `--text-scale=1.4` applied to <html>.
+  - Reload (assert no flash): at `domcontentloaded` the inline style on <html> already reads `--text-scale: 1.4` and h1 already renders at 30.8px / 46.19px. Slider opens to 1.4.
+  - Slider → 1.0: h1 shrinks back to 22px / 33px and `--text-scale` clears to 1.
+  - 0 console errors / pageerrors.
+  - Screenshots: /tmp/us-130-1-baseline.png, /tmp/us-130-2-scale-1.4.png, /tmp/us-130-3-after-reload.png, /tmp/us-130-4-back-to-1.png.
+- Quality: `tsc --noEmit` clean; `vitest run` 680/680 tests pass.
+- **Learnings for future iterations:**
+  - **Wrapping px literals in `calc(<px> * var(--text-scale))` is the cheapest possible "global font scale" hook.** Because every existing consumer already pulls `var(--fs-md)` etc., no callers had to change. Default `--text-scale: 1` lives in the GLOBAL `:root` block (the second one in tokens.css that holds `--fs-*`/`--font-*`/radii), NOT in either theme block — that way light/dark/sunset all inherit the same default with one line.
+  - **For React-controlled `<input type="range">`, programmatic value injection in playwright must use the native value setter** (`Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(el, '1.4')`) followed by `el.dispatchEvent(new Event('input', {bubbles:true}))`. Plain `el.value = '1.4'` + dispatch does NOT trigger React's onChange because React tracks the previous value via its own descriptor and skips the synthetic event. The first run of this test silently set the DOM value but React state stayed at 1.0, causing the heading-height assertion to fail with no scale change. Same trick applies to controlled `<input type="text">` and `<textarea>` if a future story needs to inject text via playwright.
+  - **No-flash verification trick.** To prove the boot script applied the value before first paint (rather than React rehydration applying it post-mount, which would flash), capture `document.documentElement.style.getPropertyValue('--text-scale')` IMMEDIATELY after `domcontentloaded` (before `networkidle`). Boot script writes the inline style synchronously in <head>, so it must be present at DOMContentLoaded; if it appears only after network idle the user would see a 1.0→1.4 flash. The test asserts `inlineTextScale === '1.4'` at domcontentloaded, not just "eventually".
+  - **The dev-server alias on this box is `npm`, not `pnpm`.** `pnpm dev` exits with `ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL Command "dev" not found` even though `pnpm test` and `pnpm typecheck` work — there is no pnpm-lock.yaml, only package-lock.json. Use `npm run dev > /tmp/devserver-<id>.log 2>&1 &` and capture the PID. (Other Ralph stories that worked may have inherited a dev server already running.)
+---

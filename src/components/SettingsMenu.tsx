@@ -24,6 +24,12 @@ type FontFamily = 'geist' | 'ibm-plex' | 'source-serif';
 export const THEME_STORAGE_KEY = 'aiLecturer.theme';
 export const DENSITY_STORAGE_KEY = 'aiLecturer.density';
 export const FONT_STORAGE_KEY = 'aiLecturer.font';
+export const TEXT_SCALE_STORAGE_KEY = 'aiLecturer.textScale';
+
+export const TEXT_SCALE_MIN = 0.8;
+export const TEXT_SCALE_MAX = 1.4;
+export const TEXT_SCALE_STEP = 0.05;
+export const TEXT_SCALE_DEFAULT = 1;
 // Per-course accent override key. Suffixed with the course slug, e.g.
 // 'aiLecturer.accent.widget-dev-guide'. Stored value is one of the Accent
 // literals; absence means "use the course default declared in course.json".
@@ -95,6 +101,33 @@ function readFont(): FontFamily {
     // localStorage may be unavailable; fall through to default.
   }
   return 'geist';
+}
+
+function clampTextScale(n: number): number {
+  if (!Number.isFinite(n)) return TEXT_SCALE_DEFAULT;
+  if (n < TEXT_SCALE_MIN) return TEXT_SCALE_MIN;
+  if (n > TEXT_SCALE_MAX) return TEXT_SCALE_MAX;
+  return n;
+}
+
+export function readTextScale(): number {
+  if (typeof window === 'undefined') return TEXT_SCALE_DEFAULT;
+  try {
+    const raw = window.localStorage.getItem(TEXT_SCALE_STORAGE_KEY);
+    if (raw === null) return TEXT_SCALE_DEFAULT;
+    const parsed = Number.parseFloat(raw);
+    return clampTextScale(parsed);
+  } catch {
+    return TEXT_SCALE_DEFAULT;
+  }
+}
+
+export function applyTextScale(value: number): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.setProperty(
+    '--text-scale',
+    String(clampTextScale(value)),
+  );
 }
 
 function systemTheme(): 'light' | 'dark' {
@@ -238,6 +271,7 @@ export function SettingsMenu({
   const [theme, setTheme] = useState<ThemePref>('system');
   const [density, setDensity] = useState<Density>('comfortable');
   const [font, setFont] = useState<FontFamily>('geist');
+  const [textScale, setTextScale] = useState<number>(TEXT_SCALE_DEFAULT);
   const [accent, setAccent] = useState<Accent>(
     courseDefaultAccent ?? 'default',
   );
@@ -253,6 +287,8 @@ export function SettingsMenu({
     setDensity(readDensity());
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFont(readFont());
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTextScale(readTextScale());
   }, []);
 
   // Resolve the visible accent selection from override + course default. Runs
@@ -272,6 +308,7 @@ export function SettingsMenu({
       setTheme(readThemePref());
       setDensity(readDensity());
       setFont(readFont());
+      setTextScale(readTextScale());
       if (courseSlug) {
         const override = readAccentOverride(courseSlug);
         setAccent(override ?? courseDefaultAccent ?? 'default');
@@ -365,6 +402,18 @@ export function SettingsMenu({
     window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   }, []);
 
+  const onTextScaleSelect = useCallback((next: number) => {
+    const clamped = clampTextScale(next);
+    try {
+      window.localStorage.setItem(TEXT_SCALE_STORAGE_KEY, String(clamped));
+    } catch {
+      // localStorage unavailable; in-memory selection still works.
+    }
+    applyTextScale(clamped);
+    setTextScale(clamped);
+    window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+  }, []);
+
   const onAccentSelect = useCallback(
     (next: Accent) => {
       if (!courseSlug) return;
@@ -425,6 +474,10 @@ export function SettingsMenu({
             onSelect={onFontSelect}
             testIdPrefix="settings-font"
           />
+          <TextScaleGroup
+            value={textScale}
+            onSelect={onTextScaleSelect}
+          />
           {courseSlug ? (
             <SettingsGroup
               label="Accent"
@@ -476,6 +529,61 @@ function SettingsGroup<T extends string>({
             </button>
           );
         })}
+      </div>
+    </section>
+  );
+}
+
+const sliderRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  padding: '4px 4px 2px',
+};
+
+const sliderInputStyle: CSSProperties = {
+  flex: 1,
+  cursor: 'pointer',
+  accentColor: 'var(--accent)',
+};
+
+const sliderReadoutStyle: CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--text-secondary)',
+  fontVariantNumeric: 'tabular-nums',
+  minWidth: 36,
+  textAlign: 'right',
+};
+
+interface TextScaleGroupProps {
+  value: number;
+  onSelect: (next: number) => void;
+}
+
+function TextScaleGroup({ value, onSelect }: TextScaleGroupProps) {
+  const percent = `${Math.round(value * 100)}%`;
+  return (
+    <section data-testid="settings-text-scale-group" style={groupStyle}>
+      <h3 style={groupLabelStyle}>Text size</h3>
+      <div style={sliderRowStyle}>
+        <input
+          type="range"
+          min={TEXT_SCALE_MIN}
+          max={TEXT_SCALE_MAX}
+          step={TEXT_SCALE_STEP}
+          value={value}
+          onChange={(e) => onSelect(Number.parseFloat(e.target.value))}
+          aria-label="Text size"
+          aria-valuemin={TEXT_SCALE_MIN}
+          aria-valuemax={TEXT_SCALE_MAX}
+          aria-valuenow={value}
+          aria-valuetext={percent}
+          data-testid="settings-text-scale-slider"
+          style={sliderInputStyle}
+        />
+        <span data-testid="settings-text-scale-value" style={sliderReadoutStyle}>
+          {percent}
+        </span>
       </div>
     </section>
   );
