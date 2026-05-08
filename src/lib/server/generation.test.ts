@@ -16,9 +16,11 @@ import {
   enqueueGeneration,
   formatStreamJsonLine,
   GenerationConflictError,
+  GenerationStateMissingError,
   getActiveRun,
   getActiveRunSummary,
   getRunById,
+  resumeGeneration,
   sseEncode,
   startGeneration,
   type FailedLesson,
@@ -28,9 +30,11 @@ import {
 
 import { POST as postGenerate, DELETE as deleteGenerate } from '@/app/api/courses/generate/route';
 import { GET as streamGenerate } from '@/app/api/courses/generate/stream/[id]/route';
+import { POST as postResume } from '@/app/api/courses/[slug]/resume/route';
 import {
   generationStateFile,
   readGenerationState,
+  type GenerationState,
 } from '@/lib/server/generationState';
 
 let coursesRoot: string;
@@ -1960,5 +1964,401 @@ describe('.generation-state.json lifecycle (US-136)', () => {
     expect(state!.initCourse.status).toBe('failed');
     expect(state!.initCourse.reason).toMatch(/did not produce course\.json/i);
     expect(state!.lessons).toEqual([]);
+  });
+});
+
+describe('resumeGeneration (US-137)', () => {
+  /** Helper: write a stub state file directly to disk, bypassing the pipeline. */
+  async function writeStubState(slug: string, state: GenerationState) {
+    const dir = path.join(coursesRoot, slug);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(generationStateFile(slug), JSON.stringify(state, null, 2), 'utf8');
+  }
+
+  it('throws GenerationStateMissingError when no .generation-state.json exists', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await expect(
+      resumeGeneration('demo', { isExecutableInPath: () => true }),
+    ).rejects.toBeInstanceOf(GenerationStateMissingError);
+  });
+
+  it('skips done lessons, retries the inflight lesson, and runs pending lessons in order', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+
+    // Run #1: drive lesson 'one' to done, leave lesson 'two' inflight when
+    // the user cancels mid-attempt; lesson 'three' never gets a chance to start.
+    const scripted1 = makeScriptedSpawn();
+    const run1 = await startGeneration('demo', {
+      spawn: scripted1.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+      sigkillGraceMs: 5,
+    });
+
+    const init = await scripted1.nextChild();
+    await writeStubCourse('demo', ['one', 'two', 'three']);
+    init.finishWithExit(0);
+
+    const one = await scripted1.nextChild();
+    await writeStubLesson('demo', 'one');
+    one.finishWithExit(0);
+
+    // Lesson 'two' is mid-spawn — wait until state.lessons['two'] flips to
+    // inflight, then cancel so the run finalises with 'two' inflight on disk.
+    await scripted1.nextChild();
+    for (let i = 0; i < 100; i++) {
+      const s = await readGenerationState('demo');
+      if (s?.lessons.find((l) => l.slug === 'two')?.status === 'inflight') break;
+      await new Promise((r) => setImmediate(r));
+    }
+    await run1.cancel();
+    await waitForFinish(run1);
+
+    const beforeResume = await readGenerationState('demo');
+    expect(beforeResume).not.toBeNull();
+    expect(beforeResume!.lessons.find((l) => l.slug === 'one')?.status).toBe('done');
+    expect(beforeResume!.lessons.find((l) => l.slug === 'two')?.status).toBe('inflight');
+    expect(beforeResume!.lessons.find((l) => l.slug === 'two')?.attempts).toBe(1);
+    expect(beforeResume!.lessons.find((l) => l.slug === 'three')?.status).toBe('pending');
+
+    // Resume — different scripted spawn so we can count children fresh.
+    const scripted2 = makeScriptedSpawn();
+    const run2 = await resumeGeneration('demo', {
+      spawn: scripted2.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+    });
+
+    // Wait for the resumed event to land. It MUST be the very first event.
+    for (let i = 0; i < 100; i++) {
+      if (run2.events.find((e) => e.type === 'resumed')) break;
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(run2.events[0]).toEqual({
+      type: 'resumed',
+      completed: ['one'],
+      remaining: ['two', 'three'],
+      inflightSlug: 'two',
+    });
+
+    // Lesson 'two' spawns directly — no init re-run.
+    const two2 = await scripted2.nextChild();
+    let mid: GenerationState | null = null;
+    for (let i = 0; i < 100; i++) {
+      mid = await readGenerationState('demo');
+      if (mid?.lessons.find((l) => l.slug === 'two')?.attempts === 2) break;
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(mid!.lessons.find((l) => l.slug === 'two')?.attempts).toBe(2);
+    expect(mid!.lessons.find((l) => l.slug === 'two')?.status).toBe('inflight');
+    await writeStubLesson('demo', 'two');
+    two2.finishWithExit(0);
+
+    // Lesson 'three' spawns next.
+    const three2 = await scripted2.nextChild();
+    await writeStubLesson('demo', 'three');
+    three2.finishWithExit(0);
+
+    await waitForFinish(run2);
+
+    // Exactly two children spawned in the resume run — init was skipped and
+    // 'one' was skipped as already-done.
+    expect(scripted2.children.length).toBe(2);
+
+    const done = run2.events.find((e) => e.type === 'done') as
+      | { type: 'done'; courseSlug: string; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
+
+    // Full success → state file deleted.
+    await expect(fs.access(generationStateFile('demo'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+  });
+
+  it('marks a lesson failed without spawning when its remaining attempt budget is 0', async () => {
+    // lessonMaxRetries=2 → 3 total attempts. attempts=3 → remaining=0.
+    await writeStubCourse('demo', ['alpha', 'beta', 'gamma']);
+    await writeStubLesson('demo', 'alpha');
+    await writeStubState('demo', {
+      schemaVersion: 1,
+      slug: 'demo',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [
+        {
+          slug: 'alpha',
+          status: 'done',
+          attempts: 1,
+          finishedAt: '2026-05-08T00:00:01.000Z',
+        },
+        { slug: 'beta', status: 'failed', attempts: 3, lastError: 'budget burned' },
+        { slug: 'gamma', status: 'pending', attempts: 0 },
+      ],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    const run = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    // Only 'gamma' should spawn — 'alpha' is done, 'beta' has no remaining budget.
+    const gamma = await scripted.nextChild();
+    await writeStubLesson('demo', 'gamma');
+    gamma.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    expect(scripted.children.length).toBe(1);
+
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons.map((f) => f.slug)).toEqual(['beta']);
+    expect(done?.failedLessons[0]?.reason).toBe('budget burned');
+
+    // State file is left in place because a lesson failed.
+    const after = await readGenerationState('demo');
+    expect(after).not.toBeNull();
+    expect(after!.lessons.find((l) => l.slug === 'beta')?.status).toBe('failed');
+    expect(after!.lessons.find((l) => l.slug === 'beta')?.attempts).toBe(3);
+  });
+
+  it('removes a stale <lesson>.tmp before the spawn but leaves a sibling .json untouched', async () => {
+    await writeStubCourse('demo', ['alpha', 'beta']);
+    // 'alpha' is already done with a valid alpha.json on disk; 'beta' is pending
+    // with a stale beta.tmp leftover from a prior atomic-write crash.
+    await writeStubLesson('demo', 'alpha');
+    const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
+    await fs.mkdir(lessonsDir, { recursive: true });
+    await fs.writeFile(path.join(lessonsDir, 'beta.tmp'), 'partial garbage', 'utf8');
+
+    await writeStubState('demo', {
+      schemaVersion: 1,
+      slug: 'demo',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [
+        {
+          slug: 'alpha',
+          status: 'done',
+          attempts: 1,
+          finishedAt: '2026-05-08T00:00:01.000Z',
+        },
+        { slug: 'beta', status: 'pending', attempts: 0 },
+      ],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    const run = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 2,
+      lessonTimeoutMs: 60_000,
+    });
+
+    const beta = await scripted.nextChild();
+
+    // The unlink runs before spawnChild, so by the time the child exists on
+    // the test side the stale .tmp must already be gone.
+    await expect(fs.access(path.join(lessonsDir, 'beta.tmp'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    // Sibling alpha.json was never touched by the cleanup.
+    await fs.access(path.join(lessonsDir, 'alpha.json'));
+
+    await writeStubLesson('demo', 'beta');
+    beta.finishWithExit(0);
+    await waitForFinish(run);
+  });
+
+  it('emits the resumed event before any stage events even when init is rerun', async () => {
+    // initCourse not done → resume must still emit the resumed event FIRST,
+    // then go on to re-run init_course.
+    await writeStubState('demo', {
+      schemaVersion: 1,
+      slug: 'demo',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'failed', reason: 'crashed' },
+      lessons: [],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    const run = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    for (let i = 0; i < 100; i++) {
+      if (run.events.find((e) => e.type === 'resumed')) break;
+      await new Promise((r) => setImmediate(r));
+    }
+    expect(run.events[0]).toEqual({
+      type: 'resumed',
+      completed: [],
+      remaining: [],
+      inflightSlug: null,
+    });
+
+    // Init re-runs (succeeds, writes course.json with one lesson).
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['only']);
+    init.finishWithExit(0);
+
+    const only = await scripted.nextChild();
+    await writeStubLesson('demo', 'only');
+    only.finishWithExit(0);
+
+    await waitForFinish(run);
+    expect(run.events.find((e) => e.type === 'done')).toBeDefined();
+  });
+
+  it('returns the active run idempotently when the same slug is already resuming', async () => {
+    await writeStubCourse('demo', ['x']);
+    await writeStubState('demo', {
+      schemaVersion: 1,
+      slug: 'demo',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    const first = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    await scripted.nextChild();
+    const same = await resumeGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    expect(same).toBe(first);
+  });
+
+  it('throws GenerationConflictError when a different slug is already in flight', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await writeStubCourse('other', ['x']);
+    await writeStubState('other', {
+      schemaVersion: 1,
+      slug: 'other',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    const live = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    void live;
+    await scripted.nextChild();
+
+    await expect(
+      resumeGeneration('other', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+      }),
+    ).rejects.toBeInstanceOf(GenerationConflictError);
+  });
+});
+
+describe('POST /api/courses/[slug]/resume (US-137)', () => {
+  async function writeStubState(slug: string, state: GenerationState) {
+    const dir = path.join(coursesRoot, slug);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(generationStateFile(slug), JSON.stringify(state, null, 2), 'utf8');
+  }
+
+  it('returns 200 + runId when the state file exists', async () => {
+    await writeStubCourse('demo', ['x']);
+    await writeStubState('demo', {
+      schemaVersion: 1,
+      slug: 'demo',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({ spawn: scripted.spawn, isExecutableInPath: () => true });
+
+    const req = new Request('http://localhost/api/courses/demo/resume', {
+      method: 'POST',
+    });
+    const res = await postResume(req, { params: Promise.resolve({ slug: 'demo' }) });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runId?: string; slug?: string };
+    expect(typeof body.runId).toBe('string');
+    expect(body.runId).toMatch(/^gen-/);
+    expect(body.slug).toBe('demo');
+
+    // Drive the resumed pipeline to completion so afterEach's tmp-dir
+    // teardown happens AFTER all deferred persistGenState writes — otherwise
+    // a final write fires once COURSES_ROOT_OVERRIDE has been cleared and
+    // leaks state into the project's real courses/ tree.
+    const run = getRunById(body.runId!);
+    expect(run).toBeDefined();
+    const child = await scripted.nextChild();
+    await writeStubLesson('demo', 'x');
+    child.finishWithExit(0);
+    await waitForFinish(run!);
+  });
+
+  it('returns 409 no-resumable-state when no state file exists', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    __setSpawnDepsForTesting({ isExecutableInPath: () => true });
+
+    const req = new Request('http://localhost/api/courses/demo/resume', {
+      method: 'POST',
+    });
+    const res = await postResume(req, { params: Promise.resolve({ slug: 'demo' }) });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe('no-resumable-state');
+  });
+
+  it('returns 409 busy when a different slug is already in flight', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    await writeStubCourse('other', ['x']);
+    await writeStubState('other', {
+      schemaVersion: 1,
+      slug: 'other',
+      startedAt: '2026-05-08T00:00:00.000Z',
+      lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+      initCourse: { status: 'done' },
+      lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
+      config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+    });
+
+    const scripted = makeScriptedSpawn();
+    __setSpawnDepsForTesting({ spawn: scripted.spawn, isExecutableInPath: () => true });
+    await startGeneration('demo');
+    await scripted.nextChild();
+
+    const req = new Request('http://localhost/api/courses/other/resume', {
+      method: 'POST',
+    });
+    const res = await postResume(req, { params: Promise.resolve({ slug: 'other' }) });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error?: string };
+    expect(body.error).toBe('busy');
   });
 });
