@@ -3041,6 +3041,387 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-141",
+      "title": "Cross-lesson coherence pass: final-stage agent + coherence-report.md",
+      "description": "As a course author, after a full course generation completes I want a final coherence pass that audits the generated lessons as a set — checking prerequisite ordering, redundancy across lessons, and notational consistency — and writes a human-readable report I can use to decide which lessons (if any) to regenerate.",
+      "acceptanceCriteria": [
+        "New skill at scripts/ralph/skills/coherence_pass/coherence_pass.md describing the agent's role: read course.json + every lesson JSON under /courses/<slug>/lessons/, then output a markdown report with three named sections — `## Prerequisite Order` (lessons that depend on concepts not yet introduced), `## Redundancy` (concepts re-explained across lessons without acknowledgement), `## Notation Consistency` (variable names, symbols, conventions that drift). Skill emits ONLY the markdown text — no JSON wrapper.",
+        "Generation pipeline integration in src/lib/server/generation.ts: after the last per-lesson `claude -p generate_lesson` invocation succeeds AND every lesson is on disk + valid (existing US-139 logic), run a final stage `coherence-pass`. Spawn `claude -p` with the coherence_pass skill, passing the course slug as cwd context, capture stdout, write to `/courses/<slug>/coherence-report.md`. The stage emits `stage:started` with `name: 'coherence-pass'` and `stage:done` (or `stage:failed`) like other stages so the live log shows it. Failure of this stage does NOT mark the course generation as failed — the report is best-effort; emit `stage:failed` with the error and continue.",
+        "When coherence pass succeeds, the response of GET /api/courses/<slug>/active-run includes a final `coherenceReportPath` field on completion summary (relative path `coherence-report.md`); when it fails, the field is absent and the failure is visible only in the SSE event log. Out of scope: surfacing the report in the UI (US can land later as a separate story); auto-rerunning lessons based on findings (explicitly out of scope per product decision).",
+        "When `RALPH_TASK_ID` env or any other ralph orchestrator env is detected (i.e. running headless inside an iteration), still execute the pass — but cap stdout consumption with a 30s timeout per spawn, and write `Coherence pass timed out — re-run generation to retry.` to the report on timeout. This protects iteration budgets without silently skipping.",
+        "Unit/integration tests in src/lib/server/generation.test.ts: with a 3-lesson mocked course where all lessons are pre-placed valid, run startGenerationInner with a mocked spawn — assert the final spawn command is the coherence_pass skill (not generate_lesson), assert `coherence-report.md` is written from the mock stdout, assert `stage:done` event with name `coherence-pass` appears AFTER all lesson stages. Failure test: mocked coherence spawn returns non-zero → `stage:failed` is emitted, course generation still completes (existing lessons remain), no `coherence-report.md` is written.",
+        "Out of scope: cross-course coherence (only within one course); per-module coherence checks (final pass only — product decision); UI surfacing of the report (file is on disk for now); auto-fix loops (read-only audit).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 141,
+      "passes": false,
+      "notes": "Final-pass-only + report-only is the deliberately conservative scope chosen by the product owner. The skill's markdown is consumed only via filesystem in this story; surfacing it in the UI is a candidate future story.",
+      "tags": []
+    },
+    {
+      "id": "US-142",
+      "title": "Course three-dots context menu in explorer with soft Delete (move to .trash)",
+      "description": "As a user browsing my courses on the home explorer, I want a three-dots overflow menu in the upper-right corner of each course card so I can perform per-course actions like Delete without cluttering the card. The first action is Delete, which soft-deletes the course by moving its directory under /courses/.trash/<slug>-<timestamp>/ — irreversible from the UI but recoverable from the filesystem.",
+      "acceptanceCriteria": [
+        "src/app/page.tsx course-card component: add an icon-button (three vertical dots, lucide-react `MoreVertical`) absolutely positioned at top-right inside the card with `data-testid=\"course-menu-btn-<slug>\"`. Click opens a shadcn DropdownMenu anchored to the button. The button's click event must `stopPropagation` so it does not trigger the card's navigate-to-course click handler.",
+        "Dropdown initial item: `Delete` (red text via `var(--danger)`) with `data-testid=\"course-menu-delete-<slug>\"`. Click closes the dropdown and opens a shadcn AlertDialog (custom modal — NOT window.confirm) titled `Delete \"<course title>\"?` with body `The course folder will be moved to /courses/.trash/. Recovery requires manual filesystem access.`, plus Cancel + Delete buttons. Cancel closes; Delete fires DELETE /api/courses/<slug> with `{ mode: 'soft' }` body.",
+        "New DELETE /api/courses/[slug]/route.ts handler: accepts optional `{ mode: 'soft' | 'hard' }` body (default 'soft'). For 'soft': ensure /courses/.trash/ exists (mkdir recursive), move /courses/<slug>/ to /courses/.trash/<slug>-<ISO-timestamp>/ via fs.rename (fall back to copy+rmdir on EXDEV cross-device). On 'hard': rejects with 501 in this story (reserved for a future story). Returns 204 on success, 404 if slug missing, 409 if a generation is currently active for that slug (computeActiveRunSummary check), 400 on slug-traversal attempts (reuse assertSafeSlug from src/lib/server/paths.ts).",
+        "Delete also clears the course's entry from ~/.ai-lecturer/progress.json if present (best-effort; skip on missing file). Trash entries DO NOT have progress entries restored.",
+        "Card UI: while DELETE is in flight, show a subtle skeleton/disabled state on the card. On 204, the home explorer's course list refetches and the card disappears with a 200ms fade. On 409, show a toast `\"Cannot delete — generation in progress for this course\"`. On 404, refetch the list (likely already gone).",
+        "Verify in browser using playwright-skill: pre-seed two mock courses on disk (course-a, course-b) via fs.writeFile + a minimal course.json each. Load /, screenshot — assert both cards visible with three-dots buttons. Click course-a's three-dots → assert dropdown appears with Delete option. Click Delete → assert AlertDialog visible with course-a title quoted in heading. Click Confirm → wait for refetch → assert course-a card is gone, course-b remains. Verify on disk: /courses/.trash/course-a-<timestamp>/ exists and contains the moved course.json. Reference all screenshots in the progress report.",
+        "Out of scope: hard-delete mode (501 placeholder for future story); a Restore-from-trash UI (filesystem only); other menu options like Rename, Duplicate, Extend, Export — these are added by their respective stories (US-144 for Extend, US-150 for Export); keyboard navigation refinements beyond shadcn's defaults.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 142,
+      "passes": false,
+      "notes": "Soft-delete-to-.trash chosen over hard-delete to prevent accidental data loss with a single click — recovery is filesystem-only by design. The dropdown is built to be extended; downstream stories (US-144 Extend, US-150 Export) will append items.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-143",
+      "title": "Extend course: agent skill + POST /api/courses/<slug>/extend",
+      "description": "As a course author, I want a server-side extend agent that takes my existing course schema (with lesson descriptions) plus a free-text instruction describing what I want to add, and returns a proposed extended schema marking which modules and lessons are new — without yet committing changes to disk or generating any lesson content. This story delivers the backend: a skill .md, a POST endpoint, and the structured response shape that downstream UI stories (US-144, US-145) consume.",
+      "acceptanceCriteria": [
+        "New skill at scripts/ralph/skills/extend_course/extend_course.md describing the agent: input is a JSON block with `currentSchema` (full course.json with module/lesson titles + descriptions) + `instruction` (user free-text) + optional `refinements: Array<{ role: 'user', content: string }>` (chat-history for iterative refinement, used by US-145). Output MUST be a single JSON object emitted on stdout: `{ proposedSchema: <full course schema with modules+lessons including any newly added>, additions: { newModuleIds: string[], newLessonIds: { moduleId: string, lessonSlug: string, lessonTitle: string, lessonDescription: string }[], rationale: string } }`. Skill instructs the agent to PRESERVE all existing module/lesson IDs and titles unchanged — additions only.",
+        "New POST /api/courses/[slug]/extend/route.ts handler: body validated by Zod schema `{ instruction: string (1..2000 chars), refinements?: Array<{ role: 'user', content: string (1..2000) }> (max 10) }`. Reads /courses/<slug>/course.json + every lesson JSON's description field, builds skill input JSON, spawns `claude -p extend_course` (reusing the existing spawnClaude helper from src/lib/server/generation.ts), captures stdout, parses as JSON, validates against ExtendResponseSchema, returns it. Returns 400 on invalid body, 404 on missing slug, 422 on agent-output parse failure (with the raw stdout truncated to 2KB in the error message for debugging), 500 on spawn failure.",
+        "ExtendResponseSchema (new file src/lib/schemas/extend.ts): proposedSchema reuses the existing CourseSchema from src/lib/schemas/course.ts; additions is its own object schema. Schema is exported and used both by the route handler and consumed by the future UI story.",
+        "Endpoint is purely read-only-from-disk: it does NOT write course.json, does NOT trigger generation, does NOT modify lesson files. (A separate Apply endpoint added in US-144 handles persistence.) This isolates risk: the agent can be called repeatedly without side effects.",
+        "Reuses the existing computeActiveRunSummary check: if a generation is currently active for the slug, return 409 with `{ error: 'busy', message: 'Cannot extend while generation is active' }` — extending a course mid-generation would corrupt state.",
+        "Unit tests in src/app/api/courses/[slug]/extend/route.test.ts (or src/lib/server/extend.test.ts if a helper module is extracted): with a mock of spawnClaude, verify that valid input → valid response is parsed and returned; invalid agent stdout (non-JSON, schema-mismatched) → 422 with parse error; missing course → 404; busy state → 409.",
+        "Out of scope: any UI (US-144 + US-145); the Apply endpoint (US-144); modifying course.json or generating new lessons (US-144 Apply triggers that); persisting refinement chat history server-side (refinements are passed in by the client each call — stateless server).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 143,
+      "passes": false,
+      "notes": "Stateless agent design (refinements passed in per call) deliberately keeps US-143 small and side-effect-free. The Apply step lives in US-144 because it touches course.json + generation pipeline — separation lets US-143 ship and be tested in isolation.",
+      "tags": []
+    },
+    {
+      "id": "US-144",
+      "title": "Extend course modal UI with highlighted proposed-schema preview + Apply",
+      "description": "As a course author, I want an Extend menu item in each course's three-dots overflow menu that opens a modal with a free-text input and, after submission, displays the agent-proposed schema (US-143) with newly-added modules and lessons highlighted in the accent color so I can visually verify what's being added. An Apply button persists the new schema to course.json and queues new lessons for generation.",
+      "acceptanceCriteria": [
+        "Add `Extend` item to the dropdown menu introduced in US-142 (between Delete and any future items, but not red — neutral text) with `data-testid=\"course-menu-extend-<slug>\"`. Click closes dropdown and opens a shadcn Dialog titled `Extend \"<course title>\"`.",
+        "Modal initial state: a textarea labeled `What would you like to add?` (placeholder: `e.g., \"add a module on advanced indexing techniques with two practice lessons\"`) + Submit + Cancel buttons. Submit POSTs to /api/courses/<slug>/extend (US-143) with `{ instruction: <textarea value> }`. While in flight: textarea disabled, Submit replaced with spinner, no escape-to-close.",
+        "On 200: replace the input UI with a schema-preview view showing the full proposedSchema as a tree (Module → Lessons). Each module/lesson has a `data-new=\"true\"` attribute when its ID is in `additions.newModuleIds` or `additions.newLessonIds`, and renders with `background: var(--accent-soft)` + `border-left: 3px solid var(--accent)` so additions are visually distinct from preserved entries. Above the tree, render `additions.rationale` in a muted box. Below the tree: `Apply` (primary) and `Discard` (secondary) buttons.",
+        "Apply click → POST /api/courses/[slug]/extend/apply (new route) with body `{ proposedSchema }`. Apply route: re-validates proposedSchema against CourseSchema, asserts every PRE-EXISTING module/lesson ID is preserved (rejects with 422 if anything was renamed/removed), writes /courses/<slug>/course.json. For each new lesson in `additions.newLessonIds`, the route enqueues that lesson for generation by calling the existing generation pipeline in 'append' mode — concretely: kicks off a startGenerationInner run with a filter that only spawns generate_lesson for the new lesson slugs (skips init since the course already exists, skips existing valid lessons via US-139). Returns 200 with `{ enqueuedLessonSlugs: string[] }`. The modal then closes and the user is shown a toast `\"Extension applied — generating <N> new lessons\"` with a link to /create (where the live generation log can be observed via the existing US-128/US-130 infrastructure).",
+        "Discard click → close modal without any backend call. The proposed schema is NOT persisted anywhere; reopening Extend starts fresh.",
+        "If the user closes the modal mid-flight (before Submit completes), the in-flight request is aborted via AbortController; if it completes after close, the response is dropped silently.",
+        "Verify in browser using playwright-skill: pre-seed a mock course with 2 modules + 4 lessons. Mock the /api/courses/<slug>/extend response via a Playwright route handler returning a deterministic ExtendResponse with one new module and two new lessons. Open three-dots menu → click Extend → screenshot empty modal. Type a short instruction → Submit → screenshot showing the preview tree with the original modules unhighlighted and the new module + new lessons highlighted in accent. Click Apply (mock the apply route to 200 with `enqueuedLessonSlugs`). Assert toast appears, modal closes, course.json on disk now contains the new module + lessons. Reference all screenshots.",
+        "Out of scope: chat refinement panel (US-145); editing the proposed schema by hand (Apply-or-Discard only in this story); showing live generation progress inside the modal (the toast hands off to /create); rolling back an applied extension (no Undo — extension is durable once applied; user can manually edit course.json or use Cancel-and-restart from US-140 if they regret it before generation completes).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 144,
+      "passes": false,
+      "notes": "Splits the Extend feature into agent (US-143) + UI (US-144) + chat refinement (US-145) per product split. Apply endpoint lives in this story because it pairs naturally with the UI's Apply button — moving it earlier would leave a dead endpoint without a caller.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-145",
+      "title": "Extend course chat refinement panel below proposed schema",
+      "description": "As a course author who's previewing a proposed extension (US-144), I want a chat panel below the proposed schema where I can iteratively refine the agent's proposal — sending follow-up corrections like \"make the second lesson code-only\" or \"split the new module into two\" — and watch the proposal update in place. Each correction passes the prior context plus the new message to the same extend agent so refinements compound.",
+      "acceptanceCriteria": [
+        "Below the schema-preview tree introduced in US-144, render a chat panel: a scrollable message list (user messages right-aligned in accent-soft, agent rationales left-aligned in muted) + input bar with textarea + Send button. The message list starts with the original instruction (as the first user message) + the first agent rationale (as the first agent reply, taken from `additions.rationale`).",
+        "Send click: POST /api/courses/<slug>/extend (US-143's route — no new endpoint) with `{ instruction: <originalInstruction>, refinements: <chat history excluding the original instruction, in order, mapped to {role:'user',content}> }`. The endpoint already accepts the optional `refinements` field per US-143's contract.",
+        "On response: replace the proposed schema preview in place — re-render with the new `proposedSchema` and updated `additions` highlights. Append the new agent rationale to the chat as a new agent reply. The Apply button at the bottom always operates on the LATEST proposedSchema received.",
+        "Loading state: while a refinement is in flight, the input bar is disabled and shows a spinner; the schema preview shows a subtle overlay (opacity 0.6, no pointer events) so the user knows the visible proposal is stale; Apply button is disabled.",
+        "Error handling: on 422 (agent emitted unparseable JSON), keep the current proposedSchema unchanged, append a system message `\"Refinement failed — please rephrase.\"` to the chat. On 409 busy, append `\"Cannot refine while generation is active.\"`. On 500, append `\"Server error — please try again.\"`. None of these errors close the modal or discard the prior proposal.",
+        "Chat history is in-memory only, scoped to the current modal session — closing the modal discards everything; reopening Extend starts fresh. (Same statelessness as US-143's server design.)",
+        "Verify in browser using playwright-skill: continue from US-144's seeded course. Mock /api/courses/<slug>/extend to return DIFFERENT proposals on first vs second call (first call: 1 new module; second call: 2 new modules — payload depends on `refinements.length`). Open Extend → submit initial instruction → screenshot proposal A. Type a refinement in the chat → Send → screenshot proposal B (with the new module highlighted differently/additionally). Verify the chat panel shows 2 user messages + 2 agent rationales. Reference both screenshots.",
+        "Out of scope: persisting chat history across sessions (in-memory only); editing or deleting prior chat messages (append-only); branching/forking refinement paths (linear chat only); a 'reset chat' button (close-and-reopen modal serves as reset).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 145,
+      "passes": false,
+      "notes": "Builds on US-144's modal — implementation is purely additive (chat panel + state for messages array + repeat-call wiring). No backend changes needed thanks to US-143's `refinements` parameter.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-146",
+      "title": "Regenerate section: skill + POST /api/courses/<slug>/lessons/<lessonSlug>/sections/<sectionId>/regenerate",
+      "description": "As a course author reviewing a generated lesson, I want a server-side regenerate-section flow that takes a single section + a short user instruction (e.g., \"more code-focused\", \"shorter\", \"add a comparison\") and returns a regenerated version of that section, leaving the rest of the lesson untouched. This story delivers the backend skill + endpoint; the UI (with highlighted-additions preview) lives in US-147.",
+      "acceptanceCriteria": [
+        "New skill at scripts/ralph/skills/regenerate_section/regenerate_section.md describing the agent: input is a JSON block with `lessonContext` (full Lesson JSON), `sectionId` (string), and `instruction` (user free-text 1..1000). Output MUST be a single JSON object on stdout: `{ newSection: <Section conforming to SectionSchema with same id+kind as input section but new content> }`. Skill instructs the agent to PRESERVE the section's `id` and `kind` (theory stays theory, quiz stays quiz, etc.) — only `content`/`prompt`/widget-specific fields may change.",
+        "New POST /api/courses/[slug]/lessons/[lessonSlug]/sections/[sectionId]/regenerate/route.ts handler: body Zod-validated as `{ instruction: string (1..1000) }`. Reads /courses/<slug>/lessons/<lessonSlug>.json, locates the section by id (404 if not found), spawns `claude -p regenerate_section` with the skill input JSON, captures stdout, parses + validates as `{ newSection: SectionSchema }` ensuring newSection.id === sectionId and newSection.kind === oldSection.kind (rejects with 422 if either drifted), returns `{ newSection, oldSection }`. Does NOT write to disk in this story — preview is computed client-side; persisting happens via a follow-up Apply call (next AC).",
+        "Companion POST /api/courses/[slug]/lessons/[lessonSlug]/sections/[sectionId]/apply/route.ts: body `{ newSection: SectionSchema }`. Re-validates the section, re-asserts id+kind preservation against the on-disk lesson, replaces only that section in the lessons array, writes lesson.json. Returns 200 with the updated Lesson. Returns 422 on validation failure, 404 if the lesson or section is missing. (A separate route to keep state changes explicit and resilient against the regen route having side effects.)",
+        "Both routes return 409 if a generation is currently active for the slug.",
+        "ParamSchema validation for slug, lessonSlug, sectionId — reuse assertSafeSlug for slug+lessonSlug; sectionId is the lesson's internal id, validated by checking it exists in the lesson (no path-traversal risk since it's not used in fs paths).",
+        "Unit tests: mock spawnClaude to return a deterministic newSection; assert response shape; assert id/kind drift detection rejects with 422; assert apply route writes only the targeted section (other sections in the lesson remain byte-identical via fs.readFile diff).",
+        "Out of scope: UI (US-147); diff/highlight rendering (UI's job); regenerating multiple sections at once; rolling back to a prior version (Apply is one-shot in this story; no snapshot for sections — full-lesson snapshot is in US-148).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 146,
+      "passes": false,
+      "notes": "Two-route design (regenerate vs apply) mirrors US-143/US-144 split — preview-first, commit-on-confirm. id+kind preservation is a hard contract: the agent cannot turn a theory section into a quiz.",
+      "tags": []
+    },
+    {
+      "id": "US-147",
+      "title": "Section regenerate UI in pencil panel with highlighted-additions preview",
+      "description": "As a course author editing a lesson, I want a Regenerate button inside the existing pencil-panel for each section that opens a small prompt input (\"more code-focused\", \"shorter\", \"add a comparison\"), then shows the regenerated section content with parts that differ from the original visually highlighted in a different color so I can review the change at a glance, with Accept/Reject buttons to commit or discard.",
+      "acceptanceCriteria": [
+        "In src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx, locate the pencil-panel rendered around line 2929+ (the `pencilNode`/`pencilButton` block). Add a `Regenerate` action to that panel for every section type — a button with `data-testid=\"regen-section-btn-<sectionId>\"`. Click opens a popover/sheet anchored to the section with a textarea labeled `How should this section change?`, three quick-pick chips (`More code-focused`, `Shorter`, `Add a comparison` — clicking populates the textarea), and Submit + Cancel buttons.",
+        "Submit POSTs to /api/courses/<slug>/lessons/<lessonSlug>/sections/<sectionId>/regenerate (US-146) with `{ instruction }`. While in flight: spinner replaces Submit, textarea disabled. On 200: replace popover content with a preview view showing the new section rendered EXACTLY as it would appear in the lesson (theory markdown, quiz options, code with widgets, etc.) BUT with a token-level diff highlight: substrings present in newSection.content that did NOT exist in oldSection.content are wrapped in `<mark style=\"background: var(--accent-soft); border-bottom: 2px solid var(--accent)\">` (or equivalent for non-text fields like quiz options — added options highlighted; changed options accent-bordered). Use a small utility (jsdiff-style word-level diff) added in src/lib/diff/sectionDiff.ts to compute the highlights; do NOT pull a heavy npm dep — a simple longest-common-subsequence over whitespace-tokens is sufficient for this story (covered by tests).",
+        "Below the highlighted preview: `Accept` (primary) + `Reject` (secondary) buttons. Accept POSTs to .../sections/<sectionId>/apply (US-146 apply route) with `{ newSection }` and on 200 patches the section in local lesson state (no full-page reload), closes the popover, shows toast `\"Section regenerated\"`. Reject closes the popover and discards the proposal — no backend call.",
+        "Error handling: on 422 (agent drift), show inline error in popover `\"Regeneration failed — try a different instruction.\"` keep textarea content. On 409 (busy), inline `\"Cannot regenerate while generation is active.\"`. On 500, `\"Server error — please try again.\"`.",
+        "The pencil-panel's existing actions are PRESERVED unchanged — Regenerate is appended, not a replacement. Existing sectionDiff util doesn't exist yet → introduce in src/lib/diff/sectionDiff.ts with a default export `diffWords(oldText: string, newText: string): Array<{ type: 'same'|'added'|'removed', text: string }>` and unit tests in sectionDiff.test.ts covering identical strings, pure additions, pure removals, mixed, empty inputs.",
+        "Verify in browser using playwright-skill: load a seeded lesson with at least one theory section. Mock the regenerate route to return a deterministic newSection where the content has 3 added sentences. Click pencil → click Regenerate → screenshot popover. Type instruction → Submit → screenshot showing the regenerated theory with the 3 new sentences highlighted with the accent background. Click Accept (mock apply to 200) → assert popover closes, toast appears, lesson state in DOM reflects newSection. Reference screenshots.",
+        "Out of scope: regenerating multiple sections at once; cross-section refinement chat (UI is single-shot per section, unlike US-145's multi-turn); diffing widget-config fields beyond display content (e.g., quiz answer-key changes shown only as 'changed' badge, not character-level diff).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 147,
+      "passes": false,
+      "notes": "Highlighted-additions preview (single pane with color-coded changes) was chosen over side-by-side diff per product owner's request — fits compact pencil-panel UX better. The token-level diff utility is intentionally tiny to avoid npm-dep churn.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-148",
+      "title": "Regenerate lesson: skill + POST /api/courses/<slug>/lessons/<lessonSlug>/regenerate with .lesson-prev.json snapshot",
+      "description": "As a course author dissatisfied with a whole lesson, I want a regenerate-lesson backend that snapshots the current lesson.json before overwriting it with a fresh agent-generated version per a user instruction, so a one-step Undo (US-149) can restore the prior version. The agent receives the user instruction, the course schema, and the current lesson content as context, and outputs a new full Lesson JSON.",
+      "acceptanceCriteria": [
+        "New skill at scripts/ralph/skills/regenerate_lesson/regenerate_lesson.md: input JSON contains `courseSchema` (course.json), `currentLesson` (full Lesson JSON), `instruction` (user free-text 1..2000). Output MUST be a single JSON on stdout: `{ newLesson: <Lesson conforming to LessonSchema with same slug+title as input> }`. Skill instructs agent to preserve lesson.slug, lesson.title, and the lesson's parent moduleId; section ids may change (full regeneration) but the section count + kinds should remain reasonable for the lesson's purpose (no hard constraint on section ids since the whole lesson is regenerated).",
+        "New POST /api/courses/[slug]/lessons/[lessonSlug]/regenerate/route.ts handler: body Zod-validated as `{ instruction: string (1..2000) }`. Reads /courses/<slug>/course.json + /courses/<slug>/lessons/<lessonSlug>.json. Spawns `claude -p regenerate_lesson` with the skill input JSON. On success: writes the existing lesson.json byte-for-byte to /courses/<slug>/lessons/<lessonSlug>.lesson-prev.json (overwriting any prior snapshot — only ONE level of undo by design), then writes the parsed+validated newLesson to lesson.json, returns `{ newLesson, hasUndo: true }`. On agent-output validation failure → 422, lesson.json untouched, no snapshot written. On 409 busy → reject. Slug+lessonSlug validated via assertSafeSlug.",
+        "Companion POST /api/courses/[slug]/lessons/[lessonSlug]/regenerate/undo/route.ts: returns 404 if `<lessonSlug>.lesson-prev.json` doesn't exist, otherwise restores it onto lesson.json (rename or copy+delete), deletes the snapshot afterwards, returns 200 with `{ restoredLesson }`. After undo there is no further undo (single-step by design — explicit and predictable).",
+        "Snapshot policy: ONLY regenerate-lesson writes the .lesson-prev.json snapshot. Section regenerate (US-147) does NOT write to it (would clobber a real lesson-undo). Manual edits via the lesson editor (existing) do NOT write to it. The snapshot represents 'the lesson before the most recent full regenerate' specifically.",
+        "Snapshot file is gitignored at the courses subdirectory level (or added to /courses/.gitignore if it exists, else the project .gitignore via a `*.lesson-prev.json` pattern). Verify the existing .gitignore is updated.",
+        "Unit/integration tests: mock spawnClaude returning a deterministic newLesson; pre-place a lesson.json with content X; POST regenerate with instruction → assert newLesson written, .lesson-prev.json contains X byte-identical, response.hasUndo === true. POST undo → assert lesson.json now contains X, .lesson-prev.json deleted. Edge: POST undo when no snapshot exists → 404. Edge: regenerate twice in a row → second regenerate's snapshot is the first regenerate's output (one-step undo only).",
+        "Out of scope: multi-step undo history (single-step intentionally); UI (US-149); auto-snapshot before manual edits in the lesson editor; rolling back if generation is interrupted between snapshot-write and lesson.json-write (the file ops are sequential — failure between them leaves the snapshot orphaned, which is acceptable: undo is a UX nicety, not a transactional guarantee).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 148,
+      "passes": false,
+      "notes": "Single-step undo via .lesson-prev.json is a deliberate trade-off — multi-step would need a history directory + cleanup policy, which is out of scope for one iteration. The 'snapshot only on regenerate' policy avoids clobbering across different mutation paths.",
+      "tags": []
+    },
+    {
+      "id": "US-149",
+      "title": "Per-lesson Regenerate button + Undo banner in lesson view",
+      "description": "As a course author viewing a lesson, I want a Regenerate button in the lesson page header that opens a prompt input, fires US-148's regenerate API, replaces the lesson with the new content in place, and shows an Undo banner at the top of the page so I can revert with one click while I'm still on the page.",
+      "acceptanceCriteria": [
+        "In src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx, add a `Regenerate lesson` action — either as a header button next to the existing actions or inside an overflow menu in the header (use whichever fits the existing header pattern; if a header doesn't exist, place it near the lesson title as a ghost button with `data-testid=\"regen-lesson-btn\"`).",
+        "Click opens a shadcn Dialog titled `Regenerate \"<lesson title>\"` with: explanatory body `\"This replaces the entire lesson with a freshly generated version. The previous version is kept as a one-step Undo while you stay on this page.\"`, a textarea labeled `How should this lesson change?` (1..2000 chars), and Submit + Cancel buttons.",
+        "Submit POSTs to /api/courses/<slug>/lessons/<lessonSlug>/regenerate (US-148) with `{ instruction }`. While in flight: dialog disabled, spinner. On 200: dialog closes, the page re-renders the new lesson (re-fetch the lesson via the existing data-loading path or use the response body to update local state), and a sticky banner appears at the top of the lesson with text `\"Lesson regenerated.\"` + an `Undo` button (`data-testid=\"undo-regen-lesson-btn\"`).",
+        "Undo click → POST .../regenerate/undo (US-148 undo route). On 200: page re-renders the restored lesson, banner disappears with a 200ms fade. On 404 (snapshot missing): banner shows error text `\"Undo unavailable.\"` for 3s then disappears.",
+        "Banner persistence: it appears on regenerate-success and stays visible until either (a) Undo is clicked, (b) the user navigates away from the lesson page (banner dismounts with the page), or (c) the user explicitly dismisses it via an `x` close button on the banner. Once dismissed/navigated-away, the .lesson-prev.json snapshot still exists on disk, but the UI does not provide access to it — the user would need to refresh the page (which detects the snapshot's existence via a new GET /api/courses/<slug>/lessons/<lessonSlug>/regenerate/status endpoint returning `{ hasUndo: boolean }`) to see the banner reappear with Undo enabled.",
+        "New GET /api/courses/<slug>/lessons/<lessonSlug>/regenerate/status route: returns `{ hasUndo: boolean }` based on the existence of `<lessonSlug>.lesson-prev.json`. The lesson page calls this on mount and shows the banner if `hasUndo: true` (covers the case where a user regenerates, navigates away, navigates back — Undo is still available until consumed).",
+        "Error handling on Submit: 422 → dialog inline error `\"Regeneration failed — try a different instruction.\"`; 409 busy → `\"Cannot regenerate while generation is active.\"`; 500 → `\"Server error — please try again.\"`.",
+        "Verify in browser using playwright-skill: load a seeded lesson. Mock regenerate route to return a deterministic newLesson where the title section text differs. Click Regenerate → screenshot dialog → Submit → screenshot lesson updated + Undo banner visible. Click Undo → screenshot lesson restored to original, banner gone. Reference all screenshots.",
+        "Out of scope: showing the prior version side-by-side (the user just regenerated — they remember roughly); diff highlighting on full-lesson regenerate (US-147 covers per-section diff; full-lesson is too coarse); a multi-step history view; a 'preview before commit' (full-lesson regen is fire-and-forget with single-step undo by design).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 149,
+      "passes": false,
+      "notes": "Banner persistence + status endpoint ensures Undo survives a navigation round-trip while the snapshot is on disk — keeps the UI honest about what's recoverable. Pairs with US-148's snapshot policy.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-150",
+      "title": "Course ZIP export: endpoint + menu option",
+      "description": "As a course author, I want to export an entire course as a ZIP file so I can back it up, share it, or re-import it on another instance. The export bundles course.json, course-spec.json, all lesson JSONs, sources/, research.md, and sources.md — but excludes generation-state and event-log files.",
+      "acceptanceCriteria": [
+        "New GET /api/courses/[slug]/export/zip/route.ts: streams an application/zip response (Content-Disposition: `attachment; filename=\"<slug>-<ISO-date>.zip\"`). Uses a streaming zip lib — prefer `archiver` if not already a dependency (lightweight, no native deps); add to package.json. ZIP root contains a single folder `<slug>/` whose contents mirror /courses/<slug>/ EXCEPT for these excluded files (matched by exact basename): `.generation-state.json`, `.generating.json`, `.generation-events.ndjson`, `.generation-events.*.ndjson` (rotated logs), `.lesson-prev.json` files (snapshot artifacts), `coherence-report.md` is INCLUDED if present.",
+        "Slug validated via assertSafeSlug. Returns 404 if /courses/<slug>/ missing, 500 on stream errors. Returns 409 if a generation is currently active for that slug (taking a snapshot mid-generation could capture inconsistent state — better to fail loudly).",
+        "Add `Export as ZIP` item to the dropdown menu introduced in US-142 (between Extend and Delete or at the end — final placement chosen to keep destructive Delete last). `data-testid=\"course-menu-export-zip-<slug>\"`. Click triggers a download by setting window.location.href to the export URL (browser handles the download stream natively); no client-side blob assembly. Show a brief toast `\"Preparing ZIP export…\"` immediately on click.",
+        "Unit/integration test in src/app/api/courses/[slug]/export/zip/route.test.ts (or via a server-test): with a seeded course on disk including one of each excluded file, hit the route, capture the response stream, parse the ZIP entries, assert exactly which files are included/excluded by name. Verify the response Content-Disposition header.",
+        "Verify in browser using playwright-skill: seed a course, open three-dots → click Export as ZIP → assert a download is triggered (Playwright's `page.waitForEvent('download')`). Save to /tmp, unzip, assert structure matches expectations. Reference the test output in the progress report.",
+        "Out of scope: progress bar for large courses (rare — most courses are small JSON + small uploads); resumable downloads; encryption/password protection; signed URLs (single-user local app, no auth model); bundling /courses/.trash/ entries (only live courses).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 150,
+      "passes": false,
+      "notes": "GET (not POST) is correct here — export is read-only, idempotent, browser-native download. Streaming via archiver avoids holding the whole ZIP in memory for courses with large source uploads.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-151",
+      "title": "Course ZIP import: greyed drag-drop card as last entry in explorer",
+      "description": "As a course author, I want a drag-and-drop import card always rendered as the last entry in the home course explorer — visually greyed-out with a dashed border to signal its different role — so I can drag a previously-exported ZIP (US-150) onto it to import the course into this instance.",
+      "acceptanceCriteria": [
+        "In src/app/page.tsx, after the list of real course cards, render a final `ImportCourseCard` component with `data-testid=\"import-course-card\"`. Visual style: same dimensions as a course card; background `var(--bg-muted)` or 50%-opacity; dashed 2px border in `var(--text-tertiary)`; centered icon (lucide `Upload`) + label `Drop course ZIP here` + subtext `or click to browse`. Hover state: dashed border → solid `var(--accent)`, opacity 0.8.",
+        "Drag-over state: visual feedback (border becomes solid accent, background becomes accent-soft). DragLeave + Drop reset to default. Drop with non-zip file → toast `\"Only .zip files are supported.\"`, no upload. Drop with zip → POST to /api/courses/import as multipart/form-data with field name `file`. Click on card opens native file picker accepting `.zip` only.",
+        "New POST /api/courses/import/route.ts handler: receives multipart, extracts file (max 100MB to keep memory bounded), writes to a temp dir under os.tmpdir(), unzips via `unzipper` or `adm-zip` (add to package.json if missing — prefer streaming `unzipper` for memory). Validates: top-level entry is a single folder named `<slug>` matching /^[a-z0-9-]+$/, that folder contains a course.json which validates against CourseSchema, and any lesson JSONs validate against LessonSchema. If validation passes AND /courses/<slug>/ does NOT already exist, move the extracted folder into /courses/<slug>/ via fs.rename (cross-device fallback). Returns 200 with `{ slug, lessonCount }`. Returns 400 on validation failure (with specific reason: `not-zip`, `bad-structure`, `invalid-course-json`, `invalid-lesson-json`), 409 if the slug already exists locally with `{ existingSlug: <slug> }` (NO auto-rename in this story — user must remove or rename existing course manually first).",
+        "On 200: the home explorer refetches the course list and the newly-imported course card slides into place. Toast `\"Imported <course title>\"`. On 409: toast `\"A course with slug \\\"<slug>\\\" already exists. Delete or rename it first.\"`. On 400 with reason: tailored toast (`\"Invalid course archive: <reason>\"`).",
+        "Security: enforce ZIP-slip protection — every entry path inside the ZIP must, after resolution, remain within the temp extraction dir; reject and 400 with `bad-structure` if any entry escapes. Reject ZIPs containing symlinks. Cap total uncompressed size to 500MB to prevent zip-bomb.",
+        "Verify in browser using playwright-skill: prepare a valid course ZIP fixture in tests (or generate at test setup by streaming via archiver, mirroring US-150's output). Load /, screenshot showing import card greyed at end of list. Programmatically drop the fixture file via Playwright's setInputFiles on the hidden file input (since real drag-drop is finicky — the click-to-browse path covers the same backend). Screenshot success state with new card. Reference screenshots.",
+        "Out of scope: previewing course contents before import (no UI inspect step — accept-or-reject from disk validation only); importing into a different slug than the ZIP's folder name (slug is fixed by ZIP contents); merging into an existing course; importing only specific lessons; signed/encrypted imports.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 151,
+      "passes": false,
+      "notes": "ZIP-slip protection + size cap are non-negotiable for any unzip endpoint, even in a single-user local app — defense-in-depth. The 'no auto-rename on conflict' policy is intentional: silent renames create confusing dual entries.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-152",
+      "title": "Course static HTML export with embedded Pyodide (publish-ready)",
+      "description": "As a course author who wants to publish a course outside the dev-server, I want a static HTML export that produces a self-contained ZIP of pre-rendered .html files (one per lesson + an index.html with module navigation) where code widgets remain functional via embedded Pyodide loaded from a CDN — no Node.js, no Next.js runtime required to view the course locally or host it on any static host.",
+      "acceptanceCriteria": [
+        "New GET /api/courses/[slug]/export/html/route.ts: returns ZIP with structure `<slug>/index.html` (course landing page with module/lesson links), `<slug>/lessons/<lessonSlug>.html` per lesson, `<slug>/assets/styles.css` (inlined design tokens + minimal print/screen CSS extracted from the live app), and `<slug>/assets/pyodide-loader.js` (a small wrapper that loads Pyodide from `https://cdn.jsdelivr.net/pyodide/<pinned-version>/full/pyodide.js` and exposes `runPython(code: string): Promise<string>`).",
+        "Per-lesson HTML rendering: server-side renders each Lesson via the SAME components used in src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx, but with a STATIC variant that omits these interactive features: AI tutor chat (US-135), per-lesson regenerate UI (US-149), section pencil-panel (US-147), live generation log, progress tracking (no writes to ~/.ai-lecturer). Code widgets (Code, CodeCloze) are kept functional: they use the embedded pyodide-loader.js to run Python in-browser. Quiz widgets are kept functional with answer-checking client-side. Theory + Demo widgets are pure render. Sandbox is rendered read-only.",
+        "Implementation approach: introduce src/lib/export/staticRender.ts that uses React's `renderToStaticMarkup` from react-dom/server to produce the per-lesson HTML strings, wrapping with a minimal `<!doctype html>` shell containing `<link rel=\"stylesheet\" href=\"../assets/styles.css\">`, `<script src=\"../assets/pyodide-loader.js\" defer></script>`, and `<script src=\"<lessonSlug>.data.js\" defer></script>` (a tiny per-lesson JS payload containing the lesson JSON + initialization code that mounts the static-React-component-tree onto the page if any client interactivity is needed for code/quiz widgets). The static variant of widget components conditionally skips interactive controls based on a `mode: 'static'` prop.",
+        "Pyodide version pinning: a single PYODIDE_VERSION constant in src/lib/export/constants.ts (e.g., `0.27.4`) used across the loader script and any tests. Document in README.md that internet access is required for Pyodide CDN load on first viewing of an exported course (an offline-bundle option is explicitly out of scope).",
+        "ZIP excludes anything not needed for static viewing: no .ts/.tsx, no node_modules, no course-spec.json (the spec is implementation detail of the in-app generator, not user-facing), no /sources/ uploads (user can re-upload if importing back via US-151 with a different ZIP — static export is for VIEWING not for re-importing into the dev app).",
+        "Slug validated, 404 on missing, 409 on busy, returns ZIP with Content-Disposition `attachment; filename=\"<slug>-static-<ISO-date>.zip\"`. Add `Export as static HTML` item to the course three-dots menu (US-142) — `data-testid=\"course-menu-export-html-<slug>\"`. Click triggers download (window.location.href to URL).",
+        "Integration test: seed a course with one theory lesson + one code lesson + one quiz lesson. Hit the route. Unzip in /tmp. Open `<slug>/lessons/theory-lesson.html` via Playwright's `page.goto('file:///tmp/.../theory-lesson.html')` — assert content renders without console errors. Open the code lesson — wait for Pyodide to load (Playwright network: allow CDN), assert `runPython('1+1')` returns '2' via an injected eval. Open the quiz lesson — click the correct option, assert client-side checking marks it green. Reference screenshots.",
+        "Out of scope: offline-bundled Pyodide (would balloon ZIP size by ~10MB+); supporting non-Python code widgets (current widgets are all Python-based); serving over HTTPS / hosting recommendations (user's choice); SEO/meta tags optimization (basic <title> only); analytics/tracking; multi-language UI (export uses the active app locale at export time only).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 152,
+      "passes": false,
+      "notes": "Static HTML is the user's stretch goal — kept as a separate story so US-150 (ZIP export) and US-151 (ZIP import) can ship independently if this one runs into Pyodide-vs-renderToStaticMarkup compatibility issues. CDN-loaded Pyodide keeps the export ZIP small but requires net access on first viewing.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-153",
+      "title": "Per-lesson PDF export via puppeteer (clean, no-interactions)",
+      "description": "As a course author, I want a Print to PDF action on each lesson that produces a clean, printable PDF (theory + Demo + Quiz answers visible, no interactive controls, no nav, no AI tutor) suitable for printing or sharing offline. The PDF is server-rendered via puppeteer/playwright headless from a dedicated /print route.",
+      "acceptanceCriteria": [
+        "New internal route src/app/courses/[slug]/lessons/[lessonSlug]/print/page.tsx: server-rendered minimal layout (no header, no sidebar, no nav, no AI tutor chat, no pencil-panels, no regen buttons). Renders the lesson's sections in order with print-friendly styles (sans-serif body, 12pt baseline, page-break-inside: avoid on widgets, `@media print` rules promoting black-on-white from theme). Quiz sections render with the correct answer visibly highlighted (since this is for printing reference material, not interaction). Code sections render code blocks WITH the hidden tests still hidden by default (preserves the 'code tests hidden' design decision per project memory) but with a distinct `[Tests hidden]` placeholder. Sandbox sections render the prompt only.",
+        "New GET /api/courses/[slug]/lessons/[lessonSlug]/export/pdf/route.ts: Uses puppeteer-core + a Chromium binary. Prefer reusing the playwright Chromium already installed via scripts/ralph/skills/playwright-skill (its node_modules contains chromium). The route launches headless Chromium pointing at `http://localhost:<active-port>/courses/<slug>/lessons/<lessonSlug>/print`, awaits networkidle, calls page.pdf({ format: 'A4', margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' }, printBackground: true }), returns the buffer with `Content-Type: application/pdf` + `Content-Disposition: attachment; filename=\"<lessonSlug>.pdf\"`. Browser launch is gated behind a server-side singleton (one browser instance reused across export calls, lazily started, idle-timeout-closed after 5min) to avoid spawning Chromium per-request.",
+        "Active-port detection: read process.env.PORT or default to 3000; if the print route fetch fails with ECONNREFUSED, return 503 `\"Dev server not running — start it before exporting PDF.\"`. Retries: one retry after 500ms before returning 503.",
+        "Add `Print to PDF` button in the lesson page header next to the Regenerate button from US-149 — `data-testid=\"export-lesson-pdf-btn\"`. Click triggers download via window.location.href to the export URL. Toast `\"Generating PDF…\"` shown immediately, dismissed when the download begins (browser-native download triggers an event we listen for, OR after 30s timeout — whichever first).",
+        "Slug + lessonSlug validated. 404 if lesson missing. 409 not relevant (PDF gen is read-only and concurrent-safe — multiple users, hypothetically, could export simultaneously). Errors during page.pdf() return 500 with the error message.",
+        "Integration test: seed a lesson with one of each section type (theory + quiz + code + sandbox + demo). Hit the export route via fetch. Save response to /tmp/<lessonSlug>.pdf. Verify the file is a valid PDF by inspecting magic bytes (`%PDF-`). Optionally use `pdf-parse` to extract text and assert the lesson title appears, the quiz question + correct answer appear, and the code block content appears. Reference test output.",
+        "Verify in browser using playwright-skill: load a lesson, click Print to PDF, assert a download is triggered (Playwright's page.waitForEvent('download')), save to /tmp, validate PDF magic bytes. Reference screenshots of the lesson view + the generated PDF (rendered as image) in the progress report.",
+        "Out of scope: full-course PDF (one lesson at a time per product decision); custom page templates (single A4 layout); custom margins via UI; OCR-friendly PDFs; PDF accessibility tagging (PDF/UA); embedding interactive elements (PDF is print-optimized — no JS execution).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 153,
+      "passes": false,
+      "notes": "Reusing the playwright-skill's Chromium avoids adding a separate puppeteer-chromium dependency (~150MB). The browser singleton is critical — naive per-request launches would make exports take 5-10s each due to Chromium startup. The 'tests hidden' detail preserves the project's documented UX decision (project memory: code-widget tests hidden by default).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-154",
+      "title": "TTS/STT infrastructure: Coqui XTTS + whisper.cpp via subprocess + /api/tts + /api/stt",
+      "description": "As a developer setting up the platform, I want server-side TTS and STT infrastructure using open-source engines (Coqui XTTS for TTS, whisper.cpp for STT) wrapped behind stable HTTP routes (/api/tts, /api/stt) so that audio widgets (US-155, US-156) and lesson generation (US-157) can call them without coupling to a specific engine. Both engines run locally (no API keys, no cloud calls) via subprocess.",
+      "acceptanceCriteria": [
+        "Setup script scripts/setup-tts.sh: detects platform (Linux/WSL2 for now), installs Coqui XTTS via `pipx install coqui-tts` (or `pip install coqui-tts` into a virtualenv at scripts/.venv/coqui/), downloads the default English voice model on first run (xtts_v2 or equivalent — whichever is current as of model-installation date), and verifies installation by running a 1-second test synthesis. Idempotent (skip steps if already done). Documented in README.md under a new `## Optional: TTS/STT setup` section.",
+        "Setup script scripts/setup-stt.sh: clones + builds whisper.cpp into scripts/.bin/whisper.cpp/ (using `make` — requires gcc/clang), downloads the `ggml-base.en.bin` model into scripts/.bin/whisper.cpp/models/. Idempotent. Documented alongside the TTS setup.",
+        "New POST /api/tts/route.ts: body Zod-validated `{ text: string (1..2000), voice?: 'en-female' | 'en-male' (default 'en-female'), outputBaseName?: string (defaults to a content-hash) }`. Spawns the TTS CLI (`scripts/.venv/coqui/bin/tts --text \"<text>\" --model_name tts_models/multilingual/multi-dataset/xtts_v2 --speaker <voice-mapped> --language_idx en --out_path <tmpfile>.wav` or equivalent based on the installed package's actual CLI shape). Captures the .wav file, moves it to `~/.ai-lecturer/tts-cache/<outputBaseName>.wav` (a content-hash filename ensures dedup across calls with identical text+voice), returns `{ audioPath: <relative path under ~/.ai-lecturer/>, durationMs: <computed via ffprobe or wav-header parse>, cached: <true if file already existed> }`.",
+        "New POST /api/stt/route.ts: body Zod-validated `{ audioPath: string (must resolve under ~/.ai-lecturer/ or /courses/<slug>/assets/), language?: 'en' (default 'en') }`. Spawns `scripts/.bin/whisper.cpp/main -m scripts/.bin/whisper.cpp/models/ggml-base.en.bin -f <resolved-audioPath> -otxt -of <tmp-output-basename>`. Reads <tmp-output-basename>.txt, returns `{ transcript: string, durationMs: number }`. Path-resolution must use path.resolve + a startsWith check against allowed roots — reject with 400 on traversal attempts.",
+        "Both routes detect missing-installation: if the TTS or STT binary/venv is not present, return 503 with `{ error: 'tts-not-installed', message: 'Run scripts/setup-tts.sh first.' }` (or the equivalent for STT). Server startup does NOT require these to be installed — the routes are graceful at request time.",
+        "Cache directory ~/.ai-lecturer/tts-cache/ has a soft-cap LRU policy: a small helper in src/lib/server/tts-cache.ts evicts the oldest files when total size exceeds 500MB. Run on every successful TTS call (cheap O(N) scan since N is small).",
+        "Add new env var docs to README.md: `AI_LECTURER_TTS_VOICE_FEMALE`, `AI_LECTURER_TTS_VOICE_MALE` for advanced users to override the default speaker IDs (defaults baked into the route).",
+        "Unit/integration tests: mock child_process.spawn (using an injectable spawnFactory in src/lib/server/tts.ts and src/lib/server/stt.ts) — verify command shape, verify response shape, verify cache hit/miss behavior, verify path-traversal rejection. NO real Coqui / whisper.cpp invocation in CI (these are heavy + network/install-dependent). The setup scripts are tested manually only and documented as such.",
+        "Out of scope: non-English languages (en only in this story; multilingual XTTS support is configurable later but UI/widget contracts target en); GPU acceleration (CPU only); streaming TTS (full file at a time); voice cloning from user samples; phoneme-level alignment for cloze positioning (US-156 will need word-level timestamps from whisper.cpp's `--print-progress` or `-ot` JSON output — surfaced in /api/stt's response as an optional `segments?: Array<{ start: number, end: number, text: string }>` field; mark this as a stretch addition if time allows in this story, otherwise add in US-156).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 154,
+      "passes": false,
+      "notes": "Subprocess wrapping isolates engine choice from consumers — swapping Coqui for Piper later means changing the route internals only. CPU-only is intentional for portability across user machines. The cache + content-hash naming makes generation re-runs cheap (US-157 will benefit).",
+      "tags": []
+    },
+    {
+      "id": "US-155",
+      "title": "AudioPlayer widget: schema + component + editor",
+      "description": "As a course author teaching language or audio-centric content, I want an AudioPlayer widget that plays a referenced audio file with custom controls (play/pause, seek bar, volume, playback speed) and an optional transcript display. This is the simpler of the two audio widgets — pure playback, no exercises.",
+      "acceptanceCriteria": [
+        "Extend src/lib/schemas/lesson.ts with a new `AudioPlayerSection` schema: `{ id: string, kind: 'audio-player', audioPath: string (relative path under /courses/<slug>/assets/audio/), transcript?: string, autoplay?: boolean (default false), title?: string }`. Add to the SectionSchema discriminated union. Add tests in src/lib/schemas/schemas.test.ts covering the new section type (valid + missing audioPath + invalid kind drift).",
+        "New widget directory src/widgets/AudioPlayer/ with: AudioPlayerWidget.tsx (player UI), AudioPlayerEditor.tsx (course editor side), schemas.ts (re-export), Widget.test.ts. The player UI uses a native <audio> element with `controls={false}` and custom controls built with shadcn Button/Slider: Play/Pause toggle, current time / total time display, seek slider, volume slider (with mute toggle), playback speed dropdown (0.75x / 1x / 1.25x / 1.5x / 2x). Keyboard: Space toggles play, ArrowLeft/Right seek -5s/+5s. ARIA labels on all controls.",
+        "Transcript display: if `transcript` is set, render it below the player in a collapsible <details> element labeled `Show transcript` (closed by default to keep listening-focused). Use the existing prose typography (var(--font-prose)).",
+        "Register the widget in src/widgets/registry.ts mapping kind 'audio-player' to AudioPlayerWidget. Verify the lesson page (src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx) renders it via the registry without changes (registry-driven dispatch is already in place).",
+        "Editor (course-edit side): AudioPlayerEditor.tsx provides a file-path input (validated to exist under the course's assets/audio/ dir on save — server-side validation in the section update route), an autoplay toggle, an optional title input, and a transcript textarea. NO file upload UI in this story (uploading is handled by the existing course-spec sources flow OR by US-157's TTS-driven generation; manual placement of files in /courses/<slug>/assets/audio/ also works for power users).",
+        "Server-side static file serving: lesson pages already serve /courses/<slug>/* via Next.js's existing route handler (or add a passthrough at /api/courses/<slug>/assets/audio/[file] if direct fs serving isn't already wired). Verify mp3, wav, and ogg are served with correct Content-Type and Range support (for seeking). If not already wired, add the route handler with content-type detection (mime-types lib already in dependencies, fall back to mime sniff if not present — DO NOT add a new dep just for this).",
+        "Verify in browser using playwright-skill: seed a lesson with one AudioPlayer section pointing to a small <500KB .wav fixture file pre-placed at /courses/<slug>/assets/audio/test.wav. Load the lesson, screenshot the player. Click Play, wait 1s, assert audio.currentTime > 0. Click the speed dropdown, select 2x, assert playbackRate=2. Open the transcript <details>, screenshot transcript visible. Reference all screenshots.",
+        "Out of scope: waveform visualization; chapters/markers; multi-track audio; speed-changes-pitch-preserved (browser default behavior); subtitle/caption support beyond plain transcript; offline caching beyond browser default; download button (not all uploads should be downloadable — controlled by lesson author's choice elsewhere).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 155,
+      "passes": false,
+      "notes": "AudioPlayer is the simpler 'just plays audio' widget — separate from the cloze-exercise widget (US-156) so the player implementation stays focused. Reuses the existing /courses static file serving path; if that path is not already wired for audio MIME types, US-155 adds it.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-156",
+      "title": "Transcript-cloze widget: listen + fill missing words exercise",
+      "description": "As a language learner, I want a transcript-cloze widget that plays an audio clip and shows its transcript with selected words replaced by input blanks I must fill in by listening — with per-blank correct/incorrect feedback on submit. The author chooses which words become blanks at edit time.",
+      "acceptanceCriteria": [
+        "Extend src/lib/schemas/lesson.ts with `TranscriptClozeSection`: `{ id: string, kind: 'transcript-cloze', audioPath: string, transcript: string, blanks: Array<{ wordIndex: number, answer: string, hint?: string }>, title?: string, instructions?: string }`. wordIndex is the 0-based position in the whitespace-tokenized transcript. answer is the expected token (case-insensitive matching by default; punctuation stripped before compare). Schema validation: each wordIndex must be in [0, transcriptWordCount), no duplicates. Add to SectionSchema union + tests.",
+        "New widget directory src/widgets/TranscriptCloze/: TranscriptClozeWidget.tsx, TranscriptClozeEditor.tsx, Widget.test.ts. The student-facing component renders an AudioPlayer (reuse the component from US-155 by importing it) at top + the transcript below with each blank rendered as an <input> with width matching the answer's character length (style: --w in ch units). After all blanks filled and `Submit` clicked: each input is colored green if correct (case-insensitive, punctuation-stripped match) or red with the correct answer shown beneath in muted text. Score `<X>/<N> correct` displayed at bottom. A `Try again` button resets all inputs.",
+        "Editor: TranscriptClozeEditor.tsx provides a transcript textarea + a click-to-toggle-blank UI: each whitespace-tokenized word becomes a clickable chip; clicking toggles whether it's a blank. Selected (blank) words are highlighted in accent. The blanks array is recomputed on every toggle. Hint can be set per-blank in a small inline field that appears when the chip is selected. The editor saves the section schema unchanged to lesson.json via the existing lesson-update route.",
+        "Tokenization helper in src/lib/widgets/transcriptTokenize.ts: `tokenize(transcript: string): Array<{ index: number, text: string, isPunctuation: boolean }>`. Whitespace-split, strip-and-track trailing punctuation. Tested for common cases (English with punctuation, contractions like \"don't\" treated as one token). Used by both the renderer (to map blanks to their positions) and the editor (to render clickable chips).",
+        "Progress integration: the widget reports its score via the existing per-section progress mechanism (see src/lib/schemas/progress.ts — extend the SectionStateSchema if needed to include `score?: { correct: number, total: number }` for this widget; if SectionStateSchema is already flexible, no schema change). Persists to ~/.ai-lecturer/progress.json via the existing progress write path.",
+        "Verify in browser using playwright-skill: seed a lesson with one TranscriptCloze section: transcript `\"The quick brown fox jumps over the lazy dog\"`, blanks `[{wordIndex:1,answer:'quick'},{wordIndex:5,answer:'over'}]`, audioPath pointing to a small fixture .wav. Load the lesson, screenshot showing two input blanks. Type 'quick' + 'over', click Submit, screenshot showing both green + score 2/2. Reload, type 'fast' + 'over', Submit, screenshot showing first red with correct answer shown, second green, score 1/2. Reference screenshots.",
+        "Out of scope: typo-tolerant matching (Levenshtein distance — strict match for now); multi-blank words (each blank is exactly one token); audio segment playback per-blank (full audio only — 'play just this word' is a stretch goal for a future story leveraging US-154's segments output); generating cloze positions automatically from audio difficulty heuristics (manual selection only).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 156,
+      "passes": false,
+      "notes": "Builds on US-155 (AudioPlayer reused as a sub-component). Strict matching keeps the first version simple — typo tolerance can be added later without breaking the schema. The author-side toggle-by-clicking UI matches common cloze-editor patterns and avoids a separate 'enter blanks JSON' UX.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-157",
+      "title": "Generation integration: TTS for AudioPlayer + transcript-cloze sections during lesson gen",
+      "description": "As a course author generating a language-focused course, I want the lesson generation pipeline to automatically synthesize audio via TTS (US-154) for any AudioPlayer or transcript-cloze section the agent emits, so the audio file is in /courses/<slug>/assets/audio/ before the lesson is marked done — without me manually uploading audio for every clip.",
+      "acceptanceCriteria": [
+        "Update scripts/ralph/skills/generate_lesson/generate_lesson.md (and any companion .md files for the generate_lesson skill): document that for AudioPlayer and transcript-cloze sections the agent should emit `audioPath: 'AUTO_TTS'` (a sentinel value) and provide a `audioSourceText` field on the section temporarily — this field is consumed by the post-processor and stripped before final write. The `transcript` field for transcript-cloze sections IS the audio source (no separate audioSourceText needed for cloze); for AudioPlayer the audioSourceText is the spoken content.",
+        "src/lib/server/generation.ts post-processing step: after the per-lesson generate_lesson spawn completes and the JSON parses + validates against an EXTENDED LessonSchema that allows the AUTO_TTS sentinel, scan the parsed Lesson for sections with `audioPath === 'AUTO_TTS'`. For each such section, derive the source text (transcript for transcript-cloze; audioSourceText for AudioPlayer), call POST /api/tts internally (or call the underlying TTS function directly to avoid HTTP overhead — extract a callable from US-154's route into src/lib/server/tts.ts), get back the cached/new audio file path, copy/move the audio into /courses/<slug>/assets/audio/<lessonSlug>-<sectionId>.wav, replace audioPath with the relative path `assets/audio/<lessonSlug>-<sectionId>.wav`, strip audioSourceText from the section. Write the final lesson.json after all TTS calls complete.",
+        "Failure handling: if any TTS call fails (engine missing, text too long, etc.), mark the lesson generation as failed for that lesson — emit `stage:failed` with the TTS error in the message, do NOT write a partial lesson.json with AUTO_TTS placeholders (avoid corrupted state). The user's recourse is to install TTS (US-154 setup) or to manually edit the generated section to remove the audio component. The .tmp partial lesson is cleaned up.",
+        "Pipeline event integration: emit a sub-stage event `stage:tts` for each audio section with payload `{ lessonSlug, sectionId, status: 'started'|'done'|'failed' }` so the live generation log (existing US-128 / US-130 SSE) shows TTS progress. These events sit between the lesson's generate_lesson `stage:done` and the lesson's overall completion event.",
+        "Skip/cache behavior: if /courses/<slug>/assets/audio/<lessonSlug>-<sectionId>.wav ALREADY exists at lesson regeneration time AND the section's text content (transcript or audioSourceText) hasn't changed (compared via a content-hash stored in a sidecar file `<lessonSlug>-<sectionId>.wav.meta.json` containing `{ contentHash: <sha256-of-source-text> }`), skip the TTS call and reuse the existing file. This saves time on iterative regenerates (US-148/US-149).",
+        "Schema gate: extend LessonSchema in a way that allows `audioPath: 'AUTO_TTS'` ONLY during pipeline post-processing (an internal LessonSchemaWithSentinel variant). The public-facing LessonSchema (used by widget rendering, by US-155 + US-156) STILL rejects AUTO_TTS — by the time a lesson is on disk, all audio paths are real relative paths. This separation prevents AUTO_TTS from leaking into rendered widgets.",
+        "Tests: mock generate_lesson spawn to return a lesson with one AudioPlayer (audioPath: AUTO_TTS, audioSourceText: 'hello world') and one transcript-cloze. Mock the internal TTS callable to write a stub .wav file and return its path. Run startGenerationInner end-to-end. Assert: lesson.json on disk has real audioPaths (no AUTO_TTS), .wav files exist at expected paths, .meta.json sidecars exist with contentHashes. Re-run with same source text → assert TTS callable is NOT invoked (cache hit), files unchanged. Modify source text → assert TTS callable IS invoked, files updated, hash updated.",
+        "Out of scope: TTS for languages other than English (US-154 is en-only for now); voice selection per-section (uses the default voice from US-154); multi-voice dialogue rendering; mid-stream regenerate of just the audio (the cache+hash approach handles re-runs but per-section audio-only regen is a candidate future story).",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 157,
+      "passes": false,
+      "notes": "Hard dependency on US-154 (TTS infra) + US-155 + US-156 (widget schemas). The AUTO_TTS sentinel pattern is a deliberate post-processing seam — keeps the agent skill simple (it doesn't need to know about TTS) and the persistence layer clean (final lesson.json has no sentinels). The content-hash cache makes lesson-regeneration cheap, leveraging US-154's filesystem-cache layer.",
+      "tags": []
     }
   ]
 }
