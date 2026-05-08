@@ -769,8 +769,8 @@ function CourseCard({
 }
 
 // US-142: per-course three-dots overflow menu in the upper-right corner of
-// each card. Currently exposes a single `Delete` action that opens a confirm
-// AlertDialog (rendered at the page level) before firing DELETE /api/courses/<slug>.
+// each card. US-150 added the `Export as ZIP` action above the destructive
+// `Delete` action.
 function CourseCardWithMenu({
   course,
   stats,
@@ -779,6 +779,7 @@ function CourseCardWithMenu({
   onToggleMenu,
   onCloseMenu,
   onRequestDelete,
+  onRequestExportZip,
   dimmed,
   fading,
   rightOffset = 12,
@@ -790,6 +791,7 @@ function CourseCardWithMenu({
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onRequestDelete: () => void;
+  onRequestExportZip: () => void;
   dimmed: boolean;
   fading: boolean;
   rightOffset?: number;
@@ -828,6 +830,20 @@ function CourseCardWithMenu({
           <button
             type="button"
             role="menuitem"
+            data-testid={`course-menu-export-zip-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onRequestExportZip();
+            }}
+            style={popoverItemStyle}
+          >
+            Export as ZIP
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             data-testid={`course-menu-delete-${course.slug}`}
             onClick={(e) => {
               e.preventDefault();
@@ -858,6 +874,7 @@ function CourseCardWithMove({
   onToggleMenu,
   onCloseMenu,
   onRequestDelete,
+  onRequestExportZip,
   dimmed,
   fading,
 }: {
@@ -873,6 +890,7 @@ function CourseCardWithMove({
   onToggleMenu: () => void;
   onCloseMenu: () => void;
   onRequestDelete: () => void;
+  onRequestExportZip: () => void;
   dimmed: boolean;
   fading: boolean;
 }) {
@@ -886,6 +904,7 @@ function CourseCardWithMove({
         onToggleMenu={onToggleMenu}
         onCloseMenu={onCloseMenu}
         onRequestDelete={onRequestDelete}
+        onRequestExportZip={onRequestExportZip}
         dimmed={dimmed}
         fading={fading}
         rightOffset={12}
@@ -965,6 +984,7 @@ function CollectionSection({
   onToggleMenu,
   onCloseMenu,
   onRequestDelete,
+  onRequestExportZip,
   deletingSlug,
   fadingSlug,
 }: {
@@ -985,6 +1005,7 @@ function CollectionSection({
   onToggleMenu: (slug: string) => void;
   onCloseMenu: () => void;
   onRequestDelete: (course: Course) => void;
+  onRequestExportZip: (course: Course) => void;
   deletingSlug: string | null;
   fadingSlug: string | null;
 }) {
@@ -1053,6 +1074,7 @@ function CollectionSection({
             onToggleMenu={() => onToggleMenu(course.slug)}
             onCloseMenu={onCloseMenu}
             onRequestDelete={() => onRequestDelete(course)}
+            onRequestExportZip={() => onRequestExportZip(course)}
             dimmed={deletingSlug === course.slug}
             fading={fadingSlug === course.slug}
           />
@@ -1508,6 +1530,18 @@ export default function DashboardPage() {
     setDeleteTarget({ slug: course.slug, title: course.title });
   }, []);
 
+  // US-150: Export as ZIP — kicks off a native browser download by setting
+  // window.location.href to the streaming endpoint. The browser handles the
+  // download stream and the toast surfaces immediate feedback.
+  const handleRequestExportZip = useCallback(
+    (course: Course) => {
+      setMenuOpenSlug(null);
+      showToast('Preparing ZIP export…');
+      window.location.href = `/api/courses/${course.slug}/export/zip`;
+    },
+    [showToast],
+  );
+
   const handleToggleMenu = useCallback((slug: string) => {
     setMoveOpenSlug(null);
     setMenuOpenSlug((cur) => (cur === slug ? null : slug));
@@ -1664,6 +1698,7 @@ export default function DashboardPage() {
                   onToggleMenu={() => handleToggleMenu(course.slug)}
                   onCloseMenu={handleCloseMenu}
                   onRequestDelete={() => handleRequestDelete(course)}
+                  onRequestExportZip={() => handleRequestExportZip(course)}
                   dimmed={deletingSlug === course.slug}
                   fading={fadingSlug === course.slug}
                 />
@@ -1695,6 +1730,7 @@ export default function DashboardPage() {
                 onToggleMenu={handleToggleMenu}
                 onCloseMenu={handleCloseMenu}
                 onRequestDelete={handleRequestDelete}
+                onRequestExportZip={handleRequestExportZip}
                 deletingSlug={deletingSlug}
                 fadingSlug={fadingSlug}
               />
@@ -1728,6 +1764,7 @@ export default function DashboardPage() {
                   onToggleMenu={handleToggleMenu}
                   onCloseMenu={handleCloseMenu}
                   onRequestDelete={handleRequestDelete}
+                  onRequestExportZip={handleRequestExportZip}
                   deletingSlug={deletingSlug}
                   fadingSlug={fadingSlug}
                 />
