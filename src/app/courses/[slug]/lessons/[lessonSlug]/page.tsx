@@ -2617,8 +2617,8 @@ function LessonStream({
       style={{
         width: '100%',
         margin: '0 auto',
-        paddingLeft: 'calc(var(--space-7) * 2)',
-        paddingRight: 'calc(var(--space-7) * 2)',
+        paddingLeft: 'calc(var(--space-8) * 2)',
+        paddingRight: 'calc(var(--space-8) * 2)',
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
