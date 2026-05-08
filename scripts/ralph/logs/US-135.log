@@ -1,0 +1,46 @@
+[2026-05-08T19:41:55+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T19:44:15+0200] Let me check the tutor-btn testid and existing tests for style.
+[2026-05-08T19:44:28+0200] Good. Only two references. Now let me make the changes.
+[2026-05-08T19:44:43+0200] Now add chatWidth state, hydration, dragging, window-width tracking, and wire callbacks:
+[2026-05-08T19:44:53+0200] Now extend the hydration effect and add a resize listener:
+[2026-05-08T19:45:02+0200] Now add resize callbacks (place near the toggleChat callback area):
+[2026-05-08T19:45:09+0200] Now update the chatCol calculation and shellStyle to use chatWidth + dragging:
+[2026-05-08T19:45:19+0200] Now wire the props onto the LessonChat component invocation:
+[2026-05-08T19:45:28+0200] Now extend LessonChat with the resize handle. Let me edit the props interface:
+[2026-05-08T19:45:44+0200] Now add resize handlers + state for hover/dragging visual + the handle itself. Add the resize logic before `if (!open)`:
+[2026-05-08T19:45:56+0200] Now I need to add the `handleHovered` / `handleDragging` state:
+[2026-05-08T19:46:04+0200] Now add the resize handle div inside the rendered aside (only when not expanded). Place it right after `<style>{lessonChatGlobalKeyframes}</style>`:
+[2026-05-08T19:46:29+0200] Typecheck clean. Now let me run tests:
+[2026-05-08T19:46:35+0200] All 719 tests pass. Let me run lint too:
+[2026-05-08T19:47:03+0200] Let me look at the warnings — 3 unused eslint-disable directives I added:
+[2026-05-08T19:47:16+0200] The lint pre-existing error is unrelated to my work. But I introduced 3 unused `eslint-disable` directives. Let me remove them since the rule only fires on the first setState:
+[2026-05-08T19:47:26+0200] Back to pre-existing 1 error. My new code is lint-clean. Now browser verification.
+[2026-05-08T19:49:23+0200] The drag isn't firing because `dispatchEvent` doesn't create a real pointer. Let me use `page.mouse` instead, and add a wait for the open transition:
+[2026-05-08T19:49:51+0200] All four checkpoints pass:
+- Default: **320** ✓
+- After drag (200px left): **516** (≈520 ✓ — within rounding/scrollbar)
+- After reload: **516** (persisted ✓)
+- After drag back + reload: **312** (persisted at new ~320 ✓)
+
+Three screenshot paths saved. Let me verify they exist:
+[2026-05-08T19:50:01+0200] Now flip prd.json passes for US-135 and update progress.txt:
+[2026-05-08T19:50:18+0200] Now flip passes for US-135 only:
+[2026-05-08T19:50:22+0200] Now append progress.txt:
+[2026-05-08T19:51:50+0200] `passes: true` is committed. Done.
+
+US-135 implemented and committed as `debcef8`.
+- 320 → user-controlled, persisted `chatWidth` (`localStorage['lessonChat-width']`).
+- 6px left-edge drag handle in `LessonChat.tsx` with pointer events + Left/Right arrow + Shift modifier; full a11y (`role="separator"`, `aria-valuemin/max/now`, `tabIndex={0}`).
+- Live grid re-template; transition disabled during drag, restored on pointer-up.
+- Narrow-viewport clamp (<600px → `min(chatWidth, innerWidth - 320)`) without writing back to storage.
+- Typecheck clean, 719/719 vitest pass, no new lint warnings.
+- Browser verified at 1280px: 320 → drag → 516 → reload → 516 → drag back + reload → 312. Screenshots at `/tmp/us-135-default-320.png`, `/tmp/us-135-after-drag-520.png`, `/tmp/us-135-after-reload-520.png`.
+[2026-05-08T19:51:50+0200] [result success turns=71 cost=$5.1309204999999976] `passes: true` is committed. Done.
+
+US-135 implemented and committed as `debcef8`.
+- 320 → user-controlled, persisted `chatWidth` (`localStorage['lessonChat-width']`).
+- 6px left-edge drag handle in `LessonChat.tsx` with pointer events + Left/Right arrow + Shift modifier; full a11y (`role="separator"`, `aria-valuemin/max/now`, `tabIndex={0}`).
+- Live grid re-template; transition disabled during drag, restored on pointer-up.
+- Narrow-viewport clamp (<600px → `min(chatWidth, innerWidth - 320)`) without writing back to storage.
+- Typecheck clean, 719/719 vitest pass, no new lint warnings.
+- Browser verified at 1280px: 320 → drag → 516 → reload → 516 → drag back + reload → 312. Screenshots at `/tmp/us-135-default-320.png`, `/tmp/us-135-after-drag-520.png`, `/tmp/us-135-after-reload-520.png`.
