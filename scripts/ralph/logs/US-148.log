@@ -1,0 +1,35 @@
+[2026-05-08T23:16:34+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:18:08+0200] Now I have enough context. Let me create the regenerate_lesson skill.
+[2026-05-08T23:20:30+0200] Now I have everything I need. Let me create the regenerate route.
+[2026-05-08T23:22:56+0200] Now let me check how generation reads `.generating.json` so my busy-state test fixture is right.
+[2026-05-08T23:22:57+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-08T23:22:59+0200] Good. Let me run typecheck and tests now.
+[2026-05-08T23:23:08+0200] Typecheck clean. Now run the tests.
+[2026-05-08T23:23:11+0200] All 20 tests pass. Now run full test suite.
+[2026-05-08T23:23:17+0200] All 842 tests pass. Now lint check.
+[2026-05-08T23:23:51+0200] Only my test file is named — and only the same pre-existing `_args` warning (same as US-146/extend.test.ts). My new code introduces no new lint errors.
+[2026-05-08T23:24:27+0200] Now flip the prd.json `passes` flag for US-148.
+[2026-05-08T23:25:13+0200] US-148 done. Commit `5d44f0e` on `ralph/us-148` with `passes: true`.
+
+**What landed:**
+- `scripts/ralph/skills/regenerate_lesson/regenerate_lesson.md` — skill spec (input: courseSchema + currentLesson + instruction 1..2000; output: `{ newLesson }`; preserves slug/courseSlug/moduleId/title verbatim).
+- `src/lib/schemas/regenerateLesson.ts` — Zod request (`instruction` 1..2000) + response (`newLesson: LessonSchema`) schemas.
+- `src/lib/server/regenerateLesson.ts` — agent spawn helper (mirrors regenerateSection.ts; `__setRegenerateLessonSpawnForTesting` deps override).
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/route.ts` — body validation, 409 busy gate, reads course.json + lesson.json, runs agent, validates identity preservation BEFORE any disk write, then `fs.writeFile(snapshotPath, raw)` + `fs.writeFile(file, newLesson)`. Returns `{ newLesson, hasUndo: true }`.
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/undo/route.ts` — 404 if no snapshot, else restores snapshot bytes byte-identically + unlinks snapshot. Returns `{ restoredLesson }`.
+- `.gitignore` — added `/courses/**/*.lesson-prev.json`.
+- 20 new tests in `src/lib/server/regenerateLesson.test.ts` covering happy path (snapshot byte-identical, hasUndo:true, agent stdin contents), regenerate-twice (second snapshot is first regenerate's output), 422 paths leaving lesson untouched + no snapshot, identity drift on slug/title/moduleId, 400/404/409/500 edges, undo round-trip (byte-identical restore + snapshot deleted), and 404 on second undo.
+
+**Quality:** typecheck clean; 842/842 tests pass; lint introduces no new errors (only the same pre-existing `_args` warning pattern as extend.test.ts and regenerateSection.test.ts).
+[2026-05-08T23:25:13+0200] [result success turns=58 cost=$4.536700500000001] US-148 done. Commit `5d44f0e` on `ralph/us-148` with `passes: true`.
+
+**What landed:**
+- `scripts/ralph/skills/regenerate_lesson/regenerate_lesson.md` — skill spec (input: courseSchema + currentLesson + instruction 1..2000; output: `{ newLesson }`; preserves slug/courseSlug/moduleId/title verbatim).
+- `src/lib/schemas/regenerateLesson.ts` — Zod request (`instruction` 1..2000) + response (`newLesson: LessonSchema`) schemas.
+- `src/lib/server/regenerateLesson.ts` — agent spawn helper (mirrors regenerateSection.ts; `__setRegenerateLessonSpawnForTesting` deps override).
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/route.ts` — body validation, 409 busy gate, reads course.json + lesson.json, runs agent, validates identity preservation BEFORE any disk write, then `fs.writeFile(snapshotPath, raw)` + `fs.writeFile(file, newLesson)`. Returns `{ newLesson, hasUndo: true }`.
+- `src/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/undo/route.ts` — 404 if no snapshot, else restores snapshot bytes byte-identically + unlinks snapshot. Returns `{ restoredLesson }`.
+- `.gitignore` — added `/courses/**/*.lesson-prev.json`.
+- 20 new tests in `src/lib/server/regenerateLesson.test.ts` covering happy path (snapshot byte-identical, hasUndo:true, agent stdin contents), regenerate-twice (second snapshot is first regenerate's output), 422 paths leaving lesson untouched + no snapshot, identity drift on slug/title/moduleId, 400/404/409/500 edges, undo round-trip (byte-identical restore + snapshot deleted), and 404 on second undo.
+
+**Quality:** typecheck clean; 842/842 tests pass; lint introduces no new errors (only the same pre-existing `_args` warning pattern as extend.test.ts and regenerateSection.test.ts).
