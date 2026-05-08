@@ -20,11 +20,20 @@ import {
   type ChildProcess,
   type SpawnOptions,
 } from 'node:child_process';
-import { promises as fs, createWriteStream, type WriteStream } from 'node:fs';
+import {
+  promises as fs,
+  appendFileSync,
+  createWriteStream,
+  readFileSync,
+  statSync,
+  unlinkSync,
+  type WriteStream,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
+import { atomicRenameSync } from './atomic';
 import {
   assertSafeSlug,
   courseDir,
@@ -64,7 +73,12 @@ export type GenerationEvent =
       inflightSlug: string | null;
     };
 
-export type GenerationListener = (event: GenerationEvent) => void;
+// US-138: listeners receive the per-run monotonic seq alongside the event so
+// the SSE handler can emit a matching `id:` line and dedupe events whose
+// seq <= the last replayed seq from the persisted ndjson log. Existing
+// callers that take a single arg are still assignable — extra trailing
+// params are ignored.
+export type GenerationListener = (event: GenerationEvent, seq: number) => void;
 
 export interface GenerationRun {
   id: string;
@@ -77,6 +91,21 @@ export interface GenerationRun {
    * running. `null` until the first stage:started fires.
    */
   currentStage: string | null;
+  /**
+   * US-138: monotonic counter incremented on every emit() call. Equals the
+   * seq id of the most recently emitted event (0 when no event has been
+   * emitted yet). Mirrored on disk via the per-course
+   * `.generation-events.ndjson` log; on resume it's seeded from the max seq
+   * found in the existing log so the counter never wraps within a course.
+   */
+  lastSeq: number;
+  /**
+   * US-138: parallel array to `events` — `eventSeqs[i]` is the seq id
+   * assigned to `events[i]`. Exposed so the SSE replay route can backstop
+   * any in-memory event whose ndjson append hadn't been observed by
+   * readFileSync at snapshot time (small partial-line race window).
+   */
+  eventSeqs: readonly number[];
   subscribe: (listener: GenerationListener) => () => void;
   cancel: () => Promise<void>;
 }
@@ -154,6 +183,96 @@ export class GenerationStateMissingError extends Error {
     super('No .generation-state.json file present for slug');
     this.name = 'GenerationStateMissingError';
   }
+}
+
+// ── US-138: persistent generation events log ─────────────────────────────────
+// Every emitted GenerationEvent is appended to a per-course ndjson file
+// BEFORE in-memory listeners are notified. The SSE handler reads the active
+// file on reconnect (Last-Event-ID / ?from=) so a tab restore or server
+// restart can replay scrollback without gaps or duplicates. When the active
+// file outgrows EVENTS_LOG_ROTATE_BYTES it is renamed via atomic.ts so a
+// fresh active file starts; rotated files are kept on disk for forensics
+// but intentionally NOT replayed to clients.
+
+const EVENTS_LOG_BASENAME = '.generation-events.ndjson';
+const EVENTS_LOG_ROTATE_BYTES_DEFAULT = 5 * 1024 * 1024;
+let eventsLogRotateBytesOverride: number | null = null;
+
+export function eventsLogPath(slug: string): string {
+  return path.join(courseDir(slug), EVENTS_LOG_BASENAME);
+}
+
+function eventsLogRotateBytes(): number {
+  return eventsLogRotateBytesOverride ?? EVENTS_LOG_ROTATE_BYTES_DEFAULT;
+}
+
+/** Test-only: shrink the rotation threshold so a unit test can trigger it
+ * without writing a real 5 MB to disk. Pass `null` to restore the default. */
+export function __setEventsLogRotateBytesForTesting(bytes: number | null): void {
+  eventsLogRotateBytesOverride = bytes;
+}
+
+/**
+ * One entry parsed out of `.generation-events.ndjson`. The on-disk shape
+ * matches this 1:1 — `{ seq, timestamp, event }`.
+ */
+export interface EventsLogEntry {
+  seq: number;
+  timestamp: string;
+  event: GenerationEvent;
+}
+
+export interface EventsLogReplay {
+  entries: EventsLogEntry[];
+  /** The largest seq observed in the file (>= fromSeq). */
+  lastSeq: number;
+  /** Lines that failed to parse — surfaced once per replay via console.warn. */
+  skippedMalformed: number;
+}
+
+/**
+ * Synchronously read the active `.generation-events.ndjson` for `slug` and
+ * return entries with `seq > fromSeq`. Sync because the SSE handler must do
+ * the replay inside ReadableStream#start with no awaits — so a concurrent
+ * emit() can't slip a new event into memory between snapshot and listener
+ * attach. Malformed lines (truncated by partial appends at crash) are
+ * skipped without throwing; callers may log the count once per replay.
+ */
+export function readEventsLogSync(slug: string, fromSeq: number): EventsLogReplay {
+  let raw: string;
+  try {
+    raw = readFileSync(eventsLogPath(slug), 'utf8');
+  } catch {
+    return { entries: [], lastSeq: fromSeq, skippedMalformed: 0 };
+  }
+  const entries: EventsLogEntry[] = [];
+  let lastSeq = fromSeq;
+  let skippedMalformed = 0;
+  for (const line of raw.split('\n')) {
+    if (line.length === 0) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      skippedMalformed += 1;
+      continue;
+    }
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as { seq?: unknown }).seq !== 'number' ||
+      typeof (parsed as { event?: unknown }).event !== 'object' ||
+      (parsed as { event?: unknown }).event === null
+    ) {
+      skippedMalformed += 1;
+      continue;
+    }
+    const entry = parsed as EventsLogEntry;
+    if (entry.seq <= fromSeq) continue;
+    entries.push(entry);
+    if (entry.seq > lastSeq) lastSeq = entry.seq;
+  }
+  return { entries, lastSeq, skippedMalformed };
 }
 
 let activeRun: GenerationRun | null = null;
@@ -462,6 +581,7 @@ export function __resetForTesting(): void {
   depsOverride = null;
   queue = [];
   queueLoaded = false;
+  eventsLogRotateBytesOverride = null;
 }
 
 function defaultIsExecutableInPath(cmd: string): boolean {
@@ -1132,8 +1252,42 @@ async function startGenerationInner(
     /* no-op */
   });
 
+  // ── US-138: per-run seq + ndjson log bootstrap ───────────────────────────
+  // A fresh pipeline truncates any prior `.generation-events.ndjson` so seq
+  // restarts at 1. A resume keeps the file and seeds lastSeq from the max
+  // seq found inside, so the counter continues monotonically across the
+  // crash+resume boundary (clients reconnecting with a stale Last-Event-ID
+  // can still replay events emitted by run #1 that haven't yet been overwritten).
+  const eventsFile = eventsLogPath(slug);
+  let initialSeq = 0;
+  if (resumeFromState) {
+    try {
+      const raw = readFileSync(eventsFile, 'utf8');
+      for (const line of raw.split('\n')) {
+        if (line.length === 0) continue;
+        try {
+          const parsed = JSON.parse(line) as { seq?: unknown };
+          if (typeof parsed.seq === 'number' && parsed.seq > initialSeq) {
+            initialSeq = parsed.seq;
+          }
+        } catch {
+          /* malformed line — ignore */
+        }
+      }
+    } catch {
+      /* ENOENT — no prior log; resume keeps initialSeq=0 */
+    }
+  } else {
+    try {
+      unlinkSync(eventsFile);
+    } catch {
+      /* ENOENT — fresh slug; nothing to truncate */
+    }
+  }
+
   const id = makeRunId();
   const events: GenerationEvent[] = [];
+  const eventSeqs: number[] = [];
   const listeners = new Set<GenerationListener>();
   let cancelled = false;
   let currentChild: ChildProcess | null = null;
@@ -1145,6 +1299,8 @@ async function startGenerationInner(
     events,
     finished: false,
     currentStage: null,
+    lastSeq: initialSeq,
+    eventSeqs,
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -1176,7 +1332,54 @@ async function startGenerationInner(
   };
 
   function emit(event: GenerationEvent) {
+    // US-138: assign the next monotonic seq before any persistence so
+    // appends and listener notifications observe the same id. Increment on
+    // run.lastSeq directly so external observers (the SSE handler) see the
+    // up-to-date counter without a separate sync step.
+    run.lastSeq += 1;
+    const seq = run.lastSeq;
+    // Persist BEFORE notifying listeners. appendFileSync is sync so the
+    // ordering is "ndjson append → listener fan-out" within a single
+    // event-loop tick — no concurrent emit can interleave (Node is
+    // single-threaded). A partial write at crash truncates the trailing
+    // line; the parser skips malformed lines, which is the documented
+    // contract for this log.
+    try {
+      const ndjsonLine = `${JSON.stringify({
+        seq,
+        timestamp: new Date().toISOString(),
+        event,
+      })}\n`;
+      appendFileSync(eventsFile, ndjsonLine, 'utf8');
+      // Cheap rotation check — fs.statSync is one syscall on the same path
+      // we just wrote to, so the inode is hot in cache. atomicRenameSync
+      // is POSIX-atomic; the next emit's appendFileSync will create a
+      // fresh active file at the same path.
+      const stat = statSync(eventsFile);
+      if (stat.size > eventsLogRotateBytes()) {
+        // Stamp comes from now() rather than the run's startedAt so two
+        // rotations within a single run produce distinct filenames; ISO
+        // chars that are invalid in a filename are flattened to dashes,
+        // and the seq is appended so two rotations that land in the same
+        // millisecond still resolve to distinct paths (otherwise the
+        // second rename would silently overwrite the first via POSIX
+        // rename-replace semantics, costing forensics data).
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const rotatedPath = path.join(
+          courseDir(slug),
+          `.generation-events.${stamp}.${seq}.ndjson`,
+        );
+        try {
+          atomicRenameSync(eventsFile, rotatedPath);
+        } catch {
+          /* best-effort — rotation is forensics-only, not load-bearing */
+        }
+      }
+    } catch {
+      /* best-effort — events log is a recovery aid, never blocks the run */
+    }
     events.push(event);
+    eventSeqs.push(seq);
     if (event.type === 'stage' && event.status === 'started') {
       run.currentStage = event.name;
       // Refresh the on-disk marker so a server restart can recover the
@@ -1190,7 +1393,7 @@ async function startGenerationInner(
     }
     for (const listener of [...listeners]) {
       try {
-        listener(event);
+        listener(event, seq);
       } catch {
         /* listeners are isolated */
       }
