@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { CourseSchema } from '@/lib/schemas/course';
-import { LessonSchema, SectionSchema } from '@/lib/schemas/lesson';
+import {
+  AUTO_TTS_SENTINEL,
+  LessonSchema,
+  LessonSchemaWithSentinel,
+  SectionSchema,
+} from '@/lib/schemas/lesson';
 import { ProgressSchema } from '@/lib/schemas/progress';
 import { CourseSpecSchema } from '@/lib/schemas/courseSpec';
 import { TheoryDataSchema } from '@/widgets/Theory/schema';
@@ -543,6 +548,69 @@ describe('Per-widget data schemas', () => {
         data: { audioPath: 'a.wav', transcript: '', blanks: [] },
       }),
     ).toThrow();
+  });
+
+  it('AudioPlayerSection: public schema rejects audioPath="AUTO_TTS" sentinel (US-157)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'audioPlayer',
+        data: { audioPath: 'AUTO_TTS' },
+      }),
+    ).toThrow();
+  });
+
+  it('TranscriptClozeSection: public schema rejects audioPath="AUTO_TTS" sentinel (US-157)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'transcriptCloze',
+        data: {
+          audioPath: 'AUTO_TTS',
+          transcript: 'one two three',
+          blanks: [{ wordIndex: 0, answer: 'one' }],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('LessonSchemaWithSentinel: accepts AUTO_TTS sentinel + audioSourceText (US-157)', () => {
+    const lesson = {
+      schemaVersion: 1,
+      slug: 'l',
+      courseSlug: 'c',
+      moduleId: 'm1',
+      title: 'L',
+      eyebrow: 'E',
+      description: 'D',
+      estimatedMinutes: 5,
+      sections: [
+        {
+          id: 's-audio',
+          title: 't',
+          type: 'audioPlayer',
+          data: {
+            audioPath: AUTO_TTS_SENTINEL,
+            audioSourceText: 'hello world',
+          },
+        },
+        {
+          id: 's-cloze',
+          title: 't',
+          type: 'transcriptCloze',
+          data: {
+            audioPath: AUTO_TTS_SENTINEL,
+            transcript: 'one two three',
+            blanks: [{ wordIndex: 0, answer: 'one' }],
+          },
+        },
+      ],
+    };
+    expect(() => LessonSchemaWithSentinel.parse(lesson)).not.toThrow();
+    // The same lesson is rejected by the strict public LessonSchema.
+    expect(() => LessonSchema.parse(lesson)).toThrow();
   });
 
   it('VideoData: parses a minimal valid YouTube object', () => {

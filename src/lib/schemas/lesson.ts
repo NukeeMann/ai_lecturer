@@ -106,16 +106,39 @@ export const VideoSectionSchema = z.object({
   data: VideoDataSchema,
 });
 
+// US-157: sentinel value the generation pipeline emits in place of a real
+// audioPath while it queues a TTS job. The post-processor replaces it with a
+// real relative path before the lesson is written to disk; the public schema
+// (below) refuses to accept it so a leaked sentinel never reaches the widget
+// renderer or the API route.
+export const AUTO_TTS_SENTINEL = 'AUTO_TTS';
+
+const AudioPlayerDataPublicSchema = AudioPlayerDataSchema.refine(
+  (d) => d.audioPath !== AUTO_TTS_SENTINEL,
+  {
+    message: `audioPath cannot be the sentinel value '${AUTO_TTS_SENTINEL}' — TTS post-processing must replace it with a real relative path before write`,
+    path: ['audioPath'],
+  },
+);
+
+const TranscriptClozeDataPublicSchema = TranscriptClozeDataSchema.refine(
+  (d) => d.audioPath !== AUTO_TTS_SENTINEL,
+  {
+    message: `audioPath cannot be the sentinel value '${AUTO_TTS_SENTINEL}' — TTS post-processing must replace it with a real relative path before write`,
+    path: ['audioPath'],
+  },
+);
+
 export const AudioPlayerSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('audioPlayer'),
-  data: AudioPlayerDataSchema,
+  data: AudioPlayerDataPublicSchema,
 });
 
 export const TranscriptClozeSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('transcriptCloze'),
-  data: TranscriptClozeDataSchema,
+  data: TranscriptClozeDataPublicSchema,
 });
 
 export const CustomSectionSchema = z.object({
@@ -159,3 +182,68 @@ export const LessonSchema = z.object({
 });
 
 export type Lesson = z.infer<typeof LessonSchema>;
+
+// US-157: pipeline-internal schema variant used by the post-processor. Allows
+// `audioPath: 'AUTO_TTS'` plus an extra `audioSourceText` field on AudioPlayer
+// sections so the generation agent can defer audio synthesis to a server-side
+// TTS pass. Once post-processing has replaced the sentinel with a real
+// relative path, the lesson is re-validated against the public LessonSchema
+// before write — the sentinel never lands on disk.
+//
+// The sentinel data shape duplicates AudioPlayerDataSchema's fields rather
+// than extending it via `.extend()` because `extend` would clone the base
+// schema's defaults (e.g. `autoplay`) into a new object, and we want the
+// audioSourceText addition to be a strict superset.
+const AudioPlayerDataWithSentinelSchema = z.object({
+  audioPath: z.string().min(1),
+  transcript: z.string().optional(),
+  autoplay: z.boolean().default(false),
+  title: z.string().optional(),
+  audioSourceText: z.string().optional(),
+});
+
+const AudioPlayerSectionWithSentinelSchema = z.object({
+  ...sectionBase,
+  type: z.literal('audioPlayer'),
+  data: AudioPlayerDataWithSentinelSchema,
+});
+
+const TranscriptClozeSectionWithSentinelSchema = z.object({
+  ...sectionBase,
+  type: z.literal('transcriptCloze'),
+  data: TranscriptClozeDataSchema,
+});
+
+export const SectionSchemaWithSentinel = z.discriminatedUnion('type', [
+  TheorySectionSchema,
+  QuizSectionSchema,
+  CodeSectionSchema,
+  CodeClozeSectionSchema,
+  DemoSectionSchema,
+  SandboxSectionSchema,
+  HistogramSectionSchema,
+  PlotImageSectionSchema,
+  ParametricExplorerSectionSchema,
+  DragMatchSectionSchema,
+  DataTableSectionSchema,
+  VideoSectionSchema,
+  AudioPlayerSectionWithSentinelSchema,
+  TranscriptClozeSectionWithSentinelSchema,
+  CustomSectionSchema,
+]);
+
+export const LessonSchemaWithSentinel = z.object({
+  schemaVersion: z.number().int().default(1),
+  slug: z.string(),
+  courseSlug: z.string(),
+  moduleId: z.string(),
+  title: z.string(),
+  eyebrow: z.string(),
+  description: z.string(),
+  estimatedMinutes: z.number().int().positive(),
+  pythonSession: z.enum(['shared', 'isolated']).optional(),
+  sections: z.array(SectionSchemaWithSentinel),
+  sources: z.array(SourceSchema).optional(),
+});
+
+export type LessonWithSentinel = z.infer<typeof LessonSchemaWithSentinel>;
