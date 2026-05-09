@@ -107,3 +107,35 @@ Previous log archived to: archive/progress-2026-05-09-0110.txt
   - **`<details>` summary styling.** The default `list-style: disc` triangle marker is `display: list-item`; setting `list-style: none` on the summary removes it but can be layout-noisy. Letting the marker stay is fine, but setting `listStyle: 'none'` keeps the summary text-only (matching the AC's "labeled `Show transcript`" wording rather than a triangle prefix).
   - **Server-side `audioPath` existence check.** Hooked into the lesson PUT route (`src/app/api/courses/[slug]/lessons/[lessonSlug]/route.ts`) rather than a hypothetical "section update route" — sections are saved as part of full-lesson PUT in this codebase. The check walks every audioPlayer section, joins `courses/<slug>/assets/audio/<audioPath>`, runs path-traversal guards, then `fs.access`. Returns 400 with a section-id-tagged error if the file is missing. Note: this also fires when handleCacheVideoTranscript writes a video transcript through the same PUT path — fine because that path doesn't add new audio sections, and existing audio files stay on disk.
 ---
+
+## 2026-05-09 - US-156
+- TranscriptCloze widget: schema + tokenizer + widget + editor + registry + lesson-page wiring + tests + smoke fixture.
+- Files added:
+  - src/lib/widgets/transcriptTokenize.ts (`tokenize` returns `{index, raw, text, isPunctuation}` per token; surrounding-punct strip; `answersMatch` helper)
+  - src/lib/widgets/transcriptTokenize.test.ts (12 tests: simple split, trailing/leading punct, contractions, all-punct tokens, multi-whitespace, case-insensitive grading, contraction interior preserved)
+  - src/widgets/TranscriptCloze/schema.ts (TranscriptClozeBlankSchema + TranscriptClozeDataSchema with superRefine: wordIndex < tokens.length, no duplicates)
+  - src/widgets/TranscriptCloze/TranscriptClozeWidget.tsx (renders AudioPlayerWidget at top, transcript with per-blank inputs whose width matches `answer.length` ch, Submit reveals green/red + correct-answer-shown-below, Try again resets, score `<X>/<N> correct`, persists score via PATCH /api/progress)
+  - src/widgets/TranscriptCloze/TranscriptClozeEditor.tsx (audioPath/title/instructions inputs, transcript textarea, click-toggle chips for each token, accent-highlighted when blank, inline answer + hint editor for selected chip, saves via existing onSave path)
+  - src/widgets/TranscriptCloze/Widget.test.ts (11 schema tests: minimal, optional fields, missing/empty audioPath, empty transcript, out-of-range/duplicate/negative wordIndex, exclusive upper bound, empty-answer reject, empty-blanks ok)
+  - src/widgets/schemas/transcript-cloze.json (built JSON-schema artifact)
+  - courses/transcript-cloze-test/{course.json,lessons/fox-demo.json,assets/audio/fox.wav} (smoke fixture using the same 96 KB WAV from US-155)
+- Files edited:
+  - src/lib/schemas/lesson.ts (TranscriptClozeSectionSchema added to SectionSchema discriminated union)
+  - src/lib/schemas/progress.ts (SectionStateSchema gained optional `score: { correct, total }`)
+  - src/lib/lessonChat/context.ts (`transcriptCloze` arm in serializeSectionBody — required because the union has an exhaustive `_exhaustive: never` check)
+  - src/lib/schemas/schemas.test.ts (added section-cases entry + 4 dedicated TranscriptCloze tests)
+  - src/widgets/registry.ts (transcriptCloze entry, Languages icon, --widget-transcript-cloze accent)
+  - src/widgets/schemas/build.ts (registered `transcript-cloze`)
+  - src/styles/tokens.css (--widget-transcript-cloze in light/dark/sunset)
+  - src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx (WidgetEditPanel arm + SectionRenderer arm, with progressKey + onComplete forwarded)
+  - scripts/ralph/prd.json (US-156 passes:true)
+- Typecheck: passes. Tests: 952/952 pass (was 925/925 — added 11 widget schema + 4 lesson schema + 12 tokenizer tests).
+- Browser verification: /tmp/us-156-{01-initial,02-correct,03-partial,04-reset}.png. Asserted: input width for "quick" (5 ch) > "over" (4 ch); type 'quick'+'over'+Submit → both `data-blank-state=correct`, score `2/2 correct`; reload, type 'fast'+'over'+Submit → b1 incorrect with correct-answer 'quick' shown beneath, b5 correct, score `1/2 correct`; Try again resets all inputs and clears score.
+- **Learnings for future iterations:**
+  - **`tokenize` shape vs AC.** AC declared the helper return type as `Array<{index, text, isPunctuation}>`. Stored 4 fields instead — added `raw` so the renderer can echo the original token (with surrounding punctuation) without rebuilding it from the source string, and so the editor's clickable chips can show "Hello," not "Hello". `text` is the punctuation-stripped form used for grading + chip default-answer. Public surface still satisfies the AC because `index/text/isPunctuation` are present.
+  - **AudioPlayerWidget reuse from another widget.** Composes cleanly: `<AudioPlayerWidget data={{ audioPath, autoplay: false, title }} courseSlug={courseSlug} />` inside another widget's JSX. The inner widget owns its own audio element + controls; we don't need to plumb refs/state. Pass `autoplay: false` explicitly because `AudioPlayerDataSchema` defaults it but the input type accepts undefined.
+  - **`SectionStateSchema.score` field.** Added optional `score: { correct, total }` (US-156) — this is the canonical extension point for any new graded widget. Persistence path: PATCH /api/progress with `{ courseSlug, lessonSlug, sectionState: { [id]: { done: true, score: { correct, total } } } }`. `applyProgressPatch` shallow-merges into existing `sectionState[id]`, which is what we want — prior submissions of the same section are overwritten with the new score.
+  - **Per-blank input width via `--w` CSS var.** AC asked for "style: --w in ch units". Set both `width: calc(${ch}ch + 14px)` and `style={{ '--w': '${ch}ch' }}`. The actual layout uses `width:` directly; `--w` is exposed for downstream styling/tests. Type-cast the React style key as `['--w' as never]` because `CSSProperties` doesn't carry an index signature for custom props.
+  - **Discriminator naming consistent w/ US-155.** AC said `kind: 'transcript-cloze'`; implemented as `type: 'transcriptCloze'` to match the rest of `SectionSchema`. JSON-schema artifact still dasherizes (`transcript-cloze.json`) because that's the build.ts naming pattern.
+  - **`react-hooks/set-state-in-effect` pairing.** Eslint flags only the FIRST `setState` inside a useEffect that has no dep-driven exit; subsequent setStates in the same effect are tolerated. Applying `// eslint-disable-next-line` to the second-or-later setState yields a "Unused eslint-disable directive" warning. Disable on the first only; remove duplicates.
+---

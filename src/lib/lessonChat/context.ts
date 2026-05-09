@@ -140,6 +140,18 @@ function serializeSectionBody(section: Section): string {
       if (section.data.transcript) parts.push(`Transcript: ${section.data.transcript}`);
       return parts.join('\n');
     }
+    case 'transcriptCloze': {
+      const parts: string[] = [`Audio: ${section.data.audioPath}`];
+      if (section.data.title) parts.push(`Title: ${section.data.title}`);
+      if (section.data.instructions)
+        parts.push(`Instructions: ${section.data.instructions}`);
+      parts.push(`Transcript: ${section.data.transcript}`);
+      const blanks = section.data.blanks
+        .map((b) => `- wordIndex=${b.wordIndex}, answer=${b.answer}`)
+        .join('\n');
+      parts.push(`Blanks:\n${blanks}`);
+      return parts.join('\n');
+    }
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {

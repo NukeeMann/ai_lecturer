@@ -17,6 +17,7 @@ import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schem
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 import { VideoDataSchema } from '@/widgets/Video/schema';
 import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
+import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 
@@ -34,6 +35,7 @@ const widgets: Record<string, ZodSchema> = {
   'data-table': DataTableDataSchema,
   video: VideoDataSchema,
   'audio-player': AudioPlayerDataSchema,
+  'transcript-cloze': TranscriptClozeDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {
