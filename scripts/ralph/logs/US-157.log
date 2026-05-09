@@ -1,0 +1,79 @@
+[2026-05-09T02:03:33+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T02:03:47+0200] Let me explore the existing infrastructure: TTS lib, generation pipeline, and the generate_lesson skill.
+[2026-05-09T02:04:24+0200] Now I have a good understanding of the generation pipeline. Let me look at the schemas, tests, and skills.
+[2026-05-09T02:07:23+0200] Now I have enough context to design and implement. Let me update the lesson schema first.
+[2026-05-09T02:07:35+0200] Now let me update the lesson schema with the sentinel variant:
+[2026-05-09T02:07:46+0200] Now add the sentinel-friendly LessonSchemaWithSentinel after the public LessonSchema:
+[2026-05-09T02:08:10+0200] Let me clean up that messy code:
+[2026-05-09T02:08:29+0200] Now let me check the `SectionSchemaWithSentinel` discriminated union — TranscriptClozeDataSchema has a superRefine, and the AudioPlayerSectionWithSentinelSchema's data has a discriminator key. With discriminatedUnion, the immediate `data` field doesn't need to be a ZodObject — only the outermost wrapping (the section variants, which start with `z.object({...sectionBase, type, data})`).
+[2026-05-09T02:08:40+0200] Typecheck passes. Now let's modify generation.ts to add the TTS post-processing.
+[2026-05-09T02:08:57+0200] Good, atomicWriteJson exists. Now add the GenerationEvent type extension and SpawnDeps field:
+[2026-05-09T02:09:18+0200] Now I need to add the post-processing logic. Let me add a new helper function and wire it into runLesson. First let me find the right spot:
+[2026-05-09T02:09:26+0200] Now let me modify the validation block in `runLesson` to use the sentinel-aware path. I'll change validation logic to:
+
+1. Parse JSON
+2. Try to validate with LessonSchemaWithSentinel
+3. If sections need TTS, do post-processing (which emits tts events, copies WAV, replaces audioPath, strips audioSourceText, and writes the final file)
+4. Validate the final result with LessonSchema
+[2026-05-09T02:09:44+0200] Now define the post-processing function and helpers. Add them inside `startGenerationInner` so they have access to `emit`, `slug`, `deps`:
+[2026-05-09T02:10:18+0200] I need to add `sha256Hex` and a `crypto` import. Let me check existing imports:
+[2026-05-09T02:10:25+0200] Add the `sha256Hex` helper outside the `startGenerationInner` function:
+[2026-05-09T02:10:42+0200] Let me run the existing schema tests to make sure I haven't broken anything:
+[2026-05-09T02:10:46+0200] Now update the generate_lesson skill docs to document AUTO_TTS:
+[2026-05-09T02:11:23+0200] Let me also update the validation checklist in SKILL.md briefly, and add a note about NEW lesson length constraint for tts requests. Let me check the TTS request size:
+[2026-05-09T02:11:28+0200] Now let me write the test file. I'll add tests for the AUTO_TTS pipeline:
+[2026-05-09T02:11:32+0200] Now let me append AUTO_TTS tests at the end:
+[2026-05-09T02:11:40+0200] Now add a new describe block at the end. Let me first check the SpawnDeps type & import shape needed:
+[2026-05-09T02:14:09+0200] The third test needs to look for the error event when all lessons fail:
+[2026-05-09T02:14:22+0200] All 3 TTS tests pass. Now let me also add some lesson schema tests for the AUTO_TTS rejection / acceptance:
+[2026-05-09T02:14:33+0200] Now add tests for AUTO_TTS sentinel handling:
+[2026-05-09T02:14:42+0200] Now also test that `LessonSchemaWithSentinel` accepts AUTO_TTS:
+[2026-05-09T02:15:02+0200] Now let me run the full test suite + typecheck:
+[2026-05-09T02:15:17+0200] All 958 tests pass (up from 952; we added 3 TTS pipeline tests + 3 schema tests). Let me also run the lint check:
+[2026-05-09T02:15:37+0200] I introduced an eslint error. Let me fix it:
+[2026-05-09T02:16:26+0200] Lint is clean for my files. Now let me run the full test suite once more to double-check:
+[2026-05-09T02:16:33+0200] All 958 tests pass. Let me now update progress.txt and mark the story complete:
+[2026-05-09T02:16:50+0200] Now append progress.txt:
+[2026-05-09T02:17:45+0200] Now let me check git status and commit:
+[2026-05-09T02:18:25+0200] US-157 is complete and committed. Summary of what landed in commit `63981a9`:
+
+**Schema layer** (`src/lib/schemas/lesson.ts`):
+- Exported `AUTO_TTS_SENTINEL` constant
+- Added `.refine()` to AudioPlayer + TranscriptCloze public schemas to reject the sentinel
+- Added internal `LessonSchemaWithSentinel` (and `SectionSchemaWithSentinel`) that permit `audioPath: 'AUTO_TTS'` plus an `audioSourceText` field on AudioPlayer sections
+
+**Pipeline** (`src/lib/server/generation.ts`):
+- New `tts` event type on `GenerationEvent` (`{ lessonSlug, sectionId, status: 'started'|'done'|'failed', errorMessage? }`)
+- New `runTts` injection point on `SpawnDeps` (defaults to the US-154 callable)
+- New `runTtsPostProcessing` step inside `runLesson`: validates lax-first, derives source text per section type, checks `<lessonSlug>-<sectionId>.wav.meta.json` for cache hit, calls TTS only on miss, copies audio into the course's `assets/audio/`, writes/refreshes sidecar, replaces sentinel with relative path, strips `audioSourceText`. Re-validates against strict `LessonSchema` then `atomicWriteJson`. On TTS failure the partial lesson is unlinked.
+- New `sha256Hex` helper (exported)
+
+**Skill docs** (`scripts/ralph/skills/generate_lesson/SKILL.md`):
+- New "AudioPlayer + transcript-cloze: defer audio synthesis to the pipeline (US-157)" subsection documenting the AUTO_TTS opt-in, `audioSourceText` for AudioPlayer (consumed + stripped), transcript reuse for cloze, the cache+sidecar behaviour, and the failure mode
+
+**Tests** (+6 over baseline):
+- 3 new pipeline tests covering happy path, cache hit + content-change cycle (3 runs), and TTS-failure path
+- 3 new schema tests covering public-schema rejection of AUTO_TTS for both section types and `LessonSchemaWithSentinel` acceptance
+
+Final state: typecheck clean, 958/958 tests pass (was 952), `passes: true` for US-157, lint clean for all touched files.
+[2026-05-09T02:18:25+0200] [result success turns=92 cost=$10.533634749999997] US-157 is complete and committed. Summary of what landed in commit `63981a9`:
+
+**Schema layer** (`src/lib/schemas/lesson.ts`):
+- Exported `AUTO_TTS_SENTINEL` constant
+- Added `.refine()` to AudioPlayer + TranscriptCloze public schemas to reject the sentinel
+- Added internal `LessonSchemaWithSentinel` (and `SectionSchemaWithSentinel`) that permit `audioPath: 'AUTO_TTS'` plus an `audioSourceText` field on AudioPlayer sections
+
+**Pipeline** (`src/lib/server/generation.ts`):
+- New `tts` event type on `GenerationEvent` (`{ lessonSlug, sectionId, status: 'started'|'done'|'failed', errorMessage? }`)
+- New `runTts` injection point on `SpawnDeps` (defaults to the US-154 callable)
+- New `runTtsPostProcessing` step inside `runLesson`: validates lax-first, derives source text per section type, checks `<lessonSlug>-<sectionId>.wav.meta.json` for cache hit, calls TTS only on miss, copies audio into the course's `assets/audio/`, writes/refreshes sidecar, replaces sentinel with relative path, strips `audioSourceText`. Re-validates against strict `LessonSchema` then `atomicWriteJson`. On TTS failure the partial lesson is unlinked.
+- New `sha256Hex` helper (exported)
+
+**Skill docs** (`scripts/ralph/skills/generate_lesson/SKILL.md`):
+- New "AudioPlayer + transcript-cloze: defer audio synthesis to the pipeline (US-157)" subsection documenting the AUTO_TTS opt-in, `audioSourceText` for AudioPlayer (consumed + stripped), transcript reuse for cloze, the cache+sidecar behaviour, and the failure mode
+
+**Tests** (+6 over baseline):
+- 3 new pipeline tests covering happy path, cache hit + content-change cycle (3 runs), and TTS-failure path
+- 3 new schema tests covering public-schema rejection of AUTO_TTS for both section types and `LessonSchemaWithSentinel` acceptance
+
+Final state: typecheck clean, 958/958 tests pass (was 952), `passes: true` for US-157, lint clean for all touched files.
