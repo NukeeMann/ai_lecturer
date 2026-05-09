@@ -85,6 +85,8 @@ import { VideoWidget } from '@/widgets/Video/VideoWidget';
 import type { VideoTranscriptSegment } from '@/widgets/Video/schema';
 import { AudioPlayerEditor } from '@/widgets/AudioPlayer/AudioPlayerEditor';
 import { AudioPlayerWidget } from '@/widgets/AudioPlayer/AudioPlayerWidget';
+import { TranscriptClozeEditor } from '@/widgets/TranscriptCloze/TranscriptClozeEditor';
+import { TranscriptClozeWidget } from '@/widgets/TranscriptCloze/TranscriptClozeWidget';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 import diffWords, { type DiffPart } from '@/lib/diff/sectionDiff';
@@ -1607,6 +1609,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'audioPlayer' && (
         <AudioPlayerEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'transcriptCloze' && (
+        <TranscriptClozeEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3451,6 +3462,21 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit audio player',
       () => onOpenPanel(section.id),
       'audio-player-edit-btn',
+    );
+  } else if (section.type === 'transcriptCloze') {
+    body = (
+      <TranscriptClozeWidget
+        data={section.data}
+        courseSlug={courseSlug}
+        progressKey={progressKey}
+        onComplete={onComplete}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit transcript cloze',
+      () => onOpenPanel(section.id),
+      'transcript-cloze-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

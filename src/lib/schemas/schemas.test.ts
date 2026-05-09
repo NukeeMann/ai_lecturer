@@ -216,6 +216,16 @@ describe('LessonSchema + SectionSchema', () => {
         type: 'audioPlayer',
         data: { audioPath: 'lesson-01.wav' },
       },
+      {
+        id: 's-tcloze',
+        title: 't',
+        type: 'transcriptCloze',
+        data: {
+          audioPath: 'lesson-01.wav',
+          transcript: 'The quick brown fox',
+          blanks: [{ wordIndex: 1, answer: 'quick' }],
+        },
+      },
     ];
     for (const section of cases) {
       expect(() => SectionSchema.parse(section)).not.toThrow();
@@ -460,6 +470,79 @@ describe('Per-widget data schemas', () => {
     if (parsed.type === 'audioPlayer') {
       expect(parsed.data.audioPath).toBe('a.wav');
     }
+  });
+
+  it('TranscriptClozeSection: accepts a valid section with in-range blanks (US-156)', () => {
+    const parsed = SectionSchema.parse({
+      id: 's',
+      title: 't',
+      type: 'transcriptCloze',
+      data: {
+        audioPath: 'a.wav',
+        transcript: 'The quick brown fox jumps over the lazy dog',
+        blanks: [
+          { wordIndex: 1, answer: 'quick' },
+          { wordIndex: 5, answer: 'over' },
+        ],
+      },
+    });
+    expect(parsed.type).toBe('transcriptCloze');
+    if (parsed.type === 'transcriptCloze') {
+      expect(parsed.data.blanks).toHaveLength(2);
+      expect(parsed.data.transcript.split(/\s+/)).toHaveLength(9);
+    }
+  });
+
+  it('TranscriptClozeSection: rejects wordIndex out of range (US-156)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'transcriptCloze',
+        data: {
+          audioPath: 'a.wav',
+          transcript: 'one two three',
+          blanks: [{ wordIndex: 5, answer: 'x' }],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('TranscriptClozeSection: rejects duplicate wordIndex (US-156)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'transcriptCloze',
+        data: {
+          audioPath: 'a.wav',
+          transcript: 'one two three',
+          blanks: [
+            { wordIndex: 1, answer: 'two' },
+            { wordIndex: 1, answer: 'two' },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it('TranscriptClozeSection: rejects empty audioPath / transcript (US-156)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'transcriptCloze',
+        data: { audioPath: '', transcript: 'x', blanks: [] },
+      }),
+    ).toThrow();
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'transcriptCloze',
+        data: { audioPath: 'a.wav', transcript: '', blanks: [] },
+      }),
+    ).toThrow();
   });
 
   it('VideoData: parses a minimal valid YouTube object', () => {

@@ -8,6 +8,12 @@ export const SectionStateSchema = z.object({
   userCode: z.string().optional(),
   quizSubmission: z.array(z.number().int().nonnegative()).optional(),
   done: z.boolean().optional(),
+  score: z
+    .object({
+      correct: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+    })
+    .optional(),
 });
 
 export type SectionState = z.infer<typeof SectionStateSchema>;

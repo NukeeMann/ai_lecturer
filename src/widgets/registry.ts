@@ -7,6 +7,7 @@ import {
   Headphones,
   Image as ImageIcon,
   Layers,
+  Languages,
   type LucideProps,
   Move,
   PenLine,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 
 import { AudioPlayerWidget } from './AudioPlayer/AudioPlayerWidget';
+import { TranscriptClozeWidget } from './TranscriptCloze/TranscriptClozeWidget';
 import { CodeWidget } from './Code/CodeWidget';
 import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
@@ -46,6 +48,7 @@ export type WidgetType =
   | 'dataTable'
   | 'video'
   | 'audioPlayer'
+  | 'transcriptCloze'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -133,6 +136,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Audio Player',
     icon: Headphones,
     accentVar: '--widget-audio-player',
+  },
+  transcriptCloze: {
+    component: TranscriptClozeWidget as ComponentType<{ data?: unknown }>,
+    label: 'Transcript Cloze',
+    icon: Languages,
+    accentVar: '--widget-transcript-cloze',
   },
   custom: {
     component: CustomPlaceholder,
