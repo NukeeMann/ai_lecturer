@@ -1140,7 +1140,7 @@ function ImportCourseCard({
   showToast,
 }: {
   onImported: () => Promise<void> | void;
-  showToast: (message: string) => void;
+  showToast: (message: string, opts?: { href?: string; linkLabel?: string }) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [dragOver, setDragOver] = useState(false);
