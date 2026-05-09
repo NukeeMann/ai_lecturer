@@ -418,6 +418,54 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - Use only when no other widget fits AND the case is genuinely one-off (will not recur in future lessons). `data` is a free-form record. The renderer is `CustomPlaceholder`, so this section currently displays as a stub — useful for marking "future widget here" but not for shipping content.
 - **If the same shape would help 2–3 future lessons, author a new first-class widget type instead** (see *Step 3a*) rather than shipping a `custom` stub. `custom` is a placeholder, not a delivery vehicle.
 
+#### AudioPlayer + transcript-cloze: defer audio synthesis to the pipeline (US-157)
+
+For language-focused courses where you want spoken audio (a teacher reading a passage, an example dialogue, a listening exercise), do **not** try to author or upload `.wav` files yourself. The webapp's generation backend ships a server-side TTS post-processor (US-154 + US-157) that runs after `generate_lesson` exits and synthesises audio for any AudioPlayer or transcript-cloze section you mark.
+
+To opt into automatic TTS for a section, emit it with the sentinel value `audioPath: "AUTO_TTS"` plus the source text the engine should speak:
+
+- **AudioPlayer** — the source text lives in a temporary `audioSourceText` field next to `audioPath`. The post-processor consumes it, synthesises the audio, replaces `audioPath` with a real relative path under `assets/audio/<lesson-slug>-<section-id>.wav`, and **strips `audioSourceText` from the section before write**. Do not also populate `audioSourceText` when `audioPath` is a real path — it would be silently dropped by the public schema and only adds noise to your output.
+- **transcript-cloze** — the section's existing `transcript` field is itself the audio source; no separate `audioSourceText` is needed.
+
+Examples:
+
+```json
+{
+  "id": "listen-passage",
+  "title": "Listen: ordering coffee in Vienna",
+  "type": "audioPlayer",
+  "data": {
+    "audioPath": "AUTO_TTS",
+    "audioSourceText": "Guten Morgen. Ich hätte gern einen kleinen Braunen, bitte.",
+    "title": "Café dialogue",
+    "transcript": "Guten Morgen. Ich hätte gern einen kleinen Braunen, bitte."
+  }
+}
+```
+
+```json
+{
+  "id": "fill-the-fox-cloze",
+  "title": "Fill in the blanks while you listen",
+  "type": "transcriptCloze",
+  "data": {
+    "audioPath": "AUTO_TTS",
+    "transcript": "The quick brown fox jumps over the lazy dog.",
+    "blanks": [
+      { "wordIndex": 1, "answer": "quick" },
+      { "wordIndex": 5, "answer": "over" }
+    ]
+  }
+}
+```
+
+Notes:
+
+- **The sentinel is opt-in.** If you have a pre-recorded WAV in the course's `assets/audio/` directory, just reference it directly — `"audioPath": "assets/audio/my-clip.wav"` — and skip both `AUTO_TTS` and `audioSourceText`. The pipeline will leave that section alone.
+- **Validation.** During pipeline post-processing the lesson is checked against the internal `LessonSchemaWithSentinel` variant (which permits `AUTO_TTS` and `audioSourceText`). Once TTS completes, the lesson is re-validated against the strict public `LessonSchema` before write — so if you ever see `AUTO_TTS` in a committed lesson file, that's a bug. Do not author a lesson where the agent is expected to invoke TTS itself; the post-processor handles it.
+- **Failure mode.** If TTS is not installed (engine missing) or the source text exceeds the engine's per-call cap, the pipeline marks the lesson generation as failed and emits the TTS error in the live log. The user's recourse is to install TTS via `scripts/setup-tts.sh` (US-154) or to manually edit the generated lesson to remove the audio component. **Do not author audio sections speculatively if the course's topic doesn't justify it** — every audio section blocks lesson completion on a successful TTS spawn.
+- **Caching.** A per-section sidecar `assets/audio/<lesson-slug>-<section-id>.wav.meta.json` records the SHA-256 of the source text, so iterative regenerates that don't change `audioSourceText` / `transcript` reuse the existing `.wav` instead of re-spawning the engine. Out of scope: voice selection per-section (uses the default voice from US-154); multi-voice dialogue rendering; non-English TTS.
+
 ### Markdown discipline
 
 - KaTeX delimiters: `$...$` (inline), `$$...$$` (block). `\\` line breaks inside `$$...$$` need to be escaped as `\\\\` in JSON strings.

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
+import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { Readable } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
@@ -3253,5 +3254,429 @@ describe('coherence-pass final stage (US-141)', () => {
     } finally {
       delete process.env.RALPH_TASK_ID;
     }
+  });
+});
+
+// ── US-157: TTS post-processing ──────────────────────────────────────────────
+// Mock generate_lesson spawn → returns a lesson with one AudioPlayer
+// (audioPath: AUTO_TTS, audioSourceText: 'hello world') and one
+// transcript-cloze. Mock the internal TTS callable to write a stub .wav file
+// and return its path. Run startGenerationInner end-to-end. Assert: lesson.json
+// on disk has real audioPaths (no AUTO_TTS), .wav files exist at expected
+// paths, .meta.json sidecars exist with contentHashes. Re-run with same source
+// text → assert TTS callable is NOT invoked (cache hit), files unchanged.
+// Modify source text → assert TTS callable IS invoked, files updated, hash
+// updated.
+
+describe('TTS post-processing (US-157)', () => {
+  /** Build a minimal valid WAV header + N bytes of silence. */
+  function fakeWav(dataBytes: number): Buffer {
+    const sampleRate = 16000;
+    const channels = 1;
+    const bitsPerSample = 16;
+    const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+    const blockAlign = (channels * bitsPerSample) / 8;
+    const buf = Buffer.alloc(44 + dataBytes);
+    buf.write('RIFF', 0);
+    buf.writeUInt32LE(36 + dataBytes, 4);
+    buf.write('WAVE', 8);
+    buf.write('fmt ', 12);
+    buf.writeUInt32LE(16, 16);
+    buf.writeUInt16LE(1, 20);
+    buf.writeUInt16LE(channels, 22);
+    buf.writeUInt32LE(sampleRate, 24);
+    buf.writeUInt32LE(byteRate, 28);
+    buf.writeUInt16LE(blockAlign, 32);
+    buf.writeUInt16LE(bitsPerSample, 34);
+    buf.write('data', 36);
+    buf.writeUInt32LE(dataBytes, 40);
+    return buf;
+  }
+
+  /**
+   * Write a `<lessonSlug>.json` to disk under coursesRoot/<slug>/lessons/
+   * containing one AudioPlayer + one transcriptCloze section, both with the
+   * AUTO_TTS sentinel and (for AudioPlayer) an audioSourceText. Used by the
+   * lesson-spawn stub which emulates what generate_lesson would write.
+   */
+  async function writeAutoTtsLesson(
+    slug: string,
+    lessonSlug: string,
+    opts: { audioSourceText?: string; transcript?: string } = {},
+  ) {
+    const dir = path.join(coursesRoot, slug, 'lessons');
+    await fs.mkdir(dir, { recursive: true });
+    const audioSourceText = opts.audioSourceText ?? 'hello world';
+    const transcript =
+      opts.transcript ?? 'The quick brown fox jumps over the lazy dog.';
+    const lesson = {
+      schemaVersion: 1,
+      slug: lessonSlug,
+      courseSlug: slug,
+      moduleId: 'm1',
+      title: lessonSlug,
+      eyebrow: 'STUB',
+      description: 'Stub lesson',
+      estimatedMinutes: 5,
+      sections: [
+        {
+          id: 's1',
+          title: 'Read',
+          type: 'theory',
+          data: { markdown: 'Stub.' },
+        },
+        {
+          id: 's-audio',
+          title: 'Listen',
+          type: 'audioPlayer',
+          data: {
+            audioPath: 'AUTO_TTS',
+            audioSourceText,
+            title: 'Spoken passage',
+          },
+        },
+        {
+          id: 's-cloze',
+          title: 'Fill the blanks',
+          type: 'transcriptCloze',
+          data: {
+            audioPath: 'AUTO_TTS',
+            transcript,
+            blanks: [
+              { wordIndex: 1, answer: 'quick' },
+              { wordIndex: 5, answer: 'over' },
+            ],
+          },
+        },
+      ],
+    };
+    await fs.writeFile(
+      path.join(dir, `${lessonSlug}.json`),
+      JSON.stringify(lesson),
+      'utf8',
+    );
+  }
+
+  /** A TTS stub that records every invocation and writes a fresh fake WAV
+   * into a per-call file under a temp dir, returning the absolute path. */
+  function makeTtsStub() {
+    const calls: { text: string; voice: string }[] = [];
+    let counter = 0;
+    const stub = async (input: { text: string; voice: 'en-female' | 'en-male' }) => {
+      calls.push({ text: input.text, voice: input.voice });
+      counter += 1;
+      const tmpDir = await fs.mkdtemp(path.join(tmpdir(), 'ai-tts-stub-'));
+      const out = path.join(tmpDir, `stub-${counter}.wav`);
+      await fs.writeFile(out, fakeWav(32000));
+      return {
+        audioPath: `tts-cache/stub-${counter}.wav`,
+        absolutePath: out,
+        durationMs: 1000,
+        cached: false,
+      };
+    };
+    return { calls, stub };
+  }
+
+  function sha256(s: string): string {
+    return crypto.createHash('sha256').update(s, 'utf8').digest('hex');
+  }
+
+  it('replaces AUTO_TTS sentinels with real paths, writes wav + meta sidecar, emits tts events', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const { calls, stub } = makeTtsStub();
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      runTts: stub,
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['lesson1']);
+    init.finishWithExit(0);
+
+    const lesson = await scripted.nextChild();
+    await writeAutoTtsLesson('demo', 'lesson1', {
+      audioSourceText: 'hello world',
+    });
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // No failed lessons.
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
+
+    // TTS callable invoked twice (once per audio section).
+    expect(calls).toHaveLength(2);
+    expect(calls.map((c) => c.text)).toContain('hello world');
+    expect(calls.map((c) => c.text)).toContain(
+      'The quick brown fox jumps over the lazy dog.',
+    );
+
+    // Lesson on disk has real paths and no AUTO_TTS.
+    const writtenRaw = await fs.readFile(
+      path.join(coursesRoot, 'demo', 'lessons', 'lesson1.json'),
+      'utf8',
+    );
+    const written = JSON.parse(writtenRaw);
+    const audioSec = written.sections.find((s: { id: string }) => s.id === 's-audio');
+    const clozeSec = written.sections.find((s: { id: string }) => s.id === 's-cloze');
+    expect(audioSec.data.audioPath).toBe('assets/audio/lesson1-s-audio.wav');
+    expect(clozeSec.data.audioPath).toBe('assets/audio/lesson1-s-cloze.wav');
+    // audioSourceText stripped.
+    expect(audioSec.data).not.toHaveProperty('audioSourceText');
+
+    // Wav files exist at expected paths.
+    const audioWav = path.join(
+      coursesRoot,
+      'demo',
+      'assets',
+      'audio',
+      'lesson1-s-audio.wav',
+    );
+    const clozeWav = path.join(
+      coursesRoot,
+      'demo',
+      'assets',
+      'audio',
+      'lesson1-s-cloze.wav',
+    );
+    await expect(fs.stat(audioWav)).resolves.toBeTruthy();
+    await expect(fs.stat(clozeWav)).resolves.toBeTruthy();
+
+    // Sidecars exist with contentHashes that match a sha256 of the source text.
+    const audioMeta = JSON.parse(
+      await fs.readFile(`${audioWav}.meta.json`, 'utf8'),
+    );
+    const clozeMeta = JSON.parse(
+      await fs.readFile(`${clozeWav}.meta.json`, 'utf8'),
+    );
+    expect(audioMeta.contentHash).toBe(sha256('hello world'));
+    expect(clozeMeta.contentHash).toBe(
+      sha256('The quick brown fox jumps over the lazy dog.'),
+    );
+
+    // tts events emitted in started/done pairs.
+    const ttsEvents = run.events.filter((e) => e.type === 'tts') as Array<{
+      type: 'tts';
+      lessonSlug: string;
+      sectionId: string;
+      status: 'started' | 'done' | 'failed';
+    }>;
+    expect(ttsEvents.map((e) => `${e.sectionId}:${e.status}`)).toEqual([
+      's-audio:started',
+      's-audio:done',
+      's-cloze:started',
+      's-cloze:done',
+    ]);
+    expect(ttsEvents.every((e) => e.lessonSlug === 'lesson1')).toBe(true);
+  });
+
+  it('skips TTS when sidecar contentHash matches; re-invokes TTS when source text changes', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+
+    // ── Run #1: cold cache, both sections synthesise ────────────────────────
+    {
+      const scripted = makeScriptedSpawn();
+      const { calls, stub } = makeTtsStub();
+
+      const run = await startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+        runTts: stub,
+      });
+
+      const init = await scripted.nextChild();
+      await writeStubCourse('demo', ['lesson1']);
+      init.finishWithExit(0);
+
+      const lesson = await scripted.nextChild();
+      await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
+      lesson.finishWithExit(0);
+
+      await waitForFinish(run);
+      expect(calls).toHaveLength(2);
+    }
+
+    // Capture the wav + meta mtimes after run #1 so we can prove run #2 left
+    // them untouched.
+    const audioWav = path.join(
+      coursesRoot,
+      'demo',
+      'assets',
+      'audio',
+      'lesson1-s-audio.wav',
+    );
+    const clozeWav = path.join(
+      coursesRoot,
+      'demo',
+      'assets',
+      'audio',
+      'lesson1-s-cloze.wav',
+    );
+    const audioStat1 = await fs.stat(audioWav);
+    const clozeStat1 = await fs.stat(clozeWav);
+
+    // ── Run #2: same source text → cache hit, TTS NOT invoked ───────────────
+    {
+      __resetForTesting();
+      // Re-set the queue override (cleared by __resetForTesting) so the second
+      // run's queue file lives under the same coursesRoot.
+      process.env.GENERATION_QUEUE_FILE_OVERRIDE = path.join(
+        coursesRoot,
+        'generation-queue.json',
+      );
+      __setCoherencePassDisabledByDefault(true);
+
+      // Wipe lesson file so the spawn re-runs (the validity guard would
+      // otherwise skip the lesson stage entirely on a re-run).
+      try {
+        await fs.unlink(path.join(coursesRoot, 'demo', 'lessons', 'lesson1.json'));
+      } catch {
+        /* fresh worktree — ignore */
+      }
+
+      const scripted = makeScriptedSpawn();
+      const { calls, stub } = makeTtsStub();
+
+      const run = await startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+        runTts: stub,
+      });
+
+      const init = await scripted.nextChild();
+      // course.json already exists from run #1; just exit 0.
+      init.finishWithExit(0);
+
+      const lesson = await scripted.nextChild();
+      await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
+      lesson.finishWithExit(0);
+
+      await waitForFinish(run);
+
+      // No TTS calls — the meta-sidecar hash matched.
+      expect(calls).toHaveLength(0);
+
+      // Wav files unchanged.
+      const audioStat2 = await fs.stat(audioWav);
+      const clozeStat2 = await fs.stat(clozeWav);
+      expect(audioStat2.mtimeMs).toBe(audioStat1.mtimeMs);
+      expect(clozeStat2.mtimeMs).toBe(clozeStat1.mtimeMs);
+    }
+
+    // ── Run #3: different audioSourceText → TTS invoked for that section ───
+    {
+      __resetForTesting();
+      process.env.GENERATION_QUEUE_FILE_OVERRIDE = path.join(
+        coursesRoot,
+        'generation-queue.json',
+      );
+      __setCoherencePassDisabledByDefault(true);
+      try {
+        await fs.unlink(path.join(coursesRoot, 'demo', 'lessons', 'lesson1.json'));
+      } catch {
+        /* ignore */
+      }
+
+      const scripted = makeScriptedSpawn();
+      const { calls, stub } = makeTtsStub();
+
+      const run = await startGeneration('demo', {
+        spawn: scripted.spawn,
+        isExecutableInPath: () => true,
+        runTts: stub,
+      });
+
+      const init = await scripted.nextChild();
+      init.finishWithExit(0);
+
+      const lesson = await scripted.nextChild();
+      await writeAutoTtsLesson('demo', 'lesson1', {
+        audioSourceText: 'goodbye world', // changed
+      });
+      lesson.finishWithExit(0);
+
+      await waitForFinish(run);
+
+      // Only the AudioPlayer section's text changed → exactly one TTS call.
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toBe('goodbye world');
+
+      // The audio wav was overwritten; the cloze wav was not.
+      const audioStat3 = await fs.stat(audioWav);
+      const clozeStat3 = await fs.stat(clozeWav);
+      expect(audioStat3.mtimeMs).not.toBe(audioStat1.mtimeMs);
+      expect(clozeStat3.mtimeMs).toBe(clozeStat1.mtimeMs);
+
+      // Sidecar hash for the AudioPlayer section bumped.
+      const audioMeta = JSON.parse(
+        await fs.readFile(`${audioWav}.meta.json`, 'utf8'),
+      );
+      expect(audioMeta.contentHash).toBe(sha256('goodbye world'));
+    }
+  });
+
+  it('marks the lesson failed when the TTS callable throws — no AUTO_TTS placeholder lands on disk', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const failingStub = async () => {
+      throw new Error('TTS engine missing — install scripts/setup-tts.sh');
+    };
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      runTts: failingStub,
+      lessonMaxRetries: 0, // single attempt — surface the failure immediately
+    });
+
+    const init = await scripted.nextChild();
+    await writeStubCourse('demo', ['lesson1']);
+    init.finishWithExit(0);
+
+    const lesson = await scripted.nextChild();
+    await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Lesson file is NOT on disk (the partial AUTO_TTS placeholder was
+    // unlinked by the post-processor on TTS failure).
+    await expect(
+      fs.access(path.join(coursesRoot, 'demo', 'lessons', 'lesson1.json')),
+    ).rejects.toBeTruthy();
+
+    // With only one lesson and that lesson failing, the pipeline finalises
+    // with an `error` event (not `done`) and surfaces failedLessons on it.
+    const errorEv = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+      | undefined;
+    expect(errorEv).toBeDefined();
+    expect(errorEv?.failedLessons).toHaveLength(1);
+    expect(errorEv?.failedLessons?.[0].slug).toBe('lesson1');
+    expect(errorEv?.failedLessons?.[0].reason).toMatch(/TTS engine missing/);
+
+    // tts:failed event emitted with the engine error.
+    const ttsFail = run.events.find(
+      (e) => e.type === 'tts' && e.status === 'failed',
+    ) as
+      | {
+          type: 'tts';
+          lessonSlug: string;
+          sectionId: string;
+          status: 'failed';
+          errorMessage?: string;
+        }
+      | undefined;
+    expect(ttsFail).toBeDefined();
+    expect(ttsFail?.lessonSlug).toBe('lesson1');
+    expect(ttsFail?.errorMessage).toMatch(/TTS engine missing/);
   });
 });

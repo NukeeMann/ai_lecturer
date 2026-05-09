@@ -31,9 +31,18 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { CourseSchema } from '@/lib/schemas/course';
-import { LessonSchema, type Lesson } from '@/lib/schemas/lesson';
-import { atomicRenameSync } from './atomic';
+import {
+  AUTO_TTS_SENTINEL,
+  LessonSchema,
+  LessonSchemaWithSentinel,
+  type Lesson,
+  type LessonWithSentinel,
+} from '@/lib/schemas/lesson';
+import { runTts as defaultRunTts, type RunTtsResult } from './tts';
+import type { TtsRequest } from '@/lib/schemas/tts';
+import { atomicRenameSync, atomicWriteJson } from './atomic';
 import {
   assertSafeSlug,
   courseDir,
@@ -80,6 +89,19 @@ export type GenerationEvent =
       completed: string[];
       remaining: string[];
       inflightSlug: string | null;
+    }
+  // US-157: per-section TTS sub-stage event emitted while the generation
+  // pipeline post-processes AudioPlayer / transcriptCloze sections that the
+  // generate_lesson agent left with `audioPath: 'AUTO_TTS'`. Sits between the
+  // lesson's generate_lesson stage:done and the lesson's overall completion.
+  // The optional `errorMessage` carries the TTS engine's failure detail when
+  // status==='failed' so the live log surfaces what went wrong.
+  | {
+      type: 'tts';
+      lessonSlug: string;
+      sectionId: string;
+      status: 'started' | 'done' | 'failed';
+      errorMessage?: string;
     };
 
 // US-138: listeners receive the per-run monotonic seq alongside the event so
@@ -209,6 +231,13 @@ export interface SpawnDeps {
   lessonMaxRetries?: number;
   /** Per-attempt wall-clock timeout in milliseconds. */
   lessonTimeoutMs?: number;
+  /**
+   * US-157: injection point for the TTS callable. Defaults to the production
+   * `runTts` from `./tts.ts`. Tests pass a stub that writes a fake .wav and
+   * returns its absolute path so the post-processor's copy/cache logic can be
+   * exercised without spawning Coqui.
+   */
+  runTts?: (input: TtsRequest) => Promise<RunTtsResult>;
 }
 
 export class GenerationConflictError extends Error {
@@ -1087,6 +1116,16 @@ function makeRunId(): string {
 }
 
 /**
+ * US-157: hex-encoded SHA-256 of a UTF-8 string. Used as the per-section
+ * cache key written to the `<lessonSlug>-<sectionId>.wav.meta.json` sidecar
+ * so that lesson regenerations skip the TTS spawn when the source text is
+ * unchanged.
+ */
+export function sha256Hex(text: string): string {
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/**
  * Convert one raw stdout/stderr line to zero or more human-readable log lines.
  *
  * Lines that look like Claude Code's `--output-format stream-json` events
@@ -1904,6 +1943,155 @@ async function startGenerationInner(
     await persistGenState();
   }
 
+  /**
+   * US-157: run the TTS post-processing pass over a sentinel-validated lesson.
+   * For each AudioPlayer / transcriptCloze section whose `audioPath` is the
+   * AUTO_TTS sentinel, derive the source text (transcript for transcriptCloze;
+   * audioSourceText for AudioPlayer), check the per-section content-hash
+   * sidecar at `<lessonSlug>-<sectionId>.wav.meta.json` to short-circuit when
+   * the same source already produced a cached .wav, otherwise call the TTS
+   * callable, copy the resulting audio into the course's assets/audio dir,
+   * and refresh the sidecar. Returns the post-processed lesson with all
+   * sentinels replaced and `audioSourceText` stripped — ready to be written
+   * to disk and re-validated against the public LessonSchema.
+   */
+  async function runTtsPostProcessing(
+    courseSlug: string,
+    lessonSlug: string,
+    lesson: LessonWithSentinel,
+  ): Promise<
+    | { ok: true; lesson: Lesson }
+    | { ok: false; error: string; sectionId: string }
+  > {
+    const ttsCallable = deps.runTts ?? defaultRunTts;
+    const audioDir = path.join(courseDir(courseSlug), 'assets', 'audio');
+
+    // Deep clone so per-section mutations don't alias the parsed input — keeps
+    // the function pure-ish from the caller's perspective.
+    const out = JSON.parse(JSON.stringify(lesson)) as LessonWithSentinel;
+
+    for (const section of out.sections) {
+      if (section.type !== 'audioPlayer' && section.type !== 'transcriptCloze') {
+        continue;
+      }
+      const data = section.data as {
+        audioPath: string;
+        transcript?: string;
+        audioSourceText?: string;
+      };
+      if (data.audioPath !== AUTO_TTS_SENTINEL) {
+        // Section already has a real path — nothing to do. Strip any leaked
+        // audioSourceText from AudioPlayer sections so it doesn't survive to
+        // the public-schema validation step.
+        if ('audioSourceText' in data) {
+          delete (data as { audioSourceText?: string }).audioSourceText;
+        }
+        continue;
+      }
+
+      // Derive the source text per AC: transcript for transcriptCloze,
+      // audioSourceText for AudioPlayer.
+      const sourceText =
+        section.type === 'transcriptCloze'
+          ? data.transcript
+          : data.audioSourceText;
+      if (typeof sourceText !== 'string' || sourceText.trim().length === 0) {
+        const which =
+          section.type === 'transcriptCloze' ? 'transcript' : 'audioSourceText';
+        return {
+          ok: false,
+          error: `Section ${section.id} has audioPath: 'AUTO_TTS' but no usable ${which} field to feed the TTS engine`,
+          sectionId: section.id,
+        };
+      }
+
+      emit({
+        type: 'tts',
+        lessonSlug,
+        sectionId: section.id,
+        status: 'started',
+      });
+
+      const fileName = `${lessonSlug}-${section.id}.wav`;
+      const absoluteWavPath = path.join(audioDir, fileName);
+      const metaPath = `${absoluteWavPath}.meta.json`;
+      const relativePath = `assets/audio/${fileName}`;
+      const newHash = sha256Hex(sourceText);
+
+      // Cache check: if the wav AND its sidecar exist AND the recorded hash
+      // matches the current source text, reuse the file untouched.
+      let cacheHit = false;
+      try {
+        await fs.access(absoluteWavPath);
+        const metaRaw = await fs.readFile(metaPath, 'utf8');
+        const meta = JSON.parse(metaRaw) as { contentHash?: unknown };
+        if (typeof meta.contentHash === 'string' && meta.contentHash === newHash) {
+          cacheHit = true;
+        }
+      } catch {
+        cacheHit = false;
+      }
+
+      if (!cacheHit) {
+        let result: RunTtsResult;
+        try {
+          result = await ttsCallable({
+            text: sourceText,
+            voice: 'en-female',
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          emit({
+            type: 'tts',
+            lessonSlug,
+            sectionId: section.id,
+            status: 'failed',
+            errorMessage: msg,
+          });
+          return { ok: false, error: msg, sectionId: section.id };
+        }
+        try {
+          await fs.mkdir(audioDir, { recursive: true });
+          await fs.copyFile(result.absolutePath, absoluteWavPath);
+          await fs.writeFile(
+            metaPath,
+            JSON.stringify({ contentHash: newHash }),
+            'utf8',
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          emit({
+            type: 'tts',
+            lessonSlug,
+            sectionId: section.id,
+            status: 'failed',
+            errorMessage: msg,
+          });
+          return { ok: false, error: msg, sectionId: section.id };
+        }
+      }
+
+      // Replace sentinel with real relative path; strip audioSourceText.
+      data.audioPath = relativePath;
+      if ('audioSourceText' in data) {
+        delete (data as { audioSourceText?: string }).audioSourceText;
+      }
+
+      emit({
+        type: 'tts',
+        lessonSlug,
+        sectionId: section.id,
+        status: 'done',
+      });
+    }
+
+    // The shape now matches the public Lesson — discriminator + non-sentinel
+    // audioPaths + no extra fields. The caller re-validates with LessonSchema
+    // before write so any drift becomes a hard fail rather than a silent
+    // strip.
+    return { ok: true, lesson: out as unknown as Lesson };
+  }
+
   async function runLesson(
     lessonSlug: string,
     opts: { maxAttemptsOverride?: number; seedRetryReason?: string } = {},
@@ -1992,9 +2180,52 @@ async function startGenerationInner(
       // Validate the produced lesson file against LessonSchema. A failed
       // validation (or a missing file) marks this attempt as failed and
       // triggers the next retry (if any remain).
+      //
+      // US-157: the agent may emit AudioPlayer / transcriptCloze sections with
+      // `audioPath: 'AUTO_TTS'` to defer audio synthesis to a server-side TTS
+      // pass. We first validate against the sentinel-friendly schema, run the
+      // TTS post-processor (which replaces the sentinel with a real relative
+      // path, copies the .wav into the course's assets dir, and writes a
+      // content-hash sidecar for cache reuse), then re-validate against the
+      // strict public LessonSchema before considering the attempt successful.
+      // If TTS fails, the partial lesson file is removed so no AUTO_TTS
+      // placeholder lands on disk; the attempt is marked failed and (per AC)
+      // the failure surfaces to the user via the normal failedLessons flow.
       try {
         const raw = await fs.readFile(lessonFile(slug, lessonSlug), 'utf8');
-        LessonSchema.parse(JSON.parse(raw));
+        const parsed = JSON.parse(raw) as unknown;
+        const sentinelResult = LessonSchemaWithSentinel.safeParse(parsed);
+        if (!sentinelResult.success) {
+          lastError = sentinelResult.error.message;
+          continue;
+        }
+        const ttsOutcome = await runTtsPostProcessing(
+          slug,
+          lessonSlug,
+          sentinelResult.data,
+        );
+        if (!ttsOutcome.ok) {
+          // Remove the partial lesson file — it still carries AUTO_TTS
+          // placeholders and would corrupt subsequent reads.
+          try {
+            await fs.unlink(lessonFile(slug, lessonSlug));
+          } catch {
+            /* file may already be gone — ignore */
+          }
+          try {
+            await fs.unlink(
+              path.join(courseDir(slug), 'lessons', `${lessonSlug}.tmp`),
+            );
+          } catch {
+            /* no stale tmp — ignore */
+          }
+          lastError = `TTS post-processing failed: ${ttsOutcome.error}`;
+          continue;
+        }
+        // Final write — re-validate with the strict public schema so we
+        // never persist a lesson with the sentinel.
+        LessonSchema.parse(ttsOutcome.lesson);
+        await atomicWriteJson(lessonFile(slug, lessonSlug), ttsOutcome.lesson);
         success = true;
         break;
       } catch (err) {
