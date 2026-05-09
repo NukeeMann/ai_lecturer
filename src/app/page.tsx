@@ -914,7 +914,7 @@ function CourseCardWithMenu({
           </button>
           <div role="separator" style={popoverDividerStyle} />
           <div role="presentation" style={popoverSectionLabelStyle}>
-            Move to
+            Collection
           </div>
           <button
             type="button"
@@ -926,10 +926,10 @@ function CourseCardWithMenu({
               onCloseMenu();
               onPickMoveTarget(null);
             }}
-            style={popoverItemStyle}
+            style={{ ...popoverItemStyle, color: 'var(--text-tertiary)' }}
             disabled={sourceCollectionId === null}
           >
-            Uncategorized
+            None
           </button>
           {collections.map((c) => (
             <button
@@ -1019,9 +1019,9 @@ function CollectionSection({
       data-collection-id={collectionId}
       style={sectionStyle}
     >
-      <div style={sectionHeaderRowStyle}>
-        <h2 style={sectionHeadingStyle}>{title}</h2>
-        {collection && (
+      {collection && (
+        <div style={sectionHeaderRowStyle}>
+          <h2 style={sectionHeadingStyle}>{title}</h2>
           <div data-popover-host style={{ position: 'relative' }}>
             <button
               type="button"
@@ -1060,8 +1060,8 @@ function CollectionSection({
               </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div style={courseGridStyle}>
         {items.map(({ course, stats, href }) => (
           <CourseCardWithMenu
