@@ -14,7 +14,6 @@ import {
   ArrowRight,
   BookOpen,
   MoreHorizontal,
-  MoreVertical,
   Plus,
   Search,
   Sparkles,
@@ -292,6 +291,23 @@ const iconButtonStyle: CSSProperties = {
   padding: 0,
 };
 
+// Bare three-dots overflow trigger — no border, no background. Used in the
+// upper-right of each course card so the dots blend visually with the card
+// rather than reading as a separate boxed control.
+const cardOverflowButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 24,
+  height: 24,
+  border: 'none',
+  borderRadius: 'var(--radius-sm)',
+  background: 'transparent',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+  padding: 0,
+};
+
 const popoverStyle: CSSProperties = {
   position: 'absolute',
   zIndex: 5,
@@ -321,6 +337,21 @@ const popoverItemStyle: CSSProperties = {
   cursor: 'pointer',
   textAlign: 'left',
   whiteSpace: 'nowrap',
+};
+
+const popoverSectionLabelStyle: CSSProperties = {
+  padding: '6px 10px 2px',
+  fontSize: 'var(--fs-xs)',
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+  color: 'var(--text-tertiary)',
+};
+
+const popoverDividerStyle: CSSProperties = {
+  height: 1,
+  margin: '4px 0',
+  background: 'var(--border)',
 };
 
 // ------- subcomponents --------------------------------------------------------
@@ -771,13 +802,17 @@ function CourseCard({
 }
 
 // US-142: per-course three-dots overflow menu in the upper-right corner of
-// each card. US-150 added the `Export as ZIP` action above the destructive
-// `Delete` action.
-// each card. US-144 added the `Extend` action below `Delete`.
+// each card. Single horizontal-dots trigger that bundles every per-card
+// action (Extend, Export ZIP/HTML, Move-to-collection, Delete) so users see
+// only one control. The trigger is bare (no border/background) and lives at
+// the default stacking level so the header's SettingsMenu dropdown can
+// render above it.
 function CourseCardWithMenu({
   course,
   stats,
   href,
+  collections,
+  sourceCollectionId,
   menuOpen,
   onToggleMenu,
   onCloseMenu,
@@ -785,13 +820,15 @@ function CourseCardWithMenu({
   onRequestExportZip,
   onRequestExportHtml,
   onRequestExtend,
+  onPickMoveTarget,
   dimmed,
   fading,
-  rightOffset = 12,
 }: {
   course: Course;
   stats: CourseStats;
   href: string;
+  collections: Collection[];
+  sourceCollectionId: string | null;
   menuOpen: boolean;
   onToggleMenu: () => void;
   onCloseMenu: () => void;
@@ -799,9 +836,9 @@ function CourseCardWithMenu({
   onRequestExportZip: () => void;
   onRequestExportHtml: () => void;
   onRequestExtend: () => void;
+  onPickMoveTarget: (targetId: string | null) => void;
   dimmed: boolean;
   fading: boolean;
-  rightOffset?: number;
 }) {
   return (
     <div data-popover-host style={{ position: 'relative' }}>
@@ -819,21 +856,34 @@ function CourseCardWithMenu({
           onToggleMenu();
         }}
         style={{
-          ...iconButtonStyle,
+          ...cardOverflowButtonStyle,
           position: 'absolute',
-          top: 12,
-          right: rightOffset,
-          zIndex: 2,
+          top: 10,
+          right: 10,
         }}
       >
-        <MoreVertical size={16} strokeWidth={2} />
+        <MoreHorizontal size={16} strokeWidth={2} />
       </button>
       {menuOpen && (
         <div
           role="menu"
           data-testid={`course-menu-${course.slug}`}
-          style={{ ...popoverStyle, top: 44, right: rightOffset }}
+          style={{ ...popoverStyle, top: 40, right: 10 }}
         >
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`course-menu-extend-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onRequestExtend();
+            }}
+            style={popoverItemStyle}
+          >
+            Extend
+          </button>
           <button
             type="button"
             role="menuitem"
@@ -862,6 +912,44 @@ function CourseCardWithMenu({
           >
             Export as static HTML
           </button>
+          <div role="separator" style={popoverDividerStyle} />
+          <div role="presentation" style={popoverSectionLabelStyle}>
+            Move to
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid={`move-target-uncategorized-${course.slug}`}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onCloseMenu();
+              onPickMoveTarget(null);
+            }}
+            style={popoverItemStyle}
+            disabled={sourceCollectionId === null}
+          >
+            Uncategorized
+          </button>
+          {collections.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              role="menuitem"
+              data-testid={`move-target-${c.id}-${course.slug}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onCloseMenu();
+                onPickMoveTarget(c.id);
+              }}
+              style={popoverItemStyle}
+              disabled={sourceCollectionId === c.id}
+            >
+              {c.name}
+            </button>
+          ))}
+          <div role="separator" style={popoverDividerStyle} />
           <button
             type="button"
             role="menuitem"
@@ -876,131 +964,6 @@ function CourseCardWithMenu({
           >
             Delete
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-testid={`course-menu-extend-${course.slug}`}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onCloseMenu();
-              onRequestExtend();
-            }}
-            style={popoverItemStyle}
-          >
-            Extend
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CourseCardWithMove({
-  course,
-  stats,
-  href,
-  collections,
-  sourceCollectionId,
-  moveOpen,
-  onToggleMove,
-  onPickTarget,
-  menuOpen,
-  onToggleMenu,
-  onCloseMenu,
-  onRequestDelete,
-  onRequestExportZip,
-  onRequestExportHtml,
-  onRequestExtend,
-  dimmed,
-  fading,
-}: {
-  course: Course;
-  stats: CourseStats;
-  href: string;
-  collections: Collection[];
-  sourceCollectionId: string | null;
-  moveOpen: boolean;
-  onToggleMove: () => void;
-  onPickTarget: (targetId: string | null) => void;
-  menuOpen: boolean;
-  onToggleMenu: () => void;
-  onCloseMenu: () => void;
-  onRequestDelete: () => void;
-  onRequestExportZip: () => void;
-  onRequestExportHtml: () => void;
-  onRequestExtend: () => void;
-  dimmed: boolean;
-  fading: boolean;
-}) {
-  return (
-    <div data-popover-host style={{ position: 'relative' }}>
-      <CourseCardWithMenu
-        course={course}
-        stats={stats}
-        href={href}
-        menuOpen={menuOpen}
-        onToggleMenu={onToggleMenu}
-        onCloseMenu={onCloseMenu}
-        onRequestDelete={onRequestDelete}
-        onRequestExportZip={onRequestExportZip}
-        onRequestExportHtml={onRequestExportHtml}
-        onRequestExtend={onRequestExtend}
-        dimmed={dimmed}
-        fading={fading}
-        rightOffset={12}
-      />
-      <button
-        type="button"
-        data-testid={`course-card-move-${course.slug}`}
-        aria-label={`Move ${course.title}`}
-        aria-haspopup="menu"
-        aria-expanded={moveOpen}
-        disabled={dimmed}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onToggleMove();
-        }}
-        style={{
-          ...iconButtonStyle,
-          position: 'absolute',
-          top: 12,
-          right: 48,
-          zIndex: 2,
-        }}
-      >
-        <MoreHorizontal size={16} strokeWidth={2} />
-      </button>
-      {moveOpen && (
-        <div
-          role="menu"
-          data-testid={`course-card-move-menu-${course.slug}`}
-          style={{ ...popoverStyle, top: 44, right: 48 }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            data-testid={`move-target-uncategorized-${course.slug}`}
-            onClick={() => onPickTarget(null)}
-            style={popoverItemStyle}
-            disabled={sourceCollectionId === null}
-          >
-            Uncategorized
-          </button>
-          {collections.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              role="menuitem"
-              data-testid={`move-target-${c.id}-${course.slug}`}
-              onClick={() => onPickTarget(c.id)}
-              style={popoverItemStyle}
-              disabled={sourceCollectionId === c.id}
-            >
-              {c.name}
-            </button>
-          ))}
         </div>
       )}
     </div>
@@ -1018,8 +981,6 @@ function CollectionSection({
   onToggleActions,
   onRename,
   onDelete,
-  moveOpenSlug,
-  onToggleMove,
   onPickMoveTarget,
   menuOpenSlug,
   onToggleMenu,
@@ -1041,8 +1002,6 @@ function CollectionSection({
   onToggleActions: () => void;
   onRename: () => void;
   onDelete: () => void;
-  moveOpenSlug: string | null;
-  onToggleMove: (slug: string) => void;
   onPickMoveTarget: (slug: string, targetId: string | null) => void;
   menuOpenSlug: string | null;
   onToggleMenu: (slug: string) => void;
@@ -1105,16 +1064,13 @@ function CollectionSection({
       </div>
       <div style={courseGridStyle}>
         {items.map(({ course, stats, href }) => (
-          <CourseCardWithMove
+          <CourseCardWithMenu
             key={course.slug}
             course={course}
             stats={stats}
             href={href}
             collections={collections}
             sourceCollectionId={sourceCollectionId}
-            moveOpen={moveOpenSlug === course.slug}
-            onToggleMove={() => onToggleMove(course.slug)}
-            onPickTarget={(targetId) => onPickMoveTarget(course.slug, targetId)}
             menuOpen={menuOpenSlug === course.slug}
             onToggleMenu={() => onToggleMenu(course.slug)}
             onCloseMenu={onCloseMenu}
@@ -1122,6 +1078,7 @@ function CollectionSection({
             onRequestExportZip={() => onRequestExportZip(course)}
             onRequestExportHtml={() => onRequestExportHtml(course)}
             onRequestExtend={() => onRequestExtend(course)}
+            onPickMoveTarget={(targetId) => onPickMoveTarget(course.slug, targetId)}
             dimmed={deletingSlug === course.slug}
             fading={fadingSlug === course.slug}
           />
@@ -1412,7 +1369,6 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
-  const [moveOpenSlug, setMoveOpenSlug] = useState<string | null>(null);
   const [menuOpenSlug, setMenuOpenSlug] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ slug: string; title: string } | null>(null);
   const [extendTarget, setExtendTarget] = useState<{ slug: string; title: string } | null>(null);
@@ -1538,13 +1494,12 @@ export default function DashboardPage() {
   }, [courses, collections, loadData]);
 
   // Outside-click + Escape closure for the per-collection actions menu and
-  // per-card move popover and per-card three-dots menu (US-142).
+  // the unified per-card three-dots menu (US-142, merged in May 2026).
   useEffect(() => {
-    if (actionsOpenId === null && moveOpenSlug === null && menuOpenSlug === null) return;
+    if (actionsOpenId === null && menuOpenSlug === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setActionsOpenId(null);
-        setMoveOpenSlug(null);
         setMenuOpenSlug(null);
       }
     };
@@ -1552,7 +1507,6 @@ export default function DashboardPage() {
       const target = e.target as Element | null;
       if (target?.closest('[data-popover-host]')) return;
       setActionsOpenId(null);
-      setMoveOpenSlug(null);
       setMenuOpenSlug(null);
     };
     document.addEventListener('keydown', onKey);
@@ -1561,7 +1515,7 @@ export default function DashboardPage() {
       document.removeEventListener('keydown', onKey);
       document.removeEventListener('mousedown', onMouseDown);
     };
-  }, [actionsOpenId, moveOpenSlug, menuOpenSlug]);
+  }, [actionsOpenId, menuOpenSlug]);
 
   const resume = useMemo(
     () => (courses && progress ? pickResumeTarget(courses, progress) : null),
@@ -1678,7 +1632,7 @@ export default function DashboardPage() {
 
   const handleMoveCourse = useCallback(
     async (slug: string, sourceId: string | null, targetId: string | null) => {
-      setMoveOpenSlug(null);
+      setMenuOpenSlug(null);
       if (sourceId === targetId) return;
       try {
         if (sourceId !== null) {
@@ -1798,7 +1752,6 @@ export default function DashboardPage() {
   );
 
   const handleToggleMenu = useCallback((slug: string) => {
-    setMoveOpenSlug(null);
     setMenuOpenSlug((cur) => (cur === slug ? null : slug));
   }, []);
 
@@ -1943,23 +1896,33 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div data-testid="course-grid" style={courseGridStyle}>
-              {enriched.map(({ course, stats, href }) => (
-                <CourseCardWithMenu
-                  key={course.slug}
-                  course={course}
-                  stats={stats}
-                  href={href}
-                  menuOpen={menuOpenSlug === course.slug}
-                  onToggleMenu={() => handleToggleMenu(course.slug)}
-                  onCloseMenu={handleCloseMenu}
-                  onRequestDelete={() => handleRequestDelete(course)}
-                  onRequestExportZip={() => handleRequestExportZip(course)}
-                  onRequestExportHtml={() => handleRequestExportHtml(course)}
-                  onRequestExtend={() => handleRequestExtend(course)}
-                  dimmed={deletingSlug === course.slug}
-                  fading={fadingSlug === course.slug}
-                />
-              ))}
+              {enriched.map(({ course, stats, href }) => {
+                const sourceCollectionId =
+                  safeCollections.find((c) => c.courseSlugs.includes(course.slug))
+                    ?.id ?? null;
+                return (
+                  <CourseCardWithMenu
+                    key={course.slug}
+                    course={course}
+                    stats={stats}
+                    href={href}
+                    collections={safeCollections}
+                    sourceCollectionId={sourceCollectionId}
+                    menuOpen={menuOpenSlug === course.slug}
+                    onToggleMenu={() => handleToggleMenu(course.slug)}
+                    onCloseMenu={handleCloseMenu}
+                    onRequestDelete={() => handleRequestDelete(course)}
+                    onRequestExportZip={() => handleRequestExportZip(course)}
+                    onRequestExportHtml={() => handleRequestExportHtml(course)}
+                    onRequestExtend={() => handleRequestExtend(course)}
+                    onPickMoveTarget={(targetId) =>
+                      void handleMoveCourse(course.slug, sourceCollectionId, targetId)
+                    }
+                    dimmed={deletingSlug === course.slug}
+                    fading={fadingSlug === course.slug}
+                  />
+                );
+              })}
               <ImportCourseCard onImported={loadData} showToast={showToast} />
             </div>
           )
@@ -1977,10 +1940,6 @@ export default function DashboardPage() {
                 onToggleActions={() => undefined}
                 onRename={() => undefined}
                 onDelete={() => undefined}
-                moveOpenSlug={moveOpenSlug}
-                onToggleMove={(slug) =>
-                  setMoveOpenSlug((cur) => (cur === slug ? null : slug))
-                }
                 onPickMoveTarget={(slug, targetId) =>
                   void handleMoveCourse(slug, null, targetId)
                 }
@@ -2013,10 +1972,6 @@ export default function DashboardPage() {
                   }
                   onRename={() => void handleRenameCollection(collection)}
                   onDelete={() => void handleDeleteCollection(collection)}
-                  moveOpenSlug={moveOpenSlug}
-                  onToggleMove={(slug) =>
-                    setMoveOpenSlug((cur) => (cur === slug ? null : slug))
-                  }
                   onPickMoveTarget={(slug, targetId) =>
                     void handleMoveCourse(slug, collection.id, targetId)
                   }
