@@ -1,0 +1,45 @@
+[2026-05-09T01:51:00+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:51:03+0200] [rate_limit seven_day status=allowed_warning]
+[2026-05-09T01:51:58+0200] Now let me look at the lesson page wiring to understand how editors are wired:
+[2026-05-09T01:52:44+0200] Good. Now let me update todos and proceed with implementation.
+[2026-05-09T01:53:21+0200] Now create the schema:
+[2026-05-09T01:53:31+0200] Now register schema in lesson.ts:
+[2026-05-09T01:53:56+0200] Now let me check the tokens.css and add the widget accent var:
+[2026-05-09T01:54:13+0200] Now create the widget. Let me first check the existing schemas test for reference since I need to add tests for the new section.
+[2026-05-09T01:54:17+0200] Continue. Let me add the test case to schemas.test.ts and update SectionStateSchema for the score field, plus add registry entry. Let me also start the widget.
+[2026-05-09T01:54:22+0200] Now let me add additional schema-level tests for TranscriptCloze (rejects out-of-range and duplicate wordIndex):
+[2026-05-09T01:54:37+0200] Now extend the SectionStateSchema to include score:
+[2026-05-09T01:54:43+0200] Now update lessonChat context.ts to include the new union case:
+[2026-05-09T01:54:50+0200] Now update the registry. Let me also add the registry entry:
+[2026-05-09T01:55:08+0200] Now create the widget. Let me look at how dragMatch persists score for reference:
+[2026-05-09T01:55:14+0200] Now write the widget:
+[2026-05-09T01:56:20+0200] Now let me create the editor:
+[2026-05-09T01:57:05+0200] Now wire into lesson page:
+[2026-05-09T01:57:28+0200] Good. `progressKey` and `onComplete` are available. Now let me write the Widget tests:
+[2026-05-09T01:57:43+0200] Now let me run typecheck and tests to find issues:
+[2026-05-09T01:57:53+0200] Typecheck passes. Let me run tests:
+[2026-05-09T01:58:12+0200] All tests pass (952). Now let's also verify lint:
+[2026-05-09T01:58:39+0200] Let me check current errors are preexisting. Run lint with focus on new files:
+[2026-05-09T01:58:55+0200] Only the two warnings I noted. Let me fix:
+[2026-05-09T01:59:21+0200] No lint issues on my files. Now create the fixture and seed data and verify with playwright:
+[2026-05-09T01:59:45+0200] Now check if there's a dev server already running, otherwise spin one up:
+[2026-05-09T02:00:14+0200] Dev server up. Now write the playwright test:
+[2026-05-09T02:01:27+0200] Patch shape uses `SectionStateSchema` directly, so my new `score` field is accepted. Now let me update prd.json + progress.txt and commit:
+[2026-05-09T02:01:37+0200] Now append progress log:
+[2026-05-09T02:02:25+0200] Now stage and commit:
+[2026-05-09T02:03:05+0200] Done. Commit `7e65df3` lands the TranscriptCloze widget with `passes: true`.
+
+**Summary:**
+- `src/lib/widgets/transcriptTokenize.ts` — whitespace + surrounding-punct tokenizer + `answersMatch` helper, both unit-tested.
+- `src/widgets/TranscriptCloze/{schema,TranscriptClozeWidget,TranscriptClozeEditor,Widget.test}.ts(x)` — schema with `wordIndex < tokens.length` + duplicate guards; widget reuses `AudioPlayerWidget`, renders inputs whose width = `answer.length` ch, grades green/red on Submit with correct answer shown beneath wrong ones, Try again resets, score `X/N correct` persists via `PATCH /api/progress`.
+- `SectionSchema` + `SectionStateSchema` (optional `score: { correct, total }`) + 5 wiring points: lesson.ts, build.ts, registry.ts, tokens.css, lesson page (SectionRenderer + WidgetEditPanel).
+- Smoke fixture at `courses/transcript-cloze-test/`; playwright verified 2/2 (correct), 1/2 (partial w/ "quick" shown beneath "fast"), and Try-again reset. Screenshots at `/tmp/us-156-{01-04}.png`.
+- 952/952 tests pass; typecheck + lint clean on new files.
+[2026-05-09T02:03:05+0200] [result success turns=107 cost=$8.89323075] Done. Commit `7e65df3` lands the TranscriptCloze widget with `passes: true`.
+
+**Summary:**
+- `src/lib/widgets/transcriptTokenize.ts` — whitespace + surrounding-punct tokenizer + `answersMatch` helper, both unit-tested.
+- `src/widgets/TranscriptCloze/{schema,TranscriptClozeWidget,TranscriptClozeEditor,Widget.test}.ts(x)` — schema with `wordIndex < tokens.length` + duplicate guards; widget reuses `AudioPlayerWidget`, renders inputs whose width = `answer.length` ch, grades green/red on Submit with correct answer shown beneath wrong ones, Try again resets, score `X/N correct` persists via `PATCH /api/progress`.
+- `SectionSchema` + `SectionStateSchema` (optional `score: { correct, total }`) + 5 wiring points: lesson.ts, build.ts, registry.ts, tokens.css, lesson page (SectionRenderer + WidgetEditPanel).
+- Smoke fixture at `courses/transcript-cloze-test/`; playwright verified 2/2 (correct), 1/2 (partial w/ "quick" shown beneath "fast"), and Try-again reset. Screenshots at `/tmp/us-156-{01-04}.png`.
+- 952/952 tests pass; typecheck + lint clean on new files.
