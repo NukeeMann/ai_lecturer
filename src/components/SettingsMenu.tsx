@@ -20,11 +20,15 @@ type ThemePref = 'light' | 'dark' | 'sunset' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
 type Accent = 'default' | 'black' | 'indigo' | 'terracotta' | 'emerald';
 type FontFamily = 'geist' | 'ibm-plex' | 'source-serif';
+type SunsetVariant = 'A' | 'B' | 'C';
 
 export const THEME_STORAGE_KEY = 'aiLecturer.theme';
 export const DENSITY_STORAGE_KEY = 'aiLecturer.density';
 export const FONT_STORAGE_KEY = 'aiLecturer.font';
 export const TEXT_SCALE_STORAGE_KEY = 'aiLecturer.textScale';
+export const SUNSET_VARIANT_STORAGE_KEY = 'aiLecturer.sunsetVariant';
+// Ship-first default per US-162 research note (Candidate A "Ember Drive").
+export const SUNSET_VARIANT_DEFAULT: SunsetVariant = 'A';
 
 export const TEXT_SCALE_MIN = 0.8;
 export const TEXT_SCALE_MAX = 1.4;
@@ -103,6 +107,17 @@ function readFont(): FontFamily {
   return 'geist';
 }
 
+function readSunsetVariant(): SunsetVariant {
+  if (typeof window === 'undefined') return SUNSET_VARIANT_DEFAULT;
+  try {
+    const v = window.localStorage.getItem(SUNSET_VARIANT_STORAGE_KEY);
+    if (v === 'A' || v === 'B' || v === 'C') return v;
+  } catch {
+    // localStorage may be unavailable; fall through to default.
+  }
+  return SUNSET_VARIANT_DEFAULT;
+}
+
 function clampTextScale(n: number): number {
   if (!Number.isFinite(n)) return TEXT_SCALE_DEFAULT;
   if (n < TEXT_SCALE_MIN) return TEXT_SCALE_MIN;
@@ -154,6 +169,11 @@ function applyFont(f: FontFamily): void {
   document.documentElement.setAttribute('data-font', f);
 }
 
+function applySunsetVariant(v: SunsetVariant): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.setAttribute('data-sunset-variant', v);
+}
+
 const THEME_OPTIONS: { value: ThemePref; label: string }[] = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
@@ -171,6 +191,12 @@ const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
   { value: 'geist', label: 'Geist' },
   { value: 'ibm-plex', label: 'IBM Plex Sans' },
   { value: 'source-serif', label: 'Source Serif' },
+];
+
+const SUNSET_VARIANT_OPTIONS: { value: SunsetVariant; label: string }[] = [
+  { value: 'A', label: 'A — Ember Drive' },
+  { value: 'B', label: 'B — Magenta Dusk' },
+  { value: 'C', label: 'C — Coastal Sundown' },
 ];
 
 const ACCENT_OPTIONS: { value: Accent; label: string }[] = [
@@ -273,6 +299,8 @@ export function SettingsMenu({
   const [density, setDensity] = useState<Density>('comfortable');
   const [font, setFont] = useState<FontFamily>('geist');
   const [textScale, setTextScale] = useState<number>(TEXT_SCALE_DEFAULT);
+  const [sunsetVariant, setSunsetVariant] =
+    useState<SunsetVariant>(SUNSET_VARIANT_DEFAULT);
   const [accent, setAccent] = useState<Accent>(
     courseDefaultAccent ?? 'default',
   );
@@ -290,6 +318,8 @@ export function SettingsMenu({
     setFont(readFont());
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setTextScale(readTextScale());
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSunsetVariant(readSunsetVariant());
   }, []);
 
   // Resolve the visible accent selection from override + course default. Runs
@@ -310,6 +340,7 @@ export function SettingsMenu({
       setDensity(readDensity());
       setFont(readFont());
       setTextScale(readTextScale());
+      setSunsetVariant(readSunsetVariant());
       if (courseSlug) {
         const override = readAccentOverride(courseSlug);
         setAccent(override ?? courseDefaultAccent ?? 'default');
@@ -415,6 +446,17 @@ export function SettingsMenu({
     window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
   }, []);
 
+  const onSunsetVariantSelect = useCallback((next: SunsetVariant) => {
+    try {
+      window.localStorage.setItem(SUNSET_VARIANT_STORAGE_KEY, next);
+    } catch {
+      // localStorage unavailable; in-memory selection still works.
+    }
+    applySunsetVariant(next);
+    setSunsetVariant(next);
+    window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+  }, []);
+
   const onAccentSelect = useCallback(
     (next: Accent) => {
       if (!courseSlug) return;
@@ -461,6 +503,15 @@ export function SettingsMenu({
             onSelect={onThemeSelect}
             testIdPrefix="settings-theme"
           />
+          {theme === 'sunset' ? (
+            <SettingsGroup
+              label="Sunset variant"
+              options={SUNSET_VARIANT_OPTIONS}
+              value={sunsetVariant}
+              onSelect={onSunsetVariantSelect}
+              testIdPrefix="settings-sunset-variant"
+            />
+          ) : null}
           <SettingsGroup
             label="Density"
             options={DENSITY_OPTIONS}
