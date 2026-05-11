@@ -231,6 +231,12 @@ describe('LessonSchema + SectionSchema', () => {
           blanks: [{ wordIndex: 1, answer: 'quick' }],
         },
       },
+      {
+        id: 's-stt',
+        title: 't',
+        type: 'sttDemo',
+        data: { maxDurationSeconds: 15 },
+      },
     ];
     for (const section of cases) {
       expect(() => SectionSchema.parse(section)).not.toThrow();
@@ -572,6 +578,38 @@ describe('Per-widget data schemas', () => {
           transcript: 'one two three',
           blanks: [{ wordIndex: 0, answer: 'one' }],
         },
+      }),
+    ).toThrow();
+  });
+
+  it('SttDemoSection: discriminated union accepts type=sttDemo with defaults (US-159)', () => {
+    const parsed = SectionSchema.parse({
+      id: 's',
+      title: 't',
+      type: 'sttDemo',
+      data: {},
+    });
+    expect(parsed.type).toBe('sttDemo');
+    if (parsed.type === 'sttDemo') {
+      expect(parsed.data.maxDurationSeconds).toBe(10);
+    }
+  });
+
+  it('SttDemoSection: rejects maxDurationSeconds out of [1, 60] (US-159)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'sttDemo',
+        data: { maxDurationSeconds: 0 },
+      }),
+    ).toThrow();
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'sttDemo',
+        data: { maxDurationSeconds: 61 },
       }),
     ).toThrow();
   });

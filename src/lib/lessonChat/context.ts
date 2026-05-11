@@ -152,6 +152,13 @@ function serializeSectionBody(section: Section): string {
       parts.push(`Blanks:\n${blanks}`);
       return parts.join('\n');
     }
+    case 'sttDemo': {
+      const parts: string[] = [
+        `STT Demo (max ${section.data.maxDurationSeconds}s)`,
+      ];
+      if (section.data.prompt) parts.push(`Prompt: ${section.data.prompt}`);
+      return parts.join('\n');
+    }
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {
