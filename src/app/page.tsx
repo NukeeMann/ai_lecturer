@@ -13,6 +13,7 @@ import { useRouter } from 'next/navigation';
 import {
   ArrowRight,
   BookOpen,
+  Check,
   MoreHorizontal,
   Plus,
   Search,
@@ -353,6 +354,17 @@ const popoverDividerStyle: CSSProperties = {
   height: 1,
   margin: '4px 0',
   background: 'var(--border)',
+};
+
+// US-161 — invisible same-width slot for non-selected move-target menu items.
+// The selected entry renders a 14×14 lucide `Check` glyph; non-selected entries
+// reserve the identical 14px column so the menu's text column doesn't jitter
+// horizontally as the user opens the menu on different cards.
+const moveTargetCheckSlotStyle: CSSProperties = {
+  display: 'inline-block',
+  width: 14,
+  height: 14,
+  flexShrink: 0,
 };
 
 // ------- subcomponents --------------------------------------------------------
@@ -930,6 +942,11 @@ function CourseCardWithMenu({
             style={{ ...popoverItemStyle, color: 'var(--text-tertiary)' }}
             disabled={sourceCollectionId === null}
           >
+            {sourceCollectionId === null ? (
+              <Check size={14} strokeWidth={2} aria-hidden />
+            ) : (
+              <span aria-hidden style={moveTargetCheckSlotStyle} />
+            )}
             None
           </button>
           {collections.map((c) => (
@@ -947,6 +964,11 @@ function CourseCardWithMenu({
               style={popoverItemStyle}
               disabled={sourceCollectionId === c.id}
             >
+              {sourceCollectionId === c.id ? (
+                <Check size={14} strokeWidth={2} aria-hidden />
+              ) : (
+                <span aria-hidden style={moveTargetCheckSlotStyle} />
+              )}
               {c.name}
             </button>
           ))}
