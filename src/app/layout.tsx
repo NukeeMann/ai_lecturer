@@ -31,11 +31,13 @@ export const metadata: Metadata = {
 // localStorage['aiLecturer.density'] (compact|comfortable|spacious),
 // localStorage['aiLecturer.font'] (geist|ibm-plex|source-serif),
 // localStorage['aiLecturer.textScale'] (float clamped to [0.8, 1.4] applied as
-// inline style --text-scale), and — when on a /courses/<slug>/... route —
-// localStorage['aiLecturer.accent.<slug>'] for any user accent override
-// (course defaults declared in course.json apply later via the lesson page
-// once the JSON loads).
-const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark'||s==='sunset')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}var f=localStorage.getItem('aiLecturer.font');if(f==='geist'||f==='ibm-plex'||f==='source-serif'){d.setAttribute('data-font',f);}var ts=localStorage.getItem('aiLecturer.textScale');if(ts!==null){var n=parseFloat(ts);if(isFinite(n)){if(n<0.8){n=0.8;}else if(n>1.4){n=1.4;}d.style.setProperty('--text-scale',String(n));}}var m=location.pathname.match(/^\\/courses\\/([^\\/]+)/);if(m){var a=localStorage.getItem('aiLecturer.accent.'+m[1]);if(a==='default'||a==='black'||a==='indigo'||a==='terracotta'||a==='emerald'){d.setAttribute('data-accent',a);}}}catch(e){}})();`;
+// inline style --text-scale),
+// localStorage['aiLecturer.sunsetVariant'] (A|B|C; missing falls back to A —
+// the ship-first default per US-162 research note), and — when on a
+// /courses/<slug>/... route — localStorage['aiLecturer.accent.<slug>'] for
+// any user accent override (course defaults declared in course.json apply
+// later via the lesson page once the JSON loads).
+const themeBootstrap = `(function(){try{var d=document.documentElement;var s=localStorage.getItem('aiLecturer.theme');var t=(s==='light'||s==='dark'||s==='sunset')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');d.setAttribute('data-theme',t);var ds=localStorage.getItem('aiLecturer.density');if(ds==='compact'||ds==='comfortable'||ds==='spacious'){d.setAttribute('data-density',ds);}var f=localStorage.getItem('aiLecturer.font');if(f==='geist'||f==='ibm-plex'||f==='source-serif'){d.setAttribute('data-font',f);}var ts=localStorage.getItem('aiLecturer.textScale');if(ts!==null){var n=parseFloat(ts);if(isFinite(n)){if(n<0.8){n=0.8;}else if(n>1.4){n=1.4;}d.style.setProperty('--text-scale',String(n));}}var sv=localStorage.getItem('aiLecturer.sunsetVariant');d.setAttribute('data-sunset-variant',(sv==='A'||sv==='B'||sv==='C')?sv:'A');var m=location.pathname.match(/^\\/courses\\/([^\\/]+)/);if(m){var a=localStorage.getItem('aiLecturer.accent.'+m[1]);if(a==='default'||a==='black'||a==='indigo'||a==='terracotta'||a==='emerald'){d.setAttribute('data-accent',a);}}}catch(e){}})();`;
 
 export default function RootLayout({
   children,
@@ -49,6 +51,7 @@ export default function RootLayout({
       data-accent="default"
       data-density="comfortable"
       data-font="geist"
+      data-sunset-variant="A"
       className={`${GeistSans.variable} ${GeistMono.variable} ${ibmPlexSans.variable} ${sourceSerif.variable} h-full antialiased`}
       suppressHydrationWarning
     >
