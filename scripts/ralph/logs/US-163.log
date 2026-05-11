@@ -1,0 +1,31 @@
+[2026-05-11T17:35:14+0200] [rate_limit five_hour status=allowed]
+[2026-05-11T17:36:24+0200] Now I'll insert the three variant blocks after the baseline sunset block.
+[2026-05-11T17:37:05+0200] Now SettingsMenu — add a sunset variant sub-control.
+[2026-05-11T17:38:01+0200] Now the rendering — add the sub-control under the Theme group, visible only when theme is sunset.
+[2026-05-11T17:38:39+0200] Now run typecheck and tests.
+[2026-05-11T17:38:55+0200] Typecheck clean. Now tests.
+[2026-05-11T17:39:03+0200] All 998 tests pass. Now browser verification with playwright.
+[2026-05-11T17:40:36+0200] The variant blocks need to come AFTER the accent variants since both have the same specificity. Let me check the structure and move them.
+[2026-05-11T17:41:47+0200] Now add the variant blocks AFTER the accent variants so they win source-order against `[data-theme="sunset"][data-accent="..."]`.
+[2026-05-11T17:42:36+0200] All AC verified. Screenshots are at `/tmp/us163-variant-{A,B,C}.png`.
+[2026-05-11T17:42:48+0200] Re-run tests to confirm tokens.css changes didn't break anything.
+[2026-05-11T17:43:05+0200] That's the documented pre-existing flake. Let me clean and re-run.
+[2026-05-11T17:43:29+0200] All 998 tests pass. Now mark US-163 done in prd.json.
+[2026-05-11T17:43:39+0200] Now append to progress.txt.
+[2026-05-11T17:44:10+0200] Now stage and commit.
+[2026-05-11T17:44:52+0200] US-163 done. Commit `1e92b34` landed on `ralph/us-163` with `passes: true` for US-163 in prd.json.
+
+**Summary:**
+- `src/styles/tokens.css`: three new variant blocks (`[data-sunset-variant="A|B|C"]`) placed *after* the accent variants so their `--accent` wins via source order (first attempt placed them before — all three variants reported the same blue `#4f8aff` because `[data-theme="sunset"][data-accent="default"]` won the equal-specificity tie). Baseline sunset block untouched.
+- `src/components/SettingsMenu.tsx`: new `SunsetVariant` type, `SUNSET_VARIANT_STORAGE_KEY`, `SUNSET_VARIANT_DEFAULT='A'`, and a `SettingsGroup` rendered only when `theme === 'sunset'`.
+- `src/app/layout.tsx`: boot script reads `aiLecturer.sunsetVariant`, falls back to `'A'` on missing/invalid; static `<html>` gets `data-sunset-variant="A"` for SSR parity.
+- Typecheck clean. Tests 998/998 (after wiping the documented `extendApply.test.ts` tmpdir flake).
+- Playwright verified: three distinct `--accent` values (`#ff8c2e` / `#f04a8b` / `#ff8a4c`), default `A` on clean install, choice persists across reload. Screenshots at `/tmp/us163-variant-{A,B,C}.png`.
+[2026-05-11T17:44:52+0200] [result success turns=64 cost=$5.332081250000002] US-163 done. Commit `1e92b34` landed on `ralph/us-163` with `passes: true` for US-163 in prd.json.
+
+**Summary:**
+- `src/styles/tokens.css`: three new variant blocks (`[data-sunset-variant="A|B|C"]`) placed *after* the accent variants so their `--accent` wins via source order (first attempt placed them before — all three variants reported the same blue `#4f8aff` because `[data-theme="sunset"][data-accent="default"]` won the equal-specificity tie). Baseline sunset block untouched.
+- `src/components/SettingsMenu.tsx`: new `SunsetVariant` type, `SUNSET_VARIANT_STORAGE_KEY`, `SUNSET_VARIANT_DEFAULT='A'`, and a `SettingsGroup` rendered only when `theme === 'sunset'`.
+- `src/app/layout.tsx`: boot script reads `aiLecturer.sunsetVariant`, falls back to `'A'` on missing/invalid; static `<html>` gets `data-sunset-variant="A"` for SSR parity.
+- Typecheck clean. Tests 998/998 (after wiping the documented `extendApply.test.ts` tmpdir flake).
+- Playwright verified: three distinct `--accent` values (`#ff8c2e` / `#f04a8b` / `#ff8a4c`), default `A` on clean install, choice persists across reload. Screenshots at `/tmp/us163-variant-{A,B,C}.png`.
