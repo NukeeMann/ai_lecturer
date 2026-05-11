@@ -1,0 +1,49 @@
+[2026-05-11T16:58:54+0200] [rate_limit five_hour status=allowed]
+[2026-05-11T17:02:22+0200] Now let me check the lesson page editor and renderer:
+[2026-05-11T17:03:35+0200] Now let me look at the lesson page imports to understand the editor wiring:
+[2026-05-11T17:03:39+0200] Now let me check the active-run/inflight tracking for STT (similar to TTS):
+[2026-05-11T17:03:44+0200] Now I have enough context to plan. Let me check the SectionRenderer signature:
+[2026-05-11T17:03:58+0200] Now I have enough context. Let me create the SttDemo widget files.
+[2026-05-11T17:04:07+0200] Now the runtime widget component:
+[2026-05-11T17:04:53+0200] Now the editor:
+[2026-05-11T17:05:12+0200] Now the schema test:
+[2026-05-11T17:05:21+0200] Now the upload route. First let me check how the route should handle the audio and what dir to write to:
+[2026-05-11T17:05:29+0200] Now let me create the upload route:
+[2026-05-11T17:05:55+0200] Now let me add tokens.css entries (light, dark, sunset):
+[2026-05-11T17:06:09+0200] Now register in `src/widgets/registry.ts`:
+[2026-05-11T17:06:30+0200] Now update `src/lib/schemas/lesson.ts`:
+[2026-05-11T17:06:44+0200] Also need to add to SectionSchemaWithSentinel:
+[2026-05-11T17:06:49+0200] Now update `src/widgets/schemas/build.ts`:
+[2026-05-11T17:06:59+0200] Now update `src/lib/lessonChat/context.ts`:
+[2026-05-11T17:07:07+0200] Now the lesson page editor + renderer wiring:
+[2026-05-11T17:07:27+0200] Now add tests to schemas.test.ts:
+[2026-05-11T17:07:33+0200] Now let me add focused SttDemo schema tests in `schemas.test.ts`:
+[2026-05-11T17:07:45+0200] Now let me check that danger CSS tokens exist and check whether the build:schemas script needs to be run:
+[2026-05-11T17:07:49+0200] Good. Now run build:schemas:
+[2026-05-11T17:08:11+0200] Typecheck passes. Let me also run lint and tests:
+[2026-05-11T17:08:41+0200] No lint issues from my files. Now let me run tests:
+[2026-05-11T17:08:49+0200] All 998 tests pass. Now let me run the browser test with playwright.
+[2026-05-11T17:09:03+0200] Need to start a dev server:
+[2026-05-11T17:09:12+0200] Now I need to create a fixture course with a sttDemo section:
+[2026-05-11T17:09:37+0200] Now let me check how playwright tests pass chromium launch args:
+[2026-05-11T17:10:24+0200] The browser test passed: /api/stt/upload was called, the route returned 503 (whisper.cpp not installed in this env), and the widget rendered the `stt-not-installed` inline error with the setup-stt.sh suggestion — exactly the AC-specified outcome.
+
+Let me also verify the recording indicator was visible mid-recording. Actually the test did wait for `stt-demo-recording-indicator` selector — that succeeded. Now let me flip the PRD and commit.
+[2026-05-11T17:10:53+0200] Now append progress.txt:
+[2026-05-11T17:11:24+0200] Now let me commit, but first check git status:
+[2026-05-11T17:12:20+0200] US-159 done. Commit `9cf2a09` is in HEAD with `passes: true` for US-159.
+
+Summary:
+- New `sttDemo` widget (`src/widgets/SttDemo/`): Zod schema with `maxDurationSeconds` (default 10, clamped to [1, 60]), runtime component that records via `MediaRecorder` with a click-to-toggle button + animated red-dot + `mm:ss` timer + auto-stop at the configured cap, and an editor for the duration cap.
+- New sibling route `POST /api/stt/upload` that takes the browser blob (multipart, field `audio`), writes it under `~/.ai-lecturer/stt-uploads/`, runs `processSttRequest`, cleans up, and returns the same response shape as `/api/stt`. `/api/stt`'s own contract is untouched.
+- Inline error handling for the three AC failure modes: 503 `stt-not-installed` (with `scripts/setup-stt.sh` hint), `NotAllowedError`/`SecurityError` mic-permission denial, 500 spawn failure.
+- All 5 widget-registration wiring points landed (tokens.css light/dark/sunset, schema build, registry with `Mic` icon, `SectionSchema` discriminated-union arm in both Lesson schemas, lesson page editor + renderer branches), plus the exhaustive arm in `lessonChat/context.ts`.
+- Typecheck clean. 998/998 tests pass. Playwright verification (chromium with `--use-fake-ui-for-media-stream` + `--use-fake-device-for-media-stream`, mic permission granted) drove a full record→stop cycle and asserted `/api/stt/upload` was called; the route returned 503 in this env and the widget rendered the `not-installed` inline error referencing `setup-stt.sh` — the AC-permitted outcome.
+[2026-05-11T17:12:20+0200] [result success turns=125 cost=$9.865454249999999] US-159 done. Commit `9cf2a09` is in HEAD with `passes: true` for US-159.
+
+Summary:
+- New `sttDemo` widget (`src/widgets/SttDemo/`): Zod schema with `maxDurationSeconds` (default 10, clamped to [1, 60]), runtime component that records via `MediaRecorder` with a click-to-toggle button + animated red-dot + `mm:ss` timer + auto-stop at the configured cap, and an editor for the duration cap.
+- New sibling route `POST /api/stt/upload` that takes the browser blob (multipart, field `audio`), writes it under `~/.ai-lecturer/stt-uploads/`, runs `processSttRequest`, cleans up, and returns the same response shape as `/api/stt`. `/api/stt`'s own contract is untouched.
+- Inline error handling for the three AC failure modes: 503 `stt-not-installed` (with `scripts/setup-stt.sh` hint), `NotAllowedError`/`SecurityError` mic-permission denial, 500 spawn failure.
+- All 5 widget-registration wiring points landed (tokens.css light/dark/sunset, schema build, registry with `Mic` icon, `SectionSchema` discriminated-union arm in both Lesson schemas, lesson page editor + renderer branches), plus the exhaustive arm in `lessonChat/context.ts`.
+- Typecheck clean. 998/998 tests pass. Playwright verification (chromium with `--use-fake-ui-for-media-stream` + `--use-fake-device-for-media-stream`, mic permission granted) drove a full record→stop cycle and asserted `/api/stt/upload` was called; the route returned 503 in this env and the widget rendered the `not-installed` inline error referencing `setup-stt.sh` — the AC-permitted outcome.
