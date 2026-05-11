@@ -237,6 +237,12 @@ describe('LessonSchema + SectionSchema', () => {
         type: 'sttDemo',
         data: { maxDurationSeconds: 15 },
       },
+      {
+        id: 's-tts-demo',
+        title: 't',
+        type: 'ttsDemo',
+        data: { defaultText: 'Hello world.' },
+      },
     ];
     for (const section of cases) {
       expect(() => SectionSchema.parse(section)).not.toThrow();
@@ -918,6 +924,44 @@ describe('Per-widget data schemas', () => {
         prompt: 'p',
         items: [{ id: '', label: 'A' }],
         zones: [{ id: 'z', label: 'Z', accepts: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it('TtsDemoSection: discriminated union accepts type=ttsDemo with empty data (US-158)', () => {
+    const parsed = SectionSchema.parse({
+      id: 's',
+      title: 't',
+      type: 'ttsDemo',
+      data: {},
+    });
+    expect(parsed.type).toBe('ttsDemo');
+    if (parsed.type === 'ttsDemo') {
+      expect(parsed.data.defaultText).toBeUndefined();
+      expect(parsed.data.placeholderText).toBeUndefined();
+    }
+  });
+
+  it('TtsDemoSection: discriminated union accepts defaultText + placeholderText (US-158)', () => {
+    const parsed = SectionSchema.parse({
+      id: 's',
+      title: 't',
+      type: 'ttsDemo',
+      data: { defaultText: 'Hello.', placeholderText: 'Type…' },
+    });
+    if (parsed.type === 'ttsDemo') {
+      expect(parsed.data.defaultText).toBe('Hello.');
+      expect(parsed.data.placeholderText).toBe('Type…');
+    }
+  });
+
+  it('TtsDemoSection: rejects defaultText longer than 2000 chars (US-158)', () => {
+    expect(() =>
+      SectionSchema.parse({
+        id: 's',
+        title: 't',
+        type: 'ttsDemo',
+        data: { defaultText: 'a'.repeat(2001) },
       }),
     ).toThrow();
   });

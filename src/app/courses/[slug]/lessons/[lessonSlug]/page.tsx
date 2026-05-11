@@ -88,6 +88,8 @@ import { AudioPlayerEditor } from '@/widgets/AudioPlayer/AudioPlayerEditor';
 import { AudioPlayerWidget } from '@/widgets/AudioPlayer/AudioPlayerWidget';
 import { SttDemoEditor } from '@/widgets/SttDemo/SttDemoEditor';
 import { SttDemoWidget } from '@/widgets/SttDemo/SttDemoWidget';
+import { TtsDemoEditor } from '@/widgets/TtsDemo/TtsDemoEditor';
+import { TtsDemoWidget } from '@/widgets/TtsDemo/TtsDemoWidget';
 import { TranscriptClozeEditor } from '@/widgets/TranscriptCloze/TranscriptClozeEditor';
 import { TranscriptClozeWidget } from '@/widgets/TranscriptCloze/TranscriptClozeWidget';
 import { Widget, type WidgetStatus } from '@/widgets/Widget';
@@ -1701,6 +1703,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'sttDemo' && (
         <SttDemoEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'ttsDemo' && (
+        <TtsDemoEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3598,6 +3609,14 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit STT demo',
       () => onOpenPanel(section.id),
       'stt-demo-edit-btn',
+    );
+  } else if (section.type === 'ttsDemo') {
+    body = <TtsDemoWidget data={section.data} />;
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit TTS demo',
+      () => onOpenPanel(section.id),
+      'tts-demo-edit-btn',
     );
   } else if (section.type === 'theory') {
     if (editing) {

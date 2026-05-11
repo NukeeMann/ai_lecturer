@@ -159,6 +159,13 @@ function serializeSectionBody(section: Section): string {
       if (section.data.prompt) parts.push(`Prompt: ${section.data.prompt}`);
       return parts.join('\n');
     }
+    case 'ttsDemo': {
+      const parts: string[] = ['TTS demo widget (runtime synthesis via /api/tts).'];
+      if (section.data.defaultText) parts.push(`Default text: ${section.data.defaultText}`);
+      if (section.data.placeholderText)
+        parts.push(`Placeholder: ${section.data.placeholderText}`);
+      return parts.join('\n');
+    }
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {

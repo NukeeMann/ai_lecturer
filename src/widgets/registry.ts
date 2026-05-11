@@ -17,10 +17,12 @@ import {
   Target,
   Terminal,
   Video as VideoIcon,
+  Volume2,
 } from 'lucide-react';
 
 import { AudioPlayerWidget } from './AudioPlayer/AudioPlayerWidget';
 import { TranscriptClozeWidget } from './TranscriptCloze/TranscriptClozeWidget';
+import { TtsDemoWidget } from './TtsDemo/TtsDemoWidget';
 import { CodeWidget } from './Code/CodeWidget';
 import { CodeClozeWidget } from './CodeCloze/CodeClozeWidget';
 import { CustomPlaceholder } from './Custom/CustomPlaceholder';
@@ -52,6 +54,7 @@ export type WidgetType =
   | 'audioPlayer'
   | 'transcriptCloze'
   | 'sttDemo'
+  | 'ttsDemo'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -151,6 +154,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'STT Demo',
     icon: Mic,
     accentVar: '--widget-stt-demo',
+  },
+  ttsDemo: {
+    component: TtsDemoWidget as ComponentType<{ data?: unknown }>,
+    label: 'TTS Demo',
+    icon: Volume2,
+    accentVar: '--widget-tts-demo',
   },
   custom: {
     component: CustomPlaceholder,

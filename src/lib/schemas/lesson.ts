@@ -14,6 +14,7 @@ import { VideoDataSchema } from '@/widgets/Video/schema';
 import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
+import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -148,6 +149,12 @@ export const SttDemoSectionSchema = z.object({
   data: SttDemoDataSchema,
 });
 
+export const TtsDemoSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('ttsDemo'),
+  data: TtsDemoDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -170,6 +177,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   AudioPlayerSectionSchema,
   TranscriptClozeSectionSchema,
   SttDemoSectionSchema,
+  TtsDemoSectionSchema,
   CustomSectionSchema,
 ]);
 
@@ -238,6 +246,7 @@ export const SectionSchemaWithSentinel = z.discriminatedUnion('type', [
   AudioPlayerSectionWithSentinelSchema,
   TranscriptClozeSectionWithSentinelSchema,
   SttDemoSectionSchema,
+  TtsDemoSectionSchema,
   CustomSectionSchema,
 ]);
 

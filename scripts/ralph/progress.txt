@@ -136,3 +136,39 @@ Previous log archived to: archive/progress-2026-05-11-1643.txt
   - For boot-script defaults like the sunset variant, set the default as an `else` branch on the same `setAttribute` call rather than skipping the attribute when no localStorage entry exists. Skipping leaves the attribute absent (and CSS falls back to the baseline block) instead of applying the explicit default — which makes "fresh install" and "stale install with unknown value" indistinguishable, and contradicts an AC that says the default must be "explicit, not arbitrary".
   - The pre-existing `extendApply.test.ts` tmpdir-cleanup race leaves `/tmp/ai-lecturer-apply-*` dirs behind on failure. Subsequent runs sometimes fail again because parallel test setup competes for the same tmpdir prefix. `rm -rf /tmp/ai-lecturer-apply-*` then re-running the suite consistently returns 998/998 here — same recipe US-160's notes mention. Don't conflate this flake with story-introduced breakage.
 ---
+
+
+## 2026-05-11 - US-158
+- TtsDemo widget: editable textarea → POST /api/tts → fetch GET /api/tts/audio/<path> → play returned WAV inline via <audio>.
+- Files added:
+  - src/widgets/TtsDemo/schema.ts (TtsDemoDataSchema: optional defaultText ≤2000 chars + optional placeholderText)
+  - src/widgets/TtsDemo/TtsDemoWidget.tsx ('use client'; textarea seeded with defaultText, Generate audio button w/ Loader2 spinner, inline error UI w/ 503 setup hint, per-instance Map<text, blobUrl> cache revoked on unmount, replays cached blob on re-click)
+  - src/widgets/TtsDemo/TtsDemoEditor.tsx (defaultText textarea + placeholderText input + sources)
+  - src/widgets/TtsDemo/Widget.test.ts (7 schema tests: empty, defaultText-only, placeholder-only, both, length cap, boundary, placeholder uncapped)
+  - src/widgets/schemas/tts-demo.json (committed JSON-schema artifact from build:schemas)
+  - src/app/api/tts/audio/[...path]/route.ts (GET handler that streams from ~/.ai-lecturer/tts-cache/; resolves against ttsCacheDir(), refuses any path that escapes; accepts both `tts-cache/<file>` and `<file>` forms)
+  - courses/tts-demo-fixture/{course.json,lessons/tts-demo.json} (smoke fixture)
+- Files edited:
+  - src/widgets/registry.ts (ttsDemo entry, Volume2 icon, --widget-tts-demo accent; WidgetType union extended)
+  - src/widgets/schemas/build.ts (registered tts-demo)
+  - src/lib/schemas/lesson.ts (TtsDemoSectionSchema added to SectionSchema + SectionSchemaWithSentinel)
+  - src/lib/lessonChat/context.ts (ttsDemo case in section-context formatter — required by the exhaustive `_exhaustive: never` check)
+  - src/lib/schemas/schemas.test.ts (added ttsDemo to section-cases array + 3 dedicated TtsDemoSection tests)
+  - src/styles/tokens.css (--widget-tts-demo in light/dark/sunset)
+  - src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx (WidgetEditPanel arm for ttsDemo + SectionRenderer branch with pencil button)
+  - scripts/ralph/prd.json (US-158 passes:true)
+- Typecheck: passes. Tests: 1000/1000 pass (was 988/988 — added 7 widget schema + 3 lesson schema + 2 fixture-derived section discriminated-union tests).
+- Lint: clean for changed files.
+- Browser verification (playwright-skill): /tmp/playwright-test-US-158.js. Two runs:
+  - **TTS not installed (port 3200)**: widget mounts, textarea seeded with `defaultText="Hello world from Coqui XTTS."`, clicking Generate triggers POST `/api/tts` → 503 `{ error: 'tts-not-installed', message: 'Run scripts/setup-tts.sh first.' }`. Widget renders `[data-testid="tts-demo-error"]` with `data-error-status="503"` and the setup-hint sub-block referencing `scripts/setup-tts.sh`. Screenshot `/tmp/us-158-02-error.png`.
+  - **TTS mocked (port 3201, AI_LECTURER_TTS_BIN=/tmp/fake-tts.sh writes a 44-byte WAV)**: same textarea + Generate flow, but now `<audio data-testid="tts-demo-audio">` mounts with a `blob:http:...` src. Re-clicking Generate on the same text triggers ZERO additional POSTs to /api/tts (verified by counting `request` events on the page) — confirms the per-instance cache. Screenshot `/tmp/us-158-02-audio-ready.png`.
+  - The only console message at the network layer is the expected `Failed to load resource: 503` notice in the error path; filtered out of the assertion.
+- **Learnings for future iterations:**
+  - **TTS cache audio is not under `courses/`.** The /api/tts POST returns `audioPath` like `tts-cache/<hash>.wav` relative to `AI_LECTURER_HOME` (`~/.ai-lecturer/`), NOT a course-asset path. AudioPlayerWidget's `/api/courses/<slug>/assets/audio/<path>` endpoint can't serve it. The TtsDemo widget needs a separate audio-serving endpoint — added `/api/tts/audio/[...path]/route.ts` which streams from `ttsCacheDir()` and refuses any traversal that escapes the directory. The widget converts the returned `audioPath` into a URL by encoding each path segment and prefixing `/api/tts/audio/`.
+  - **Per-instance client-side audio cache via `Map<text, blobUrl>`.** Implemented as a `useRef(new Map())` so the cache survives re-renders but is local to the component instance. On Generate: check cache first; on miss, POST /api/tts, fetch the returned audioPath as a blob, `URL.createObjectURL(blob)`, store in the Map. The `useEffect(() => () => …revokeObjectURL)` cleanup revokes all blob URLs on unmount. Cache survives across multiple Generates on the same widget instance but is discarded on navigation away — matches AC.
+  - **Mocking Coqui TTS in playwright runs.** A 30-line bash + python3 heredoc script at `/tmp/fake-tts.sh` parses `--out_path` and writes a minimal valid 44-byte RIFF/WAVE header + 0.1s of silence. Pointing `AI_LECTURER_TTS_BIN` at this script gives the API route a successful spawn → WAV file → cache hit cycle without needing Coqui's 1.8GB model download. Useful as a template for any future TTS-dependent UI test.
+  - **Discriminator naming consistent w/ AudioPlayer/TranscriptCloze.** AC said widget id `ttsDemo` (camelCase) — implemented exactly that. JSON-schema artifact is dasherized (`tts-demo.json`) to match the build.ts naming convention for peer widgets.
+  - **The widget MUST NOT use the AUTO_TTS sentinel (US-157).** That pattern is generation-time post-processing only. TtsDemo calls /api/tts at runtime from the browser — completely separate code path.
+  - **`Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set` setter override** is the same React-aware input trick from the slider pattern, but for textareas. Setting `el.value = '…'` directly bypasses React's value tracker; using the native setter + dispatching an `input` event fires the controlled `onChange`. Already in the codebase patterns list but worth re-flagging.
+- **Recovery note (post-cherry-pick on 2026-05-11):** Original commit `af1c287` was orphaned by a botched US-159 merge; rescued via `git cherry-pick af1c287` against current main. Sunset palette gained a third dimension (US-163 variants A/B/C) in the meantime, so `--widget-tts-demo` was added per-variant (A=#5cb8cc, B=#6cb8d6, C=#4faedc) instead of the single sunset block from the original patch. JSON schemas regenerated via `npm run build:schemas`.
+---
