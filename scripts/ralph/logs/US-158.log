@@ -1,0 +1,59 @@
+[2026-05-11T16:43:19+0200] [rate_limit five_hour status=allowed]
+[2026-05-11T16:44:46+0200] Now I have a good picture. Let me check the lesson page wiring to understand the editor branching:
+[2026-05-11T16:44:59+0200] Now let me look at lessonChat context (has exhaustive check):
+[2026-05-11T16:45:07+0200] Now let me check schemas tests, prd.json, and quick references:
+[2026-05-11T16:45:19+0200] Now let me look at the AudioPlayer Widget.test.ts and other widget tests structure:
+[2026-05-11T16:45:30+0200] Let me also look at the prd.json for US-158 to be sure:
+[2026-05-11T16:46:58+0200] Now let me write the schema file:
+[2026-05-11T16:47:04+0200] Now the widget:
+[2026-05-11T16:47:08+0200] Now let me write the TtsDemoWidget:
+[2026-05-11T16:47:43+0200] Let me fix the widget to use a GET endpoint for the audio file, and add the audio-serving route:
+[2026-05-11T16:48:10+0200] Now let's create the audio-serving route. First, let me check the existing assets route for the pattern:
+[2026-05-11T16:48:35+0200] Now the TtsDemoEditor:
+[2026-05-11T16:48:55+0200] Now wire registry, lesson schema, lessonChat context, tokens, schemas/build, and the lesson page. Let me check the EditorForm exports for `inputStyle`:
+[2026-05-11T16:48:58+0200] Good. Now update tokens.css, registry, build.ts, lesson.ts, lessonChat/context.ts, and the lesson page:
+[2026-05-11T16:49:27+0200] Registry — add TtsDemo entry (use `Mic` icon? Let's pick `Volume2`):
+[2026-05-11T16:49:43+0200] Now build.ts (schemas):
+[2026-05-11T16:49:54+0200] Now lesson.ts SectionSchema:
+[2026-05-11T16:50:11+0200] Also update SectionSchemaWithSentinel to include TtsDemo:
+[2026-05-11T16:50:17+0200] Now lessonChat/context.ts (exhaustive arm):
+[2026-05-11T16:50:25+0200] Now the lesson page — wire editor + renderer:
+[2026-05-11T16:50:38+0200] Now the SectionRenderer. Find the renderer branch for transcriptCloze and add ttsDemo after:
+[2026-05-11T16:50:53+0200] Now write the Widget.test.ts for TtsDemo:
+[2026-05-11T16:51:03+0200] Now extend `schemas.test.ts` to add a `ttsDemo` section case and a couple of schema tests:
+[2026-05-11T16:51:08+0200] Let me add a small TtsDemoSection arm to the section-cases array and add focused tests. First locate the `cases` array:
+[2026-05-11T16:51:19+0200] Now add a couple of focused TtsDemo schema tests at the end of "Per-widget data schemas" describe:
+[2026-05-11T16:51:31+0200] Let me also check the end of `LessonSchemaWithSentinel` test block:
+[2026-05-11T16:51:50+0200] Now run `build:schemas` to emit `tts-demo.json`:
+[2026-05-11T16:51:56+0200] Now run typecheck and tests:
+[2026-05-11T16:52:06+0200] Typecheck clean. Now run tests:
+[2026-05-11T16:52:16+0200] 1000/1000 tests passing. Let me also run a quick lint check on the changed files and then proceed with browser verification.
+[2026-05-11T16:52:41+0200] Clean. Now browser verification with playwright-skill.
+[2026-05-11T16:53:01+0200] Let me start the dev server and seed a fixture course:
+[2026-05-11T16:53:28+0200] Let me create a fixture course and start the dev server. First seed the fixture course:
+[2026-05-11T16:53:58+0200] I'm in the playwright-skill dir. Let me cd back to the repo root:
+[2026-05-11T16:54:16+0200] Good, dev server is up on 3200. Now write playwright test:
+[2026-05-11T16:55:10+0200] Need a `summary` on the module:
+[2026-05-11T16:55:23+0200] The browser logs a 503 network resource error which is expected for the error-path outcome. Update the test to filter that out:
+[2026-05-11T16:55:44+0200] Browser verification passes. Let me check screenshots exist and explore an additional smoke check — when there is a successful generation we'd want to validate the audio playback path. We can't easily verify that without TTS installed, but the AC explicitly says either outcome is acceptable. Let me also verify there are no console errors with a totally different page navigation (to confirm the widget mounts cleanly on success path):
+[2026-05-11T16:55:50+0200] Now let me also do a quick test against the success path by mocking the TTS engine. I'll inject a fake binary by setting `AI_LECTURER_TTS_BIN` to a small shell script that writes a fake wav, then restart dev:
+[2026-05-11T16:56:27+0200] Now run the test against port 3201 to verify the success path:
+[2026-05-11T16:56:39+0200] Both happy and 503-error paths verified. Audio element appears, cache prevents re-POST on repeat clicks. Let me also take a final success-state screenshot:
+[2026-05-11T16:56:52+0200] Now flip US-158 passes=true in prd.json, append to progress.txt, and commit. First, modify prd.json:
+[2026-05-11T16:57:06+0200] Append to progress.txt:
+[2026-05-11T16:57:35+0200] Now stop the dev server, then commit:
+[2026-05-11T16:58:10+0200] Commit landed in HEAD with US-158 `passes: true`. Stopping the dev server:
+[2026-05-11T16:58:27+0200] US-158 done. Commit `af1c287` is in HEAD with `passes: true` for US-158.
+
+Summary:
+- New `ttsDemo` widget (`src/widgets/TtsDemo/`): schema, runtime component with seeded textarea + Generate audio button + Loader2 spinner + inline 503/500 error UI + per-instance `Map<text, blobUrl>` cache revoked on unmount, and editor that exposes `defaultText`/`placeholderText`.
+- New `/api/tts/audio/[...path]/route.ts` streams cached WAVs from `~/.ai-lecturer/tts-cache/` (path-traversal guarded), since the existing /api/tts route returns an `audioPath` under the user-state dir rather than under any course's assets.
+- Wired the 5 mandatory widget-registration points: token CSS var (light/dark/sunset), widget schema build entry, `widgetRegistry` entry (Volume2 icon), `SectionSchema` discriminated-union arm, and the lesson page's editor + renderer branches. Also added the matching `lessonChat/context.ts` arm to satisfy the exhaustive `_exhaustive: never` check.
+- Typecheck clean. Tests: 1000/1000. Playwright verification passed in both modes: 503 setup-hint error when TTS is uninstalled, and `blob:` audio src + cache-hit (0 follow-up POSTs) when TTS is mocked via `AI_LECTURER_TTS_BIN=/tmp/fake-tts.sh`.
+[2026-05-11T16:58:27+0200] [result success turns=131 cost=$12.34199550000001] US-158 done. Commit `af1c287` is in HEAD with `passes: true` for US-158.
+
+Summary:
+- New `ttsDemo` widget (`src/widgets/TtsDemo/`): schema, runtime component with seeded textarea + Generate audio button + Loader2 spinner + inline 503/500 error UI + per-instance `Map<text, blobUrl>` cache revoked on unmount, and editor that exposes `defaultText`/`placeholderText`.
+- New `/api/tts/audio/[...path]/route.ts` streams cached WAVs from `~/.ai-lecturer/tts-cache/` (path-traversal guarded), since the existing /api/tts route returns an `audioPath` under the user-state dir rather than under any course's assets.
+- Wired the 5 mandatory widget-registration points: token CSS var (light/dark/sunset), widget schema build entry, `widgetRegistry` entry (Volume2 icon), `SectionSchema` discriminated-union arm, and the lesson page's editor + renderer branches. Also added the matching `lessonChat/context.ts` arm to satisfy the exhaustive `_exhaustive: never` check.
+- Typecheck clean. Tests: 1000/1000. Playwright verification passed in both modes: 503 setup-hint error when TTS is uninstalled, and `blob:` audio src + cache-hit (0 follow-up POSTs) when TTS is mocked via `AI_LECTURER_TTS_BIN=/tmp/fake-tts.sh`.
