@@ -1,0 +1,24 @@
+[2026-05-11T17:12:49+0200] [rate_limit five_hour status=allowed]
+[2026-05-11T17:15:28+0200] Let me check what files from US-158 were dropped, to evaluate restoring TtsDemo as a US-160 prerequisite.
+[2026-05-11T17:15:40+0200] The TtsDemo widget was implemented in commit `af1c287` but the merge into `ralph/us-159` dropped all 18 of its files. Restoring all of that work would effectively re-implement US-158, which violates the "work ONLY on US-160" rule. I'll follow the same fallback the PRD already documents for the US-159-dropped case: include the theory intro + sttDemo section, omit ttsDemo, and flag this deviation explicitly in the commit + progress.
+[2026-05-11T17:16:04+0200] Now I have a clear pattern. Let me create the course and lesson files.
+[2026-05-11T17:16:25+0200] Now add the slug to `DEMO_COURSE_SLUGS` so the first-run seed picks it up.
+[2026-05-11T17:16:49+0200] Typecheck clean. Now tests.
+[2026-05-11T17:17:44+0200] All 998 tests pass. Now browser verification.
+[2026-05-11T17:18:12+0200] The new course is served. Now write the playwright test.
+[2026-05-11T17:20:36+0200] Browser verification passed. Now mark US-160 done and commit.
+[2026-05-11T17:21:23+0200] Now stop the dev server, stage, commit.
+[2026-05-11T17:22:12+0200] US-160 done. Commit `fbeeb49` is in HEAD with `passes: true` for US-160.
+
+Summary:
+- New bundled `courses/tts-stt-test/` course (course.json + lessons/speech-demo.json) with a Markdown theory intro + an `sttDemo` section (default 10s cap).
+- `tts-stt-test` added to `DEMO_COURSE_SLUGS` in `src/app/page.tsx:59` so the first-run seed groups it under the auto-created Widget Demos collection.
+- Typecheck clean; 998/998 tests pass; playwright-verified (cleared `aiLecturer.collectionsSeeded`, polled until seed completed with `tts-stt-test` inside Widget Demos, opened the course → lesson, asserted theory + SttDemo render with zero console errors).
+- **Deviation flagged in commit + progress.txt:** the AC also asks for a `ttsDemo` section, but the TtsDemo widget files were dropped by the US-159 merge resolution (commit 13d2e7d) — `src/widgets/TtsDemo/`, `/api/tts/audio/[...path]/route.ts`, registry/schema/lessonChat entries are all missing on this branch. I applied the same fallback US-160's notes prescribe for the symmetrical US-159-dropped case (keep the course, drop the missing-widget section) rather than re-implementing US-158 inside this story.
+[2026-05-11T17:22:12+0200] [result success turns=85 cost=$4.938535499999999] US-160 done. Commit `fbeeb49` is in HEAD with `passes: true` for US-160.
+
+Summary:
+- New bundled `courses/tts-stt-test/` course (course.json + lessons/speech-demo.json) with a Markdown theory intro + an `sttDemo` section (default 10s cap).
+- `tts-stt-test` added to `DEMO_COURSE_SLUGS` in `src/app/page.tsx:59` so the first-run seed groups it under the auto-created Widget Demos collection.
+- Typecheck clean; 998/998 tests pass; playwright-verified (cleared `aiLecturer.collectionsSeeded`, polled until seed completed with `tts-stt-test` inside Widget Demos, opened the course → lesson, asserted theory + SttDemo render with zero console errors).
+- **Deviation flagged in commit + progress.txt:** the AC also asks for a `ttsDemo` section, but the TtsDemo widget files were dropped by the US-159 merge resolution (commit 13d2e7d) — `src/widgets/TtsDemo/`, `/api/tts/audio/[...path]/route.ts`, registry/schema/lessonChat entries are all missing on this branch. I applied the same fallback US-160's notes prescribe for the symmetrical US-159-dropped case (keep the course, drop the missing-widget section) rather than re-implementing US-158 inside this story.
