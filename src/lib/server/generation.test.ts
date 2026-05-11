@@ -1056,6 +1056,84 @@ describe('startGeneration spawn wrapper', () => {
     expect(prompt).toContain(path.join(sourcesDir, 'paper.pdf'));
   });
 
+  // ── GENERATION_MOCK fixture wiring ─────────────────────────────────────
+  // The mock branches in defaultInitCourseCommand / defaultLessonCommand /
+  // defaultCoherencePassCommand spawn .cjs files under
+  // src/lib/server/generationMockScripts/. These tests pin the wiring so a
+  // rename or move of those files breaks the unit suite (loud) instead of
+  // only the playwright e2e suite (slow).
+  describe('GENERATION_MOCK fixture wiring', () => {
+    const fsSync = require('node:fs') as typeof import('node:fs');
+    const mockScriptsDir = path.join(
+      process.cwd(),
+      'src',
+      'lib',
+      'server',
+      'generationMockScripts',
+    );
+
+    afterEach(() => {
+      delete process.env.GENERATION_MOCK;
+      delete process.env.GENERATION_MOCK_INIT_DELAY_MS;
+    });
+
+    it('GENERATION_MOCK=broken points init at the broken stub script', () => {
+      process.env.GENERATION_MOCK = 'broken';
+      const spec = defaultInitCourseCommand('demo');
+      expect(spec.command).toBe(process.execPath);
+      const scriptPath = path.join(mockScriptsDir, 'initCourseBroken.cjs');
+      expect(spec.args).toEqual([scriptPath]);
+      expect(fsSync.existsSync(scriptPath)).toBe(true);
+    });
+
+    it('GENERATION_MOCK=1 + slug starting with `broken-` points init at the broken stub script', () => {
+      process.env.GENERATION_MOCK = '1';
+      const spec = defaultInitCourseCommand('broken-demo');
+      const scriptPath = path.join(mockScriptsDir, 'initCourseBroken.cjs');
+      expect(spec.args[0]).toBe(scriptPath);
+    });
+
+    it('GENERATION_MOCK=1 points init at initCourse.cjs with slug + initDelay argv', () => {
+      process.env.GENERATION_MOCK = '1';
+      process.env.GENERATION_MOCK_INIT_DELAY_MS = '750';
+      const spec = defaultInitCourseCommand('demo');
+      expect(spec.command).toBe(process.execPath);
+      const scriptPath = path.join(mockScriptsDir, 'initCourse.cjs');
+      expect(spec.args).toEqual([scriptPath, 'demo', '750']);
+      expect(fsSync.existsSync(scriptPath)).toBe(true);
+    });
+
+    it('GENERATION_MOCK=1 init delay falls back to the 200ms default when the env var is unset / invalid', () => {
+      process.env.GENERATION_MOCK = '1';
+      delete process.env.GENERATION_MOCK_INIT_DELAY_MS;
+      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+
+      process.env.GENERATION_MOCK_INIT_DELAY_MS = 'not-a-number';
+      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+
+      process.env.GENERATION_MOCK_INIT_DELAY_MS = '-5';
+      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+    });
+
+    it('GENERATION_MOCK=1 points lessons at generateLesson.cjs with slug + lessonSlug argv', () => {
+      process.env.GENERATION_MOCK = '1';
+      const spec = defaultLessonCommand('demo', 'intro');
+      expect(spec.command).toBe(process.execPath);
+      const scriptPath = path.join(mockScriptsDir, 'generateLesson.cjs');
+      expect(spec.args).toEqual([scriptPath, 'demo', 'intro']);
+      expect(fsSync.existsSync(scriptPath)).toBe(true);
+    });
+
+    it('GENERATION_MOCK=1 points coherence-pass at coherencePass.cjs with no argv', () => {
+      process.env.GENERATION_MOCK = '1';
+      const spec = defaultCoherencePassCommand('demo');
+      expect(spec.command).toBe(process.execPath);
+      const scriptPath = path.join(mockScriptsDir, 'coherencePass.cjs');
+      expect(spec.args).toEqual([scriptPath]);
+      expect(fsSync.existsSync(scriptPath)).toBe(true);
+    });
+  });
+
   it('retries a failed lesson and marks it done when the retry succeeds', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
