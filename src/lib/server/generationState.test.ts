@@ -20,7 +20,8 @@ function makeState(slug: string, overrides: Partial<GenerationState> = {}): Gene
     slug,
     startedAt: '2026-05-08T10:00:00.000Z',
     lastUpdatedAt: '2026-05-08T10:00:00.000Z',
-    initCourse: { status: 'done' },
+    research: { status: 'done' },
+    design: { status: 'done' },
     lessons: [
       { slug: 'intro', status: 'pending', attempts: 0 },
       { slug: 'outro', status: 'pending', attempts: 0 },
@@ -97,7 +98,8 @@ describe('writeGenerationState', () => {
     const loaded = await readGenerationState('demo');
     expect(loaded).not.toBeNull();
     expect(loaded?.slug).toBe('demo');
-    expect(loaded?.initCourse.status).toBe('done');
+    expect(loaded?.research.status).toBe('done');
+    expect(loaded?.design.status).toBe('done');
     expect(loaded?.lessons).toHaveLength(2);
     expect(loaded?.lessons[0]).toMatchObject({ slug: 'intro', status: 'pending', attempts: 0 });
     expect(loaded?.config).toEqual({ lessonMaxRetries: 2, lessonTimeoutMs: 1_800_000 });

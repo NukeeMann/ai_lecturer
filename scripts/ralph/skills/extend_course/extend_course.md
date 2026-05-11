@@ -80,7 +80,7 @@ The `additions` block is the diff for the UI to highlight. `newModuleIds` lists 
 1. **Preserve every existing module and lesson, byte-for-byte.** Do NOT rename modules, do NOT rename lessons, do NOT change `id`, `slug`, `title`, `summary`, `description`, `estimatedMinutes`, `accentColor`, `icon`, `createdAt`, or any other existing field. Additions only.
 2. **`updatedAt`** on the course root may be refreshed to the current ISO 8601 timestamp. All other top-level fields stay unchanged.
 3. **New module IDs** must be unique within the course and follow the existing pattern (`m<N>` where `N` is one greater than the current max). Example: existing `["m1", "m2", "m3"]` → next is `m4`.
-4. **New lesson slugs** must be unique within the course (across all modules) and derived via the same slugify rule as `init_course`: lowercase, replace whitespace with `-`, strip non `[a-z0-9-]`, collapse repeated `-`, trim leading/trailing `-`.
+4. **New lesson slugs** must be unique within the course (across all modules) and derived via the same slugify rule as `design_course`: lowercase, replace whitespace with `-`, strip non `[a-z0-9-]`, collapse repeated `-`, trim leading/trailing `-`.
 5. **`estimatedMinutes`** on new lessons should be a positive integer in 5–30 (typical lesson sizing).
 6. **Module placement.** If the user's instruction implies a new theme (e.g. "add a chapter on …"), create a new module. If the instruction is "add lessons about X to module Y", append lessons to the existing module Y.
 7. **`refinements`** (when present) are follow-up messages from the user about a previous extend proposal. Treat them as additional context layered on top of `instruction` — the user is iterating on the same extension, not starting fresh.

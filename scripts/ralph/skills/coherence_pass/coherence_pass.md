@@ -6,7 +6,7 @@ user-invocable: true
 
 # Coherence Pass
 
-Audit one finished course end-to-end and emit a human-readable markdown report. This skill is the FINAL stage of the course-generation pipeline (after [`init_course`](../init_course/SKILL.md) and one [`generate_lesson`](../generate_lesson/SKILL.md) per lesson have completed). The report's purpose is to give a course author a checklist of issues to consider before shipping the course OR before regenerating individual lessons.
+Audit one finished course end-to-end and emit a human-readable markdown report. This skill is the FINAL stage of the course-generation pipeline (after [`research_course`](../research_course/SKILL.md) and [`design_course`](../design_course/SKILL.md) prepared the shared artefacts and one [`generate_lesson`](../generate_lesson/SKILL.md) per lesson has completed). The report's purpose is to give a course author a checklist of issues to consider before shipping the course OR before regenerating individual lessons.
 
 **This is a READ-ONLY audit. Do not modify `course.json`. Do not modify any lesson file. Do not edit `research.md` / `sources.md`. The single output is the markdown report streamed to stdout.**
 
@@ -154,12 +154,13 @@ The webapp pipes stdout straight into `coherence-report.md` byte-for-byte, so an
 
 ## Step 5: Stop
 
-You're done. The webapp captures stdout, writes `/courses/<slug>/coherence-report.md`, and emits a `stage:done` event for `coherence-pass`. Do not author any other files. Do not invoke `generate_lesson` or `init_course`. Do not modify the course directory.
+You're done. The webapp captures stdout, writes `/courses/<slug>/coherence-report.md`, and emits a `stage:done` event for `coherence-pass`. Do not author any other files. Do not invoke `generate_lesson`, `research_course`, or `design_course`. Do not modify the course directory.
 
 ---
 
 ## Cross-references
 
-- [`init_course/SKILL.md`](../init_course/SKILL.md) — wrote the `course.json` you walked in Step 2.
+- [`design_course/SKILL.md`](../design_course/SKILL.md) — wrote the `course.json` you walked in Step 2.
+- [`research_course/SKILL.md`](../research_course/SKILL.md) — wrote `research.md` + `sources.md` that informed every lesson you read.
 - [`generate_lesson/SKILL.md`](../generate_lesson/SKILL.md) — wrote each lesson JSON file you read in Step 2; the per-lesson agent never sees other lessons, which is precisely why this final pass exists.
 - `src/lib/schemas/course.ts` / `src/lib/schemas/lesson.ts` — the Zod schemas that define what's actually inside `course.json` / `lessons/*.json`.

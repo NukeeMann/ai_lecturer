@@ -1,16 +1,17 @@
-// Mock claude -p stand-in for the init_course stage. Writes a stub
-// course.json into <coursesRoot>/<slug>/ that validates against
-// CourseSchema. When a course-spec.json is present in the same dir it
-// honours the wizard's draftStructure (so multi-lesson curricula survive
-// into the realised course, used by US-108's lesson-progress slider
-// playwright test); otherwise falls back to a single-lesson 'intro' stub.
+// Mock claude -p stand-in for the design_course stage. Writes a stub
+// course.json into <coursesRoot>/<slug>/ that validates against CourseSchema.
+// When a course-spec.json is present in the same dir it honours the
+// wizard's draftStructure (so multi-lesson curricula survive into the
+// realised course, used by US-108's lesson-progress slider playwright
+// test); otherwise falls back to a single-lesson 'intro' stub.
 //
-// Spawned by defaultInitCourseCommand() when GENERATION_MOCK === '1'.
+// Spawned by defaultDesignCourseCommand() when GENERATION_MOCK === '1'.
 //
 // argv[2] = slug          (already validated by assertSafeSlug before spawn)
-// argv[3] = initDelayMs   (deferring the course.json write keeps the run
-//                          mid-flight long enough for the US-106 resume
-//                          banner playwright test to navigate away + back)
+// argv[3] = designDelayMs (defer the course.json write, mirroring the
+//                          research mock's delay knob for resume-banner
+//                          tests that need a window on either side of the
+//                          research → design boundary)
 //
 // Honours COURSES_ROOT_OVERRIDE so per-test tmpdirs work the same as the
 // production courses/ root.
@@ -19,10 +20,10 @@ const fs = require('fs');
 const path = require('path');
 
 const slug = process.argv[2];
-const initDelay = Number.parseInt(process.argv[3] ?? '0', 10) || 0;
+const designDelay = Number.parseInt(process.argv[3] ?? '0', 10) || 0;
 
 if (!slug) {
-  console.error('initCourse mock: missing argv[2] slug');
+  console.error('designCourse mock: missing argv[2] slug');
   process.exit(2);
 }
 
@@ -30,10 +31,10 @@ const root = process.env.COURSES_ROOT_OVERRIDE || path.join(process.cwd(), 'cour
 const dir = path.join(root, slug);
 fs.mkdirSync(path.join(dir, 'lessons'), { recursive: true });
 
-console.log('[mock init_course] researching topic...');
+console.log('[mock design_course] reading research.md + sources.md');
 
 setTimeout(() => {
-  console.log('[mock init_course] writing course.json');
+  console.log('[mock design_course] writing course.json');
 
   function slugify(input) {
     return String(input)
@@ -99,5 +100,5 @@ setTimeout(() => {
     updatedAt: '2026-05-04T00:00:00.000Z',
   };
   fs.writeFileSync(path.join(dir, 'course.json'), JSON.stringify(courseJson, null, 2));
-  console.log('[mock init_course] done');
-}, initDelay);
+  console.log('[mock design_course] done');
+}, designDelay);

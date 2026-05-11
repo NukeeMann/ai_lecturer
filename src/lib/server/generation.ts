@@ -1,10 +1,12 @@
 // Server-only module that owns the (single) running course-generation
 // subprocess and exposes its output as a stream of structured events.
 //
-// Pipeline: a natural-language brief that points `claude -p` at the
-// init_course skill, then ONE `claude -p` per lesson driven directly from
-// course.json — no ralph.sh, no worktrees, no branches, no git push. Both
-// stages run with stdout+stderr captured to the run's event log AND tee'd to
+// Pipeline: TWO natural-language `claude -p` briefs for the course init —
+// research_course (writes research.md + sources.md) then design_course
+// (writes course.json) — followed by ONE `claude -p` per lesson driven
+// directly from course.json, then a final coherence_pass. No ralph.sh, no
+// worktrees, no branches, no git push. Every stage runs with stdout+stderr
+// captured to the run's event log AND tee'd to
 // `/courses/<slug>/.generation.log`. Per-stage output is also tee'd to
 // structured per-stage logs under `/courses/<slug>/logs/` so the wizard can
 // reload completed-stage scrollback after the pipeline moves on (US-105).
@@ -117,9 +119,9 @@ export interface GenerationRun {
   events: GenerationEvent[];
   finished: boolean;
   /**
-   * Name of the most recently started stage ('init_course', 'lesson:<slug>',
-   * etc.) — used by the resume banner (US-106) to label what's currently
-   * running. `null` until the first stage:started fires.
+   * Name of the most recently started stage ('research_course', 'design_course',
+   * 'lesson:<slug>', 'coherence-pass') — used by the resume banner (US-106) to
+   * label what's currently running. `null` until the first stage:started fires.
    */
   currentStage: string | null;
   /**
@@ -204,7 +206,18 @@ export type EnqueueResult =
 export interface SpawnDeps {
   spawn?: typeof defaultSpawn;
   isExecutableInPath?: (cmd: string) => boolean;
-  initCourseCommand?: (slug: string) => { command: string; args: string[] };
+  /**
+   * First half of the (former) init_course stage — produces research.md +
+   * sources.md. Splitting init into two agents lets each one have its own
+   * retry budget, log file, and SSE stage event.
+   */
+  researchCourseCommand?: (slug: string) => { command: string; args: string[] };
+  /**
+   * Second half of the (former) init_course stage — reads the research/sources
+   * artefacts plus the original spec and writes course.json validated against
+   * CourseSchema.
+   */
+  designCourseCommand?: (slug: string) => { command: string; args: string[] };
   lessonCommand?: (
     slug: string,
     lessonSlug: string,
@@ -574,10 +587,21 @@ async function resolveCourseName(slug: string): Promise<string> {
   return slug;
 }
 
+// Pipeline stages whose disk log basename matches the SSE event name 1:1.
+// Per-lesson stages use the form `lesson:<lessonSlug>` for SSE while the
+// disk file is just `<lessonSlug>.log` — anything not in this set is treated
+// as a lesson and re-prefixed accordingly.
+const PIPELINE_STAGE_NAMES = new Set([
+  'research_course',
+  'design_course',
+  'coherence-pass',
+]);
+
 /**
  * Walk the most-recently-modified per-stage log file for `slug` and return
- * its basename (e.g. 'init_course' or 'intro'). Used to recover the current
- * stage of a server-restart-survivor run when the in-memory run is gone.
+ * its basename (e.g. 'research_course', 'design_course', 'intro'). Used to
+ * recover the current stage of a server-restart-survivor run when the
+ * in-memory run is gone.
  */
 async function deriveStageFromLogs(slug: string): Promise<string | null> {
   let entries: string[];
@@ -600,10 +624,10 @@ async function deriveStageFromLogs(slug: string): Promise<string | null> {
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const top = candidates[0].stage;
-  // The disk log file for a per-lesson stage is `<lessonSlug>.log`; the SSE
-  // event name is `lesson:<lessonSlug>`. Re-attach the prefix so banner stage
-  // labels are consistent regardless of whether the in-memory run is alive.
-  return top === 'init_course' ? 'init_course' : `lesson:${top}`;
+  // Pipeline stages map 1:1; per-lesson stages re-attach the `lesson:` prefix
+  // so banner stage labels are consistent regardless of whether the in-memory
+  // run is alive.
+  return PIPELINE_STAGE_NAMES.has(top) ? top : `lesson:${top}`;
 }
 
 /**
@@ -627,7 +651,7 @@ export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
 async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
   if (activeRun && !activeRun.finished) {
     const slug = activeRun.slug;
-    const stage = activeRun.currentStage ?? 'init_course';
+    const stage = activeRun.currentStage ?? 'research_course';
     const name = await resolveCourseName(slug);
     const queueSummary = await getQueueSummary();
     const progress = await readProgressForActiveRun(slug);
@@ -681,7 +705,7 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
     const stage =
       (typeof marker.stage === 'string' && marker.stage.length > 0 ? marker.stage : null) ??
       (await deriveStageFromLogs(slug)) ??
-      'init_course';
+      'research_course';
     const name = await resolveCourseName(slug);
     const progress = await readProgressForActiveRun(slug);
     const queueSummary = await getQueueSummary();
@@ -709,7 +733,7 @@ async function readProgressForActiveRun(slug: string): Promise<ActiveRunProgress
   if (!state) return null;
 
   // Map lesson slug → human title via course.json. course.json lands after
-  // init_course completes; before then we fall back to the slug itself.
+  // design_course completes; before then we fall back to the slug itself.
   const titleBySlug = new Map<string, string>();
   try {
     const raw = await fs.readFile(courseFile(slug), 'utf8');
@@ -738,8 +762,18 @@ async function readProgressForActiveRun(slug: string): Promise<ActiveRunProgress
   }));
   const lessonsDone = lessons.filter((l) => l.status === 'done').length;
   const inflight = lessons.find((l) => l.status === 'inflight');
+  // The UI's `initStatus` is a single 'pending|done|failed' summarising the
+  // (now two-stage) init pipeline. Either stage failing surfaces as 'failed';
+  // we only call it 'done' once design_course has produced course.json.
+  // Anything in between (research done, design pending) reads as 'pending'.
+  const initStatus: 'pending' | 'done' | 'failed' =
+    state.research.status === 'failed' || state.design.status === 'failed'
+      ? 'failed'
+      : state.design.status === 'done'
+        ? 'done'
+        : 'pending';
   return {
-    initStatus: state.initCourse.status,
+    initStatus,
     lessonsDone,
     lessonsTotal: lessons.length,
     currentLessonSlug: inflight ? inflight.slug : null,
@@ -811,7 +845,31 @@ function mockScriptPath(name: string): string {
   return path.join(MOCK_SCRIPTS_DIR, name);
 }
 
-export function defaultInitCourseCommand(slug: string): { command: string; args: string[] } {
+// Shared helper: build the natural-language paragraph that lists uploaded
+// source materials so an init-stage agent can Read them before authoring.
+// Returns '' when no sources were uploaded (the "Start from scratch" path
+// in the wizard). US-104 / US-124 wire the .docx → .extracted/<name>.md
+// swap because claude's Read tool can't parse the zip-of-XML directly.
+function buildInitSourcesSection(slug: string, agentBlurb: string): string {
+  const sourcePaths = listCourseSourceFilesSync(slug);
+  const resolvedSources = sourcePaths.map(resolveSourcePathForPrompt);
+  if (resolvedSources.length === 0) return '';
+  return (
+    ` Source materials uploaded by the user (${agentBlurb}):\n` +
+    resolvedSources
+      .map((s) =>
+        s.extractedFrom
+          ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
+          : `- ${s.readPath}`,
+      )
+      .join('\n') +
+    '\n'
+  );
+}
+
+export function defaultResearchCourseCommand(
+  slug: string,
+): { command: string; args: string[] } {
   // Defence-in-depth: callers (the route + courseDir) already assert this, but
   // we re-check here so the slug we splice into the prompt cannot escape.
   assertSafeSlug(slug);
@@ -821,75 +879,49 @@ export function defaultInitCourseCommand(slug: string): { command: string; args:
   //                                        single dev server can drive BOTH
   //                                        the broken and the happy scenario
   //                                        in one playwright run.
-  // The broken stub prints 'Unknown command: /init_course' and exits 0 without
-  // ever writing course.json — exactly what `claude -p '/init_course <slug>'`
-  // did before the fix, so the post-init guard can be exercised end-to-end.
+  // The broken stub prints "Unknown command:" and exits 0 without ever
+  // writing research.md / sources.md — the same "claude -p silently no-ops
+  // on an unparseable prompt" failure mode that the post-research guard
+  // exists to catch.
   if (
     process.env.GENERATION_MOCK === 'broken' ||
     (process.env.GENERATION_MOCK === '1' && slug.startsWith('broken-'))
   ) {
     return {
       command: process.execPath,
-      args: [mockScriptPath('initCourseBroken.cjs')],
+      args: [mockScriptPath('researchCourseBroken.cjs')],
     };
   }
   if (process.env.GENERATION_MOCK === '1') {
-    // Test-only fast path that writes a valid stub course.json (lessons live
-    // in their own per-lesson mock — see defaultLessonCommand). Lets the
-    // playwright browser test exercise the full Stage-5-streaming →
-    // redirect-to-/courses/<slug> flow without depending on a real `claude`
-    // CLI being on PATH.
-    //
-    // The mock honours an existing course-spec.json's draftStructure so a
-    // multi-lesson curriculum from the wizard survives into the realised
-    // course.json (used by US-108's lesson-progress slider playwright test).
-    // Falls back to a single 'intro' lesson when no spec exists yet.
-    // The default 200ms is fast enough for the wizard's smoke tests but too
-    // fast to verify the US-106 resume banner — we want a window where the
-    // run is mid-flight while the test navigates away and back. Setting
-    // GENERATION_MOCK_INIT_DELAY_MS extends the init phase.
+    // Test-only fast path that writes minimal research.md + sources.md so
+    // design_course's preconditions are met. The default 200ms keeps the
+    // run mid-flight long enough for the US-106 resume banner test;
+    // GENERATION_MOCK_INIT_DELAY_MS extends the research phase if a test
+    // needs a bigger window.
     const initDelayMs = parseInt(process.env.GENERATION_MOCK_INIT_DELAY_MS ?? '', 10);
     const initDelay = Number.isFinite(initDelayMs) && initDelayMs >= 0 ? initDelayMs : 200;
     return {
       command: process.execPath,
-      args: [mockScriptPath('initCourse.cjs'), slug, String(initDelay)],
+      args: [mockScriptPath('researchCourse.cjs'), slug, String(initDelay)],
     };
   }
-  // Natural-language brief instead of a `/init_course` slash command. claude's
-  // print mode (`-p`) treats slash commands as literal prompt text and just
-  // prints "Unknown command:" before exiting 0 — we have to name the skill in
-  // prose and point the agent at its SKILL.md so it actually runs the steps.
-  // Mirrors the pattern in scripts/ralph/ralph.sh:612 / :1053. The slug is
-  // safe to splice (assertSafeSlug above limits it to [A-Za-z0-9-_]) and is
-  // passed as an argv element, never via a shell.
-  // US-104: when the user uploaded source materials in Stage 0 (US-103), the
-  // files now live at /courses/<slug>/sources/. Enumerate them and inject
-  // their absolute paths into the prompt so claude knows to ground the
-  // curriculum in user-supplied content. When the directory is empty/absent
-  // (the "Start from scratch" path) the prompt is unchanged.
-  const sourcePaths = listCourseSourceFilesSync(slug);
-  // US-124: for .docx the original file is unreadable to Claude Code's Read
-  // tool (it's a zip-of-XML), so swap in the pre-extracted markdown sibling
-  // when one was produced at upload time. The original .docx is NOT injected
-  // into the prompt — pointing Read at a binary blob just wastes a turn.
-  const resolvedSources = sourcePaths.map(resolveSourcePathForPrompt);
-  const sourcesSection =
-    resolvedSources.length > 0
-      ? ` Source materials uploaded by the user (the curriculum MUST be grounded in these files — invoke the Read tool on EACH path BEFORE drafting course.json so every module/lesson/quiz item traces back to this content rather than generic textbook material):\n${resolvedSources
-          .map((s) =>
-            s.extractedFrom
-              ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
-              : `- ${s.readPath}`,
-          )
-          .join('\n')}\n`
-      : '';
+  // Natural-language brief — claude's print mode (`-p`) treats slash
+  // commands as literal text and just prints "Unknown command:" before
+  // exiting 0, so we name the skill in prose and point the agent at its
+  // SKILL.md to actually run the steps. assertSafeSlug above limits the
+  // slug to [A-Za-z0-9-_], making the splice safe; it travels as a prompt
+  // body string, never via a shell.
+  const sourcesSection = buildInitSourcesSection(
+    slug,
+    'the research MUST be grounded in these files — invoke the Read tool on EACH path BEFORE drafting research.md so every concept and source you list traces back to this content rather than generic textbook material',
+  );
   const prompt =
-    `Run the init_course skill defined in scripts/ralph/skills/init_course/SKILL.md. ` +
+    `Run the research_course skill defined in scripts/ralph/skills/research_course/SKILL.md. ` +
     `Argument: slug = "${slug}". ` +
     `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course-spec.json: ` +
-    `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md), ` +
-    `do the architect pass (write /courses/${slug}/course.json validated against CourseSchema). ` +
-    `Do not generate lesson content here — the webapp's generation backend will invoke generate_lesson once per lesson after this step. ` +
+    `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md). ` +
+    `Do NOT write /courses/${slug}/course.json — that file belongs to the design_course skill that runs after you. ` +
+    `Do not generate lesson content here. ` +
     `Do NOT touch scripts/ralph/.` +
     sourcesSection;
   return {
@@ -902,6 +934,55 @@ export function defaultInitCourseCommand(slug: string): { command: string; args:
       // of buffering everything until the run finishes. claude requires
       // --verbose alongside stream-json under -p; pumpStream / formatStreamJsonLine
       // turn each event into a human-readable log line. See US-102.
+      '--output-format',
+      'stream-json',
+      '--verbose',
+      '--dangerously-skip-permissions',
+    ],
+  };
+}
+
+export function defaultDesignCourseCommand(
+  slug: string,
+): { command: string; args: string[] } {
+  assertSafeSlug(slug);
+  if (process.env.GENERATION_MOCK === '1') {
+    // Mock for the design stage: writes course.json honouring an existing
+    // course-spec.json's draftStructure (multi-lesson curricula survive into
+    // the realised course; used by US-108's lesson-progress slider playwright
+    // test). Falls back to a single 'intro' lesson when no spec exists yet.
+    // No `broken-` short-circuit here: the broken path is exercised at the
+    // research stage instead, which is always first.
+    const designDelayMs = parseInt(
+      process.env.GENERATION_MOCK_DESIGN_DELAY_MS ?? '',
+      10,
+    );
+    const designDelay =
+      Number.isFinite(designDelayMs) && designDelayMs >= 0 ? designDelayMs : 0;
+    return {
+      command: process.execPath,
+      args: [mockScriptPath('designCourse.cjs'), slug, String(designDelay)],
+    };
+  }
+  const sourcesSection = buildInitSourcesSection(
+    slug,
+    'the final course shape MUST be grounded in these files — invoke the Read tool on EACH path BEFORE deciding modules/lessons so the structure reflects the user-supplied content rather than a generic outline',
+  );
+  const prompt =
+    `Run the design_course skill defined in scripts/ralph/skills/design_course/SKILL.md. ` +
+    `Argument: slug = "${slug}". ` +
+    `Read that SKILL.md and execute its steps end-to-end. ` +
+    `Inputs you MUST Read first: /courses/${slug}/course-spec.json, /courses/${slug}/research.md, /courses/${slug}/sources.md (the prior research_course agent has just written the last two). ` +
+    `Then do the architect pass: write /courses/${slug}/course.json validated against CourseSchema in src/lib/schemas/course.ts. ` +
+    `If you rename any lesson relative to course-spec.draftStructure, update the matching ## <Lesson title> heading in /courses/${slug}/sources.md in place so generate_lesson's per-lesson source lookup still resolves. ` +
+    `Do NOT re-do the research. Do NOT generate lesson content. Do NOT touch scripts/ralph/.` +
+    sourcesSection;
+  return {
+    command: 'claude',
+    args: [
+      '-p',
+      prompt,
+      // See defaultResearchCourseCommand for why stream-json + --verbose.
       '--output-format',
       'stream-json',
       '--verbose',
@@ -935,12 +1016,12 @@ export function defaultLessonCommand(
   // body (after assertSafeSlug above limits each to [A-Za-z0-9-_], which
   // makes them safe to splice) and `claude -p` runs in --dangerously-skip-
   // permissions mode so the agent can write the lesson file unattended.
-  // US-104: same source-materials injection as defaultInitCourseCommand —
+  // US-104: same source-materials injection as the init-stage commands —
   // per-lesson generation must also be able to pull facts/quotes/figures
   // from the originals. When no sources were uploaded, the brief is
   // unchanged.
   const sourcePaths = listCourseSourceFilesSync(slug);
-  // US-124: same docx → .extracted/<name>.md swap as defaultInitCourseCommand.
+  // US-124: same docx → .extracted/<name>.md swap as the init-stage commands.
   // The lesson generator must point Read at a parseable text format, never at
   // the original docx blob.
   const resolvedSources = sourcePaths.map(resolveSourcePathForPrompt);
@@ -973,7 +1054,7 @@ export function defaultLessonCommand(
     args: [
       '-p',
       prompt,
-      // See defaultInitCourseCommand for why --output-format stream-json
+      // See defaultResearchCourseCommand for why --output-format stream-json
       // + --verbose is set; same incremental-streaming requirement applies
       // per-lesson. US-102.
       '--output-format',
@@ -1367,8 +1448,9 @@ export async function startGeneration(slug: string, depsArg: SpawnDeps = {}): Pr
  * US-137: resume a partial run from a `.generation-state.json` snapshot.
  * Skips lessons whose status is already `done`, retries `inflight` /
  * `failed` / `pending` lessons with the remaining attempt budget computed
- * against `state.config.lessonMaxRetries`, and skips the init spawn entirely
- * when `initCourse.status === 'done'`.
+ * against `state.config.lessonMaxRetries`, and skips each of the two init
+ * spawns (research_course, design_course) when its status is already
+ * `done` in the snapshot.
  *
  * Throws `GenerationStateMissingError` when no state file is present.
  * Throws `GenerationConflictError` when a different slug is already in
@@ -1421,7 +1503,8 @@ async function startGenerationInner(
   }
 
   const spawnFn = deps.spawn ?? defaultSpawn;
-  const initSpec = (deps.initCourseCommand ?? defaultInitCourseCommand)(slug);
+  const researchSpec = (deps.researchCourseCommand ?? defaultResearchCourseCommand)(slug);
+  const designSpec = (deps.designCourseCommand ?? defaultDesignCourseCommand)(slug);
   const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
@@ -1860,16 +1943,30 @@ async function startGenerationInner(
     return genState?.lessons.find((l) => l.slug === lessonSlug);
   }
 
-  async function markInitFailed(reason: string) {
+  // Persist a terminal failure for one of the two init stages. The other
+  // stage stays 'pending' (a failed research means design never even ran).
+  // Resume from the persisted state restarts from whichever stage is not
+  // 'done' — see the Stage 1 / Stage 2 blocks below.
+  async function markInitStageFailed(
+    stage: 'research' | 'design',
+    reason: string,
+  ) {
     if (genState) {
-      genState.initCourse = { status: 'failed', reason };
+      genState[stage] = { status: 'failed', reason };
     } else {
       genState = {
         schemaVersion: 1,
         slug,
         startedAt: new Date().toISOString(),
         lastUpdatedAt: new Date().toISOString(),
-        initCourse: { status: 'failed', reason },
+        research:
+          stage === 'research'
+            ? { status: 'failed', reason }
+            : { status: 'pending' },
+        design:
+          stage === 'design'
+            ? { status: 'failed', reason }
+            : { status: 'pending' },
         lessons: [],
         config: { lessonMaxRetries, lessonTimeoutMs },
       };
@@ -2300,57 +2397,140 @@ async function startGenerationInner(
       const remaining = resumeFromState.lessons
         .filter((l) => l.status !== 'done')
         .map((l) => l.slug);
-      // When init isn't done yet we restart at init, so no lesson is
-      // "currently being attempted" from the wizard's perspective. Otherwise
-      // the next non-done lesson is the one we're about to attempt.
-      const inflightSlug =
-        resumeFromState.initCourse.status === 'done' ? remaining[0] ?? null : null;
+      // The wizard's "currently attempting" slot is meaningful only once the
+      // init pipeline is past design_course (so course.json exists and the
+      // lesson loop is the natural next step). If either init stage is still
+      // pending/failed we surface no inflight lesson.
+      const initDone =
+        resumeFromState.research.status === 'done' &&
+        resumeFromState.design.status === 'done';
+      const inflightSlug = initDone ? remaining[0] ?? null : null;
       emit({ type: 'resumed', completed, remaining, inflightSlug });
     }
 
-    // ── Stage 1: init_course (skipped on resume when already done) ──────────
+    // ── Stage 1: research_course ────────────────────────────────────────────
+    // Writes /courses/<slug>/research.md and /courses/<slug>/sources.md.
+    // Skipped on resume when already done; runs every other time.
+    if (!(resumeFromState && resumeFromState.research.status === 'done')) {
+      emit({ type: 'stage', name: 'research_course', status: 'started' });
+      const researchLogPath = path.join(genLogs, 'research_course.log');
+      const researchLogStream = createWriteStream(researchLogPath, { flags: 'w' });
+      researchLogStream.on('error', () => {
+        /* swallow late writes */
+      });
+      const researchResult = await spawnChild(researchSpec, {
+        extraLogStream: researchLogStream,
+      });
+      researchLogStream.end();
+      if (cancelled) {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        await markInitStageFailed('research', 'Cancelled by user');
+        finalize('error', 'Cancelled by user');
+        return;
+      }
+      if (researchResult.exit !== 0) {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        const reason = `research_course failed (exit ${researchResult.exit})`;
+        await markInitStageFailed('research', reason);
+        finalize('error', reason);
+        return;
+      }
+      // Post-research guard: claude in -p mode silently no-ops on prompts it
+      // doesn't understand (printing "Unknown command:" and exiting 0). If
+      // research.md is missing, design_course has nothing to read — bail out
+      // before its spawn. We do not validate sources.md schema-wise (it has
+      // no schema), but we do require it to exist as a basic sanity check.
+      try {
+        await fs.access(path.join(courseDir(slug), 'research.md'));
+      } catch {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        const reason =
+          'research_course did not produce research.md — check .generation.log';
+        await markInitStageFailed('research', reason);
+        finalize('error', reason);
+        return;
+      }
+      try {
+        await fs.access(path.join(courseDir(slug), 'sources.md'));
+      } catch {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        const reason =
+          'research_course did not produce sources.md — check .generation.log';
+        await markInitStageFailed('research', reason);
+        finalize('error', reason);
+        return;
+      }
+      // Seed genState with research done; design's status carries over
+      // from the resume snapshot (pending on a fresh run, possibly
+      // failed/pending from a prior crashed run). Reaching this point
+      // means none of the early-return guards above fired, so genState
+      // is guaranteed to still be its initial `null` — no need to merge
+      // with an in-memory predecessor.
+      genState = {
+        schemaVersion: 1,
+        slug,
+        startedAt: resumeFromState?.startedAt ?? new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        research: { status: 'done' },
+        design: resumeFromState?.design ?? { status: 'pending' },
+        lessons: resumeFromState?.lessons ?? [],
+        config: { lessonMaxRetries, lessonTimeoutMs },
+      };
+      await persistGenState();
+      emit({ type: 'stage', name: 'research_course', status: 'done' });
+    }
+
+    // ── Stage 2: design_course ──────────────────────────────────────────────
+    // Reads research.md + sources.md + course-spec.json + uploads, writes
+    // course.json. On resume-with-design-already-done we skip the spawn and
+    // hydrate the lesson list directly from the persisted state.
     let lessons: { slug: string; moduleId: string }[];
-    if (resumeFromState && resumeFromState.initCourse.status === 'done') {
+    if (resumeFromState && resumeFromState.design.status === 'done') {
       // Hydrate genState from the persisted snapshot (deep clone so per-loop
       // mutations don't alias the caller's state object).
       genState = JSON.parse(JSON.stringify(resumeFromState)) as GenerationState;
+      // Make sure research stays marked done in the hydrated state — if we
+      // ran the research stage above (because it was failed/pending) and the
+      // hydrated snapshot still claims otherwise, prefer the in-flight truth.
+      genState.research = { status: 'done' };
       // Use the persisted lesson order — it was derived from course.json on
       // run #1 and is the authoritative resume order per the AC.
       lessons = resumeFromState.lessons.map((l) => ({ slug: l.slug, moduleId: '' }));
     } else {
-      emit({ type: 'stage', name: 'init_course', status: 'started' });
-      const initLogPath = path.join(genLogs, 'init_course.log');
-      const initLogStream = createWriteStream(initLogPath, { flags: 'w' });
-      initLogStream.on('error', () => {
+      emit({ type: 'stage', name: 'design_course', status: 'started' });
+      const designLogPath = path.join(genLogs, 'design_course.log');
+      const designLogStream = createWriteStream(designLogPath, { flags: 'w' });
+      designLogStream.on('error', () => {
         /* swallow late writes */
       });
-      const initResult = await spawnChild(initSpec, { extraLogStream: initLogStream });
-      initLogStream.end();
+      const designResult = await spawnChild(designSpec, {
+        extraLogStream: designLogStream,
+      });
+      designLogStream.end();
       if (cancelled) {
-        emit({ type: 'stage', name: 'init_course', status: 'error' });
-        await markInitFailed('Cancelled by user');
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
+        await markInitStageFailed('design', 'Cancelled by user');
         finalize('error', 'Cancelled by user');
         return;
       }
-      if (initResult.exit !== 0) {
-        emit({ type: 'stage', name: 'init_course', status: 'error' });
-        const reason = `init_course failed (exit ${initResult.exit})`;
-        await markInitFailed(reason);
+      if (designResult.exit !== 0) {
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
+        const reason = `design_course failed (exit ${designResult.exit})`;
+        await markInitStageFailed('design', reason);
         finalize('error', reason);
         return;
       }
-      // Post-init guard: claude in -p mode silently no-ops on prompts it
-      // doesn't understand (the original bug printed "Unknown command:" and
-      // exited 0). If course.json is missing, we cannot iterate lessons —
-      // bail out before the per-lesson loop tries to read a file that's
-      // not there.
+      // Post-design guard: same silent-no-op risk as research; bail out if
+      // course.json is missing or invalid so the per-lesson loop never tries
+      // to read a file that's not there.
       let courseRaw: string;
       try {
         courseRaw = await fs.readFile(courseFile(slug), 'utf8');
       } catch {
-        emit({ type: 'stage', name: 'init_course', status: 'error' });
-        const reason = 'init_course did not produce course.json — check .generation.log';
-        await markInitFailed(reason);
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
+        const reason =
+          'design_course did not produce course.json — check .generation.log';
+        await markInitStageFailed('design', reason);
         finalize('error', reason);
         return;
       }
@@ -2358,18 +2538,18 @@ async function startGenerationInner(
       try {
         course = CourseSchema.parse(JSON.parse(courseRaw));
       } catch (err) {
-        emit({ type: 'stage', name: 'init_course', status: 'error' });
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
         const detail = err instanceof Error ? err.message : String(err);
-        const reason = `init_course produced invalid course.json: ${detail}`;
-        await markInitFailed(reason);
+        const reason = `design_course produced invalid course.json: ${detail}`;
+        await markInitStageFailed('design', reason);
         finalize('error', reason);
         return;
       }
       // US-136 / US-137: write/refresh the .generation-state.json now that we
-      // have a validated course.json. On resume-with-init-not-done, MERGE the
-      // existing per-lesson status by slug so attempt counts from before the
-      // crash carry over; lessons that no longer appear in course.json are
-      // dropped, and lessons newly introduced by init come in as fresh
+      // have a validated course.json. On resume-with-design-not-done, MERGE
+      // the existing per-lesson status by slug so attempt counts from before
+      // the crash carry over; lessons that no longer appear in course.json
+      // are dropped, and lessons newly introduced by design come in as fresh
       // pending entries.
       const mergedLessons = course.modules.flatMap((m) =>
         m.lessons.map((l) => {
@@ -2385,19 +2565,20 @@ async function startGenerationInner(
         slug,
         startedAt: resumeFromState?.startedAt ?? new Date().toISOString(),
         lastUpdatedAt: new Date().toISOString(),
-        initCourse: { status: 'done' },
+        research: { status: 'done' },
+        design: { status: 'done' },
         lessons: mergedLessons,
         config: { lessonMaxRetries, lessonTimeoutMs },
       };
       await persistGenState();
-      emit({ type: 'stage', name: 'init_course', status: 'done' });
+      emit({ type: 'stage', name: 'design_course', status: 'done' });
 
       lessons = course.modules.flatMap((m) =>
         m.lessons.map((l) => ({ slug: l.slug, moduleId: m.id })),
       );
     }
 
-    // ── Stage 2..N+1: one (retried) claude call per lesson, sequentially ───
+    // ── Stage 3..N+2: one (retried) claude call per lesson, sequentially ───
     const total = lessons.length;
     const failedLessons: FailedLesson[] = [];
     const failedReport: FailedReportEntry[] = [];

@@ -1,6 +1,6 @@
 ---
 name: generate_lesson
-description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json. Accepts two explicit arguments — the course slug and the lesson slug — from the invoking prompt. Reads the lesson context from /courses/<slug>/course.json (find lesson by slug → recover module / estimatedMinutes / title), /courses/<slug>/research.md, and /courses/<slug>/sources.md, then composes a lesson with 4–8 sections that mixes widget types and validates against LessonSchema. Invoked once per lesson by the webapp's course-generation backend after init_course has written course.json. Triggers on: generate_lesson, Run generate_lesson, generate lesson <slug>/<lesson-slug>."
+description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json. Accepts two explicit arguments — the course slug and the lesson slug — from the invoking prompt. Reads the lesson context from /courses/<slug>/course.json (find lesson by slug → recover module / estimatedMinutes / title), /courses/<slug>/research.md, and /courses/<slug>/sources.md, then composes a lesson with 4–8 sections that mixes widget types and validates against LessonSchema. Invoked once per lesson by the webapp's course-generation backend after research_course and design_course have written research.md / sources.md / course.json. Triggers on: generate_lesson, Run generate_lesson, generate lesson <slug>/<lesson-slug>."
 user-invocable: true
 ---
 
@@ -8,7 +8,7 @@ user-invocable: true
 
 Produce one valid lesson JSON file for a single lesson. Each invocation handles exactly one lesson identified by `(slug, lesson-slug)`.
 
-This skill is the back half of the course-generation pipeline. The front half is [`init_course`](../init_course/SKILL.md) — it reads a `course-spec.json` produced by the webapp wizard and writes `/courses/<slug>/research.md`, `/courses/<slug>/sources.md`, and `/courses/<slug>/course.json`. The webapp's generation backend then walks `course.json.modules.flatMap(m => m.lessons)` and invokes this skill once per lesson with the `(slug, lesson-slug)` pair.
+This skill is the back half of the course-generation pipeline. The front half is a two-agent init sequence: [`research_course`](../research_course/SKILL.md) reads the wizard's `course-spec.json` and writes `/courses/<slug>/research.md` + `/courses/<slug>/sources.md`; then [`design_course`](../design_course/SKILL.md) reads those plus the spec and writes `/courses/<slug>/course.json`. The webapp's generation backend then walks `course.json.modules.flatMap(m => m.lessons)` and invokes this skill once per lesson with the `(slug, lesson-slug)` pair.
 
 **Do NOT touch other lesson files. Do NOT update `course.json` or `research.md` or `sources.md` (you may *append* a `## <Lesson title>` block to `sources.md` if you discover new references — see Step 4 — but never delete or rewrite existing entries).**
 
@@ -88,7 +88,7 @@ From `lesson` and its parent module pull:
 | Module summary    | parent `module.summary` — useful for framing the lesson  |
 | Estimated minutes | `lesson.estimatedMinutes`                                |
 
-If the lesson is not found in `course.json`, stop with an error — `init_course` failed to register it, and authoring against a non-existent lesson would corrupt the course folder.
+If the lesson is not found in `course.json`, stop with an error — `design_course` failed to register it, and authoring against a non-existent lesson would corrupt the course folder.
 
 For deeper subject-matter context (scope, theory/practice mix, level), lean on `research.md` and `course.json.description` / `course.json.title`. The `course-spec.json` (if still around) carries `level`, `durationTarget`, and `theoryPracticeRatio`; reading it is optional but helps tune the section mix (Step 6).
 
@@ -96,10 +96,10 @@ For deeper subject-matter context (scope, theory/practice mix, level), lean on `
 
 ## Step 2: Read Course Context
 
-Open the shared course files. They are the working memory the `init_course` skill prepared for every per-lesson agent.
+Open the shared course files. `research.md` + `sources.md` are the working memory the `research_course` skill prepared for every per-lesson agent; `course.json` was finalised by the `design_course` skill that ran immediately after.
 
 - `/courses/<slug>/research.md` — narrative reference: prerequisites, key concepts, common misconceptions, suggested ordering, and per-lesson hints under `## Notes for lesson generation`. Lean on its `Common misconceptions` for plausible quiz distractors. Lean on `Notes for lesson generation` for cues like *"Where math/KaTeX is appropriate"*, *"Where a code exercise is more illuminating than a quiz"*, *"Where a Demo widget would help"*, *"Where a Sandbox is a good fit"*.
-- `/courses/<slug>/sources.md` — the curated reference list `init_course` collected during its research pass. Find the `## <lesson title>` heading whose title matches `lesson.title` and copy ≥ 3 entries into `lesson.sources` directly. Also consider `## Course-wide references` for cross-lesson textbooks. If the file is missing (older course or hand-written course folder), fall back to your own research per Step 4.
+- `/courses/<slug>/sources.md` — the curated reference list `research_course` collected during its research pass. Find the `## <lesson title>` heading whose title matches `lesson.title` and copy ≥ 3 entries into `lesson.sources` directly. Also consider `## Course-wide references` for cross-lesson textbooks. If the file is missing (older course or hand-written course folder), fall back to your own research per Step 4.
 - `/courses/<slug>/course.json` — authoritative structure. You already opened it in Step 1 to find the lesson; keep it open to cross-check `slug` / `moduleId` / `estimatedMinutes` while drafting.
 
 If `course.json` lists a different `slug` or different `estimatedMinutes` than any external context (e.g. a stale prompt), **trust `course.json`**. The course file is the source of truth.
@@ -176,7 +176,7 @@ Identify **at least 3 credible sources** for this lesson. Aim for a mix:
 - **Reputable articles** — Wikipedia for foundational concepts (it is stable and well-edited for established maths/CS topics), official documentation pages (`scikit-image`, `numpy`, `scipy`, `pytorch`), MDN / W3C, IETF RFCs.
 - **Recognised educational videos** — channels with editorial standards: 3Blue1Brown, StatQuest with Josh Starmer, Computerphile, Two Minute Papers, MIT OpenCourseWare, Khan Academy. Use the canonical YouTube URL.
 
-The starting point is the matching `## <lesson title>` block in `/courses/<slug>/sources.md` — `init_course` curated ≥ 3 entries per lesson there. Copy them over wholesale unless you have a specific reason to drop one. Add fresh entries only if a section truly needs a reference the bibliography is missing.
+The starting point is the matching `## <lesson title>` block in `/courses/<slug>/sources.md` — `research_course` curated ≥ 3 entries per lesson there. Copy them over wholesale unless you have a specific reason to drop one. Add fresh entries only if a section truly needs a reference the bibliography is missing.
 
 ### URL stability rules
 
@@ -213,7 +213,7 @@ Every source object must conform to `SourceSchema` (`src/lib/schemas/lesson.ts`)
 
 ### Recording in `sources.md` (optional but encouraged)
 
-If you discover useful sources beyond what `init_course` recorded in `/courses/<slug>/sources.md`, append them to that file under the existing `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `init_course` or by other per-lesson agents.
+If you discover useful sources beyond what `research_course` recorded in `/courses/<slug>/sources.md`, append them to that file under the existing `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `research_course` or by other per-lesson agents.
 
 ---
 
@@ -744,7 +744,8 @@ Why this lesson works as a worked example:
 
 ## Cross-references
 
-- [`init_course/SKILL.md`](../init_course/SKILL.md) — wrote the `course.json` / `research.md` / `sources.md` you read in Step 1 and Step 2.
+- [`research_course/SKILL.md`](../research_course/SKILL.md) — wrote `research.md` + `sources.md` you read in Step 2.
+- [`design_course/SKILL.md`](../design_course/SKILL.md) — wrote `course.json` you read in Step 1.
 - `src/lib/schemas/lesson.ts` — `LessonSchema`, `SectionSchema` (discriminated union), Zod source of truth.
 - `src/lib/schemas/course.ts` — `CourseSchema`, `ModuleSchema`, `LessonRefSchema` — describe the parent course you're authoring against.
 - `src/widgets/<Name>/schema.ts` — per-widget Zod schemas. JSON mirrors live in `src/widgets/schemas/*.json` (regenerated via `npm run build:schemas`).

@@ -203,9 +203,9 @@ export interface StoredSourceFile {
 /** Synchronously enumerate the absolute paths of every regular file under
  *  /courses/<slug>/sources/. Returns [] when the directory is missing or
  *  empty. Sorted lexicographically for stable prompt output. Used at
- *  generation-time by defaultInitCourseCommand / defaultLessonCommand
- *  (US-104) — sync because the factory functions are sync and the listing
- *  is small and local. */
+ *  generation-time by defaultResearchCourseCommand / defaultDesignCourseCommand /
+ *  defaultLessonCommand (US-104) — sync because the factory functions are
+ *  sync and the listing is small and local. */
 export function listCourseSourceFilesSync(slug: string): string[] {
   assertSafeSlug(slug);
   const dir = courseSourcesDir(slug);
@@ -333,7 +333,7 @@ function truncationMarker(remaining: number): string {
  * Load every staged source file under `<draftsRoot>/<draftId>/sources/` into
  * a prompt-ready array (US-125). Used by the wizard Clarify and Structure
  * routes to ground their LLM calls in the learner's uploads BEFORE the
- * outline is accepted (init_course only sees them after that).
+ * outline is accepted (research_course / design_course only see them after that).
  *
  * Behaviour:
  * - Files are read in lexicographic order (matches `listCourseSourceFilesSync`).

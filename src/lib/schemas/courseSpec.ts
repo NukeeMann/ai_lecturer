@@ -4,7 +4,7 @@ export const LevelSchema = z.enum(['beginner', 'intermediate', 'advanced']);
 
 /**
  * `durationTarget` controls how big the planned course should be. The architect
- * step in `init_course` uses this to bound module/lesson counts.
+ * step in `design_course` uses this to bound module/lesson counts.
  *
  * - `short`         — 3–5 lessons / 30–60 min
  * - `standard`      — 8–12 lessons / 1–3h

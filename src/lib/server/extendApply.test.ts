@@ -244,10 +244,11 @@ describe('POST /api/courses/[slug]/extend/apply (US-144)', () => {
     // updatedAt was bumped to a fresh timestamp.
     expect(persisted.updatedAt).not.toBe('2026-04-15T10:05:00.000Z');
 
-    // Generation state was seeded with init done + only the new lessons.
+    // Generation state was seeded with both init stages done + only the new lessons.
     const state = await readGenerationState(slug);
     expect(state).not.toBeNull();
-    expect(state!.initCourse.status).toBe('done');
+    expect(state!.research.status).toBe('done');
+    expect(state!.design.status).toBe('done');
     expect(state!.lessons.map((l) => l.slug).sort()).toEqual(
       ['canny-pipeline', 'gradient-direction'].sort(),
     );
@@ -320,7 +321,7 @@ describe('POST /api/courses/[slug]/extend/apply (US-144)', () => {
       JSON.stringify({
         childPid: process.pid,
         slug,
-        stage: 'init_course',
+        stage: 'research_course',
         startedAt: '2026-05-08T00:00:00.000Z',
       }),
       'utf8',

@@ -33,7 +33,7 @@ export interface CurriculumResponse {
  * /create's Stage 6 progress slider (US-108) to pre-render every lesson
  * placeholder before per-lesson generation begins. Prefers the realised
  * `course.json` (with stable slugs); falls back to `course-spec.json`
- * (`draftStructure.modules[].lessons[]`) when init_course has not finished
+ * (`draftStructure.modules[].lessons[]`) when design_course has not finished
  * yet — in that case slugs are derived from titles via `slugify()` so the
  * UI can still match `lesson:<slug>` SSE events to slots.
  */
@@ -80,7 +80,7 @@ export async function GET(_req: Request, { params }: RouteCtx) {
     // the next stage:done refresh.
   }
 
-  // Path 2: pre-init_course fallback — read course-spec.json so the UI can
+  // Path 2: pre-design_course fallback — read course-spec.json so the UI can
   // render the planned count before the architect has written course.json.
   let raw: string;
   try {

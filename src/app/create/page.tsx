@@ -2276,7 +2276,7 @@ interface ProgressState {
 type StageStatus = 'started' | 'done' | 'error';
 
 // US-108 — lesson slot in the horizontal progress slider. Sourced from
-// GET /api/courses/<slug>/curriculum (course.json once init_course finishes,
+// GET /api/courses/<slug>/curriculum (course.json once design_course finishes,
 // course-spec.json fallback before that).
 interface CurriculumLesson {
   slug: string;
@@ -2289,7 +2289,7 @@ interface CurriculumLesson {
 type LessonSlotStatus = 'pending' | 'started' | 'done' | 'error';
 
 interface StageEntry {
-  name: string;          // SSE stage name ('init_course' or 'lesson:<slug>')
+  name: string;          // SSE stage name ('research_course' / 'design_course' / 'lesson:<slug>' / 'coherence-pass')
   diskName: string;      // basename used for URL/disk lookup
   status: StageStatus;
   liveLines: string[];   // streamed lines for the active session
@@ -2300,12 +2300,33 @@ interface StageEntry {
   hydrated: boolean;     // true if seeded from /logs index (page opened mid-run)
 }
 
+// Pipeline stages whose SSE name and disk-log basename match 1:1. Anything
+// not in this set is treated as a per-lesson stage (`lesson:<slug>` SSE
+// event vs `<slug>.log` on disk).
+const PIPELINE_STAGE_NAMES = new Set(['research_course', 'design_course', 'coherence-pass']);
+
 // Map an SSE stage event name to the on-disk basename used in /logs/<stage>.
-// The pipeline emits 'init_course' verbatim and prefixes lesson stages with
-// 'lesson:' (see startGenerationInner.runLesson). The disk filename strips
-// that prefix.
+// Per-lesson stages are prefixed with 'lesson:' (see
+// startGenerationInner.runLesson) and stored on disk as `<slug>.log`; the
+// pipeline stages map 1:1.
 export function stageDiskName(sseName: string): string {
   return sseName.startsWith('lesson:') ? sseName.slice('lesson:'.length) : sseName;
+}
+
+// Human-readable label for the SSE log panel's stage heading. Pipeline
+// stages get fixed strings; per-lesson stages keep their slug-derived title
+// resolved elsewhere.
+export function stageDisplayLabel(sseName: string): string {
+  switch (sseName) {
+    case 'research_course':
+      return 'Research';
+    case 'design_course':
+      return 'Design course';
+    case 'coherence-pass':
+      return 'Coherence pass';
+    default:
+      return sseName;
+  }
 }
 
 // US-108 — pre-rendered horizontal slider of every planned lesson slot.
@@ -2814,7 +2835,7 @@ function StageLogSection({
         ) : (
           <ChevronRight size={14} strokeWidth={2} />
         )}
-        <span style={{ flex: 1, fontWeight: 600 }}>{entry.name}</span>
+        <span style={{ flex: 1, fontWeight: 600 }}>{stageDisplayLabel(entry.name)}</span>
         <span
           style={{
             display: 'inline-flex',
@@ -2889,7 +2910,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   } | null>(null);
 
   // US-108 — pre-rendered lesson slots. Sourced from
-  // GET /api/courses/<slug>/curriculum (course.json once init_course finishes,
+  // GET /api/courses/<slug>/curriculum (course.json once design_course finishes,
   // course-spec.json fallback before that).
   const [curriculum, setCurriculum] = useState<CurriculumLesson[] | null>(null);
   const [curriculumSource, setCurriculumSource] = useState<'course' | 'spec' | null>(null);
@@ -3060,7 +3081,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
 
   // US-108 — fetch the planned lesson list so the progress slider can
   // pre-render every slot before per-lesson generation starts. Refetched
-  // when init_course finishes so we can upgrade from the spec-derived
+  // when design_course finishes so we can upgrade from the spec-derived
   // placeholder slugs (slugify(title)) to the canonical course.json slugs.
   const refetchCurriculum = useCallback(async () => {
     try {
@@ -3086,18 +3107,21 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   }, [refetchCurriculum]);
 
   // Once we have authoritative course.json data we can stop polling.
-  const initCourseDone = useMemo(
+  // course.json lands when design_course (the second init stage) finishes;
+  // research_course only produces research.md / sources.md, neither of
+  // which the slider needs.
+  const designCourseDone = useMemo(
     () =>
       stages.some(
-        (s) => s.diskName === 'init_course' && (s.status === 'done' || s.status === 'error'),
+        (s) => s.diskName === 'design_course' && (s.status === 'done' || s.status === 'error'),
       ),
     [stages],
   );
   useEffect(() => {
-    if (!initCourseDone) return;
+    if (!designCourseDone) return;
     if (curriculumSource === 'course') return;
     void refetchCurriculum();
-  }, [initCourseDone, curriculumSource, refetchCurriculum]);
+  }, [designCourseDone, curriculumSource, refetchCurriculum]);
 
   // Derive lesson statuses from the SSE stage events. The map is keyed by
   // the lesson slug (stage diskName for `lesson:<slug>` entries). Slots not
@@ -3136,7 +3160,7 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
         setStages((prev) => {
           if (prev.length > 0) return prev; // SSE already added live entries
           return data.stages!.map((s) => ({
-            name: s.stage === 'init_course' ? 'init_course' : `lesson:${s.stage}`,
+            name: PIPELINE_STAGE_NAMES.has(s.stage) ? s.stage : `lesson:${s.stage}`,
             diskName: s.stage,
             status: 'done' as StageStatus,
             liveLines: [],

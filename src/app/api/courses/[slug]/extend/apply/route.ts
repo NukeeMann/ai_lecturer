@@ -142,10 +142,11 @@ export async function POST(req: Request, { params }: RouteCtx) {
   }
 
   // Drive the generation pipeline in "append mode" by seeding a state file
-  // with init_course already done and only the new lessons listed as
-  // pending; resumeGeneration honours both. US-139's idempotency guard
-  // would skip the existing lessons regardless, but listing only the new
-  // ones keeps progress events clean for the UI.
+  // with both init stages (research_course + design_course) already done
+  // and only the new lessons listed as pending; resumeGeneration honours
+  // both. US-139's idempotency guard would skip the existing lessons
+  // regardless, but listing only the new ones keeps progress events clean
+  // for the UI.
   const lessonMaxRetries = parseNonNegativeInt(process.env.LESSON_MAX_RETRIES, 2);
   const lessonTimeoutMs =
     parseNonNegativeInt(process.env.LESSON_TIMEOUT_SEC, 1800) * 1000;
@@ -155,7 +156,8 @@ export async function POST(req: Request, { params }: RouteCtx) {
     slug,
     startedAt: now,
     lastUpdatedAt: now,
-    initCourse: { status: 'done' },
+    research: { status: 'done' },
+    design: { status: 'done' },
     lessons: newLessonSlugs.map((s) => ({
       slug: s,
       status: 'pending' as const,

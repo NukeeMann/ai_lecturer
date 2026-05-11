@@ -15,8 +15,9 @@ import {
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
   defaultCoherencePassCommand,
-  defaultInitCourseCommand,
+  defaultDesignCourseCommand,
   defaultLessonCommand,
+  defaultResearchCourseCommand,
   enqueueGeneration,
   eventsLogPath,
   formatStreamJsonLine,
@@ -172,6 +173,53 @@ async function writeStubCourse(slug: string, lessonSlugs: string[]) {
   );
 }
 
+/**
+ * Write minimal research.md + sources.md so the post-research guard in
+ * the orchestrator accepts the research_course child's "exit". Mirrors
+ * writeStubCourse for the second init stage.
+ */
+async function writeStubResearchArtefacts(slug: string) {
+  const dir = path.join(coursesRoot, slug);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, 'research.md'), '# Research: stub\n', 'utf8');
+  await fs.writeFile(path.join(dir, 'sources.md'), '# Sources: stub\n', 'utf8');
+}
+
+/**
+ * Drive both init stages of a scripted pipeline in one call:
+ *  1. consume the research_course child, write research.md + sources.md,
+ *     exit 0
+ *  2. consume the design_course child, write course.json with the given
+ *     lesson slugs, exit 0
+ * Most pipeline tests just want to fast-forward through init to start
+ * scripting per-lesson children — this helper is what they call.
+ */
+async function runInitStages(
+  scripted: ScriptedSpawn,
+  slug: string,
+  lessonSlugs: string[],
+): Promise<void> {
+  const research = await scripted.nextChild();
+  await writeStubResearchArtefacts(slug);
+  research.finishWithExit(0);
+  const design = await scripted.nextChild();
+  await writeStubCourse(slug, lessonSlugs);
+  design.finishWithExit(0);
+}
+
+/**
+ * Variant of runInitStages used by US-139 idempotency tests: the test
+ * pre-places course.json + research.md + sources.md before startGeneration,
+ * so both init children just need to consume and exit 0 — the pre-existing
+ * files satisfy the post-stage guards on read-back.
+ */
+async function passInitStagesNoWrite(scripted: ScriptedSpawn): Promise<void> {
+  const research = await scripted.nextChild();
+  research.finishWithExit(0);
+  const design = await scripted.nextChild();
+  design.finishWithExit(0);
+}
+
 /** Helper: write a valid stub lesson file at the canonical path. */
 async function writeStubLesson(slug: string, lessonSlug: string) {
   const dir = path.join(coursesRoot, slug, 'lessons');
@@ -229,11 +277,11 @@ afterEach(async () => {
 describe('formatStreamJsonLine (US-102)', () => {
   it('passes non-JSON lines through unchanged', () => {
     expect(formatStreamJsonLine('hello world')).toEqual(['hello world']);
-    expect(formatStreamJsonLine('[mock init_course] working...')).toEqual([
-      '[mock init_course] working...',
+    expect(formatStreamJsonLine('[mock research_course] working...')).toEqual([
+      '[mock research_course] working...',
     ]);
-    expect(formatStreamJsonLine('Unknown command: /init_course')).toEqual([
-      'Unknown command: /init_course',
+    expect(formatStreamJsonLine('Unknown command: /research_course')).toEqual([
+      'Unknown command: /research_course',
     ]);
     expect(formatStreamJsonLine('')).toEqual(['']);
   });
@@ -401,10 +449,10 @@ describe('sseEncode', () => {
   });
   it('encodes stage with name and status', () => {
     const text = new TextDecoder().decode(
-      sseEncode({ type: 'stage', name: 'init_course', status: 'started' }),
+      sseEncode({ type: 'stage', name: 'research_course', status: 'started' }),
     );
     expect(text).toContain('event: stage\n');
-    expect(text).toContain('"name":"init_course"');
+    expect(text).toContain('"name":"research_course"');
     expect(text).toContain('"status":"started"');
   });
   it('encodes error with message', () => {
@@ -424,7 +472,7 @@ describe('startGeneration spawn wrapper', () => {
     ).rejects.toBeInstanceOf(ClaudeUnavailableError);
   });
 
-  it('runs init then iterates lessons sequentially and emits stage/log/progress/done', async () => {
+  it('runs both init stages then iterates lessons sequentially and emits stage/log/progress/done', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
 
@@ -433,21 +481,27 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    // Child #1 is the init claude — emulate it by writing a 2-lesson
-    // course.json before exit so the post-init guard / per-lesson loop see
-    // real output.
-    const init = await scripted.nextChild();
-    init.emitStdout('init says hi\n');
-    await writeStubCourse('demo', ['intro', 'outro']);
-    init.finishWithExit(0);
+    // Child #1 is research_course — write research.md + sources.md and exit
+    // so the post-research guard accepts the artefacts.
+    const research = await scripted.nextChild();
+    research.emitStdout('researching\n');
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
 
-    // Child #2 is the per-lesson claude for `intro` — write the file before exit.
+    // Child #2 is design_course — write the 2-lesson course.json so the
+    // post-design guard / per-lesson loop see real output.
+    const design = await scripted.nextChild();
+    design.emitStdout('designing\n');
+    await writeStubCourse('demo', ['intro', 'outro']);
+    design.finishWithExit(0);
+
+    // Child #3 is the per-lesson claude for `intro` — write the file before exit.
     const intro = await scripted.nextChild();
     intro.emitStdout('working on intro\n');
     await writeStubLesson('demo', 'intro');
     intro.finishWithExit(0);
 
-    // Child #3 is the per-lesson claude for `outro`.
+    // Child #4 is the per-lesson claude for `outro`.
     const outro = await scripted.nextChild();
     outro.emitStdout('working on outro\n');
     await writeStubLesson('demo', 'outro');
@@ -458,8 +512,10 @@ describe('startGeneration spawn wrapper', () => {
 
     const stageEvents = events.filter((e) => e.type === 'stage');
     expect(stageEvents).toEqual([
-      { type: 'stage', name: 'init_course', status: 'started' },
-      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'done' },
+      { type: 'stage', name: 'design_course', status: 'started' },
+      { type: 'stage', name: 'design_course', status: 'done' },
       { type: 'stage', name: 'lesson:intro', status: 'started' },
       { type: 'stage', name: 'lesson:intro', status: 'done' },
       { type: 'stage', name: 'lesson:outro', status: 'started' },
@@ -467,7 +523,8 @@ describe('startGeneration spawn wrapper', () => {
     ]);
 
     const logLines = events.filter((e) => e.type === 'log').map((e) => (e as { line: string }).line);
-    expect(logLines).toContain('init says hi');
+    expect(logLines).toContain('researching');
+    expect(logLines).toContain('designing');
     expect(logLines).toContain('working on intro');
     expect(logLines).toContain('working on outro');
 
@@ -499,9 +556,7 @@ describe('startGeneration spawn wrapper', () => {
       lessonCommand,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['alpha', 'beta']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['alpha', 'beta']);
 
     const alpha = await scripted.nextChild();
     expect(alpha.command).toBe('fake-claude');
@@ -535,9 +590,7 @@ describe('startGeneration spawn wrapper', () => {
     });
 
     // Init succeeds with 2 lessons.
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['good', 'bad']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['good', 'bad']);
 
     // Lesson 1 (`good`) succeeds.
     const good = await scripted.nextChild();
@@ -566,8 +619,10 @@ describe('startGeneration spawn wrapper', () => {
     // Both lessons emitted started; only `good` emitted a `done` stage; `bad` emitted error.
     const stageEvents = run.events.filter((e) => e.type === 'stage');
     expect(stageEvents).toEqual([
-      { type: 'stage', name: 'init_course', status: 'started' },
-      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'done' },
+      { type: 'stage', name: 'design_course', status: 'started' },
+      { type: 'stage', name: 'design_course', status: 'done' },
       { type: 'stage', name: 'lesson:good', status: 'started' },
       { type: 'stage', name: 'lesson:good', status: 'done' },
       { type: 'stage', name: 'lesson:bad', status: 'started' },
@@ -594,9 +649,7 @@ describe('startGeneration spawn wrapper', () => {
       lessonMaxRetries: 0,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['malformed']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['malformed']);
 
     // Lesson exits 0 but writes JSON missing required fields.
     const lesson = await scripted.nextChild();
@@ -629,9 +682,7 @@ describe('startGeneration spawn wrapper', () => {
       sigkillGraceMs: 5000,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['first', 'second']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['first', 'second']);
 
     // First lesson succeeds.
     const first = await scripted.nextChild();
@@ -649,8 +700,9 @@ describe('startGeneration spawn wrapper', () => {
 
     await waitForFinish(run);
 
-    // Pipeline finalized as error (cancelled) — NO third spawn happened.
-    expect(scripted.children.length).toBe(3);
+    // Pipeline finalized as error (cancelled). Spawn count = 2 init stages
+    // + 2 lesson attempts (first done, second cancelled mid-flight).
+    expect(scripted.children.length).toBe(4);
     const error = run.events.find((e) => e.type === 'error') as
       | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
       | undefined;
@@ -668,16 +720,18 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    const init = await scripted.nextChild();
+    const research = await scripted.nextChild();
 
     // Mid-flight stream-json events arrive line-by-line on stdout BEFORE the
     // child exits — without US-102's incremental decoding the SSE log panel
     // wouldn't surface them until close. Each emit + microtask tick lets
     // pumpStream flush the line into a `log` event before the next event
-    // pushes through.
+    // pushes through. We script the research child here because it is the
+    // first init spawn; the same streaming code path serves design + lesson
+    // children too.
     const tick = () => new Promise((r) => setImmediate(r));
 
-    init.emitStdout(
+    research.emitStdout(
       JSON.stringify({
         type: 'system',
         subtype: 'init',
@@ -690,7 +744,7 @@ describe('startGeneration spawn wrapper', () => {
       .map((e) => (e as { line: string }).line);
     expect(logLinesSoFar).toContain('[system init claude-opus-4-7]');
 
-    init.emitStdout(
+    research.emitStdout(
       JSON.stringify({
         type: 'assistant',
         message: {
@@ -707,9 +761,9 @@ describe('startGeneration spawn wrapper', () => {
     // Critically: BEFORE the child exits, the assistant text must already be
     // in the log buffer — the whole point of stream-json is that we don't
     // wait for end-of-stage to see anything.
-    expect(init.exitCode).toBeNull();
+    expect(research.exitCode).toBeNull();
 
-    init.emitStdout(
+    research.emitStdout(
       JSON.stringify({
         type: 'assistant',
         message: {
@@ -718,7 +772,7 @@ describe('startGeneration spawn wrapper', () => {
             {
               type: 'tool_use',
               name: 'Write',
-              input: { file_path: '/courses/demo/course.json' },
+              input: { file_path: '/courses/demo/research.md' },
             },
           ],
         },
@@ -726,8 +780,8 @@ describe('startGeneration spawn wrapper', () => {
     );
     await tick();
 
-    await writeStubCourse('demo', ['intro']);
-    init.emitStdout(
+    await writeStubResearchArtefacts('demo');
+    research.emitStdout(
       JSON.stringify({
         type: 'result',
         subtype: 'success',
@@ -735,7 +789,13 @@ describe('startGeneration spawn wrapper', () => {
         duration_ms: 4500,
       }) + '\n',
     );
-    init.finishWithExit(0);
+    research.finishWithExit(0);
+
+    // Design stage just needs to land course.json so the per-lesson loop
+    // can pick up the single 'intro' lesson.
+    const design = await scripted.nextChild();
+    await writeStubCourse('demo', ['intro']);
+    design.finishWithExit(0);
 
     const lesson = await scripted.nextChild();
     await writeStubLesson('demo', 'intro');
@@ -753,7 +813,7 @@ describe('startGeneration spawn wrapper', () => {
       expect.arrayContaining([
         '[system init claude-opus-4-7]',
         'Researching topic.',
-        '→ Write(file_path: /courses/demo/course.json)',
+        '→ Write(file_path: /courses/demo/research.md)',
         '[result success (4.5s)]',
       ]),
     );
@@ -766,11 +826,11 @@ describe('startGeneration spawn wrapper', () => {
     );
     expect(logRaw).toContain('[system init claude-opus-4-7]');
     expect(logRaw).toContain('Researching topic.');
-    expect(logRaw).toContain('→ Write(file_path: /courses/demo/course.json)');
+    expect(logRaw).toContain('→ Write(file_path: /courses/demo/research.md)');
     expect(logRaw).not.toContain('"type":"assistant"');
   });
 
-  it('captures stdout AND stderr to /courses/<slug>/.generation.log across init + lesson stages', async () => {
+  it('captures stdout AND stderr to /courses/<slug>/.generation.log across all stages', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
@@ -778,11 +838,17 @@ describe('startGeneration spawn wrapper', () => {
       isExecutableInPath: () => true,
     });
 
-    const init = await scripted.nextChild();
-    init.emitStdout('init-stdout-line\n');
-    init.emitStderr('init-stderr-line\n');
+    const research = await scripted.nextChild();
+    research.emitStdout('research-stdout-line\n');
+    research.emitStderr('research-stderr-line\n');
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
+
+    const design = await scripted.nextChild();
+    design.emitStdout('design-stdout-line\n');
+    design.emitStderr('design-stderr-line\n');
     await writeStubCourse('demo', ['only']);
-    init.finishWithExit(0);
+    design.finishWithExit(0);
 
     const lesson = await scripted.nextChild();
     lesson.emitStdout('lesson-stdout-line\n');
@@ -796,15 +862,19 @@ describe('startGeneration spawn wrapper', () => {
       .map((e) => (e as { line: string }).line);
     expect(lines).toEqual(
       expect.arrayContaining([
-        'init-stdout-line',
-        'init-stderr-line',
+        'research-stdout-line',
+        'research-stderr-line',
+        'design-stdout-line',
+        'design-stderr-line',
         'lesson-stdout-line',
         'lesson-stderr-line',
       ]),
     );
     const log = await fs.readFile(path.join(coursesRoot, 'demo', '.generation.log'), 'utf8');
-    expect(log).toContain('init-stdout-line');
-    expect(log).toContain('init-stderr-line');
+    expect(log).toContain('research-stdout-line');
+    expect(log).toContain('research-stderr-line');
+    expect(log).toContain('design-stdout-line');
+    expect(log).toContain('design-stderr-line');
     expect(log).toContain('lesson-stdout-line');
     expect(log).toContain('lesson-stderr-line');
   });
@@ -881,11 +951,12 @@ describe('startGeneration spawn wrapper', () => {
     expect(scripted.children.length).toBe(1);
   });
 
-  it('finalizes as error when init exits 0 but course.json is missing (Unknown command bug)', async () => {
-    // Reproduces US-095: `claude -p '/init_course <slug>'` printed
-    // "Unknown command: /init_course" and exited 0 without ever invoking the
-    // skill. With no course.json on disk, the per-lesson loop has no input
-    // and the pipeline must surface an error rather than silently emit done.
+  it('finalizes as error when research exits 0 but research.md is missing (Unknown command bug)', async () => {
+    // Reproduces US-095 for the first init stage: `claude -p` in print mode
+    // silently no-ops on prompts it doesn't understand (printing "Unknown
+    // command:" and exiting 0). With no research.md on disk the design
+    // stage has nothing to read; the pipeline must surface an error rather
+    // than silently emit done. Same risk profile, same defensive guard.
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
@@ -894,30 +965,34 @@ describe('startGeneration spawn wrapper', () => {
     });
 
     const claude = await scripted.nextChild();
-    claude.emitStdout('Unknown command: /init_course\n');
-    claude.finishWithExit(0); // intentionally do NOT write course.json
+    claude.emitStdout('Unknown command: /research_course\n');
+    claude.finishWithExit(0); // intentionally do NOT write research.md
 
     await waitForFinish(run);
 
     const stages = run.events.filter((e) => e.type === 'stage');
     expect(stages).toEqual([
-      { type: 'stage', name: 'init_course', status: 'started' },
-      { type: 'stage', name: 'init_course', status: 'error' },
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'error' },
     ]);
 
     const error = run.events.find((e) => e.type === 'error') as
       | { type: 'error'; message: string }
       | undefined;
     expect(error).toBeDefined();
-    expect(error?.message).toMatch(/init_course did not produce course\.json/i);
+    expect(error?.message).toMatch(/research_course did not produce research\.md/i);
     expect(error?.message).toMatch(/\.generation\.log/i);
 
     expect(run.events.find((e) => e.type === 'done')).toBeUndefined();
 
-    // Pipeline must NOT have proceeded to a per-lesson spawn.
+    // Pipeline must NOT have proceeded to the design spawn (let alone any
+    // per-lesson spawn).
     expect(scripted.children.length).toBe(1);
 
-    // course.json was never written (sanity).
+    // research.md, sources.md, and course.json were never written (sanity).
+    await expect(
+      fs.access(path.join(coursesRoot, 'demo', 'research.md')),
+    ).rejects.toBeDefined();
     await expect(
       fs.access(path.join(coursesRoot, 'demo', 'course.json')),
     ).rejects.toBeDefined();
@@ -925,18 +1000,63 @@ describe('startGeneration spawn wrapper', () => {
     expect(getActiveRun()).toBeNull();
   });
 
-  it('default init prompt names the SKILL.md path and avoids the slash-command form', () => {
-    const spec = defaultInitCourseCommand('demo');
+  it('finalizes as error when design exits 0 but course.json is missing', async () => {
+    // Same defensive guard as the research stage, but for design_course:
+    // research produced its artefacts, so the pipeline advances; design
+    // then silently no-ops and the per-lesson loop has no course.json to
+    // walk. The orchestrator must surface this as an error too.
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const research = await scripted.nextChild();
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
+
+    const design = await scripted.nextChild();
+    design.emitStdout('Unknown command: /design_course\n');
+    design.finishWithExit(0); // intentionally do NOT write course.json
+
+    await waitForFinish(run);
+
+    const stages = run.events.filter((e) => e.type === 'stage');
+    expect(stages).toEqual([
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'done' },
+      { type: 'stage', name: 'design_course', status: 'started' },
+      { type: 'stage', name: 'design_course', status: 'error' },
+    ]);
+
+    const error = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string }
+      | undefined;
+    expect(error).toBeDefined();
+    expect(error?.message).toMatch(/design_course did not produce course\.json/i);
+
+    // No per-lesson child spawned.
+    expect(scripted.children.length).toBe(2);
+
+    await expect(
+      fs.access(path.join(coursesRoot, 'demo', 'course.json')),
+    ).rejects.toBeDefined();
+  });
+
+  it('default research prompt names the SKILL.md path and avoids the slash-command form', () => {
+    const spec = defaultResearchCourseCommand('demo');
     expect(spec.command).toBe('claude');
     expect(spec.args[0]).toBe('-p');
     const prompt = spec.args[1];
-    expect(prompt).toContain('init_course');
-    expect(prompt).toContain('scripts/ralph/skills/init_course/SKILL.md');
+    expect(prompt).toContain('research_course');
+    expect(prompt).toContain('scripts/ralph/skills/research_course/SKILL.md');
     expect(prompt).toContain('demo');
     // The pre-fix bug was using `/init_course <slug>` as the prompt body —
     // claude in -p mode treats that as literal text and prints "Unknown
-    // command:" before exiting 0. Guard against a regression.
-    expect(prompt).not.toMatch(/^\s*\/init_course\b/);
+    // command:" before exiting 0. Guard against a regression on the new
+    // skill name too.
+    expect(prompt).not.toMatch(/^\s*\/research_course\b/);
     expect(spec.args).toContain('--dangerously-skip-permissions');
     // US-102: incremental streaming requires --output-format stream-json
     // (and --verbose to satisfy claude -p's flag combo) so the SSE log
@@ -944,11 +1064,43 @@ describe('startGeneration spawn wrapper', () => {
     expect(spec.args).toContain('--output-format');
     expect(spec.args).toContain('stream-json');
     expect(spec.args).toContain('--verbose');
+    // Research is the first init stage — must explicitly tell the agent
+    // NOT to write course.json (that belongs to design_course).
+    expect(prompt).toContain('course.json');
+    expect(prompt).toMatch(/Do NOT write.*course\.json/i);
   });
 
-  it('default init prompt rejects unsafe slugs (assertSafeSlug)', () => {
-    expect(() => defaultInitCourseCommand('../etc')).toThrow(/Invalid slug/i);
-    expect(() => defaultInitCourseCommand('a/b')).toThrow(/Invalid slug/i);
+  it('default research prompt rejects unsafe slugs (assertSafeSlug)', () => {
+    expect(() => defaultResearchCourseCommand('../etc')).toThrow(/Invalid slug/i);
+    expect(() => defaultResearchCourseCommand('a/b')).toThrow(/Invalid slug/i);
+  });
+
+  it('default design prompt names the SKILL.md path, references the prior stage outputs, and asks for course.json', () => {
+    const spec = defaultDesignCourseCommand('demo');
+    expect(spec.command).toBe('claude');
+    expect(spec.args[0]).toBe('-p');
+    const prompt = spec.args[1];
+    expect(prompt).toContain('design_course');
+    expect(prompt).toContain('scripts/ralph/skills/design_course/SKILL.md');
+    expect(prompt).toContain('demo');
+    // Design MUST be told to Read research_course's outputs before it writes
+    // course.json — the whole point of the split is that design consumes
+    // research's artefacts, not re-does them.
+    expect(prompt).toContain('research.md');
+    expect(prompt).toContain('sources.md');
+    expect(prompt).toContain('course.json');
+    expect(prompt).toContain('CourseSchema');
+    // Same regression guard.
+    expect(prompt).not.toMatch(/^\s*\/design_course\b/);
+    expect(spec.args).toContain('--dangerously-skip-permissions');
+    expect(spec.args).toContain('--output-format');
+    expect(spec.args).toContain('stream-json');
+    expect(spec.args).toContain('--verbose');
+  });
+
+  it('default design prompt rejects unsafe slugs', () => {
+    expect(() => defaultDesignCourseCommand('../etc')).toThrow(/Invalid slug/i);
+    expect(() => defaultDesignCourseCommand('a/b')).toThrow(/Invalid slug/i);
   });
 
   it('default lesson prompt names the generate_lesson SKILL.md and includes both slugs', () => {
@@ -988,28 +1140,29 @@ describe('startGeneration spawn wrapper', () => {
   });
 
   // ── US-104: source-materials injection ─────────────────────────────────
-  it('default init prompt is unchanged when /courses/<slug>/sources/ is absent (US-104)', () => {
+  // Both init stages (research_course + design_course) and the per-lesson
+  // command share the same `buildInitSourcesSection` helper, so the
+  // uploaded-files block must appear in all three when sources are present
+  // and stay absent when the sources/ dir is empty or missing.
+  it('research + design prompts are unchanged when /courses/<slug>/sources/ is absent (US-104)', () => {
     // Default test setup has the slug dir created but NO sources subdir.
-    const spec = defaultInitCourseCommand('demo');
-    const prompt = spec.args[1];
-    expect(prompt).not.toMatch(/Source materials/i);
+    expect(defaultResearchCourseCommand('demo').args[1]).not.toMatch(/Source materials/i);
+    expect(defaultDesignCourseCommand('demo').args[1]).not.toMatch(/Source materials/i);
   });
 
-  it('default init prompt is unchanged when /courses/<slug>/sources/ is empty (US-104)', async () => {
+  it('research + design prompts are unchanged when /courses/<slug>/sources/ is empty (US-104)', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo', 'sources'), { recursive: true });
-    const spec = defaultInitCourseCommand('demo');
-    const prompt = spec.args[1];
-    expect(prompt).not.toMatch(/Source materials/i);
+    expect(defaultResearchCourseCommand('demo').args[1]).not.toMatch(/Source materials/i);
+    expect(defaultDesignCourseCommand('demo').args[1]).not.toMatch(/Source materials/i);
   });
 
-  it('default init prompt injects absolute paths for every uploaded source file (US-104)', async () => {
+  it('research prompt injects absolute paths for every uploaded source file (US-104)', async () => {
     const sourcesDir = path.join(coursesRoot, 'demo', 'sources');
     await fs.mkdir(sourcesDir, { recursive: true });
     await fs.writeFile(path.join(sourcesDir, 'lecture-01.pdf'), 'x');
     await fs.writeFile(path.join(sourcesDir, 'notes.txt'), 'x');
 
-    const spec = defaultInitCourseCommand('demo');
-    const prompt = spec.args[1];
+    const prompt = defaultResearchCourseCommand('demo').args[1];
     expect(prompt).toContain('Source materials');
     // Instructions must direct claude to use the Read tool BEFORE drafting.
     expect(prompt).toContain('Read tool');
@@ -1021,6 +1174,20 @@ describe('startGeneration spawn wrapper', () => {
     expect(prompt).toContain(notes);
     expect(path.isAbsolute(lec)).toBe(true);
     expect(path.isAbsolute(notes)).toBe(true);
+  });
+
+  it('design prompt also injects the absolute uploaded-source paths (US-104)', async () => {
+    // The design stage benefits from the same grounding: if the user
+    // uploaded a syllabus PDF, the architect should Read it before
+    // committing module/lesson shape.
+    const sourcesDir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(sourcesDir, { recursive: true });
+    await fs.writeFile(path.join(sourcesDir, 'syllabus.pdf'), 'x');
+
+    const prompt = defaultDesignCourseCommand('demo').args[1];
+    expect(prompt).toContain('Source materials');
+    expect(prompt).toContain('Read tool');
+    expect(prompt).toContain(path.join(sourcesDir, 'syllabus.pdf'));
   });
 
   it('default lesson prompt is unchanged when /courses/<slug>/sources/ is absent (US-104)', () => {
@@ -1057,11 +1224,10 @@ describe('startGeneration spawn wrapper', () => {
   });
 
   // ── GENERATION_MOCK fixture wiring ─────────────────────────────────────
-  // The mock branches in defaultInitCourseCommand / defaultLessonCommand /
-  // defaultCoherencePassCommand spawn .cjs files under
-  // src/lib/server/generationMockScripts/. These tests pin the wiring so a
-  // rename or move of those files breaks the unit suite (loud) instead of
-  // only the playwright e2e suite (slow).
+  // The mock branches in each default*Command function spawn .cjs files
+  // under src/lib/server/generationMockScripts/. These tests pin the
+  // wiring so a rename or move of those files breaks the unit suite
+  // (loud) instead of only the playwright e2e suite (slow).
   describe('GENERATION_MOCK fixture wiring', () => {
     const fsSync = require('node:fs') as typeof import('node:fs');
     const mockScriptsDir = path.join(
@@ -1075,44 +1241,75 @@ describe('startGeneration spawn wrapper', () => {
     afterEach(() => {
       delete process.env.GENERATION_MOCK;
       delete process.env.GENERATION_MOCK_INIT_DELAY_MS;
+      delete process.env.GENERATION_MOCK_DESIGN_DELAY_MS;
     });
 
-    it('GENERATION_MOCK=broken points init at the broken stub script', () => {
+    it('GENERATION_MOCK=broken points research at the broken stub script', () => {
       process.env.GENERATION_MOCK = 'broken';
-      const spec = defaultInitCourseCommand('demo');
+      const spec = defaultResearchCourseCommand('demo');
       expect(spec.command).toBe(process.execPath);
-      const scriptPath = path.join(mockScriptsDir, 'initCourseBroken.cjs');
+      const scriptPath = path.join(mockScriptsDir, 'researchCourseBroken.cjs');
       expect(spec.args).toEqual([scriptPath]);
       expect(fsSync.existsSync(scriptPath)).toBe(true);
     });
 
-    it('GENERATION_MOCK=1 + slug starting with `broken-` points init at the broken stub script', () => {
+    it('GENERATION_MOCK=1 + slug starting with `broken-` points research at the broken stub script', () => {
       process.env.GENERATION_MOCK = '1';
-      const spec = defaultInitCourseCommand('broken-demo');
-      const scriptPath = path.join(mockScriptsDir, 'initCourseBroken.cjs');
+      const spec = defaultResearchCourseCommand('broken-demo');
+      const scriptPath = path.join(mockScriptsDir, 'researchCourseBroken.cjs');
       expect(spec.args[0]).toBe(scriptPath);
     });
 
-    it('GENERATION_MOCK=1 points init at initCourse.cjs with slug + initDelay argv', () => {
+    it('GENERATION_MOCK=1 points research at researchCourse.cjs with slug + initDelay argv', () => {
       process.env.GENERATION_MOCK = '1';
       process.env.GENERATION_MOCK_INIT_DELAY_MS = '750';
-      const spec = defaultInitCourseCommand('demo');
+      const spec = defaultResearchCourseCommand('demo');
       expect(spec.command).toBe(process.execPath);
-      const scriptPath = path.join(mockScriptsDir, 'initCourse.cjs');
+      const scriptPath = path.join(mockScriptsDir, 'researchCourse.cjs');
       expect(spec.args).toEqual([scriptPath, 'demo', '750']);
       expect(fsSync.existsSync(scriptPath)).toBe(true);
     });
 
-    it('GENERATION_MOCK=1 init delay falls back to the 200ms default when the env var is unset / invalid', () => {
+    it('GENERATION_MOCK=1 research delay falls back to the 200ms default when the env var is unset / invalid', () => {
       process.env.GENERATION_MOCK = '1';
       delete process.env.GENERATION_MOCK_INIT_DELAY_MS;
-      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+      expect(defaultResearchCourseCommand('demo').args[2]).toBe('200');
 
       process.env.GENERATION_MOCK_INIT_DELAY_MS = 'not-a-number';
-      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+      expect(defaultResearchCourseCommand('demo').args[2]).toBe('200');
 
       process.env.GENERATION_MOCK_INIT_DELAY_MS = '-5';
-      expect(defaultInitCourseCommand('demo').args[2]).toBe('200');
+      expect(defaultResearchCourseCommand('demo').args[2]).toBe('200');
+    });
+
+    it('GENERATION_MOCK=1 points design at designCourse.cjs with slug + designDelay argv', () => {
+      process.env.GENERATION_MOCK = '1';
+      process.env.GENERATION_MOCK_DESIGN_DELAY_MS = '125';
+      const spec = defaultDesignCourseCommand('demo');
+      expect(spec.command).toBe(process.execPath);
+      const scriptPath = path.join(mockScriptsDir, 'designCourse.cjs');
+      expect(spec.args).toEqual([scriptPath, 'demo', '125']);
+      expect(fsSync.existsSync(scriptPath)).toBe(true);
+    });
+
+    it('GENERATION_MOCK=1 design delay defaults to 0 when the env var is unset / invalid', () => {
+      process.env.GENERATION_MOCK = '1';
+      delete process.env.GENERATION_MOCK_DESIGN_DELAY_MS;
+      expect(defaultDesignCourseCommand('demo').args[2]).toBe('0');
+
+      process.env.GENERATION_MOCK_DESIGN_DELAY_MS = 'abc';
+      expect(defaultDesignCourseCommand('demo').args[2]).toBe('0');
+    });
+
+    it('GENERATION_MOCK=1 does NOT short-circuit design via the `broken-` slug prefix', () => {
+      // The `broken-` short-circuit lives on the research stage only —
+      // research is always the first init child so that's the path the
+      // playwright "broken init" scenario needs to fire. The design mock
+      // stays happy regardless of slug prefix.
+      process.env.GENERATION_MOCK = '1';
+      const spec = defaultDesignCourseCommand('broken-demo');
+      const scriptPath = path.join(mockScriptsDir, 'designCourse.cjs');
+      expect(spec.args[0]).toBe(scriptPath);
     });
 
     it('GENERATION_MOCK=1 points lessons at generateLesson.cjs with slug + lessonSlug argv', () => {
@@ -1144,9 +1341,7 @@ describe('startGeneration spawn wrapper', () => {
       lessonTimeoutMs: 60_000,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['retryme']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['retryme']);
 
     // Attempt 1: non-zero exit + stderr, no file written.
     const a1 = await scripted.nextChild();
@@ -1208,9 +1403,7 @@ describe('startGeneration spawn wrapper', () => {
       lessonTimeoutMs: 60_000,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['doomed', 'lucky']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['doomed', 'lucky']);
 
     // 'doomed' fails on every one of its 3 attempts (non-zero exit).
     for (let i = 0; i < 3; i++) {
@@ -1259,12 +1452,17 @@ describe('startGeneration spawn wrapper', () => {
     expect(report[0].lastError).toMatch(/exited with code 1/);
     expect(report[0].logPath).toBe('logs/doomed.log');
 
-    // Init log was teed to logs/init_course.log.
-    const initLog = await fs.readFile(
-      path.join(coursesRoot, 'demo', 'logs', 'init_course.log'),
+    // Init logs were teed to logs/research_course.log + logs/design_course.log.
+    const researchLog = await fs.readFile(
+      path.join(coursesRoot, 'demo', 'logs', 'research_course.log'),
       'utf8',
     );
-    expect(typeof initLog).toBe('string');
+    expect(typeof researchLog).toBe('string');
+    const designLog = await fs.readFile(
+      path.join(coursesRoot, 'demo', 'logs', 'design_course.log'),
+      'utf8',
+    );
+    expect(typeof designLog).toBe('string');
   });
 
   it('per-attempt timeout SIGTERMs then SIGKILLs and the next attempt sees a timeout retry context', async () => {
@@ -1279,9 +1477,7 @@ describe('startGeneration spawn wrapper', () => {
       sigkillGraceMs: 30,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['hangs']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['hangs']);
 
     // Attempt 1: child never exits on its own — let the per-attempt timeout
     // fire. FakeChildProcess.kill('SIGKILL') auto-finishes the child, so the
@@ -1516,10 +1712,13 @@ describe('POST /api/courses/generate (route)', () => {
     );
     const { id } = (await ok.json()) as { id: string };
 
-    const init = await scripted.nextChild();
-    init.emitStdout('hello-world\n');
+    const research = await scripted.nextChild();
+    research.emitStdout('hello-world\n');
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
+    const design = await scripted.nextChild();
     await writeStubCourse('demo', ['intro']);
-    init.finishWithExit(0);
+    design.finishWithExit(0);
     const lesson = await scripted.nextChild();
     lesson.emitStdout('lesson-line\n');
     await writeStubLesson('demo', 'intro');
@@ -1593,7 +1792,7 @@ describe('getActiveRunSummary (US-106)', () => {
       active: true,
       slug: 'demo',
       name: 'My Resumed Course',
-      stage: 'init_course',
+      stage: 'research_course',
       queue: [],
     });
   });
@@ -1626,11 +1825,14 @@ describe('getActiveRunSummary (US-106)', () => {
       childPid: number | null;
     };
     expect(marker.slug).toBe('demo');
-    expect(marker.stage).toBe('init_course');
+    // First spawn is the research_course child — marker reflects the
+    // most-recently started stage.
+    expect(marker.stage).toBe('research_course');
     expect(marker.childPid).toBe(init.pid);
 
-    // Finish the init child without writing course.json so the pipeline
-    // bails to the error finalize branch — that path also removes the marker.
+    // Finish the research child with a non-zero exit so the pipeline
+    // bails to the error finalize branch (no design child spawns) — that
+    // path also removes the marker.
     init.finishWithExit(1);
     await waitForFinish(run);
 
@@ -1645,7 +1847,7 @@ describe('getActiveRunSummary (US-106)', () => {
       JSON.stringify({
         childPid: 9999999, // very high — guaranteed ESRCH on modern kernels
         slug: 'ghosted',
-        stage: 'init_course',
+        stage: 'research_course',
         startedAt: '2026-05-04T00:00:00.000Z',
       }),
       'utf8',
@@ -1808,8 +2010,9 @@ describe('enqueueGeneration / sequential queue (US-107)', () => {
     const second = await enqueueGeneration('next');
     expect(second.kind).toBe('queued');
 
-    // Finish 'demo' init with no course.json so the pipeline finalizes
-    // (error path) — finalize must still drain the queue.
+    // Finish 'demo' research child with no research.md so the
+    // post-research guard trips and the pipeline finalizes via the error
+    // path — finalize must still drain the queue.
     init.finishWithExit(0);
 
     if (first.kind !== 'started') throw new Error('first not started');
@@ -1911,20 +2114,21 @@ describe('.generation-state.json lifecycle (US-136)', () => {
       lessonTimeoutMs: 60_000,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['intro', 'outro']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['intro', 'outro']);
 
     // After init success the state file exists with both lessons pending.
+    // Poll until BOTH init stages are persisted as 'done' — research lands
+    // first, then design, with the lesson loop kicking off right after.
     const statePath = generationStateFile('demo');
     let snapshot = await readGenerationState('demo');
-    // Brief poll: the state write happens just before the next stage emit.
-    for (let i = 0; i < 50 && !snapshot; i++) {
-      await new Promise((r) => setImmediate(r));
+    for (let i = 0; i < 50; i++) {
       snapshot = await readGenerationState('demo');
+      if (snapshot && snapshot.design.status === 'done') break;
+      await new Promise((r) => setImmediate(r));
     }
     expect(snapshot).not.toBeNull();
-    expect(snapshot!.initCourse.status).toBe('done');
+    expect(snapshot!.research.status).toBe('done');
+    expect(snapshot!.design.status).toBe('done');
     expect(snapshot!.lessons.map((l) => l.slug)).toEqual(['intro', 'outro']);
     expect(snapshot!.lessons.every((l) => l.status === 'pending')).toBe(true);
     expect(snapshot!.config.lessonMaxRetries).toBe(2);
@@ -1966,9 +2170,7 @@ describe('.generation-state.json lifecycle (US-136)', () => {
       lessonTimeoutMs: 60_000,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['lucky', 'doomed']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['lucky', 'doomed']);
 
     const lucky = await scripted.nextChild();
     await writeStubLesson('demo', 'lucky');
@@ -1985,7 +2187,8 @@ describe('.generation-state.json lifecycle (US-136)', () => {
 
     const state = await readGenerationState('demo');
     expect(state).not.toBeNull();
-    expect(state!.initCourse.status).toBe('done');
+    expect(state!.research.status).toBe('done');
+    expect(state!.design.status).toBe('done');
     const lucky2 = state!.lessons.find((l) => l.slug === 'lucky');
     const doomed = state!.lessons.find((l) => l.slug === 'doomed');
     expect(lucky2?.status).toBe('done');
@@ -2006,9 +2209,7 @@ describe('.generation-state.json lifecycle (US-136)', () => {
       sigkillGraceMs: 50,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['only']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['only']);
 
     // Wait until the lesson child is alive (state file shows inflight) then
     // simulate a SIGKILL. atomicWriteJson always renames from .tmp → final;
@@ -2037,7 +2238,7 @@ describe('.generation-state.json lifecycle (US-136)', () => {
     expect(state!.lessons[0].status).toBe('failed');
   });
 
-  it('records initCourse.status=failed on init failure (no course.json produced)', async () => {
+  it('records research.status=failed on research_course failure (no research.md produced)', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
     const run = await startGeneration('demo', {
@@ -2046,15 +2247,43 @@ describe('.generation-state.json lifecycle (US-136)', () => {
     });
 
     const claude = await scripted.nextChild();
-    claude.emitStdout('Unknown command: /init_course\n');
-    claude.finishWithExit(0); // exits 0 but does NOT write course.json
+    claude.emitStdout('Unknown command: /research_course\n');
+    claude.finishWithExit(0); // exits 0 but does NOT write research.md
 
     await waitForFinish(run);
 
     const state = await readGenerationState('demo');
     expect(state).not.toBeNull();
-    expect(state!.initCourse.status).toBe('failed');
-    expect(state!.initCourse.reason).toMatch(/did not produce course\.json/i);
+    expect(state!.research.status).toBe('failed');
+    expect(state!.research.reason).toMatch(/did not produce research\.md/i);
+    // Design stage never ran — stays pending.
+    expect(state!.design.status).toBe('pending');
+    expect(state!.lessons).toEqual([]);
+  });
+
+  it('records design.status=failed on design_course failure (research done, course.json missing)', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    const research = await scripted.nextChild();
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
+
+    const design = await scripted.nextChild();
+    design.emitStdout('Unknown command: /design_course\n');
+    design.finishWithExit(0); // exits 0 but does NOT write course.json
+
+    await waitForFinish(run);
+
+    const state = await readGenerationState('demo');
+    expect(state).not.toBeNull();
+    expect(state!.research.status).toBe('done');
+    expect(state!.design.status).toBe('failed');
+    expect(state!.design.reason).toMatch(/did not produce course\.json/i);
     expect(state!.lessons).toEqual([]);
   });
 });
@@ -2088,9 +2317,7 @@ describe('resumeGeneration (US-137)', () => {
       sigkillGraceMs: 5,
     });
 
-    const init = await scripted1.nextChild();
-    await writeStubCourse('demo', ['one', 'two', 'three']);
-    init.finishWithExit(0);
+    await runInitStages(scripted1, 'demo', ['one', 'two', 'three']);
 
     const one = await scripted1.nextChild();
     await writeStubLesson('demo', 'one');
@@ -2180,7 +2407,8 @@ describe('resumeGeneration (US-137)', () => {
       slug: 'demo',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [
         {
           slug: 'alpha',
@@ -2237,7 +2465,8 @@ describe('resumeGeneration (US-137)', () => {
       slug: 'demo',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [
         {
           slug: 'alpha',
@@ -2274,14 +2503,15 @@ describe('resumeGeneration (US-137)', () => {
   });
 
   it('emits the resumed event before any stage events even when init is rerun', async () => {
-    // initCourse not done → resume must still emit the resumed event FIRST,
-    // then go on to re-run init_course.
+    // research not done → resume must still emit the resumed event FIRST,
+    // then go on to re-run the init pipeline (research + design).
     await writeStubState('demo', {
       schemaVersion: 1,
       slug: 'demo',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'failed', reason: 'crashed' },
+      research: { status: 'failed', reason: 'crashed' },
+      design: { status: 'pending' },
       lessons: [],
       config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
     });
@@ -2303,10 +2533,8 @@ describe('resumeGeneration (US-137)', () => {
       inflightSlug: null,
     });
 
-    // Init re-runs (succeeds, writes course.json with one lesson).
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['only']);
-    init.finishWithExit(0);
+    // Init re-runs (both stages succeed; course.json lands with one lesson).
+    await runInitStages(scripted, 'demo', ['only']);
 
     const only = await scripted.nextChild();
     await writeStubLesson('demo', 'only');
@@ -2323,7 +2551,8 @@ describe('resumeGeneration (US-137)', () => {
       slug: 'demo',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
       config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
     });
@@ -2349,7 +2578,8 @@ describe('resumeGeneration (US-137)', () => {
       slug: 'other',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
       config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
     });
@@ -2385,7 +2615,8 @@ describe('POST /api/courses/[slug]/resume (US-137)', () => {
       slug: 'demo',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
       config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
     });
@@ -2435,7 +2666,8 @@ describe('POST /api/courses/[slug]/resume (US-137)', () => {
       slug: 'other',
       startedAt: '2026-05-08T00:00:00.000Z',
       lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-      initCourse: { status: 'done' },
+      research: { status: 'done' },
+      design: { status: 'done' },
       lessons: [{ slug: 'x', status: 'pending', attempts: 0 }],
       config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
     });
@@ -2457,8 +2689,8 @@ describe('POST /api/courses/[slug]/resume (US-137)', () => {
 
 describe('persistent generation events ndjson + SSE replay (US-138)', () => {
   // Writes a course.json with zero modules so the per-lesson loop is a no-op
-  // — the test is then free to drive arbitrary log events through init's
-  // stdout without spawning a chain of lesson children.
+  // — the test is then free to drive arbitrary log events through the
+  // research child's stdout without spawning a chain of lesson children.
   async function writeEmptyCourse(slug: string) {
     const dir = path.join(coursesRoot, slug);
     await fs.mkdir(dir, { recursive: true });
@@ -2479,6 +2711,24 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
     );
   }
 
+  // Empty-course variant of runInitStages: caller-supplied research stdout
+  // drives the log events for these ndjson tests; then research finishes,
+  // design writes an empty course.json (zero modules), pipeline finalises
+  // with no per-lesson spawns.
+  async function emitOnResearchAndFinishInit(
+    scripted: ScriptedSpawn,
+    slug: string,
+    researchStdout: string,
+  ): Promise<void> {
+    const research = await scripted.nextChild();
+    research.emitStdout(researchStdout);
+    await writeStubResearchArtefacts(slug);
+    research.finishWithExit(0);
+    const design = await scripted.nextChild();
+    await writeEmptyCourse(slug);
+    design.finishWithExit(0);
+  }
+
   it('appends every emitted event to .generation-events.ndjson with a monotonic seq', async () => {
     await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
     const scripted = makeScriptedSpawn();
@@ -2486,10 +2736,7 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
     });
-    const init = await scripted.nextChild();
-    init.emitStdout('a\nb\nc\n');
-    await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    await emitOnResearchAndFinishInit(scripted, 'demo', 'a\nb\nc\n');
     await waitForFinish(run);
 
     const raw = await fs.readFile(eventsLogPath('demo'), 'utf8');
@@ -2519,12 +2766,9 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
     });
     // Drive enough log events that capturing seq=42 leaves a long tail to
     // replay (and the AC's "100 events" target is comfortably exceeded).
-    const init = await scripted.nextChild();
     let blob = '';
     for (let i = 1; i <= 100; i++) blob += `line ${i}\n`;
-    init.emitStdout(blob);
-    await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    await emitOnResearchAndFinishInit(scripted, 'demo', blob);
     await waitForFinish(run);
     expect(run.lastSeq).toBeGreaterThanOrEqual(100);
 
@@ -2556,10 +2800,7 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
     });
-    const init = await scripted.nextChild();
-    init.emitStdout('one\ntwo\nthree\n');
-    await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    await emitOnResearchAndFinishInit(scripted, 'demo', 'one\ntwo\nthree\n');
     await waitForFinish(run);
 
     const res = await streamGenerate(
@@ -2578,10 +2819,7 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
     });
-    const init = await scripted.nextChild();
-    init.emitStdout('a\nb\nc\nd\ne\n');
-    await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    await emitOnResearchAndFinishInit(scripted, 'demo', 'a\nb\nc\nd\ne\n');
     await waitForFinish(run);
 
     const res = await streamGenerate(
@@ -2607,18 +2845,21 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
     });
-    const init = await scripted.nextChild();
+    const research = await scripted.nextChild();
     // ~10 events of ~200 bytes each blow past the 1 KB threshold.
     let blob = '';
     for (let i = 0; i < 10; i++) blob += `${'x'.repeat(200)}\n`;
-    init.emitStdout(blob);
-    // Pump a small idle so all data events drain before init exits, then
-    // fire a second batch — the rotation must have occurred by then so
+    research.emitStdout(blob);
+    // Pump a small idle so all data events drain before research exits,
+    // then fire a second batch — the rotation must have occurred by then so
     // these later events land in the *fresh* active file.
     await new Promise((r) => setImmediate(r));
-    init.emitStdout(`${'y'.repeat(50)}\n${'y'.repeat(50)}\n${'y'.repeat(50)}\n`);
+    research.emitStdout(`${'y'.repeat(50)}\n${'y'.repeat(50)}\n${'y'.repeat(50)}\n`);
+    await writeStubResearchArtefacts('demo');
+    research.finishWithExit(0);
+    const design = await scripted.nextChild();
     await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    design.finishWithExit(0);
     await waitForFinish(run);
 
     // A rotated file exists alongside the still-present active file.
@@ -2666,10 +2907,7 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
       spawn: scripted.spawn,
       isExecutableInPath: () => true,
     });
-    const init = await scripted.nextChild();
-    init.emitStdout('a\nb\nc\nd\ne\n');
-    await writeEmptyCourse('demo');
-    init.finishWithExit(0);
+    await emitOnResearchAndFinishInit(scripted, 'demo', 'a\nb\nc\nd\ne\n');
     await waitForFinish(run);
 
     // Inject a corrupt line in the middle of the active file (simulating a
@@ -2746,7 +2984,8 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
         slug: 'demo',
         startedAt: '2026-05-08T00:00:00.000Z',
         lastUpdatedAt: '2026-05-08T00:00:00.000Z',
-        initCourse: { status: 'done' },
+        research: { status: 'done' },
+      design: { status: 'done' },
         lessons: [],
         config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
       }),
@@ -2806,8 +3045,9 @@ describe('isLessonAlreadyValid (US-139)', () => {
 });
 
 describe('pre-skip when lesson is already valid (US-139)', () => {
-  it('pre-placed valid lesson skips the spawn — only init child observed', async () => {
+  it('pre-placed valid lesson skips the spawn — only init children observed', async () => {
     await writeStubCourse('demo', ['lesson-a']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson-a');
 
     const scripted = makeScriptedSpawn();
@@ -2816,22 +3056,24 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       isExecutableInPath: () => true,
     });
 
-    // Init child runs but doesn't need to write course.json — it already
-    // exists on disk from writeStubCourse above.
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    // Both init children run but don't need to write anything — the
+    // artefacts (research.md, sources.md, course.json) all exist on disk
+    // from the pre-placement above and the post-stage guards re-read them.
+    await passInitStagesNoWrite(scripted);
 
     await waitForFinish(run);
 
-    // ONLY init was spawned; the per-lesson stage was satisfied by the
+    // Both init stages spawned; the per-lesson stage was satisfied by the
     // pre-existing valid file.
-    expect(scripted.children.length).toBe(1);
+    expect(scripted.children.length).toBe(2);
 
-    // Stage events: init + lesson:lesson-a (started + done).
+    // Stage events: research + design + lesson:lesson-a (started + done).
     const stages = run.events.filter((e) => e.type === 'stage');
     expect(stages).toEqual([
-      { type: 'stage', name: 'init_course', status: 'started' },
-      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'done' },
+      { type: 'stage', name: 'design_course', status: 'started' },
+      { type: 'stage', name: 'design_course', status: 'done' },
       { type: 'stage', name: 'lesson:lesson-a', status: 'started' },
       { type: 'stage', name: 'lesson:lesson-a', status: 'done' },
     ]);
@@ -2848,6 +3090,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
 
   it('truncated lesson JSON falls through to a normal spawn and is overwritten', async () => {
     await writeStubCourse('demo', ['lesson-a']);
+    await writeStubResearchArtefacts('demo');
     const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
     await fs.mkdir(lessonsDir, { recursive: true });
     // Truncated mid-write — JSON.parse will throw → reason: 'parse-error'.
@@ -2864,8 +3107,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       lessonMaxRetries: 0,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     // The bad file does NOT short-circuit the iteration — claude is invoked
     // for lesson-a and overwrites the file with valid output.
@@ -2875,7 +3117,8 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
 
     await waitForFinish(run);
 
-    expect(scripted.children.length).toBe(2);
+    // 2 init + 1 lesson respawn = 3 total.
+    expect(scripted.children.length).toBe(3);
 
     // The bad truncated file was overwritten with the valid one.
     const raw = await fs.readFile(path.join(lessonsDir, 'lesson-a.json'), 'utf8');
@@ -2886,6 +3129,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
 
   it('lesson JSON missing required fields falls through to a normal spawn', async () => {
     await writeStubCourse('demo', ['lesson-a']);
+    await writeStubResearchArtefacts('demo');
     const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
     await fs.mkdir(lessonsDir, { recursive: true });
     // Valid JSON but LessonSchema.safeParse will fail (missing courseSlug,
@@ -2903,19 +3147,20 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       lessonMaxRetries: 0,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     const lessonChild = await scripted.nextChild();
     await writeStubLesson('demo', 'lesson-a');
     lessonChild.finishWithExit(0);
 
     await waitForFinish(run);
-    expect(scripted.children.length).toBe(2);
+    // 2 init + 1 lesson = 3 total.
+    expect(scripted.children.length).toBe(3);
   });
 
   it('stale .tmp alongside valid .json: tmp removed and no spawn', async () => {
     await writeStubCourse('demo', ['lesson-a']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson-a');
     const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
     await fs.writeFile(
@@ -2930,13 +3175,12 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       isExecutableInPath: () => true,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     await waitForFinish(run);
 
-    // No per-lesson spawn — pre-existing valid .json still wins.
-    expect(scripted.children.length).toBe(1);
+    // Only the 2 init children spawned — pre-existing valid .json wins.
+    expect(scripted.children.length).toBe(2);
     // The stale .tmp is dropped regardless of validity.
     await expect(
       fs.access(path.join(lessonsDir, 'lesson-a.tmp')),
@@ -2947,6 +3191,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
 
   it('stale .tmp only (no .json): tmp removed and spawn proceeds', async () => {
     await writeStubCourse('demo', ['lesson-b']);
+    await writeStubResearchArtefacts('demo');
     const lessonsDir = path.join(coursesRoot, 'demo', 'lessons');
     await fs.mkdir(lessonsDir, { recursive: true });
     await fs.writeFile(
@@ -2961,8 +3206,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       isExecutableInPath: () => true,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     // The unlink runs at the start of the iteration BEFORE the spawn — by the
     // time the lesson child exists on the test side, the stale .tmp must
@@ -2976,11 +3220,13 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
     lessonChild.finishWithExit(0);
 
     await waitForFinish(run);
-    expect(scripted.children.length).toBe(2);
+    // 2 init + 1 lesson = 3 total.
+    expect(scripted.children.length).toBe(3);
   });
 
   it('integration: 3-lesson course with lessons 1+3 valid pre-placed → only lesson 2 spawns, progress reaches 3/3', async () => {
     await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson1');
     await writeStubLesson('demo', 'lesson3');
 
@@ -2990,8 +3236,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       isExecutableInPath: () => true,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     // ONLY lesson2 spawns — lesson1 and lesson3 are pre-skipped via
     // isLessonAlreadyValid.
@@ -3001,8 +3246,8 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
 
     await waitForFinish(run);
 
-    // Spawn count: 1 init + 1 lesson 2 = 2 total children.
-    expect(scripted.children.length).toBe(2);
+    // Spawn count: 2 init + 1 lesson 2 = 3 total children.
+    expect(scripted.children.length).toBe(3);
 
     // Progress walks every lesson in order.
     const progress = run.events.filter((e) => e.type === 'progress');
@@ -3013,12 +3258,14 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       { type: 'progress', current: 3, total: 3 },
     ]);
 
-    // Stage events: every lesson emits started+done in order, regardless of
-    // whether it was pre-skipped or actually spawned.
+    // Stage events: research + design + every lesson emits started+done in
+    // order, regardless of whether the lesson was pre-skipped or spawned.
     const stages = run.events.filter((e) => e.type === 'stage');
     expect(stages).toEqual([
-      { type: 'stage', name: 'init_course', status: 'started' },
-      { type: 'stage', name: 'init_course', status: 'done' },
+      { type: 'stage', name: 'research_course', status: 'started' },
+      { type: 'stage', name: 'research_course', status: 'done' },
+      { type: 'stage', name: 'design_course', status: 'started' },
+      { type: 'stage', name: 'design_course', status: 'done' },
       { type: 'stage', name: 'lesson:lesson1', status: 'started' },
       { type: 'stage', name: 'lesson:lesson1', status: 'done' },
       { type: 'stage', name: 'lesson:lesson2', status: 'started' },
@@ -3037,6 +3284,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
     // fails — the failure keeps the state file on disk so we can assert the
     // skipped lesson's state was persisted as `done` with attempts=0.
     await writeStubCourse('demo', ['skip-me', 'fail-me']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'skip-me');
 
     const scripted = makeScriptedSpawn();
@@ -3046,8 +3294,7 @@ describe('pre-skip when lesson is already valid (US-139)', () => {
       lessonMaxRetries: 0, // single attempt for fail-me
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     // fail-me spawns and exits non-zero so the state file persists.
     const failChild = await scripted.nextChild();
@@ -3088,9 +3335,10 @@ describe('coherence-pass final stage (US-141)', () => {
 
   it('runs coherence-pass after every lesson stage and writes the report from stdout', async () => {
     // Pre-place a 3-lesson course with all lessons valid so the per-lesson
-    // loop pre-skips every spawn (US-139) and the only post-init child is
-    // the coherence-pass spawn.
+    // loop pre-skips every spawn (US-139) and the only post-init children
+    // are the two init stages plus the coherence-pass spawn.
     await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson1');
     await writeStubLesson('demo', 'lesson2');
     await writeStubLesson('demo', 'lesson3');
@@ -3104,10 +3352,9 @@ describe('coherence-pass final stage (US-141)', () => {
       disableCoherencePass: false,
     });
 
-    // Init child runs but doesn't write course.json — the file is already
-    // on disk from writeStubCourse above.
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    // Both init children run but don't need to write anything — the
+    // artefacts already exist on disk from the pre-placement above.
+    await passInitStagesNoWrite(scripted);
 
     // No per-lesson children — all three lessons pre-skipped via US-139.
     // The very next spawn must be the coherence-pass child.
@@ -3128,8 +3375,8 @@ describe('coherence-pass final stage (US-141)', () => {
 
     await waitForFinish(run);
 
-    // Spawn count: 1 init + 1 coherence (no per-lesson children).
-    expect(scripted.children.length).toBe(2);
+    // Spawn count: 2 init + 1 coherence (no per-lesson children).
+    expect(scripted.children.length).toBe(3);
 
     // The on-disk report is the captured stdout, byte-for-byte.
     const reportPath = path.join(coursesRoot, 'demo', 'coherence-report.md');
@@ -3176,6 +3423,7 @@ describe('coherence-pass final stage (US-141)', () => {
 
   it('coherence-pass spawn returning non-zero emits stage:error and leaves no report on disk', async () => {
     await writeStubCourse('demo', ['lesson1', 'lesson2', 'lesson3']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson1');
     await writeStubLesson('demo', 'lesson2');
     await writeStubLesson('demo', 'lesson3');
@@ -3187,8 +3435,7 @@ describe('coherence-pass final stage (US-141)', () => {
       disableCoherencePass: false,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     const coherence = await scripted.nextChild();
     coherence.emitStderr('boom\n');
@@ -3235,6 +3482,7 @@ describe('coherence-pass final stage (US-141)', () => {
     // produce a misleading audit on partial coverage and the AC requires it
     // skip in that case.
     await writeStubCourse('demo', ['ok-lesson', 'bad-lesson']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'ok-lesson');
 
     const scripted = makeScriptedSpawn();
@@ -3245,8 +3493,7 @@ describe('coherence-pass final stage (US-141)', () => {
       lessonMaxRetries: 0,
     });
 
-    const init = await scripted.nextChild();
-    init.finishWithExit(0);
+    await passInitStagesNoWrite(scripted);
 
     // ok-lesson is pre-skipped (US-139). bad-lesson spawns and exits non-zero.
     const bad = await scripted.nextChild();
@@ -3255,8 +3502,8 @@ describe('coherence-pass final stage (US-141)', () => {
 
     await waitForFinish(run);
 
-    // No coherence-pass child was spawned — only init + bad-lesson.
-    expect(scripted.children.length).toBe(2);
+    // No coherence-pass child was spawned — only 2 init + bad-lesson.
+    expect(scripted.children.length).toBe(3);
 
     const stages = run.events.filter((e) => e.type === 'stage');
     expect(stages).not.toContainEqual({
@@ -3277,6 +3524,7 @@ describe('coherence-pass final stage (US-141)', () => {
 
   it('coherence-pass writes a placeholder when RALPH_TASK_ID is set and the spawn times out', async () => {
     await writeStubCourse('demo', ['lesson1']);
+    await writeStubResearchArtefacts('demo');
     await writeStubLesson('demo', 'lesson1');
 
     process.env.RALPH_TASK_ID = 'US-TEST';
@@ -3295,8 +3543,7 @@ describe('coherence-pass final stage (US-141)', () => {
         sigkillGraceMs: 1,
       });
 
-      const init = await scripted.nextChild();
-      init.finishWithExit(0);
+      await passInitStagesNoWrite(scripted);
 
       // The coherence child is captured but NEVER calls finishWithExit on
       // its own — the wrapper's attemptTimer must fire and SIGTERM/SIGKILL
@@ -3471,9 +3718,7 @@ describe('TTS post-processing (US-157)', () => {
       runTts: stub,
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['lesson1']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['lesson1']);
 
     const lesson = await scripted.nextChild();
     await writeAutoTtsLesson('demo', 'lesson1', {
@@ -3570,9 +3815,7 @@ describe('TTS post-processing (US-157)', () => {
         runTts: stub,
       });
 
-      const init = await scripted.nextChild();
-      await writeStubCourse('demo', ['lesson1']);
-      init.finishWithExit(0);
+      await runInitStages(scripted, 'demo', ['lesson1']);
 
       const lesson = await scripted.nextChild();
       await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
@@ -3629,9 +3872,10 @@ describe('TTS post-processing (US-157)', () => {
         runTts: stub,
       });
 
-      const init = await scripted.nextChild();
-      // course.json already exists from run #1; just exit 0.
-      init.finishWithExit(0);
+      // course.json + research/sources already exist from run #1; both
+      // init children just exit 0 and the post-stage guards pass against
+      // the existing files.
+      await passInitStagesNoWrite(scripted);
 
       const lesson = await scripted.nextChild();
       await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
@@ -3672,8 +3916,7 @@ describe('TTS post-processing (US-157)', () => {
         runTts: stub,
       });
 
-      const init = await scripted.nextChild();
-      init.finishWithExit(0);
+      await passInitStagesNoWrite(scripted);
 
       const lesson = await scripted.nextChild();
       await writeAutoTtsLesson('demo', 'lesson1', {
@@ -3715,9 +3958,7 @@ describe('TTS post-processing (US-157)', () => {
       lessonMaxRetries: 0, // single attempt — surface the failure immediately
     });
 
-    const init = await scripted.nextChild();
-    await writeStubCourse('demo', ['lesson1']);
-    init.finishWithExit(0);
+    await runInitStages(scripted, 'demo', ['lesson1']);
 
     const lesson = await scripted.nextChild();
     await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });

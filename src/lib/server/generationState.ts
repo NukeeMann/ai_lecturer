@@ -11,15 +11,21 @@ import { z } from 'zod';
 import { atomicWriteJson } from './atomic';
 import { courseDir } from './paths';
 
+// The init pipeline is split into two sequential stages (research_course
+// then design_course). Each gets its own status block so resume logic can
+// independently skip a completed stage and restart the failed one.
+const InitStageStatusSchema = z.object({
+  status: z.enum(['pending', 'done', 'failed']),
+  reason: z.string().optional(),
+});
+
 export const GenerationStateSchema = z.object({
   schemaVersion: z.literal(1),
   slug: z.string(),
   startedAt: z.string(),
   lastUpdatedAt: z.string(),
-  initCourse: z.object({
-    status: z.enum(['pending', 'done', 'failed']),
-    reason: z.string().optional(),
-  }),
+  research: InitStageStatusSchema,
+  design: InitStageStatusSchema,
   lessons: z.array(
     z.object({
       slug: z.string(),

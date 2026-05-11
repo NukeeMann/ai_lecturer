@@ -900,8 +900,10 @@ describe('GET /api/courses/[slug]/logs (US-105)', () => {
   });
 
   it('lists each .log basename, sorted by mtime ascending', async () => {
-    await writeStageLog('demo', 'init_course', 'init line\n');
+    await writeStageLog('demo', 'research_course', 'research line\n');
     // Stagger mtimes so the sort is deterministic.
+    await new Promise((r) => setTimeout(r, 12));
+    await writeStageLog('demo', 'design_course', 'design line\n');
     await new Promise((r) => setTimeout(r, 12));
     await writeStageLog('demo', 'tensors', 'lesson1 line\n');
     await new Promise((r) => setTimeout(r, 12));
@@ -912,21 +914,26 @@ describe('GET /api/courses/[slug]/logs (US-105)', () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { stages: { stage: string; bytes: number }[] };
-    expect(body.stages.map((s) => s.stage)).toEqual(['init_course', 'tensors', 'autograd']);
-    const init = body.stages.find((s) => s.stage === 'init_course');
-    expect(init?.bytes).toBe(Buffer.byteLength('init line\n', 'utf8'));
+    expect(body.stages.map((s) => s.stage)).toEqual([
+      'research_course',
+      'design_course',
+      'tensors',
+      'autograd',
+    ]);
+    const research = body.stages.find((s) => s.stage === 'research_course');
+    expect(research?.bytes).toBe(Buffer.byteLength('research line\n', 'utf8'));
   });
 
   it('skips non-.log files in logs/', async () => {
     const dir = path.join(coursesRoot, 'demo', 'logs');
     await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, 'init_course.log'), 'a', 'utf8');
+    await fs.writeFile(path.join(dir, 'research_course.log'), 'a', 'utf8');
     await fs.writeFile(path.join(dir, 'failed_report.json'), '[]', 'utf8');
     const res = await getLogsIndex(new Request('http://x/api/courses/demo/logs'), {
       params: Promise.resolve({ slug: 'demo' }),
     });
     const body = (await res.json()) as { stages: { stage: string }[] };
-    expect(body.stages.map((s) => s.stage)).toEqual(['init_course']);
+    expect(body.stages.map((s) => s.stage)).toEqual(['research_course']);
   });
 
   it('rejects an unsafe slug', async () => {
@@ -945,10 +952,10 @@ describe('GET /api/courses/[slug]/logs/[stage] (US-105)', () => {
   };
 
   it('returns the persisted log as text/plain', async () => {
-    const body = '[mock init_course] researching topic...\n[mock init_course] done\n';
-    await writeStageLog('demo', 'init_course', body);
-    const res = await getLogStage(new Request('http://x/api/courses/demo/logs/init_course'), {
-      params: Promise.resolve({ slug: 'demo', stage: 'init_course' }),
+    const body = '[mock research_course] researching topic...\n[mock research_course] done\n';
+    await writeStageLog('demo', 'research_course', body);
+    const res = await getLogStage(new Request('http://x/api/courses/demo/logs/research_course'), {
+      params: Promise.resolve({ slug: 'demo', stage: 'research_course' }),
     });
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toMatch(/^text\/plain/);
@@ -985,8 +992,8 @@ describe('GET /api/courses/[slug]/logs/[stage] (US-105)', () => {
   });
 
   it('rejects an unsafe slug', async () => {
-    const res = await getLogStage(new Request('http://x/api/courses/..%2fevil/logs/init_course'), {
-      params: Promise.resolve({ slug: '../evil', stage: 'init_course' }),
+    const res = await getLogStage(new Request('http://x/api/courses/..%2fevil/logs/research_course'), {
+      params: Promise.resolve({ slug: '../evil', stage: 'research_course' }),
     });
     expect(res.status).toBe(400);
   });
@@ -1011,7 +1018,7 @@ describe('GET /api/courses/active-run (US-106)', () => {
       JSON.stringify({
         childPid: 9999999,
         slug: 'ghost-course',
-        stage: 'init_course',
+        stage: 'research_course',
         startedAt: '2026-05-04T00:00:00.000Z',
       }),
       'utf8',
@@ -1098,7 +1105,7 @@ describe('GET /api/courses/active-run (US-106)', () => {
   it('falls back to log-derived stage when the marker has no stage', async () => {
     const dir = path.join(coursesRoot, 'derive-stage');
     await fs.mkdir(path.join(dir, 'logs'), { recursive: true });
-    await fs.writeFile(path.join(dir, 'logs', 'init_course.log'), 'init line\n');
+    await fs.writeFile(path.join(dir, 'logs', 'research_course.log'), 'research line\n');
     await new Promise((r) => setTimeout(r, 12));
     await fs.writeFile(path.join(dir, 'logs', 'intro.log'), 'lesson line\n');
     await fs.writeFile(
@@ -1127,7 +1134,7 @@ describe('GET /api/courses/active-run (US-106)', () => {
       JSON.stringify({
         childPid: process.pid,
         slug: 'nameless-run',
-        stage: 'init_course',
+        stage: 'research_course',
         startedAt: '2026-05-04T00:00:00.000Z',
       }),
       'utf8',
@@ -1223,7 +1230,7 @@ describe('GET /api/courses/[slug]/curriculum (US-108)', () => {
       'Optimization',
     ]);
     expect(body.lessons.map((l) => l.index)).toEqual([0, 1, 2]);
-    // moduleId is unknown until init_course produces course.json.
+    // moduleId is unknown until design_course produces course.json.
     expect(body.lessons.every((l) => l.moduleId === null)).toBe(true);
   });
 

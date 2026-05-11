@@ -132,8 +132,8 @@ export function buildAgentInputCourse(
 }
 
 export function defaultExtendCommand(): { command: string; args: string[] } {
-  // Mirrors the natural-language brief pattern used by init_course /
-  // generate_lesson: claude's `-p` print mode treats slash commands as
+  // Mirrors the natural-language brief pattern used by research_course /
+  // design_course / generate_lesson: claude's `-p` print mode treats slash commands as
   // literal prompt text, so we ask the agent to load the SKILL.md and
   // run it. The structured input arrives on stdin (via the `--` brief
   // below pointing the agent at stdin) so we never have to splice JSON
