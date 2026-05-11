@@ -3422,6 +3422,116 @@
       "passes": true,
       "notes": "Hard dependency on US-154 (TTS infra) + US-155 + US-156 (widget schemas). The AUTO_TTS sentinel pattern is a deliberate post-processing seam — keeps the agent skill simple (it doesn't need to know about TTS) and the persistence layer clean (final lesson.json has no sentinels). The content-hash cache makes lesson-regeneration cheap, leveraging US-154's filesystem-cache layer.",
       "tags": []
+    },
+    {
+      "id": "US-158",
+      "title": "TtsDemo widget: editable text → /api/tts → audio playback",
+      "description": "As a user wanting to verify the TTS pipeline works without generating a whole course, I want a widget that lets me type a phrase, click Generate, and hear the synthesized result — so I can confirm Coqui XTTS is installed and producing audio.",
+      "acceptanceCriteria": [
+        "New widget id `ttsDemo` registered in src/widgets/registry.ts with a Zod schema (TtsDemoDataSchema, colocated in src/lib/schemas/lesson.ts or a dedicated module following the AudioPlayer pattern), a runtime component at src/widgets/TtsDemo/TtsDemoWidget.tsx, and an editor for the lesson-edit UI",
+        "Schema accepts optional `defaultText` (string, max 2000 chars) and `placeholderText` (string) fields; the component renders a multi-line textarea seeded with `defaultText` plus a primary `Generate audio` button",
+        "Clicking Generate POSTs `{ text }` to /api/tts and plays the returned audio inline using an HTML <audio> element. Match the response contract defined in src/lib/schemas/tts.ts — align with whichever shape the existing route returns (audioBase64 or audioPath) and reuse the playback path from AudioPlayerWidget where reasonable",
+        "Visible loading state during synthesis (button disabled + inline spinner); inline error messages on HTTP 503 (`tts-not-installed`, surface the suggestion to run scripts/setup-tts.sh) and HTTP 500 (generic spawn failure — show the engine error detail)",
+        "Per-instance client-side cache keyed by exact input text so re-clicking Generate on unchanged text replays the cached blob without re-hitting /api/tts. Cache lives in component state and is discarded on unmount",
+        "Editor exposes the `defaultText` and `placeholderText` fields so lesson authors can pre-seed the widget",
+        "Verify in browser using playwright-skill: open a lesson containing a ttsDemo section, type sample text, click Generate, assert an <audio> element appears and no console errors are logged. If TTS is not installed in the test environment, assert the 503 inline error message is shown instead — both outcomes are acceptable evidence the wiring is correct",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 158,
+      "passes": false,
+      "notes": "Distinct from US-155 AudioPlayer: that widget plays a pre-baked audio file referenced by audioPath; this widget calls /api/tts at runtime from the browser. Do NOT use the AUTO_TTS sentinel — that pattern (US-157) is only for generation-time post-processing. Pair with US-159 (STT counterpart) and US-160 (bundled demo course).",
+      "tags": ["ui"]
+    },
+    {
+      "id": "US-159",
+      "title": "SttDemo widget: record audio → /api/stt → transcript",
+      "description": "As a user wanting to verify the STT pipeline works end-to-end, I want a widget that records a short clip from the microphone, sends it to /api/stt, and displays the transcript — so I can confirm whisper.cpp is installed and producing recognizable text.",
+      "acceptanceCriteria": [
+        "New widget id `sttDemo` registered in src/widgets/registry.ts with a Zod schema, a runtime component at src/widgets/SttDemo/SttDemoWidget.tsx, and an editor",
+        "Component requests the microphone via navigator.mediaDevices.getUserMedia and records via MediaRecorder; the recording is uploaded to /api/stt in the format that matches src/app/api/stt/route.ts (multipart form-data or base64 wav — whichever the route already accepts; do NOT change the route's contract in this story)",
+        "UX: click-to-toggle recording (one click to start, another to stop). A visible red-dot indicator + running mm:ss timer renders during recording. Document the UX choice in a single short comment in the component",
+        "After upload, the transcript text renders below the controls. Errors surface inline: HTTP 503 (`stt-not-installed`, suggest scripts/setup-stt.sh), mic-permission denied (DOMException NotAllowedError), HTTP 500 (whisper.cpp spawn failure — show the engine error detail)",
+        "Editor exposes `maxDurationSeconds` (default 10, clamped to [1, 60]) so demo lessons can't accidentally record long clips; the component enforces this client-side by auto-stopping the recorder when the limit is hit",
+        "Verify in browser using playwright-skill — launch Chromium with `--use-fake-ui-for-media-stream` + `--use-fake-device-for-media-stream` flags (or stub MediaRecorder if simpler), drive a full record/stop cycle, assert /api/stt was called and the transcript area is populated. If STT isn't installed, assert the 503 inline error renders — both outcomes count as wiring evidence",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 159,
+      "passes": false,
+      "notes": "First UI consumer of /api/stt — until now the route only had unit tests in src/lib/server/stt.test.ts. Mic-permission handling must be graceful (never throw an unhandled promise rejection). Pair with US-158 + US-160.",
+      "tags": ["ui"]
+    },
+    {
+      "id": "US-160",
+      "title": "Bundled tts-stt-test course demonstrating TtsDemo + SttDemo widgets",
+      "description": "As a user who just installed the app, I want a bundled `/courses/tts-stt-test/` course that demonstrates the new TtsDemo and SttDemo widgets so I can immediately verify both speech pipelines without having to generate a full course of my own.",
+      "acceptanceCriteria": [
+        "New `/courses/tts-stt-test/` directory mirroring the layout of sibling demo courses (`audio-test`, `cloze-test`, `transcript-cloze-test`, etc.) — same JSON file structure, same metadata fields, same lesson-file naming",
+        "Course contains at least one lesson with one section per new widget: a `ttsDemo` section seeded with `defaultText` of \"Hello — this is a sample of synthesized speech.\" and an `sttDemo` section with the default 10s recording limit. Add a brief theory intro section above them so the lesson reads naturally",
+        "First-run seed logic in src/app/page.tsx (the SEED_FLAG_KEY block around src/app/page.tsx:1428) picks up the new course and groups it into the \"Widget Demos\" collection automatically — no extra wiring needed; verify the existing seed path handles it",
+        "Verify in browser using playwright-skill: clear localStorage key `aiLecturer.collectionsSeeded`, reload the dashboard, assert the tts-stt-test course appears under Widget Demos, open it, assert both widgets render without console errors",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 160,
+      "passes": false,
+      "notes": "Depends on US-158 + US-159. If US-159 is dropped before implementation, drop the sttDemo section from the seed lesson but keep the course. Use `/courses/audio-test/` as the layout template.",
+      "tags": ["ui"]
+    },
+    {
+      "id": "US-161",
+      "title": "Dashboard per-course menu: leading ✓ on currently-assigned collection (or None)",
+      "description": "As a user opening the three-dots menu on a course card, I want a checkmark glyph next to the currently-assigned collection (or next to \"None\" when the course is uncategorized) so I can see at a glance which collection the course belongs to.",
+      "acceptanceCriteria": [
+        "In `CourseCardWithMenu` (src/app/page.tsx:810–970), the menu item whose target id matches `sourceCollectionId` renders a leading lucide-react `Check` icon (size 14, strokeWidth 2). When `sourceCollectionId === null`, the \"None\" entry gets the checkmark instead",
+        "Non-selected entries get matching leading padding (an invisible same-width slot) so the menu doesn't visually jitter as the user opens it on different cards",
+        "The matching entry keeps its existing `disabled` behavior — the checkmark is the positive affordance, `disabled` is the no-op affordance; they coexist",
+        "data-testid values on menu items remain unchanged (`move-target-uncategorized-<slug>`, `move-target-<collectionId>-<slug>`) so existing tests stay green",
+        "Verify in browser using playwright-skill: open the menu on an uncategorized course → ✓ next to \"None\"; move it to a named collection; re-open the menu on the moved course → ✓ now sits next to the named collection",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 161,
+      "passes": false,
+      "notes": "Independent of US-158…US-160. The current `disabled` styling already prevents re-picking the same target; this story adds a positive affordance for *which* target is current.",
+      "tags": ["ui"]
+    },
+    {
+      "id": "US-162",
+      "title": "Sunset palette research note — 3 candidate palettes (less washed-out)",
+      "description": "As a designer iterating on the sunset theme (currently perceived as washed-out), I want a research note proposing 3 candidate palettes with rationale and full HEX tables for every token, so US-163 can implement them without further design work.",
+      "acceptanceCriteria": [
+        "New file `scripts/ralph/sunset-palette-research.md` exists",
+        "The note documents 3 named candidate palettes (e.g. \"Saturated Warm\", \"Magenta Dusk\", \"Coastal Sundown\" — names at author's discretion). For each candidate: (a) a one-paragraph rationale plus at least one reference link (dribbble / behance / material / photo source / etc.), (b) an explicit contrast/saturation comparison vs the current sunset palette (tokens.css:163–234), (c) a full HEX table covering every CSS variable defined in `:root[data-theme=\"sunset\"]`: bg/bg-elevated/bg-subtle/bg-hover/bg-active/bg-inverse, border/border-strong/border-focus, text and text-secondary/tertiary/quaternary/inverse/on-accent, accent and accent-hover/active/subtle/subtle-hover/border/text, success/warning/danger/insight and their subtle/border variants, every widget-* token, every code-* token, shadow-xs/sm/md/lg/focus",
+        "Each candidate is *less* washed-out than the current palette — the contrast/saturation comparison must support this claim with numeric values (WCAG contrast ratio for text-on-bg pairs; HSL saturation for accent) where reasonable",
+        "The note explicitly designates one candidate as \"ship-first default\" with one sentence of justification",
+        "No code change in this story — research deliverable only. tokens.css is NOT modified here",
+        "Typecheck passes"
+      ],
+      "priority": 162,
+      "passes": false,
+      "notes": "Pure-research story. Output feeds US-163, which implements all 3 candidates as `data-sunset-variant=\"A|B|C\"` for in-browser A/B/C comparison. No browser verification needed — reviewer reads the markdown.",
+      "tags": []
+    },
+    {
+      "id": "US-163",
+      "title": "Sunset variant picker — A/B/C palettes from US-162 + Settings sub-toggle",
+      "description": "As a user who finds the current sunset theme washed-out, I want to switch between three candidate sunset palettes from Settings so I can pick the one I like best without anyone committing to a single redesign first.",
+      "acceptanceCriteria": [
+        "src/styles/tokens.css gains three new blocks: `:root[data-theme=\"sunset\"][data-sunset-variant=\"A\"]`, `…=\"B\"`, `…=\"C\"`. HEX values are copied verbatim from the corresponding tables in scripts/ralph/sunset-palette-research.md (US-162)",
+        "The existing `:root[data-theme=\"sunset\"]` block stays in place as the baseline so an absent or unknown `data-sunset-variant` value falls back to the current palette",
+        "src/components/SettingsMenu.tsx gains a sub-control under the Theme section, visible only when the current theme resolves to `sunset`. The control lets the user pick variant A / B / C and persists the choice to localStorage under key `aiLecturer.sunsetVariant`",
+        "The inline boot script that sets `data-theme` early to avoid FOUC also applies `data-sunset-variant` from localStorage on first paint",
+        "Default variant on a clean install is the one US-162's note designates as \"ship-first default\" — explicit, not arbitrary",
+        "Verify in browser using playwright-skill: switch theme to Sunset, cycle through A → B → C in Settings, capture a screenshot after each switch, and assert the computed value of `--accent` on `:root` differs between variants",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 163,
+      "passes": false,
+      "notes": "Depends on US-162. The variant picker UX lives in SettingsMenu.tsx where the existing theme list (`{ value: 'sunset', label: 'Sunset' }`, see SettingsMenu.tsx:160) renders. Keep the picker hidden unless theme === 'sunset' so non-sunset users don't see noise.",
+      "tags": ["ui"]
     }
   ]
 }
