@@ -85,3 +85,20 @@ Previous log archived to: archive/progress-2026-05-11-1643.txt
   - `page.reload({ waitUntil: 'networkidle' })` reliably times out on this dashboard in playwright — there's a long-running async source (maybe the focus-rebinding fetch?) that keeps the network from going idle. Use `domcontentloaded` + a short explicit `waitForTimeout` instead.
   - `extendApply.test.ts` periodically leaves a `/courses/edge-detection-basics/.generating.json` artifact in the worktree when its tmpdir-cleanup race fires. Cleaning that up (`rm -rf courses/edge-detection-basics/`) before re-running the test suite restores the 998/998 green state. The underlying race lives in the test's `afterEach` (background spawn writes after `fs.rm` already started).
 ---
+
+## [2026-05-11] - US-161
+- Added a leading lucide-react `Check` icon (size 14, strokeWidth 2) to the currently-assigned move-target inside `CourseCardWithMenu` (`src/app/page.tsx`). When `sourceCollectionId === null` the check sits next to "None"; otherwise it sits next to the matching named-collection entry.
+- Non-selected entries render an invisible `<span aria-hidden style={{display:'inline-block',width:14,height:14,flexShrink:0}}>` so the text column doesn't jitter as the menu opens on different cards. The slot is named `moveTargetCheckSlotStyle` and lives alongside the other popover style constants for symmetry.
+- Imported `Check` from `lucide-react` (already had `ArrowRight`, `BookOpen`, `MoreHorizontal`, `Plus`, `Search`, `Sparkles`, `Upload` from the same import); no other lucide imports were touched.
+- Kept the existing `disabled` behavior — the checkmark is a positive affordance, `disabled` is the no-op affordance, and they now coexist on the matching entry. data-testid values (`move-target-uncategorized-<slug>`, `move-target-<collectionId>-<slug>`) are unchanged so the 998-test suite stays green.
+- Typecheck clean. Tests: 998/998 passing.
+- Browser verification (`/tmp/playwright-test-US-161.js`, dev server on :3000):
+  - Opened the three-dots menu on the uncategorized `audio-test` card → asserted only the "None" item carried a child `<svg>` and every named-collection item carried the invisible-slot `<span aria-hidden>` instead.
+  - Clicked the "Widget Demos" target, polled until the card's `[data-testid="course-section"]` parent flipped to that collection's id, then reopened the menu → asserted the check moved to "Widget Demos" and "None" picked up the invisible slot.
+  - Restored: moved the course back to None so the test leaves the dashboard exactly as it found it.
+  - Screenshots: `/tmp/us161-uncategorized-menu.png`, `/tmp/us161-categorized-menu.png`, `/tmp/us161-final.png`.
+- **Learnings for future iterations:**
+  - The `popoverItemStyle` already has `display: flex; gap: 8` so the lucide icon slots in cleanly as a sibling of the label text — you do NOT need a wrapper element or extra layout work. The invisible-slot trick is the standard "reserved width" pattern: `<span aria-hidden>` of identical pixel size + `flexShrink: 0` to defeat the flex item shrinking.
+  - When verifying a menu-entry icon swap in playwright, query for `:scope > svg` rather than `svg` — every lucide icon button on the page renders an `<svg>`, and a non-scoped selector ends up matching the trigger's `MoreHorizontal` instead. Same applies to the invisible-slot `<span aria-hidden>`: scope it to a direct child to avoid false positives if a future widget adds nested aria-hidden spans.
+  - The dev server's "ready" log line in this Next.js 16/Turbopack build is `✓ Ready in NNNms`. Earlier stories' polling scripts that grep for `Ready in|started server|Local:` keep working — but the older "started server" string is gone, so a watcher that ONLY grepped for `started server` would have hung. Keep the alternation.
+---
