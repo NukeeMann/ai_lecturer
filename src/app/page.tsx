@@ -68,6 +68,7 @@ const DEMO_COURSE_SLUGS: ReadonlySet<string> = new Set([
   'quiz-test',
   'smoke-test',
   'theory-test',
+  'tts-stt-test',
   'video-test',
   'widget-dev-guide',
 ]);
