@@ -9,6 +9,7 @@ import {
   Layers,
   Languages,
   type LucideProps,
+  Mic,
   Move,
   PenLine,
   Sliders,
@@ -31,6 +32,7 @@ import { ParametricExplorerWidget } from './ParametricExplorer/ParametricExplore
 import { PlotImageWidget } from './PlotImage/PlotImageWidget';
 import { QuizWidget } from './Quiz/QuizWidget';
 import { SandboxWidget } from './Sandbox/SandboxWidget';
+import { SttDemoWidget } from './SttDemo/SttDemoWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 import { VideoWidget } from './Video/VideoWidget';
 
@@ -49,6 +51,7 @@ export type WidgetType =
   | 'video'
   | 'audioPlayer'
   | 'transcriptCloze'
+  | 'sttDemo'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -142,6 +145,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Transcript Cloze',
     icon: Languages,
     accentVar: '--widget-transcript-cloze',
+  },
+  sttDemo: {
+    component: SttDemoWidget as ComponentType<{ data?: unknown }>,
+    label: 'STT Demo',
+    icon: Mic,
+    accentVar: '--widget-stt-demo',
   },
   custom: {
     component: CustomPlaceholder,

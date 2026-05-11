@@ -12,6 +12,7 @@ import { ParametricExplorerDataSchema } from '@/widgets/ParametricExplorer/schem
 import { PlotImageDataSchema } from '@/widgets/PlotImage/schema';
 import { VideoDataSchema } from '@/widgets/Video/schema';
 import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
+import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
@@ -141,6 +142,12 @@ export const TranscriptClozeSectionSchema = z.object({
   data: TranscriptClozeDataPublicSchema,
 });
 
+export const SttDemoSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('sttDemo'),
+  data: SttDemoDataSchema,
+});
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -162,6 +169,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   VideoSectionSchema,
   AudioPlayerSectionSchema,
   TranscriptClozeSectionSchema,
+  SttDemoSectionSchema,
   CustomSectionSchema,
 ]);
 
@@ -229,6 +237,7 @@ export const SectionSchemaWithSentinel = z.discriminatedUnion('type', [
   VideoSectionSchema,
   AudioPlayerSectionWithSentinelSchema,
   TranscriptClozeSectionWithSentinelSchema,
+  SttDemoSectionSchema,
   CustomSectionSchema,
 ]);
 
