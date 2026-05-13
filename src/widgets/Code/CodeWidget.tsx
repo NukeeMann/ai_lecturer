@@ -10,7 +10,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from 'react';
-import { Check, ChevronDown, ChevronRight, Circle, Download, Eye, EyeOff, FileText, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, Circle, Download, Eye, EyeOff, FileText, Play, X } from 'lucide-react';
 import { EditorState } from '@codemirror/state';
 import { EditorView, lineNumbers } from '@codemirror/view';
 import { syntaxHighlighting } from '@codemirror/language';
@@ -728,18 +728,35 @@ const outputMediaLabelStyle: CSSProperties = {
 
 interface OutputMediaProps {
   media: CodeOutputMedia;
+  /**
+   * When provided, overrides `media.src` for the rendered `<img>` (image
+   * variant only). Caption + alt stay as authored. Used by the live-capture
+   * path to swap in a blob URL of the user's matplotlib figure (US-174).
+   */
+  displaySrc?: string;
+  /**
+   * Placeholder caption shown when `media.kind === 'image'`, `live` is true,
+   * and no live PNG has rendered yet (US-174).
+   */
+  placeholderCaption?: string;
 }
 
-function OutputMediaBlock({ media }: OutputMediaProps) {
+function OutputMediaBlock({ media, displaySrc, placeholderCaption }: OutputMediaProps) {
+  const imgSrc = media.kind === 'image' ? displaySrc ?? media.src : media.src;
+  const showPlaceholderCaption =
+    media.kind === 'image' && !displaySrc && Boolean(placeholderCaption);
   return (
     <div data-codewidget-output-media data-media-kind={media.kind} style={outputMediaWrapStyle}>
       <span style={outputMediaLabelStyle}>Output media</span>
       {media.kind === 'image' ? (
         <ZoomableImage
-          src={media.src}
+          src={imgSrc}
           alt={media.alt ?? ''}
           style={outputMediaStyle}
-          imgProps={{ 'data-codewidget-output-img': '' }}
+          imgProps={{
+            'data-codewidget-output-img': '',
+            'data-codewidget-output-img-live': displaySrc ? 'true' : 'false',
+          }}
         />
       ) : (
         <video
@@ -748,6 +765,11 @@ function OutputMediaBlock({ media }: OutputMediaProps) {
           controls
           style={outputMediaStyle}
         />
+      )}
+      {showPlaceholderCaption && (
+        <span data-codewidget-output-placeholder style={inputCaptionStyle}>
+          {placeholderCaption}
+        </span>
       )}
       {media.caption && <span style={inputCaptionStyle}>{media.caption}</span>}
     </div>
@@ -781,6 +803,25 @@ export function CodeWidget({
   const confettiFiredRef = useRef(false);
   const solutionPanelId = useId();
   const containerBodyId = useId();
+
+  const liveCaptureEnabled =
+    data.outputMedia?.kind === 'image' && data.outputMedia.live === true;
+  const [livePngUrl, setLivePngUrl] = useState<string | null>(null);
+  const livePngUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    livePngUrlRef.current = livePngUrl;
+  }, [livePngUrl]);
+  useEffect(() => {
+    return () => {
+      if (livePngUrlRef.current) URL.revokeObjectURL(livePngUrlRef.current);
+    };
+  }, []);
+  const setLivePng = useCallback((next: string | null) => {
+    setLivePngUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return next;
+    });
+  }, []);
 
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
@@ -824,6 +865,7 @@ export function CodeWidget({
       const result: RunWithTestsResult = await runWithTests(
         code,
         data.tests.map((t) => ({ name: t.name, body: t.body })),
+        liveCaptureEnabled ? { captureLiveImage: true } : undefined,
       );
       setStdout(result.stdout ?? '');
       setStderr(result.stderr ?? '');
@@ -832,6 +874,10 @@ export function CodeWidget({
       setErrorMessage(result.errorMessage);
       const tr = result.testResults ?? [];
       setResults(tr);
+      if (liveCaptureEnabled && result.png && result.png instanceof Uint8Array) {
+        const blob = new Blob([result.png as BlobPart], { type: 'image/png' });
+        setLivePng(URL.createObjectURL(blob));
+      }
       const passed = tr.length > 0 && tr.every((r) => r.passed);
       if (passed) {
         setSubmission('submitted-pass');
@@ -876,7 +922,56 @@ export function CodeWidget({
       );
       setSubmission('submitted-fail');
     }
-  }, [code, data.tests, runWithTests, status, submission, progressKey, alreadyCompleted]);
+  }, [
+    code,
+    data.tests,
+    runWithTests,
+    status,
+    submission,
+    progressKey,
+    alreadyCompleted,
+    liveCaptureEnabled,
+    setLivePng,
+  ]);
+
+  // No-tests + live-capture path (US-174): clicking Run does not submit any
+  // tests, just runs user code through the live-capture worker path so the
+  // matplotlib figure swaps the placeholder image.
+  const handleLiveRun = useCallback(async () => {
+    if (status !== 'ready') return;
+    if (submission === 'submitting') return;
+    setSubmission('submitting');
+    setOutputCollapsed(false);
+    setTracebackOpen(false);
+    try {
+      const result: RunWithTestsResult = await runWithTests(code, [], {
+        captureLiveImage: true,
+      });
+      setStdout(result.stdout ?? '');
+      setStderr(result.stderr ?? '');
+      setTraceback(result.traceback);
+      setErrorType(result.errorType);
+      setErrorMessage(result.errorMessage);
+      if (result.png && result.png instanceof Uint8Array) {
+        const blob = new Blob([result.png as BlobPart], { type: 'image/png' });
+        setLivePng(URL.createObjectURL(blob));
+      }
+      setResults(null);
+      setSubmission(result.traceback ? 'submitted-fail' : 'idle');
+    } catch (err) {
+      if (err instanceof PyodideStopError) {
+        setSubmission('idle');
+        return;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      setStdout('');
+      setStderr('');
+      setTraceback(msg);
+      setErrorType(err instanceof Error ? err.name : undefined);
+      setErrorMessage(msg);
+      setSubmission('submitted-fail');
+    }
+  }, [code, runWithTests, status, submission, setLivePng]);
 
   const handleReset = useCallback(() => {
     setResults(null);
@@ -888,7 +983,8 @@ export function CodeWidget({
     setExpanded({});
     setSubmission('idle');
     setTracebackOpen(false);
-  }, []);
+    setLivePng(null);
+  }, [setLivePng]);
 
   const submitDisabled =
     status !== 'ready' ||
@@ -918,6 +1014,23 @@ export function CodeWidget({
       ariaLabel: 'Submit code and run tests',
     };
   }, [submission, handleSubmit, submitDisabled]);
+
+  const liveRunDisabled =
+    status !== 'ready' || submission === 'submitting';
+  const liveRunAction = useMemo(
+    () => ({
+      label: submission === 'submitting' ? 'Running…' : 'Run',
+      icon: <Play size={14} aria-hidden />,
+      onClick: () => {
+        void handleLiveRun();
+      },
+      disabled: liveRunDisabled,
+      variant: 'secondary' as const,
+      testId: 'codewidget-run',
+      ariaLabel: 'Run code and capture matplotlib figure',
+    }),
+    [handleLiveRun, liveRunDisabled, submission],
+  );
 
   const tests = data.tests;
   const showWarning = submission === 'submitted-fail' && results !== null;
@@ -1107,6 +1220,15 @@ export function CodeWidget({
 
   const inputs = data.inputs ?? [];
   const outputMedia = data.outputMedia;
+  // When tests are present, Submit handles execution. With no tests + live
+  // capture, surface a Run button that drives runWithTests with no tests so
+  // the figure capture path still fires.
+  const resolvedPrimaryAction =
+    tests.length > 0
+      ? primaryAction
+      : liveCaptureEnabled
+        ? liveRunAction
+        : undefined;
 
   return (
     <div ref={confettiOriginRef} data-codewidget-root>
@@ -1119,10 +1241,22 @@ export function CodeWidget({
         onCodeChange={setCode}
         onReset={handleReset}
         extraPanel={extraPanel}
-        primaryAction={tests.length > 0 ? primaryAction : undefined}
+        primaryAction={resolvedPrimaryAction}
         outputPlaceholder={placeholder}
         actionRunning={submission === 'submitting'}
-        outputMediaSlot={outputMedia ? <OutputMediaBlock media={outputMedia} /> : undefined}
+        outputMediaSlot={
+          outputMedia ? (
+            <OutputMediaBlock
+              media={outputMedia}
+              displaySrc={liveCaptureEnabled ? livePngUrl ?? undefined : undefined}
+              placeholderCaption={
+                liveCaptureEnabled
+                  ? '# placeholder showing what your output should look like'
+                  : undefined
+              }
+            />
+          ) : undefined
+        }
       />
     </div>
   );

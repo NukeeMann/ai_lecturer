@@ -51,6 +51,9 @@ interface RunRequest {
   // only meaningful value is 'cv2', which triggers ensureCv2Shim(py) before
   // user code is exec'd.
   requiresPackages?: string[];
+  // When true on 'runWithTests', capture any matplotlib figure left open
+  // after user code + tests ran and return it as PNG bytes (US-174).
+  captureLiveImage?: boolean;
   // gaussFilter payload
   pixels?: Uint8Array;
   width?: number;
@@ -268,6 +271,37 @@ async function ensureCv2Shim(py: PyodideAPI): Promise<void> {
   cv2InstalledOnce = true;
 }
 
+// Live matplotlib figure capture for the Code widget (US-174). Set to AGG so
+// figures render off-screen; called AFTER user code (and tests) finish.
+const LIVE_PNG_PY = `
+import io as __live_io
+import matplotlib as __live_mpl
+__live_mpl.use('AGG')
+import matplotlib.pyplot as __live_plt
+
+def __ai_capture_live_png():
+    nums = __live_plt.get_fignums()
+    if not nums:
+        __live_plt.close('all')
+        return None
+    fig = __live_plt.figure(nums[-1])
+    buf = __live_io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=110)
+    __live_plt.close('all')
+    return buf.getvalue()
+`;
+
+let livePngInstalled = false;
+async function ensureLivePngCapture(py: PyodideAPI): Promise<void> {
+  if (livePngInstalled) return;
+  if (!matplotlibPromise) {
+    matplotlibPromise = py.loadPackage(['matplotlib']);
+  }
+  await matplotlibPromise;
+  await py.runPythonAsync(LIVE_PNG_PY);
+  livePngInstalled = true;
+}
+
 function formatTraceback(err: unknown): string {
   if (err instanceof Error) {
     return err.message || err.toString();
@@ -424,6 +458,9 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     if (data.requiresPackages?.includes('cv2')) {
       await ensureCv2Shim(py);
     }
+    if (data.captureLiveImage) {
+      await ensureLivePngCapture(py);
+    }
     py.globals.set('__ai_user_code__', code ?? '');
     py.globals.set('__ai_tests__', tests ?? []);
     let testResults: unknown = [];
@@ -439,13 +476,40 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     } catch (err) {
       extras = errorFields(err);
     }
-    ctx.postMessage({
-      id,
-      stdout: formatStdoutChunks(stdoutBuf),
-      stderr: formatStdoutChunks(stderrBuf),
-      ...extras,
-      testResults,
-    });
+    let livePng: Uint8Array | undefined;
+    if (data.captureLiveImage) {
+      try {
+        const raw = (await py.runPythonAsync(
+          '__ai_capture_live_png()',
+        )) as unknown;
+        if (raw instanceof Uint8Array) {
+          livePng = raw;
+        } else if (
+          raw &&
+          typeof (raw as PyProxyLike).toJs === 'function'
+        ) {
+          const conv = (raw as PyProxyLike).toJs!() as unknown;
+          if (conv instanceof Uint8Array) {
+            livePng = conv;
+          }
+          (raw as PyProxyLike).destroy?.();
+        }
+      } catch {
+        // Figure capture failures must not break test reporting.
+      }
+    }
+    const transfer: Transferable[] = livePng ? [livePng.buffer] : [];
+    ctx.postMessage(
+      {
+        id,
+        stdout: formatStdoutChunks(stdoutBuf),
+        stderr: formatStdoutChunks(stderrBuf),
+        ...extras,
+        testResults,
+        ...(livePng ? { png: livePng } : {}),
+      },
+      transfer,
+    );
   } catch (err) {
     ctx.postMessage({
       id,
