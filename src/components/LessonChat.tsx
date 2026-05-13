@@ -11,13 +11,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Maximize2, Minimize2, Square, X } from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Square, Volume2, X } from 'lucide-react';
 
 import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
 import { modLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
+import { readTtsVoice } from '@/lib/client/ttsVoice';
 
-interface ChatMessage {
+export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'error';
   text: string;
@@ -41,6 +42,9 @@ interface LessonChatProps {
   onResize?: (w: number) => void;
   onResizeStart?: () => void;
   onResizeEnd?: (finalWidth: number) => void;
+  /** Test-only: seed the messages list so UI states (speak buttons, error
+   *  chips, pending rows) can be rendered without the chat-stream round-trip. */
+  initialMessages?: ChatMessage[];
 }
 
 const LINE_HEIGHT_PX = 20;
@@ -65,6 +69,7 @@ export function LessonChat({
   onResize,
   onResizeStart,
   onResizeEnd,
+  initialMessages,
 }: LessonChatProps) {
   const isMac = useIsMacPlatform();
   // Ctrl+Q toggles the panel. Mounted from this component (per US-078 AC) so
@@ -73,7 +78,9 @@ export function LessonChat({
   // ctrl:true (not mod:true) because ⌘+Q quits the browser on macOS.
   useKeyboardShortcut({ key: 'q', ctrl: true }, onToggle);
   const [draft, setDraft] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    () => initialMessages ?? [],
+  );
   const [sending, setSending] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
   // Temporary fullscreen-overlay expansion. Toggled by the header button;
@@ -91,6 +98,20 @@ export function LessonChat({
   const streamAbortRef = useRef<AbortController | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
   const userStoppedRef = useRef<boolean>(false);
+  // Single shared <audio> element for per-message TTS playback. Mounted once
+  // at the panel level; src is swapped between cached blob URLs as the
+  // learner clicks different speak buttons.
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  // Per-message blob-URL cache. Keyed by message id; values are object URLs
+  // created from the audio Blob returned by /api/tts. Revoked on panel close,
+  // unmount, or chat-session change (different course/lesson).
+  const ttsCacheRef = useRef<Map<string, string>>(new Map());
+  // Per-message error-chip auto-clear timers. Tracked so a fresh click on the
+  // same message replaces a stale chip without two timers racing.
+  const ttsErrorTimerRef = useRef<Map<string, number>>(new Map());
+  const [ttsPlayingId, setTtsPlayingId] = useState<string | null>(null);
+  const [ttsLoadingId, setTtsLoadingId] = useState<string | null>(null);
+  const [ttsErrorId, setTtsErrorId] = useState<string | null>(null);
   const draftKey = useMemo(
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
@@ -471,6 +492,160 @@ export function LessonChat({
     })();
   }, [activeSectionId, courseSlug, draft, draftKey, finalizeStopped, lessonSlug, messages, sending]);
 
+  const clearTtsErrorTimer = useCallback((id: string) => {
+    const t = ttsErrorTimerRef.current.get(id);
+    if (t !== undefined) {
+      window.clearTimeout(t);
+      ttsErrorTimerRef.current.delete(id);
+    }
+  }, []);
+
+  const flagTtsError = useCallback(
+    (id: string) => {
+      clearTtsErrorTimer(id);
+      setTtsErrorId(id);
+      const timer = window.setTimeout(() => {
+        setTtsErrorId((cur) => (cur === id ? null : cur));
+        ttsErrorTimerRef.current.delete(id);
+      }, 4000);
+      ttsErrorTimerRef.current.set(id, timer);
+    },
+    [clearTtsErrorTimer],
+  );
+
+  const resetTtsCache = useCallback(() => {
+    const audio = ttsAudioRef.current;
+    if (audio) {
+      try {
+        audio.pause();
+      } catch {
+        // ignore — pausing a never-played element is a no-op
+      }
+    }
+    for (const url of ttsCacheRef.current.values()) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore — happens when the URL was already revoked or invalid
+      }
+    }
+    ttsCacheRef.current.clear();
+    for (const timer of ttsErrorTimerRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    ttsErrorTimerRef.current.clear();
+    setTtsPlayingId(null);
+    setTtsLoadingId(null);
+    setTtsErrorId(null);
+  }, []);
+
+  const handleSpeak = useCallback(
+    (message: ChatMessage) => {
+      if (message.role !== 'assistant') return;
+      if (message.pending || message.stopped) return;
+      const text = message.text.trim();
+      if (text.length === 0) return;
+      const audio = ttsAudioRef.current;
+      if (!audio) return;
+
+      // Same-message click: toggle play/pause. Preserve currentTime on pause,
+      // and resume from the paused position on the next click.
+      if (ttsPlayingId === message.id) {
+        if (audio.paused) {
+          void audio.play().catch(() => {
+            flagTtsError(message.id);
+          });
+        } else {
+          audio.pause();
+        }
+        return;
+      }
+
+      // Switching messages — pause any current playback before swapping src.
+      // Single-playback semantics: playing message B always stops message A.
+      if (!audio.paused) {
+        audio.pause();
+      }
+
+      const startPlayback = (url: string) => {
+        audio.src = url;
+        setTtsPlayingId(message.id);
+        void audio.play().catch(() => {
+          flagTtsError(message.id);
+          setTtsPlayingId((cur) => (cur === message.id ? null : cur));
+        });
+      };
+
+      const cachedUrl = ttsCacheRef.current.get(message.id);
+      if (cachedUrl) {
+        startPlayback(cachedUrl);
+        return;
+      }
+
+      setTtsLoadingId(message.id);
+      const voice = readTtsVoice();
+      void (async () => {
+        try {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: message.text, voice }),
+          });
+          if (!res.ok) {
+            flagTtsError(message.id);
+            return;
+          }
+          // The AC contract is "audio Blob returned from /api/tts". The real
+          // POST handler today returns JSON `{ audioPath, durationMs, cached }`
+          // for backward compatibility with TtsDemo (US-158). Branch on the
+          // response content type so the test mock (audio/* directly) AND the
+          // production two-step flow (JSON pointer → GET /api/tts/audio/<path>)
+          // both work without forking the route.
+          const contentType = res.headers.get('content-type') ?? '';
+          let blob: Blob;
+          if (contentType.includes('application/json')) {
+            const json = (await res.json()) as { audioPath?: string };
+            const audioPath = json.audioPath;
+            if (!audioPath) {
+              flagTtsError(message.id);
+              return;
+            }
+            const audioRes = await fetch(
+              `/api/tts/audio/${audioPath.replace(/^\/+/, '')}`,
+            );
+            if (!audioRes.ok) {
+              flagTtsError(message.id);
+              return;
+            }
+            blob = await audioRes.blob();
+          } else {
+            blob = await res.blob();
+          }
+          const url = URL.createObjectURL(blob);
+          ttsCacheRef.current.set(message.id, url);
+          startPlayback(url);
+        } catch {
+          flagTtsError(message.id);
+        } finally {
+          setTtsLoadingId((cur) => (cur === message.id ? null : cur));
+        }
+      })();
+    },
+    [flagTtsError, ttsPlayingId],
+  );
+
+  // Clear cache + revoke object URLs when the panel closes, the chat session
+  // changes (different course/lesson slug), or the component unmounts. Each
+  // call to resetTtsCache pauses the shared <audio> element first.
+  useEffect(() => {
+    if (!open) {
+      resetTtsCache();
+    }
+    return () => {
+      resetTtsCache();
+    };
+  }, [open, courseSlug, lessonSlug, resetTtsCache]);
+
   const handleStop = useCallback(() => {
     if (!sending) return;
     userStoppedRef.current = true;
@@ -606,6 +781,32 @@ export function LessonChat({
       style={{ ...composedAsideStyle, position: expanded ? 'fixed' : 'relative' }}
     >
       <style>{lessonChatGlobalKeyframes}</style>
+      <audio
+        ref={ttsAudioRef}
+        data-testid="lesson-chat-tts-audio"
+        preload="auto"
+        onPlay={() => {
+          // Keep ttsPlayingId honest if .play() resolves after a state reset.
+          if (ttsPlayingId === null) return;
+        }}
+        onPause={() => {
+          // Pause event also fires when audio ends. Only clear when we've
+          // truly reached the end so a manual pause keeps the Pause icon's
+          // resume affordance accurate.
+          const el = ttsAudioRef.current;
+          if (el && el.ended) {
+            setTtsPlayingId(null);
+          }
+        }}
+        onEnded={() => setTtsPlayingId(null)}
+        onError={() => {
+          if (ttsPlayingId) {
+            flagTtsError(ttsPlayingId);
+            setTtsPlayingId(null);
+          }
+        }}
+        style={{ display: 'none' }}
+      />
       {!expanded ? (
         <div
           data-testid="lesson-chat-resize-handle"
@@ -675,6 +876,14 @@ export function LessonChat({
               if (m.role === 'user') bubbleStyle = userBubbleStyle;
               else if (m.role === 'error') bubbleStyle = errorBubbleStyle;
               const showTypingDots = m.pending && m.text.length === 0;
+              const hasSpeakable =
+                m.role === 'assistant' &&
+                !m.pending &&
+                !m.stopped &&
+                m.text.trim().length > 0;
+              const isPlaying = ttsPlayingId === m.id;
+              const isLoading = ttsLoadingId === m.id;
+              const hasError = ttsErrorId === m.id;
               return (
                 <li
                   key={m.id}
@@ -683,18 +892,62 @@ export function LessonChat({
                   data-stopped={m.stopped ? 'true' : undefined}
                   style={rowStyle}
                 >
-                  <div style={bubbleStyle}>
-                    {showTypingDots ? <TypingDots /> : m.text}
-                    {m.stopped ? (
-                      <>
-                        {'\n'}
-                        <span
-                          data-testid="lesson-chat-stopped-suffix"
-                          style={stoppedSuffixStyle}
+                  <div style={assistantColumnStyle}>
+                    <div style={bubbleStyle}>
+                      {showTypingDots ? <TypingDots /> : m.text}
+                      {m.stopped ? (
+                        <>
+                          {'\n'}
+                          <span
+                            data-testid="lesson-chat-stopped-suffix"
+                            style={stoppedSuffixStyle}
+                          >
+                            {STOPPED_SUFFIX}
+                          </span>
+                        </>
+                      ) : null}
+                    </div>
+                    {hasSpeakable ? (
+                      <div style={ttsFooterRowStyle}>
+                        <button
+                          type="button"
+                          data-testid={`lesson-chat-tts-${m.id}`}
+                          data-state={
+                            isLoading
+                              ? 'loading'
+                              : isPlaying
+                                ? 'playing'
+                                : 'idle'
+                          }
+                          aria-label={
+                            isPlaying ? 'Pause playback' : 'Read message aloud'
+                          }
+                          disabled={isLoading}
+                          onClick={() => handleSpeak(m)}
+                          style={ttsBtnStyle}
                         >
-                          {STOPPED_SUFFIX}
-                        </span>
-                      </>
+                          {isLoading ? (
+                            <span
+                              data-testid={`lesson-chat-tts-spinner-${m.id}`}
+                              style={ttsSpinnerStyle}
+                              aria-hidden
+                            />
+                          ) : isPlaying ? (
+                            <Pause size={14} strokeWidth={2} />
+                          ) : (
+                            <Volume2 size={14} strokeWidth={2} />
+                          )}
+                        </button>
+                        {hasError ? (
+                          <span
+                            data-testid={`lesson-chat-tts-error-${m.id}`}
+                            style={ttsErrorChipStyle}
+                            role="status"
+                          >
+                            Couldn&apos;t read message — try again
+                          </span>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </li>
@@ -930,6 +1183,59 @@ const errorBubbleStyle: CSSProperties = {
   wordBreak: 'break-word',
 };
 
+const assistantColumnStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  maxWidth: '94%',
+  gap: 4,
+};
+
+const ttsFooterRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
+  flexWrap: 'wrap',
+};
+
+const ttsBtnStyle: CSSProperties = {
+  width: 24,
+  height: 24,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'transparent',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const ttsSpinnerStyle: CSSProperties = {
+  width: 12,
+  height: 12,
+  borderWidth: 2,
+  borderStyle: 'solid',
+  borderColor: 'var(--border-strong)',
+  borderTopColor: 'var(--accent)',
+  borderRadius: '50%',
+  display: 'inline-block',
+  animation: 'lesson-chat-tts-spin 0.8s linear infinite',
+};
+
+const ttsErrorChipStyle: CSSProperties = {
+  fontSize: '11px',
+  color: 'var(--danger-text, #991b1b)',
+  background: 'var(--danger-subtle, #fee2e2)',
+  border: '1px solid var(--danger-border, #fecaca)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '2px 6px',
+  lineHeight: 1.3,
+};
+
 const stoppedSuffixStyle: CSSProperties = {
   display: 'block',
   fontStyle: 'italic',
@@ -974,6 +1280,10 @@ const lessonChatGlobalKeyframes = `
 @keyframes lesson-chat-typing-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
+}
+@keyframes lesson-chat-tts-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 `;
 

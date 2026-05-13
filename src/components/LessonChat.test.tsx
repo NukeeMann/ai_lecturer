@@ -1,0 +1,189 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+
+import { LessonChat, type ChatMessage } from './LessonChat';
+import { TTS_VOICE_STORAGE_KEY } from '@/lib/client/ttsVoice';
+
+const FIXTURE: ChatMessage[] = [
+  { id: 'm-1', role: 'user', text: 'hello' },
+  { id: 'm-2', role: 'assistant', text: 'first reply' },
+  { id: 'm-3', role: 'user', text: 'follow up' },
+  { id: 'm-4', role: 'assistant', text: '', pending: true },
+  { id: 'm-5', role: 'error', text: 'AI Tutor error: boom' },
+  { id: 'm-6', role: 'assistant', text: 'second reply' },
+];
+
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+describe('LessonChat (US-183) — speak button per assistant message', () => {
+  it('renders a speak button only on non-pending, non-stopped, non-empty assistant messages', () => {
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={FIXTURE}
+      />,
+    );
+
+    // Exactly two speak buttons — one per "speakable" assistant message.
+    const buttons = screen
+      .queryAllByRole('button')
+      .filter((b) => (b.getAttribute('data-testid') ?? '').startsWith('lesson-chat-tts-'));
+    expect(buttons.length).toBe(2);
+
+    // The two we expect.
+    expect(screen.getByTestId('lesson-chat-tts-m-2')).not.toBeNull();
+    expect(screen.getByTestId('lesson-chat-tts-m-6')).not.toBeNull();
+
+    // The ones we DON'T expect — user, pending assistant, error.
+    expect(screen.queryByTestId('lesson-chat-tts-m-1')).toBeNull();
+    expect(screen.queryByTestId('lesson-chat-tts-m-3')).toBeNull();
+    expect(screen.queryByTestId('lesson-chat-tts-m-4')).toBeNull();
+    expect(screen.queryByTestId('lesson-chat-tts-m-5')).toBeNull();
+
+    // aria-label starts in idle state.
+    expect(
+      screen.getByTestId('lesson-chat-tts-m-2').getAttribute('aria-label'),
+    ).toBe('Read message aloud');
+  });
+
+  it('fetches /api/tts on first click, uses cache on re-click, and re-fetches for a different message', async () => {
+    // Seed the user's selected voice so handleSpeak reads it via readTtsVoice.
+    window.localStorage.setItem(TTS_VOICE_STORAGE_KEY, 'en-male-neutral');
+
+    const fakeMp3 = new Blob([new Uint8Array([0xff, 0xfb, 0x90, 0x00])], {
+      type: 'audio/mpeg',
+    });
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, _init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : (input as Request).url;
+        if (url.endsWith('/api/tts')) {
+          return new Response(fakeMp3, {
+            status: 200,
+            headers: { 'Content-Type': 'audio/mpeg' },
+          });
+        }
+        throw new Error(`Unexpected fetch: ${url}`);
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Deterministic blob URLs so cache assertions are unambiguous.
+    let urlCounter = 0;
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => `blob:mock://${++urlCounter}`);
+    const revokeSpy = vi
+      .spyOn(URL, 'revokeObjectURL')
+      .mockImplementation(() => {
+        /* no-op */
+      });
+
+    // jsdom's HTMLMediaElement.play is unimplemented and throws. Stub it.
+    const playSpy = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockImplementation(async function (this: HTMLMediaElement) {
+        // Mimic the browser flipping `paused` from true → false.
+        Object.defineProperty(this, 'paused', {
+          configurable: true,
+          get: () => false,
+        });
+      });
+    const pauseSpy = vi
+      .spyOn(HTMLMediaElement.prototype, 'pause')
+      .mockImplementation(function (this: HTMLMediaElement) {
+        Object.defineProperty(this, 'paused', {
+          configurable: true,
+          get: () => true,
+        });
+      });
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={FIXTURE}
+      />,
+    );
+
+    const buttonA = screen.getByTestId('lesson-chat-tts-m-2');
+    const buttonB = screen.getByTestId('lesson-chat-tts-m-6');
+
+    // First click on A — fetches /api/tts.
+    await act(async () => {
+      fireEvent.click(buttonA);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [firstCallInput, firstCallInit] = fetchMock.mock.calls[0]!;
+    const firstUrl =
+      typeof firstCallInput === 'string'
+        ? firstCallInput
+        : (firstCallInput as Request).url;
+    expect(firstUrl).toBe('/api/tts');
+    const firstBody = JSON.parse(String(firstCallInit?.body ?? '{}')) as {
+      text?: string;
+      voice?: string;
+    };
+    expect(firstBody.text).toBe('first reply');
+    expect(firstBody.voice).toBe('en-male-neutral');
+
+    // Second click on A — cached, NO new fetch.
+    await act(async () => {
+      fireEvent.click(buttonA);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Re-click A again to resume — still no new fetch.
+    await act(async () => {
+      fireEvent.click(buttonA);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Click B — different message → new fetch fires.
+    await act(async () => {
+      fireEvent.click(buttonB);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [secondCallInput, secondCallInit] = fetchMock.mock.calls[1]!;
+    const secondUrl =
+      typeof secondCallInput === 'string'
+        ? secondCallInput
+        : (secondCallInput as Request).url;
+    expect(secondUrl).toBe('/api/tts');
+    const secondBody = JSON.parse(String(secondCallInit?.body ?? '{}')) as {
+      text?: string;
+    };
+    expect(secondBody.text).toBe('second reply');
+
+    createSpy.mockRestore();
+    revokeSpy.mockRestore();
+    playSpy.mockRestore();
+    pauseSpy.mockRestore();
+  });
+});
