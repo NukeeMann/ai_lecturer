@@ -2,6 +2,9 @@
 // on (US-031). Runs Pyodide in Node via the `pyodide` npm package; the worker
 // itself loads the same Python source from `runnerPython.ts`, so behavior
 // observed here is faithful to what runs in the browser worker.
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import { RUNNER_PY } from './runnerPython';
@@ -15,6 +18,7 @@ interface PyDictProxy {
 }
 
 interface PyodideAPI {
+  loadPackage: (names: string | string[]) => Promise<void>;
   runPython: (code: string, options?: { globals?: PyDictProxy }) => unknown;
   runPythonAsync: (
     code: string,
@@ -123,4 +127,65 @@ describe('Pyodide lesson namespace (RUNNER_PY)', () => {
     expect(results[0].assertionDetail).toBe('expected 42');
     expect(lessonGlobals.get('value')).toBe(10);
   });
+});
+
+// cv2 shim (US-173) — exercises the same `loadPackage(['scipy','scikit-image'])
+// + runPythonAsync(CV2_SHIM_PY)` sequence the worker's ensureCv2Shim runs
+// when a Code widget sets `requiresPackages: ['cv2']`. The worker itself is
+// a Web Worker and can't be instantiated in Node, so we drive the underlying
+// Pyodide instance directly to verify the shim's behavior end-to-end.
+const CV2_SHIM_PY_PATH = resolve(__dirname, '../../../scripts/pyodide/cv2_shim.py');
+
+describe('cv2 shim', () => {
+  let cv2Ready = false;
+
+  beforeAll(async () => {
+    await py.loadPackage(['scipy', 'scikit-image']);
+    const cv2Src = readFileSync(CV2_SHIM_PY_PATH, 'utf-8');
+    await py.runPythonAsync(cv2Src);
+    cv2Ready = true;
+  }, 180_000);
+
+  it('cv2 shim — Sobel returns same-shape float array', async () => {
+    expect(cv2Ready).toBe(true);
+    await reset();
+    const code = [
+      'import cv2',
+      'import numpy as np',
+      'img = np.zeros((8, 8), dtype=np.uint8)',
+      'img[2:6, 2:6] = 255',
+      'gx = cv2.Sobel(img, cv2.CV_64F, 1, 0)',
+      'assert gx.shape == (8, 8)',
+      'assert gx.dtype == np.float64',
+    ].join('\n');
+    let error: unknown = null;
+    try {
+      await py.runPythonAsync(code, { globals: lessonGlobals });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeNull();
+  }, 60_000);
+
+  it('cv2 shim — Canny returns binary uint8', async () => {
+    expect(cv2Ready).toBe(true);
+    await reset();
+    const code = [
+      'import cv2',
+      'import numpy as np',
+      'img = np.zeros((32, 32), dtype=np.uint8)',
+      'img[8:24, 8:24] = 255',
+      'edges = cv2.Canny(img, 100, 200)',
+      'assert edges.dtype == np.uint8',
+      'assert set(int(v) for v in np.unique(edges).tolist()) <= {0, 255}',
+      'assert edges.max() == 255',
+    ].join('\n');
+    let error: unknown = null;
+    try {
+      await py.runPythonAsync(code, { globals: lessonGlobals });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeNull();
+  }, 60_000);
 });
