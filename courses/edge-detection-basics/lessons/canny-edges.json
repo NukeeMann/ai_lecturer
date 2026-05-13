@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "slug": "canny-edges",
+  "courseSlug": "edge-detection-basics",
+  "moduleId": "m1",
+  "title": "Canny — turning gradients into clean edges",
+  "eyebrow": "Lesson 2 · Edges",
+  "description": "From a fuzzy Sobel magnitude to a one-pixel-wide binary edge map. The Canny pipeline: blur, gradient, non-max suppression, hysteresis thresholding.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-recap",
+      "title": "Why Sobel is not enough",
+      "type": "theory",
+      "data": {
+        "markdown": "## Where Sobel falls short\n\nIn Lesson 1 we saw that the Sobel gradient magnitude lights up at edges — but it also lights up everywhere there is texture or noise, and every edge ends up several pixels thick. For real applications (object detection, vectorisation, shape descriptors) we usually want:\n\n1. A **binary** edge map: each pixel is either \"edge\" or \"not edge\".\n2. Edges that are **one pixel wide** (thin), not fuzzy ramps.\n3. **Connected** edges where possible — a real boundary should not be broken into dotted fragments.\n\nThe **Canny edge detector** (John F. Canny, 1986) was designed to satisfy all three with a four-step pipeline. The good news: in OpenCV it is one function call, `cv2.Canny`."
+      }
+    },
+    {
+      "id": "s2-input",
+      "title": "Input image — a textured scene",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/input-canny.png",
+        "alt": "A synthetic grayscale scene with two houses on a graded sky background. The bottom of the frame is filled with a checkerboard pattern. The image has photographic blur and noise added.",
+        "caption": "Figure 2.1 — Synthetic textured scene (256×256, grayscale). The two houses give us crisp object boundaries; the checkered floor lets us watch Canny suppress the high-frequency texture; the smooth sky gradient lets us check that Canny does NOT fire on slow ramps."
+      }
+    },
+    {
+      "id": "s3-pipeline",
+      "title": "The Canny pipeline — four steps",
+      "type": "theory",
+      "data": {
+        "markdown": "## The four steps Canny performs internally\n\n1. **Gaussian blur.** Smooth the image to suppress high-frequency noise so the gradient is computed on stable values. OpenCV applies this implicitly before the gradient.\n2. **Sobel gradient.** Compute $G_x$, $G_y$, magnitude and **direction** $\\theta = \\arctan(G_y / G_x)$. We need direction this time — Sobel alone did not use it.\n3. **Non-maximum suppression (NMS).** For each pixel, look at its two neighbours along the gradient direction. Keep the pixel only if its magnitude is larger than both neighbours. This thins fuzzy edges into one-pixel-wide ridges.\n4. **Hysteresis thresholding.** Use two thresholds, `low` and `high`. Pixels above `high` are *strong* edges (definitely kept). Pixels below `low` are dropped. Pixels in between are *weak*: kept only if they are 8-connected to a strong edge. This bridges gaps without picking up isolated noise.\n\nThe `low:high` ratio is typically `1:2` or `1:3`. OpenCV's docs recommend `1:3`. The values are in the same units as the gradient magnitude — usually 50–200 for an 8-bit input."
+      }
+    },
+    {
+      "id": "s4-code",
+      "title": "One function call — cv2.Canny",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "All four steps above are bundled into a single OpenCV call. The two numeric arguments are the lower and upper hysteresis thresholds (in the gradient-magnitude units).\n\n```\nedges = cv2.Canny(img, threshold1=100, threshold2=200)\n```\n\nReturns a `uint8` array the same shape as `img`: `255` where there is an edge, `0` otherwise. Try the snippet below, then compare with the output figure underneath.\n\nThis snippet is **illustrative** — the lesson player does not execute it.",
+        "starterCode": "import cv2\n\n# 1. Load as single-channel grayscale (Canny expects single-channel uint8).\nimg = cv2.imread('input-canny.png', cv2.IMREAD_GRAYSCALE)\n\n# 2. Canny does Gaussian blur + Sobel + NMS + hysteresis internally.\n#    Lower threshold ~ how weak an edge we'll keep if connected.\n#    Upper threshold ~ how strong an edge needs to be to start a chain.\n#    The 1:2 / 1:3 ratio is the rule of thumb from Canny's original paper.\nedges = cv2.Canny(img, 100, 200)\n\n# 3. The result is already a binary uint8 image — save directly.\ncv2.imwrite('output-canny.png', edges)\n",
+        "tests": [
+          {
+            "name": "canny_returns_uint8",
+            "body": "# Illustrative check — the lesson player does not run this. Real OpenCV usage:\n# cv2.Canny(img, low, high) returns a uint8 array, 0 = background, 255 = edge.\nassert True"
+          }
+        ],
+        "solution": "import cv2\n\nimg = cv2.imread('input-canny.png', cv2.IMREAD_GRAYSCALE)\nedges = cv2.Canny(img, 100, 200)\ncv2.imwrite('output-canny.png', edges)\n"
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+          "title": "OpenCV — Canny Edge Detection tutorial",
+          "kind": "article"
+        },
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "Canny, J. F. (1986). A Computational Approach to Edge Detection. IEEE TPAMI",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        }
+      ]
+    },
+    {
+      "id": "s5-output",
+      "title": "Output — the Canny edge map",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/output-canny.png",
+        "alt": "Binary edge map: the outlines of the two houses, their roofs, windows, doors, and the horizon line all appear as crisp white one-pixel-wide curves. The checkerboard pattern at the bottom is reduced to the boundaries of each square. The smooth sky gradient produces no edges at all.",
+        "caption": "Figure 2.2 — `cv2.Canny(img, 100, 200)` applied to Figure 2.1. Note three things: (1) the smooth sky gradient produces no edges — slow ramps are correctly ignored; (2) the texture in the checkerboard is reduced to the boundaries of each tile; (3) every kept edge is one pixel wide."
+      }
+    },
+    {
+      "id": "s6-takeaways",
+      "title": "Sobel vs Canny — when to use which",
+      "type": "theory",
+      "data": {
+        "markdown": "## Sobel vs Canny\n\n| | **Sobel** | **Canny** |\n|---|---|---|\n| Output | continuous magnitude `[0..255]` | binary `0` or `255` |\n| Width | several px (gradient \"ramp\") | one px (after NMS) |\n| Noise handling | none — passes through | implicit Gaussian blur + hysteresis |\n| Speed | one convolution per direction | ~3× more work (blur + NMS + BFS) |\n| Typical use | feature input to ML models; HOG-style descriptors | object outlining, contour extraction, vectorisation |\n\nA rule of thumb: if your *downstream code* will threshold the result anyway, give it the Sobel magnitude and let it choose. If you need clean edges *now* — say, to feed `cv2.findContours` — use Canny.\n\n### Tuning the thresholds\n\n`cv2.Canny`'s two arguments are the only knobs you usually touch. Practical workflow:\n\n1. Start with `(100, 200)`.\n2. If you are missing real edges → lower **both** by ~30%.\n3. If you are picking up texture/noise → raise **both** by ~30%.\n4. Keep the `1:2` or `1:3` ratio between them; varying the ratio independently rarely helps."
+      }
+    }
+  ]
+}

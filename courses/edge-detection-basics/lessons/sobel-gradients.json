@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "slug": "sobel-gradients",
+  "courseSlug": "edge-detection-basics",
+  "moduleId": "m1",
+  "title": "Sobel — image gradients in two lines of OpenCV",
+  "eyebrow": "Lesson 1 · Edges",
+  "description": "What an edge is, why the gradient catches it, and how `cv2.Sobel` gives you the gradient in two array operations.",
+  "estimatedMinutes": 8,
+  "sections": [
+    {
+      "id": "s1-intro",
+      "title": "What is an edge, really?",
+      "type": "theory",
+      "data": {
+        "markdown": "## What is an edge?\n\nLook at the input photo below. A human sees the dark rectangle, the outlined square, the diagonal line, the round disk. But a computer sees a 2D array of grayscale numbers. To it, the image is just `I[y, x] ∈ [0, 255]`.\n\nAn **edge** is a place where `I[y, x]` changes fast. Inside the dark rectangle, neighbouring pixels all read ~60; in the bright background, they all read ~200; but as you cross the boundary, the value jumps from ~60 to ~200 in two or three pixels. That jump is what we want to detect.\n\nThe mathematical name for \"how fast does `I` change?\" is the **gradient**:\n\n$$ \\nabla I = \\left(\\frac{\\partial I}{\\partial x},\\; \\frac{\\partial I}{\\partial y}\\right) $$\n\nIts **magnitude** $\\lVert \\nabla I \\rVert = \\sqrt{(\\partial I/\\partial x)^2 + (\\partial I/\\partial y)^2}$ is large at edges and ~0 in flat regions. That single number — the gradient magnitude — is essentially a *first* edge detector. The rest of this lesson shows how OpenCV computes it with the Sobel operator."
+      }
+    },
+    {
+      "id": "s2-input",
+      "title": "Input image — a synthetic still life",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/input-sobel.png",
+        "alt": "A synthetic grayscale scene: a dark filled rectangle on the left, an outlined square on the upper right, a circular disk on the lower right with a small bright square inside, and a thin diagonal line crossing the whole frame. Mild Gaussian blur and noise mimic a real photograph.",
+        "caption": "Figure 1.1 — Synthetic input image (256×256, grayscale). Procedural, no licensing constraints. The mix of filled regions, outlines, and a thin line gives us a variety of edge types to detect."
+      }
+    },
+    {
+      "id": "s3-code",
+      "title": "Compute the Sobel gradient",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "The Sobel operator approximates the gradient by **convolving the image with two small 3×3 kernels** — one that responds to horizontal change ($G_x$), one to vertical change ($G_y$):\n\n$$ G_x = \\begin{bmatrix} -1 & 0 & 1 \\\\ -2 & 0 & 2 \\\\ -1 & 0 & 1 \\end{bmatrix}, \\qquad G_y = \\begin{bmatrix} -1 & -2 & -1 \\\\\\ 0 & 0 & 0 \\\\\\ 1 & 2 & 1 \\end{bmatrix} $$\n\nOpenCV does the convolution for you. The snippet below shows the canonical recipe:\n\n1. Load the image as grayscale.\n2. Compute `gx` and `gy` with `cv2.Sobel`. Use `ddepth=cv2.CV_64F` so negative gradients aren't clipped.\n3. Take the magnitude `sqrt(gx**2 + gy**2)` and scale to `uint8` for display.\n\nThis snippet is **illustrative** — the lesson player does not execute it. The figure below the code shows what running this against `Figure 1.1` produces.",
+        "starterCode": "import cv2\nimport numpy as np\n\n# 1. Load the input as a single-channel grayscale image.\nimg = cv2.imread('input-sobel.png', cv2.IMREAD_GRAYSCALE)\n\n# 2. Compute first-order derivatives along x and y.\n#    ddepth=cv2.CV_64F keeps negative gradient values (a signed kernel\n#    would otherwise be clipped to 0 when written into a uint8 buffer).\n#    ksize=3 selects the 3x3 Sobel kernels shown above.\ngx = cv2.Sobel(img, ddepth=cv2.CV_64F, dx=1, dy=0, ksize=3)\ngy = cv2.Sobel(img, ddepth=cv2.CV_64F, dx=0, dy=1, ksize=3)\n\n# 3. Gradient magnitude per pixel, rescaled into uint8 for display.\nmag = np.sqrt(gx * gx + gy * gy)\nmag = (mag / mag.max() * 255).astype(np.uint8)\n\ncv2.imwrite('output-sobel.png', mag)\n",
+        "tests": [
+          {
+            "name": "sobel_uses_cv2_Sobel",
+            "body": "# Illustrative check — the lesson player does not run this. Real OpenCV usage:\n# cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3) returns the partial derivative dI/dx.\nassert True"
+          }
+        ],
+        "solution": "import cv2\nimport numpy as np\n\nimg = cv2.imread('input-sobel.png', cv2.IMREAD_GRAYSCALE)\ngx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3)\ngy = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=3)\nmag = np.sqrt(gx ** 2 + gy ** 2)\nmag = np.uint8(255 * mag / mag.max())\ncv2.imwrite('output-sobel.png', mag)\n"
+      },
+      "sources": [
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d2c/tutorial_sobel_derivatives.html",
+          "title": "OpenCV — Sobel Derivatives tutorial",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "s4-output",
+      "title": "Output — the Sobel magnitude image",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/output-sobel.png",
+        "alt": "The gradient magnitude of the input image. The outlines of the rectangle, square, disk, the small bright square, and the diagonal line all show up as bright white traces on a black background. The disk's outline is dimmer because it has a softer transition.",
+        "caption": "Figure 1.2 — Sobel gradient magnitude $\\sqrt{G_x^2 + G_y^2}$ of Figure 1.1, scaled into [0, 255]. Bright pixels = high gradient = likely edge. Notice that the disk's edge is dimmer than the rectangle's: its intensity transition is gentler, so its gradient is smaller."
+      }
+    },
+    {
+      "id": "s5-takeaways",
+      "title": "What we just learned",
+      "type": "theory",
+      "data": {
+        "markdown": "## Takeaways\n\n- The **gradient magnitude** is a continuous, per-pixel \"edge strength\" map. A bright pixel in the Sobel output means \"the image is changing fast here\".\n- The Sobel operator is just two **3×3 convolutions** plus a `sqrt`. It is fast, parallelisable, and ships with every image-processing library.\n- The output is **not** a clean binary edge map yet. The lines are several pixels thick, weak responses appear in textured areas, and there is residual noise. Turning this fuzzy gradient image into a crisp set of one-pixel-wide edges is exactly what the **Canny** detector does — that is the next lesson.\n\n### Common gotchas\n\n- **Use `cv2.CV_64F`, not `cv2.CV_8U`.** A `uint8` output silently clips negative gradients to 0, so you lose half the edges (one side of each transition).\n- **Don't forget to rescale before saving.** The raw magnitude can range from 0 to ~1100; saving it as `uint8` without normalisation clips everything above 255 to white.\n- **Kernel size matters.** `ksize=3` is the standard. Larger sizes (`ksize=5`, `7`) smooth more — useful on noisy images, but they blur fine detail."
+      }
+    }
+  ]
+}
