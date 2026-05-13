@@ -1,6 +1,25 @@
 // US-154: server-only whisper.cpp subprocess wrapper.
 // Spawns the locally-built `main` (or `whisper-cli`) binary, captures the
 // transcript .txt it emits, and returns the text.
+//
+// US-168: device selection (CPU vs CUDA). whisper.cpp ships two distinct
+// builds: the default CPU build under `scripts/.bin/whisper.cpp/...` and an
+// opt-in CUDA build under `scripts/.whisper-cuda/...` (built via
+// `scripts/setup-stt-cuda.sh`). whisper-cli auto-uses GPU when built with
+// CUDA, so argv is identical between the two builds — only the binary path
+// changes. Behaviour:
+//   - `AI_LECTURER_STT_DEVICE=auto` (default) → call `whisperCudaAvailable()`
+//     which stat's the CUDA binary and shells out to `nvidia-smi`. If both
+//     succeed, the CUDA path is spawned; otherwise the existing CPU path is
+//     used unchanged. Probe result is memoised for the process lifetime;
+//     failures are silent (CPU fallback) and logged once at info level.
+//   - `AI_LECTURER_STT_DEVICE=cuda` → force the CUDA binary path. If it's
+//     missing, the spawn fails as SttNotInstalledError.
+//   - `AI_LECTURER_STT_DEVICE=cpu` → never consult the probe; use the
+//     existing CPU candidate list.
+// The CUDA binary path itself can be overridden via
+// `AI_LECTURER_WHISPER_CUDA_BIN` (useful when CUDA whisper.cpp is installed
+// somewhere outside `scripts/.whisper-cuda/`).
 
 import { spawn as defaultSpawn, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
@@ -117,6 +136,32 @@ export function whisperModelPath(): string {
   );
 }
 
+/** Path to the optional CUDA-built whisper-cli. Built by
+ *  `scripts/setup-stt-cuda.sh`; absent on systems without the CUDA toolkit.
+ *  Override with `AI_LECTURER_WHISPER_CUDA_BIN` when whisper.cpp's CUDA
+ *  build lives elsewhere. */
+export function whisperCudaBinaryPath(): string {
+  const override = process.env.AI_LECTURER_WHISPER_CUDA_BIN;
+  if (override && override.length > 0) return override;
+  return path.join(
+    process.cwd(),
+    'scripts',
+    '.whisper-cuda',
+    'build',
+    'bin',
+    'whisper-cli',
+  );
+}
+
+export type SttDeviceMode = 'cuda' | 'cpu' | 'auto';
+
+/** Read & validate `AI_LECTURER_STT_DEVICE`. Unknown values fall back to `auto`. */
+export function sttDeviceMode(): SttDeviceMode {
+  const raw = (process.env.AI_LECTURER_STT_DEVICE ?? 'auto').toLowerCase();
+  if (raw === 'cuda' || raw === 'cpu' || raw === 'auto') return raw;
+  return 'auto';
+}
+
 export interface AllowedRoots {
   home: string;
   courses: string;
@@ -207,9 +252,108 @@ export interface SttSpawnDeps {
 
 let depsOverride: SttSpawnDeps | null = null;
 
-/** Test-only: replace the spawn / file-existence deps used by `runStt`. */
+/** Test-only: replace the spawn / file-existence deps used by `runStt`. Also
+ *  resets the memoised CUDA probe result so each test starts from a clean
+ *  slate (mock spawn behaviour can change between tests). */
 export function __setSttDepsForTesting(deps: SttSpawnDeps | null): void {
   depsOverride = deps;
+  whisperCudaProbeResult = null;
+  whisperCudaProbeLogged = false;
+}
+
+let whisperCudaProbeResult: { available: boolean; binaryPath: string } | null = null;
+let whisperCudaProbeLogged = false;
+
+function logWhisperCudaProbeFailure(reason: string): void {
+  if (whisperCudaProbeLogged) return;
+  whisperCudaProbeLogged = true;
+  console.info(`STT CUDA probe failed, using CPU: ${reason}`);
+}
+
+/**
+ * Spawn `nvidia-smi -L` and resolve true iff it exits 0. Any spawn error
+ * (ENOENT when nvidia-smi isn't on PATH, etc.) resolves false. Used as a
+ * cheap "is there an NVIDIA driver wired up?" check that doesn't depend on
+ * the whisper.cpp build's CUDA backend actually working.
+ */
+async function probeNvidiaSmi(): Promise<boolean> {
+  const spawnFn = depsOverride?.spawn ?? defaultSpawn;
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawnFn('nvidia-smi', ['-L'], {
+        stdio: ['ignore', 'ignore', 'ignore'],
+      });
+    } catch {
+      resolve(false);
+      return;
+    }
+    child.on('error', () => resolve(false));
+    child.on('close', (code) => resolve(code === 0));
+  });
+}
+
+/**
+ * Probe whether the CUDA-built whisper.cpp is usable. Order:
+ *   1. Stat `whisperCudaBinaryPath()` (default `scripts/.whisper-cuda/build/bin/whisper-cli`
+ *      or `AI_LECTURER_WHISPER_CUDA_BIN`). If missing → return CPU fallback.
+ *   2. Spawn `nvidia-smi -L`. If exit 0 → CUDA is available. Otherwise → CPU.
+ * Memoised for the process lifetime — the answer cannot change without a
+ * restart. Any unexpected failure (e.g. spawn throws synchronously) logs
+ * once at info level and returns the CPU path. The CPU `binaryPath`
+ * returned is the first existing whisper-cli CPU candidate so callers
+ * don't have to repeat the lookup; if none exist it falls back to the
+ * first declared candidate so `SttNotInstalledError` still has a stable
+ * target to mention.
+ */
+export async function whisperCudaAvailable(): Promise<{
+  available: boolean;
+  binaryPath: string;
+}> {
+  if (whisperCudaProbeResult !== null) return whisperCudaProbeResult;
+  const exists = depsOverride?.binaryExists ?? defaultBinaryExists;
+  const cudaBin = whisperCudaBinaryPath();
+  const cpuFallback =
+    (await pickWhisperBinary(exists)) ?? whisperBinaryCandidates()[0];
+  try {
+    const cudaPresent = await exists(cudaBin);
+    if (!cudaPresent) {
+      whisperCudaProbeResult = { available: false, binaryPath: cpuFallback };
+      return whisperCudaProbeResult;
+    }
+    const gpuOk = await probeNvidiaSmi();
+    whisperCudaProbeResult = gpuOk
+      ? { available: true, binaryPath: cudaBin }
+      : { available: false, binaryPath: cpuFallback };
+    return whisperCudaProbeResult;
+  } catch (err) {
+    logWhisperCudaProbeFailure((err as Error).message);
+    whisperCudaProbeResult = { available: false, binaryPath: cpuFallback };
+    return whisperCudaProbeResult;
+  }
+}
+
+/**
+ * Resolve which whisper-cli binary to spawn, honouring `AI_LECTURER_STT_DEVICE`.
+ * Returns `null` if no usable binary was found — callers translate that into
+ * `SttNotInstalledError`.
+ */
+async function resolveWhisperBinary(): Promise<string | null> {
+  const exists = depsOverride?.binaryExists ?? defaultBinaryExists;
+  const mode = sttDeviceMode();
+  if (mode === 'cuda') {
+    const cudaBin = whisperCudaBinaryPath();
+    return (await exists(cudaBin)) ? cudaBin : null;
+  }
+  if (mode === 'cpu') {
+    return pickWhisperBinary(exists);
+  }
+  const probe = await whisperCudaAvailable();
+  if (probe.available) return probe.binaryPath;
+  // probe.binaryPath is the chosen CPU fallback (first existing CPU
+  // candidate, or the first declared candidate when none exist). Verify it
+  // actually exists before handing it back.
+  return (await exists(probe.binaryPath)) ? probe.binaryPath : null;
 }
 
 async function defaultBinaryExists(p: string): Promise<boolean> {
@@ -313,15 +457,18 @@ export interface RunSttInput {
  * stays focused on the subprocess shape.
  */
 export async function runStt(input: RunSttInput): Promise<SttResponse> {
-  const exists = depsOverride?.binaryExists ?? defaultBinaryExists;
   const modelCheck = depsOverride?.modelExists ?? defaultModelExists;
-  const binaryPath = await pickWhisperBinary(exists);
+  const binaryPath = await resolveWhisperBinary();
   const modelPath = whisperModelPath();
   if (!binaryPath || !(await modelCheck(modelPath))) {
-    throw new SttNotInstalledError(
-      binaryPath ?? whisperBinaryCandidates()[0],
-      modelPath,
-    );
+    // Pick the most informative "what was missing" target for the error
+    // message: when device=cuda we name the CUDA binary, otherwise the
+    // first CPU candidate.
+    const intended =
+      sttDeviceMode() === 'cuda'
+        ? whisperCudaBinaryPath()
+        : whisperBinaryCandidates()[0];
+    throw new SttNotInstalledError(binaryPath ?? intended, modelPath);
   }
 
   const spawnFn = depsOverride?.spawn ?? defaultSpawn;
