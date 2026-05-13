@@ -1,0 +1,50 @@
+[2026-05-13T12:43:29+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T12:45:41+0200] Now let me make the schema changes:
+[2026-05-13T12:45:52+0200] Now update server/tts.ts:
+[2026-05-13T12:46:03+0200] Now check the README env-var docs:
+[2026-05-13T12:46:11+0200] Now update the generation.ts call site:
+[2026-05-13T12:46:26+0200] Update generation.test.ts type literal:
+[2026-05-13T12:46:47+0200] Good. Now let me look at the TtsDemo schema and prepare to update fetch to use voice.
+[2026-05-13T12:46:51+0200] Now create the client-side voice store helper:
+[2026-05-13T12:47:05+0200] Update TtsDemo to read voice from store:
+[2026-05-13T12:47:31+0200] Now update the SettingsMenu with the Voice group. Let me look at the lucide imports and confirm Play icon usage:
+[2026-05-13T12:47:35+0200] Now I'll add the Voice group to the SettingsMenu. The horizontal pill picker has play icons that send `/api/tts` requests:
+[2026-05-13T12:47:44+0200] Now add VOICE_OPTIONS and styles before `triggerBtnStyle`:
+[2026-05-13T12:47:52+0200] Now add the voice picker logic and rendering. Let me first add the state and handler, then render. I'll look at the relevant section of SettingsMenu:
+[2026-05-13T12:48:19+0200] Now add the voice select handler and preview handler. Let me find the existing accent select callback:
+[2026-05-13T12:48:24+0200] Now I'll add the voice picker handlers and renderer. Insert callbacks after `onAccentSelect`:
+[2026-05-13T12:48:46+0200] Now I need to add VoiceGroup component and render it under Accent. Let me also add styles, then place the rendered group:
+[2026-05-13T12:48:57+0200] Now add the VoiceGroup component and render it:
+[2026-05-13T12:49:14+0200] Now let me update the SettingsMenu test to add Voice picker tests:
+[2026-05-13T12:49:41+0200] Now update tts.test.ts for the new enum values:
+[2026-05-13T12:50:22+0200] Now let me run typecheck:
+[2026-05-13T12:50:48+0200] Typecheck passes. Let me run tests now:
+[2026-05-13T12:50:54+0200] Let me run the full test suite:
+[2026-05-13T12:51:03+0200] All 1015 tests pass. Let me also run lint:
+[2026-05-13T12:55:44+0200] All playwright assertions pass. Let me verify screenshots exist:
+[2026-05-13T12:55:55+0200] Now update prd.json + progress.txt and commit:
+[2026-05-13T12:56:54+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T12:57:13+0200] Done. Committed `8122bdc` with US-166 marked `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary of US-166 implementation:**
+
+- **Schema (`src/lib/schemas/tts.ts`)** — `TtsVoiceEnum` is now `['en-female-warm', 'en-male-neutral', 'en-female-bright']` with `DEFAULT_TTS_VOICE = 'en-female-warm'` and a `TTS_VOICE_VALUES` export for client iteration.
+- **Server (`src/lib/server/tts.ts`)** — `DEFAULT_VOICE_SPEAKERS` maps each voice to a popular built-in XTTS v2 speaker (Ana Florence / Damien Black / Tammie Ema), with the chosen mapping documented in a comment block. `resolveVoiceSpeaker` reads per-voice env-var overrides via `AI_LECTURER_TTS_VOICE_<UPPER_SNAKE>`.
+- **Client store (`src/lib/client/ttsVoice.ts`, new)** — `readTtsVoice` / `writeTtsVoice` against `aiLecturer.ttsVoice` in localStorage.
+- **`SettingsMenu`** — new `VoiceGroup` directly below `Accent`: three horizontal pills with `Play size=12` icons; click pill → `writeTtsVoice` + `SETTINGS_CHANGE_EVENT`; click play → `POST /api/tts` with the matching voice, blob-URL appended as a hidden `<audio autoplay>`. Spinner replaces the icon in-flight, errors render `Preview failed` for 3s, second click stops the first.
+- **TtsDemo** migrated to read voice from store and key its in-memory cache by `voice+text`.
+- **Server-side generation** uses `DEFAULT_TTS_VOICE` instead of hard-coding (it runs without browser context).
+- **Tests** — `SettingsMenu.test.tsx` adds three Voice-picker assertions (render, click+localStorage, mocked fetch+blob+audio wire-up); `tts.test.ts` updated for new voice literals + per-voice env-var override. Full suite: 1015 passed. Typecheck: clean.
+- **Playwright** — headless run on `widget-dev-guide` lesson page asserts: 3 pills render, Accent + Voice groups both visible, selection moves through all three voices with localStorage updates, each play button POSTs `/api/tts` with the correct voice + sample text, audio element receives a blob URL.
+[2026-05-13T12:57:13+0200] [result success turns=109 cost=$8.853675500000001] Done. Committed `8122bdc` with US-166 marked `passes: true` in `scripts/ralph/prd.json`.
+
+**Summary of US-166 implementation:**
+
+- **Schema (`src/lib/schemas/tts.ts`)** — `TtsVoiceEnum` is now `['en-female-warm', 'en-male-neutral', 'en-female-bright']` with `DEFAULT_TTS_VOICE = 'en-female-warm'` and a `TTS_VOICE_VALUES` export for client iteration.
+- **Server (`src/lib/server/tts.ts`)** — `DEFAULT_VOICE_SPEAKERS` maps each voice to a popular built-in XTTS v2 speaker (Ana Florence / Damien Black / Tammie Ema), with the chosen mapping documented in a comment block. `resolveVoiceSpeaker` reads per-voice env-var overrides via `AI_LECTURER_TTS_VOICE_<UPPER_SNAKE>`.
+- **Client store (`src/lib/client/ttsVoice.ts`, new)** — `readTtsVoice` / `writeTtsVoice` against `aiLecturer.ttsVoice` in localStorage.
+- **`SettingsMenu`** — new `VoiceGroup` directly below `Accent`: three horizontal pills with `Play size=12` icons; click pill → `writeTtsVoice` + `SETTINGS_CHANGE_EVENT`; click play → `POST /api/tts` with the matching voice, blob-URL appended as a hidden `<audio autoplay>`. Spinner replaces the icon in-flight, errors render `Preview failed` for 3s, second click stops the first.
+- **TtsDemo** migrated to read voice from store and key its in-memory cache by `voice+text`.
+- **Server-side generation** uses `DEFAULT_TTS_VOICE` instead of hard-coding (it runs without browser context).
+- **Tests** — `SettingsMenu.test.tsx` adds three Voice-picker assertions (render, click+localStorage, mocked fetch+blob+audio wire-up); `tts.test.ts` updated for new voice literals + per-voice env-var override. Full suite: 1015 passed. Typecheck: clean.
+- **Playwright** — headless run on `widget-dev-guide` lesson page asserts: 3 pills render, Accent + Voice groups both visible, selection moves through all three voices with localStorage updates, each play button POSTs `/api/tts` with the correct voice + sample text, audio element receives a blob URL.
