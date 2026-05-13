@@ -11,6 +11,7 @@ import {
   __setTtsDepsForTesting,
   buildTtsArgs,
   contentHash,
+  isCudaAvailable,
   parseWavDurationMs,
   resolveVoiceSpeaker,
   type TtsSpawnDeps,
@@ -33,11 +34,15 @@ class FakeChildProcess extends EventEmitter {
     onSpawn?: (args: string[]) => Promise<void> | void;
     exitCode?: number;
     stderrText?: string;
+    stdoutText?: string;
+    /** When set, emits an 'error' event in lieu of normal exit. */
+    spawnError?: Error;
   }) {
     super();
     this.capturedArgs = opts.args;
     const exitCode = opts.exitCode ?? 0;
     const stderrText = opts.stderrText ?? '';
+    const stdoutText = opts.stdoutText ?? '';
 
     this.stdin = new Writable({ write: (_c, _e, cb) => cb(), final: (cb) => cb() });
     this.stdout = new Readable({ read() {} });
@@ -50,9 +55,14 @@ class FakeChildProcess extends EventEmitter {
         this.emit('error', err);
         return;
       }
+      if (opts.spawnError) {
+        this.emit('error', opts.spawnError);
+        return;
+      }
+      if (stdoutText) this.stdout.push(Buffer.from(stdoutText, 'utf8'));
       this.stdout.push(null);
-      this.stderr.push(stderrText ? Buffer.from(stderrText, 'utf8') : null);
-      if (stderrText) this.stderr.push(null);
+      if (stderrText) this.stderr.push(Buffer.from(stderrText, 'utf8'));
+      this.stderr.push(null);
       this.emit('exit', exitCode, null);
       setImmediate(() => this.emit('close', exitCode, null));
     });
@@ -98,6 +108,16 @@ function makeSuccessSpawn(opts: {
   const { recordings, audioBytes = 32000, binaryExists = true } = opts;
   return {
     spawn: ((command: string, args: string[]) => {
+      // US-167: route the CUDA probe through a stubbed "no GPU" answer so
+      // existing tests don't see a phantom spawn recording. Tests that
+      // exercise the probe directly use makeCudaSpawn() instead.
+      const isProbe =
+        args.includes('-c') &&
+        args.some((a) => typeof a === 'string' && a.includes('torch.cuda.is_available'));
+      if (isProbe) {
+        const child = new FakeChildProcess({ args, stdoutText: '0\n' });
+        return child as unknown as ChildProcess;
+      }
       recordings.push({ command, args: [...args] });
       const child = new FakeChildProcess({
         args,
@@ -128,6 +148,7 @@ afterEach(async () => {
   delete process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_WARM;
   delete process.env.AI_LECTURER_TTS_VOICE_EN_MALE_NEUTRAL;
   delete process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_BRIGHT;
+  delete process.env.AI_LECTURER_TTS_DEVICE;
   await fs.rm(homeRoot, { recursive: true, force: true });
 });
 
@@ -375,5 +396,210 @@ describe('evictOldestUntilUnderBudget (US-154)', () => {
     await fs.writeFile(path.join(dir, 'a.wav'), Buffer.alloc(50));
     const removed = await evictOldestUntilUnderBudget({ dir, budgetBytes: 1000 });
     expect(removed).toEqual([]);
+  });
+});
+
+describe('CUDA probe + --use_cuda flag (US-167)', () => {
+  /** Spawn factory that recognises the probe (`python3 -c '...'`) vs the
+   *  TTS CLI invocation (anything with `--out_path`) and returns the right
+   *  fake child for each. The probe child writes its `probeStdout` to
+   *  stdout (typically `'1\n'` for CUDA-available, `'0\n'` for not). The
+   *  TTS child writes a fake WAV at the requested `--out_path` so runTts
+   *  completes successfully. If `probeError` is set, the probe spawn throws
+   *  synchronously; if `probeSpawnErrEvent` is set, the probe child emits
+   *  an asynchronous `'error'` event in lieu of normal exit. */
+  function makeCudaSpawn(opts: {
+    recordings: SpawnRecording[];
+    probeStdout?: string;
+    probeExitCode?: number;
+    probeError?: Error;
+    probeSpawnErrEvent?: Error;
+  }): TtsSpawnDeps {
+    const {
+      recordings,
+      probeStdout = '1\n',
+      probeExitCode = 0,
+      probeError,
+      probeSpawnErrEvent,
+    } = opts;
+    return {
+      spawn: ((command: string, args: string[]) => {
+        recordings.push({ command, args: [...args] });
+        const isProbe =
+          args.includes('-c') &&
+          args.some((a) => typeof a === 'string' && a.includes('torch.cuda.is_available'));
+        if (isProbe) {
+          if (probeError) throw probeError;
+          const child = new FakeChildProcess({
+            args,
+            stdoutText: probeStdout,
+            exitCode: probeExitCode,
+            spawnError: probeSpawnErrEvent,
+          });
+          return child as unknown as ChildProcess;
+        }
+        // TTS CLI invocation.
+        const child = new FakeChildProcess({
+          args,
+          onSpawn: async (a) => {
+            const idx = a.indexOf('--out_path');
+            if (idx >= 0 && idx + 1 < a.length) {
+              const outPath = a[idx + 1];
+              await fs.mkdir(path.dirname(outPath), { recursive: true });
+              await fs.writeFile(outPath, fakeWav(32000));
+            }
+          },
+        });
+        return child as unknown as ChildProcess;
+      }) as unknown as TtsSpawnDeps['spawn'],
+      binaryExists: async () => true,
+    };
+  }
+
+  function ttsRecording(recordings: SpawnRecording[]): SpawnRecording | undefined {
+    return recordings.find((r) => r.args.includes('--out_path'));
+  }
+
+  function probeCount(recordings: SpawnRecording[]): number {
+    return recordings.filter(
+      (r) =>
+        r.args.includes('-c') &&
+        r.args.some((a) => typeof a === 'string' && a.includes('torch.cuda.is_available')),
+    ).length;
+  }
+
+  it('(1) probe-true → tts argv contains --use_cuda true', async () => {
+    const recordings: SpawnRecording[] = [];
+    __setTtsDepsForTesting(makeCudaSpawn({ recordings, probeStdout: '1\n' }));
+
+    const res = await postTts(
+      new Request('http://x/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'gpu please', voice: 'en-female-warm' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const tts = ttsRecording(recordings);
+    expect(tts).toBeDefined();
+    const flagIdx = tts!.args.indexOf('--use_cuda');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(tts!.args[flagIdx + 1]).toBe('true');
+    expect(probeCount(recordings)).toBe(1);
+  });
+
+  it('(2) probe-false → tts argv does NOT contain --use_cuda', async () => {
+    const recordings: SpawnRecording[] = [];
+    __setTtsDepsForTesting(makeCudaSpawn({ recordings, probeStdout: '0\n' }));
+
+    const res = await postTts(
+      new Request('http://x/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'cpu only', voice: 'en-female-warm' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const tts = ttsRecording(recordings);
+    expect(tts).toBeDefined();
+    expect(tts!.args).not.toContain('--use_cuda');
+    expect(probeCount(recordings)).toBe(1);
+  });
+
+  it('(3) AI_LECTURER_TTS_DEVICE=cuda forces the flag without probing', async () => {
+    process.env.AI_LECTURER_TTS_DEVICE = 'cuda';
+    const recordings: SpawnRecording[] = [];
+    // Probe stdout would say "no GPU" (0) but mode=cuda should bypass it.
+    __setTtsDepsForTesting(makeCudaSpawn({ recordings, probeStdout: '0\n' }));
+
+    const res = await postTts(
+      new Request('http://x/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'force gpu', voice: 'en-female-warm' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const tts = ttsRecording(recordings);
+    expect(tts).toBeDefined();
+    const flagIdx = tts!.args.indexOf('--use_cuda');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(tts!.args[flagIdx + 1]).toBe('true');
+    // Mode=cuda must NOT spawn the probe.
+    expect(probeCount(recordings)).toBe(0);
+  });
+
+  it('(4) AI_LECTURER_TTS_DEVICE=cpu skips the flag even if probe would succeed', async () => {
+    process.env.AI_LECTURER_TTS_DEVICE = 'cpu';
+    const recordings: SpawnRecording[] = [];
+    __setTtsDepsForTesting(makeCudaSpawn({ recordings, probeStdout: '1\n' }));
+
+    const res = await postTts(
+      new Request('http://x/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'force cpu', voice: 'en-female-warm' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const tts = ttsRecording(recordings);
+    expect(tts).toBeDefined();
+    expect(tts!.args).not.toContain('--use_cuda');
+    expect(probeCount(recordings)).toBe(0);
+  });
+
+  it('(5) probe error returns false and does not throw', async () => {
+    const recordings: SpawnRecording[] = [];
+    __setTtsDepsForTesting(
+      makeCudaSpawn({
+        recordings,
+        probeSpawnErrEvent: Object.assign(new Error('ENOENT python3'), { code: 'ENOENT' }),
+      }),
+    );
+
+    // Direct probe — must resolve to false, never throw.
+    await expect(isCudaAvailable()).resolves.toBe(false);
+
+    // And the next /api/tts call still succeeds with no --use_cuda.
+    const res = await postTts(
+      new Request('http://x/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'probe broke', voice: 'en-female-warm' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const tts = ttsRecording(recordings);
+    expect(tts).toBeDefined();
+    expect(tts!.args).not.toContain('--use_cuda');
+  });
+
+  it('memoises the probe across multiple runTts calls', async () => {
+    const recordings: SpawnRecording[] = [];
+    __setTtsDepsForTesting(makeCudaSpawn({ recordings, probeStdout: '1\n' }));
+
+    for (const text of ['one', 'two', 'three']) {
+      const res = await postTts(
+        new Request('http://x/api/tts', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text, voice: 'en-female-warm' }),
+        }),
+      );
+      expect(res.status).toBe(200);
+    }
+    // Probe should have run exactly once; three separate tts spawns.
+    expect(probeCount(recordings)).toBe(1);
+    const ttsCalls = recordings.filter((r) => r.args.includes('--out_path'));
+    expect(ttsCalls).toHaveLength(3);
+    for (const call of ttsCalls) {
+      const flagIdx = call.args.indexOf('--use_cuda');
+      expect(flagIdx).toBeGreaterThanOrEqual(0);
+      expect(call.args[flagIdx + 1]).toBe('true');
+    }
   });
 });
