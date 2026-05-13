@@ -123,12 +123,30 @@ describe('Extend wizard page (US-171)', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
-  it('renders one + Add lesson button per module and exactly one + Add module button', () => {
+  it('renders one Add lesson button per module and exactly one Add module button', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
     expect(screen.getByTestId('extend-add-lesson-m1')).toBeTruthy();
     expect(screen.getByTestId('extend-add-lesson-m2')).toBeTruthy();
     expect(screen.queryAllByTestId(/^extend-add-lesson-/)).toHaveLength(2);
     expect(screen.getByTestId('extend-add-module')).toBeTruthy();
+  });
+
+  it('US-176: +Add buttons render only the Lucide icon (no literal "+" in textContent)', () => {
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+
+    const addModule = screen.getByTestId('extend-add-module');
+    expect(addModule.textContent ?? '').not.toContain('+');
+    expect((addModule.textContent ?? '').trim()).toBe('Add module');
+    expect(addModule.querySelectorAll('svg')).toHaveLength(1);
+
+    for (const moduleId of ['m1', 'm2']) {
+      const addLesson = screen.getByTestId(`extend-add-lesson-${moduleId}`);
+      expect(addLesson.textContent ?? '').not.toContain('+');
+      expect((addLesson.textContent ?? '').trim()).toMatch(
+        /^Add lesson to .+/,
+      );
+      expect(addLesson.querySelectorAll('svg')).toHaveLength(1);
+    }
   });
 
   it('shows the course title in the heading and a disabled Generate additions button before any additions', () => {
@@ -140,7 +158,7 @@ describe('Extend wizard page (US-171)', () => {
     expect(generate.disabled).toBe(true);
   });
 
-  it('+ Add module dialog: posts expected instruction, reflects response in tree with data-new highlight', async () => {
+  it('Add module dialog: posts expected instruction, reflects response in tree with data-new highlight', async () => {
     const response = buildExtendResponseWithNewModule();
     const fetchMock = mockFetchOnce(response);
     render(<ExtendWizardClient course={TEST_COURSE} />);
@@ -188,7 +206,7 @@ describe('Extend wizard page (US-171)', () => {
     ).toBeNull();
   });
 
-  it('+ Add lesson dialog: second call sends prior instruction as refinement; new lesson highlighted', async () => {
+  it('Add lesson dialog: second call sends prior instruction as refinement; new lesson highlighted', async () => {
     const firstResp = buildExtendResponseWithNewModule();
     const secondResp = buildExtendResponseAddNewLessonToModuleOne(firstResp);
 

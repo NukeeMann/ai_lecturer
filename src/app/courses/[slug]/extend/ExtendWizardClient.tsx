@@ -581,7 +581,7 @@ export default function ExtendWizardClient({
                         style={addInlineBtnStyle}
                       >
                         <Plus size={14} strokeWidth={2} />
-                        <span>{`+ Add lesson to ${m.title}`}</span>
+                        <span>{`Add lesson to ${m.title}`}</span>
                       </button>
                     )}
                   </div>
@@ -597,7 +597,7 @@ export default function ExtendWizardClient({
                   style={addBlockBtnStyle}
                 >
                   <Plus size={16} strokeWidth={2} />
-                  <span>+ Add module</span>
+                  <span>Add module</span>
                 </button>
               )}
             </div>
