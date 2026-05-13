@@ -1,0 +1,27 @@
+[2026-05-13T22:05:28+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:06:16+0200] Now let me update the design_course SKILL.md.
+[2026-05-13T22:06:21+0200] Now update the worked example to include `summary` on each lesson and add the instruction paragraph.
+[2026-05-13T22:06:31+0200] Now add the instruction paragraph. Let me insert it in the sizing rules area or right after the lesson shape comment.
+[2026-05-13T22:06:56+0200] No structured-output schema in the skill dir. Now add tests.
+[2026-05-13T22:07:17+0200] Good. Now run typecheck and tests.
+[2026-05-13T22:07:42+0200] All 1056 tests pass. Now update prd.json and progress, then commit.
+[2026-05-13T22:07:54+0200] I duplicated the passes field. Need to remove the old `"passes": false` entry.
+[2026-05-13T22:08:04+0200] Now append progress.txt.
+[2026-05-13T22:09:02+0200] US-178 done. Summary:
+
+- `src/lib/schemas/course.ts` — `LessonRefSchema` gains `summary: z.string().optional()`; `LessonRef` type updates automatically via `z.infer`.
+- `src/widgets/schemas/course.json` — regenerated via `npm run build:schemas`; only diff is the new optional `summary` field on lesson items (not in `required`).
+- `scripts/ralph/skills/design_course/SKILL.md` — lesson-shape comment block + all 4 worked-example lessons include `summary`; added the requested instruction paragraph under "Lesson slug derivation". No `*.schema.json` exists under the skill dir, so the structured-output AC was vacuous.
+- `scripts/ralph/skills/generate_lesson/SKILL.md` — one new row in the context table between Module summary and Estimated minutes.
+- `src/lib/schemas/schemas.test.ts` — 3 new tests covering omit (backward compat), include (parses + roundtrips value), and wrong-type (rejected with Zod issue at `modules.0.lessons.0.summary`).
+- Typecheck clean; vitest 1056/1056 pass (1053 prior + 3 new).
+- prd.json `US-178.passes = true`; commit `5c8fb6b`.
+[2026-05-13T22:09:02+0200] [result success turns=43 cost=$2.0379520000000007] US-178 done. Summary:
+
+- `src/lib/schemas/course.ts` — `LessonRefSchema` gains `summary: z.string().optional()`; `LessonRef` type updates automatically via `z.infer`.
+- `src/widgets/schemas/course.json` — regenerated via `npm run build:schemas`; only diff is the new optional `summary` field on lesson items (not in `required`).
+- `scripts/ralph/skills/design_course/SKILL.md` — lesson-shape comment block + all 4 worked-example lessons include `summary`; added the requested instruction paragraph under "Lesson slug derivation". No `*.schema.json` exists under the skill dir, so the structured-output AC was vacuous.
+- `scripts/ralph/skills/generate_lesson/SKILL.md` — one new row in the context table between Module summary and Estimated minutes.
+- `src/lib/schemas/schemas.test.ts` — 3 new tests covering omit (backward compat), include (parses + roundtrips value), and wrong-type (rejected with Zod issue at `modules.0.lessons.0.summary`).
+- Typecheck clean; vitest 1056/1056 pass (1053 prior + 3 new).
+- prd.json `US-178.passes = true`; commit `5c8fb6b`.
