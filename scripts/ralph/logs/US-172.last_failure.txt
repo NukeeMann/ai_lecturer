@@ -1,0 +1,421 @@
+Agent finished but produced 0 commits. You MUST set passes:true for US-172 in scripts/ralph/prd.json AND run 'git commit' before exiting — uncommitted work is captured below for the next retry to rebuild.
+
+Files touched (lost on retry):
+ M src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+ M src/app/page.tsx
+
+Unstaged diff (first 400 lines, for rebuild):
+diff --git a/src/app/courses/[slug]/extend/ExtendWizardClient.tsx b/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+index 5b4188a..40ef238 100644
+--- a/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
++++ b/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+@@ -9,7 +9,16 @@ import {
+   type CSSProperties,
+ } from 'react';
+ import Link from 'next/link';
+-import { ArrowLeft, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
++import {
++  AlertTriangle,
++  ArrowLeft,
++  Check,
++  Loader2,
++  Plus,
++  RotateCcw,
++  Sparkles,
++  X,
++} from 'lucide-react';
+ 
+ import { AppLogoLink } from '@/components/AppLogo';
+ import { SettingsMenu } from '@/components/SettingsMenu';
+@@ -29,6 +38,22 @@ type Additions = {
+   newLessonIds: ExtendNewLesson[];
+ };
+ 
++type LessonProgressStatus = 'pending' | 'started' | 'done' | 'error';
++
++type Phase =
++  // Initial state: editing the proposed schema.
++  | { kind: 'edit' }
++  // Read-only: someone else is mid-generation for this slug.
++  | { kind: 'busy' }
++  // POST /apply in flight (button shows spinner).
++  | { kind: 'applying' }
++  // /apply returned 200; live SSE log panel is mounted.
++  | { kind: 'progress'; enqueuedLessonSlugs: string[]; genId: string | null }
++  // Cancel succeeded.
++  | { kind: 'cancelled'; enqueuedLessonSlugs: string[] }
++  // All enqueued lessons reported done/error.
++  | { kind: 'done'; enqueuedLessonSlugs: string[] };
++
+ function buildInstruction(
+   dialog: DialogState,
+   text: string,
+@@ -64,9 +89,16 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+   const [instructionDraft, setInstructionDraft] = useState('');
+   const [loading, setLoading] = useState(false);
+   const [toast, setToast] = useState<string | null>(null);
++  const [phase, setPhase] = useState<Phase>({ kind: 'edit' });
++  const [lessonStatuses, setLessonStatuses] = useState<
++    Record<string, LessonProgressStatus>
++  >({});
++  const [logLines, setLogLines] = useState<string[]>([]);
+   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+   const abortRef = useRef<AbortController | null>(null);
+   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
++  const eventSourceRef = useRef<EventSource | null>(null);
++  const cancelInFlightRef = useRef(false);
+ 
+   const showToast = useCallback((msg: string) => {
+     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+@@ -86,23 +118,49 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+   const hasAdditions =
+     additions.newModuleIds.length > 0 || additions.newLessonIds.length > 0;
+ 
++  // On mount, check whether a generation is already active for this slug.
++  // If so, jump straight into read-only mode (banner + disabled +Add buttons).
++  // Same 409 reason as US-143.
++  useEffect(() => {
++    let cancelled = false;
++    void (async () => {
++      try {
++        const res = await fetch('/api/courses/active-run', { cache: 'no-store' });
++        if (cancelled || !res.ok) return;
++        const data = (await res.json()) as {
++          active: boolean;
++          slug?: string;
++        };
++        if (cancelled) return;
++        if (data.active && data.slug === course.slug) {
++          setPhase({ kind: 'busy' });
++        }
++      } catch {
++        /* best-effort — fall back to edit mode if the probe fails */
++      }
++    })();
++    return () => {
++      cancelled = true;
++    };
++  }, [course.slug]);
++
++  const isReadOnly = phase.kind !== 'edit';
++
+   const openModuleDialog = useCallback(() => {
+-    if (loading) return;
++    if (loading || isReadOnly) return;
+     setInstructionDraft('');
+     setDialog({ kind: 'module' });
+-  }, [loading]);
++  }, [loading, isReadOnly]);
+ 
+   const openLessonDialog = useCallback(
+     (moduleId: string, moduleTitle: string) => {
+-      if (loading) return;
++      if (loading || isReadOnly) return;
+       setInstructionDraft('');
+       setDialog({ kind: 'lesson', moduleId, moduleTitle });
+     },
+-    [loading],
++    [loading, isReadOnly],
+   );
+ 
+-  // Cancel button — also used by the Esc key + backdrop click. When a request
+-  // is in flight, we abort it; the abort handler in handleAdd resets loading.
+   const closeDialog = useCallback(() => {
+     if (abortRef.current) {
+       abortRef.current.abort();
+@@ -119,8 +177,6 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+     if (!dialog) return;
+     if (loading) return;
+     const fullInstruction = buildInstruction(dialog, trimmed);
+-    // Latest instruction goes into `instruction`; everything before it is
+-    // chronological refinement history (US-143 contract).
+     const refinements = instructions.map((content) => ({
+       role: 'user' as const,
+       content,
+@@ -149,6 +205,7 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+           showToast('Cannot extend while generation is active.');
+           setDialog(null);
+           setInstructionDraft('');
++          setPhase({ kind: 'busy' });
+         } else {
+           showToast('Server error — please try again.');
+         }
+@@ -197,6 +254,205 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+     setInstructions([]);
+   }, [course, hasAdditions, loading]);
+ 
++  // Apply: POST the accumulated proposedSchema to /api/courses/<slug>/extend/apply.
++  // On 200, switch the wizard shell into 'progress' mode and attach SSE for
++  // per-lesson stage events on the enqueued lesson slugs.
++  const handleApply = useCallback(async () => {
++    if (!hasAdditions) return;
++    if (phase.kind !== 'edit') return;
++    setPhase({ kind: 'applying' });
++    try {
++      const res = await fetch(
++        `/api/courses/${encodeURIComponent(course.slug)}/extend/apply`,
++        {
++          method: 'POST',
++          headers: { 'content-type': 'application/json' },
++          body: JSON.stringify({ proposedSchema: currentProposed }),
++        },
++      );
++      if (!res.ok) {
++        if (res.status === 409) {
++          showToast('Cannot extend while generation is active.');
++          setPhase({ kind: 'busy' });
++        } else {
++          let detail = `Server error (${res.status})`;
++          try {
++            const j = (await res.json()) as { error?: string; message?: string };
++            if (j.message) detail = j.message;
++            else if (j.error) detail = j.error;
++          } catch {
++            /* non-json body */
++          }
++          showToast(detail);
++          setPhase({ kind: 'edit' });
++        }
++        return;
++      }
++      const data = (await res.json()) as { enqueuedLessonSlugs: string[] };
++      const enqueued = Array.isArray(data.enqueuedLessonSlugs)
++        ? data.enqueuedLessonSlugs
++        : [];
++      // Seed the lesson-status map so every enqueued lesson renders as pending
++      // before the first SSE event arrives.
++      const seeded: Record<string, LessonProgressStatus> = {};
++      for (const s of enqueued) seeded[s] = 'pending';
++      setLessonStatuses(seeded);
++      setLogLines([]);
++      setPhase({ kind: 'progress', enqueuedLessonSlugs: enqueued, genId: null });
++    } catch (err) {
++      showToast(
++        err instanceof Error ? err.message : 'Server error — please try again.',
++      );
++      setPhase({ kind: 'edit' });
++    }
++  }, [course.slug, currentProposed, hasAdditions, phase.kind, showToast]);
++
++  // Once we're in 'progress' phase, fetch the run id via POST /api/courses/generate
++  // (idempotent same-slug attach when a run is already active, US-105) and
++  // wire EventSource for stage / log / done events.
++  const enqueuedSlugsKey = useMemo(() => {
++    if (phase.kind !== 'progress') return null;
++    return phase.enqueuedLessonSlugs.join('|');
++  }, [phase]);
++
++  useEffect(() => {
++    if (phase.kind !== 'progress') return;
++    if (phase.genId !== null) return;
++    if (phase.enqueuedLessonSlugs.length === 0) {
++      // Nothing to wait on — go straight to done.
++      setPhase({ kind: 'done', enqueuedLessonSlugs: [] });
++      return;
++    }
++    let cancelled = false;
++    void (async () => {
++      try {
++        const res = await fetch('/api/courses/generate', {
++          method: 'POST',
++          headers: { 'content-type': 'application/json' },
++          body: JSON.stringify({ slug: course.slug }),
++        });
++        if (cancelled || !res.ok) return;
++        const body = (await res.json()) as
++          | { id: string; slug: string }
++          | { queued: true; slug: string; position: number; total: number };
++        if (cancelled) return;
++        if ('id' in body) {
++          setPhase((prev) =>
++            prev.kind === 'progress'
++              ? { ...prev, genId: body.id }
++              : prev,
++          );
++        }
++      } catch {
++        /* SSE will simply not attach; user can still cancel + try again */
++      }
++    })();
++    return () => {
++      cancelled = true;
++    };
++    // We deliberately depend on the joined enqueued-slug key, not the array
++    // identity (which changes on every render).
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [phase.kind, phase.kind === 'progress' ? phase.genId : null, enqueuedSlugsKey, course.slug]);
++
++  // Attach SSE once we have a genId.
++  useEffect(() => {
++    if (phase.kind !== 'progress') return;
++    if (!phase.genId) return;
++    const es = new EventSource(
++      `/api/courses/generate/stream/${encodeURIComponent(phase.genId)}`,
++    );
++    eventSourceRef.current = es;
++
++    const onStage = (ev: MessageEvent) => {
++      try {
++        const data = JSON.parse(ev.data) as {
++          name: string;
++          status: 'started' | 'done' | 'error';
++        };
++        if (!data.name.startsWith('lesson:')) return;
++        const slug = data.name.slice('lesson:'.length);
++        setLessonStatuses((prev) => ({ ...prev, [slug]: data.status }));
++      } catch {
++        /* malformed */
++      }
++    };
++    const onLog = (ev: MessageEvent) => {
++      try {
++        const data = JSON.parse(ev.data) as { line: string };
++        if (typeof data.line === 'string') {
++          setLogLines((prev) => {
++            // Keep only the last 200 lines; older ones are off-screen anyway.
++            const next = prev.concat(data.line);
++            return next.length > 200 ? next.slice(next.length - 200) : next;
++          });
++        }
++      } catch {
++        /* malformed */
++      }
++    };
++    const onDone = () => {
++      es.close();
++      eventSourceRef.current = null;
++    };
++
++    es.addEventListener('stage', onStage as EventListener);
++    es.addEventListener('log', onLog as EventListener);
++    es.addEventListener('done', onDone as EventListener);
++
++    return () => {
++      es.removeEventListener('stage', onStage as EventListener);
++      es.removeEventListener('log', onLog as EventListener);
++      es.removeEventListener('done', onDone as EventListener);
++      try {
++        es.close();
++      } catch {
++        /* already closed */
++      }
++      if (eventSourceRef.current === es) {
++        eventSourceRef.current = null;
++      }
++    };
++  }, [phase]);
++
++  // Auto-transition to 'done' once every enqueued lesson is in a terminal
++  // status (done or error). AC: "When all enqueued lessons report completion".
++  useEffect(() => {
++    if (phase.kind !== 'progress') return;
++    if (phase.enqueuedLessonSlugs.length === 0) return;
++    const allTerminal = phase.enqueuedLessonSlugs.every((s) => {
++      const st = lessonStatuses[s];
++      return st === 'done' || st === 'error';
++    });
++    if (allTerminal) {
++      setPhase({
++        kind: 'done',
++        enqueuedLessonSlugs: phase.enqueuedLessonSlugs,
++      });
++    }
++  }, [lessonStatuses, phase]);
++
++  const handleCancelGeneration = useCallback(async () => {
++    if (phase.kind !== 'progress') return;
++    if (cancelInFlightRef.current) return;
++    cancelInFlightRef.current = true;
++    const id = phase.genId;
++    try {
++      if (id) {
++        await fetch(`/api/courses/generate?id=${encodeURIComponent(id)}`, {
++          method: 'DELETE',
++        });
++      }
++    } catch {
++      /* swallow — show cancelled UI anyway, the user asked */
++    }
++    cancelInFlightRef.current = false;
++    setPhase({
++      kind: 'cancelled',
++      enqueuedLessonSlugs: phase.enqueuedLessonSlugs,
++    });
++  }, [phase]);
++
+   // Esc closes dialog. While loading, Cancel/Esc abort the in-flight request.
+   useEffect(() => {
+     if (!dialog) return;
+@@ -221,9 +477,32 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+     return () => {
+       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+       abortRef.current?.abort();
++      eventSourceRef.current?.close();
+     };
+   }, []);
+ 
++  // Destination of the Done button: the first new lesson under its module.
++  // If we don't know the slug-to-module mapping (race), fall back to the
++  // course page.
++  const doneTargetHref = useMemo(() => {
++    const enqueued =
++      phase.kind === 'progress' ||
++      phase.kind === 'cancelled' ||
++      phase.kind === 'done'
++        ? phase.enqueuedLessonSlugs
++        : [];
++    const firstSlug = enqueued[0];
++    if (!firstSlug) return `/courses/${encodeURIComponent(course.slug)}`;
++    return `/courses/${encodeURIComponent(course.slug)}/lessons/${encodeURIComponent(
++      firstSlug,
++    )}`;
++  }, [phase, course.slug]);
++
++  const showProgressView =
++    phase.kind === 'progress' ||
++    phase.kind === 'cancelled' ||
++    phase.kind === 'done';
++
+   return (
+     <div style={pageStyle}>
+       <header style={headerStyle}>
+@@ -281,128 +560,174 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
+               marginBottom: 'var(--space-6)',
+             }}
+           >
+-            Add new modules or lessons to this course. Each addition is
+-            proposed by the agent and reflected in the schema tree below.
++            {showProgressView
++              ? 'New modules and lessons are being generated. You can watch progress below.'
++              : 'Add new modules or lessons to this course. Each addition is proposed by the agent and reflected in the schema tree below.'}
+           </p>
+ 
+-          <div
+-            data-testid="extend-tree"
+-            data-loading={loading ? 'true' : undefined}
+-            style={{
+-              display: 'flex',
+-              flexDirection: 'column',
+-              gap: 'var(--space-4)',
+-              opacity: loading ? 0.6 : 1,
+-              pointerEvents: loading ? 'none' : undefined,
+-              transition: 'opacity 120ms ease',
+-            }}
+-          >
+-            {currentProposed.modules.map((m) => {
+-              const moduleIsNew = newModuleIdSet.has(m.id);
+-              const moduleMinutes = m.lessons.reduce(
+
+Last agent output:
+[2026-05-13T13:44:41+0200] Now let me update the dashboard — switch the three-dots Extend to navigate, drop the modal & all its imports/state/render/types.
+[2026-05-13T13:44:50+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:45:11+0200] Now delete the modal render call from JSX:
+[2026-05-13T13:45:17+0200] Now delete the 4 modal-related component functions and the chat-message types (line 2192–3053 in the original; need to recheck offsets):
+[2026-05-13T13:45:40+0200] Now check no stragglers remain:
+[2026-05-13T13:45:46+0200] Good — leftover is only a code comment in a file we'll rewrite anyway. Now the wizard rewrite for AC 1–3 + AC 6 (active-gen guard):
+[2026-05-13T13:45:47+0200] Now I'll rewrite the wizard client to incorporate the apply flow, progress view, cancel button, and active-gen guard. Let me look at how the create page renders its log panel for the lesson list specifically:
+[2026-05-13T13:46:18+0200] Now rewrite ExtendWizardClient.tsx with the apply + progress view + Cancel/Done + active-gen guard:
+[2026-05-13T13:48:13+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:48:14+0200] [rate_limit five_hour status=rejected]
+[2026-05-13T13:48:14+0200] You've hit your limit · resets 3:50pm (Europe/Warsaw)
+[2026-05-13T13:48:14+0200] [result success ERROR turns=77 cost=$5.53344725] You've hit your limit · resets 3:50pm (Europe/Warsaw)
