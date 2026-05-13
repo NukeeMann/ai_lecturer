@@ -35,18 +35,72 @@ export class SttPathError extends Error {
   }
 }
 
-/** Default candidate paths for the whisper.cpp executable. The build can
- *  produce either `<repo>/main` (older) or `<repo>/build/bin/whisper-cli`
- *  / `<repo>/build/bin/main` (newer). The route picks the first one
- *  present at request time. */
+export class SttTranscodeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SttTranscodeError';
+  }
+}
+
+/** Extensions whisper-cli decodes natively. Anything else must be transcoded
+ *  to 16 kHz mono PCM WAV via ffmpeg first. */
+const WHISPER_NATIVE_EXTS = new Set(['.wav', '.ogg', '.mp3', '.flac']);
+
+/** Transcode `input` to a sibling `.transcoded.wav` (16 kHz mono PCM) using
+ *  ffmpeg. Browser MediaRecorder typically produces webm/opus, which
+ *  whisper-cli cannot decode. */
+async function transcodeToWav(
+  input: string,
+  spawnFn: typeof defaultSpawn,
+): Promise<string> {
+  const out = `${input}.transcoded.wav`;
+  const args = ['-y', '-i', input, '-ac', '1', '-ar', '16000', out];
+  let child: ChildProcess;
+  try {
+    child = spawnFn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (err) {
+    throw new SttTranscodeError(
+      `Failed to spawn ffmpeg: ${(err as Error).message}. Install with: sudo apt-get install -y ffmpeg`,
+    );
+  }
+  const stderrChunks: Buffer[] = [];
+  child.stderr?.on('data', (chunk: Buffer | string) => {
+    stderrChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  });
+  const exitCode: number = await new Promise((resolve, reject) => {
+    child.on('error', (err) => {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        reject(
+          new SttTranscodeError(
+            'ffmpeg not found on PATH. Install with: sudo apt-get install -y ffmpeg',
+          ),
+        );
+      } else {
+        reject(err);
+      }
+    });
+    child.on('close', (code) => resolve(code ?? 0));
+  });
+  if (exitCode !== 0) {
+    const stderr = Buffer.concat(stderrChunks).toString('utf8').slice(0, 512);
+    throw new SttTranscodeError(`ffmpeg exited with code ${exitCode}: ${stderr}`);
+  }
+  return out;
+}
+
+/** Default candidate paths for the whisper.cpp executable. Newer
+ *  whisper.cpp builds emit `build/bin/whisper-cli` and ship a deprecated
+ *  `build/bin/main` stub that prints a warning and exits non-zero on
+ *  modern args — so `whisper-cli` MUST come first. Older builds emit a
+ *  top-level `main` binary. */
 export function whisperBinaryCandidates(): string[] {
   const override = process.env.AI_LECTURER_STT_BIN;
   if (override && override.length > 0) return [override];
   const root = path.join(process.cwd(), 'scripts', '.bin', 'whisper.cpp');
   return [
+    path.join(root, 'build', 'bin', 'whisper-cli'),
     path.join(root, 'main'),
     path.join(root, 'build', 'bin', 'main'),
-    path.join(root, 'build', 'bin', 'whisper-cli'),
   ];
 }
 
@@ -270,16 +324,27 @@ export async function runStt(input: RunSttInput): Promise<SttResponse> {
     );
   }
 
+  const spawnFn = depsOverride?.spawn ?? defaultSpawn;
+
+  // whisper-cli only decodes flac/mp3/ogg/wav natively; transcode anything
+  // else (webm, m4a, mp4, ...) to 16 kHz mono WAV first.
+  let audioPath = input.resolvedAudioPath;
+  let transcodedPath: string | null = null;
+  const ext = path.extname(audioPath).toLowerCase();
+  if (!WHISPER_NATIVE_EXTS.has(ext)) {
+    transcodedPath = await transcodeToWav(audioPath, spawnFn);
+    audioPath = transcodedPath;
+  }
+
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'ai-lecturer-stt-'));
   const outBase = path.join(tmpDir, 'out');
   const args = buildWhisperArgs({
-    audioPath: input.resolvedAudioPath,
+    audioPath,
     modelPath,
     outBase,
     language: input.language,
   });
 
-  const spawnFn = depsOverride?.spawn ?? defaultSpawn;
   let child: ChildProcess;
   try {
     child = spawnFn(binaryPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -316,6 +381,7 @@ export async function runStt(input: RunSttInput): Promise<SttResponse> {
   if (exitCode !== 0) {
     const stderr = Buffer.concat(stderrChunks).toString('utf8');
     await fs.rm(tmpDir, { recursive: true, force: true });
+    if (transcodedPath) await fs.rm(transcodedPath, { force: true });
     throw new SttSpawnError(
       `whisper.cpp exited with code ${exitCode}: ${stderr.slice(0, 512)}`,
     );
@@ -326,6 +392,7 @@ export async function runStt(input: RunSttInput): Promise<SttResponse> {
     transcript = (await fs.readFile(`${outBase}.txt`, 'utf8')).trim();
   } catch (err) {
     await fs.rm(tmpDir, { recursive: true, force: true });
+    if (transcodedPath) await fs.rm(transcodedPath, { force: true });
     throw new SttSpawnError(
       `whisper.cpp succeeded but did not produce ${outBase}.txt: ${(err as Error).message}`,
     );
@@ -339,18 +406,19 @@ export async function runStt(input: RunSttInput): Promise<SttResponse> {
     segments = undefined;
   }
 
-  // Best-effort duration: wav-header parse on the source. Non-WAV inputs
-  // get durationMs=0 (whisper.cpp accepts other formats but our cache
-  // outputs WAV).
+  // Best-effort duration: wav-header parse on whichever path is WAV. Prefer
+  // the transcoded WAV when present (covers webm/m4a uploads); fall back to
+  // the original (works when the source is already WAV).
   let durationMs = 0;
   try {
-    const audioBuf = await fs.readFile(input.resolvedAudioPath);
+    const audioBuf = await fs.readFile(transcodedPath ?? input.resolvedAudioPath);
     durationMs = parseWavDurationMs(audioBuf);
   } catch {
     durationMs = 0;
   }
 
   await fs.rm(tmpDir, { recursive: true, force: true });
+  if (transcodedPath) await fs.rm(transcodedPath, { force: true });
 
   const result: SttResponse = { transcript, durationMs };
   if (segments) result.segments = segments;

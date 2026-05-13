@@ -19,6 +19,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/.venv/coqui"
 TTS_BIN="${VENV_DIR}/bin/tts"
 MODEL_NAME="tts_models/multilingual/multi-dataset/xtts_v2"
+# XTTS v2 is a voice-cloning model — it always requires a speaker.
+# `Ana Florence` is the same default the server uses (see DEFAULT_VOICE_FEMALE
+# in src/lib/server/tts.ts).
+DEFAULT_SPEAKER="Ana Florence"
 
 log() { printf '[setup-tts] %s\n' "$*"; }
 
@@ -53,8 +57,18 @@ else
   source "${VENV_DIR}/bin/activate"
   log "Upgrading pip…"
   pip install --upgrade pip >/dev/null
-  log "Installing coqui-tts (this can take several minutes — torch is large)…"
-  pip install coqui-tts
+  log "Installing torch + torchaudio (CPU build, ~200MB)…"
+  # coqui-tts no longer pulls torch in as a dependency, so install the CPU
+  # wheels explicitly. CUDA users can swap the index URL after the fact.
+  pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+  log "Installing coqui-tts[codec] (this can take several minutes)…"
+  # `codec` extra pulls in `torchcodec`, required by Coqui since PyTorch 2.9.
+  pip install 'coqui-tts[codec]'
+  # coqui-tts 0.27.x declares `transformers>=4.57` without an upper bound,
+  # but transformers 5.x removes symbols XTTS imports (e.g. isin_mps_friendly).
+  # Pin to the latest 4.x line to keep imports working.
+  log "Pinning transformers<5 (coqui-tts upper-bound workaround)…"
+  pip install 'transformers<5'
   deactivate
 fi
 
@@ -71,13 +85,17 @@ if [[ -f "${MODEL_MARKER}" ]]; then
   log "Default model marker present (${MODEL_MARKER}) — skipping pre-download."
 else
   log "Pre-downloading ${MODEL_NAME} (~1.8GB)…"
+  log "Auto-accepting Coqui CPML (non-commercial) by setting COQUI_TOS_AGREED=1."
   # The CLI errors out when run with --list_models on missing args; instead
   # we issue a dummy synthesis with a single short word and discard the
   # output. This forces the model download.
+  # XTTS v2 has `tos_required: true`; without COQUI_TOS_AGREED=1 the CLI
+  # prompts on stdin and errors out under non-interactive shells.
   TMP_WAV="$(mktemp --suffix=.wav)"
-  if "${TTS_BIN}" \
+  if COQUI_TOS_AGREED=1 "${TTS_BIN}" \
         --text "ok" \
         --model_name "${MODEL_NAME}" \
+        --speaker_idx "${DEFAULT_SPEAKER}" \
         --language_idx en \
         --out_path "${TMP_WAV}" >/dev/null 2>&1; then
     rm -f "${TMP_WAV}"
@@ -93,9 +111,10 @@ fi
 # --- 5. Verify with a 1-second test synthesis -------------------------------
 log "Verifying installation with a 1-second test synthesis…"
 VERIFY_WAV="$(mktemp --suffix=.wav)"
-if "${TTS_BIN}" \
+if COQUI_TOS_AGREED=1 "${TTS_BIN}" \
       --text "Hello." \
       --model_name "${MODEL_NAME}" \
+      --speaker_idx "${DEFAULT_SPEAKER}" \
       --language_idx en \
       --out_path "${VERIFY_WAV}" >/dev/null 2>&1; then
   if [[ -s "${VERIFY_WAV}" ]]; then

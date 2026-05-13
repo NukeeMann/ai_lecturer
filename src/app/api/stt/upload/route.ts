@@ -12,6 +12,7 @@ import {
   SttNotInstalledError,
   SttPathError,
   SttSpawnError,
+  SttTranscodeError,
   processSttRequest,
 } from '@/lib/server/stt';
 import { aiLecturerHome } from '@/lib/server/tts-cache';
@@ -110,6 +111,12 @@ export async function POST(req: Request) {
           error: 'stt-not-installed',
           message: 'Run scripts/setup-stt.sh first.',
         },
+        { status: 503 },
+      );
+    }
+    if (err instanceof SttTranscodeError) {
+      return NextResponse.json(
+        { error: 'stt-transcode-failed', message: err.message },
         { status: 503 },
       );
     }

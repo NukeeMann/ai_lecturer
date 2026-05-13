@@ -14,15 +14,19 @@
 .PARAMETER SkipLogin
   Skip the interactive `claude` login prompt (use if already logged in).
 
+.PARAMETER SkipMedia
+  Skip TTS/STT setup (Coqui XTTS + whisper.cpp via WSL).
+
 .EXAMPLE
   .\setup.ps1
   .\setup.ps1 -SkipLogin
-  .\setup.ps1 -SkipDev -SkipLogin
+  .\setup.ps1 -SkipDev -SkipLogin -SkipMedia
 #>
 [CmdletBinding()]
 param(
     [switch]$SkipDev,
-    [switch]$SkipLogin
+    [switch]$SkipLogin,
+    [switch]$SkipMedia
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,7 +123,44 @@ if (-not $SkipLogin) {
     Write-Host "Pomijam logowanie (--SkipLogin)." -ForegroundColor DarkGray
 }
 
-# ---- 6. Dev server ----
+# ---- 6. TTS/STT (Coqui XTTS + whisper.cpp) — uruchamiane w WSL ----
+if (-not $SkipMedia) {
+    Write-Step "TTS/STT (Coqui XTTS + whisper.cpp)"
+    if (-not (Test-Cmd 'wsl')) {
+        Write-Host "Nie wykryto 'wsl'. Pomijam TTS/STT setup." -ForegroundColor Yellow
+        Write-Host "Aby zainstalować ręcznie: uruchom 'scripts/setup-tts.sh' i 'scripts/setup-stt.sh' w Linux/WSL2." -ForegroundColor DarkGray
+    } else {
+        $repoLinux = (& wsl wslpath -a "$repoRoot") -join "`n"
+        $repoLinux = $repoLinux.Trim()
+        if (-not $repoLinux) {
+            Write-Host "Nie udało się przetłumaczyć ścieżki repo na format WSL. Pomijam TTS/STT." -ForegroundColor Yellow
+        } else {
+            Write-Host "Repo w WSL: $repoLinux"
+            Write-Host "Doinstalowuję cmake + build-essential + python3-venv w WSL (może poprosić o hasło sudo)..."
+            wsl bash -lc "sudo apt-get update -qq && sudo apt-get install -y cmake build-essential python3-venv ffmpeg curl git"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Instalacja pakietów apt nie powiodła się ($LASTEXITCODE). Pomijam TTS/STT." -ForegroundColor Yellow
+            } else {
+                Write-Host "Uruchamiam setup-stt.sh (whisper.cpp build + model ~140MB)..."
+                wsl bash -lc "cd '$repoLinux' && bash scripts/setup-stt.sh"
+                $sttExit = $LASTEXITCODE
+                if ($sttExit -ne 0) {
+                    Write-Host "setup-stt.sh zakończony błędem ($sttExit). Sprawdź log i uruchom ponownie." -ForegroundColor Yellow
+                }
+                Write-Host "Uruchamiam setup-tts.sh (Coqui XTTS venv + model ~1.8GB — to potrwa)..."
+                wsl bash -lc "cd '$repoLinux' && bash scripts/setup-tts.sh"
+                $ttsExit = $LASTEXITCODE
+                if ($ttsExit -ne 0) {
+                    Write-Host "setup-tts.sh zakończony błędem ($ttsExit). Sprawdź log i uruchom ponownie." -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+} else {
+    Write-Host "Pomijam TTS/STT (--SkipMedia)." -ForegroundColor DarkGray
+}
+
+# ---- 7. Dev server ----
 if (-not $SkipDev) {
     Write-Step "Uruchamianie portalu (npm run dev)"
     Write-Host "Portal: http://localhost:3000"

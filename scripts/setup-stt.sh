@@ -32,9 +32,10 @@ case "$(uname -s)" in
 esac
 
 # --- 2. Toolchain check ------------------------------------------------------
-for tool in git make cc; do
+for tool in git make cc cmake ffmpeg; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
-    log "Missing required tool: ${tool}. Install build-essential (Linux) or Xcode CLT (macOS)."
+    log "Missing required tool: ${tool}."
+    log "Install on Ubuntu/WSL2: sudo apt-get install -y build-essential cmake ffmpeg git"
     exit 3
   fi
 done
