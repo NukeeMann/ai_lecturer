@@ -1,0 +1,24 @@
+[2026-05-13T22:00:17+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:00:53+0200] Let me start the dev server and explore the playwright skill setup.
+[2026-05-13T22:01:31+0200] Dev server is up. Now let me write the failing playwright test for the bug.
+[2026-05-13T22:01:50+0200] Bug reproduced: panel.bottom=833.5 vs viewportHeight=600 (overflows by ~233px). Now applying the fix.
+[2026-05-13T22:02:02+0200] Now add the Vitest unit test.
+[2026-05-13T22:02:30+0200] Unit tests pass. Now browser verification.
+[2026-05-13T22:03:09+0200] All browser checks pass. Now run typecheck and full vitest.
+[2026-05-13T22:03:41+0200] All checks pass. Updating prd.json and progress.txt.
+[2026-05-13T22:05:00+0200] US-177 done — commit `200ccfa` on `ralph/us-177` has `passes: true` for the story.
+
+**Summary**
+- Reproduced the bug at 1280×600 + theme=sunset: panel.bottom=833.5px vs viewport=600px (overflow ~233px).
+- Fixed `panelStyle` in `src/components/SettingsMenu.tsx:237` by adding `maxHeight: 'calc(100vh - 80px)'`, `overflowY: 'auto'`, `overscrollBehavior: 'contain'`.
+- Added a Vitest unit test that asserts the panel's rendered inline `style` carries `overflow-y: auto`, a `max-height:` value, and `overscroll-behavior: contain`.
+- Browser verified both cases: at 1280×720 the panel has no internal scrollbar (scrollHeight===clientHeight===637); at 1280×600 + sunset, panel.bottom=571.5 ≤ 600 and scrolling reveals the variant + text-scale slider. Tab keyboard nav focuses the slider and the browser's default `:focus` scroll brings it into the panel's visible rect — no `scrollIntoView` needed.
+- Quality: `npm run typecheck` clean. `npx vitest run` — 1053/1053 pass (1052 prior + 1 new US-177 test).
+[2026-05-13T22:05:00+0200] [result success turns=39 cost=$2.964502000000001] US-177 done — commit `200ccfa` on `ralph/us-177` has `passes: true` for the story.
+
+**Summary**
+- Reproduced the bug at 1280×600 + theme=sunset: panel.bottom=833.5px vs viewport=600px (overflow ~233px).
+- Fixed `panelStyle` in `src/components/SettingsMenu.tsx:237` by adding `maxHeight: 'calc(100vh - 80px)'`, `overflowY: 'auto'`, `overscrollBehavior: 'contain'`.
+- Added a Vitest unit test that asserts the panel's rendered inline `style` carries `overflow-y: auto`, a `max-height:` value, and `overscroll-behavior: contain`.
+- Browser verified both cases: at 1280×720 the panel has no internal scrollbar (scrollHeight===clientHeight===637); at 1280×600 + sunset, panel.bottom=571.5 ≤ 600 and scrolling reveals the variant + text-scale slider. Tab keyboard nav focuses the slider and the browser's default `:focus` scroll brings it into the panel's visible rect — no `scrollIntoView` needed.
+- Quality: `npm run typecheck` clean. `npx vitest run` — 1053/1053 pass (1052 prior + 1 new US-177 test).
