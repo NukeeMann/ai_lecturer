@@ -1,0 +1,36 @@
+[2026-05-13T12:57:41+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T12:59:16+0200] Now I have a clear picture. Let me check the env-var logic patterns used elsewhere and look at what `console.info` patterns the codebase uses.
+[2026-05-13T12:59:26+0200] Now I'll edit `src/lib/server/tts.ts` to add CUDA probe + env override + flag wiring.
+[2026-05-13T13:00:17+0200] Now update `buildTtsArgs` and `runTts` to wire in the flag.
+[2026-05-13T13:00:49+0200] Now extend `FakeChildProcess` to support stdoutText and add the 5 tests.
+[2026-05-13T13:01:00+0200] Now add a CUDA-aware spawn factory and the 5 tests. Let me check the existing afterEach to add `AI_LECTURER_TTS_DEVICE` cleanup.
+[2026-05-13T13:01:08+0200] Now add the `isCudaAvailable` import and the new test block. Let me also add a helper to build a CUDA-aware spawn deps.
+[2026-05-13T13:01:15+0200] Now add the CUDA test block at the end of the file. Let me look at the end:
+[2026-05-13T13:02:14+0200] Typecheck passes. Now run the tests scoped to tts.
+[2026-05-13T13:02:24+0200] The existing `makeSuccessSpawn` now records the probe call too, breaking length assertions. Let me make it route the probe to a "cpu" answer without recording it.
+[2026-05-13T13:02:41+0200] All 23 tests pass. Now run the full test suite + typecheck:
+[2026-05-13T13:02:46+0200] Let me check if that unrelated extendApply failure is flaky (likely fs race in cleanup):
+[2026-05-13T13:02:50+0200] The extendApply failure was a flaky fs cleanup race — passes in isolation. Re-run full suite once to confirm:
+[2026-05-13T13:03:01+0200] Let me verify this flake exists on main (pre-my-change):
+[2026-05-13T13:03:12+0200] Aha — there's a stale `courses/edge-detection-basics/` directory left from a prior aborted test run. It's polluting the test env. Let me check:
+[2026-05-13T13:03:18+0200] Stale dir is unrelated to my change. Let me clean it up and re-run:
+[2026-05-13T13:03:26+0200] All 1021 tests pass. Now confirm typecheck once more and clean up any leftover from this run too:
+[2026-05-13T13:03:38+0200] Now flip US-167 in prd.json + append progress.txt entry.
+[2026-05-13T13:04:08+0200] Now append the progress entry:
+[2026-05-13T13:04:31+0200] Now stage and commit.
+[2026-05-13T13:05:00+0200] US-167 done and committed (f9b8433). `passes: true` for US-167 in prd.json.
+
+**What changed**
+- `src/lib/server/tts.ts`: `isCudaAvailable()` probe (spawns venv `python3 -c 'import torch; print(int(torch.cuda.is_available()))'`, memoized for the process), `shouldUseCuda()` honoring `AI_LECTURER_TTS_DEVICE` (`cuda`/`cpu`/`auto`), `buildTtsArgs` gains optional `useCuda` that appends `--use_cuda true`, `runTts` awaits `shouldUseCuda()`. Probe failures log once at info level and return `false`. `__setTtsDepsForTesting` clears the probe memo.
+- `src/lib/server/tts.test.ts`: `FakeChildProcess` extended with `stdoutText`/`spawnError`; `makeSuccessSpawn` now intercepts the probe so unrelated assertions hold; new `CUDA probe + --use_cuda flag (US-167)` describe with 6 tests (probe-true, probe-false, env=cuda, env=cpu, probe error, memoization).
+- Cache key, request/response contract, and schemas unchanged per AC.
+
+**Quality**: `pnpm typecheck` ✅, `pnpm test --run` ✅ (1021 passed).
+[2026-05-13T13:05:00+0200] [result success turns=46 cost=$3.48615875] US-167 done and committed (f9b8433). `passes: true` for US-167 in prd.json.
+
+**What changed**
+- `src/lib/server/tts.ts`: `isCudaAvailable()` probe (spawns venv `python3 -c 'import torch; print(int(torch.cuda.is_available()))'`, memoized for the process), `shouldUseCuda()` honoring `AI_LECTURER_TTS_DEVICE` (`cuda`/`cpu`/`auto`), `buildTtsArgs` gains optional `useCuda` that appends `--use_cuda true`, `runTts` awaits `shouldUseCuda()`. Probe failures log once at info level and return `false`. `__setTtsDepsForTesting` clears the probe memo.
+- `src/lib/server/tts.test.ts`: `FakeChildProcess` extended with `stdoutText`/`spawnError`; `makeSuccessSpawn` now intercepts the probe so unrelated assertions hold; new `CUDA probe + --use_cuda flag (US-167)` describe with 6 tests (probe-true, probe-false, env=cuda, env=cpu, probe error, memoization).
+- Cache key, request/response contract, and schemas unchanged per AC.
+
+**Quality**: `pnpm typecheck` ✅, `pnpm test --run` ✅ (1021 passed).
