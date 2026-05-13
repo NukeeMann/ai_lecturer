@@ -865,7 +865,10 @@ export function CodeWidget({
       const result: RunWithTestsResult = await runWithTests(
         code,
         data.tests.map((t) => ({ name: t.name, body: t.body })),
-        liveCaptureEnabled ? { captureLiveImage: true } : undefined,
+        {
+          requiresPackages: data.requiresPackages,
+          captureLiveImage: liveCaptureEnabled || undefined,
+        },
       );
       setStdout(result.stdout ?? '');
       setStderr(result.stderr ?? '');
@@ -925,6 +928,7 @@ export function CodeWidget({
   }, [
     code,
     data.tests,
+    data.requiresPackages,
     runWithTests,
     status,
     submission,
@@ -945,6 +949,7 @@ export function CodeWidget({
     setTracebackOpen(false);
     try {
       const result: RunWithTestsResult = await runWithTests(code, [], {
+        requiresPackages: data.requiresPackages,
         captureLiveImage: true,
       });
       setStdout(result.stdout ?? '');
@@ -971,7 +976,7 @@ export function CodeWidget({
       setErrorMessage(msg);
       setSubmission('submitted-fail');
     }
-  }, [code, runWithTests, status, submission, setLivePng]);
+  }, [code, data.requiresPackages, runWithTests, status, submission, setLivePng]);
 
   const handleReset = useCallback(() => {
     setResults(null);
