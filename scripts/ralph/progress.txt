@@ -172,3 +172,31 @@ Previous log archived to: archive/progress-2026-05-11-1643.txt
   - **`Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set` setter override** is the same React-aware input trick from the slider pattern, but for textareas. Setting `el.value = '…'` directly bypasses React's value tracker; using the native setter + dispatching an `input` event fires the controlled `onChange`. Already in the codebase patterns list but worth re-flagging.
 - **Recovery note (post-cherry-pick on 2026-05-11):** Original commit `af1c287` was orphaned by a botched US-159 merge; rescued via `git cherry-pick af1c287` against current main. Sunset palette gained a third dimension (US-163 variants A/B/C) in the meantime, so `--widget-tts-demo` was added per-variant (A=#5cb8cc, B=#6cb8d6, C=#4faedc) instead of the single sunset block from the original patch. JSON schemas regenerated via `npm run build:schemas`.
 ---
+
+## [2026-05-13] - US-164
+- Added pure helper `bottomBarNextAction({finished, markComplete, navigate})` at `src/lib/lessons/bottomBarNext.ts` — awaits the completion mutator first when `!finished`, then calls navigate. Idempotent: already-finished lessons skip the mutator and only navigate.
+- Wired up in `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`:
+  - New `handleBottomBarNext(targetSlug)` `useCallback` placed AFTER `handleMarkComplete` (TDZ-safe order). It calls `bottomBarNextAction` with `finished: lessonStatus === 'finished'`, `markComplete: handleMarkComplete` (shared mutator — source of truth for the toggle UI), and `navigate: () => router.push(...)`.
+  - `BottomBarProps` gained an optional `onNavigateNext?: (slug:string) => void`; the Next-side `NavButton` falls back to `onNavigate` when not supplied, so existing call sites (none outside the lesson page) keep working.
+  - Lesson page passes `onNavigateNext={handleBottomBarNext}` alongside the existing `onNavigate` / `onMarkComplete` props. Prev button is unchanged.
+- Test: `src/lib/lessons/bottomBarNext.test.ts` — 4 cases: not-finished → mark+nav, finished → nav only, order (mark awaited before nav), idempotent re-invocation.
+- Typecheck clean. Tests: 1012/1012 passing (+ 4 new for this story; baseline was 1008 before US-164 work).
+- Lint: only the same pre-existing `react-hooks/set-state-in-effect` warning on line 455 of the lesson page (unrelated to my edits — verified by `git stash && eslint && git stash pop`).
+- Browser verification (`/tmp/playwright-test-US-164.js`, dev server on :3300, course `theory-test` cleared of prior progress):
+  1. Open lesson A (`markdown-basics`) — initial `data-finished="false"` ✓
+  2. Click bottom-bar Next → URL flips to lesson B (`math-and-callouts`) ✓
+  3. Navigate back to A → `data-finished="true"` (Lesson completed) ✓
+  4. Click Next on now-completed A → navigates to B (no toggle-off) ✓
+  5. Click Next on B (not finished) → marks + navigates to C ✓
+  6. Navigate back to A → STILL `data-finished="true"` (idempotent across two Next clicks) ✓
+  7. Verify B `data-finished="true"` after step 5 ✓
+  8. Click Next on completed B → navigates to C without toggling ✓
+  9. Navigate back to B → STILL `data-finished="true"` ✓
+  - Screenshots: `/tmp/us164-01-lessonA-initial.png`, `/tmp/us164-02-lessonB-arrived.png`, `/tmp/us164-03-lessonA-completed.png`, `/tmp/us164-04-lessonA-still-completed.png`, `/tmp/us164-05-lessonB-completed.png`, `/tmp/us164-06-lessonB-still-completed.png`.
+- **Learnings for future iterations:**
+  - **The BottomBar mounts BEFORE progress loads.** Initial render of the lesson page has `progress = null`, so `lessonStatus` defaults to `'not_started'` and the Mark Complete button reads `data-finished="false"` until `loadAll()` resolves and the optimistic re-render fires. In playwright, `await page.waitForSelector('[data-testid="lesson-bottom-bar"]')` is NOT enough — also wait for `[data-testid="lesson-skeleton"]` to detach (signals `loaded=true` and progress has hydrated). Otherwise you race the fetch and read a stale `data-finished="false"` even when the server says `"status":"finished"`. Same gotcha would bite any other test that asserts bottom-bar state right after navigation.
+  - **handleMarkComplete is async (awaits the PATCH) and that's load-bearing.** `bottomBarNextAction` awaits the shared mutator before calling `navigate()`. Because handleMarkComplete awaits its fetch BEFORE returning, the server-side `/api/progress` write has acknowledged by the time `router.push(...)` fires — so re-entry to the source lesson sees `status: 'finished'` reliably. If a future refactor makes handleMarkComplete fire-and-forget, the round-trip race would resurface and the AC-required "return to prior lesson shows Lesson completed" check would flake.
+  - **TDZ caveat for `useCallback` dep arrays.** `handleBottomBarNext` references `handleMarkComplete` AND lists it in deps. Placing handleBottomBarNext earlier in the function body (e.g., next to `handleNavigate` at line 532) would crash at `useCallback`-call time because the deps array is evaluated eagerly and `handleMarkComplete` is still in its TDZ. Body-only references are fine (closure resolves at call time), but the deps array forces declaration order to matter. Cure: declare the new callback AFTER its dependent callback.
+  - **The Next-button click handler does NOT need to cancel the auto-advance timer.** Because `router.push` triggers a Next.js client-side navigation, the lesson page unmounts and the existing `useEffect` cleanup at `page.tsx:464-472` clears `autoAdvanceTimerRef.current` automatically. Without that cleanup, the 1500 ms timer scheduled inside `scheduleAutoAdvance({force:true})` would fire post-navigation and re-`router.push(...)` the user to `advanceTarget` from the OLD page's closure. Verified working as-is.
+  - **Optional callback fallback pattern.** Adding `onNavigateNext?: (slug:string) => void` with `onClick={onNavigateNext ?? onNavigate}` keeps the component backwards-compatible for any test or future call site that only supplies the unified `onNavigate`. Standard pattern when extending a shared component prop surface without forcing breaking changes on callers.
+---
