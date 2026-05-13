@@ -9,7 +9,7 @@ import {
   type CSSProperties,
 } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
+import { ArrowLeft, Check, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
 
 import { AppLogoLink } from '@/components/AppLogo';
 import { SettingsMenu } from '@/components/SettingsMenu';
@@ -28,6 +28,39 @@ type Additions = {
   newModuleIds: string[];
   newLessonIds: ExtendNewLesson[];
 };
+
+// US-172 — two top-level view modes inside the wizard shell. The progress
+// view replaces the schema tree once `Generate additions` has been clicked
+// and /apply returned the enqueued lesson slugs. We deliberately don't
+// route away so the breadcrumb/header stays continuous.
+type View = 'edit' | 'progress';
+
+type LessonProgressStatus = 'pending' | 'inflight' | 'done' | 'failed';
+
+interface ActiveRunProgressLessonResp {
+  slug: string;
+  title: string;
+  status: LessonProgressStatus;
+}
+
+interface ActiveRunProgressResp {
+  initStatus: 'pending' | 'done' | 'failed';
+  lessonsDone: number;
+  lessonsTotal: number;
+  currentLessonSlug: string | null;
+  lessons: ActiveRunProgressLessonResp[];
+}
+
+type ActiveRunResponse =
+  | { active: false; queue: unknown[] }
+  | {
+      active: true;
+      slug: string;
+      name: string;
+      stage: string;
+      queue: unknown[];
+      progress?: ActiveRunProgressResp;
+    };
 
 function buildInstruction(
   dialog: DialogState,
@@ -53,7 +86,13 @@ function mergeAdditions(prev: Additions, incoming: Additions): Additions {
   return { newModuleIds: mergedModuleIds, newLessonIds: mergedLessons };
 }
 
-export default function ExtendWizardClient({ course }: { course: Course }) {
+export default function ExtendWizardClient({
+  course,
+  initialGenerationActive = false,
+}: {
+  course: Course;
+  initialGenerationActive?: boolean;
+}) {
   const [currentProposed, setCurrentProposed] = useState<Course>(course);
   const [additions, setAdditions] = useState<Additions>({
     newModuleIds: [],
@@ -64,6 +103,16 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
   const [instructionDraft, setInstructionDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [view, setView] = useState<View>('edit');
+  const [applying, setApplying] = useState(false);
+  const [enqueuedLessonSlugs, setEnqueuedLessonSlugs] = useState<string[]>([]);
+  const [lessonStatuses, setLessonStatuses] = useState<
+    Record<string, LessonProgressStatus>
+  >({});
+  const [genId, setGenId] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const [progressError, setProgressError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,19 +135,21 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
   const hasAdditions =
     additions.newModuleIds.length > 0 || additions.newLessonIds.length > 0;
 
+  const readOnly = initialGenerationActive && view === 'edit';
+
   const openModuleDialog = useCallback(() => {
-    if (loading) return;
+    if (loading || readOnly) return;
     setInstructionDraft('');
     setDialog({ kind: 'module' });
-  }, [loading]);
+  }, [loading, readOnly]);
 
   const openLessonDialog = useCallback(
     (moduleId: string, moduleTitle: string) => {
-      if (loading) return;
+      if (loading || readOnly) return;
       setInstructionDraft('');
       setDialog({ kind: 'lesson', moduleId, moduleTitle });
     },
-    [loading],
+    [loading, readOnly],
   );
 
   // Cancel button — also used by the Esc key + backdrop click. When a request
@@ -119,8 +170,6 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
     if (!dialog) return;
     if (loading) return;
     const fullInstruction = buildInstruction(dialog, trimmed);
-    // Latest instruction goes into `instruction`; everything before it is
-    // chronological refinement history (US-143 contract).
     const refinements = instructions.map((content) => ({
       role: 'user' as const,
       content,
@@ -185,7 +234,7 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
   ]);
 
   const handleReset = useCallback(() => {
-    if (loading) return;
+    if (loading || readOnly) return;
     if (hasAdditions) {
       const ok = window.confirm(
         'Discard all pending additions and reset the proposed schema?',
@@ -195,7 +244,168 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
     setCurrentProposed(course);
     setAdditions({ newModuleIds: [], newLessonIds: [] });
     setInstructions([]);
-  }, [course, hasAdditions, loading]);
+  }, [course, hasAdditions, loading, readOnly]);
+
+  // US-172 — Generate additions. POST the accumulated proposedSchema to the
+  // existing US-144 apply endpoint, then flip into the progress view with
+  // the enqueued lesson slugs that came back.
+  const handleGenerate = useCallback(async () => {
+    if (applying) return;
+    if (!hasAdditions) return;
+    setApplying(true);
+    setProgressError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(course.slug)}/extend/apply`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ proposedSchema: currentProposed }),
+        },
+      );
+      if (!res.ok) {
+        if (res.status === 409) {
+          showToast('Cannot extend while generation is active.');
+        } else {
+          let detail = `Server returned ${res.status}`;
+          try {
+            const json = (await res.json()) as {
+              error?: string;
+              message?: string;
+            };
+            if (json.message) detail = json.message;
+            else if (json.error) detail = json.error;
+          } catch {
+            /* non-JSON body */
+          }
+          showToast(detail);
+        }
+        return;
+      }
+      const data = (await res.json()) as { enqueuedLessonSlugs: string[] };
+      const slugs = Array.isArray(data.enqueuedLessonSlugs)
+        ? data.enqueuedLessonSlugs
+        : [];
+      setEnqueuedLessonSlugs(slugs);
+      // Seed all to pending immediately so the progress view has every row
+      // even before the first poll lands.
+      const initial: Record<string, LessonProgressStatus> = {};
+      for (const s of slugs) initial[s] = 'pending';
+      setLessonStatuses(initial);
+      setView('progress');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'Server error — please try again.',
+      );
+    } finally {
+      setApplying(false);
+    }
+  }, [applying, course.slug, currentProposed, hasAdditions, showToast]);
+
+  // Once we're in the progress view we (a) re-POST /generate to attach to
+  // the active run (idempotent for same slug, US-105) so we know the SSE id
+  // for cancellation, and (b) poll /api/courses/active-run for per-lesson
+  // status. The poll is cheap and stops as soon as every enqueued slug is
+  // done OR the run becomes inactive.
+  const allEnqueuedComplete = useMemo(() => {
+    if (enqueuedLessonSlugs.length === 0) return false;
+    return enqueuedLessonSlugs.every((s) => lessonStatuses[s] === 'done');
+  }, [enqueuedLessonSlugs, lessonStatuses]);
+
+  useEffect(() => {
+    if (view !== 'progress') return;
+    if (enqueuedLessonSlugs.length === 0) return;
+    let cancelledLocal = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const attach = async () => {
+      try {
+        const res = await fetch('/api/courses/generate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ slug: course.slug }),
+        });
+        if (cancelledLocal || !res.ok) return;
+        const body = (await res.json()) as
+          | { id?: string; slug?: string }
+          | { queued?: true; slug?: string };
+        if ('id' in body && typeof body.id === 'string') {
+          setGenId(body.id);
+        }
+      } catch {
+        /* best-effort */
+      }
+    };
+
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/courses/active-run', { cache: 'no-store' });
+        if (cancelledLocal || !res.ok) return;
+        const body = (await res.json()) as ActiveRunResponse;
+        if (cancelledLocal) return;
+        if (!body.active || body.slug !== course.slug) {
+          // Either the run finished or another slug is now active. For our
+          // enqueued slugs we mark any non-failed pending/inflight as done
+          // because the underlying lesson JSON was produced by the time the
+          // run wound down. Done state is the trigger for `Done — open course`.
+          setLessonStatuses((prev) => {
+            const next = { ...prev };
+            for (const slug of enqueuedLessonSlugs) {
+              if (next[slug] !== 'failed') next[slug] = 'done';
+            }
+            return next;
+          });
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+          return;
+        }
+        const lessons = body.progress?.lessons ?? [];
+        if (lessons.length === 0) return;
+        const wanted = new Set(enqueuedLessonSlugs);
+        setLessonStatuses((prev) => {
+          const next = { ...prev };
+          for (const l of lessons) {
+            if (!wanted.has(l.slug)) continue;
+            next[l.slug] = l.status;
+          }
+          return next;
+        });
+      } catch {
+        /* transient — try again next tick */
+      }
+    };
+
+    void attach();
+    void poll();
+    timer = setInterval(() => void poll(), 1500);
+
+    return () => {
+      cancelledLocal = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [view, enqueuedLessonSlugs, course.slug]);
+
+  const handleCancelGeneration = useCallback(async () => {
+    if (cancelling || cancelled) return;
+    setCancelling(true);
+    try {
+      if (genId) {
+        await fetch(
+          `/api/courses/generate?id=${encodeURIComponent(genId)}`,
+          { method: 'DELETE' },
+        );
+      }
+      setCancelled(true);
+    } catch (err) {
+      setProgressError(
+        err instanceof Error ? err.message : 'Failed to cancel — try again.',
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }, [cancelled, cancelling, genId]);
 
   // Esc closes dialog. While loading, Cancel/Esc abort the in-flight request.
   useEffect(() => {
@@ -223,6 +433,14 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
       abortRef.current?.abort();
     };
   }, []);
+
+  const firstNewLessonSlug =
+    additions.newLessonIds[0]?.lessonSlug ?? enqueuedLessonSlugs[0] ?? null;
+  const doneHref = firstNewLessonSlug
+    ? `/courses/${encodeURIComponent(course.slug)}/lessons/${encodeURIComponent(firstNewLessonSlug)}`
+    : `/courses/${encodeURIComponent(course.slug)}`;
+
+  const showDoneButton = cancelled || allEnqueuedComplete;
 
   return (
     <div style={pageStyle}>
@@ -281,127 +499,282 @@ export default function ExtendWizardClient({ course }: { course: Course }) {
               marginBottom: 'var(--space-6)',
             }}
           >
-            Add new modules or lessons to this course. Each addition is
-            proposed by the agent and reflected in the schema tree below.
+            {view === 'progress'
+              ? 'Generation in progress. Stream of stages for the newly added lessons appears below.'
+              : 'Add new modules or lessons to this course. Each addition is proposed by the agent and reflected in the schema tree below.'}
           </p>
 
-          <div
-            data-testid="extend-tree"
-            data-loading={loading ? 'true' : undefined}
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--space-4)',
-              opacity: loading ? 0.6 : 1,
-              pointerEvents: loading ? 'none' : undefined,
-              transition: 'opacity 120ms ease',
-            }}
-          >
-            {currentProposed.modules.map((m) => {
-              const moduleIsNew = newModuleIdSet.has(m.id);
-              const moduleMinutes = m.lessons.reduce(
-                (ms, l) => ms + l.estimatedMinutes,
-                0,
-              );
-              return (
-                <div
-                  key={m.id}
-                  data-testid={`extend-module-${m.id}`}
-                  data-new={moduleIsNew ? 'true' : undefined}
-                  style={moduleIsNew ? newModuleCardStyle : moduleCardStyle}
-                >
-                  <div style={moduleHeaderStyle}>
-                    <div
-                      data-testid={`extend-module-title-${m.id}`}
-                      style={moduleTitleStyle}
-                    >
-                      {m.title}
-                    </div>
-                    <span style={moduleMetaStyle}>
-                      {m.lessons.length} lessons · ~{moduleMinutes} min
-                    </span>
-                  </div>
-                  <ul style={lessonListStyle}>
-                    {m.lessons.map((l) => {
-                      const lessonIsNew = newLessonSlugSet.has(l.slug);
-                      return (
-                        <li
-                          key={l.slug}
-                          data-testid={`extend-lesson-${l.slug}`}
-                          data-new={lessonIsNew ? 'true' : undefined}
-                          style={
-                            lessonIsNew ? newLessonRowStyle : lessonRowStyle
-                          }
-                        >
-                          <span style={lessonTitleStyle}>{l.title}</span>
-                          <span style={lessonMetaStyle}>
-                            {l.estimatedMinutes} min
-                          </span>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                  <button
-                    type="button"
-                    data-testid={`extend-add-lesson-${m.id}`}
-                    onClick={() => openLessonDialog(m.id, m.title)}
-                    disabled={loading}
-                    style={addInlineBtnStyle}
-                  >
-                    <Plus size={14} strokeWidth={2} />
-                    <span>{`+ Add lesson to ${m.title}`}</span>
-                  </button>
-                </div>
-              );
-            })}
-
-            <button
-              type="button"
-              data-testid="extend-add-module"
-              onClick={openModuleDialog}
-              disabled={loading}
-              style={addBlockBtnStyle}
+          {readOnly && view === 'edit' && (
+            <div
+              data-testid="extend-readonly-banner"
+              role="status"
+              style={readOnlyBannerStyle}
             >
-              <Plus size={16} strokeWidth={2} />
-              <span>+ Add module</span>
-            </button>
-          </div>
+              Cannot extend while generation is active
+            </div>
+          )}
+
+          {view === 'edit' ? (
+            <div
+              data-testid="extend-tree"
+              data-loading={loading ? 'true' : undefined}
+              data-readonly={readOnly ? 'true' : undefined}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-4)',
+                opacity: loading ? 0.6 : 1,
+                pointerEvents: loading ? 'none' : undefined,
+                transition: 'opacity 120ms ease',
+              }}
+            >
+              {currentProposed.modules.map((m) => {
+                const moduleIsNew = newModuleIdSet.has(m.id);
+                const moduleMinutes = m.lessons.reduce(
+                  (ms, l) => ms + l.estimatedMinutes,
+                  0,
+                );
+                return (
+                  <div
+                    key={m.id}
+                    data-testid={`extend-module-${m.id}`}
+                    data-new={moduleIsNew ? 'true' : undefined}
+                    style={moduleIsNew ? newModuleCardStyle : moduleCardStyle}
+                  >
+                    <div style={moduleHeaderStyle}>
+                      <div
+                        data-testid={`extend-module-title-${m.id}`}
+                        style={moduleTitleStyle}
+                      >
+                        {m.title}
+                      </div>
+                      <span style={moduleMetaStyle}>
+                        {m.lessons.length} lessons · ~{moduleMinutes} min
+                      </span>
+                    </div>
+                    <ul style={lessonListStyle}>
+                      {m.lessons.map((l) => {
+                        const lessonIsNew = newLessonSlugSet.has(l.slug);
+                        return (
+                          <li
+                            key={l.slug}
+                            data-testid={`extend-lesson-${l.slug}`}
+                            data-new={lessonIsNew ? 'true' : undefined}
+                            style={
+                              lessonIsNew ? newLessonRowStyle : lessonRowStyle
+                            }
+                          >
+                            <span style={lessonTitleStyle}>{l.title}</span>
+                            <span style={lessonMetaStyle}>
+                              {l.estimatedMinutes} min
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        data-testid={`extend-add-lesson-${m.id}`}
+                        onClick={() => openLessonDialog(m.id, m.title)}
+                        disabled={loading}
+                        style={addInlineBtnStyle}
+                      >
+                        <Plus size={14} strokeWidth={2} />
+                        <span>{`+ Add lesson to ${m.title}`}</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+
+              {!readOnly && (
+                <button
+                  type="button"
+                  data-testid="extend-add-module"
+                  onClick={openModuleDialog}
+                  disabled={loading}
+                  style={addBlockBtnStyle}
+                >
+                  <Plus size={16} strokeWidth={2} />
+                  <span>+ Add module</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <div
+              data-testid="extend-progress"
+              data-all-done={allEnqueuedComplete ? 'true' : undefined}
+              data-cancelled={cancelled ? 'true' : undefined}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-3)',
+              }}
+            >
+              <div style={progressHeaderStyle}>
+                <span
+                  data-testid="extend-progress-count"
+                  style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}
+                >
+                  {Object.values(lessonStatuses).filter((s) => s === 'done').length}
+                  {' / '}
+                  {enqueuedLessonSlugs.length} lessons complete
+                </span>
+                {cancelled && (
+                  <span
+                    data-testid="extend-progress-cancelled-msg"
+                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}
+                  >
+                    Cancelled — partial additions remain
+                  </span>
+                )}
+              </div>
+              <ul style={lessonListStyle}>
+                {enqueuedLessonSlugs.map((slug) => {
+                  const status = lessonStatuses[slug] ?? 'pending';
+                  return (
+                    <li
+                      key={slug}
+                      data-testid={`extend-progress-lesson-${slug}`}
+                      data-status={status}
+                      style={progressRowStyle}
+                    >
+                      <span style={progressIconSlotStyle}>
+                        {status === 'done' ? (
+                          <Check size={14} strokeWidth={2} aria-hidden />
+                        ) : status === 'inflight' ? (
+                          <span
+                            aria-hidden
+                            data-testid={`extend-progress-spinner-${slug}`}
+                            style={spinnerStyle}
+                          />
+                        ) : status === 'failed' ? (
+                          <X size={14} strokeWidth={2} aria-hidden />
+                        ) : (
+                          <span style={progressDotStyle} aria-hidden />
+                        )}
+                      </span>
+                      <span style={lessonTitleStyle}>{slug}</span>
+                      <span style={lessonMetaStyle}>{status}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+              {progressError && (
+                <div
+                  data-testid="extend-progress-error"
+                  role="alert"
+                  style={progressErrorStyle}
+                >
+                  {progressError}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
       <div style={bottomBarStyle}>
-        <div style={{ color: 'var(--text-tertiary)', fontSize: 'var(--fs-xs)' }}>
-          {hasAdditions
-            ? `${additions.newModuleIds.length + additions.newLessonIds.length} pending ${
-                additions.newModuleIds.length + additions.newLessonIds.length === 1
-                  ? 'addition'
-                  : 'additions'
-              }`
-            : 'Nothing pending yet.'}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button
-            type="button"
-            data-testid="extend-reset"
-            onClick={handleReset}
-            disabled={loading || (!hasAdditions && instructions.length === 0)}
-            style={ghostBtnStyle}
-          >
-            <RotateCcw size={14} strokeWidth={2} />
-            <span>Reset proposal</span>
-          </button>
-          <button
-            type="button"
-            data-testid="extend-generate"
-            disabled
-            title="Wire-up coming in next iteration"
-            aria-label="Generate additions (disabled)"
-            style={primaryBtnStyle(true)}
-          >
-            <Sparkles size={14} strokeWidth={2} />
-            <span>Generate additions</span>
-          </button>
-        </div>
+        {view === 'edit' ? (
+          <>
+            <div
+              style={{ color: 'var(--text-tertiary)', fontSize: 'var(--fs-xs)' }}
+            >
+              {hasAdditions
+                ? `${additions.newModuleIds.length + additions.newLessonIds.length} pending ${
+                    additions.newModuleIds.length + additions.newLessonIds.length === 1
+                      ? 'addition'
+                      : 'additions'
+                  }`
+                : 'Nothing pending yet.'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                data-testid="extend-reset"
+                onClick={handleReset}
+                disabled={
+                  loading ||
+                  readOnly ||
+                  (!hasAdditions && instructions.length === 0)
+                }
+                style={ghostBtnStyle}
+              >
+                <RotateCcw size={14} strokeWidth={2} />
+                <span>Reset proposal</span>
+              </button>
+              <button
+                type="button"
+                data-testid="extend-generate"
+                onClick={() => void handleGenerate()}
+                disabled={applying || readOnly || !hasAdditions}
+                title={
+                  readOnly
+                    ? 'Cannot extend while generation is active'
+                    : !hasAdditions
+                      ? 'Add at least one module or lesson first'
+                      : undefined
+                }
+                aria-label={
+                  applying ? 'Generating additions' : 'Generate additions'
+                }
+                style={primaryBtnStyle(applying || readOnly || !hasAdditions)}
+              >
+                {applying ? (
+                  <>
+                    <span
+                      data-testid="extend-generate-spinner"
+                      aria-hidden
+                      style={spinnerStyle}
+                    />
+                    <span>Generating…</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} strokeWidth={2} />
+                    <span>Generate additions</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div
+              style={{ color: 'var(--text-tertiary)', fontSize: 'var(--fs-xs)' }}
+            >
+              {cancelled
+                ? 'Cancelled — partial additions remain'
+                : allEnqueuedComplete
+                  ? 'All new lessons generated.'
+                  : 'Generation in progress…'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {!cancelled && !allEnqueuedComplete && (
+                <button
+                  type="button"
+                  data-testid="extend-progress-cancel"
+                  onClick={() => void handleCancelGeneration()}
+                  disabled={cancelling}
+                  style={ghostBtnStyle}
+                >
+                  {cancelling ? 'Cancelling…' : 'Cancel'}
+                </button>
+              )}
+              {showDoneButton && (
+                <Link
+                  href={doneHref}
+                  data-testid="extend-progress-done"
+                  style={{ ...primaryBtnStyle(false), textDecoration: 'none' }}
+                >
+                  <Check size={14} strokeWidth={2} />
+                  <span>Done — open course</span>
+                </Link>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {toast && (
@@ -577,9 +950,6 @@ const contentWrapStyle: CSSProperties = {
 };
 
 const moduleCardStyle: CSSProperties = {
-  // Longhand only — combining shorthand `border` with a separate
-  // `borderLeftWidth` lets the shorthand stomp the 3px accent rail (this
-  // pattern is taken from page.tsx ExtendPreview).
   borderTopWidth: 1,
   borderRightWidth: 1,
   borderBottomWidth: 1,
@@ -869,4 +1239,66 @@ const toastStyle: CSSProperties = {
   zIndex: 1100,
   maxWidth: 480,
   textAlign: 'center',
+};
+
+const readOnlyBannerStyle: CSSProperties = {
+  padding: '10px 14px',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--accent-soft, var(--accent-subtle))',
+  borderTopWidth: 1,
+  borderRightWidth: 1,
+  borderBottomWidth: 1,
+  borderLeftWidth: 3,
+  borderStyle: 'solid',
+  borderTopColor: 'var(--border)',
+  borderRightColor: 'var(--border)',
+  borderBottomColor: 'var(--border)',
+  borderLeftColor: 'var(--accent)',
+  color: 'var(--accent-text, var(--text))',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 500,
+  marginBottom: 'var(--space-5)',
+};
+
+const progressHeaderStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 'var(--space-3)',
+};
+
+const progressRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-3)',
+  padding: '10px 12px',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border)',
+};
+
+const progressIconSlotStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: 'var(--text-secondary)',
+  flexShrink: 0,
+};
+
+const progressDotStyle: CSSProperties = {
+  width: 8,
+  height: 8,
+  borderRadius: '50%',
+  background: 'var(--border-strong)',
+};
+
+const progressErrorStyle: CSSProperties = {
+  padding: '8px 12px',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--danger-subtle, var(--bg-elevated))',
+  border: '1px solid var(--danger-border, var(--border))',
+  color: 'var(--danger, var(--text))',
+  fontSize: 'var(--fs-sm)',
 };

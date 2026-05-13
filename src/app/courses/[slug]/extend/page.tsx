@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 
 import { readCourse } from '@/lib/server/courses';
+import { getActiveRunSummary } from '@/lib/server/generation';
 import { InvalidSlugError } from '@/lib/server/paths';
 
 import ExtendWizardClient from './ExtendWizardClient';
@@ -27,5 +28,15 @@ export default async function CourseExtendPage({
   }
   if (!course) notFound();
 
-  return <ExtendWizardClient course={course} />;
+  // US-172: read-only mode while generation is active for THIS slug. Matches
+  // the same 409 reason the extend/apply endpoints use server-side.
+  const summary = await getActiveRunSummary();
+  const initialGenerationActive = summary.active && summary.slug === slug;
+
+  return (
+    <ExtendWizardClient
+      course={course}
+      initialGenerationActive={initialGenerationActive}
+    />
+  );
 }
