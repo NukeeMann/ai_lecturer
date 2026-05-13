@@ -1,0 +1,399 @@
+Agent finished but produced 0 commits. You MUST set passes:true for US-180 in scripts/ralph/prd.json AND run 'git commit' before exiting — uncommitted work is captured below for the next retry to rebuild.
+
+Files touched (lost on retry):
+ M src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+?? src/lib/slugify.ts
+
+Unstaged diff (first 400 lines, for rebuild):
+diff --git a/src/app/courses/[slug]/extend/ExtendWizardClient.tsx b/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+index 4920804..61d29f3 100644
+--- a/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
++++ b/src/app/courses/[slug]/extend/ExtendWizardClient.tsx
+@@ -15,18 +15,24 @@ import { AppLogoLink } from '@/components/AppLogo';
+ import { SettingsMenu } from '@/components/SettingsMenu';
+ import { ThemeToggle } from '@/components/ThemeToggle';
+ import type { Course } from '@/lib/schemas/course';
+-import type {
+-  ExtendNewLesson,
+-  ExtendResponse,
+-} from '@/lib/schemas/extend';
++import { slugify } from '@/lib/slugify';
+ 
+ type DialogState =
+   | { kind: 'module' }
+   | { kind: 'lesson'; moduleId: string; moduleTitle: string };
+ 
++// US-180 — additions tracked locally; no agent roundtrip means we own the
++// shape. `lessonSlug` is preserved so `firstNewLessonSlug` keeps working.
++type NewLessonAddition = {
++  moduleId: string;
++  lessonSlug: string;
++  title: string;
++  estimatedMinutes: number;
++};
++
+ type Additions = {
+   newModuleIds: string[];
+-  newLessonIds: ExtendNewLesson[];
++  newLessonIds: NewLessonAddition[];
+ };
+ 
+ // US-172 — two top-level view modes inside the wizard shell. The progress
+@@ -62,30 +68,6 @@ type ActiveRunResponse =
+       progress?: ActiveRunProgressResp;
+     };
+ 
+-function buildInstruction(
+-  dialog: DialogState,
+-  text: string,
+-): string {
+-  if (dialog.kind === 'module') {
+-    return `Add a new module: ${text}`;
+-  }
+-  return `Add a new lesson under module "${dialog.moduleTitle}" (id: ${dialog.moduleId}): ${text}`;
+-}
+-
+-function mergeAdditions(prev: Additions, incoming: Additions): Additions {
+-  const mergedModuleIds = Array.from(
+-    new Set([...prev.newModuleIds, ...incoming.newModuleIds]),
+-  );
+-  const seen = new Set<string>();
+-  const mergedLessons: ExtendNewLesson[] = [];
+-  for (const l of [...prev.newLessonIds, ...incoming.newLessonIds]) {
+-    if (seen.has(l.lessonSlug)) continue;
+-    seen.add(l.lessonSlug);
+-    mergedLessons.push(l);
+-  }
+-  return { newModuleIds: mergedModuleIds, newLessonIds: mergedLessons };
+-}
+-
+ export default function ExtendWizardClient({
+   course,
+   initialGenerationActive = false,
+@@ -98,10 +80,10 @@ export default function ExtendWizardClient({
+     newModuleIds: [],
+     newLessonIds: [],
+   });
+-  const [instructions, setInstructions] = useState<string[]>([]);
+   const [dialog, setDialog] = useState<DialogState | null>(null);
+-  const [instructionDraft, setInstructionDraft] = useState('');
+-  const [loading, setLoading] = useState(false);
++  const [titleDraft, setTitleDraft] = useState('');
++  const [summaryDraft, setSummaryDraft] = useState('');
++  const [dialogError, setDialogError] = useState<string | null>(null);
+   const [toast, setToast] = useState<string | null>(null);
+   const [view, setView] = useState<View>('edit');
+   const [applying, setApplying] = useState(false);
+@@ -113,8 +95,8 @@ export default function ExtendWizardClient({
+   const [cancelling, setCancelling] = useState(false);
+   const [cancelled, setCancelled] = useState(false);
+   const [progressError, setProgressError] = useState<string | null>(null);
+-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+-  const abortRef = useRef<AbortController | null>(null);
++  const titleInputRef = useRef<HTMLInputElement | null>(null);
++  const summaryTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+ 
+   const showToast = useCallback((msg: string) => {
+@@ -138,103 +120,116 @@ export default function ExtendWizardClient({
+   const readOnly = initialGenerationActive && view === 'edit';
+ 
+   const openModuleDialog = useCallback(() => {
+-    if (loading || readOnly) return;
+-    setInstructionDraft('');
++    if (readOnly) return;
++    setTitleDraft('');
++    setSummaryDraft('');
++    setDialogError(null);
+     setDialog({ kind: 'module' });
+-  }, [loading, readOnly]);
++  }, [readOnly]);
+ 
+   const openLessonDialog = useCallback(
+     (moduleId: string, moduleTitle: string) => {
+-      if (loading || readOnly) return;
+-      setInstructionDraft('');
++      if (readOnly) return;
++      setTitleDraft('');
++      setSummaryDraft('');
++      setDialogError(null);
+       setDialog({ kind: 'lesson', moduleId, moduleTitle });
+     },
+-    [loading, readOnly],
++    [readOnly],
+   );
+ 
+-  // Cancel button — also used by the Esc key + backdrop click. When a request
+-  // is in flight, we abort it; the abort handler in handleAdd resets loading.
+   const closeDialog = useCallback(() => {
+-    if (abortRef.current) {
+-      abortRef.current.abort();
+-      abortRef.current = null;
+-    }
+     setDialog(null);
+-    setInstructionDraft('');
+-    setLoading(false);
++    setTitleDraft('');
++    setSummaryDraft('');
++    setDialogError(null);
+   }, []);
+ 
+-  const handleAdd = useCallback(async () => {
+-    const trimmed = instructionDraft.trim();
+-    if (!trimmed) return;
++  // US-180 — direct-add to currentProposed. No fetch; the form values are
++  // appended locally and the dialog closes synchronously.
++  const handleAdd = useCallback(() => {
+     if (!dialog) return;
+-    if (loading) return;
+-    const fullInstruction = buildInstruction(dialog, trimmed);
+-    const refinements = instructions.map((content) => ({
+-      role: 'user' as const,
+-      content,
+-    }));
+-    setLoading(true);
+-    const ctrl = new AbortController();
+-    abortRef.current = ctrl;
+-    try {
+-      const res = await fetch(
+-        `/api/courses/${encodeURIComponent(course.slug)}/extend`,
+-        {
+-          method: 'POST',
+-          headers: { 'content-type': 'application/json' },
+-          body: JSON.stringify({
+-            instruction: fullInstruction,
+-            ...(refinements.length > 0 ? { refinements } : {}),
+-          }),
+-          signal: ctrl.signal,
+-        },
+-      );
+-      if (ctrl.signal.aborted) return;
+-      if (!res.ok) {
+-        if (res.status === 422) {
+-          showToast("Couldn't add — please rephrase.");
+-        } else if (res.status === 409) {
+-          showToast('Cannot extend while generation is active.');
+-          setDialog(null);
+-          setInstructionDraft('');
+-        } else {
+-          showToast('Server error — please try again.');
+-        }
++    const title = titleDraft.trim();
++    if (title.length === 0) return;
++    const summary = summaryDraft.trim();
++    if (dialog.kind === 'module') {
++      const id = slugify(title);
++      const collision = currentProposed.modules.some((m) => m.id === id);
++      if (collision) {
++        setDialogError('A module with this id already exists.');
+         return;
+       }
+-      const data = (await res.json()) as ExtendResponse;
+-      if (ctrl.signal.aborted) return;
+-      setCurrentProposed(data.proposedSchema);
+-      setAdditions((prev) =>
+-        mergeAdditions(prev, {
+-          newModuleIds: data.additions.newModuleIds,
+-          newLessonIds: data.additions.newLessonIds,
+-        }),
+-      );
+-      setInstructions((prev) => [...prev, fullInstruction]);
++      setCurrentProposed((prev) => ({
++        ...prev,
++        modules: [
++          ...prev.modules,
++          {
++            id,
++            title,
++            ...(summary.length > 0 ? { summary } : {}),
++            lessons: [],
++          },
++        ],
++      }));
++      setAdditions((prev) => ({
++        newModuleIds: [...prev.newModuleIds, id],
++        newLessonIds: prev.newLessonIds,
++      }));
+       setDialog(null);
+-      setInstructionDraft('');
+-    } catch (err) {
+-      if ((err as Error).name === 'AbortError') return;
+-      showToast('Server error — please try again.');
+-    } finally {
+-      if (!ctrl.signal.aborted) {
+-        setLoading(false);
+-        abortRef.current = null;
+-      }
++      setTitleDraft('');
++      setSummaryDraft('');
++      setDialogError(null);
++      return;
++    }
++    const slug = slugify(title);
++    const parent = currentProposed.modules.find(
++      (m) => m.id === dialog.moduleId,
++    );
++    const collision =
++      parent !== undefined && parent.lessons.some((l) => l.slug === slug);
++    if (collision) {
++      setDialogError('A lesson with this slug already exists in this module.');
++      return;
+     }
+-  }, [
+-    course.slug,
+-    dialog,
+-    instructionDraft,
+-    instructions,
+-    loading,
+-    showToast,
+-  ]);
++    setCurrentProposed((prev) => ({
++      ...prev,
++      modules: prev.modules.map((m) =>
++        m.id === dialog.moduleId
++          ? {
++              ...m,
++              lessons: [
++                ...m.lessons,
++                {
++                  slug,
++                  title,
++                  estimatedMinutes: 15,
++                  ...(summary.length > 0 ? { summary } : {}),
++                },
++              ],
++            }
++          : m,
++      ),
++    }));
++    setAdditions((prev) => ({
++      newModuleIds: prev.newModuleIds,
++      newLessonIds: [
++        ...prev.newLessonIds,
++        {
++          moduleId: dialog.moduleId,
++          lessonSlug: slug,
++          title,
++          estimatedMinutes: 15,
++        },
++      ],
++    }));
++    setDialog(null);
++    setTitleDraft('');
++    setSummaryDraft('');
++    setDialogError(null);
++  }, [currentProposed, dialog, summaryDraft, titleDraft]);
+ 
+   const handleReset = useCallback(() => {
+-    if (loading || readOnly) return;
++    if (readOnly) return;
+     if (hasAdditions) {
+       const ok = window.confirm(
+         'Discard all pending additions and reset the proposed schema?',
+@@ -243,8 +238,7 @@ export default function ExtendWizardClient({
+     }
+     setCurrentProposed(course);
+     setAdditions({ newModuleIds: [], newLessonIds: [] });
+-    setInstructions([]);
+-  }, [course, hasAdditions, loading, readOnly]);
++  }, [course, hasAdditions, readOnly]);
+ 
+   // US-172 — Generate additions. POST the accumulated proposedSchema to the
+   // existing US-144 apply endpoint, then flip into the progress view with
+@@ -407,30 +401,32 @@ export default function ExtendWizardClient({
+     }
+   }, [cancelled, cancelling, genId]);
+ 
+-  // Esc closes dialog. While loading, Cancel/Esc abort the in-flight request.
++  // Esc closes dialog. Cmd/Ctrl+Enter triggers Add when valid.
+   useEffect(() => {
+     if (!dialog) return;
+     function onKey(e: KeyboardEvent) {
+       if (e.key === 'Escape') {
+         e.preventDefault();
+         closeDialog();
++      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
++        e.preventDefault();
++        if (titleDraft.trim().length > 0) handleAdd();
+       }
+     }
+     window.addEventListener('keydown', onKey);
+     return () => window.removeEventListener('keydown', onKey);
+-  }, [dialog, closeDialog]);
++  }, [dialog, closeDialog, handleAdd, titleDraft]);
+ 
+-  // Autofocus the textarea when dialog opens.
++  // Autofocus the Title input when dialog opens.
+   useEffect(() => {
+     if (!dialog) return;
+-    const t = textareaRef.current;
++    const t = titleInputRef.current;
+     if (t) t.focus();
+   }, [dialog]);
+ 
+   useEffect(() => {
+     return () => {
+       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+-      abortRef.current?.abort();
+     };
+   }, []);
+ 
+@@ -517,15 +513,11 @@ export default function ExtendWizardClient({
+           {view === 'edit' ? (
+             <div
+               data-testid="extend-tree"
+-              data-loading={loading ? 'true' : undefined}
+               data-readonly={readOnly ? 'true' : undefined}
+               style={{
+                 display: 'flex',
+                 flexDirection: 'column',
+                 gap: 'var(--space-4)',
+-                opacity: loading ? 0.6 : 1,
+-                pointerEvents: loading ? 'none' : undefined,
+-                transition: 'opacity 120ms ease',
+               }}
+             >
+               {currentProposed.modules.map((m) => {
+@@ -606,7 +598,6 @@ export default function ExtendWizardClient({
+                         type="button"
+                         data-testid={`extend-add-lesson-${m.id}`}
+                         onClick={() => openLessonDialog(m.id, m.title)}
+-                        disabled={loading}
+                         style={addInlineBtnStyle}
+                       >
+                         <Plus size={14} strokeWidth={2} />
+@@ -622,7 +613,6 @@ export default function ExtendWizardClient({
+                   type="button"
+                   data-testid="extend-add-module"
+                   onClick={openModuleDialog}
+-                  disabled={loading}
+                   style={addBlockBtnStyle}
+                 >
+                   <Plus size={16} strokeWidth={2} />
+@@ -723,11 +713,7 @@ export default function ExtendWizardClient({
+                 type="button"
+                 data-testid="extend-reset"
+                 onClick={handleReset}
+-                disabled={
+-                  loading ||
+-                  readOnly ||
+-                  (!hasAdditions && instructions.length === 0)
+-                }
++                disabled={readOnly || !hasAdditions}
+                 style={ghostBtnStyle}
+               >
+                 <RotateCcw size={14} strokeWidth={2} />
+
+Untracked files (first 10):
+src/lib/slugify.ts
+
+Last agent output:
+[2026-05-13T22:16:30+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:18:05+0200] Now I have a clear picture. Let me create the slugify util and refactor the wizard dialog.
+[2026-05-13T22:18:09+0200] Now the main refactor of `ExtendWizardClient.tsx`:
+[2026-05-13T22:18:25+0200] Now replace the state hooks and handlers in the component body:
+[2026-05-13T22:18:56+0200] Now update the keydown handlers and the autofocus effect:
+[2026-05-13T22:19:05+0200] Now fix `extend-tree` (remove loading-related `data-loading` and opacity), `addInlineBtnStyle`/`addBlockBtnStyle` disabled — those reference `loading`. Reset button now uses simplified disabled condition:
+[2026-05-13T22:20:26+0200] Now replace the dialog body and footer with the new two-field form:
+[2026-05-13T22:21:26+0200] API Error: Internal server error
+[2026-05-13T22:21:26+0200] [result success ERROR turns=25 cost=$1.96023475] API Error: Internal server error
