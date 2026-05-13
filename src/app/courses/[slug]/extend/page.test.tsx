@@ -490,3 +490,110 @@ describe('Extend wizard Generate additions + progress view (US-172)', () => {
     expect(generate.disabled).toBe(true);
   });
 });
+
+describe('Extend wizard schema tree summaries (US-179)', () => {
+  it('renders module summary and lesson summary below each title when present', () => {
+    const course: Course = {
+      ...TEST_COURSE,
+      modules: [
+        {
+          id: 'm1',
+          title: 'Module One',
+          summary: 'Module One covers fundamentals and core concepts.',
+          lessons: [
+            {
+              slug: 'l1',
+              title: 'Lesson 1',
+              estimatedMinutes: 10,
+              summary: 'Walks through the introduction in detail.',
+            },
+            {
+              slug: 'l2',
+              title: 'Lesson 2',
+              estimatedMinutes: 12,
+            },
+          ],
+        },
+      ],
+    };
+    render(<ExtendWizardClient course={course} />);
+    expect(
+      screen.getByText('Module One covers fundamentals and core concepts.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Walks through the introduction in detail.'),
+    ).toBeTruthy();
+    // Title + minutes still on first row of l1, summary on second row.
+    const lessonRow = screen.getByTestId('extend-lesson-l1');
+    expect(lessonRow.textContent ?? '').toContain('Lesson 1');
+    expect(lessonRow.textContent ?? '').toContain('10 min');
+    expect(lessonRow.textContent ?? '').toContain(
+      'Walks through the introduction in detail.',
+    );
+    // l2 has no summary → no summary testid present.
+    expect(screen.queryByTestId('extend-lesson-summary-l2')).toBeNull();
+  });
+
+  it('renders no empty <p> elements when summaries are missing or empty strings', () => {
+    const course: Course = {
+      ...TEST_COURSE,
+      modules: [
+        {
+          id: 'm1',
+          title: 'Module One',
+          summary: '',
+          lessons: [
+            {
+              slug: 'l1',
+              title: 'Lesson 1',
+              estimatedMinutes: 10,
+              summary: '',
+            },
+            {
+              slug: 'l2',
+              title: 'Lesson 2',
+              estimatedMinutes: 12,
+            },
+            {
+              slug: 'l3',
+              title: 'Lesson 3',
+              estimatedMinutes: 9,
+              summary: '   ',
+            },
+          ],
+        },
+      ],
+    };
+    const { container } = render(<ExtendWizardClient course={course} />);
+    expect(container.querySelectorAll('p:empty').length).toBe(0);
+    expect(screen.queryByTestId('extend-module-summary-m1')).toBeNull();
+    expect(screen.queryByTestId('extend-lesson-summary-l1')).toBeNull();
+    expect(screen.queryByTestId('extend-lesson-summary-l2')).toBeNull();
+    expect(screen.queryByTestId('extend-lesson-summary-l3')).toBeNull();
+  });
+
+  it('read-only mode (initialGenerationActive) still renders summaries', () => {
+    const course: Course = {
+      ...TEST_COURSE,
+      modules: [
+        {
+          id: 'm1',
+          title: 'Module One',
+          summary: 'Read-only summary stays visible.',
+          lessons: [
+            {
+              slug: 'l1',
+              title: 'Lesson 1',
+              estimatedMinutes: 10,
+              summary: 'Lesson summary stays visible too.',
+            },
+          ],
+        },
+      ],
+    };
+    render(<ExtendWizardClient course={course} initialGenerationActive />);
+    expect(screen.getByTestId('extend-readonly-banner')).toBeTruthy();
+    expect(screen.getByText('Read-only summary stays visible.')).toBeTruthy();
+    expect(screen.getByText('Lesson summary stays visible too.')).toBeTruthy();
+  });
+});

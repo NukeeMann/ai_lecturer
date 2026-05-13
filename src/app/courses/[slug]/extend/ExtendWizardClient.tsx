@@ -534,6 +534,10 @@ export default function ExtendWizardClient({
                   (ms, l) => ms + l.estimatedMinutes,
                   0,
                 );
+                const moduleSummary =
+                  typeof m.summary === 'string' && m.summary.trim() !== ''
+                    ? m.summary
+                    : null;
                 return (
                   <div
                     key={m.id}
@@ -541,20 +545,35 @@ export default function ExtendWizardClient({
                     data-new={moduleIsNew ? 'true' : undefined}
                     style={moduleIsNew ? newModuleCardStyle : moduleCardStyle}
                   >
-                    <div style={moduleHeaderStyle}>
-                      <div
-                        data-testid={`extend-module-title-${m.id}`}
-                        style={moduleTitleStyle}
-                      >
-                        {m.title}
+                    <div style={moduleHeaderSectionStyle}>
+                      <div style={moduleHeaderStyle}>
+                        <div
+                          data-testid={`extend-module-title-${m.id}`}
+                          style={moduleTitleStyle}
+                        >
+                          {m.title}
+                        </div>
+                        <span style={moduleMetaStyle}>
+                          {m.lessons.length} lessons · ~{moduleMinutes} min
+                        </span>
                       </div>
-                      <span style={moduleMetaStyle}>
-                        {m.lessons.length} lessons · ~{moduleMinutes} min
-                      </span>
+                      {moduleSummary && (
+                        <p
+                          data-testid={`extend-module-summary-${m.id}`}
+                          style={summaryStyle}
+                        >
+                          {moduleSummary}
+                        </p>
+                      )}
                     </div>
                     <ul style={lessonListStyle}>
                       {m.lessons.map((l) => {
                         const lessonIsNew = newLessonSlugSet.has(l.slug);
+                        const lessonSummary =
+                          typeof l.summary === 'string' &&
+                          l.summary.trim() !== ''
+                            ? l.summary
+                            : null;
                         return (
                           <li
                             key={l.slug}
@@ -564,10 +583,20 @@ export default function ExtendWizardClient({
                               lessonIsNew ? newLessonRowStyle : lessonRowStyle
                             }
                           >
-                            <span style={lessonTitleStyle}>{l.title}</span>
-                            <span style={lessonMetaStyle}>
-                              {l.estimatedMinutes} min
-                            </span>
+                            <div style={lessonRowTopStyle}>
+                              <span style={lessonTitleStyle}>{l.title}</span>
+                              <span style={lessonMetaStyle}>
+                                {l.estimatedMinutes} min
+                              </span>
+                            </div>
+                            {lessonSummary && (
+                              <p
+                                data-testid={`extend-lesson-summary-${l.slug}`}
+                                style={summaryStyle}
+                              >
+                                {lessonSummary}
+                              </p>
+                            )}
                           </li>
                         );
                       })}
@@ -1004,8 +1033,8 @@ const lessonListStyle: CSSProperties = {
 
 const lessonRowStyle: CSSProperties = {
   display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
+  flexDirection: 'column',
+  alignItems: 'stretch',
   padding: '8px 10px',
   borderRadius: 'var(--radius-sm)',
   background: 'var(--bg)',
@@ -1018,7 +1047,26 @@ const lessonRowStyle: CSSProperties = {
   borderRightColor: 'var(--border)',
   borderBottomColor: 'var(--border)',
   borderLeftColor: 'var(--border)',
+};
+
+const lessonRowTopStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'row',
+  alignItems: 'baseline',
+  justifyContent: 'space-between',
   gap: 'var(--space-3)',
+};
+
+const moduleHeaderSectionStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+};
+
+const summaryStyle: CSSProperties = {
+  margin: '4px 0 0',
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--text-secondary)',
+  lineHeight: 1.4,
 };
 
 const newLessonRowStyle: CSSProperties = {
