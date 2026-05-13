@@ -1,0 +1,28 @@
+[2026-05-13T22:09:28+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:11:09+0200] Now I have enough context. Let me check the smoke-test course (legacy case) and design the implementation.
+[2026-05-13T22:11:23+0200] Now let me make the JSX changes:
+[2026-05-13T22:11:38+0200] Now update the styles — change `lessonRowStyle` to flex column, and add `lessonRowTopStyle`, `moduleHeaderSectionStyle`, `summaryStyle`:
+[2026-05-13T22:11:55+0200] Now add the vitest test. Let me append a new describe block:
+[2026-05-13T22:12:19+0200] Typecheck passes. Run vitest:
+[2026-05-13T22:12:37+0200] That looks like a flaky test unrelated to my changes. Re-run to confirm:
+[2026-05-13T22:12:41+0200] Flaky — passes alone. Let me run full suite again to confirm everything's clean:
+[2026-05-13T22:12:55+0200] All 1059 tests pass. Update todos and proceed to browser test:
+[2026-05-13T22:12:59+0200] Now create a fixture course and start a dev server:
+[2026-05-13T22:14:07+0200] I was already inside the playwright-skill dir from the previous Bash invocation. Let me re-run:
+[2026-05-13T22:14:17+0200] The runner expects top-level code, not module.exports. Let me rewrite:
+[2026-05-13T22:14:47+0200] Browser tests pass. Now clean up fixture, update prd.json + progress.txt, commit. Move back to project root:
+[2026-05-13T22:15:03+0200] Now append progress.txt:
+[2026-05-13T22:16:02+0200] US-179 done. Commit `6b8a0b3` on `ralph/us-179` includes:
+
+- **`ExtendWizardClient.tsx`**: module header gains `<p>{m.summary}</p>` (rendered only when non-empty after trim); each lesson `<li>` restructured to `flex-direction: column` with an inner title+minutes row + optional `<p>{l.summary}</p>`. Summary style matches the AC: `margin: 4px 0 0; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4`. `data-new` highlight continues to cover the entire row including the summary.
+- **`page.test.tsx`**: 3 new tests — summaries render via `getByText`, no empty `<p>` when summaries are missing/empty/whitespace, read-only mode still surfaces summaries.
+- **Browser test**: temp fixture course (module + one lesson with summary, one legacy lesson) + legacy `smoke-test` course; both pass with `p:empty.length === 0`, computed flex-direction of lesson `<li>` confirmed `column`, inner title row confirmed `row`/`space-between`. Fixture cleaned up.
+- **Quality**: `npm run typecheck` clean, `npx vitest run` — 1059/1059 tests pass.
+- **prd.json**: US-179 `passes = true`. **progress.txt**: appended.
+[2026-05-13T22:16:02+0200] [result success turns=46 cost=$4.183819499999999] US-179 done. Commit `6b8a0b3` on `ralph/us-179` includes:
+
+- **`ExtendWizardClient.tsx`**: module header gains `<p>{m.summary}</p>` (rendered only when non-empty after trim); each lesson `<li>` restructured to `flex-direction: column` with an inner title+minutes row + optional `<p>{l.summary}</p>`. Summary style matches the AC: `margin: 4px 0 0; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.4`. `data-new` highlight continues to cover the entire row including the summary.
+- **`page.test.tsx`**: 3 new tests — summaries render via `getByText`, no empty `<p>` when summaries are missing/empty/whitespace, read-only mode still surfaces summaries.
+- **Browser test**: temp fixture course (module + one lesson with summary, one legacy lesson) + legacy `smoke-test` course; both pass with `p:empty.length === 0`, computed flex-direction of lesson `<li>` confirmed `column`, inner title row confirmed `row`/`space-between`. Fixture cleaned up.
+- **Quality**: `npm run typecheck` clean, `npx vitest run` — 1059/1059 tests pass.
+- **prd.json**: US-179 `passes = true`. **progress.txt**: appended.
