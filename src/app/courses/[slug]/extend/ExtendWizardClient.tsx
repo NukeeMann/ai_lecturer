@@ -14,19 +14,26 @@ import { ArrowLeft, Check, Plus, RotateCcw, Sparkles, X } from 'lucide-react';
 import { AppLogoLink } from '@/components/AppLogo';
 import { SettingsMenu } from '@/components/SettingsMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import type { Course } from '@/lib/schemas/course';
-import type {
-  ExtendNewLesson,
-  ExtendResponse,
-} from '@/lib/schemas/extend';
+import type { Course, LessonRef, Module } from '@/lib/schemas/course';
+import { slugify } from '@/lib/slugify';
 
 type DialogState =
   | { kind: 'module' }
   | { kind: 'lesson'; moduleId: string; moduleTitle: string };
 
+// US-180 — the agent roundtrip is gone, so the additions list is owned
+// fully by this component. `lessonSlug` is preserved so `firstNewLessonSlug`
+// (Done — open course link) keeps working.
+type NewLessonAddition = {
+  moduleId: string;
+  lessonSlug: string;
+  title: string;
+  estimatedMinutes: number;
+};
+
 type Additions = {
   newModuleIds: string[];
-  newLessonIds: ExtendNewLesson[];
+  newLessonIds: NewLessonAddition[];
 };
 
 // US-172 — two top-level view modes inside the wizard shell. The progress
@@ -62,30 +69,6 @@ type ActiveRunResponse =
       progress?: ActiveRunProgressResp;
     };
 
-function buildInstruction(
-  dialog: DialogState,
-  text: string,
-): string {
-  if (dialog.kind === 'module') {
-    return `Add a new module: ${text}`;
-  }
-  return `Add a new lesson under module "${dialog.moduleTitle}" (id: ${dialog.moduleId}): ${text}`;
-}
-
-function mergeAdditions(prev: Additions, incoming: Additions): Additions {
-  const mergedModuleIds = Array.from(
-    new Set([...prev.newModuleIds, ...incoming.newModuleIds]),
-  );
-  const seen = new Set<string>();
-  const mergedLessons: ExtendNewLesson[] = [];
-  for (const l of [...prev.newLessonIds, ...incoming.newLessonIds]) {
-    if (seen.has(l.lessonSlug)) continue;
-    seen.add(l.lessonSlug);
-    mergedLessons.push(l);
-  }
-  return { newModuleIds: mergedModuleIds, newLessonIds: mergedLessons };
-}
-
 export default function ExtendWizardClient({
   course,
   initialGenerationActive = false,
@@ -98,10 +81,10 @@ export default function ExtendWizardClient({
     newModuleIds: [],
     newLessonIds: [],
   });
-  const [instructions, setInstructions] = useState<string[]>([]);
   const [dialog, setDialog] = useState<DialogState | null>(null);
-  const [instructionDraft, setInstructionDraft] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [summaryDraft, setSummaryDraft] = useState('');
+  const [dialogError, setDialogError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [view, setView] = useState<View>('edit');
   const [applying, setApplying] = useState(false);
@@ -113,8 +96,8 @@ export default function ExtendWizardClient({
   const [cancelling, setCancelling] = useState(false);
   const [cancelled, setCancelled] = useState(false);
   const [progressError, setProgressError] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const titleInputRef = useRef<HTMLInputElement | null>(null);
+  const summaryTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -138,103 +121,105 @@ export default function ExtendWizardClient({
   const readOnly = initialGenerationActive && view === 'edit';
 
   const openModuleDialog = useCallback(() => {
-    if (loading || readOnly) return;
-    setInstructionDraft('');
+    if (readOnly) return;
+    setTitleDraft('');
+    setSummaryDraft('');
+    setDialogError(null);
     setDialog({ kind: 'module' });
-  }, [loading, readOnly]);
+  }, [readOnly]);
 
   const openLessonDialog = useCallback(
     (moduleId: string, moduleTitle: string) => {
-      if (loading || readOnly) return;
-      setInstructionDraft('');
+      if (readOnly) return;
+      setTitleDraft('');
+      setSummaryDraft('');
+      setDialogError(null);
       setDialog({ kind: 'lesson', moduleId, moduleTitle });
     },
-    [loading, readOnly],
+    [readOnly],
   );
 
-  // Cancel button — also used by the Esc key + backdrop click. When a request
-  // is in flight, we abort it; the abort handler in handleAdd resets loading.
   const closeDialog = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
     setDialog(null);
-    setInstructionDraft('');
-    setLoading(false);
+    setTitleDraft('');
+    setSummaryDraft('');
+    setDialogError(null);
   }, []);
 
-  const handleAdd = useCallback(async () => {
-    const trimmed = instructionDraft.trim();
-    if (!trimmed) return;
+  // US-180 — direct-add to currentProposed. No fetch; the form values are
+  // appended locally and the dialog closes synchronously. Collisions surface
+  // inline rather than via toast.
+  const handleAdd = useCallback(() => {
     if (!dialog) return;
-    if (loading) return;
-    const fullInstruction = buildInstruction(dialog, trimmed);
-    const refinements = instructions.map((content) => ({
-      role: 'user' as const,
-      content,
-    }));
-    setLoading(true);
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    try {
-      const res = await fetch(
-        `/api/courses/${encodeURIComponent(course.slug)}/extend`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            instruction: fullInstruction,
-            ...(refinements.length > 0 ? { refinements } : {}),
-          }),
-          signal: ctrl.signal,
-        },
-      );
-      if (ctrl.signal.aborted) return;
-      if (!res.ok) {
-        if (res.status === 422) {
-          showToast("Couldn't add — please rephrase.");
-        } else if (res.status === 409) {
-          showToast('Cannot extend while generation is active.');
-          setDialog(null);
-          setInstructionDraft('');
-        } else {
-          showToast('Server error — please try again.');
-        }
+    const title = titleDraft.trim();
+    if (title.length === 0) return;
+    const summary = summaryDraft.trim();
+
+    if (dialog.kind === 'module') {
+      const id = slugify(title);
+      const collision = currentProposed.modules.some((m) => m.id === id);
+      if (collision) {
+        setDialogError('A module with this id already exists.');
         return;
       }
-      const data = (await res.json()) as ExtendResponse;
-      if (ctrl.signal.aborted) return;
-      setCurrentProposed(data.proposedSchema);
-      setAdditions((prev) =>
-        mergeAdditions(prev, {
-          newModuleIds: data.additions.newModuleIds,
-          newLessonIds: data.additions.newLessonIds,
-        }),
-      );
-      setInstructions((prev) => [...prev, fullInstruction]);
-      setDialog(null);
-      setInstructionDraft('');
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-      showToast('Server error — please try again.');
-    } finally {
-      if (!ctrl.signal.aborted) {
-        setLoading(false);
-        abortRef.current = null;
-      }
+      // ModuleSchema requires `summary: string`. We store '' when empty —
+      // rendering already treats empty/missing identically, and /apply
+      // accepts an empty string.
+      const newModule: Module = {
+        id,
+        title,
+        summary,
+        lessons: [],
+      };
+      setCurrentProposed((prev) => ({
+        ...prev,
+        modules: [...prev.modules, newModule],
+      }));
+      setAdditions((prev) => ({
+        newModuleIds: [...prev.newModuleIds, id],
+        newLessonIds: prev.newLessonIds,
+      }));
+      closeDialog();
+      return;
     }
-  }, [
-    course.slug,
-    dialog,
-    instructionDraft,
-    instructions,
-    loading,
-    showToast,
-  ]);
+
+    // Lesson branch.
+    const slug = slugify(title);
+    const parent = currentProposed.modules.find(
+      (m) => m.id === dialog.moduleId,
+    );
+    if (parent && parent.lessons.some((l) => l.slug === slug)) {
+      setDialogError('A lesson with this slug already exists in this module.');
+      return;
+    }
+    // LessonRef.summary is optional — omit when empty.
+    const newLesson: LessonRef = {
+      slug,
+      title,
+      estimatedMinutes: 15,
+      ...(summary.length > 0 ? { summary } : {}),
+    };
+    const moduleId = dialog.moduleId;
+    setCurrentProposed((prev) => ({
+      ...prev,
+      modules: prev.modules.map((m) =>
+        m.id === moduleId
+          ? { ...m, lessons: [...m.lessons, newLesson] }
+          : m,
+      ),
+    }));
+    setAdditions((prev) => ({
+      newModuleIds: prev.newModuleIds,
+      newLessonIds: [
+        ...prev.newLessonIds,
+        { moduleId, lessonSlug: slug, title, estimatedMinutes: 15 },
+      ],
+    }));
+    closeDialog();
+  }, [closeDialog, currentProposed, dialog, summaryDraft, titleDraft]);
 
   const handleReset = useCallback(() => {
-    if (loading || readOnly) return;
+    if (readOnly) return;
     if (hasAdditions) {
       const ok = window.confirm(
         'Discard all pending additions and reset the proposed schema?',
@@ -243,8 +228,7 @@ export default function ExtendWizardClient({
     }
     setCurrentProposed(course);
     setAdditions({ newModuleIds: [], newLessonIds: [] });
-    setInstructions([]);
-  }, [course, hasAdditions, loading, readOnly]);
+  }, [course, hasAdditions, readOnly]);
 
   // US-172 — Generate additions. POST the accumulated proposedSchema to the
   // existing US-144 apply endpoint, then flip into the progress view with
@@ -287,8 +271,6 @@ export default function ExtendWizardClient({
         ? data.enqueuedLessonSlugs
         : [];
       setEnqueuedLessonSlugs(slugs);
-      // Seed all to pending immediately so the progress view has every row
-      // even before the first poll lands.
       const initial: Record<string, LessonProgressStatus> = {};
       for (const s of slugs) initial[s] = 'pending';
       setLessonStatuses(initial);
@@ -302,11 +284,6 @@ export default function ExtendWizardClient({
     }
   }, [applying, course.slug, currentProposed, hasAdditions, showToast]);
 
-  // Once we're in the progress view we (a) re-POST /generate to attach to
-  // the active run (idempotent for same slug, US-105) so we know the SSE id
-  // for cancellation, and (b) poll /api/courses/active-run for per-lesson
-  // status. The poll is cheap and stops as soon as every enqueued slug is
-  // done OR the run becomes inactive.
   const allEnqueuedComplete = useMemo(() => {
     if (enqueuedLessonSlugs.length === 0) return false;
     return enqueuedLessonSlugs.every((s) => lessonStatuses[s] === 'done');
@@ -344,10 +321,6 @@ export default function ExtendWizardClient({
         const body = (await res.json()) as ActiveRunResponse;
         if (cancelledLocal) return;
         if (!body.active || body.slug !== course.slug) {
-          // Either the run finished or another slug is now active. For our
-          // enqueued slugs we mark any non-failed pending/inflight as done
-          // because the underlying lesson JSON was produced by the time the
-          // run wound down. Done state is the trigger for `Done — open course`.
           setLessonStatuses((prev) => {
             const next = { ...prev };
             for (const slug of enqueuedLessonSlugs) {
@@ -407,30 +380,33 @@ export default function ExtendWizardClient({
     }
   }, [cancelled, cancelling, genId]);
 
-  // Esc closes dialog. While loading, Cancel/Esc abort the in-flight request.
+  // Esc closes dialog. Cmd/Ctrl+Enter from anywhere in the dialog triggers
+  // Add when title is non-empty (US-180 UX polish).
   useEffect(() => {
     if (!dialog) return;
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault();
         closeDialog();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        if (titleDraft.trim().length > 0) handleAdd();
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dialog, closeDialog]);
+  }, [dialog, closeDialog, handleAdd, titleDraft]);
 
-  // Autofocus the textarea when dialog opens.
+  // Autofocus the Title input when dialog opens (US-180 UX polish).
   useEffect(() => {
     if (!dialog) return;
-    const t = textareaRef.current;
+    const t = titleInputRef.current;
     if (t) t.focus();
   }, [dialog]);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      abortRef.current?.abort();
     };
   }, []);
 
@@ -441,6 +417,10 @@ export default function ExtendWizardClient({
     : `/courses/${encodeURIComponent(course.slug)}`;
 
   const showDoneButton = cancelled || allEnqueuedComplete;
+
+  const dialogIsLesson = dialog?.kind === 'lesson';
+  const titleLabel = dialogIsLesson ? 'Lesson title' : 'Module title';
+  const summaryLabel = dialogIsLesson ? 'Lesson summary' : 'Module summary';
 
   return (
     <div style={pageStyle}>
@@ -501,7 +481,7 @@ export default function ExtendWizardClient({
           >
             {view === 'progress'
               ? 'Generation in progress. Stream of stages for the newly added lessons appears below.'
-              : 'Add new modules or lessons to this course. Each addition is proposed by the agent and reflected in the schema tree below.'}
+              : 'Add new modules or lessons to this course. Each addition is reflected in the schema tree below.'}
           </p>
 
           {readOnly && view === 'edit' && (
@@ -517,15 +497,11 @@ export default function ExtendWizardClient({
           {view === 'edit' ? (
             <div
               data-testid="extend-tree"
-              data-loading={loading ? 'true' : undefined}
               data-readonly={readOnly ? 'true' : undefined}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 'var(--space-4)',
-                opacity: loading ? 0.6 : 1,
-                pointerEvents: loading ? 'none' : undefined,
-                transition: 'opacity 120ms ease',
               }}
             >
               {currentProposed.modules.map((m) => {
@@ -606,7 +582,6 @@ export default function ExtendWizardClient({
                         type="button"
                         data-testid={`extend-add-lesson-${m.id}`}
                         onClick={() => openLessonDialog(m.id, m.title)}
-                        disabled={loading}
                         style={addInlineBtnStyle}
                       >
                         <Plus size={14} strokeWidth={2} />
@@ -622,7 +597,6 @@ export default function ExtendWizardClient({
                   type="button"
                   data-testid="extend-add-module"
                   onClick={openModuleDialog}
-                  disabled={loading}
                   style={addBlockBtnStyle}
                 >
                   <Plus size={16} strokeWidth={2} />
@@ -723,11 +697,7 @@ export default function ExtendWizardClient({
                 type="button"
                 data-testid="extend-reset"
                 onClick={handleReset}
-                disabled={
-                  loading ||
-                  readOnly ||
-                  (!hasAdditions && instructions.length === 0)
-                }
+                disabled={readOnly || !hasAdditions}
                 style={ghostBtnStyle}
               >
                 <RotateCcw size={14} strokeWidth={2} />
@@ -831,14 +801,14 @@ export default function ExtendWizardClient({
             data-kind={dialog.kind}
             role="dialog"
             aria-modal="true"
-            aria-labelledby="extend-dialog-title"
+            aria-labelledby="extend-dialog-heading"
             style={dialogStyle}
           >
             <header style={dialogHeaderStyle}>
-              <h2 id="extend-dialog-title" style={dialogTitleStyle}>
+              <h2 id="extend-dialog-heading" style={dialogTitleStyle}>
                 {dialog.kind === 'module'
                   ? `Add a module to "${course.title}"`
-                  : `Add a lesson to "${dialog.moduleTitle}"`}
+                  : `Add a lesson under "${dialog.moduleTitle}"`}
               </h2>
               <button
                 type="button"
@@ -852,28 +822,63 @@ export default function ExtendWizardClient({
             </header>
             <div style={dialogBodyStyle}>
               <label
-                htmlFor="extend-dialog-textarea"
+                htmlFor="extend-dialog-title"
                 style={dialogLabelStyle}
               >
-                {dialog.kind === 'module'
-                  ? 'What should this module cover?'
-                  : 'What should this lesson cover?'}
+                {titleLabel}
+              </label>
+              <input
+                id="extend-dialog-title"
+                data-testid="extend-dialog-title"
+                ref={titleInputRef}
+                type="text"
+                value={titleDraft}
+                onChange={(e) => {
+                  setTitleDraft(e.target.value);
+                  if (dialogError) setDialogError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.metaKey &&
+                    !e.ctrlKey &&
+                    !e.shiftKey &&
+                    !e.altKey
+                  ) {
+                    e.preventDefault();
+                    summaryTextareaRef.current?.focus();
+                  }
+                }}
+                placeholder='e.g., "Advanced indexing patterns"'
+                maxLength={120}
+                style={dialogInputStyle}
+              />
+              <label
+                htmlFor="extend-dialog-summary"
+                style={dialogLabelStyle}
+              >
+                {summaryLabel}
               </label>
               <textarea
-                id="extend-dialog-textarea"
-                data-testid="extend-dialog-textarea"
-                ref={textareaRef}
-                value={instructionDraft}
-                onChange={(e) => setInstructionDraft(e.target.value)}
-                disabled={loading}
-                placeholder={
-                  dialog.kind === 'module'
-                    ? 'e.g., "a new module on advanced indexing with three lessons"'
-                    : 'e.g., "a deep dive on the autograd engine with two practice exercises"'
-                }
-                rows={4}
+                id="extend-dialog-summary"
+                data-testid="extend-dialog-summary"
+                ref={summaryTextareaRef}
+                value={summaryDraft}
+                onChange={(e) => setSummaryDraft(e.target.value)}
+                placeholder="One sentence describing what this module/lesson covers."
+                rows={3}
+                maxLength={300}
                 style={dialogTextareaStyle}
               />
+              {dialogError && (
+                <p
+                  data-testid="extend-dialog-error"
+                  role="alert"
+                  style={dialogErrorStyle}
+                >
+                  {dialogError}
+                </p>
+              )}
             </div>
             <div style={dialogFooterStyle}>
               <button
@@ -887,24 +892,11 @@ export default function ExtendWizardClient({
               <button
                 type="button"
                 data-testid="extend-dialog-add"
-                onClick={() => void handleAdd()}
-                disabled={loading || instructionDraft.trim().length === 0}
-                style={primaryBtnStyle(
-                  loading || instructionDraft.trim().length === 0,
-                )}
+                onClick={handleAdd}
+                disabled={titleDraft.trim().length === 0}
+                style={primaryBtnStyle(titleDraft.trim().length === 0)}
               >
-                {loading ? (
-                  <>
-                    <span
-                      data-testid="extend-dialog-add-spinner"
-                      aria-hidden
-                      style={spinnerStyle}
-                    />
-                    <span>Adding…</span>
-                  </>
-                ) : (
-                  'Add'
-                )}
+                Add
               </button>
             </div>
             <style>{`@keyframes extend-spin { to { transform: rotate(360deg); } }`}</style>
@@ -1239,10 +1231,8 @@ const dialogLabelStyle: CSSProperties = {
   color: 'var(--text-secondary)',
 };
 
-const dialogTextareaStyle: CSSProperties = {
+const dialogInputStyle: CSSProperties = {
   width: '100%',
-  resize: 'vertical',
-  minHeight: 90,
   padding: '10px 12px',
   border: '1px solid var(--border)',
   borderRadius: 'var(--radius-sm)',
@@ -1251,6 +1241,26 @@ const dialogTextareaStyle: CSSProperties = {
   fontFamily: 'inherit',
   fontSize: 'var(--fs-sm)',
   lineHeight: 1.5,
+};
+
+const dialogTextareaStyle: CSSProperties = {
+  width: '100%',
+  resize: 'vertical',
+  minHeight: 72,
+  padding: '10px 12px',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  background: 'var(--bg)',
+  color: 'var(--text)',
+  fontFamily: 'inherit',
+  fontSize: 'var(--fs-sm)',
+  lineHeight: 1.5,
+};
+
+const dialogErrorStyle: CSSProperties = {
+  margin: '4px 0 0',
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--danger, var(--text))',
 };
 
 const dialogFooterStyle: CSSProperties = {

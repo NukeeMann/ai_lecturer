@@ -10,7 +10,6 @@ import {
 } from '@testing-library/react';
 
 import type { Course } from '@/lib/schemas/course';
-import type { ExtendResponse } from '@/lib/schemas/extend';
 import ExtendWizardClient from './ExtendWizardClient';
 
 afterEach(() => {
@@ -49,76 +48,7 @@ const TEST_COURSE: Course = {
   updatedAt: '2026-05-13T00:00:00Z',
 };
 
-function buildExtendResponseWithNewModule(): ExtendResponse {
-  return {
-    proposedSchema: {
-      ...TEST_COURSE,
-      modules: [
-        ...TEST_COURSE.modules,
-        {
-          id: 'm3',
-          title: 'Module Three (new)',
-          summary: 'agent-added module',
-          lessons: [
-            { slug: 'm3-l1', title: 'Intro to advanced indexing', estimatedMinutes: 9 },
-          ],
-        },
-      ],
-    },
-    additions: {
-      newModuleIds: ['m3'],
-      newLessonIds: [],
-      rationale: 'Added a new module on advanced indexing.',
-    },
-  };
-}
-
-function buildExtendResponseAddNewLessonToModuleOne(prev: ExtendResponse): ExtendResponse {
-  return {
-    proposedSchema: {
-      ...prev.proposedSchema,
-      modules: prev.proposedSchema.modules.map((m) =>
-        m.id === 'm1'
-          ? {
-              ...m,
-              lessons: [
-                ...m.lessons,
-                {
-                  slug: 'm1-l-new',
-                  title: 'Autograd deep dive',
-                  estimatedMinutes: 14,
-                },
-              ],
-            }
-          : m,
-      ),
-    },
-    additions: {
-      newModuleIds: [],
-      newLessonIds: [
-        {
-          moduleId: 'm1',
-          lessonSlug: 'm1-l-new',
-          lessonTitle: 'Autograd deep dive',
-          lessonDescription: 'A deep dive on the autograd engine.',
-        },
-      ],
-      rationale: 'Added a new lesson under module One on autograd.',
-    },
-  };
-}
-
-function mockFetchOnce(response: unknown, status = 200): ReturnType<typeof vi.fn> {
-  const fetchMock = vi.fn().mockResolvedValueOnce({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(response),
-  } as unknown as Response);
-  global.fetch = fetchMock as unknown as typeof fetch;
-  return fetchMock;
-}
-
-describe('Extend wizard page (US-171)', () => {
+describe('Extend wizard page (US-180 direct-add)', () => {
   beforeEach(() => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
@@ -131,7 +61,7 @@ describe('Extend wizard page (US-171)', () => {
     expect(screen.getByTestId('extend-add-module')).toBeTruthy();
   });
 
-  it('US-176: +Add buttons render only the Lucide icon (no literal "+" in textContent)', () => {
+  it('+Add buttons render only the Lucide icon (no literal "+" in textContent)', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
 
     const addModule = screen.getByTestId('extend-add-module');
@@ -158,261 +88,283 @@ describe('Extend wizard page (US-171)', () => {
     expect(generate.disabled).toBe(true);
   });
 
-  it('Add module dialog: posts expected instruction, reflects response in tree with data-new highlight', async () => {
-    const response = buildExtendResponseWithNewModule();
-    const fetchMock = mockFetchOnce(response);
+  it('Module dialog: opens with Title + Summary fields and Module labels (US-180)', () => {
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+    fireEvent.click(screen.getByTestId('extend-add-module'));
+
+    const dialog = screen.getByTestId('extend-dialog');
+    expect(dialog.getAttribute('data-kind')).toBe('module');
+
+    const titleInput = screen.getByTestId(
+      'extend-dialog-title',
+    ) as HTMLInputElement;
+    const summaryArea = screen.getByTestId(
+      'extend-dialog-summary',
+    ) as HTMLTextAreaElement;
+
+    expect(titleInput.tagName).toBe('INPUT');
+    expect(titleInput.type).toBe('text');
+    expect(titleInput.maxLength).toBe(120);
+    expect(titleInput.placeholder).toBe('e.g., "Advanced indexing patterns"');
+
+    expect(summaryArea.tagName).toBe('TEXTAREA');
+    expect(summaryArea.rows).toBe(3);
+    expect(summaryArea.maxLength).toBe(300);
+    expect(summaryArea.placeholder).toBe(
+      'One sentence describing what this module/lesson covers.',
+    );
+
+    // Module-specific labels.
+    expect(dialog.textContent ?? '').toContain('Module title');
+    expect(dialog.textContent ?? '').toContain('Module summary');
+  });
+
+  it('Lesson dialog: shows Lesson title / Lesson summary labels and parent context line (US-180)', () => {
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+    fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
+
+    const dialog = screen.getByTestId('extend-dialog');
+    expect(dialog.getAttribute('data-kind')).toBe('lesson');
+    expect(dialog.textContent ?? '').toContain('Lesson title');
+    expect(dialog.textContent ?? '').toContain('Lesson summary');
+    expect(dialog.textContent ?? '').toContain(
+      'Add a lesson under "Module One"',
+    );
+  });
+
+  it('Add module directly appends to currentProposed without fetching /extend (US-180)', async () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
     render(<ExtendWizardClient course={TEST_COURSE} />);
 
     fireEvent.click(screen.getByTestId('extend-add-module'));
-    expect(screen.getByTestId('extend-dialog').getAttribute('data-kind')).toBe(
-      'module',
-    );
-
-    const textarea = screen.getByTestId(
-      'extend-dialog-textarea',
-    ) as HTMLTextAreaElement;
-    fireEvent.change(textarea, {
-      target: { value: 'advanced indexing module' },
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Indexing' },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    fireEvent.change(screen.getByTestId('extend-dialog-summary'), {
+      target: { value: 'Tensor slicing and dicing' },
     });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('extend-dialog')).toBeNull();
     });
 
-    // Fetch call payload assertions.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/courses/test-course/extend');
-    expect(init.method).toBe('POST');
-    const body = JSON.parse(String(init.body)) as {
-      instruction: string;
-      refinements?: unknown;
-    };
-    expect(body.instruction).toBe(
-      'Add a new module: advanced indexing module',
-    );
-    expect(body.refinements).toBeUndefined();
+    // No /extend agent call.
+    expect(fetchMock).not.toHaveBeenCalled();
 
-    // The new module is rendered with data-new + highlight.
-    const newMod = await screen.findByTestId('extend-module-m3');
+    const newMod = screen.getByTestId('extend-module-indexing');
     expect(newMod.getAttribute('data-new')).toBe('true');
     expect(newMod.style.borderLeftWidth).toBe('3px');
-    // Existing modules are NOT highlighted.
     expect(
-      screen.getByTestId('extend-module-m1').getAttribute('data-new'),
-    ).toBeNull();
+      screen.getByTestId('extend-module-title-indexing').textContent,
+    ).toBe('Indexing');
+    expect(
+      screen.getByTestId('extend-module-summary-indexing').textContent,
+    ).toBe('Tensor slicing and dicing');
   });
 
-  it('Add lesson dialog: second call sends prior instruction as refinement; new lesson highlighted', async () => {
-    const firstResp = buildExtendResponseWithNewModule();
-    const secondResp = buildExtendResponseAddNewLessonToModuleOne(firstResp);
-
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(firstResp),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(secondResp),
-      });
-    global.fetch = fetchMock as unknown as typeof fetch;
-
+  it('Add module with empty summary omits the summary section visually (US-180)', async () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
-
-    // First call: add a module.
     fireEvent.click(screen.getByTestId('extend-add-module'));
-    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
-      target: { value: 'advanced indexing module' },
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Just A Title' },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
-    });
-    await screen.findByTestId('extend-module-m3');
-
-    // Second call: add a lesson under module One.
-    fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
-    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
-      target: { value: 'autograd deep dive' },
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
-    });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
 
     await waitFor(() => {
       expect(screen.queryByTestId('extend-dialog')).toBeNull();
     });
 
-    // Second call payload contains refinements with the prior instruction.
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    const [, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    const body = JSON.parse(String(secondInit.body)) as {
-      instruction: string;
-      refinements: Array<{ role: 'user'; content: string }>;
-    };
-    expect(body.instruction).toBe(
-      'Add a new lesson under module "Module One" (id: m1): autograd deep dive',
-    );
-    expect(body.refinements).toEqual([
-      { role: 'user', content: 'Add a new module: advanced indexing module' },
-    ]);
+    expect(screen.getByTestId('extend-module-just-a-title')).toBeTruthy();
+    expect(
+      screen.queryByTestId('extend-module-summary-just-a-title'),
+    ).toBeNull();
+  });
 
-    // The new lesson appears under m1 with data-new highlight.
-    const newLesson = await screen.findByTestId('extend-lesson-m1-l-new');
+  it('Module collision shows inline error and does not add the module (US-180)', () => {
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+    fireEvent.click(screen.getByTestId('extend-add-module'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'M1' },
+    });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+
+    // Dialog stays open with inline error; no new module appears.
+    expect(screen.getByTestId('extend-dialog')).toBeTruthy();
+    const err = screen.getByTestId('extend-dialog-error');
+    expect(err.textContent).toBe('A module with this id already exists.');
+    // Only the two pre-existing modules.
+    expect(screen.queryByTestId('extend-module-m1')).toBeTruthy();
+    expect(screen.queryByTestId('extend-module-m2')).toBeTruthy();
+    expect(screen.queryByTestId('extend-module-m3')).toBeNull();
+    // The slugified collision attempt was for 'M1' → slugify → 'm1'.
+    // No new card was added.
+    const moduleCards = Array.from(
+      document.querySelectorAll('[data-testid^="extend-module-"]'),
+    ).filter((el) => {
+      const tid = el.getAttribute('data-testid') ?? '';
+      return (
+        !tid.startsWith('extend-module-title-') &&
+        !tid.startsWith('extend-module-summary-')
+      );
+    });
+    expect(moduleCards).toHaveLength(2);
+  });
+
+  it('Add lesson directly appends under parent module with summary visible (US-180)', async () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock as unknown as typeof fetch;
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+
+    fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Autograd Deep Dive' },
+    });
+    fireEvent.change(screen.getByTestId('extend-dialog-summary'), {
+      target: { value: 'Trace tensors through .backward()' },
+    });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('extend-dialog')).toBeNull();
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const newLesson = screen.getByTestId('extend-lesson-autograd-deep-dive');
     expect(newLesson.getAttribute('data-new')).toBe('true');
     expect(newLesson.style.borderLeftWidth).toBe('3px');
-    // The previously added module remains highlighted (accumulation).
+    expect(newLesson.textContent ?? '').toContain('Autograd Deep Dive');
+    expect(newLesson.textContent ?? '').toContain('15 min');
     expect(
-      screen.getByTestId('extend-module-m3').getAttribute('data-new'),
-    ).toBe('true');
+      screen.getByTestId('extend-lesson-summary-autograd-deep-dive')
+        .textContent,
+    ).toBe('Trace tensors through .backward()');
   });
 
-  it('409 busy: shows toast, closes dialog, does not mutate currentProposed or additions', async () => {
-    const fetchMock = mockFetchOnce(
-      { error: 'busy', message: 'Cannot extend while generation is active' },
-      409,
-    );
+  it('Lesson collision is scoped to the parent module — same slug allowed under a different module (US-180)', async () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
 
-    fireEvent.click(screen.getByTestId('extend-add-module'));
-    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
-      target: { value: 'whatever' },
+    // First: add a "Shared Name" lesson under m1.
+    fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Shared Name' },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
-    });
-
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
     await waitFor(() => {
       expect(screen.queryByTestId('extend-dialog')).toBeNull();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    const toast = await screen.findByTestId('extend-toast');
-    expect(toast.textContent).toBe(
-      'Cannot extend while generation is active.',
+    // Adding the same slug under m1 again collides.
+    fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Shared Name' },
+    });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    expect(screen.getByTestId('extend-dialog-error').textContent).toBe(
+      'A lesson with this slug already exists in this module.',
     );
+    fireEvent.click(screen.getByTestId('extend-dialog-cancel'));
 
-    // No state mutation — original modules are present and no new highlight.
-    expect(screen.getByTestId('extend-module-m1')).toBeTruthy();
-    expect(screen.getByTestId('extend-module-m2')).toBeTruthy();
-    expect(screen.queryByTestId('extend-module-m3')).toBeNull();
-    expect(
-      screen.getByTestId('extend-module-m1').getAttribute('data-new'),
-    ).toBeNull();
+    // But the same slug under m2 is fine.
+    fireEvent.click(screen.getByTestId('extend-add-lesson-m2'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Shared Name' },
+    });
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('extend-dialog')).toBeNull();
+    });
+    // Two lessons with the same slug now exist — one under each module.
+    expect(screen.queryAllByTestId('extend-lesson-shared-name')).toHaveLength(2);
   });
 
-  it('422 unparseable: shows toast, dialog stays open with textarea preserved', async () => {
-    const fetchMock = mockFetchOnce(
-      { error: 'agent-output-invalid', message: 'parse error' },
-      422,
-    );
+  it('Reset proposal: restores original tree, clears highlights and pending counter (US-180)', async () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
 
     fireEvent.click(screen.getByTestId('extend-add-module'));
-    const textarea = screen.getByTestId(
-      'extend-dialog-textarea',
-    ) as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'something to add' } });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Indexing' },
     });
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    // Dialog stays open + textarea preserved.
-    const dialog = await screen.findByTestId('extend-dialog');
-    expect(dialog).toBeTruthy();
-    expect(
-      (screen.getByTestId('extend-dialog-textarea') as HTMLTextAreaElement)
-        .value,
-    ).toBe('something to add');
-
-    const toast = await screen.findByTestId('extend-toast');
-    expect(toast.textContent).toBe("Couldn't add — please rephrase.");
-  });
-
-  it('Reset proposal: restores original tree and clears highlights', async () => {
-    const response = buildExtendResponseWithNewModule();
-    mockFetchOnce(response);
-    render(<ExtendWizardClient course={TEST_COURSE} />);
-
-    fireEvent.click(screen.getByTestId('extend-add-module'));
-    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
-      target: { value: 'advanced indexing module' },
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('extend-dialog')).toBeNull();
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
-    });
-    await screen.findByTestId('extend-module-m3');
+    expect(screen.getByTestId('extend-module-indexing')).toBeTruthy();
 
-    // Reset proposal.
     fireEvent.click(screen.getByTestId('extend-reset'));
     await waitFor(() => {
-      expect(screen.queryByTestId('extend-module-m3')).toBeNull();
+      expect(screen.queryByTestId('extend-module-indexing')).toBeNull();
     });
     expect(window.confirm).toHaveBeenCalled();
     expect(screen.getByTestId('extend-module-m1')).toBeTruthy();
     expect(screen.getByTestId('extend-module-m2')).toBeTruthy();
+    // No additions left → Generate disabled, Reset disabled.
+    expect(
+      (screen.getByTestId('extend-generate') as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId('extend-reset') as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 
-  it('Add button stays disabled when textarea is empty / whitespace only', () => {
+  it('Add button stays disabled when Title input is empty / whitespace only (US-180)', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
     fireEvent.click(screen.getByTestId('extend-add-module'));
     const add = screen.getByTestId('extend-dialog-add') as HTMLButtonElement;
     expect(add.disabled).toBe(true);
 
-    const textarea = screen.getByTestId(
-      'extend-dialog-textarea',
-    ) as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: '   ' } });
+    const titleInput = screen.getByTestId(
+      'extend-dialog-title',
+    ) as HTMLInputElement;
+    fireEvent.change(titleInput, { target: { value: '   ' } });
     expect(add.disabled).toBe(true);
 
-    fireEvent.change(textarea, { target: { value: 'real instruction' } });
+    fireEvent.change(titleInput, { target: { value: 'Real Title' } });
     expect(add.disabled).toBe(false);
   });
 
-  it('Cancel closes the dialog without sending a request', () => {
+  it('Cancel closes the dialog without sending a request (US-180)', () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock as unknown as typeof fetch;
     render(<ExtendWizardClient course={TEST_COURSE} />);
     fireEvent.click(screen.getByTestId('extend-add-module'));
-    const textarea = screen.getByTestId(
-      'extend-dialog-textarea',
-    ) as HTMLTextAreaElement;
-    fireEvent.change(textarea, { target: { value: 'nope' } });
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'nope' },
+    });
     fireEvent.click(screen.getByTestId('extend-dialog-cancel'));
 
     expect(screen.queryByTestId('extend-dialog')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('Enter in Title input moves focus to Summary textarea (US-180 UX polish)', () => {
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+    fireEvent.click(screen.getByTestId('extend-add-module'));
+    const titleInput = screen.getByTestId(
+      'extend-dialog-title',
+    ) as HTMLInputElement;
+    const summaryArea = screen.getByTestId(
+      'extend-dialog-summary',
+    ) as HTMLTextAreaElement;
+    titleInput.focus();
+    expect(document.activeElement).toBe(titleInput);
+    fireEvent.keyDown(titleInput, { key: 'Enter' });
+    expect(document.activeElement).toBe(summaryArea);
+  });
 });
 
-describe('Extend wizard Generate additions + progress view (US-172)', () => {
+describe('Extend wizard Generate additions + progress view (US-172, still wired to /apply)', () => {
   beforeEach(() => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
-  it('Generate additions is enabled after one addition and POSTs to /extend/apply with the current proposedSchema', async () => {
-    const extendResp = buildExtendResponseWithNewModule();
-    const applyResp = {
-      enqueuedLessonSlugs: ['m3-l1'],
-    };
-
+  it('Generate additions is enabled after one direct-add and POSTs to /extend/apply with the current proposedSchema (US-180)', async () => {
+    const applyResp = { enqueuedLessonSlugs: ['indexing'] };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
-        // First call: POST /extend (Add module)
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(extendResp),
-      })
-      .mockResolvedValueOnce({
-        // Second call: POST /extend/apply
+        // POST /extend/apply
         ok: true,
         status: 200,
         json: () => Promise.resolve(applyResp),
@@ -432,15 +384,17 @@ describe('Extend wizard Generate additions + progress view (US-172)', () => {
       (screen.getByTestId('extend-generate') as HTMLButtonElement).disabled,
     ).toBe(true);
 
-    // Add a module.
+    // Add a module locally.
     fireEvent.click(screen.getByTestId('extend-add-module'));
-    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
-      target: { value: 'advanced indexing module' },
+    fireEvent.change(screen.getByTestId('extend-dialog-title'), {
+      target: { value: 'Indexing' },
     });
-    await act(async () => {
-      fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    await waitFor(() => {
+      expect(screen.queryByTestId('extend-dialog')).toBeNull();
     });
-    await screen.findByTestId('extend-module-m3');
+    // No /extend call was made.
+    expect(fetchMock).not.toHaveBeenCalled();
 
     // Now Generate is enabled.
     const generateBtn = screen.getByTestId(
@@ -457,7 +411,6 @@ describe('Extend wizard Generate additions + progress view (US-172)', () => {
       expect(screen.queryByTestId('extend-progress')).not.toBeNull();
     });
 
-    // Find the apply call.
     const applyCall = fetchMock.mock.calls.find(
       ([url]) => url === '/api/courses/test-course/extend/apply',
     );
@@ -468,12 +421,13 @@ describe('Extend wizard Generate additions + progress view (US-172)', () => {
       proposedSchema: Course;
     };
     expect(applyBody.proposedSchema.slug).toBe('test-course');
-    // The proposed schema includes the new module.
-    expect(applyBody.proposedSchema.modules.find((m) => m.id === 'm3')).toBeTruthy();
+    expect(
+      applyBody.proposedSchema.modules.find((m) => m.id === 'indexing'),
+    ).toBeTruthy();
 
     // Progress view rendered, schema tree replaced.
     expect(screen.queryByTestId('extend-tree')).toBeNull();
-    expect(screen.getByTestId('extend-progress-lesson-m3-l1')).toBeTruthy();
+    expect(screen.getByTestId('extend-progress-lesson-indexing')).toBeTruthy();
   });
 
   it('renders read-only mode + banner when initialGenerationActive=true; +Add and Generate are gone', () => {
