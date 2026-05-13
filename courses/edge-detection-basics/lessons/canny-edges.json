@@ -17,17 +17,7 @@
       }
     },
     {
-      "id": "s2-input",
-      "title": "Input image — a textured scene",
-      "type": "plotImage",
-      "data": {
-        "src": "/api/courses/edge-detection-basics/assets/input-canny.png",
-        "alt": "A synthetic grayscale scene with two houses on a graded sky background. The bottom of the frame is filled with a checkerboard pattern. The image has photographic blur and noise added.",
-        "caption": "Figure 2.1 — Synthetic textured scene (256×256, grayscale). The two houses give us crisp object boundaries; the checkered floor lets us watch Canny suppress the high-frequency texture; the smooth sky gradient lets us check that Canny does NOT fire on slow ramps."
-      }
-    },
-    {
-      "id": "s3-pipeline",
+      "id": "s2-pipeline",
       "title": "The Canny pipeline — four steps",
       "type": "theory",
       "data": {
@@ -35,19 +25,43 @@
       }
     },
     {
-      "id": "s4-code",
+      "id": "s3-code",
       "title": "One function call — cv2.Canny",
       "type": "code",
       "data": {
-        "taskMarkdown": "All four steps above are bundled into a single OpenCV call. The two numeric arguments are the lower and upper hysteresis thresholds (in the gradient-magnitude units).\n\n```\nedges = cv2.Canny(img, threshold1=100, threshold2=200)\n```\n\nReturns a `uint8` array the same shape as `img`: `255` where there is an edge, `0` otherwise. Try the snippet below, then compare with the output figure underneath.\n\nThis snippet is **illustrative** — the lesson player does not execute it.",
-        "starterCode": "import cv2\n\n# 1. Load as single-channel grayscale (Canny expects single-channel uint8).\nimg = cv2.imread('input-canny.png', cv2.IMREAD_GRAYSCALE)\n\n# 2. Canny does Gaussian blur + Sobel + NMS + hysteresis internally.\n#    Lower threshold ~ how weak an edge we'll keep if connected.\n#    Upper threshold ~ how strong an edge needs to be to start a chain.\n#    The 1:2 / 1:3 ratio is the rule of thumb from Canny's original paper.\nedges = cv2.Canny(img, 100, 200)\n\n# 3. The result is already a binary uint8 image — save directly.\ncv2.imwrite('output-canny.png', edges)\n",
+        "taskMarkdown": "All four steps above are bundled into a single OpenCV call. The two numeric arguments are the lower and upper hysteresis thresholds (in the gradient-magnitude units).\n\n```\nedges = cv2.Canny(img, threshold1=100, threshold2=200)\n```\n\nReturns a `uint8` array the same shape as `img`: `255` where there is an edge, `0` otherwise. Try the snippet below, then compare with the output figure underneath — and try lowering the thresholds (e.g. `30, 60`) to see how many faint edges Canny picks up.\n\nThis lesson uses an in-browser cv2 shim built on scikit-image — visually similar to real OpenCV, but pixel values may differ slightly. See course README for details.",
+        "starterCode": "import cv2\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# 1. Build the textured input scene directly (256x256 grayscale).\n#    We recreate it in-process so we don't have to touch Pyodide's\n#    virtual filesystem.\nimg = np.zeros((256, 256), dtype=np.uint8)\n\n# Sky gradient at the top.\nfor y in range(0, 140):\n    img[y, :] = int(120 + (y / 140) * 80)\n\n# Two houses.\nimg[80:160, 30:110] = 90          # left house body\nimg[60:80, 30:110] = 70           # left house roof\nimg[100:120, 60:80] = 30          # left house door\nimg[80:160, 140:220] = 110        # right house body\nimg[60:80, 140:220] = 80          # right house roof\nimg[100:120, 170:190] = 40        # right house door\n\n# Checkerboard floor.\nfor y in range(170, 256, 16):\n    for x in range(0, 256, 16):\n        tile = 200 if ((y // 16) + (x // 16)) % 2 == 0 else 60\n        img[y:y + 16, x:x + 16] = tile\n\n# 2. Canny does Gaussian blur + Sobel + NMS + hysteresis internally.\n#    Lower threshold ~ how weak an edge we'll keep if connected.\n#    Upper threshold ~ how strong an edge needs to be to start a chain.\n#    The 1:2 / 1:3 ratio is the rule of thumb from Canny's original paper.\nedges = cv2.Canny(img, 100, 200)\n\nplt.imshow(edges, cmap='gray')\nplt.axis('off')\n",
         "tests": [
           {
-            "name": "canny_returns_uint8",
-            "body": "# Illustrative check — the lesson player does not run this. Real OpenCV usage:\n# cv2.Canny(img, low, high) returns a uint8 array, 0 = background, 255 = edge.\nassert True"
+            "name": "canny_edges_dtype_is_uint8",
+            "body": "assert edges.dtype == np.uint8"
+          },
+          {
+            "name": "canny_edges_are_binary",
+            "body": "assert set(int(v) for v in np.unique(edges).tolist()) <= {0, 255}"
+          },
+          {
+            "name": "canny_edges_max_is_255",
+            "body": "assert edges.max() == 255"
           }
         ],
-        "solution": "import cv2\n\nimg = cv2.imread('input-canny.png', cv2.IMREAD_GRAYSCALE)\nedges = cv2.Canny(img, 100, 200)\ncv2.imwrite('output-canny.png', edges)\n"
+        "solution": "import cv2\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nimg = np.zeros((256, 256), dtype=np.uint8)\nfor y in range(0, 140):\n    img[y, :] = int(120 + (y / 140) * 80)\nimg[80:160, 30:110] = 90\nimg[60:80, 30:110] = 70\nimg[100:120, 60:80] = 30\nimg[80:160, 140:220] = 110\nimg[60:80, 140:220] = 80\nimg[100:120, 170:190] = 40\nfor y in range(170, 256, 16):\n    for x in range(0, 256, 16):\n        tile = 200 if ((y // 16) + (x // 16)) % 2 == 0 else 60\n        img[y:y + 16, x:x + 16] = tile\n\nedges = cv2.Canny(img, 100, 200)\n\nplt.imshow(edges, cmap='gray')\nplt.axis('off')\n",
+        "requiresPackages": ["cv2"],
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/edge-detection-basics/assets/input-canny.png",
+            "alt": "A synthetic grayscale scene with two houses on a graded sky background. The bottom of the frame is filled with a checkerboard pattern. The image has photographic blur and noise added.",
+            "caption": "Figure 2.1 — Synthetic textured scene (256×256, grayscale). The two houses give us crisp object boundaries; the checkered floor lets us watch Canny suppress the high-frequency texture; the smooth sky gradient lets us check that Canny does NOT fire on slow ramps."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/edge-detection-basics/assets/output-canny.png",
+          "alt": "Binary edge map: the outlines of the two houses, their roofs, windows, doors, and the horizon line all appear as crisp white one-pixel-wide curves. The checkerboard pattern at the bottom is reduced to the boundaries of each square. The smooth sky gradient produces no edges at all.",
+          "caption": "Figure 2.2 — `cv2.Canny(img, 100, 200)` applied to Figure 2.1. Note three things: (1) the smooth sky gradient produces no edges — slow ramps are correctly ignored; (2) the texture in the checkerboard is reduced to the boundaries of each tile; (3) every kept edge is one pixel wide.",
+          "live": true
+        }
       },
       "sources": [
         {
@@ -65,17 +79,7 @@
       ]
     },
     {
-      "id": "s5-output",
-      "title": "Output — the Canny edge map",
-      "type": "plotImage",
-      "data": {
-        "src": "/api/courses/edge-detection-basics/assets/output-canny.png",
-        "alt": "Binary edge map: the outlines of the two houses, their roofs, windows, doors, and the horizon line all appear as crisp white one-pixel-wide curves. The checkerboard pattern at the bottom is reduced to the boundaries of each square. The smooth sky gradient produces no edges at all.",
-        "caption": "Figure 2.2 — `cv2.Canny(img, 100, 200)` applied to Figure 2.1. Note three things: (1) the smooth sky gradient produces no edges — slow ramps are correctly ignored; (2) the texture in the checkerboard is reduced to the boundaries of each tile; (3) every kept edge is one pixel wide."
-      }
-    },
-    {
-      "id": "s6-takeaways",
+      "id": "s4-takeaways",
       "title": "Sobel vs Canny — when to use which",
       "type": "theory",
       "data": {
