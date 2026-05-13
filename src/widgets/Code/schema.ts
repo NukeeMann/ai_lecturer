@@ -37,6 +37,10 @@ export const CodeOutputMediaSchema = z.discriminatedUnion('kind', [
     src: z.string().min(1),
     alt: z.string().optional(),
     caption: z.string().optional(),
+    // When true, the static `src` acts as a placeholder until the user runs
+    // their code; the matplotlib figure produced by the run replaces it
+    // (US-174). Falsy or missing = current static behavior.
+    live: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('video'),

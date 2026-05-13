@@ -76,7 +76,8 @@ heavy packages in the future without growing the API surface.
 - Shim source: `scripts/pyodide/cv2_shim.py`
 - Worker plumbing: `src/lib/pyodide/worker.ts` (`CV2_SHIM_PY`,
   `ensureCv2Shim`)
-- Client API: `src/lib/pyodide/client.ts` (`run` / `runWithTests` accept
-  `requiresPackages?: string[]`)
+- Client API: `src/lib/pyodide/client.ts` (`run(code, requiresPackages?)`;
+  `runWithTests(code, tests, options?)` where options also carries
+  `captureLiveImage?: boolean` for the US-174 live figure-capture path)
 - Schema: `src/widgets/Code/schema.ts` (`CodeDataSchema.requiresPackages`)
 - Tests: `src/lib/pyodide/runner.test.ts` (`describe('cv2 shim')`)

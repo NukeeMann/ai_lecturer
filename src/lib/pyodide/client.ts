@@ -47,6 +47,13 @@ export interface TestResult {
 
 export interface RunWithTestsResult extends RunResult {
   testResults: TestResult[];
+  /**
+   * Matplotlib figure captured after user code + tests finished, encoded as
+   * PNG bytes. Only present when the caller opts in via
+   * `runWithTests(code, tests, { captureLiveImage: true })` AND user code
+   * produced at least one figure (US-174).
+   */
+  png?: Uint8Array;
 }
 
 export interface GaussFilterResult {
@@ -224,6 +231,7 @@ type WorkerPayload =
       code: string;
       tests: PyodideTestSpec[];
       requiresPackages?: string[];
+      captureLiveImage?: boolean;
     }
   | {
       type: 'gaussFilter';
@@ -292,13 +300,24 @@ function callWorker<T>(
   });
 }
 
+export interface RunWithTestsOptions {
+  requiresPackages?: string[];
+  /**
+   * When true, the worker captures any matplotlib figure left open after
+   * user code (+ tests) ran, and attaches it to the result as `png` bytes.
+   * Off by default — the figure-capture path lazy-loads matplotlib + sets
+   * the AGG backend, so callers that don't need it pay nothing (US-174).
+   */
+  captureLiveImage?: boolean;
+}
+
 export interface UsePyodideReturn {
   status: PyodideStatus;
   run: (code: string, requiresPackages?: string[]) => Promise<RunResult>;
   runWithTests: (
     code: string,
     tests: PyodideTestSpec[],
-    requiresPackages?: string[],
+    options?: RunWithTestsOptions,
   ) => Promise<RunWithTestsResult>;
   gaussFilter: (
     pixels: Uint8Array,
@@ -352,9 +371,19 @@ export function usePyodide(): UsePyodideReturn {
   );
 
   const runWithTests = useCallback(
-    (code: string, tests: PyodideTestSpec[], requiresPackages?: string[]) =>
+    (
+      code: string,
+      tests: PyodideTestSpec[],
+      options?: RunWithTestsOptions,
+    ) =>
       callWorker<RunWithTestsResult>(
-        { type: 'runWithTests', code, tests, requiresPackages },
+        {
+          type: 'runWithTests',
+          code,
+          tests,
+          requiresPackages: options?.requiresPackages,
+          captureLiveImage: options?.captureLiveImage,
+        },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
       ),
