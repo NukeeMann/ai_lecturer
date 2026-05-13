@@ -1,0 +1,66 @@
+[2026-05-13T13:12:18+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T13:13:31+0200] Now let me look at code section examples in existing courses to see proper Code widget JSON:
+[2026-05-13T13:14:21+0200] Now let me write the image generation script:
+[2026-05-13T13:15:01+0200] Let me verify them visually:
+[2026-05-13T13:15:17+0200] Images look great — sobel output shows white edges on dark background, canny shows binary edges of the houses + checkered pattern.
+[2026-05-13T13:15:24+0200] Now let me create the course.json and lesson files.
+[2026-05-13T13:15:29+0200] Now the Sobel lesson:
+[2026-05-13T13:16:00+0200] Now the Canny lesson:
+[2026-05-13T13:16:32+0200] Now the README with attribution:
+[2026-05-13T13:16:55+0200] Let me validate the JSON files against the schema:
+[2026-05-13T13:17:32+0200] Schemas validate. Now I'll delete the temporary test (it's only used to verify, not durable) and run the full typecheck+test suite.
+[2026-05-13T13:17:52+0200] Typecheck passes. Now let me check if any tests reference the courses dir that might be affected:
+[2026-05-13T13:17:57+0200] All 1031 tests pass. Now Playwright verification.
+[2026-05-13T13:19:01+0200] The 404s are `regenerate/status` polling endpoints — expected behavior for non-AI-generated fixture courses; assets all load 200. Let me view the screenshots:
+[2026-05-13T13:19:05+0200] Course shows in "My courses" — "Edge Detection with Open..." (truncated). Now lesson 1:
+[2026-05-13T13:19:09+0200] Lesson 1 page renders. The screenshot shows the title, theory + math markdown. Need to verify the Code widget + images appear further down — let me take a scrolled screenshot.
+[2026-05-13T13:19:31+0200] Code widget is rendering with Python+OpenCV snippet, and we can see input figure caption (Figure 1.1) above and the output PlotImage starting below. Let me check lesson 2:
+[2026-05-13T13:19:36+0200] Lesson 2 Code widget shows `cv2.Canny(img, 100, 200)`. Let me verify the full-page screenshots so both input + output images are visible:
+[2026-05-13T13:20:10+0200] Let me take more screenshots showing input + code + output for each lesson:
+[2026-05-13T13:20:37+0200] Input image renders + Code widget starts below. Now the output:
+[2026-05-13T13:20:51+0200] All four screenshots confirm: input photo, code widget with cv2.Sobel/Canny snippet, and output edge map render for both lessons.
+[2026-05-13T13:20:56+0200] Now mark the story as passed in prd.json:
+[2026-05-13T13:21:24+0200] Now append progress and commit.
+[2026-05-13T13:21:54+0200] Now the commit:
+[2026-05-13T13:22:22+0200] This `.generating.json` is a transient runtime marker leaked by a test (likely a test path leak; not user-authored content). I'll remove it and re-stage:
+[2026-05-13T13:22:25+0200] Clean stage. Now commit:
+[2026-05-13T13:22:39+0200] [rate_limit ? status=allowed]
+[2026-05-13T13:22:44+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T13:22:46+0200] Commit is in HEAD with `passes:true` for US-169.
+[2026-05-13T13:22:51+0200] Now I'll stop the dev server by its captured PID (per CLAUDE.md, after the commit lands):
+[2026-05-13T13:23:03+0200] ## Summary
+
+US-169 complete. Created bundled fixture course `edge-detection-basics` with two paired-image lessons demonstrating OpenCV edge detection:
+
+**Course structure**
+- `courses/edge-detection-basics/course.json` — slug, indigo accent, 2 lessons in module `m1`
+- `lessons/sobel-gradients.json` — theory → input PlotImage → Code widget with `cv2.Sobel` snippet → output PlotImage → recap
+- `lessons/canny-edges.json` — theory → input PlotImage → pipeline theory → Code widget with `cv2.Canny(img, 100, 200)` → output PlotImage → Sobel-vs-Canny table
+- `README.md` — documents the procedurally-generated assets (CC0-equivalent, no third-party licensing)
+- `assets/{input,output}-{sobel,canny}.png` — 256×256 synthetic PNGs generated via numpy + Pillow; outputs are faithful reproductions of what `cv2.Sobel` / `cv2.Canny` would produce on the inputs
+
+**Verification**
+- `pnpm typecheck` ✅
+- `pnpm test --run` ✅ (1031 passed, 57 files)
+- Ad-hoc zod parse against `CourseSchema` + `LessonSchema` ✅
+- Playwright headless run on `pnpm dev`: dashboard lists the course, US-036 search bar finds it on "edge detection", both lessons render the input image, Code widget with the right Python+OpenCV snippet, and the output edge map. Screenshots at `/tmp/us169-{dashboard,search,lesson1,lesson2,lesson1-{input,code,output},lesson2-{input,code,output}}.png`. Only console errors are `regenerate/status` 404s — expected for non-AI-generated fixture courses.
+
+**Commit:** `008d641` on `ralph/us-169` — 10 files changed; `prd.json` flips US-169 `passes` to `true`; no other story touched.
+[2026-05-13T13:23:03+0200] [result success turns=107 cost=$6.1180892500000015] ## Summary
+
+US-169 complete. Created bundled fixture course `edge-detection-basics` with two paired-image lessons demonstrating OpenCV edge detection:
+
+**Course structure**
+- `courses/edge-detection-basics/course.json` — slug, indigo accent, 2 lessons in module `m1`
+- `lessons/sobel-gradients.json` — theory → input PlotImage → Code widget with `cv2.Sobel` snippet → output PlotImage → recap
+- `lessons/canny-edges.json` — theory → input PlotImage → pipeline theory → Code widget with `cv2.Canny(img, 100, 200)` → output PlotImage → Sobel-vs-Canny table
+- `README.md` — documents the procedurally-generated assets (CC0-equivalent, no third-party licensing)
+- `assets/{input,output}-{sobel,canny}.png` — 256×256 synthetic PNGs generated via numpy + Pillow; outputs are faithful reproductions of what `cv2.Sobel` / `cv2.Canny` would produce on the inputs
+
+**Verification**
+- `pnpm typecheck` ✅
+- `pnpm test --run` ✅ (1031 passed, 57 files)
+- Ad-hoc zod parse against `CourseSchema` + `LessonSchema` ✅
+- Playwright headless run on `pnpm dev`: dashboard lists the course, US-036 search bar finds it on "edge detection", both lessons render the input image, Code widget with the right Python+OpenCV snippet, and the output edge map. Screenshots at `/tmp/us169-{dashboard,search,lesson1,lesson2,lesson1-{input,code,output},lesson2-{input,code,output}}.png`. Only console errors are `regenerate/status` 404s — expected for non-AI-generated fixture courses.
+
+**Commit:** `008d641` on `ralph/us-169` — 10 files changed; `prd.json` flips US-169 `passes` to `true`; no other story touched.
