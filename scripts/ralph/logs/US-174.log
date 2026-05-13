@@ -1,3 +1,41 @@
-[2026-05-13T18:05:46+0200] [rate_limit five_hour status=rejected]
-[2026-05-13T18:05:47+0200] You've hit your limit · resets 9pm (Europe/Warsaw)
-[2026-05-13T18:05:47+0200] [result success ERROR turns=1 cost=$0] You've hit your limit · resets 9pm (Europe/Warsaw)
+[2026-05-13T21:23:25+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T21:26:06+0200] Now I have enough context. Let me implement.
+
+**Step 1: Schema change**
+[2026-05-13T21:26:11+0200] **Step 2: client.ts**
+[2026-05-13T21:26:37+0200] **Step 3: worker.ts**
+[2026-05-13T21:26:52+0200] Now update the `runWithTests` handler to capture the PNG when requested:
+[2026-05-13T21:27:11+0200] **Step 4: CodeWidget — refactor OutputMediaBlock + wire live capture**
+[2026-05-13T21:27:28+0200] Now wire the live PNG capture into the CodeWidget. The widget needs:
+- Blob URL state with ref-based cleanup
+- Pass `captureLiveImage: true` to `runWithTests` when `outputMedia.live === true`
+- When `tests.length === 0` and `live === true`, provide a custom Run primaryAction so clicking Run triggers `runWithTests`
+[2026-05-13T21:27:35+0200] Now update `handleSubmit` to pass `captureLiveImage`, handle the returned PNG, and add a "Run" handler used when no tests exist:
+[2026-05-13T21:28:04+0200] Now wire up the custom primaryAction for no-tests+live and pass `displaySrc` to `OutputMediaBlock`:
+[2026-05-13T21:28:17+0200] Now update the JSX return that wires `primaryAction` and `outputMediaSlot`:
+[2026-05-13T21:28:37+0200] **Step 5: Unit tests.** Let me write the test for CodeWidget:
+[2026-05-13T21:29:00+0200] Now regenerate JSON schemas and run typecheck + tests:
+[2026-05-13T21:29:14+0200] Tests pass. Now typecheck:
+[2026-05-13T21:29:23+0200] Typecheck passes. Now run the full test suite to ensure nothing broke:
+[2026-05-13T21:29:35+0200] All 1051 tests pass. Now let's do the browser verification with playwright.
+[2026-05-13T21:30:39+0200] Now write the playwright test:
+[2026-05-13T21:31:12+0200] Browser test passes. Cleanup the temp test course:
+[2026-05-13T21:31:16+0200] **Final step: update prd.json, progress.txt, and commit.**
+[2026-05-13T21:31:40+0200] Now append progress.txt:
+[2026-05-13T21:32:16+0200] Now verify all changes, then commit:
+[2026-05-13T21:32:55+0200] US-174 committed (`b48e8e3`) with `passes:true`. Summary:
+
+- **Schema** (`src/widgets/Code/schema.ts`): added optional `live?: boolean` on the image variant of `CodeOutputMediaSchema`; regenerated `code.json` + `lesson.json`.
+- **Client** (`src/lib/pyodide/client.ts`): `RunWithTestsResult` gains `png?: Uint8Array`; `runWithTests(code, tests, options?)` takes an options bag with `requiresPackages?` and `captureLiveImage?`.
+- **Worker** (`src/lib/pyodide/worker.ts`): new `LIVE_PNG_PY` + `ensureLivePngCapture(py)`; after `__ai_run_tests` finishes, if `captureLiveImage===true` it runs `__ai_capture_live_png()` (matches `runWithPlotParam`'s `plt.get_fignums()[-1] → fig.savefig(..., dpi=110)` block), attaches `png` and transfers the buffer.
+- **CodeWidget** (`src/widgets/Code/CodeWidget.tsx`): `OutputMediaBlock` accepts `displaySrc` + `placeholderCaption`; widget tracks a live PNG blob URL via ref-cleanup pattern (revoked on replace + unmount); with no tests it now supplies a custom Run `primaryAction` (`data-testid="codewidget-run"`) so the live-capture path also fires from Run.
+- **Tests**: new `CodeWidget.test.tsx` with the two AC cases; `npm run typecheck` clean; full vitest suite — 1051/1051 green.
+- **Browser**: playwright verified end-to-end against a temp `us-174-live-output` lesson — placeholder → `blob:` URL after Run → reverts to placeholder after Reset. Screenshots at `/tmp/us-174-{before-run,after-run,after-reset}.png`.
+[2026-05-13T21:32:55+0200] [result success turns=89 cost=$7.84501375] US-174 committed (`b48e8e3`) with `passes:true`. Summary:
+
+- **Schema** (`src/widgets/Code/schema.ts`): added optional `live?: boolean` on the image variant of `CodeOutputMediaSchema`; regenerated `code.json` + `lesson.json`.
+- **Client** (`src/lib/pyodide/client.ts`): `RunWithTestsResult` gains `png?: Uint8Array`; `runWithTests(code, tests, options?)` takes an options bag with `requiresPackages?` and `captureLiveImage?`.
+- **Worker** (`src/lib/pyodide/worker.ts`): new `LIVE_PNG_PY` + `ensureLivePngCapture(py)`; after `__ai_run_tests` finishes, if `captureLiveImage===true` it runs `__ai_capture_live_png()` (matches `runWithPlotParam`'s `plt.get_fignums()[-1] → fig.savefig(..., dpi=110)` block), attaches `png` and transfers the buffer.
+- **CodeWidget** (`src/widgets/Code/CodeWidget.tsx`): `OutputMediaBlock` accepts `displaySrc` + `placeholderCaption`; widget tracks a live PNG blob URL via ref-cleanup pattern (revoked on replace + unmount); with no tests it now supplies a custom Run `primaryAction` (`data-testid="codewidget-run"`) so the live-capture path also fires from Run.
+- **Tests**: new `CodeWidget.test.tsx` with the two AC cases; `npm run typecheck` clean; full vitest suite — 1051/1051 green.
+- **Browser**: playwright verified end-to-end against a temp `us-174-live-output` lesson — placeholder → `blob:` URL after Run → reverts to placeholder after Reset. Screenshots at `/tmp/us-174-{before-run,after-run,after-reset}.png`.
