@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
+  CancellationCooldownError,
   ClaudeUnavailableError,
   GenerationConflictError,
   GenerationStateMissingError,
@@ -32,6 +33,9 @@ export async function POST(_req: Request, { params }: RouteCtx) {
     }
     if (err instanceof GenerationConflictError) {
       return NextResponse.json({ error: 'busy' }, { status: 409 });
+    }
+    if (err instanceof CancellationCooldownError) {
+      return NextResponse.json({ error: 'recently-cancelled' }, { status: 409 });
     }
     if (err instanceof ClaudeUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 503 });

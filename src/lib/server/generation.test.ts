@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 
 import {
+  __clearCancelCooldownForTesting,
   __getQueueForTesting,
   __resetForTesting,
   __setCoherencePassDisabledByDefault,
@@ -2342,6 +2343,8 @@ describe('resumeGeneration (US-137)', () => {
     expect(beforeResume!.lessons.find((l) => l.slug === 'three')?.status).toBe('pending');
 
     // Resume — different scripted spawn so we can count children fresh.
+    // Clear the post-cancel cooldown that would otherwise block resume.
+    __clearCancelCooldownForTesting();
     const scripted2 = makeScriptedSpawn();
     const run2 = await resumeGeneration('demo', {
       spawn: scripted2.spawn,

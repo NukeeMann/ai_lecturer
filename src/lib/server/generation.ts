@@ -17,6 +17,7 @@
 // `PREVIOUS ATTEMPT FAILED:\n<reason>` block. Concurrency is gated to 1.
 
 import {
+  ChildProcess as RealChildProcess,
   spawn as defaultSpawn,
   spawnSync,
   type ChildProcess,
@@ -281,6 +282,21 @@ export class GenerationStateMissingError extends Error {
 }
 
 /**
+ * Thrown by enqueueGeneration() and resumeGeneration() when a cancel for
+ * this slug landed within the last `CANCEL_COOLDOWN_MS`. Why: a Cancel
+ * click can race with an auto-resume path (resume banner fallback,
+ * StrictMode double-mount, stale tab) that re-fires within milliseconds —
+ * the cooldown gives that storm a chance to die down so cancel actually
+ * sticks. Route handlers map this to 409 `{ error: 'recently-cancelled' }`.
+ */
+export class CancellationCooldownError extends Error {
+  constructor(public readonly slug: string) {
+    super(`Generation for "${slug}" was cancelled recently — wait a few seconds before retrying`);
+    this.name = 'CancellationCooldownError';
+  }
+}
+
+/**
  * US-139: defensive idempotency guard for the per-lesson stage. Returns
  * `{ valid: true }` when `/courses/<slug>/lessons/<lessonSlug>.json` already
  * parses + validates against `LessonSchema` (the same schema enforced by the
@@ -431,6 +447,49 @@ let startingGeneration = false;
 let startingSlug: string | null = null;
 const runsById = new Map<string, GenerationRun>();
 let depsOverride: SpawnDeps | null = null;
+
+// Slug → ms timestamp of the most recent cancel. Used to short-circuit
+// auto-restart paths (resume banner fallback, StrictMode re-mount) that
+// would otherwise re-spawn within milliseconds of a Cancel click.
+const recentlyCancelledAt = new Map<string, number>();
+const CANCEL_COOLDOWN_MS = 5_000;
+
+function isInCancelCooldown(slug: string): boolean {
+  const ts = recentlyCancelledAt.get(slug);
+  if (ts === undefined) return false;
+  if (Date.now() - ts < CANCEL_COOLDOWN_MS) return true;
+  recentlyCancelledAt.delete(slug);
+  return false;
+}
+
+/**
+ * Kill the whole process group rooted at `child`. `spawnChild` launches with
+ * `detached: true`, which puts the child in its own session+pgid (pgid ===
+ * child.pid). Signalling `-pid` reaches every descendant claude spawned in
+ * that session — without this, SIGTERM only hits the top-level claude and
+ * its Bash/Read/etc. subprocesses keep running.
+ *
+ * The `instanceof RealChildProcess` gate is a safety net for test mocks
+ * (which subclass EventEmitter, not ChildProcess) — without it, the
+ * scripted spawn's fake pid would point `process.kill(-pid)` at a real
+ * process group on the test runner.
+ */
+function killChildTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  const pid = child.pid;
+  if (child instanceof RealChildProcess && typeof pid === 'number') {
+    try {
+      process.kill(-pid, signal);
+      return;
+    } catch {
+      /* group kill failed (race vs. exit, or non-POSIX) — fall through */
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    /* ignore */
+  }
+}
 
 // US-107 — sequential FIFO queue for course generations. When a POST arrives
 // while activeRun is still running, the new slug is appended to `queue` and
@@ -790,6 +849,11 @@ export function __setSpawnDepsForTesting(deps: SpawnDeps | null): void {
   depsOverride = deps;
 }
 
+/** Test-only: clear the post-cancel cooldown so a follow-up start/resume isn't blocked. */
+export function __clearCancelCooldownForTesting(): void {
+  recentlyCancelledAt.clear();
+}
+
 /** Test-only: drop all bookkeeping and force-kill any active child. */
 export function __resetForTesting(): void {
   if (activeRun && !activeRun.finished) {
@@ -803,6 +867,7 @@ export function __resetForTesting(): void {
   queue = [];
   queueLoaded = false;
   eventsLogRotateBytesOverride = null;
+  recentlyCancelledAt.clear();
 }
 
 function defaultIsExecutableInPath(cmd: string): boolean {
@@ -1372,6 +1437,13 @@ export async function enqueueGeneration(
 ): Promise<EnqueueResult> {
   await ensureQueueLoaded();
 
+  // Reject restart attempts within the cooldown window after a cancel. Lets
+  // explicit Cancel actually stop the pipeline even when the UI or another
+  // tab fires an idempotent /generate POST a few ms later.
+  if (isInCancelCooldown(slug)) {
+    throw new CancellationCooldownError(slug);
+  }
+
   // Idempotent attach for same-slug-already-active. Mirror startGeneration's
   // own check so callers don't have to special-case it.
   if (activeRun && !activeRun.finished && activeRun.slug === slug) {
@@ -1471,6 +1543,12 @@ export async function resumeGeneration(
   }
   if ((activeRun && !activeRun.finished) || startingGeneration) {
     throw new GenerationConflictError();
+  }
+
+  // Same cooldown gate as enqueueGeneration — blocks the resume-banner
+  // path that fires automatically after Cancel.
+  if (isInCancelCooldown(slug)) {
+    throw new CancellationCooldownError(slug);
   }
 
   const state = await readGenerationState(slug);
@@ -1592,20 +1670,15 @@ async function startGenerationInner(
     async cancel() {
       if (run.finished) return;
       cancelled = true;
+      // Record the cancel so enqueueGeneration/resumeGeneration reject
+      // restart attempts that fire automatically within the cooldown.
+      recentlyCancelledAt.set(slug, Date.now());
       const child = currentChild;
       if (!child || child.exitCode !== null) return;
-      try {
-        child.kill('SIGTERM');
-      } catch {
-        /* ignore */
-      }
+      killChildTree(child, 'SIGTERM');
       if (!killTimer) {
         killTimer = setTimeout(() => {
-          try {
-            child.kill('SIGKILL');
-          } catch {
-            /* ignore */
-          }
+          killChildTree(child, 'SIGKILL');
         }, sigkillGraceMs);
         // Don't keep the event loop alive just for the kill timer.
         if (typeof killTimer.unref === 'function') killTimer.unref();
@@ -1768,6 +1841,10 @@ async function startGenerationInner(
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: process.env,
+        // Start child in its own process group/session so killChildTree
+        // can signal -pid and reach every descendant (claude → Bash → …).
+        // Without detached, SIGTERM only hits the top-level claude.
+        detached: true,
       };
       let child: ChildProcess;
       try {
@@ -1815,18 +1892,10 @@ async function startGenerationInner(
         attemptTimer = setTimeout(() => {
           if (child.exitCode !== null) return;
           timedOut = true;
-          try {
-            child.kill('SIGTERM');
-          } catch {
-            /* ignore */
-          }
+          killChildTree(child, 'SIGTERM');
           if (!killTimer) {
             killTimer = setTimeout(() => {
-              try {
-                child.kill('SIGKILL');
-              } catch {
-                /* ignore */
-              }
+              killChildTree(child, 'SIGKILL');
             }, sigkillGraceMs);
             if (typeof killTimer.unref === 'function') killTimer.unref();
           }

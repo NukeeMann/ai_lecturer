@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { promises as fs } from 'node:fs';
 import {
+  CancellationCooldownError,
   ClaudeUnavailableError,
   GenerationConflictError,
   enqueueGeneration,
@@ -62,6 +63,9 @@ export async function POST(req: Request) {
       // US-107 flow, but the error class still exists for code paths that
       // call startGeneration directly.
       return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    if (err instanceof CancellationCooldownError) {
+      return NextResponse.json({ error: 'recently-cancelled' }, { status: 409 });
     }
     if (err instanceof ClaudeUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 503 });
