@@ -131,16 +131,13 @@ describe('Extend wizard page (US-171)', () => {
     expect(screen.getByTestId('extend-add-module')).toBeTruthy();
   });
 
-  it('shows the course title in the heading and a disabled Generate additions button', () => {
+  it('shows the course title in the heading and a disabled Generate additions button before any additions', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
     expect(screen.getByTestId('extend-page-title').textContent).toBe(
       'Extend "Test Course"',
     );
     const generate = screen.getByTestId('extend-generate') as HTMLButtonElement;
     expect(generate.disabled).toBe(true);
-    expect(generate.getAttribute('title')).toBe(
-      'Wire-up coming in next iteration',
-    );
   });
 
   it('+ Add module dialog: posts expected instruction, reflects response in tree with data-new highlight', async () => {
@@ -374,5 +371,104 @@ describe('Extend wizard page (US-171)', () => {
 
     expect(screen.queryByTestId('extend-dialog')).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Extend wizard Generate additions + progress view (US-172)', () => {
+  beforeEach(() => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  });
+
+  it('Generate additions is enabled after one addition and POSTs to /extend/apply with the current proposedSchema', async () => {
+    const extendResp = buildExtendResponseWithNewModule();
+    const applyResp = {
+      enqueuedLessonSlugs: ['m3-l1'],
+    };
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        // First call: POST /extend (Add module)
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(extendResp),
+      })
+      .mockResolvedValueOnce({
+        // Second call: POST /extend/apply
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(applyResp),
+      })
+      .mockResolvedValue({
+        // Subsequent: /generate attach + /active-run polling — harmless empties
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ active: false, queue: [] }),
+      });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<ExtendWizardClient course={TEST_COURSE} />);
+
+    // Generate is disabled when no additions exist.
+    expect(
+      (screen.getByTestId('extend-generate') as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // Add a module.
+    fireEvent.click(screen.getByTestId('extend-add-module'));
+    fireEvent.change(screen.getByTestId('extend-dialog-textarea'), {
+      target: { value: 'advanced indexing module' },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('extend-dialog-add'));
+    });
+    await screen.findByTestId('extend-module-m3');
+
+    // Now Generate is enabled.
+    const generateBtn = screen.getByTestId(
+      'extend-generate',
+    ) as HTMLButtonElement;
+    expect(generateBtn.disabled).toBe(false);
+
+    // Click Generate → POST /extend/apply with proposedSchema.
+    await act(async () => {
+      fireEvent.click(generateBtn);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('extend-progress')).not.toBeNull();
+    });
+
+    // Find the apply call.
+    const applyCall = fetchMock.mock.calls.find(
+      ([url]) => url === '/api/courses/test-course/extend/apply',
+    );
+    expect(applyCall).toBeTruthy();
+    const applyInit = applyCall![1] as RequestInit;
+    expect(applyInit.method).toBe('POST');
+    const applyBody = JSON.parse(String(applyInit.body)) as {
+      proposedSchema: Course;
+    };
+    expect(applyBody.proposedSchema.slug).toBe('test-course');
+    // The proposed schema includes the new module.
+    expect(applyBody.proposedSchema.modules.find((m) => m.id === 'm3')).toBeTruthy();
+
+    // Progress view rendered, schema tree replaced.
+    expect(screen.queryByTestId('extend-tree')).toBeNull();
+    expect(screen.getByTestId('extend-progress-lesson-m3-l1')).toBeTruthy();
+  });
+
+  it('renders read-only mode + banner when initialGenerationActive=true; +Add and Generate are gone', () => {
+    render(
+      <ExtendWizardClient
+        course={TEST_COURSE}
+        initialGenerationActive
+      />,
+    );
+    expect(screen.getByTestId('extend-readonly-banner')).toBeTruthy();
+    expect(screen.queryByTestId('extend-add-module')).toBeNull();
+    expect(screen.queryByTestId('extend-add-lesson-m1')).toBeNull();
+    const generate = screen.getByTestId('extend-generate') as HTMLButtonElement;
+    expect(generate.disabled).toBe(true);
   });
 });
