@@ -1,0 +1,28 @@
+[2026-05-13T13:33:02+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T13:34:52+0200] Now I have enough context. Let me write the new ExtendWizardClient.
+[2026-05-13T13:36:01+0200] Now let me rewrite the test file to match the new behavior.
+[2026-05-13T13:36:44+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:36:59+0200] Typecheck clean. Run tests for the page.
+[2026-05-13T13:37:04+0200] All tests pass. Now run the full suite to make sure nothing else regressed.
+[2026-05-13T13:37:13+0200] All 1040 tests pass. Now browser-test with Playwright.
+[2026-05-13T13:37:46+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:38:17+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:38:48+0200] All three steps passed: module add → lesson add (with correct refinements payload) → reset proposal. Let me verify screenshots exist.
+[2026-05-13T13:39:03+0200] Now append progress and commit.
+[2026-05-13T13:39:41+0200] [rate_limit five_hour status=allowed_warning]
+[2026-05-13T13:40:10+0200] Commit `cfa5bdf` landed with US-171 → `passes: true`. Stopping the dev server (PID 49279) is unnecessary — the orchestrator tears down the worktree — so I'll exit without killing anything.
+
+Summary:
+- Rewrote `src/app/courses/[slug]/extend/ExtendWizardClient.tsx` to drive the schema tree from backend-returned `currentProposed: Course` + `additions: { newModuleIds, newLessonIds }` state. +Add module/+Add lesson dialog clicks POST to `/api/courses/<slug>/extend` with the spec'd instruction strings and chronological refinements continuity; response replaces the tree and the new items render with `data-new="true"` + `var(--accent-soft)` + 3px accent left rail.
+- Added a `Reset proposal` button (with `confirm()` guard when additions are pending), in-flight spinner + AbortController-backed Cancel, opacity-0.6 overlay on the tree while loading, and toast-driven 422/409/500 error handling (none of which mutate state).
+- Existing US-144/145 modal untouched.
+- 9 unit tests verify fetch payload (instruction + refinements), highlights via `data-new` and `borderLeftWidth === '3px'`, 422/409 error paths, Reset flow.
+- `pnpm typecheck` ✅ ; `pnpm test --run` ✅ (1040/1040). Playwright headless run with `ctx.route` mocks captured `/tmp/us171-{01-new-module,02-new-lesson,03-reset}.png` — all three AC scenarios pass; second POST body confirmed to include the first instruction as a `refinements[]` entry.
+[2026-05-13T13:40:10+0200] [result success turns=54 cost=$3.8104915] Commit `cfa5bdf` landed with US-171 → `passes: true`. Stopping the dev server (PID 49279) is unnecessary — the orchestrator tears down the worktree — so I'll exit without killing anything.
+
+Summary:
+- Rewrote `src/app/courses/[slug]/extend/ExtendWizardClient.tsx` to drive the schema tree from backend-returned `currentProposed: Course` + `additions: { newModuleIds, newLessonIds }` state. +Add module/+Add lesson dialog clicks POST to `/api/courses/<slug>/extend` with the spec'd instruction strings and chronological refinements continuity; response replaces the tree and the new items render with `data-new="true"` + `var(--accent-soft)` + 3px accent left rail.
+- Added a `Reset proposal` button (with `confirm()` guard when additions are pending), in-flight spinner + AbortController-backed Cancel, opacity-0.6 overlay on the tree while loading, and toast-driven 422/409/500 error handling (none of which mutate state).
+- Existing US-144/145 modal untouched.
+- 9 unit tests verify fetch payload (instruction + refinements), highlights via `data-new` and `borderLeftWidth === '3px'`, 422/409 error paths, Reset flow.
+- `pnpm typecheck` ✅ ; `pnpm test --run` ✅ (1040/1040). Playwright headless run with `ctx.route` mocks captured `/tmp/us171-{01-new-module,02-new-lesson,03-reset}.png` — all three AC scenarios pass; second POST body confirmed to include the first instruction as a `refinements[]` entry.
