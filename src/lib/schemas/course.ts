@@ -14,6 +14,7 @@ export const LessonRefSchema = z.object({
   slug: z.string(),
   title: z.string(),
   estimatedMinutes: z.number().int().positive(),
+  summary: z.string().optional(),
 });
 
 export type LessonRef = z.infer<typeof LessonRefSchema>;

@@ -73,6 +73,7 @@ Write to `/courses/<slug>/course.json` and validate against `CourseSchema` (`src
           slug: "<lesson-slug>", // derived via slugify() from lesson title
           title: "...",
           estimatedMinutes: 12,
+          summary: "...",        // 1-line lesson summary (~100-200 chars)
         },
         ...
       ],
@@ -85,6 +86,8 @@ Write to `/courses/<slug>/course.json` and validate against `CourseSchema` (`src
 ```
 
 **Lesson slug derivation:** lowercase, replace whitespace with `-`, strip non `[a-z0-9-]`, collapse repeated `-`. Same rule the webapp uses in `src/lib/server/paths.ts → slugify()`.
+
+**Lesson summary:** For each lesson, emit a `summary` field (string, ~100–200 chars, one sentence) describing what the lesson covers. This surfaces in the Extend wizard and course dashboard.
 
 **Sizing rules:**
 
@@ -142,8 +145,8 @@ If you did NOT rename any lesson, skip this step.
       "title": "Gradients in images",
       "summary": "What it means to take a derivative of an image and which kernels approximate that.",
       "lessons": [
-        { "slug": "what-is-an-image-gradient", "title": "What is an image gradient?", "estimatedMinutes": 10 },
-        { "slug": "sobel-and-prewitt-operators", "title": "Sobel and Prewitt operators", "estimatedMinutes": 12 }
+        { "slug": "what-is-an-image-gradient", "title": "What is an image gradient?", "estimatedMinutes": 10, "summary": "Defines the image gradient as a 2D derivative and shows how it highlights regions of rapid intensity change." },
+        { "slug": "sobel-and-prewitt-operators", "title": "Sobel and Prewitt operators", "estimatedMinutes": 12, "summary": "Introduces two classic 3x3 convolution kernels that approximate horizontal and vertical image derivatives." }
       ]
     },
     {
@@ -151,8 +154,8 @@ If you did NOT rename any lesson, skip this step.
       "title": "From gradients to edges",
       "summary": "Turning a gradient map into a clean edge map; the full Canny pipeline.",
       "lessons": [
-        { "slug": "non-maximum-suppression-and-thresholding", "title": "Non-maximum suppression and thresholding", "estimatedMinutes": 12 },
-        { "slug": "the-canny-edge-detector", "title": "The Canny edge detector", "estimatedMinutes": 15 }
+        { "slug": "non-maximum-suppression-and-thresholding", "title": "Non-maximum suppression and thresholding", "estimatedMinutes": 12, "summary": "Thins thick gradient ridges to single-pixel edges and uses double thresholds with hysteresis to keep only strong, connected edges." },
+        { "slug": "the-canny-edge-detector", "title": "The Canny edge detector", "estimatedMinutes": 15, "summary": "Walks through Canny's full pipeline: smoothing, gradient, non-max suppression, and hysteresis thresholding." }
       ]
     }
   ],
