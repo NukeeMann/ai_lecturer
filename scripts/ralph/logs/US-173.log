@@ -1,0 +1,35 @@
+[2026-05-13T17:46:06+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T17:47:51+0200] Now update the run and runWithTests handlers to invoke ensureCv2Shim when requested.
+[2026-05-13T17:48:05+0200] Now update client.ts to forward requiresPackages:
+[2026-05-13T17:48:22+0200] Now update the schema:
+[2026-05-13T17:50:31+0200] Now update progress.txt's Codebase Patterns section:
+[2026-05-13T17:50:59+0200] Typecheck passes. Now run tests:
+[2026-05-13T17:51:09+0200] All 6 tests pass. Now run the full test suite to make sure nothing regressed:
+[2026-05-13T17:51:19+0200] All 1049 tests pass. Now run lint:
+[2026-05-13T17:51:41+0200] My changes have no lint errors. Now check the existing widgets/schema build:
+[2026-05-13T17:52:09+0200] Now append a progress entry to progress.txt:
+[2026-05-13T17:52:32+0200] Now stage and commit:
+[2026-05-13T17:53:09+0200] US-173 committed. `passes: true` is in `scripts/ralph/prd.json` at line 3776.
+
+What landed in the commit:
+- `scripts/pyodide/cv2_shim.py` — canonical shim source (imread/imwrite/Sobel/Canny + IMREAD_GRAYSCALE/IMREAD_COLOR/CV_8U/CV_64F over scipy.ndimage + skimage; rebinds `sys.modules['cv2']`).
+- `src/lib/pyodide/worker.ts` — `CV2_SHIM_PY` inlined, `ensureCv2Shim(py)`, `requiresPackages` plumbed into `run` + `runWithTests`.
+- `src/lib/pyodide/client.ts` — `run` / `runWithTests` accept optional `requiresPackages?: string[]`.
+- `src/widgets/Code/schema.ts` — `requiresPackages?: string[]` field + JSDoc pointer; `code.json` / `lesson.json` regenerated via `build:schemas`.
+- `src/lib/pyodide/runner.test.ts` — two new tests (Sobel float64 shape, Canny binary uint8); all 1049 tests pass.
+- `src/lib/pyodide/CLAUDE.md` — new doc.
+- `scripts/ralph/progress.txt` — Codebase Patterns bullet + per-story log entry.
+
+Typecheck clean; full vitest suite green.
+[2026-05-13T17:53:09+0200] [result success turns=63 cost=$4.348394000000001] US-173 committed. `passes: true` is in `scripts/ralph/prd.json` at line 3776.
+
+What landed in the commit:
+- `scripts/pyodide/cv2_shim.py` — canonical shim source (imread/imwrite/Sobel/Canny + IMREAD_GRAYSCALE/IMREAD_COLOR/CV_8U/CV_64F over scipy.ndimage + skimage; rebinds `sys.modules['cv2']`).
+- `src/lib/pyodide/worker.ts` — `CV2_SHIM_PY` inlined, `ensureCv2Shim(py)`, `requiresPackages` plumbed into `run` + `runWithTests`.
+- `src/lib/pyodide/client.ts` — `run` / `runWithTests` accept optional `requiresPackages?: string[]`.
+- `src/widgets/Code/schema.ts` — `requiresPackages?: string[]` field + JSDoc pointer; `code.json` / `lesson.json` regenerated via `build:schemas`.
+- `src/lib/pyodide/runner.test.ts` — two new tests (Sobel float64 shape, Canny binary uint8); all 1049 tests pass.
+- `src/lib/pyodide/CLAUDE.md` — new doc.
+- `scripts/ralph/progress.txt` — Codebase Patterns bullet + per-story log entry.
+
+Typecheck clean; full vitest suite green.
