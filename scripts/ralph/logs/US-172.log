@@ -1,3 +1,43 @@
-[2026-05-13T13:48:58+0200] [rate_limit five_hour status=rejected]
-[2026-05-13T13:48:58+0200] You've hit your limit · resets 3:50pm (Europe/Warsaw)
-[2026-05-13T13:48:58+0200] [result success ERROR turns=1 cost=$0] You've hit your limit · resets 3:50pm (Europe/Warsaw)
+[2026-05-13T16:02:13+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T16:03:17+0200] Now let me find the relevant existing files: CourseMenu, the existing modal, the apply endpoint, and the GenerationLog component.
+[2026-05-13T16:04:57+0200] Now let me find the apply route, and the create-course progress UI:
+[2026-05-13T16:05:14+0200] Now find the create-course generation log component:
+[2026-05-13T16:06:02+0200] Now I understand the structure. The Stage5Generate is too complex/coupled to extract. For the simpler view here, I'll build a self-contained progress view that polls /api/courses/<slug>/active-run or queries the SSE stream. Let me check the SSE stream interface:
+[2026-05-13T16:07:47+0200] Now let me look at the dashboard page for the menu placement at line 1940 to understand the props structure:
+[2026-05-13T16:08:09+0200] Good. Now let me start implementing. First, update the dashboard to navigate to the wizard:
+[2026-05-13T16:08:25+0200] Now I'll make the modifications. Step 1: remove `extendTarget`, `setExtendTarget`, `handleExtendApplied`, ExtendDialog functions, ExtendChatMessage/Phase types, ExtendResponse import. And change `handleRequestExtend` to navigate.
+[2026-05-13T16:08:35+0200] Now update `handleRequestExtend` to navigate and remove `handleExtendApplied`:
+[2026-05-13T16:08:44+0200] Now remove the modal render at line ~2026:
+[2026-05-13T16:08:55+0200] Now remove the modal component definitions (ExtendCourseDialog, ExtendInputForm, ExtendPreview, ExtendChatPanel). Let me look at the bounds:
+[2026-05-13T16:09:02+0200] Now find end of file:
+[2026-05-13T16:09:12+0200] Now I'll delete lines 2171–3032 (everything from the comment block through end-of-ExtendChatPanel). Let me use a Bash sed-based approach via the Edit tool by replacing the unique start marker and capturing through end:
+[2026-05-13T16:09:27+0200] Now let me check what's left to make sure nothing dangling and run a typecheck pass:
+[2026-05-13T16:09:40+0200] Now let me update the wizard server page to also detect active generation:
+[2026-05-13T16:09:49+0200] Now let me rewrite the ExtendWizardClient.tsx with the new Generate additions wiring + progress view:
+[2026-05-13T16:11:37+0200] Now let me run typecheck to catch any issues:
+[2026-05-13T16:11:54+0200] Now let me update the existing tests for the wizard. The old tests still use the legacy semantics for the Generate button; let me update them:
+[2026-05-13T16:12:52+0200] All 11 wizard tests pass. Now let me also add tests proving (a) the dashboard's Extend menu item navigates rather than opening a modal, and (b) the modal component is not present. Let me check whether page.tsx has any tests we need to add. First, let me check if there are simple existing tests where I could add a new one:
+[2026-05-13T16:13:04+0200] Now let me add a static-source test that proves the modal symbols are gone from page.tsx + that the menu's Extend onClick triggers navigation:
+[2026-05-13T16:13:22+0200] All passing. Now let me run the full test suite:
+[2026-05-13T16:13:43+0200] All 1047 tests pass. Now let me run typecheck and then the playwright verification:
+[2026-05-13T16:13:52+0200] Now playwright. Let me start a dev server and verify:
+[2026-05-13T16:14:10+0200] Now let me write the playwright test. I'll verify: navigate from dashboard → click Extend three-dots → URL changes to /extend (no modal). Then add module + lesson, click Generate additions, mock /apply, mock active-run with progress, click Done.
+[2026-05-13T16:15:54+0200] Now append to progress.txt:
+[2026-05-13T16:16:34+0200] Now let me commit. First, let me kill the dev server:
+[2026-05-13T16:17:03+0200] Commit landed. Now kill the dev server by its specific PID:
+[2026-05-13T16:17:19+0200] US-172 is done. Net diff: 7 files, +746/−1018 (the modal removal alone cuts ~867 lines from page.tsx). Commit `cc2fb9a` flips US-172 to `passes:true`.
+
+Summary of what shipped:
+- **Wizard**: `Generate additions` POSTs `/extend/apply`, then the schema tree is replaced inline by a progress grid that polls `/api/courses/active-run` for per-lesson status. `Done — open course` links to the first new lesson once everything is `done`; Cancel calls `DELETE /generate?id=<id>` and switches to "Cancelled — partial additions remain".
+- **Read-only mode**: server page calls `getActiveRunSummary()`; if the same slug is active, the wizard hides every +Add and shows a banner.
+- **Three-dots menu**: `handleRequestExtend` now `router.push`es to `/courses/<slug>/extend`; the `course-menu-extend-<slug>` testid is preserved.
+- **Modal removed**: all of `ExtendCourseDialog`/`ExtendInputForm`/`ExtendPreview`/`ExtendChatPanel`, the `extendTarget` state, the `<ExtendCourseDialog>` JSX, and the `ExtendResponse` import are gone from `src/app/page.tsx`.
+- **Tests**: 9 prior US-171 wizard tests + 2 new US-172 tests (Generate wires to /apply + progress view; read-only mode) + 5 static-source assertions in `extendModalRemoval.test.ts`. Full suite: 1047 passed. Playwright headless verified the full dashboard → wizard → progress → Done flow.
+[2026-05-13T16:17:19+0200] [result success turns=93 cost=$9.410780749999999] US-172 is done. Net diff: 7 files, +746/−1018 (the modal removal alone cuts ~867 lines from page.tsx). Commit `cc2fb9a` flips US-172 to `passes:true`.
+
+Summary of what shipped:
+- **Wizard**: `Generate additions` POSTs `/extend/apply`, then the schema tree is replaced inline by a progress grid that polls `/api/courses/active-run` for per-lesson status. `Done — open course` links to the first new lesson once everything is `done`; Cancel calls `DELETE /generate?id=<id>` and switches to "Cancelled — partial additions remain".
+- **Read-only mode**: server page calls `getActiveRunSummary()`; if the same slug is active, the wizard hides every +Add and shows a banner.
+- **Three-dots menu**: `handleRequestExtend` now `router.push`es to `/courses/<slug>/extend`; the `course-menu-extend-<slug>` testid is preserved.
+- **Modal removed**: all of `ExtendCourseDialog`/`ExtendInputForm`/`ExtendPreview`/`ExtendChatPanel`, the `extendTarget` state, the `<ExtendCourseDialog>` JSX, and the `ExtendResponse` import are gone from `src/app/page.tsx`.
+- **Tests**: 9 prior US-171 wizard tests + 2 new US-172 tests (Generate wires to /apply + progress view; read-only mode) + 5 static-source assertions in `extendModalRemoval.test.ts`. Full suite: 1047 passed. Playwright headless verified the full dashboard → wizard → progress → Done flow.
