@@ -1,0 +1,35 @@
+[2026-05-13T13:23:34+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T13:25:27+0200] Let me check the Stage4 dialog header structure and the existing app shell layout.
+[2026-05-13T13:27:25+0200] Now the client wizard component:
+[2026-05-13T13:28:23+0200] Now the unit test:
+[2026-05-13T13:28:53+0200] Typecheck passes. Now tests:
+[2026-05-13T13:29:00+0200] All 6 tests pass. Now full test run to ensure nothing broke:
+[2026-05-13T13:29:09+0200] Unrelated flake (ENOTEMPTY in tmp), same kind seen in prior progress. Retry:
+[2026-05-13T13:29:32+0200] All 1037 tests pass. Now mark todos and move to playwright:
+[2026-05-13T13:30:50+0200] All playwright checks pass — 2 +Add lesson buttons, 1 +Add module, dialog opens with correct heading, pending placeholders render, Discard removes the right one, Generate button disabled with correct tooltip, zero console errors.
+[2026-05-13T13:31:01+0200] The UI matches the AC: pending placeholder cards have dashed accent borders and accent-soft backgrounds; pending lessons live inside their module's list; pending module is below the modules; Discard links work; status bar shows "2 pending additions".
+
+Now update prd, append progress, commit.
+[2026-05-13T13:31:33+0200] Append to progress log:
+[2026-05-13T13:32:36+0200] US-170 done. Commit `115ffa3` is on `ralph/us-170` with `passes: true`.
+
+**Summary**
+- New route `src/app/courses/[slug]/extend/page.tsx` (server, reads course via `readCourse()`, `notFound()` on missing/bad slug) → `ExtendWizardClient.tsx` (`'use client'`, all the tree + dialog state).
+- Tree mirrors the create-page Stage4 module-card layout (header + lesson rows + module/lesson meta).
+- `extend-add-lesson-<moduleId>` buttons under each module, single `extend-add-module` button at the bottom.
+- Dialog uses the codebase's existing `role="dialog"` + backdrop pattern (no shadcn/ui in this repo — same approach as `ShortcutsModal` and the in-page `ExtendCourseDialog`); titles, label text, placeholders, Cancel/Add all match the AC verbatim.
+- `pendingAdditions: Array<{kind, moduleId?, instruction}>` exactly per spec; pending lessons render inside their module, pending modules render below the last module; styling uses `var(--accent-soft, var(--accent-subtle))` + `1px dashed var(--accent)`; each placeholder has an inline `Discard` button.
+- Disabled `Generate additions` button bottom-right with `title="Wire-up coming in next iteration"`.
+- 6 vitest+RTL tests in `page.test.tsx` cover button counts, both dialog flows, Discard removal, Cancel-without-append, Add-disabled-on-empty.
+- Typecheck ✅; full test suite 1037/1037 ✅; playwright headless verified all 6 acceptance screenshots in `/tmp/us170-1-initial.png` … `/tmp/us170-6-after-discard.png` with zero console errors.
+[2026-05-13T13:32:36+0200] [result success turns=84 cost=$5.55143125] US-170 done. Commit `115ffa3` is on `ralph/us-170` with `passes: true`.
+
+**Summary**
+- New route `src/app/courses/[slug]/extend/page.tsx` (server, reads course via `readCourse()`, `notFound()` on missing/bad slug) → `ExtendWizardClient.tsx` (`'use client'`, all the tree + dialog state).
+- Tree mirrors the create-page Stage4 module-card layout (header + lesson rows + module/lesson meta).
+- `extend-add-lesson-<moduleId>` buttons under each module, single `extend-add-module` button at the bottom.
+- Dialog uses the codebase's existing `role="dialog"` + backdrop pattern (no shadcn/ui in this repo — same approach as `ShortcutsModal` and the in-page `ExtendCourseDialog`); titles, label text, placeholders, Cancel/Add all match the AC verbatim.
+- `pendingAdditions: Array<{kind, moduleId?, instruction}>` exactly per spec; pending lessons render inside their module, pending modules render below the last module; styling uses `var(--accent-soft, var(--accent-subtle))` + `1px dashed var(--accent)`; each placeholder has an inline `Discard` button.
+- Disabled `Generate additions` button bottom-right with `title="Wire-up coming in next iteration"`.
+- 6 vitest+RTL tests in `page.test.tsx` cover button counts, both dialog flows, Discard removal, Cancel-without-append, Add-disabled-on-empty.
+- Typecheck ✅; full test suite 1037/1037 ✅; playwright headless verified all 6 acceptance screenshots in `/tmp/us170-1-initial.png` … `/tmp/us170-6-after-discard.png` with zero console errors.
