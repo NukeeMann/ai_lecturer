@@ -100,12 +100,61 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
     window.removeEventListener(SETTINGS_CHANGE_EVENT, handler);
   });
 
-  it('clicking a play icon POSTs /api/tts with the matching voice and wires the blob into an audio element', async () => {
-    const audioBlob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'audio/wav' });
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
-      void _init;
+  it('clicking a play icon points an <audio> element at /voice-samples/<voice>.mp3 (no /api/tts call)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : (input as Request).url;
-      if (url.startsWith('http') && url.endsWith('/api/tts')) {
+      throw new Error(`Unexpected fetch on static-sample path: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createdAudioEls: HTMLAudioElement[] = [];
+    const originalCreate = document.createElement.bind(document);
+    const createSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tag: string, options?: ElementCreationOptions) => {
+        const el = originalCreate(tag, options);
+        if (tag.toLowerCase() === 'audio') {
+          const audioEl = el as HTMLAudioElement;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (audioEl as any).play = vi.fn(async () => {
+            /* no-op */
+          });
+          createdAudioEls.push(audioEl);
+        }
+        return el;
+      });
+
+    render(<SettingsMenu />);
+    fireEvent.click(screen.getByTestId('settings-menu-trigger'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('settings-voice-play-en-male-neutral'));
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // The static-MP3 path makes no /api/tts request.
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    expect(createdAudioEls.length).toBeGreaterThanOrEqual(1);
+    const audioEl = createdAudioEls[createdAudioEls.length - 1]!;
+    expect(audioEl.getAttribute('data-voice')).toBe('en-male-neutral');
+    expect(audioEl.getAttribute('data-source')).toBe('static');
+    expect(audioEl.src).toMatch(
+      /\/voice-samples\/en-male-neutral\.mp3$/,
+    );
+
+    createSpy.mockRestore();
+  });
+
+  it('falls back to /api/tts/preview when the static sample errors', async () => {
+    const audioBlob = new Blob([new Uint8Array([1, 2, 3, 4])], {
+      type: 'audio/wav',
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      if (url.includes('/api/tts/preview')) {
         return new Response(
           JSON.stringify({
             audioPath: 'tts-cache/stub.wav',
@@ -115,21 +164,11 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         );
       }
-      if (url.endsWith('/api/tts') || url.includes('/api/tts')) {
-        if (url.includes('/api/tts/audio/')) {
-          return new Response(audioBlob, {
-            status: 200,
-            headers: { 'Content-Type': 'audio/wav' },
-          });
-        }
-        return new Response(
-          JSON.stringify({
-            audioPath: 'tts-cache/stub.wav',
-            durationMs: 1000,
-            cached: false,
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        );
+      if (url.includes('/api/tts/audio/')) {
+        return new Response(audioBlob, {
+          status: 200,
+          headers: { 'Content-Type': 'audio/wav' },
+        });
       }
       throw new Error(`Unexpected fetch: ${url}`);
     });
@@ -143,7 +182,6 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
         const el = originalCreate(tag, options);
         if (tag.toLowerCase() === 'audio') {
           const audioEl = el as HTMLAudioElement;
-          // jsdom doesn't implement play(); stub it so onVoicePreview can await it.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (audioEl as any).play = vi.fn(async () => {
             /* no-op */
@@ -153,64 +191,54 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
         return el;
       });
 
-    const objectUrls: string[] = [];
     const createObjectSpy = vi
       .spyOn(URL, 'createObjectURL')
-      .mockImplementation((b: Blob | MediaSource) => {
-        const u = `blob:mock://${objectUrls.length}`;
-        objectUrls.push(u);
-        void b;
-        return u;
-      });
+      .mockImplementation(() => 'blob:mock://0');
     const revokeSpy = vi
       .spyOn(URL, 'revokeObjectURL')
       .mockImplementation(() => {
         /* no-op */
       });
 
+    const warnSpy = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => {
+        /* swallow */
+      });
+
     render(<SettingsMenu />);
     fireEvent.click(screen.getByTestId('settings-menu-trigger'));
 
     await act(async () => {
-      fireEvent.click(screen.getByTestId('settings-voice-play-en-male-neutral'));
+      fireEvent.click(screen.getByTestId('settings-voice-play-en-female-warm'));
     });
-
-    // Resolve any pending microtasks.
+    expect(createdAudioEls.length).toBeGreaterThanOrEqual(1);
+    const staticEl = createdAudioEls[0]!;
+    // Fire the error event so onVoicePreview triggers the fallback.
+    await act(async () => {
+      staticEl.dispatchEvent(new Event('error'));
+    });
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
+      await Promise.resolve();
     });
 
-    // /api/tts was called with the matching voice.
-    const ttsCall = fetchMock.mock.calls.find((args) => {
+    const previewCall = fetchMock.mock.calls.find((args) => {
       const u = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-      return u.endsWith('/api/tts');
+      return u.includes('/api/tts/preview');
     });
-    expect(ttsCall).toBeDefined();
-    const init = ttsCall![1] as RequestInit | undefined;
-    expect(init?.method).toBe('POST');
-    const body = JSON.parse(String(init?.body ?? '{}')) as {
-      voice?: string;
-      text?: string;
-    };
-    expect(body.voice).toBe('en-male-neutral');
-    expect(body.text).toBe("Hi there, let's learn something new");
+    expect(previewCall).toBeDefined();
+    expect(warnSpy).toHaveBeenCalled();
 
-    // Audio fetch is the second request.
-    const audioCall = fetchMock.mock.calls.find((args) => {
-      const u = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-      return u.includes('/api/tts/audio/');
-    });
-    expect(audioCall).toBeDefined();
-
-    // An <audio> element was created and pointed at the object URL.
-    expect(createdAudioEls.length).toBeGreaterThanOrEqual(1);
-    const audioEl = createdAudioEls[createdAudioEls.length - 1]!;
-    expect(audioEl.src).toMatch(/^blob:mock:/);
-    expect(audioEl.getAttribute('data-voice')).toBe('en-male-neutral');
+    const fallbackEl = createdAudioEls.find(
+      (el) => el.getAttribute('data-source') === 'fallback',
+    );
+    expect(fallbackEl).toBeDefined();
 
     createSpy.mockRestore();
     createObjectSpy.mockRestore();
     revokeSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 });
