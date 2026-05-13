@@ -106,8 +106,9 @@ TTS audio is cached under `~/.ai-lecturer/tts-cache/<content-hash>.wav` so repea
 
 ### Optional env vars
 
-- `AI_LECTURER_TTS_VOICE_FEMALE` — XTTS speaker ID used for `voice: 'en-female'` (default: `Ana Florence`).
-- `AI_LECTURER_TTS_VOICE_MALE` — XTTS speaker ID used for `voice: 'en-male'` (default: `Damien Black`).
+- `AI_LECTURER_TTS_VOICE_EN_FEMALE_WARM` — XTTS speaker ID used for `voice: 'en-female-warm'` (default: `Ana Florence`).
+- `AI_LECTURER_TTS_VOICE_EN_MALE_NEUTRAL` — XTTS speaker ID used for `voice: 'en-male-neutral'` (default: `Damien Black`).
+- `AI_LECTURER_TTS_VOICE_EN_FEMALE_BRIGHT` — XTTS speaker ID used for `voice: 'en-female-bright'` (default: `Tammie Ema`).
 - `AI_LECTURER_TTS_BIN` — full path to the Coqui `tts` binary (default: `scripts/.venv/coqui/bin/tts`).
 - `AI_LECTURER_STT_BIN` — full path to the whisper.cpp binary (default: `scripts/.bin/whisper.cpp/main` or `…/build/bin/whisper-cli`).
 - `AI_LECTURER_STT_MODEL` — full path to the ggml whisper model (default: `scripts/.bin/whisper.cpp/models/ggml-base.en.bin`).

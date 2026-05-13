@@ -8,13 +8,15 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { Settings as SettingsIcon } from 'lucide-react';
+import { Loader2, Play, Settings as SettingsIcon } from 'lucide-react';
 
 import {
   isMod,
   useKeyboardShortcuts,
   type KeyboardShortcut,
 } from '@/lib/hooks/useKeyboardShortcuts';
+import { readTtsVoice, writeTtsVoice } from '@/lib/client/ttsVoice';
+import { DEFAULT_TTS_VOICE, type TtsVoice } from '@/lib/schemas/tts';
 
 type ThemePref = 'light' | 'dark' | 'sunset' | 'system';
 type Density = 'compact' | 'comfortable' | 'spacious';
@@ -207,6 +209,17 @@ const ACCENT_OPTIONS: { value: Accent; label: string }[] = [
   { value: 'emerald', label: 'Emerald' },
 ];
 
+// US-166: three Coqui XTTS v2 voices the user can switch between. The
+// underlying speaker IDs (and per-voice env-var overrides) live in
+// `src/lib/server/tts.ts` — this list only carries display labels.
+export const VOICE_OPTIONS: { value: TtsVoice; label: string }[] = [
+  { value: 'en-female-warm', label: 'Warm' },
+  { value: 'en-male-neutral', label: 'Neutral' },
+  { value: 'en-female-bright', label: 'Bright' },
+];
+
+export const TTS_VOICE_SAMPLE_TEXT = "Hi there, let's learn something new";
+
 const triggerBtnStyle: CSSProperties = {
   width: 28,
   height: 28,
@@ -279,6 +292,62 @@ const optionSelectedStyle: CSSProperties = {
   fontWeight: 500,
 };
 
+const voicePillRowStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  gap: 6,
+};
+
+const voicePillBaseStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '4px 6px 4px 10px',
+  borderRadius: 'var(--radius-full, 999px)',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border-strong)',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  fontFamily: 'inherit',
+  fontSize: 'var(--fs-sm)',
+  cursor: 'pointer',
+};
+
+const voicePillSelectedStyle: CSSProperties = {
+  ...voicePillBaseStyle,
+  background: 'var(--bg-subtle)',
+  color: 'var(--text)',
+  fontWeight: 500,
+};
+
+const voicePlayBtnStyle: CSSProperties = {
+  width: 18,
+  height: 18,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--text-tertiary)',
+  borderRadius: 'var(--radius-full, 999px)',
+  cursor: 'pointer',
+  padding: 0,
+};
+
+const voiceSpinnerStyle: CSSProperties = {
+  animation: 'settings-voice-spin 1s linear infinite',
+};
+
+const voiceErrorStyle: CSSProperties = {
+  marginTop: 4,
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--danger)',
+};
+
+const voiceSpinKeyframes = `@keyframes settings-voice-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`;
+
 export interface SettingsMenuProps {
   // Course context for the per-course Accent picker. When `courseSlug` is
   // provided, the Accent group is rendered. The selected value is the
@@ -304,7 +373,14 @@ export function SettingsMenu({
   const [accent, setAccent] = useState<Accent>(
     courseDefaultAccent ?? 'default',
   );
+  const [voice, setVoice] = useState<TtsVoice>(DEFAULT_TTS_VOICE);
+  const [previewingVoice, setPreviewingVoice] = useState<TtsVoice | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  const previewCacheRef = useRef<Map<TtsVoice, string>>(new Map());
+  const previewErrorTimerRef = useRef<number | null>(null);
 
   // Initial sync from localStorage. The boot script in layout.tsx applies the
   // attributes to <html> before paint; here we only mirror those values into
@@ -320,6 +396,8 @@ export function SettingsMenu({
     setTextScale(readTextScale());
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSunsetVariant(readSunsetVariant());
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVoice(readTtsVoice());
   }, []);
 
   // Resolve the visible accent selection from override + course default. Runs
@@ -341,6 +419,7 @@ export function SettingsMenu({
       setFont(readFont());
       setTextScale(readTextScale());
       setSunsetVariant(readSunsetVariant());
+      setVoice(readTtsVoice());
       if (courseSlug) {
         const override = readAccentOverride(courseSlug);
         setAccent(override ?? courseDefaultAccent ?? 'default');
@@ -472,6 +551,140 @@ export function SettingsMenu({
     [courseSlug],
   );
 
+  const stopActivePreview = useCallback(() => {
+    const el = previewAudioRef.current;
+    if (el) {
+      try {
+        el.pause();
+      } catch {
+        /* ignore */
+      }
+      try {
+        el.remove();
+      } catch {
+        /* ignore */
+      }
+      previewAudioRef.current = null;
+    }
+    const url = previewUrlRef.current;
+    if (url) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        /* ignore */
+      }
+      previewUrlRef.current = null;
+    }
+  }, []);
+
+  const onVoiceSelect = useCallback((next: TtsVoice) => {
+    writeTtsVoice(next);
+    setVoice(next);
+    window.dispatchEvent(new Event(SETTINGS_CHANGE_EVENT));
+  }, []);
+
+  const showPreviewError = useCallback(() => {
+    setPreviewError('Preview failed');
+    if (previewErrorTimerRef.current !== null) {
+      window.clearTimeout(previewErrorTimerRef.current);
+    }
+    previewErrorTimerRef.current = window.setTimeout(() => {
+      setPreviewError(null);
+      previewErrorTimerRef.current = null;
+    }, 3000);
+  }, []);
+
+  const onVoicePreview = useCallback(
+    async (target: TtsVoice) => {
+      stopActivePreview();
+      setPreviewError(null);
+      setPreviewingVoice(target);
+      try {
+        let url = previewCacheRef.current.get(target) ?? null;
+        if (!url) {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: TTS_VOICE_SAMPLE_TEXT,
+              voice: target,
+            }),
+          });
+          if (!res.ok) {
+            showPreviewError();
+            return;
+          }
+          const payload = (await res.json()) as { audioPath?: string };
+          const audioPath = payload.audioPath ?? '';
+          if (!audioPath) {
+            showPreviewError();
+            return;
+          }
+          const trimmed = audioPath.replace(/^\/+/, '');
+          const segments = trimmed
+            .split('/')
+            .filter((s) => s.length > 0)
+            .map((s) => encodeURIComponent(s));
+          const audioUrl = `/api/tts/audio/${segments.join('/')}`;
+          const audioRes = await fetch(audioUrl);
+          if (!audioRes.ok) {
+            showPreviewError();
+            return;
+          }
+          const blob = await audioRes.blob();
+          url = URL.createObjectURL(blob);
+          previewCacheRef.current.set(target, url);
+        }
+        const audioEl = document.createElement('audio');
+        audioEl.setAttribute('data-testid', 'settings-voice-preview-audio');
+        audioEl.setAttribute('data-voice', target);
+        audioEl.src = url;
+        audioEl.autoplay = true;
+        audioEl.hidden = true;
+        audioEl.style.display = 'none';
+        audioEl.addEventListener('ended', () => {
+          if (previewAudioRef.current === audioEl) {
+            stopActivePreview();
+            setPreviewingVoice(null);
+          }
+        });
+        document.body.appendChild(audioEl);
+        previewAudioRef.current = audioEl;
+        previewUrlRef.current = url;
+        try {
+          await audioEl.play();
+        } catch {
+          /* autoplay policy may block — user can click again */
+        }
+      } catch {
+        showPreviewError();
+      } finally {
+        setPreviewingVoice((cur) => (cur === target ? null : cur));
+      }
+    },
+    [showPreviewError, stopActivePreview],
+  );
+
+  // Tear down any inline preview audio + cached blob URLs on unmount.
+  useEffect(() => {
+    const cache = previewCacheRef.current;
+    return () => {
+      stopActivePreview();
+      for (const url of cache.values()) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          /* ignore */
+        }
+      }
+      cache.clear();
+      if (previewErrorTimerRef.current !== null) {
+        window.clearTimeout(previewErrorTimerRef.current);
+        previewErrorTimerRef.current = null;
+      }
+    };
+  }, [stopActivePreview]);
+
   return (
     <div
       ref={containerRef}
@@ -539,9 +752,101 @@ export function SettingsMenu({
               testIdPrefix="settings-accent"
             />
           ) : null}
+          <VoiceGroup
+            value={voice}
+            previewingVoice={previewingVoice}
+            previewError={previewError}
+            onSelect={onVoiceSelect}
+            onPreview={onVoicePreview}
+          />
         </div>
       ) : null}
     </div>
+  );
+}
+
+interface VoiceGroupProps {
+  value: TtsVoice;
+  previewingVoice: TtsVoice | null;
+  previewError: string | null;
+  onSelect: (v: TtsVoice) => void;
+  onPreview: (v: TtsVoice) => void;
+}
+
+function VoiceGroup({
+  value,
+  previewingVoice,
+  previewError,
+  onSelect,
+  onPreview,
+}: VoiceGroupProps) {
+  return (
+    <section data-testid="settings-voice-group" style={groupStyle}>
+      <style>{voiceSpinKeyframes}</style>
+      <h3 style={groupLabelStyle}>Voice</h3>
+      <div role="radiogroup" aria-label="Voice" style={voicePillRowStyle}>
+        {VOICE_OPTIONS.map((opt) => {
+          const selected = opt.value === value;
+          const isLoading = previewingVoice === opt.value;
+          return (
+            <div
+              key={opt.value}
+              data-testid={`settings-voice-pill-${opt.value}`}
+              data-selected={selected}
+              style={selected ? voicePillSelectedStyle : voicePillBaseStyle}
+            >
+              <button
+                type="button"
+                role="menuitemradio"
+                data-testid={`settings-voice-${opt.value}`}
+                aria-checked={selected}
+                aria-selected={selected}
+                onClick={() => onSelect(opt.value)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  color: 'inherit',
+                  font: 'inherit',
+                  cursor: 'pointer',
+                }}
+              >
+                {opt.label}
+              </button>
+              <button
+                type="button"
+                data-testid={`settings-voice-play-${opt.value}`}
+                aria-label={`Preview ${opt.label} voice`}
+                aria-busy={isLoading}
+                onClick={() => onPreview(opt.value)}
+                disabled={isLoading}
+                style={voicePlayBtnStyle}
+              >
+                {isLoading ? (
+                  <Loader2
+                    size={12}
+                    aria-hidden
+                    style={voiceSpinnerStyle}
+                    data-testid={`settings-voice-spinner-${opt.value}`}
+                  />
+                ) : (
+                  <Play size={12} aria-hidden />
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {previewError ? (
+        <div
+          data-testid="settings-voice-error"
+          role="alert"
+          style={voiceErrorStyle}
+        >
+          {previewError}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

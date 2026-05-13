@@ -43,7 +43,7 @@ import {
   type LessonWithSentinel,
 } from '@/lib/schemas/lesson';
 import { runTts as defaultRunTts, type RunTtsResult } from './tts';
-import type { TtsRequest } from '@/lib/schemas/tts';
+import { DEFAULT_TTS_VOICE, type TtsRequest } from '@/lib/schemas/tts';
 import { atomicRenameSync, atomicWriteJson } from './atomic';
 import {
   assertSafeSlug,
@@ -2068,7 +2068,7 @@ async function startGenerationInner(
         try {
           result = await ttsCallable({
             text: sourceText,
-            voice: 'en-female',
+            voice: DEFAULT_TTS_VOICE,
           });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
