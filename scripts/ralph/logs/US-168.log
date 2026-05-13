@@ -1,0 +1,19 @@
+[2026-05-13T13:05:27+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T13:07:33+0200] Now I understand the layout. Let me start by writing the failing test first (per AC1), then implementing.
+[2026-05-13T13:07:39+0200] Now update `makeSuccessSpawn` to route nvidia-smi probes through a stubbed exit-1 (so existing CPU tests stay CPU-only), and add an `exitCode` option support to `FakeChildProcess`:
+[2026-05-13T13:07:49+0200] Now add the `AI_LECTURER_STT_DEVICE` cleanup and the new test group at the end of the file:
+[2026-05-13T13:07:54+0200] Now append the US-168 tests at the end of the file:
+[2026-05-13T13:08:36+0200] Now implement the CUDA probe + binary selection in stt.ts:
+[2026-05-13T13:08:48+0200] Now add the device mode + CUDA-path helpers after `whisperModelPath`:
+[2026-05-13T13:08:59+0200] Now update `__setSttDepsForTesting` to reset the memo, and add the probe + binary resolution:
+[2026-05-13T13:09:20+0200] Now update `runStt` to use the new binary resolution:
+[2026-05-13T13:09:32+0200] Let me run the tests now:
+[2026-05-13T13:09:35+0200] All 27 tests pass.
+[2026-05-13T13:09:41+0200] Now let me create the opt-in CUDA setup script:
+[2026-05-13T13:10:14+0200] Now let me update the README env-var section:
+[2026-05-13T13:10:36+0200] Now run the full quality suite:
+[2026-05-13T13:10:46+0200] Typecheck passes. Now full test suite:
+[2026-05-13T13:10:54+0200] All 1031 tests pass. Let me update the todos and progress log:
+[2026-05-13T13:11:24+0200] Now flip US-168's `passes` to true in prd.json:
+[2026-05-13T13:11:49+0200] US-168 done. STT now picks the opt-in CUDA-built `whisper-cli` when present (stat + `nvidia-smi -L` exit 0), falls back to the existing CPU binary otherwise, and accepts `AI_LECTURER_STT_DEVICE=cuda|cpu|auto` to force the choice. The opt-in build lives in `scripts/setup-stt-cuda.sh` (cmake with `-DGGML_CUDA=ON`) and is never invoked by normal setup. Typecheck + all 1031 tests pass; commit `b1e8d3e` flips `passes:true` for US-168.
+[2026-05-13T13:11:49+0200] [result success turns=44 cost=$3.649706000000001] US-168 done. STT now picks the opt-in CUDA-built `whisper-cli` when present (stat + `nvidia-smi -L` exit 0), falls back to the existing CPU binary otherwise, and accepts `AI_LECTURER_STT_DEVICE=cuda|cpu|auto` to force the choice. The opt-in build lives in `scripts/setup-stt-cuda.sh` (cmake with `-DGGML_CUDA=ON`) and is never invoked by normal setup. Typecheck + all 1031 tests pass; commit `b1e8d3e` flips `passes:true` for US-168.
