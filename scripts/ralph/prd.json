@@ -620,7 +620,7 @@
         "File: scripts/ralph/skills/generate_lesson/SKILL.md",
         "Frontmatter: name: generate_lesson, user-invocable: false (auto-discovered by ralph agents picking up lesson stories triggered by init_course-generated prd)",
         "Skill instructs agent to: read lesson plan from current ralph story (title + summary + scope from notes/description), read course context from /courses/<slug>/research.md and /courses/<slug>/course.json, read widget JSON Schemas from src/widgets/schemas/",
-        "Generation rules documented in SKILL.md: 4–8 sections per lesson; mix widget types (at least 1 theory; 1 quiz where conceptual checking helps; 1 code or 1 demo where topic permits hands-on); theory uses markdown with KaTeX where math is relevant; each code exercise has 2–4 named tests with descriptive names + meaningful (but small) bodies; quiz has plausible distractors and a clear explanation; sandbox encouragement copy is one tasteful sentence",
+        "Generation rules documented in SKILL.md: at least 1 theory section (150–400 words each) followed by 2–5 widget sections per lesson; mix widget types (at least 1 theory; 1 quiz where conceptual checking helps; 1 code or 1 demo where topic permits hands-on); theory uses markdown with KaTeX where math is relevant; each code exercise has 2–4 named tests with descriptive names + meaningful (but small) bodies; quiz has plausible distractors and a clear explanation; sandbox encouragement copy is one tasteful sentence",
         "Output written to /courses/<slug>/lessons/<lesson-slug>.json, validated against LessonSchema before commit; on validation failure, agent must read the Zod error, fix the JSON, retry — never commit invalid",
         "SKILL.md includes a worked example: a 4-section lesson on 'Median filter' showing theory + quiz + code (with tests) + sandbox JSON",
         "SKILL.md cross-references init_course skill for context on how the lesson story landed in prd.json",
@@ -3539,6 +3539,218 @@
       "priority": 163,
       "passes": true,
       "notes": "Depends on US-162. The variant picker UX lives in SettingsMenu.tsx where the existing theme list (`{ value: 'sunset', label: 'Sunset' }`, see SettingsMenu.tsx:160) renders. Keep the picker hidden unless theme === 'sunset' so non-sunset users don't see noise.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-164",
+      "title": "Bottom-bar Next click auto-marks current lesson completed (idempotent)",
+      "description": "As a learner, when I click the Next button in the bottom bar of a lesson, I want the current lesson to be implicitly marked completed before navigation, so I don't have to remember the separate Mark Complete step. If the lesson is already completed, Next just navigates without re-toggling state.",
+      "acceptanceCriteria": [
+        "In src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx (the bottom-bar handler that wires the Next button next to the existing Mark Complete control around lines 2955-2990), the Next click handler now: (1) reads the current lesson's `finished` state, (2) if NOT finished, calls the same completion mutator the Mark Complete button uses (sets `finished=true` and persists to ~/.ai-lecturer/progress.json via the existing progress-write path, AND triggers the same downstream effects: section-pill counter update from US-079, section completion from US-081, etc.), (3) then performs the existing navigation to the next lesson. If already finished, no completion side-effects fire — it's a pure navigation.",
+        "Behavior is preserved on the LAST lesson: Next still triggers the existing last-lesson redirect (US-067) and still marks the lesson completed first (so finishing a course via Next on the last lesson leaves it fully completed).",
+        "Auto-advance flow (US-067) is unchanged — it already marks completion via the existing path; this story only changes the explicit Next-button click handler.",
+        "The explicit `Mark Complete` / `Lesson completed` button remains visible and functional (no removal). It is the source of truth for the toggle UI; Next merely shares the completion mutator.",
+        "Unit test in src/app/courses/[slug]/lessons/[lessonSlug]/page.test.ts (or a new test file alongside) covering the handler logic: with a not-finished lesson, Next click → completion mutator called once + navigation called once; with a finished lesson, Next click → completion mutator NOT called + navigation called once. Mock the mutator and the router.",
+        "Verify in browser using playwright-skill: open a freshly-seeded course, navigate to a not-completed lesson, click Next → assert URL changed AND on returning to the prior lesson the bottom bar shows `Lesson completed`. Then on the now-completed lesson, click Next again from the prior lesson → reach this lesson → click Next → assert it remains completed (no toggle-off). Reference screenshots of the bottom bar in the completed state before/after.",
+        "Out of scope: any change to keyboard shortcuts; any change to the Prev button; removing the explicit Mark Complete button (deferred); changing auto-advance behavior.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 164,
+      "passes": false,
+      "notes": "Bottom-bar lives in src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx around line 2955-2990. Existing Mark Complete uses data-testid=\"bottom-bar-mark-complete\".",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-165",
+      "title": "Faded-red ✕ next to 'Lesson completed' to undo completion (hover brightens)",
+      "description": "As a learner who completed a lesson by mistake (or wants to revisit it as not-yet-done), I want a small faded-red ✕ icon to appear immediately to the right of the `Lesson completed` text in the bottom bar. Clicking it un-marks the lesson completed. Hovering brightens the icon so it's discoverable without being visually loud at rest.",
+      "acceptanceCriteria": [
+        "In src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx, in the `if (finished)` branch of the bottom-bar Mark-Complete renderer (around line 2955-2972), render a sibling button immediately after the `Lesson completed` text. Use a lucide `X` icon (size=14, strokeWidth=2.25 to match the existing Check). The button has `data-testid=\"bottom-bar-unmark-complete\"`, `aria-label=\"Unmark lesson as completed\"`, and a non-bubbling onClick that calls the existing completion mutator with `finished=false`.",
+        "Visual styling: at rest the ✕ uses `color: color-mix(in srgb, var(--danger) 45%, transparent)` (or equivalent: ~45% opacity faded red — NOT bright/jarring); on hover the color transitions to `var(--danger)` at full opacity. Use a CSS transition of `color 120ms ease`. The button has no background, no border, padding ~4px so the click target is reasonable; cursor: pointer.",
+        "Click is isolated from the `Lesson completed` button: stopPropagation so toggling Off via the ✕ does not also toggle the parent button. Verify both controls remain usable: the parent `Lesson completed` button continues to toggle via its existing handler; the ✕ is only an unmark shortcut.",
+        "Undo cascades correctly: un-marking the lesson updates progress.json, recomputes the section progress pill (US-079), and unsets section completion if appropriate (US-081 inverse). No new persistence work — reuse the existing mutator.",
+        "Visible only when `finished === true`. When the lesson is not finished, the ✕ does not render (the `Mark lesson complete` button is shown instead, no change there).",
+        "Unit test: render the bottom bar in `finished=true` state, assert the ✕ button is present with the correct testid + aria-label; click it and assert the mutator is called with `finished=false` exactly once and event.stopPropagation was invoked. Render in `finished=false` state and assert the ✕ button is absent.",
+        "Verify in browser using playwright-skill: navigate to a completed lesson, screenshot the bottom bar at rest (✕ should be faded), hover the ✕ and screenshot again (✕ should be visibly brighter). Click the ✕ and assert the bottom bar re-renders with the active `Mark lesson complete` button. Reference both screenshots.",
+        "Out of scope: confirmation dialog before unmarking (one-click is intentional); any change to keyboard navigation focus order beyond making the ✕ tabbable in natural DOM order; adding the same control elsewhere (only the bottom bar).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 165,
+      "passes": false,
+      "notes": "Render position: immediately to the right of `Lesson completed` text inside the same flex row, sibling of the existing button. Reuse var(--danger) which is already defined in the theme; if not, add it to the theme tokens once and document.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-166",
+      "title": "TTS voice picker in Settings under Accent — 3 voices + per-voice sample preview",
+      "description": "As a learner, I want to pick which of three TTS voices is used for AudioPlayer / TtsDemo / transcript-cloze playback. The picker lives in the Settings menu directly under the Accent group. Each voice option has a small play button that previews a fixed sample phrase ('Hi there, let's learn something new') so I can audition before committing.",
+      "acceptanceCriteria": [
+        "Extend src/lib/schemas/tts.ts: replace `TtsVoiceEnum = z.enum(['en-female', 'en-male'])` with three options. Pick three distinct, popular Coqui XTTS v2 built-in speakers — e.g. `en-female-warm`, `en-male-neutral`, `en-female-bright` (final identifier strings TBD by the implementer based on what XTTS v2 ships; document the chosen speaker mapping in a comment block in src/lib/server/tts.ts). Update `resolveVoiceSpeaker` in src/lib/server/tts.ts to return the appropriate XTTS speaker name for each of the three values, with env var overrides per the existing pattern (e.g. `AI_LECTURER_TTS_VOICE_<KEY>`). Default voice in the request schema becomes the first of the three. The previous two-value enum is fully replaced — no compat shim.",
+        "Migrate any existing call sites that hard-code `'en-female'` / `'en-male'`: TtsDemo widget (US-158), AudioPlayer (US-157), transcript-cloze generation. They must read the user-selected voice from a new client store rather than hard-coding. The new client store is `aiLecturer.ttsVoice` in localStorage (string, one of the three enum values, defaults to first).",
+        "In src/components/SettingsMenu.tsx, add a new group titled `Voice` immediately below the existing `Accent` group. Render the three voices as a horizontal pill picker matching the visual style of the Accent group (ACCENT_OPTIONS pattern around line 202). Each pill has a small play icon button to its right (lucide `Play` size=12). Selected pill uses the existing accent-selected styling. Selection persists to `localStorage['aiLecturer.ttsVoice']` and dispatches the existing settings-changed event so other components can react.",
+        "Per-voice sample preview: clicking a voice's play icon POSTs to /api/tts with `{ text: \"Hi there, let's learn something new\", voice: <that voice id> }` and plays the returned audio inline (small <audio> element appended to DOM, autoplay, hidden). While in flight: show a spinner in place of the play icon. Cache hits via existing tts-cache return immediately. Errors render a small inline `Preview failed` text below the picker for 3s, then auto-clear. Only one preview can play at a time — clicking a second play button stops the first.",
+        "Unit test in src/components/SettingsMenu.test.tsx: render with mocked fetch, assert three voice pills render with the selected one highlighted from localStorage; click a non-selected pill → localStorage updates and the settings-changed event fires; click a play icon → fetch called with the correct voice, returned blob is wired to an audio element. Mock fetch + the audio element creation.",
+        "Server: no new endpoint — /api/tts already accepts `voice` per the schema. Just verify it accepts the new enum values via the updated schema (the existing /api/tts route uses the schema for validation).",
+        "Verify in browser using playwright-skill: open Settings menu → screenshot showing Accent + Voice groups stacked. Click each voice pill → verify the highlighted state moves and localStorage updates (assert via page.evaluate). Click each play button (mock /api/tts via Playwright route handler returning a tiny stub WAV) → assert the audio element receives a blob URL. Reference screenshot.",
+        "Out of scope: per-course voice override (only global setting); voice picker for non-English languages (XTTS multilingual setup is a separate concern); custom user-uploaded voice samples; gender/accent filter UI beyond the 3 fixed options.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 166,
+      "passes": false,
+      "notes": "Existing voice plumbing: src/lib/schemas/tts.ts (enum), src/lib/server/tts.ts (resolveVoiceSpeaker, DEFAULT_VOICE_FEMALE/MALE around line 33-44). SettingsMenu accent group is the visual reference (ACCENT_OPTIONS at line 202).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-167",
+      "title": "TTS (Coqui XTTS) auto-uses CUDA when available, falls back to CPU",
+      "description": "As a power user with an NVIDIA GPU, I want the TTS subprocess to detect CUDA availability at startup and run inference on the GPU for substantially faster synthesis. On systems without CUDA (most laptops, CI), behavior is unchanged — CPU inference as today.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the lack of GPU detection exists before the change: a unit test in src/lib/server/tts.test.ts asserts that when a mocked CUDA probe returns `available=true`, the spawned `tts` command line includes `--use_cuda true`; the test should fail against current main (which never passes the flag).",
+        "Add a one-shot CUDA probe helper in src/lib/server/tts.ts (or a new src/lib/server/gpu.ts shared with STT in US-168): `async function isCudaAvailable(): Promise<boolean>`. Implementation: spawn `python3 -c 'import torch; print(int(torch.cuda.is_available()))'` against the same venv that hosts the Coqui binary (derived from `coquiBinPath()` — sibling `python3` in `scripts/.venv/coqui/bin/`). Result is memoized for the process lifetime (the answer doesn't change without a restart). On any error (non-zero exit, no torch, ENOENT), return false silently — never throw — and log once at info level `TTS CUDA probe failed, using CPU: <reason>`.",
+        "When `isCudaAvailable()` returns true, the spawned `tts` command in src/lib/server/tts.ts adds `--use_cuda true` to its argv. When false, argv is unchanged from current behavior (CPU inference, identical to today). The probe runs once on the first /api/tts request and the result is cached.",
+        "Env override: `AI_LECTURER_TTS_DEVICE` accepts `cuda`, `cpu`, or `auto` (default). `cuda` forces the flag without probing (errors propagate if the GPU isn't actually present); `cpu` skips the probe and forces CPU; `auto` is the probe behavior above. Document this in the TtsNotInstalledError vicinity (top of file comments).",
+        "Unit tests in src/lib/server/tts.test.ts: (1) probe-true path → argv contains `--use_cuda true`; (2) probe-false path → argv does NOT contain `--use_cuda`; (3) AI_LECTURER_TTS_DEVICE=cuda forces the flag without probing; (4) AI_LECTURER_TTS_DEVICE=cpu skips the flag even if probe would succeed; (5) probe error returns false and does not throw. Mock the spawn function via the existing test pattern for spawn injection.",
+        "No change to /api/tts request/response contract; no change to TtsRequest/TtsResponse schemas; no change to tts-cache (cache keys stay text+voice only — cuda vs cpu produces equivalent audio for cache purposes, and we don't want device toggling to invalidate the cache).",
+        "Out of scope: STT/whisper.cpp GPU support (separate story US-168); a UI toggle for the device (env var only for now); reporting which device was used in the API response; multi-GPU selection.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 167,
+      "passes": false,
+      "notes": "TTS spawn site: src/lib/server/tts.ts. Coqui XTTS supports `--use_cuda true`. Probe via the venv python that owns Coqui.",
+      "tags": []
+    },
+    {
+      "id": "US-168",
+      "title": "STT (whisper.cpp) auto-uses CUDA when available, falls back to CPU",
+      "description": "As a power user with an NVIDIA GPU, I want whisper.cpp to use the CUDA-built `whisper-cli` when one is detected, for faster transcription. On systems without CUDA, behavior is unchanged — the existing CPU `whisper-cli` is used as today.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the lack of GPU detection exists before the change: a unit test in src/lib/server/stt.test.ts asserts that when a mocked CUDA-binary probe returns `available=true`, the spawn invocation uses the CUDA-enabled binary path AND, where applicable, includes whisper.cpp's GPU flag (e.g. omits `--no-gpu` and/or sets `-gpu` per the local whisper.cpp build's CLI). Test should fail against current main.",
+        "Add a STT-specific probe in src/lib/server/stt.ts (or reuse src/lib/server/gpu.ts shared with US-167): `async function whisperCudaAvailable(): Promise<{ available: boolean, binaryPath: string }>`. Probe order: (1) check for a CUDA-built whisper-cli at `scripts/.whisper-cuda/build/bin/whisper-cli` (or env override `AI_LECTURER_WHISPER_CUDA_BIN`); (2) if present and `nvidia-smi` exits 0, return `{available:true, binaryPath:<cuda-path>}`; (3) otherwise return `{available:false, binaryPath:<existing CPU path>}`. Memoize for process lifetime. Any probe error → return CPU path, log once `STT CUDA probe failed, using CPU: <reason>`.",
+        "When the probe returns `available=true`, the spawn in src/lib/server/stt.ts uses the CUDA binary path. CPU path is the existing default — argv unchanged from today. If whisper.cpp's CUDA binary needs additional flags (e.g. `-ngl <n>` for GPU layers), include them; if it auto-uses GPU when available, no extra flag is needed — verify against the locally installed binary's `--help` output and document the chosen invocation in a comment.",
+        "Env override: `AI_LECTURER_STT_DEVICE` accepts `cuda`, `cpu`, `auto` (default). `cuda` forces the CUDA binary (errors propagate if missing); `cpu` forces the existing CPU binary; `auto` is the probe behavior. Document near SttNotInstalledError.",
+        "Setup: extend scripts/setup-stt.sh (or add scripts/setup-stt-cuda.sh as a peer) so the user can opt-in to building the CUDA whisper.cpp binary. The script must NOT run automatically during normal setup — CUDA build requires the CUDA toolkit. Document the opt-in flag in the script's header comments.",
+        "Unit tests in src/lib/server/stt.test.ts: (1) probe-true path → spawn uses CUDA binary path; (2) probe-false path → spawn uses existing CPU binary; (3) AI_LECTURER_STT_DEVICE=cuda forces CUDA path even if probe wouldn't pick it; (4) AI_LECTURER_STT_DEVICE=cpu skips CUDA even if available; (5) missing CUDA binary returns CPU and does not throw. Mock spawn + filesystem stat via existing test patterns.",
+        "No change to /api/stt request/response contract; no change to SttRequest/SttResponse schemas; transcode-to-WAV step (existing) is unchanged.",
+        "Out of scope: TTS GPU support (separate story US-167); auto-building the CUDA binary as part of normal setup; UI toggle (env var only); reporting device in the API response; selecting which GPU layer count (-ngl) to use beyond a single sensible default.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 168,
+      "passes": false,
+      "notes": "STT spawn site: src/lib/server/stt.ts. Probe approach: stat for CUDA binary + `nvidia-smi` exit code. Setup script lives at scripts/setup-stt.sh.",
+      "tags": []
+    },
+    {
+      "id": "US-169",
+      "title": "Bundled 'edge-detection-basics' fixture course — Code widget + input/output Image widgets (OpenCV)",
+      "description": "As a developer evaluating the platform, I want a hand-crafted bundled demo course that showcases the Code widget alongside paired Image widgets (input photo + output edge map) using a simple OpenCV edge-detection example. It ships in the repo (parallel to tts-demo-fixture and stt-demo-fixture) so anyone cloning the project can immediately see what a code+image lesson looks like without running generation.",
+      "acceptanceCriteria": [
+        "Create courses/edge-detection-basics/ with a complete, valid course structure: course.json (matching CourseSchema in src/lib/schemas/course.ts), and one or more lesson JSONs under courses/edge-detection-basics/lessons/. Course title `Edge Detection with OpenCV — Hands-On Basics`, slug `edge-detection-basics`, accent set to a sensible value (e.g. `indigo`). At least one module with at least two lessons: Lesson 1 covering Sobel/gradient intuition, Lesson 2 covering Canny edge detection. Both lessons include the demo elements below.",
+        "Each demo lesson contains: (1) a Code widget with a runnable Python+OpenCV snippet (e.g. `cv2.Canny(img, 100, 200)` for lesson 2, `cv2.Sobel(...)` for lesson 1) — content faithful to actual OpenCV API; (2) an input Image widget showing a source photograph (committed to courses/edge-detection-basics/assets/input-<lesson>.png or .jpg); (3) an output Image widget showing the edge-detection result (courses/edge-detection-basics/assets/output-<lesson>.png). Input/output images must be visually meaningful — the output must clearly show the edges produced by the snippet on the input. Source images must be either MIT/CC0/public-domain (cite source in a README at courses/edge-detection-basics/README.md) or generated synthetically (procedural pattern is fine).",
+        "Lesson narrative (theory blocks before/after the code+images) explains: what edges are, why gradient → magnitude → threshold pipeline works, the difference between Sobel (gradient) and Canny (gradient + non-max suppression + hysteresis). Keep each lesson under ~600 words of theory text — this is a fixture, not a textbook.",
+        "Course is loadable via the existing course loader: navigating to /courses/edge-detection-basics/lessons/<first-lesson-slug> renders without errors. All widget JSON conforms to the existing widget schemas (Code widget schema, Image widget schema). No new widget types are introduced.",
+        "Lessons listed in dashboard alongside other bundled fixture courses. Course is discoverable via the existing search bar (US-036).",
+        "Verify in browser using playwright-skill: open the dashboard, find `Edge Detection with OpenCV` in the course list, click into the first lesson, screenshot showing the Code widget rendered with a Python OpenCV snippet AND both Image widgets (input + output). Click Next, screenshot the second lesson similarly. Reference both screenshots.",
+        "Out of scope: making the Code widget actually execute the snippet (no live execution — the snippet is illustrative, like other Code widget instances); a third lesson; a quiz/practice section beyond what already fits naturally; any new widget type.",
+        "Typecheck passes",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 169,
+      "passes": false,
+      "notes": "Existing fixture courses to mirror: courses/tts-demo-fixture/, courses/stt-demo-fixture/. Existing image-bearing courses to mirror: courses/image-test/, courses/plotimage-test/. Verify the exact Code widget + Image widget schemas before authoring lesson JSON. Pre-existing courses/edge-detection-basics/ folder was deleted before this story was filed — start from scratch.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-170",
+      "title": "Extend Course wizard page — schema tree with +Module / +Lesson buttons and per-click dialog (UI scaffold, mocked state)",
+      "description": "As a course author, I want a dedicated full-page Extend wizard (parallel to the create-course wizard at /create) that renders my current course schema as an interactive tree with `+ Add module` buttons under each module and `+ Add lesson` buttons under each lesson. Clicking either opens a dialog asking me what I want to add. This story delivers the page shell + tree + dialog UI only — it uses local mocked state for additions, no backend wiring yet (that comes in US-171).",
+      "acceptanceCriteria": [
+        "New route at src/app/courses/[slug]/extend/page.tsx that fetches the course schema (reuse existing course loader from src/lib/server/courses or equivalent — same path used by /courses/[slug]/lessons/...). On load, renders the full schema as a tree: each module as a header card with its lessons listed as rows underneath. The visual style matches the create-page schema preview (US-128/US-130 generation log layout) so the wizard feels like a sibling of /create.",
+        "Beneath each module's lesson list, render a `+ Add lesson to <module title>` button (subtle, secondary styling, full-width). Beneath the entire schema tree (after the last module), render a `+ Add module` button. Each button has a stable data-testid: `extend-add-lesson-<moduleId>` and `extend-add-module` respectively.",
+        "Clicking either button opens a shadcn Dialog. For `+ Add lesson`: title `Add a lesson to \"<module title>\"`, body has a textarea labeled `What should this lesson cover?` (placeholder: `e.g., \"a deep dive on the autograd engine with two practice exercises\"`) + Cancel + Add buttons. For `+ Add module`: title `Add a module to \"<course title>\"`, body has a textarea labeled `What should this module cover?` (placeholder: `e.g., \"a new module on advanced indexing with three lessons\"`) + Cancel + Add buttons.",
+        "Add click in this story is local-only: the typed instruction is appended to a client-side `pendingAdditions` state array `Array<{ kind: 'module' | 'lesson', moduleId?: string, instruction: string }>`. The tree re-renders to show a placeholder card for each pending addition (visually distinct: `background: var(--accent-soft)`, `border: 1px dashed var(--accent)`, label `(pending) <truncated instruction>`). No backend call. No persistence.",
+        "Each pending placeholder has an inline `Discard` link/button that removes it from `pendingAdditions`.",
+        "Page header: title `Extend \"<course title>\"`, breadcrumb back to /courses (or to dashboard), and a disabled `Generate additions` button at the bottom right (will be enabled by US-172). Disabled tooltip: `Wire-up coming in next iteration`.",
+        "Three-dots menu Extend item is NOT yet redirected to this page — that switch happens in US-172. Authors reach the wizard for now via direct URL only (or a temporary dev link in the dashboard footer if helpful for testing).",
+        "Verify in browser using playwright-skill: pre-seed a course with 2 modules and 4 lessons. Navigate directly to /courses/<slug>/extend → screenshot the tree with all + buttons visible. Click `+ Add module` → screenshot dialog → type instruction → click Add → screenshot tree showing one pending-module placeholder. Click `+ Add lesson` under the second module → repeat → screenshot tree showing both placeholders. Click Discard on one → screenshot tree with only the remaining placeholder. Reference all screenshots.",
+        "Unit test in src/app/courses/[slug]/extend/page.test.tsx: render with mocked course data, assert correct number of `+ Add lesson` buttons (one per module) and one `+ Add module` button; simulate dialog flow → assert pendingAdditions state mutates correctly; simulate Discard → assert removal.",
+        "Out of scope: any /api call (US-171 wires it); any actual course modification (US-171); any generation step (US-172); rerouting the three-dots menu Extend item (US-172); editing/reordering EXISTING modules/lessons (extend-only, never mutate existing entries).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 170,
+      "passes": false,
+      "notes": "Existing extend modal (US-144/145) stays in place for now. This story builds the new page in parallel; US-172 swaps the entry point and removes the modal. Reuse: src/lib/schemas/course.ts (CourseSchema), existing /create page layout for visual reference.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-171",
+      "title": "Extend wizard wires +Module/+Lesson dialogs to /api/courses/<slug>/extend; updated proposed schema renders inline with new-item highlights",
+      "description": "As a course author using the Extend wizard from US-170, when I click Add in a +Module or +Lesson dialog, I want the wizard to call the existing /api/courses/<slug>/extend endpoint with a TARGETED instruction (e.g. `add a new lesson under module X about <my text>`) and update the visible schema tree to reflect the agent's proposal — with the newly-added module(s)/lesson(s) highlighted. Multiple additions accumulate against the latest proposed schema.",
+      "acceptanceCriteria": [
+        "Replace the local-only `pendingAdditions` mechanism from US-170 with backend-driven proposed-schema state. Component state holds: `currentProposed: CourseSchema` (initialized to the loaded course), `additions: { newModuleIds: string[], newLessonIds: { moduleId: string, lessonSlug: string, ... }[] }` (initialized empty).",
+        "+Add module dialog Add click: POST to /api/courses/<slug>/extend (the existing US-143 endpoint) with body `{ instruction: \"Add a new module: \" + <textarea text> }`. Response updates `currentProposed` to the returned `proposedSchema` and merges `additions.newModuleIds` (union of existing + response's newModuleIds). The newly-added module appears in the tree at its agent-chosen position with `data-new=\"true\"` and `background: var(--accent-soft)` + `border-left: 3px solid var(--accent)` (mirroring US-144's highlight style for visual consistency).",
+        "+Add lesson dialog Add click: POST to /api/courses/<slug>/extend with body `{ instruction: \"Add a new lesson under module \\\"<moduleTitle>\\\" (id: <moduleId>): \" + <textarea text> }`. Response updates `currentProposed` and merges `additions.newLessonIds`. The new lesson row renders highlighted under its parent module.",
+        "Refinements continuity: subsequent calls pass the prior instructions as `refinements: Array<{ role: 'user', content: string }>` per US-143's contract, so the agent has cumulative context. Order: chronological (first instruction → second instruction → ...). The latest typed instruction is the `instruction` field; everything before it goes into `refinements`.",
+        "Loading state during a request: dialog Add button shows spinner + textarea disabled + Cancel still enabled (cancels via AbortController). The schema tree shows a subtle overlay (opacity 0.6, no pointer events) so it's clear the displayed proposal is being updated. Other +Add buttons are disabled while in flight (one extension request at a time).",
+        "Error handling: on 422 (agent emitted unparseable JSON) → toast `Couldn't add — please rephrase.` and dialog stays open with the textarea content preserved so the user can edit. On 409 busy → toast `Cannot extend while generation is active.` + close dialog. On 500 → toast `Server error — please try again.` + dialog stays open. None of these errors mutate `currentProposed` or `additions`.",
+        "A `Reset proposal` button next to the still-disabled `Generate additions` button clears `currentProposed` back to the originally loaded schema and clears `additions`. Confirms via `confirm()` if there are pending additions.",
+        "Existing modal (US-144/145) is NOT touched — it still works through its own code path. This story only modifies the new wizard page from US-170.",
+        "Verify in browser using playwright-skill: pre-seed course with 2 modules + 4 lessons. Mock /api/courses/<slug>/extend via Playwright route handler with deterministic responses (first call: original + 1 new module; second call: original + 1 new module + 1 new lesson). Open wizard → click `+ Add module` → fill + Add → screenshot showing the new module highlighted in the tree. Click `+ Add lesson` under an existing module → fill + Add → screenshot showing both highlights. Click `Reset proposal` → confirm → screenshot showing tree restored to original. Reference all screenshots.",
+        "Unit test: mock fetch + the loaded course; simulate +Add module flow → assert fetch payload contains expected instruction string AND the response's proposedSchema is reflected in component state. Simulate a second call → assert refinements array contains the prior instruction. Simulate 409 → assert toast + no state mutation.",
+        "Out of scope: enabling/wiring the Generate additions button (US-172); rerouting the three-dots menu (US-172); deleting individual additions one-by-one (Reset is the only undo for now); editing the proposed module/lesson titles by hand.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 171,
+      "passes": false,
+      "notes": "Backend endpoint (POST /api/courses/[slug]/extend) is reused from US-143 unchanged. Highlight styling mirrors US-144 for consistency.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-172",
+      "title": "Extend wizard Confirm → /apply → live generation-progress view; replace three-dots Extend menu entry to navigate to wizard; remove old US-144/US-145 modal UI",
+      "description": "As a course author who has accumulated additions in the Extend wizard (US-170/171), I want to click `Generate additions`, have the proposed schema applied to course.json via the existing /apply endpoint, and immediately see the live per-stage generation log for the new lessons (same UX as initial course creation). Also: the three-dots menu Extend item now navigates to this wizard instead of opening the old modal, and the old modal UI from US-144/US-145 is removed.",
+      "acceptanceCriteria": [
+        "`Generate additions` button is enabled iff `additions.newModuleIds.length > 0 || additions.newLessonIds.length > 0`. Click → POST to /api/courses/[slug]/extend/apply (the existing US-144 apply endpoint) with `{ proposedSchema: currentProposed }`. On 200 with `{ enqueuedLessonSlugs: string[] }` → navigate to a new generation-progress view (see next AC) with the slug list passed in.",
+        "Generation-progress view: render inside the same wizard page shell (do NOT route away — feels continuous). Replace the schema tree with a live log panel that mirrors the per-lesson progress UI used by the create-course flow (reuses the existing component from US-105/US-128/US-130 — likely src/components/GenerationLog.tsx or wherever the create page hosts it). The panel streams stage updates for the new lesson slugs from the existing generation log persistence (US-105). When all enqueued lessons report completion, show a `Done — open course` button that links back to /courses/<slug>/lessons/<first-new-lesson-slug>.",
+        "Mid-generation cancellation: a Cancel button in the progress view calls the existing cancel endpoint (US-140 cancel-and-restart pattern) and on success shows `Cancelled — partial additions remain` + the Done button.",
+        "Three-dots menu rerouting: in src/components/CourseMenu.tsx (or wherever the dropdown from US-142 lives), the Extend menu item's onClick changes from `setExtendModalOpen(true)` to `router.push('/courses/<slug>/extend')`. The data-testid stays `course-menu-extend-<slug>` for test continuity.",
+        "Modal removal: delete the modal component file(s) introduced in US-144 (the Extend dialog component + its preview tree + chat panel from US-145). Remove the import + state + render call from the dashboard / course menu host. Their tests are deleted alongside. The endpoints from US-143 (POST /extend) and US-144's apply route are KEPT unchanged — both the wizard and any external scripts can still hit them.",
+        "If a user navigates directly to /courses/<slug>/extend during an active generation for that slug, the wizard renders the schema tree as read-only (no +Add buttons enabled, banner: `Cannot extend while generation is active`). Same 409 reason as US-143.",
+        "Verify in browser using playwright-skill: pre-seed course; mock /api/courses/<slug>/extend (per US-171) and /api/courses/<slug>/extend/apply (per US-144) and the generation log SSE/poll source. Walk full happy path: open dashboard → three-dots → click Extend → assert URL changed to /courses/<slug>/extend (NOT a modal). Add one module + one lesson via the wizard. Click `Generate additions` → assert apply called with the right payload → assert progress view replaces the tree → emit two completion events from the mocked log source → assert `Done — open course` button appears → click it → assert URL is the new lesson page. Reference screenshots: wizard with proposal, progress view mid-generation, progress view complete. ALSO: navigate to dashboard, three-dots → Extend; assert NO modal opens (the old one is gone).",
+        "Unit/integration tests: test that the apply call wires through correctly given a mocked accumulated proposal; test that the three-dots menu Extend onClick triggers navigation (mocked router); test that the modal component file no longer exists (file-presence assertion or import test) — alternatively a Storybook/component test confirming nothing renders the modal.",
+        "Out of scope: editing the proposed schema by hand at the apply step (Generate-or-Reset only); per-lesson cancel (only whole-generation cancel via the existing endpoint); a confirm dialog before Generate (one-click is intentional given Reset exists); migrating data from in-flight uses of the modal — the modal had no persistent state beyond what /apply already wrote.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 172,
+      "passes": false,
+      "notes": "Backend endpoints REUSED unchanged: POST /api/courses/[slug]/extend (US-143), POST /api/courses/[slug]/extend/apply (US-144), generation log infra (US-105/US-128/US-130), cancel (US-140). UI surfaces REMOVED: Extend modal + chat panel from US-144/US-145.",
       "tags": [
         "ui"
       ]
