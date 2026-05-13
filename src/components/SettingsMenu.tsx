@@ -248,6 +248,11 @@ const panelStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 8,
+  // 80px = top bar (~64) + 16px safe margin so the panel never spills below
+  // the viewport on short screens (laptops, devtools open, etc.).
+  maxHeight: 'calc(100vh - 80px)',
+  overflowY: 'auto',
+  overscrollBehavior: 'contain',
 };
 
 const groupStyle: CSSProperties = {

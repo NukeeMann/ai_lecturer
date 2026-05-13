@@ -40,6 +40,26 @@ describe('SettingsMenu (US-134) — Sunset theme option', () => {
   });
 });
 
+describe('SettingsMenu (US-177) — panel stays within viewport on short screens', () => {
+  it('panel inline style caps height and scrolls internally', () => {
+    render(<SettingsMenu />);
+    fireEvent.click(screen.getByTestId('settings-menu-trigger'));
+
+    const panel = screen.getByTestId('settings-menu') as HTMLElement;
+    // React's CSSProperties writes `overflowY` to the DOM `style` attribute as
+    // the `overflow-y` longhand. Same for `maxHeight` → `max-height`.
+    expect(panel.style.overflowY).toBe('auto');
+    expect(panel.style.maxHeight).not.toBe('');
+    // Confirm the literal style attribute carries the expected longhands so
+    // the AC's "inline style includes `overflow-y: auto` and a `max-height`"
+    // check holds against raw CSS text.
+    const styleAttr = panel.getAttribute('style') ?? '';
+    expect(styleAttr).toMatch(/overflow-y:\s*auto/);
+    expect(styleAttr).toMatch(/max-height:/);
+    expect(styleAttr).toMatch(/overscroll-behavior:\s*contain/);
+  });
+});
+
 describe('SettingsMenu (US-166) — Voice picker', () => {
   it('renders all three voice pills with the persisted selection highlighted', () => {
     window.localStorage.setItem(TTS_VOICE_STORAGE_KEY, 'en-male-neutral');
