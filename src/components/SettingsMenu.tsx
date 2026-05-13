@@ -384,8 +384,10 @@ export function SettingsMenu({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
-  const previewCacheRef = useRef<Map<TtsVoice, string>>(new Map());
   const previewErrorTimerRef = useRef<number | null>(null);
+  // Track voices that have already warned once about a missing/corrupt static
+  // sample so we don't spam console.warn on repeated retries.
+  const warnedMissingSampleRef = useRef<Set<TtsVoice>>(new Set());
 
   // Initial sync from localStorage. The boot script in layout.tsx applies the
   // attributes to <html> before paint; here we only mirror those values into
@@ -599,50 +601,50 @@ export function SettingsMenu({
     }, 3000);
   }, []);
 
-  const onVoicePreview = useCallback(
+  // Fallback path: original on-the-fly preview against /api/tts (kept verbatim
+  // from the pre-US-182 flow). Runs only when the pre-baked static MP3 sample
+  // under /voice-samples/ is missing or fails to decode.
+  const playPreviewFallback = useCallback(
     async (target: TtsVoice) => {
-      stopActivePreview();
-      setPreviewError(null);
-      setPreviewingVoice(target);
       try {
-        let url = previewCacheRef.current.get(target) ?? null;
-        if (!url) {
-          const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: TTS_VOICE_SAMPLE_TEXT,
-              voice: target,
-            }),
-          });
-          if (!res.ok) {
-            showPreviewError();
-            return;
-          }
-          const payload = (await res.json()) as { audioPath?: string };
-          const audioPath = payload.audioPath ?? '';
-          if (!audioPath) {
-            showPreviewError();
-            return;
-          }
-          const trimmed = audioPath.replace(/^\/+/, '');
-          const segments = trimmed
-            .split('/')
-            .filter((s) => s.length > 0)
-            .map((s) => encodeURIComponent(s));
-          const audioUrl = `/api/tts/audio/${segments.join('/')}`;
-          const audioRes = await fetch(audioUrl);
-          if (!audioRes.ok) {
-            showPreviewError();
-            return;
-          }
-          const blob = await audioRes.blob();
-          url = URL.createObjectURL(blob);
-          previewCacheRef.current.set(target, url);
+        const res = await fetch('/api/tts/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: TTS_VOICE_SAMPLE_TEXT,
+            voice: target,
+          }),
+        });
+        if (!res.ok) {
+          showPreviewError();
+          setPreviewingVoice((cur) => (cur === target ? null : cur));
+          return;
         }
+        const payload = (await res.json()) as { audioPath?: string };
+        const audioPath = payload.audioPath ?? '';
+        if (!audioPath) {
+          showPreviewError();
+          setPreviewingVoice((cur) => (cur === target ? null : cur));
+          return;
+        }
+        const trimmed = audioPath.replace(/^\/+/, '');
+        const segments = trimmed
+          .split('/')
+          .filter((s) => s.length > 0)
+          .map((s) => encodeURIComponent(s));
+        const audioUrl = `/api/tts/audio/${segments.join('/')}`;
+        const audioRes = await fetch(audioUrl);
+        if (!audioRes.ok) {
+          showPreviewError();
+          setPreviewingVoice((cur) => (cur === target ? null : cur));
+          return;
+        }
+        const blob = await audioRes.blob();
+        const url = URL.createObjectURL(blob);
         const audioEl = document.createElement('audio');
         audioEl.setAttribute('data-testid', 'settings-voice-preview-audio');
         audioEl.setAttribute('data-voice', target);
+        audioEl.setAttribute('data-source', 'fallback');
         audioEl.src = url;
         audioEl.autoplay = true;
         audioEl.hidden = true;
@@ -663,26 +665,60 @@ export function SettingsMenu({
         }
       } catch {
         showPreviewError();
-      } finally {
         setPreviewingVoice((cur) => (cur === target ? null : cur));
       }
     },
     [showPreviewError, stopActivePreview],
   );
 
-  // Tear down any inline preview audio + cached blob URLs on unmount.
+  const onVoicePreview = useCallback(
+    (target: TtsVoice) => {
+      stopActivePreview();
+      setPreviewError(null);
+      setPreviewingVoice(target);
+
+      const audioEl = document.createElement('audio');
+      audioEl.setAttribute('data-testid', 'settings-voice-preview-audio');
+      audioEl.setAttribute('data-voice', target);
+      audioEl.setAttribute('data-source', 'static');
+      audioEl.src = `/voice-samples/${target}.mp3`;
+      audioEl.autoplay = true;
+      audioEl.hidden = true;
+      audioEl.style.display = 'none';
+      audioEl.addEventListener('ended', () => {
+        if (previewAudioRef.current === audioEl) {
+          stopActivePreview();
+          setPreviewingVoice(null);
+        }
+      });
+      audioEl.addEventListener('error', () => {
+        if (previewAudioRef.current !== audioEl) return;
+        if (!warnedMissingSampleRef.current.has(target)) {
+          warnedMissingSampleRef.current.add(target);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[settings] /voice-samples/${target}.mp3 missing or unplayable — falling back to /api/tts/preview.`,
+          );
+        }
+        stopActivePreview();
+        void playPreviewFallback(target);
+      });
+      document.body.appendChild(audioEl);
+      previewAudioRef.current = audioEl;
+      void audioEl.play().catch(() => {
+        /* autoplay policy may block — user can click again */
+      });
+    },
+    [playPreviewFallback, stopActivePreview],
+  );
+
+  // Tear down any inline preview audio on unmount. (The blob-URL cache from
+  // pre-US-182 is gone — the browser HTTP-caches /voice-samples/<voice>.mp3
+  // directly. The fallback path's per-play object URL is revoked inside
+  // stopActivePreview.)
   useEffect(() => {
-    const cache = previewCacheRef.current;
     return () => {
       stopActivePreview();
-      for (const url of cache.values()) {
-        try {
-          URL.revokeObjectURL(url);
-        } catch {
-          /* ignore */
-        }
-      }
-      cache.clear();
       if (previewErrorTimerRef.current !== null) {
         window.clearTimeout(previewErrorTimerRef.current);
         previewErrorTimerRef.current = null;
