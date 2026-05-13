@@ -86,6 +86,7 @@ From `lesson` and its parent module pull:
 | Module ID         | parent `module.id` (e.g. `m1`, `m2`)                     |
 | Module title      | parent `module.title` — used for `eyebrow`               |
 | Module summary    | parent `module.summary` — useful for framing the lesson  |
+| Lesson summary    | parent `lessonRef.summary` — when present, the author's intent for this lesson; treat as a hint, not a hard spec |
 | Estimated minutes | `lesson.estimatedMinutes`                                |
 
 If the lesson is not found in `course.json`, stop with an error — `design_course` failed to register it, and authoring against a non-existent lesson would corrupt the course folder.

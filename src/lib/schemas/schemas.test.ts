@@ -75,6 +75,57 @@ describe('CourseSchema', () => {
     const parsed = CourseSchema.parse({ ...minimal, schemaVersion: 1 });
     expect(parsed.schemaVersion).toBe(1);
   });
+
+  describe('LessonRef.summary (US-178)', () => {
+    const courseWithLesson = (lesson: Record<string, unknown>) => ({
+      ...minimal,
+      modules: [
+        {
+          id: 'm1',
+          title: 'Module 1',
+          summary: 'First module',
+          lessons: [lesson],
+        },
+      ],
+    });
+
+    it('parses a course whose lesson omits summary (backward compatibility)', () => {
+      const course = courseWithLesson({
+        slug: 'intro',
+        title: 'Intro',
+        estimatedMinutes: 10,
+      });
+      expect(() => CourseSchema.parse(course)).not.toThrow();
+    });
+
+    it('parses a course whose lesson includes a summary string', () => {
+      const course = courseWithLesson({
+        slug: 'intro',
+        title: 'Intro',
+        estimatedMinutes: 10,
+        summary: 'A one-line description',
+      });
+      const parsed = CourseSchema.parse(course);
+      expect(parsed.modules[0]?.lessons[0]?.summary).toBe('A one-line description');
+    });
+
+    it('rejects a lesson whose summary is the wrong type (number)', () => {
+      const course = courseWithLesson({
+        slug: 'intro',
+        title: 'Intro',
+        estimatedMinutes: 10,
+        summary: 123,
+      });
+      const result = CourseSchema.safeParse(course);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const issue = result.error.issues.find(
+          (i) => i.path.join('.') === 'modules.0.lessons.0.summary',
+        );
+        expect(issue).toBeDefined();
+      }
+    });
+  });
 });
 
 describe('LessonSchema + SectionSchema', () => {

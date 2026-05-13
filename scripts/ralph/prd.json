@@ -3874,6 +3874,7 @@
     {
       "id": "US-178",
       "title": "Add optional `summary` to LessonRefSchema and update design_course skill to emit module + lesson summaries",
+      "passes": true,
       "description": "As the Extend wizard (US-179/US-180) and the lesson dashboard, I want each lesson reference in course.json to carry an optional one-line `summary` so the UI can show authors a description next to module + lesson titles. Currently LessonRefSchema has only `slug, title, estimatedMinutes` — there is no place to persist a per-lesson description on the course-level outline. Also: the design_course skill (`scripts/ralph/skills/design_course/SKILL.md`) needs its prompt updated to instruct the agent to emit `summary` on each lesson going forward.",
       "acceptanceCriteria": [
         "src/lib/schemas/course.ts LessonRefSchema gains `summary: z.string().optional()` (optional so existing course.json files still parse without migration). Update the derived TS `LessonRef` type accordingly.",
@@ -3887,7 +3888,6 @@
         "Tests pass"
       ],
       "priority": 178,
-      "passes": false,
       "notes": "Module summaries already work (ModuleSchema.summary is required). Only lessons need the new field. Out of scope: backfilling existing courses; updating regenerate_lesson skill (lesson.summary lives on the outline, not inside the lesson JSON). US-179 (display) and US-180 (+Add form) depend on this story landing first.",
       "tags": []
     },
