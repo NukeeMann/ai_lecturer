@@ -13,6 +13,8 @@ import {
   parseWhisperSegments,
   resolveAudioPath,
   whisperBinaryCandidates,
+  whisperCudaAvailable,
+  whisperCudaBinaryPath,
   type SttSpawnDeps,
 } from '@/lib/server/stt';
 
@@ -65,10 +67,20 @@ function makeSuccessSpawn(opts: {
   recordings: SpawnRecording[];
   transcript: string;
   segmentsJson?: string;
+  /** When true, the mocked `nvidia-smi` probe exits 0 (CUDA present); when
+   *  false (default), it exits 1 so existing CPU-path tests stay CPU. */
+  nvidiaSmiOk?: boolean;
 }): SttSpawnDeps {
-  const { recordings, transcript, segmentsJson } = opts;
+  const { recordings, transcript, segmentsJson, nvidiaSmiOk = false } = opts;
   return {
     spawn: ((command: string, args: string[]) => {
+      // US-168: route the `nvidia-smi` probe through a stubbed result so
+      // existing tests don't see a phantom spawn recording. Tests that
+      // exercise the CUDA path pass `nvidiaSmiOk: true` to flip the probe.
+      if (command === 'nvidia-smi') {
+        const child = new FakeChildProcess({ args, exitCode: nvidiaSmiOk ? 0 : 1 });
+        return child as unknown as ChildProcess;
+      }
       recordings.push({ command, args: [...args] });
       const child = new FakeChildProcess({
         args,
@@ -104,6 +116,8 @@ afterEach(async () => {
   __setSttDepsForTesting(null);
   delete process.env.AI_LECTURER_HOME_OVERRIDE;
   delete process.env.COURSES_ROOT_OVERRIDE;
+  delete process.env.AI_LECTURER_STT_DEVICE;
+  delete process.env.AI_LECTURER_WHISPER_CUDA_BIN;
   await fs.rm(homeRoot, { recursive: true, force: true });
   await fs.rm(coursesRootDir, { recursive: true, force: true });
 });
@@ -357,5 +371,242 @@ describe('POST /api/stt (US-154)', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.segments).toEqual([{ start: 0, end: 2, text: 'Hello world' }]);
+  });
+});
+
+describe('whisperCudaAvailable + CUDA binary selection (US-168)', () => {
+  it('returns available=true with CUDA path when binary present and nvidia-smi succeeds', async () => {
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          return new FakeChildProcess({ args, exitCode: 0 }) as unknown as ChildProcess;
+        }
+        throw new Error('unexpected spawn during probe: ' + command);
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async () => true,
+      modelExists: async () => true,
+    });
+    const probe = await whisperCudaAvailable();
+    expect(probe.available).toBe(true);
+    expect(probe.binaryPath).toBe(whisperCudaBinaryPath());
+  });
+
+  it('returns available=false with CPU fallback when CUDA binary is missing', async () => {
+    __setSttDepsForTesting({
+      spawn: ((command: string, _args: string[]) => {
+        throw new Error('unexpected spawn (CUDA absent should short-circuit): ' + command);
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async (p: string) => !p.includes('.whisper-cuda'),
+      modelExists: async () => true,
+    });
+    const probe = await whisperCudaAvailable();
+    expect(probe.available).toBe(false);
+    expect(probe.binaryPath).toMatch(/whisper\.cpp/);
+  });
+
+  it('returns available=false when nvidia-smi exits non-zero even if CUDA binary is present', async () => {
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          return new FakeChildProcess({ args, exitCode: 1 }) as unknown as ChildProcess;
+        }
+        throw new Error('unexpected spawn: ' + command);
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async () => true,
+      modelExists: async () => true,
+    });
+    const probe = await whisperCudaAvailable();
+    expect(probe.available).toBe(false);
+    expect(probe.binaryPath).not.toBe(whisperCudaBinaryPath());
+  });
+
+  it('spawn uses the CUDA binary path when probe reports available=true (failing on current main pre-US-168)', async () => {
+    const fp = path.join(homeRoot, 'tts-cache', 'foo.wav');
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, Buffer.alloc(64));
+    const recordings: SpawnRecording[] = [];
+    __setSttDepsForTesting(
+      makeSuccessSpawn({ recordings, transcript: 'cuda hello', nvidiaSmiOk: true }),
+    );
+    const res = await postStt(
+      new Request('http://x/api/stt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioPath: 'tts-cache/foo.wav' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].command).toBe(whisperCudaBinaryPath());
+    // whisper-cli auto-uses CUDA when the binary is built with it; argv
+    // stays identical to the CPU invocation (no --no-gpu, no extra flag).
+    expect(recordings[0].args).not.toContain('--no-gpu');
+  });
+
+  it('spawn uses the existing CPU binary when probe returns available=false', async () => {
+    const fp = path.join(homeRoot, 'tts-cache', 'foo.wav');
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, Buffer.alloc(64));
+    const recordings: SpawnRecording[] = [];
+    __setSttDepsForTesting(
+      // nvidiaSmiOk defaults to false → probe returns CPU.
+      makeSuccessSpawn({ recordings, transcript: 'cpu hello' }),
+    );
+    const res = await postStt(
+      new Request('http://x/api/stt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioPath: 'tts-cache/foo.wav' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].command).not.toBe(whisperCudaBinaryPath());
+    expect(recordings[0].command).toMatch(/whisper\.cpp/);
+  });
+
+  it('AI_LECTURER_STT_DEVICE=cuda forces the CUDA binary even when nvidia-smi would fail', async () => {
+    process.env.AI_LECTURER_STT_DEVICE = 'cuda';
+    const fp = path.join(homeRoot, 'tts-cache', 'foo.wav');
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, Buffer.alloc(64));
+    const recordings: SpawnRecording[] = [];
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          // device=cuda should NOT consult nvidia-smi at all.
+          throw new Error('nvidia-smi must not be probed when device=cuda');
+        }
+        recordings.push({ command, args: [...args] });
+        return new FakeChildProcess({
+          args,
+          onSpawn: async (a) => {
+            const idx = a.indexOf('-of');
+            if (idx >= 0 && idx + 1 < a.length) {
+              const base = a[idx + 1];
+              await fs.mkdir(path.dirname(base), { recursive: true });
+              await fs.writeFile(`${base}.txt`, 'forced cuda', 'utf8');
+            }
+          },
+        }) as unknown as ChildProcess;
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async () => true,
+      modelExists: async () => true,
+    });
+    const res = await postStt(
+      new Request('http://x/api/stt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioPath: 'tts-cache/foo.wav' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].command).toBe(whisperCudaBinaryPath());
+  });
+
+  it('AI_LECTURER_STT_DEVICE=cpu skips the CUDA binary even when probe would succeed', async () => {
+    process.env.AI_LECTURER_STT_DEVICE = 'cpu';
+    const fp = path.join(homeRoot, 'tts-cache', 'foo.wav');
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, Buffer.alloc(64));
+    const recordings: SpawnRecording[] = [];
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          // device=cpu should NOT probe nvidia-smi either.
+          throw new Error('nvidia-smi must not be probed when device=cpu');
+        }
+        recordings.push({ command, args: [...args] });
+        return new FakeChildProcess({
+          args,
+          onSpawn: async (a) => {
+            const idx = a.indexOf('-of');
+            if (idx >= 0 && idx + 1 < a.length) {
+              const base = a[idx + 1];
+              await fs.mkdir(path.dirname(base), { recursive: true });
+              await fs.writeFile(`${base}.txt`, 'forced cpu', 'utf8');
+            }
+          },
+        }) as unknown as ChildProcess;
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async () => true,
+      modelExists: async () => true,
+    });
+    const res = await postStt(
+      new Request('http://x/api/stt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioPath: 'tts-cache/foo.wav' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].command).not.toBe(whisperCudaBinaryPath());
+  });
+
+  it('missing CUDA binary returns CPU path and does not throw', async () => {
+    const fp = path.join(homeRoot, 'tts-cache', 'foo.wav');
+    await fs.mkdir(path.dirname(fp), { recursive: true });
+    await fs.writeFile(fp, Buffer.alloc(64));
+    const recordings: SpawnRecording[] = [];
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          // CUDA binary missing → probe must short-circuit before nvidia-smi.
+          throw new Error('nvidia-smi must not be probed when CUDA binary is missing');
+        }
+        recordings.push({ command, args: [...args] });
+        return new FakeChildProcess({
+          args,
+          onSpawn: async (a) => {
+            const idx = a.indexOf('-of');
+            if (idx >= 0 && idx + 1 < a.length) {
+              const base = a[idx + 1];
+              await fs.mkdir(path.dirname(base), { recursive: true });
+              await fs.writeFile(`${base}.txt`, 'cpu only', 'utf8');
+            }
+          },
+        }) as unknown as ChildProcess;
+      }) as unknown as SttSpawnDeps['spawn'],
+      // CUDA binary is missing; CPU candidates exist.
+      binaryExists: async (p: string) => !p.includes('.whisper-cuda'),
+      modelExists: async () => true,
+    });
+    const res = await postStt(
+      new Request('http://x/api/stt', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioPath: 'tts-cache/foo.wav' }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(recordings).toHaveLength(1);
+    expect(recordings[0].command).not.toBe(whisperCudaBinaryPath());
+  });
+
+  it('memoizes the probe result across calls', async () => {
+    let probeCount = 0;
+    __setSttDepsForTesting({
+      spawn: ((command: string, args: string[]) => {
+        if (command === 'nvidia-smi') {
+          probeCount += 1;
+          return new FakeChildProcess({ args, exitCode: 0 }) as unknown as ChildProcess;
+        }
+        throw new Error('unexpected spawn: ' + command);
+      }) as unknown as SttSpawnDeps['spawn'],
+      binaryExists: async () => true,
+      modelExists: async () => true,
+    });
+    const first = await whisperCudaAvailable();
+    const second = await whisperCudaAvailable();
+    expect(first.available).toBe(true);
+    expect(second.available).toBe(true);
+    expect(probeCount).toBe(1);
+  });
+
+  it('honours AI_LECTURER_WHISPER_CUDA_BIN override', async () => {
+    process.env.AI_LECTURER_WHISPER_CUDA_BIN = '/custom/cuda/whisper-cli';
+    expect(whisperCudaBinaryPath()).toBe('/custom/cuda/whisper-cli');
   });
 });

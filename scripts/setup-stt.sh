@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# US-154: Set up whisper.cpp for /api/stt.
+# US-154: Set up whisper.cpp for /api/stt (CPU build only).
 #
 # Idempotent: skips clone/build/download if already done. Tested manually
 # only — see README.md ("Optional: TTS/STT setup") for the contract.
@@ -8,6 +8,12 @@
 #   1. Clones whisper.cpp into scripts/.bin/whisper.cpp/ (if missing).
 #   2. Runs `make` (requires gcc/clang + make) to build the `main` binary.
 #   3. Downloads ggml-base.en.bin into scripts/.bin/whisper.cpp/models/.
+#
+# US-168: this script builds the CPU binary only. For the CUDA-accelerated
+# build run `scripts/setup-stt-cuda.sh` (opt-in; requires the NVIDIA CUDA
+# toolkit). /api/stt auto-detects the CUDA binary at runtime — see the
+# `AI_LECTURER_STT_DEVICE` / `AI_LECTURER_WHISPER_CUDA_BIN` env vars in
+# README.md and the SttNotInstalledError docs in src/lib/server/stt.ts.
 
 set -euo pipefail
 

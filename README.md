@@ -112,6 +112,8 @@ TTS audio is cached under `~/.ai-lecturer/tts-cache/<content-hash>.wav` so repea
 - `AI_LECTURER_TTS_BIN` — full path to the Coqui `tts` binary (default: `scripts/.venv/coqui/bin/tts`).
 - `AI_LECTURER_STT_BIN` — full path to the whisper.cpp binary (default: `scripts/.bin/whisper.cpp/main` or `…/build/bin/whisper-cli`).
 - `AI_LECTURER_STT_MODEL` — full path to the ggml whisper model (default: `scripts/.bin/whisper.cpp/models/ggml-base.en.bin`).
+- `AI_LECTURER_STT_DEVICE` — `auto` (default) | `cuda` | `cpu`. In `auto` mode `/api/stt` uses the CUDA-built `whisper-cli` when it is present on disk and `nvidia-smi` exits 0. `cuda` forces the CUDA binary (errors propagate if missing); `cpu` keeps the existing CPU binary. Build the CUDA binary with `scripts/setup-stt-cuda.sh`.
+- `AI_LECTURER_WHISPER_CUDA_BIN` — full path to a CUDA-built `whisper-cli` (default: `scripts/.whisper-cuda/build/bin/whisper-cli`).
 - `AI_LECTURER_HOME_OVERRIDE` — override the user-state directory (default: `~/.ai-lecturer/`). Used by tests; unlikely to be useful in production.
 - `LESSON_MAX_RETRIES`, `LESSON_TIMEOUT_SEC` — per-lesson generation retry count and per-attempt timeout (see `src/lib/server/generation.ts`).
 
