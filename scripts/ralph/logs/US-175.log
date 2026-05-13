@@ -1,0 +1,22 @@
+[2026-05-13T21:33:23+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T21:35:24+0200] Let me look at CodeRunner to understand Reset behavior and how to drive it in the browser test.
+[2026-05-13T21:35:47+0200] Now I have enough context. Let me write the new lesson files.
+[2026-05-13T21:37:25+0200] Typecheck passes. Now let me validate the lesson files load through the API/schemas, and check for any existing tests that touch these files.
+[2026-05-13T21:37:37+0200] Let me run a small JSON schema validation through the existing Zod schema, since lesson load is the critical path.
+[2026-05-13T21:37:51+0200] Schemas pass. Now let me run the relevant unit tests to make sure nothing else broke.
+[2026-05-13T21:38:03+0200] All 1051 tests pass. Now let me set up the dev server and run the playwright tests.
+[2026-05-13T21:38:32+0200] Detection failed but server is up. I'll hardcode the URL. Let me write the Sobel playwright test.
+[2026-05-13T21:39:03+0200] Let me rewrite the tests as standalone scripts (with their own browser launch).
+[2026-05-13T21:39:37+0200] The output img only appears once Pyodide is ready. Let me fix the test order — wait for Pyodide first, then check for output img.
+[2026-05-13T21:40:48+0200] The `waitForFunction` signature treats the second arg as a function argument, not options. Let me fix by using `null` as the arg.
+[2026-05-13T21:45:00+0200] Let me add more diagnostics — log console messages and check for errors during the cv2 shim load.
+[2026-05-13T21:50:15+0200] scikit-image isn't loading. Let me check the worker code path.
+[2026-05-13T21:50:33+0200] Found the bug — `CodeWidget` doesn't pass `data.requiresPackages` through to `runWithTests`. Let me fix that.
+[2026-05-13T21:50:37+0200] Now let me fix the CodeWidget to forward `data.requiresPackages`.
+[2026-05-13T21:51:23+0200] Now let me re-run the Sobel test.
+[2026-05-13T21:51:36+0200] Sobel test passes. Now let me write the Canny test.
+[2026-05-13T21:53:35+0200] Both browser tests pass. Now let me make sure all unit tests still pass.
+[2026-05-13T21:53:47+0200] All 1051 tests pass. Let me update the todo list and proceed to commit.
+[2026-05-13T21:54:35+0200] Now let me append progress.txt.
+[2026-05-13T21:55:57+0200] Commit landed in HEAD with `passes: true` for US-175. The story restructured both edge-detection lessons (`sobel-gradients`, `canny-edges`) so the input image, code editor, and live cv2-shim output live inside a single Code widget. Found and fixed an unrelated bug where `CodeWidget` didn't forward `data.requiresPackages` to `runWithTests`, which would have made `import cv2` silently fail even with the shim wired into the worker. Browser-verified both lessons with playwright-skill (Sobel: plot flips to `blob:`; Canny: edit `100, 200` → `30, 60`, second blob bytes differ from first). `npm run typecheck` clean; `npx vitest run` 1051/1051 green.
+[2026-05-13T21:55:57+0200] [result success turns=91 cost=$8.32457025] Commit landed in HEAD with `passes: true` for US-175. The story restructured both edge-detection lessons (`sobel-gradients`, `canny-edges`) so the input image, code editor, and live cv2-shim output live inside a single Code widget. Found and fixed an unrelated bug where `CodeWidget` didn't forward `data.requiresPackages` to `runWithTests`, which would have made `import cv2` silently fail even with the shim wired into the worker. Browser-verified both lessons with playwright-skill (Sobel: plot flips to `blob:`; Canny: edit `100, 200` → `30, 60`, second blob bytes differ from first). `npm run typecheck` clean; `npx vitest run` 1051/1051 green.
