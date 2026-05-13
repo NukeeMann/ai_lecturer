@@ -1,6 +1,6 @@
 ---
 name: generate_lesson
-description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json. Accepts two explicit arguments — the course slug and the lesson slug — from the invoking prompt. Reads the lesson context from /courses/<slug>/course.json (find lesson by slug → recover module / estimatedMinutes / title), /courses/<slug>/research.md, and /courses/<slug>/sources.md, then composes a lesson with 4–8 sections that mixes widget types and validates against LessonSchema. Invoked once per lesson by the webapp's course-generation backend after research_course and design_course have written research.md / sources.md / course.json. Triggers on: generate_lesson, Run generate_lesson, generate lesson <slug>/<lesson-slug>."
+description: "Author a single lesson JSON file at /courses/<slug>/lessons/<lesson-slug>.json. Accepts two explicit arguments — the course slug and the lesson slug — from the invoking prompt. Reads the lesson context from /courses/<slug>/course.json (find lesson by slug → recover module / estimatedMinutes / title), /courses/<slug>/research.md, and /courses/<slug>/sources.md, then composes a lesson with at least 1 `theory` section (150–400 words) followed by 2–5 widget sections that mixes widget types and validates against LessonSchema. Invoked once per lesson by the webapp's course-generation backend after research_course and design_course have written research.md / sources.md / course.json. Triggers on: generate_lesson, Run generate_lesson, generate lesson <slug>/<lesson-slug>."
 user-invocable: true
 ---
 
@@ -26,9 +26,9 @@ Concretely, prefer **illustration over assertion** wherever the topic permits. A
 - **Concrete numbers, worked examples, sample I/O.** A formula plus a worked example beats either alone. Code briefs that show *one* concrete input → expected output ground the abstraction immediately.
 - **Markdown structure that helps the eye.** Headings (`##`/`###`) for genuine sub-beats, bullet lists for parallel items, fenced code blocks for code, tables for comparisons, blockquotes (`>`) sparingly for definitions or warnings. Don't ship a single 400-word paragraph when the same content as four bulleted points reads twice as fast.
 - **Diagrams, charts, kernels, masks.** When the topic is spatial / geometric / structural (a kernel layout, a network architecture, a state machine, a coordinate system), a diagram is non-negotiable — use the Image widget for hero figures and inline images for supporting ones. For quantitative figures (curves, distributions, error vs. iteration), prefer `plotImage` so axes are readable.
-- **Active checks, not just exposition.** A quiz between two theory beats is not a checklist item to satisfy — it's the moment the learner finds out whether the previous beat actually landed. Pick distractors that diagnose specific misconceptions from `research.md`, not throwaway "obviously wrong" options.
+- **Active checks, not just exposition.** A quiz placed after a theory beat is not a checklist item to satisfy — it's the moment the learner finds out whether the previous beat actually landed. Pick distractors that diagnose specific misconceptions from `research.md`, not throwaway "obviously wrong" options.
 
-Lessons that read like a textbook excerpt (long unbroken prose, no figures, no comparisons, formulas dumped without context) should be rare and only when the topic genuinely permits nothing else. The rules below (≥ 2 theory beats, `[theory → 1–3 widgets]` pairs, inline-image floor on theory ≥ 300 chars, axes-mandatory for `plotImage`, etc.) are the **floor** — meet them, then ask yourself whether the lesson actually *teaches* the topic or merely *covers* it.
+Lessons that read like a textbook excerpt (long unbroken prose, no figures, no comparisons, formulas dumped without context) should be rare and only when the topic genuinely permits nothing else. The rules below (≥ 1 theory beat of 150–400 words, 2–5 widget sections, inline-image floor on theory ≥ 300 chars, axes-mandatory for `plotImage`, etc.) are the **floor** — meet them, then ask yourself whether the lesson actually *teaches* the topic or merely *covers* it.
 
 ---
 
@@ -41,7 +41,7 @@ Lessons that read like a textbook excerpt (long unbroken prose, no figures, no c
 3. Read the **per-widget JSON Schemas** under `src/widgets/schemas/` (`theory.json`, `quiz.json`, `code.json`, `demo.json`, `sandbox.json`, `plotImage.json`).
 4. **Source research pass** — identify ≥ 3 credible references for this lesson *before writing content*. Start from the matching `## <lesson title>` heading in `sources.md`; supplement with your own research only if those entries don't fully cover the lesson scope. See Step 4 for the full rules.
 5. **Visual illustrations pass** — pick the inline images and Image-widget hero figures that will accompany the lesson. Lessons should be visually rich, not walls of text. See Step 5 for the rules.
-6. Compose a lesson with **8–14 sections** mixing widget types — roughly 2x the prior baseline so the lesson covers the topic in genuine depth — and structured as **at least two `[theory → 1–3 widgets]` pairs** (more pairs allowed). See Step 6 for the full layout rules.
+6. Compose a lesson with **at least 1 `theory` section (150–400 words)** followed by **2–5 widget sections** mixing widget types. See Step 6 for the full layout rules.
 7. Write `/courses/<slug>/lessons/<lesson-slug>.json` — including the `sources` field (lesson-level) plus optional `section.sources` for theory sections that draw on a specific reference.
 8. Validate the file against `LessonSchema` (`src/lib/schemas/lesson.ts`). On failure, read the Zod issues, fix the JSON, retry. Never write invalid JSON.
 9. Stop. The skill ends after the lesson file is written and validates.
@@ -304,7 +304,7 @@ The Image widget caches external URLs into `courses/<slug>/assets/images/` on sa
   eyebrow: "<short uppercase tag>",   // e.g. module title in caps, or "PRACTICE"
   description: "<one-sentence lesson description>",
   estimatedMinutes: <int>,      // from course.json
-  sections: [ ... ],            // 4–8 entries; see below
+  sections: [ ... ],            // ≥1 theory + 2–5 widgets; see below
   sources: [ ... ],             // ≥3 entries; see Step 4
 }
 ```
@@ -313,29 +313,28 @@ The Image widget caches external URLs into `courses/<slug>/assets/images/` on sa
 
 ### Section count and mix
 
-- **8–14 sections per lesson**, in display order. This is roughly **2x the previous baseline** (the older 4–8 range produced lessons that were too thin for the topics being covered). Bias toward the upper half of the range for `intermediate` / `advanced` topics or `estimatedMinutes ≥ 12`; the lower end is reserved for tightly-scoped beginner lessons.
-- **At least TWO distinct `theory` sections** are MANDATORY — a single theory block, however long, is no longer acceptable. Split the topic into two (or more) coherent theory beats: e.g. *intuition / definition* in the first, *formal derivation / edge cases* in the second; or *forward direction* in the first, *inverse / failure modes* in the second.
-- **Each `theory` section MUST be followed by 1–3 widget sections** (any non-theory type: `quiz`, `code`, `demo`, `sandbox`, `image`, `plotImage`, `custom`). The required shape is:
+- **At least 1 `theory` section per lesson, each 150–400 words.** Multiple theory beats are allowed (and encouraged when the topic naturally splits into distinct sub-beats — e.g. *intuition / definition* then *formal derivation / edge cases*; or *forward direction* then *failure modes*) — but a single solid theory section is acceptable when the topic is tightly scoped.
+- **2–5 widget sections per lesson** (any non-theory type: `quiz`, `code`, `demo`, `sandbox`, `image`, `plotImage`, `custom`). This is the total widget budget for the lesson, regardless of how the theory sections are split. Typical shapes:
 
   ```
-  [theory] → [1–3 widgets] → [theory] → [1–3 widgets]   (two such pairs minimum, more pairs allowed)
+  [theory] → [2–5 widgets]                                  (single theory beat, the common case)
+  [theory] → [1–3 widgets] → [theory] → [1–2 widgets]       (two beats, widgets split across them)
   ```
 
-  - Do **not** stack two `theory` sections back-to-back. Every `theory` section except the last must be followed by at least one widget before the next `theory` appears.
-  - The widget run after the **last** `theory` section must also contain 1–3 widgets — no lesson should end on a bare `theory` block.
-  - Three or more `[theory → widgets]` pairs are encouraged for `extensive` / `comprehensive` courses or when the lesson naturally splits into more than two beats.
+  - Do **not** stack two `theory` sections back-to-back. If you use more than one theory beat, place at least one widget between consecutive theories.
+  - **No lesson ends on a bare `theory` block** — the last theory section must be followed by at least one widget.
 - **Always start with a `theory` section** (so the learner has context before the first interactive section).
-- **At least 1 `quiz` section where conceptual checking helps.** With ≥ 2 theory beats it is natural to put one quiz after each theory section. Skip only if the lesson is pure mechanics (e.g. a hands-on debug walkthrough where a quiz feels artificial).
+- **At least 1 `quiz` section where conceptual checking helps.** Skip only if the lesson is pure mechanics (e.g. a hands-on debug walkthrough where a quiz feels artificial).
 - **At least 1 `code` section OR 1 `demo` section where the topic permits hands-on.** For numeric / image / signal topics with a Pyodide-friendly task, prefer `code`. For visual intuition that benefits from a slider (currently only the `gauss` blur demo) prefer `demo`.
 - **At most one `demo` section per lesson** (the only registered demo is `gauss`; reusing it twice is redundant).
 - A `sandbox` section is a nice closer for hands-on lessons — encourages free exploration after the graded code exercise. Optional.
 - A `custom` section is an escape hatch for things no widget covers; use sparingly and only when the topic genuinely warrants it.
 
-When the invoking prompt or `course-spec.json` carries a `Theory/practice mix` (0..1), use it to tune the balance — but **the ≥ 2 theory sections + `[theory → 1–3 widgets]` shape is non-negotiable in every case**:
+When the invoking prompt or `course-spec.json` carries a `Theory/practice mix` (0..1), use it to tune the balance — but **the ≥ 1 theory section + 2–5 widget shape is non-negotiable in every case**:
 
-- `≤ 0.3` → lean practice: 2 theory beats (kept compact) + 2–3 code + 1–2 quiz + 1 sandbox. Each theory pair leans on one short theory + 2–3 hands-on widgets.
-- `0.4–0.6` → balanced: 2–3 theory beats + 2 code (or 1 code + 1 demo) + 1–2 quiz + optional sandbox. Each theory pair: theory + 1–2 widgets.
-- `≥ 0.7` → lean theory: 3–4 theory beats + 1–2 quiz; code/sandbox only if the topic clearly invites it. Each theory pair: theory + 1 quiz/image widget is fine.
+- `≤ 0.3` → lean practice: 1 theory beat (kept compact) + 4–5 widgets weighted toward `code` / `sandbox` / `demo` (e.g. 2 code + 1 quiz + 1 sandbox).
+- `0.4–0.6` → balanced: 1–2 theory beats + 3–4 widgets (mix of `quiz`, `code`, `image` / `plotImage`).
+- `≥ 0.7` → lean theory: 1–2 theory beats + 2–3 widgets weighted toward `quiz` / `image` / `plotImage`; code/sandbox only if the topic clearly invites it.
 
 If no ratio is given, default to the balanced mix.
 
@@ -358,7 +357,7 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - `data.markdown` is plain markdown rendered with KaTeX support (`$inline$` and `$$block$$`).
 - Use KaTeX where math is genuinely relevant (formulas, summations, kernels) — don't force LaTeX into prose.
 - Use fenced code blocks for code snippets (\`\`\`python ... \`\`\`).
-- Length: **150–400 words per theory section** (the prior 80–250-word target produced lessons that were too thin — this is the per-section half of the ~2x lesson-length increase). With ≥ 2 theory sections required (see *Section count and mix* above) this still keeps each block readable while letting the lesson cover the topic in genuine depth. Use the lower half of the range when the topic genuinely splits into many small beats; use the upper half when you have only the minimum two beats and need each to carry real weight.
+- Length: **150–400 words per theory section.** Use the lower half of the range when the topic splits into multiple theory beats and each one is a short focused sub-section; use the upper half when the lesson has a single theory beat that needs to carry real weight on its own.
 - Headings: don't open with `# `; the section's own title is already a heading. Use `##` / `###` for sub-structure if needed.
 - **Don't ship a wall of prose.** Apply the *Your Role* principles at the top of this skill: break the markdown with bullet lists for parallel items, short tables for X-vs-Y comparisons, blockquotes for definitions / warnings, and at least one `![alt](url)` inline image whenever the section is ≥ 300 chars and the topic is visualisable (almost always — kernels, signals, plots, architectures, before/after pairs, geometric layouts). KaTeX formulas and worked numeric examples beat hand-wavy prose every time the topic involves quantities. A theory section that is one unbroken 350-word paragraph with no formula, no list, no figure, and no code is a *failure mode*, not a default.
 
@@ -694,10 +693,10 @@ Output — `/courses/image-denoising/lessons/median-filter.json`:
 
 Why this lesson works as a worked example:
 
-- **8 sections forming 3 `[theory → widgets]` pairs** — at the floor of the new 8–14 section range (US-112). Three theory beats (*intuition* → *algorithm / complexity* → *failure modes*) split the topic into the natural why/how/when shape, and each is followed by 1–3 widgets — no two theory sections back-to-back, no lesson ending on a bare theory. Appropriate here for a 12-minute beginner lesson with a 0.4 theory/practice mix; an `intermediate` lesson on the same topic would add a `plotImage` of the histogram-sliding optimisation in pair 2 and another quiz in pair 3 to push toward the upper half of the range.
-- **Pair 1 — theory (intuition) → image → quiz.** The first theory section opens with intuition + an inline Wikimedia Commons image of salt-and-pepper noise (>300 chars of markdown justifies the visual; the alt text describes exactly what the figure shows) + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference. The image widget (hero figure) reinforces the edge-preservation claim with a stand-alone diagram comparing median vs. mean filter outputs on a step edge — `alt` detailed and specific; `caption` summarises the takeaway in one sentence; `attribution.text` follows the `Wikimedia Commons, <author>, <license>` format. The quiz uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors.
-- **Pair 2 — theory (algorithm) → code.** The second theory section pivots from *why* (intuition) to *how* (the window/sort/pick algorithm + complexity + non-separability), with KaTeX for the per-window cost and a section-level `sources` entry pointing at the Huang 1979 paper that introduced the histogram-based sliding optimisation. The code exercise has 4 tests with descriptive names and small bodies — one test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
-- **Pair 3 — theory (failure modes) → quiz → sandbox.** The third theory section pivots one final time, from *how* (the algorithm) to *when* (the regimes where the median is the *wrong* tool: Gaussian noise, dense impulse noise > 50% of the window, thin features). The follow-up quiz is multi-select and forces the learner to apply the failure-mode reasoning to three concrete scenarios; the explanation re-grounds each correct option in the rule from the preceding theory. The sandbox closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and the noise rate and see the median's failure mode for themselves.
+- **8 sections — 3 theory beats + 5 widget sections** — this lesson uses the **upper end** of the 2–5 widget budget because the topic naturally splits into three distinct why/how/when beats. Each theory beat (*intuition* → *algorithm / complexity* → *failure modes*) is followed by 1–2 widgets — no two theory sections back-to-back, no lesson ending on a bare theory. Equally valid for a tightly-scoped variant of the same topic: a single 350-word theory beat followed by 4 widgets (image → code → quiz → sandbox). The chosen shape here matches a 12-minute beginner lesson with a 0.4 theory/practice mix.
+- **Beat 1 — theory (intuition) → image → quiz.** The first theory section opens with intuition + an inline Wikimedia Commons image of salt-and-pepper noise (>300 chars of markdown justifies the visual; the alt text describes exactly what the figure shows) + KaTeX formula + one explicit edge-preservation claim. It carries a section-level `sources` entry (the Wikipedia article on median filtering) because the theory leans directly on that reference. The image widget (hero figure) reinforces the edge-preservation claim with a stand-alone diagram comparing median vs. mean filter outputs on a step edge — `alt` detailed and specific; `caption` summarises the takeaway in one sentence; `attribution.text` follows the `Wikimedia Commons, <author>, <license>` format. The quiz uses "mean filter" / "Gaussian filter" / "they're equivalent" as plausible distractors.
+- **Beat 2 — theory (algorithm) → code.** The second theory section pivots from *why* (intuition) to *how* (the window/sort/pick algorithm + complexity + non-separability), with KaTeX for the per-window cost and a section-level `sources` entry pointing at the Huang 1979 paper that introduced the histogram-based sliding optimisation. The code exercise has 4 tests with descriptive names and small bodies — one test is `hidden: false` so the learner sees a smoke test up front; the other three are hidden grading tests.
+- **Beat 3 — theory (failure modes) → quiz → sandbox.** The third theory section pivots one final time, from *how* (the algorithm) to *when* (the regimes where the median is the *wrong* tool: Gaussian noise, dense impulse noise > 50% of the window, thin features). The follow-up quiz is multi-select and forces the learner to apply the failure-mode reasoning to three concrete scenarios; the explanation re-grounds each correct option in the rule from the preceding theory. The sandbox closes the lesson with one warm sentence of encouragement and a starter that primes the learner to vary `k` and the noise rate and see the median's failure mode for themselves.
 - **Lesson-level `sources` has 4 entries** mixing kinds (`article`, `book`, `video`) — comfortably above the ≥ 3 floor. The book entry carries `author` + `year` because for textbook chapters those are strongly preferred. The Wikipedia + scikit-image entries omit `author`/`year` (recoverable from the URL). All URLs are stable: Wikipedia, official scikit-image docs, the publisher's catalogue page, and an official Computerphile YouTube video — no medium / towardsdatascience.
 
 ---
@@ -711,10 +710,10 @@ Why this lesson works as a worked example:
 - [ ] `courseSlug` matches the directory.
 - [ ] `moduleId` matches the parent module in `course.json`.
 - [ ] `estimatedMinutes` matches `course.json`'s lesson entry.
-- [ ] **8–14 sections** (~2x the prior 4–8 baseline; US-112).
-- [ ] **At least TWO distinct `theory` sections** (US-112). A single theory block is no longer acceptable.
-- [ ] **Every `theory` section is followed by 1–3 widget sections** (any non-theory type) before the next `theory` section or the end of the lesson — i.e. `[theory → 1–3 widgets] → [theory → 1–3 widgets]` repeated, with no two `theory` sections back-to-back and no lesson ending on a bare theory section (US-112).
-- [ ] **Each `theory.markdown` is 150–400 words** (US-112) so each beat carries real weight rather than being a thin paragraph.
+- [ ] **At least 1 `theory` section** (multiple beats allowed; no two `theory` sections back-to-back).
+- [ ] **2–5 widget sections** total (any non-theory type).
+- [ ] **No lesson ends on a bare `theory` block** — the last `theory` section is followed by at least one widget.
+- [ ] **Each `theory.markdown` is 150–400 words** so the beat carries real weight rather than being a thin paragraph.
 - [ ] At least one of `quiz` (where conceptual checking helps).
 - [ ] At least one of `code` or `demo` (where the topic permits hands-on).
 - [ ] All `section.id` values are unique within the lesson.

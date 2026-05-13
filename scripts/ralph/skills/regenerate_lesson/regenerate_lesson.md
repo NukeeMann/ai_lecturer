@@ -106,7 +106,7 @@ If any of these drift, the route returns 422 and `lesson.json` is left untouched
 
 1. **Preserve identity.** Copy `slug`, `courseSlug`, `moduleId`, and `title` verbatim from `currentLesson` into `newLesson`. The rest of the course (navigation, the parent module's `lessons` list, persisted progress keyed on `slug`, generation logs) all reference these fields. The route rejects with 422 if any of them drift.
 2. **Refresh the body freely.** `eyebrow`, `description`, `estimatedMinutes`, `sections`, and `sources` are yours to rewrite — that is the whole point of regenerating. Section ids MAY change (you are rebuilding the section list end-to-end), but every section must satisfy its variant of `SectionSchema`.
-3. **Reasonable section count + kind mix.** Aim for 4–8 sections. Match the *purpose* of the lesson:
+3. **Reasonable section count + kind mix.** Aim for **≥ 1 `theory` section (150–400 words) + 2–5 widget sections** (roughly 3–6 sections total; up to ~8 if the topic genuinely splits into multiple theory beats). No two `theory` sections back-to-back; never end on a bare `theory` block. Match the *purpose* of the lesson:
    - A theoretical lesson is mostly `theory` interleaved with one or two `quiz` checks; a `code` or `sandbox` exercise is welcome but not mandatory.
    - A coding lesson opens with one or two `theory` setups, has a `code` task as its centrepiece, and may close with a `sandbox` for free play and/or a `quiz` to confirm the takeaway.
    - A widget-driven lesson (e.g. `histogram`, `parametricExplorer`, `demo`, `dragMatch`, `dataTable`, `video`, `plotImage`) keeps the canonical widget at the centre, with `theory` framing it and a `quiz` confirming the takeaway.
