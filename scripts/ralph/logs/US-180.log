@@ -1,9 +1,26 @@
-[2026-05-13T22:16:30+0200] [rate_limit five_hour status=allowed]
-[2026-05-13T22:18:05+0200] Now I have a clear picture. Let me create the slugify util and refactor the wizard dialog.
-[2026-05-13T22:18:09+0200] Now the main refactor of `ExtendWizardClient.tsx`:
-[2026-05-13T22:18:25+0200] Now replace the state hooks and handlers in the component body:
-[2026-05-13T22:18:56+0200] Now update the keydown handlers and the autofocus effect:
-[2026-05-13T22:19:05+0200] Now fix `extend-tree` (remove loading-related `data-loading` and opacity), `addInlineBtnStyle`/`addBlockBtnStyle` disabled — those reference `loading`. Reset button now uses simplified disabled condition:
-[2026-05-13T22:20:26+0200] Now replace the dialog body and footer with the new two-field form:
-[2026-05-13T22:21:26+0200] API Error: Internal server error
-[2026-05-13T22:21:26+0200] [result success ERROR turns=25 cost=$1.96023475] API Error: Internal server error
+[2026-05-13T22:22:18+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:22:53+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:25:55+0200] I'll take the simpler path: store `summary: ''` for modules when empty (Module.summary is required by Zod schema; rendering already treats empty/missing identically). For lessons (where summary is optional), omit when empty. This avoids a schema migration and keeps the UX identical.
+[2026-05-13T22:27:50+0200] Now let me rewrite the test file to replace the /extend agent tests with direct-add tests.
+[2026-05-13T22:29:13+0200] Typecheck clean. Now tests.
+[2026-05-13T22:29:37+0200] All 19 tests pass. Now let me run the full suite to confirm nothing else broke.
+[2026-05-13T22:29:50+0200] All 1063 tests pass. Now playwright verification.
+[2026-05-13T22:31:24+0200] Now let me update prd.json, append progress.txt, and commit.
+[2026-05-13T22:32:46+0200] Committed `fd42bf6` with `passes: true` for US-180.
+
+**What landed:**
+- `src/lib/slugify.ts` — client-safe slugify util (mirrors `src/lib/server/paths.ts:slugify` without `node:path`).
+- `ExtendWizardClient.tsx` — dialog replaced with `<input>` Title + `<textarea>` Summary fields, kind-swapped labels, autofocus Title, Enter → focus Summary, Cmd/Ctrl+Enter → Add. `handleAdd` is now synchronous: slugifies, checks collisions (inline error), appends to `currentProposed`. All `/extend` POST plumbing + refinements bookkeeping is gone.
+- `page.test.tsx` — full rewrite: deleted /extend mock tests, added 10 direct-add tests; US-179 summary suite kept verbatim.
+- Module summary AC deviation noted in progress.txt: stored as `''` when empty (ModuleSchema requires it; `/apply` would reject otherwise). Lessons omit as AC specifies.
+
+**Verification:** typecheck clean, 1063/1063 vitest pass, playwright browser test passed all assertions (`/tmp/us-180-final.png`).
+[2026-05-13T22:32:46+0200] [result success turns=58 cost=$6.12988275] Committed `fd42bf6` with `passes: true` for US-180.
+
+**What landed:**
+- `src/lib/slugify.ts` — client-safe slugify util (mirrors `src/lib/server/paths.ts:slugify` without `node:path`).
+- `ExtendWizardClient.tsx` — dialog replaced with `<input>` Title + `<textarea>` Summary fields, kind-swapped labels, autofocus Title, Enter → focus Summary, Cmd/Ctrl+Enter → Add. `handleAdd` is now synchronous: slugifies, checks collisions (inline error), appends to `currentProposed`. All `/extend` POST plumbing + refinements bookkeeping is gone.
+- `page.test.tsx` — full rewrite: deleted /extend mock tests, added 10 direct-add tests; US-179 summary suite kept verbatim.
+- Module summary AC deviation noted in progress.txt: stored as `''` when empty (ModuleSchema requires it; `/apply` would reject otherwise). Lessons omit as AC specifies.
+
+**Verification:** typecheck clean, 1063/1063 vitest pass, playwright browser test passed all assertions (`/tmp/us-180-final.png`).
