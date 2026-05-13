@@ -1,0 +1,22 @@
+[2026-05-13T12:16:48+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T12:20:39+0200] Now I'll implement the changes. First, the pure helper:
+[2026-05-13T12:20:54+0200] Now wire the helper into the lesson page:
+[2026-05-13T12:21:03+0200] Now add the `handleBottomBarNext` callback after `handleNavigate`:
+[2026-05-13T12:21:23+0200] I need to move `handleBottomBarNext` after `handleMarkComplete` is declared. Let me revert and place it correctly:
+[2026-05-13T12:21:39+0200] Now wire it to BottomBar. Update the BottomBar interface and pass through to the Next NavButton:
+[2026-05-13T12:21:49+0200] Now pass `onNavigateNext` from the page to BottomBar:
+[2026-05-13T12:22:44+0200] Pre-existing lint error — not from my change. Now let's do browser verification.
+[2026-05-13T12:32:28+0200] All browser checks pass. Let me verify screenshots exist:
+[2026-05-13T12:32:34+0200] Now update prd.json and progress.txt:
+[2026-05-13T12:33:41+0200] Commit `a0d4187` landed with `US-164.passes=true`. Summary of what shipped:
+
+- **`src/lib/lessons/bottomBarNext.ts`** — pure `bottomBarNextAction({finished, markComplete, navigate})` helper: awaits the completion mutator when `!finished`, then navigates. Idempotent on finished lessons.
+- **`src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`** — new `handleBottomBarNext` callback (placed after `handleMarkComplete` to dodge TDZ); BottomBar gained an optional `onNavigateNext` prop wired to the Next-side `NavButton` (Prev + Mark Complete + auto-advance unchanged).
+- **`src/lib/lessons/bottomBarNext.test.ts`** — 4 cases: mark+nav, nav-only, await-ordering, idempotent re-invocation.
+- Typecheck clean. Tests: 1012/1012 pass. Browser-verified across `theory-test`'s 3 lessons with screenshots `/tmp/us164-{01..06}-*.png`.
+[2026-05-13T12:33:41+0200] [result success turns=92 cost=$7.651311500000002] Commit `a0d4187` landed with `US-164.passes=true`. Summary of what shipped:
+
+- **`src/lib/lessons/bottomBarNext.ts`** — pure `bottomBarNextAction({finished, markComplete, navigate})` helper: awaits the completion mutator when `!finished`, then navigates. Idempotent on finished lessons.
+- **`src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx`** — new `handleBottomBarNext` callback (placed after `handleMarkComplete` to dodge TDZ); BottomBar gained an optional `onNavigateNext` prop wired to the Next-side `NavButton` (Prev + Mark Complete + auto-advance unchanged).
+- **`src/lib/lessons/bottomBarNext.test.ts`** — 4 cases: mark+nav, nav-only, await-ordering, idempotent re-invocation.
+- Typecheck clean. Tests: 1012/1012 pass. Browser-verified across `theory-test`'s 3 lessons with screenshots `/tmp/us164-{01..06}-*.png`.
