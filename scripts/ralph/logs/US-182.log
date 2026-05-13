@@ -1,0 +1,30 @@
+[2026-05-13T22:42:48+0200] [rate_limit five_hour status=allowed]
+[2026-05-13T22:43:58+0200] Let me look at the TTS schemas and existing CLAUDE.md for scripts/build patterns.
+[2026-05-13T22:44:44+0200] Now update SettingsMenu.tsx — switch to static MP3 with graceful fallback.
+[2026-05-13T22:45:13+0200] Now update the unmount cleanup effect to drop the previewCacheRef.
+[2026-05-13T22:45:19+0200] Now update tests:
+[2026-05-13T22:46:07+0200] The AC references `/api/tts/preview` for the fallback, but the codebase only has `/api/tts`. Let me create a thin `/api/tts/preview` alias route so the fallback path actually works (and matches AC literally).
+[2026-05-13T22:46:27+0200] Typecheck clean. Run unit tests for the SettingsMenu file.
+[2026-05-13T22:46:32+0200] All 7 SettingsMenu tests pass. Now start the dev server and try generating MP3 samples.
+[2026-05-13T22:47:05+0200] TTS backend isn't installed — graceful-degradation path. Let me run the playwright test, fulfilling the static-file requests via page.route() so we can verify the wiring without baked MP3s.
+[2026-05-13T22:47:43+0200] All three voices fetched their static MP3, zero `/api/tts/preview` calls. Screenshot captured. Now run the full test suite + typecheck.
+[2026-05-13T22:48:08+0200] The 1 failing test is unrelated to US-182 (it's a flaky `.generating.json` race in generation.test.ts). Let me confirm it's pre-existing flakiness by re-running just that file.
+[2026-05-13T22:48:13+0200] Confirmed flake — passes in isolation. Now finalize: progress.txt, prd.json, commit.
+[2026-05-13T22:49:25+0200] US-182 committed at `cb2602d` with `passes: true`.
+
+**Summary**
+- `SettingsMenu.onVoicePreview` now plays `/voice-samples/<voice>.mp3` directly; on audio `error`, falls back to POST `/api/tts/preview` (warned once per voice). The previewCacheRef blob-URL bookkeeping is gone; the URL/revoke paths are kept only on the fallback branch.
+- New `scripts/build/generate-voice-samples.ts` + `npm run build:voice-samples` script + `scripts/build/CLAUDE.md`.
+- New thin alias route `src/app/api/tts/preview` so the fallback path matches the AC literally without duplicating `/api/tts` logic.
+- Tests: replaced the `/api/tts` assertion with a static-MP3 assertion + new audio-error fallback test (7/7 SettingsMenu tests pass; full suite 1063/1064 — the 1 failure is a pre-existing `.generating.json` flake under contention).
+- Browser test: playwright with `page.route()` fulfilling `/voice-samples/*` confirmed all 3 voices issued a `/voice-samples/<voice>.mp3` request and zero `/api/tts/preview` calls. Screenshot at `/tmp/us-182-settings-en-female-warm.png`.
+- Pre-flight: local TTS backend not installed (503 `tts-not-installed`), so the commit ships the script + UI + alias route **without** the MP3 files, per the AC's graceful-degradation clause. `progress.txt` carries the operator note.
+[2026-05-13T22:49:25+0200] [result success turns=54 cost=$4.224845750000001] US-182 committed at `cb2602d` with `passes: true`.
+
+**Summary**
+- `SettingsMenu.onVoicePreview` now plays `/voice-samples/<voice>.mp3` directly; on audio `error`, falls back to POST `/api/tts/preview` (warned once per voice). The previewCacheRef blob-URL bookkeeping is gone; the URL/revoke paths are kept only on the fallback branch.
+- New `scripts/build/generate-voice-samples.ts` + `npm run build:voice-samples` script + `scripts/build/CLAUDE.md`.
+- New thin alias route `src/app/api/tts/preview` so the fallback path matches the AC literally without duplicating `/api/tts` logic.
+- Tests: replaced the `/api/tts` assertion with a static-MP3 assertion + new audio-error fallback test (7/7 SettingsMenu tests pass; full suite 1063/1064 — the 1 failure is a pre-existing `.generating.json` flake under contention).
+- Browser test: playwright with `page.route()` fulfilling `/voice-samples/*` confirmed all 3 voices issued a `/voice-samples/<voice>.mp3` request and zero `/api/tts/preview` calls. Screenshot at `/tmp/us-182-settings-en-female-warm.png`.
+- Pre-flight: local TTS backend not installed (503 `tts-not-installed`), so the commit ships the script + UI + alias route **without** the MP3 files, per the AC's graceful-degradation clause. `progress.txt` carries the operator note.
