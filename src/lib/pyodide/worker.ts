@@ -47,6 +47,10 @@ interface RunRequest {
   code?: string;
   tests?: Array<{ name: string; body: string }>;
   lessonSlug?: string;
+  // 'run' / 'runWithTests' optional package preload (US-173). Currently the
+  // only meaningful value is 'cv2', which triggers ensureCv2Shim(py) before
+  // user code is exec'd.
+  requiresPackages?: string[];
   // gaussFilter payload
   pixels?: Uint8Array;
   width?: number;
@@ -70,6 +74,8 @@ let gaussInstalled = false;
 let pillowPromise: Promise<void> | null = null;
 let pexpInstalled = false;
 let matplotlibPromise: Promise<void> | null = null;
+let cv2InstalledOnce = false;
+let cv2PackagesPromise: Promise<void> | null = null;
 // Per-lesson Python namespace. The Python dict lives in worker globals as
 // `__ai_lesson_globals`; this proxy is captured once after the runner is
 // installed and reused for every `'run'` exec so user-defined names persist
@@ -194,6 +200,74 @@ async function ensurePexp(py: PyodideAPI): Promise<void> {
   pexpInstalled = true;
 }
 
+// cv2 shim (US-173) — Pyodide has no native OpenCV, so we expose a thin
+// Python shim over scipy.ndimage + scikit-image that mimics the subset of
+// the cv2 API used by lessons. After load, `import cv2` resolves to the
+// shim module. Keep CV2_SHIM_PY in sync with scripts/pyodide/cv2_shim.py.
+const CV2_SHIM_PY = `
+"""cv2 shim for Pyodide (NOT real OpenCV). See scripts/pyodide/cv2_shim.py
+for the canonical source + caveats."""
+import sys
+
+import numpy as np
+import scipy.ndimage as _ndimage
+import skimage.color as _color
+import skimage.feature as _feature
+import skimage.io as _io
+
+IMREAD_GRAYSCALE = 0
+IMREAD_COLOR = 1
+CV_8U = 0
+CV_64F = 6
+
+
+def imread(path, flags=IMREAD_COLOR):
+    img = _io.imread(path)
+    if flags == IMREAD_GRAYSCALE:
+        if img.ndim == 3:
+            img = _color.rgb2gray(img)
+        img = (np.asarray(img) * 255).astype(np.uint8) if img.dtype != np.uint8 else img
+    return img
+
+
+def imwrite(path, img):
+    _io.imsave(path, img)
+    return True
+
+
+def Sobel(src, ddepth, dx, dy, ksize=3):
+    if ksize != 3:
+        raise ValueError("cv2 shim Sobel only supports ksize=3")
+    arr = src.astype(np.float64)
+    if dx == 1 and dy == 0:
+        return _ndimage.sobel(arr, axis=1)
+    if dx == 0 and dy == 1:
+        return _ndimage.sobel(arr, axis=0)
+    raise ValueError("cv2 shim Sobel only supports (dx=1,dy=0) or (dx=0,dy=1)")
+
+
+def Canny(image, threshold1, threshold2):
+    edges = _feature.canny(
+        image.astype(np.float64) / 255.0,
+        low_threshold=threshold1 / 255.0,
+        high_threshold=threshold2 / 255.0,
+    )
+    return (edges.astype(np.uint8)) * 255
+
+
+sys.modules['cv2'] = sys.modules[__name__]
+`;
+
+async function ensureCv2Shim(py: PyodideAPI): Promise<void> {
+  if (cv2InstalledOnce) return;
+  if (!cv2PackagesPromise) {
+    cv2PackagesPromise = py.loadPackage(['scipy', 'scikit-image']);
+  }
+  await cv2PackagesPromise;
+  await py.runPythonAsync(CV2_SHIM_PY);
+  cv2InstalledOnce = true;
+}
+
 function formatTraceback(err: unknown): string {
   if (err instanceof Error) {
     return err.message || err.toString();
@@ -257,6 +331,9 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     if (type === 'run') {
       try {
         await ensureRunner(py);
+        if (data.requiresPackages?.includes('cv2')) {
+          await ensureCv2Shim(py);
+        }
         await py.runPythonAsync(code ?? '', {
           globals: lessonGlobalsProxy ?? undefined,
         });
@@ -344,6 +421,9 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
 
     // runWithTests
     await ensureRunner(py);
+    if (data.requiresPackages?.includes('cv2')) {
+      await ensureCv2Shim(py);
+    }
     py.globals.set('__ai_user_code__', code ?? '');
     py.globals.set('__ai_tests__', tests ?? []);
     let testResults: unknown = [];

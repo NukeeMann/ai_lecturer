@@ -218,8 +218,13 @@ export function stopPyodide(reason: PyodideStopReason = 'user'): void {
 }
 
 type WorkerPayload =
-  | { type: 'run'; code: string }
-  | { type: 'runWithTests'; code: string; tests: PyodideTestSpec[] }
+  | { type: 'run'; code: string; requiresPackages?: string[] }
+  | {
+      type: 'runWithTests';
+      code: string;
+      tests: PyodideTestSpec[];
+      requiresPackages?: string[];
+    }
   | {
       type: 'gaussFilter';
       pixels: Uint8Array;
@@ -289,8 +294,12 @@ function callWorker<T>(
 
 export interface UsePyodideReturn {
   status: PyodideStatus;
-  run: (code: string) => Promise<RunResult>;
-  runWithTests: (code: string, tests: PyodideTestSpec[]) => Promise<RunWithTestsResult>;
+  run: (code: string, requiresPackages?: string[]) => Promise<RunResult>;
+  runWithTests: (
+    code: string,
+    tests: PyodideTestSpec[],
+    requiresPackages?: string[],
+  ) => Promise<RunWithTestsResult>;
   gaussFilter: (
     pixels: Uint8Array,
     width: number,
@@ -333,17 +342,19 @@ export function usePyodide(): UsePyodideReturn {
   );
 
   const run = useCallback(
-    (code: string) =>
-      callWorker<RunResult>({ type: 'run', code }, undefined, {
-        timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS,
-      }),
+    (code: string, requiresPackages?: string[]) =>
+      callWorker<RunResult>(
+        { type: 'run', code, requiresPackages },
+        undefined,
+        { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
+      ),
     [],
   );
 
   const runWithTests = useCallback(
-    (code: string, tests: PyodideTestSpec[]) =>
+    (code: string, tests: PyodideTestSpec[], requiresPackages?: string[]) =>
       callWorker<RunWithTestsResult>(
-        { type: 'runWithTests', code, tests },
+        { type: 'runWithTests', code, tests, requiresPackages },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
       ),

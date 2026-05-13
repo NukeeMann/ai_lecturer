@@ -52,6 +52,8 @@ export const CodeDataSchema = z.object({
   solution: z.string().optional(),
   inputs: z.array(CodeInputSchema).optional(),
   outputMedia: CodeOutputMediaSchema.optional(),
+  // 'cv2' resolves to a shim, not real OpenCV — see src/lib/pyodide/CLAUDE.md
+  requiresPackages: z.array(z.string()).optional(),
 });
 
 export type CodeTest = z.infer<typeof CodeTestSchema>;
