@@ -57,3 +57,25 @@ Previous log archived to: archive/progress-2026-05-13-1233.txt
 
 - **Browser audio upload pattern (US-159).** `/api/stt`'s contract is `{audioPath: string}` (server-side path under ~/.ai-lecturer/ or <courses>/), so browser-recorded audio can't hit it directly. Solution: a sibling `/api/stt/upload` (POST multipart, field `audio`) that writes the blob to `~/.ai-lecturer/stt-uploads/rec-<ts>-<rand>.<ext>`, calls `processSttRequest({audioPath: absPath, language:'en'})`, deletes the temp file (best-effort), and returns the same `{transcript, durationMs, segments?}` shape. Same 503/500/path-error response codes as /api/stt so widget error handling is identical. The MIME→extension map (`audio/webm`, `audio/ogg`, `audio/mp4`, `audio/wav`) lets whisper.cpp accept the recording format the browser produced — Chromium MediaRecorder defaults to `audio/webm;codecs=opus` which whisper.cpp does accept. /api/stt/upload size cap is 20MB.
 - **Playwright mic capture flags.** Pass `--use-fake-ui-for-media-stream` + `--use-fake-device-for-media-stream` to chromium launch `args` AND grant permissions: `await context.grantPermissions(['microphone'], { origin })`. Both are needed: the flags inject the fake device and skip the permission UI, but Chromium still requires the origin to be in the permissions list. With both, `navigator.mediaDevices.getUserMedia({audio:true})` resolves with a stream that MediaRecorder can consume, producing real (silent) audio chunks suitable for round-trip wiring tests.
+
+## 2026-05-13 12:55 - US-166
+- Added TTS voice picker: 3 voices selectable in Settings menu under Accent, each with inline preview.
+- Files changed:
+  - src/lib/schemas/tts.ts (enum 2→3 values + DEFAULT_TTS_VOICE + TTS_VOICE_VALUES exports)
+  - src/lib/server/tts.ts (DEFAULT_VOICE_SPEAKERS map + voiceEnvKey + resolveVoiceSpeaker rewrite)
+  - src/lib/server/tts.test.ts (env-var override test + voice literals)
+  - src/lib/server/generation.ts (replace hardcoded 'en-female' with DEFAULT_TTS_VOICE import)
+  - src/lib/server/generation.test.ts (relax stub voice type to string)
+  - src/lib/client/ttsVoice.ts (NEW: readTtsVoice/writeTtsVoice + storage key constant)
+  - src/widgets/TtsDemo/TtsDemoWidget.tsx (pass voice in /api/tts body, cache by voice+text)
+  - src/components/SettingsMenu.tsx (VoiceGroup component + pill row + preview state + onVoicePreview)
+  - src/components/SettingsMenu.test.tsx (NEW Voice picker tests with mocked fetch/audio/URL)
+  - README.md (env var doc update: 3 new AI_LECTURER_TTS_VOICE_EN_* vars)
+- Quality: pnpm typecheck ✅, pnpm test --run ✅ (1015 passed), playwright headless test ✅ (3 pills render, selection + localStorage update, /api/tts hit with correct voice for each, blob URL wired into a hidden <audio>).
+- Learnings for future iterations:
+  - **`audio.ended` fires immediately on a stubbed empty WAV blob and your onEnded handler removes the element**, so `querySelectorAll('audio')` AFTER a brief wait returns empty even though the preview DID play. In playwright, use a MutationObserver installed BEFORE the click to capture the transient element; record its src/data-voice as it's added. Don't rely on the audio element still being mounted by the time you inspect.
+  - **Three places to wire a per-voice env var override**: (1) env-key derivation in `resolveVoiceSpeaker` (e.g. `AI_LECTURER_TTS_VOICE_<UPPER_SNAKE_OF_VOICE_ID>`), (2) README env-var docs section, (3) `afterEach` cleanup in `tts.test.ts` to delete each `process.env.AI_LECTURER_TTS_VOICE_*` so per-test override doesn't leak.
+  - **SettingsMenu.tsx is a long-lived "all global prefs" panel**: every per-tab pref (theme, density, font, text scale, sunset variant, accent, voice) follows the same wire-up pattern — initial sync via `useEffect(() => setX(readX()))`, refresh handler tied to `SETTINGS_CHANGE_EVENT` + `'storage'` events, and dispatch `new Event(SETTINGS_CHANGE_EVENT)` after any `localStorage.setItem`. New prefs that other components need to read-back-live must dispatch this event or other tabs/components won't notice.
+  - **TtsDemo's per-instance text cache MUST be keyed by `voice + text`**, otherwise switching voice and re-submitting the same text replays the previous voice's cached blob URL. Same goes for any future widget that POSTs to /api/tts and caches blob URLs in-memory.
+  - **The "preview audio" hidden-element pattern**: `document.createElement('audio')` + `autoplay=true` + `hidden=true` + `style.display='none'` + manual `appendChild`. Don't render it via JSX — that ties its lifetime to React reconciliation, which fights the "only one preview at a time → click another to stop the first" requirement that wants imperative removal.
+---

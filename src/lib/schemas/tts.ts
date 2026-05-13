@@ -2,12 +2,27 @@ import { z } from 'zod';
 
 // US-154: shared schemas for /api/tts and /api/stt.
 
-export const TtsVoiceEnum = z.enum(['en-female', 'en-male']);
+// US-166: three Coqui XTTS v2 voices selectable from Settings. See the
+// speaker mapping doc-block in src/lib/server/tts.ts for the underlying
+// XTTS speaker IDs and per-voice env-var overrides.
+export const TtsVoiceEnum = z.enum([
+  'en-female-warm',
+  'en-male-neutral',
+  'en-female-bright',
+]);
 export type TtsVoice = z.infer<typeof TtsVoiceEnum>;
+
+export const TTS_VOICE_VALUES: readonly TtsVoice[] = [
+  'en-female-warm',
+  'en-male-neutral',
+  'en-female-bright',
+] as const;
+
+export const DEFAULT_TTS_VOICE: TtsVoice = 'en-female-warm';
 
 export const TtsRequestSchema = z.object({
   text: z.string().min(1).max(2000),
-  voice: TtsVoiceEnum.default('en-female'),
+  voice: TtsVoiceEnum.default(DEFAULT_TTS_VOICE),
   outputBaseName: z
     .string()
     .min(1)

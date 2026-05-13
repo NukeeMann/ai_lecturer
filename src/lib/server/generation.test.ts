@@ -3687,7 +3687,7 @@ describe('TTS post-processing (US-157)', () => {
   function makeTtsStub() {
     const calls: { text: string; voice: string }[] = [];
     let counter = 0;
-    const stub = async (input: { text: string; voice: 'en-female' | 'en-male' }) => {
+    const stub = async (input: { text: string; voice: string }) => {
       calls.push({ text: input.text, voice: input.voice });
       counter += 1;
       const tmpDir = await fs.mkdtemp(path.join(tmpdir(), 'ai-tts-stub-'));

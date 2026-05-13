@@ -125,8 +125,9 @@ beforeEach(async () => {
 afterEach(async () => {
   __setTtsDepsForTesting(null);
   delete process.env.AI_LECTURER_HOME_OVERRIDE;
-  delete process.env.AI_LECTURER_TTS_VOICE_FEMALE;
-  delete process.env.AI_LECTURER_TTS_VOICE_MALE;
+  delete process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_WARM;
+  delete process.env.AI_LECTURER_TTS_VOICE_EN_MALE_NEUTRAL;
+  delete process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_BRIGHT;
   await fs.rm(homeRoot, { recursive: true, force: true });
 });
 
@@ -145,17 +146,21 @@ describe('parseWavDurationMs (US-154)', () => {
 
 describe('contentHash + buildTtsArgs (US-154)', () => {
   it('hashes the same input to the same value (and different input differs)', () => {
-    const a = contentHash('hello world', 'en-female');
-    const b = contentHash('hello world', 'en-female');
-    const c = contentHash('hello world', 'en-male');
-    const d = contentHash('hello world!', 'en-female');
+    const a = contentHash('hello world', 'en-female-warm');
+    const b = contentHash('hello world', 'en-female-warm');
+    const c = contentHash('hello world', 'en-male-neutral');
+    const d = contentHash('hello world!', 'en-female-warm');
     expect(a).toBe(b);
     expect(a).not.toBe(c);
     expect(a).not.toBe(d);
     expect(a).toMatch(/^[0-9a-f]{32}$/);
   });
   it('emits the expected argv shape', () => {
-    const args = buildTtsArgs({ text: 'hi', voice: 'en-female', outPath: '/tmp/x.wav' });
+    const args = buildTtsArgs({
+      text: 'hi',
+      voice: 'en-female-warm',
+      outPath: '/tmp/x.wav',
+    });
     expect(args).toContain('--text');
     expect(args).toContain('hi');
     expect(args).toContain('--model_name');
@@ -165,11 +170,13 @@ describe('contentHash + buildTtsArgs (US-154)', () => {
     expect(args).toContain('--out_path');
     expect(args).toContain('/tmp/x.wav');
   });
-  it('honours env-var voice overrides', () => {
-    process.env.AI_LECTURER_TTS_VOICE_FEMALE = 'CustomFemale';
-    process.env.AI_LECTURER_TTS_VOICE_MALE = 'CustomMale';
-    expect(resolveVoiceSpeaker('en-female')).toBe('CustomFemale');
-    expect(resolveVoiceSpeaker('en-male')).toBe('CustomMale');
+  it('honours env-var voice overrides for each of the three voices', () => {
+    process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_WARM = 'CustomWarm';
+    process.env.AI_LECTURER_TTS_VOICE_EN_MALE_NEUTRAL = 'CustomNeutral';
+    process.env.AI_LECTURER_TTS_VOICE_EN_FEMALE_BRIGHT = 'CustomBright';
+    expect(resolveVoiceSpeaker('en-female-warm')).toBe('CustomWarm');
+    expect(resolveVoiceSpeaker('en-male-neutral')).toBe('CustomNeutral');
+    expect(resolveVoiceSpeaker('en-female-bright')).toBe('CustomBright');
   });
 });
 
@@ -182,7 +189,7 @@ describe('POST /api/tts (US-154)', () => {
       new Request('http://x/api/tts', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: 'Hello, world!', voice: 'en-female' }),
+        body: JSON.stringify({ text: 'Hello, world!', voice: 'en-female-warm' }),
       }),
     );
     expect(res.status).toBe(200);
@@ -194,7 +201,7 @@ describe('POST /api/tts (US-154)', () => {
     expect(recordings[0].command).toMatch(/tts$/);
     expect(recordings[0].args).toContain('Hello, world!');
     // Cache file actually exists.
-    const expected = path.join(ttsCacheDir(), `${contentHash('Hello, world!', 'en-female')}.wav`);
+    const expected = path.join(ttsCacheDir(), `${contentHash('Hello, world!', 'en-female-warm')}.wav`);
     await expect(fs.stat(expected)).resolves.toBeTruthy();
   });
 
@@ -202,7 +209,7 @@ describe('POST /api/tts (US-154)', () => {
     const recordings: SpawnRecording[] = [];
     __setTtsDepsForTesting(makeSuccessSpawn({ recordings }));
 
-    const body = JSON.stringify({ text: 'Cache me.', voice: 'en-female' });
+    const body = JSON.stringify({ text: 'Cache me.', voice: 'en-female-warm' });
     const first = await postTts(
       new Request('http://x/api/tts', {
         method: 'POST',
