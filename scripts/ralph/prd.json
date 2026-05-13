@@ -3754,6 +3754,271 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-173",
+      "title": "cv2 shim in Pyodide worker — let `import cv2` work in the browser via scipy.ndimage + scikit-image",
+      "description": "As a course author, I want lessons that import cv2 to actually execute in browser-side Pyodide so learners can run and edit real OpenCV-looking code instead of seeing snippets marked `# illustrative — the lesson player does not execute it`. Pyodide has no native OpenCV port, so we ship a thin Python shim that re-exposes the OpenCV API subset used by lessons on top of scipy.ndimage + scikit-image (both already loadable in Pyodide).",
+      "acceptanceCriteria": [
+        "New file `scripts/pyodide/cv2_shim.py` exists and implements the following OpenCV API subset as wrappers over scipy.ndimage + skimage.feature + skimage.io + skimage.color: constants `IMREAD_GRAYSCALE = 0`, `IMREAD_COLOR = 1`, `CV_8U = 0`, `CV_64F = 6`; functions `imread(path, flags=IMREAD_COLOR)` (uses `skimage.io.imread`, converts to grayscale via `skimage.color.rgb2gray` when flag is GRAYSCALE; returns uint8 in grayscale path), `imwrite(path, img)` (uses `skimage.io.imsave`, returns True), `Sobel(src, ddepth, dx, dy, ksize=3)` (uses `scipy.ndimage.sobel(src.astype(np.float64), axis=1)` for dx=1/dy=0 and `axis=0` for dx=0/dy=1; raises ValueError for other combinations; ksize argument accepted but only 3×3 supported), `Canny(image, threshold1, threshold2)` (uses `skimage.feature.canny(img.astype(np.float64)/255.0, low_threshold=threshold1/255.0, high_threshold=threshold2/255.0)`, returns uint8 mask with values {0, 255}).",
+        "Module ends with `sys.modules['cv2'] = sys.modules[__name__]` so `import cv2` in user code resolves to the shim.",
+        "Top-of-file docstring explicitly documents: (a) this is a shim, not real OpenCV; (b) numerically NOT 1:1 with OpenCV — different default Gaussian sigma in Canny, different sobel kernel scaling — visual results similar but pixel-exact comparisons will differ; (c) only a subset of cv2 API is implemented (the functions listed above), adding new functions requires extending this file; (d) Sobel `ksize` only supports 3 (scipy.ndimage.sobel is fixed at 3×3); (e) consumers must call this through the Pyodide worker — see `src/lib/pyodide/CLAUDE.md`.",
+        "`src/widgets/Code/schema.ts` `CodeDataSchema` is extended with optional `requiresPackages?: string[]` field (zod: `z.array(z.string()).optional()`). When set, the worker will load those packages before executing the user's code. The current canonical value is `['cv2']`.",
+        "`src/lib/pyodide/worker.ts` gains `ensureCv2Shim(py)` modeled on existing `ensurePexp` / `ensureGauss` (worker.ts:143-195): module-level boolean `cv2InstalledOnce = false`; function awaits `py.loadPackage(['scipy', 'scikit-image'])` then `py.runPythonAsync(CV2_SHIM_PY)` then sets `cv2InstalledOnce = true`; subsequent calls are no-ops. `CV2_SHIM_PY` is a string constant containing the contents of `scripts/pyodide/cv2_shim.py` (read at build/bundle time — match how PEXP_PY is currently inlined in worker.ts).",
+        "`RunRequest` types in worker.ts (the `run` and `runWithTests` payload variants around worker.ts:221) are extended with optional `requiresPackages?: string[]`. Before exec'ing user code in those handlers, if the array contains `'cv2'`, await `ensureCv2Shim(py)`. Same plumbing for `client.ts`: the public `run` and `runWithTests` APIs accept an optional `requiresPackages?: string[]` and forward it in the postMessage payload.",
+        "Unit test in `src/lib/pyodide/runner.test.ts`: a test named `cv2 shim — Sobel returns same-shape float array` runs `import cv2; import numpy as np; img = np.zeros((8, 8), dtype=np.uint8); img[2:6, 2:6] = 255; gx = cv2.Sobel(img, cv2.CV_64F, 1, 0); assert gx.shape == (8, 8); assert gx.dtype == np.float64` through the worker with `requiresPackages: ['cv2']` — expect no traceback and assert no error in result.",
+        "Unit test in same file: a test named `cv2 shim — Canny returns binary uint8` runs `import cv2; import numpy as np; img = np.zeros((32, 32), dtype=np.uint8); img[8:24, 8:24] = 255; edges = cv2.Canny(img, 100, 200); assert edges.dtype == np.uint8; assert set(int(v) for v in np.unique(edges).tolist()) <= {0, 255}; assert edges.max() == 255` through the worker. Expect no traceback.",
+        "Discoverability for future agents (USER REQUIREMENT): new file `src/lib/pyodide/CLAUDE.md` documents the cv2 shim. It must include: a 1-paragraph summary stating that `cv2` in Pyodide is a shim built on scipy + skimage, not the real OpenCV; a list of currently-implemented functions and constants; the known divergences from real OpenCV (Canny sigma, Sobel scaling, ksize=3 only); how to extend the shim (add function to `scripts/pyodide/cv2_shim.py`, no worker changes needed since the shim is loaded as a Python module); pointer to `scripts/pyodide/cv2_shim.py`. ALSO: append a single bullet to the `## Codebase Patterns` section at the top of `scripts/ralph/progress.txt` reading something like `- cv2 in Pyodide is a shim over scipy.ndimage + skimage (scripts/pyodide/cv2_shim.py) — NOT real OpenCV; subset of API; see src/lib/pyodide/CLAUDE.md`. ALSO: add a one-line JSDoc-style comment above the `requiresPackages` field in `src/widgets/Code/schema.ts` reading `// 'cv2' resolves to a shim, not real OpenCV — see src/lib/pyodide/CLAUDE.md`.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 173,
+      "passes": false,
+      "notes": "Foundation for US-174 (live output) and US-175 (edge-detection lesson rewrite). Pyodide does not ship OpenCV (no WASM port exists as an official wheel); scipy + scikit-image cover ~80% of the OpenCV image-processing surface used by lessons, so we wrap them in a `cv2`-shaped facade. Numeric divergence is acceptable for pedagogy — lessons should not assert pixel-exact equality with real-OpenCV output. The shim is `lazy-loaded` (~5MB of skimage on first use) so non-cv2 lessons stay fast. Discoverability AC was added per user request so future agents extending image-processing lessons don't assume real OpenCV semantics.",
+      "tags": []
+    },
+    {
+      "id": "US-174",
+      "title": "Live output in Code widget — `outputMedia.live: true` swaps the reference image with a PNG rendered from the user's code",
+      "description": "As a learner, after I edit code in a Code widget and click Run, I want the figure shown below the editor to be the matplotlib output of MY code, not just a static reference image. Today `data.outputMedia` in the Code widget renders a fixed `<img src=...>` from the lesson JSON — it never changes. The PlotImage widget already knows how to capture matplotlib figures from Pyodide and stream them as blob URLs (`runWithPlotParam` + `PlotImageWidget.tsx:407-411`); we wire that same mechanism into the Code widget's existing `OutputMediaBlock`.",
+      "acceptanceCriteria": [
+        "`CodeOutputMediaSchema` in `src/widgets/Code/schema.ts:34-46` is extended with optional `live?: boolean` (zod: `z.boolean().optional()`). Default false / missing = current static behavior (no regression for existing lessons that use `outputMedia`).",
+        "`RunWithTestsResult` in `src/lib/pyodide/client.ts:48-50` is extended with `png?: Uint8Array`. The `runWithTests` callable signature gains an optional second-arg field `captureLiveImage?: boolean` (existing call sites continue to work unchanged).",
+        "`src/lib/pyodide/worker.ts` handler for `runWithTests` (around worker.ts:345): after user code + tests have finished executing, if the request carries `captureLiveImage === true`, run the same matplotlib-figure capture block currently in `runWithPlotParam` (worker.ts:167-177 — `matplotlib.pyplot.get_fignums()` → last figure → `fig.savefig(BytesIO, format='png', bbox_inches='tight', dpi=110)` → bytes; close all figures). Attach the resulting `png?: Uint8Array` to the worker's reply and include `png.buffer` in the postMessage `transfer` list. If no figure was created, return without `png` (the widget falls back to the static `outputMedia.src`).",
+        "`src/widgets/Code/CodeWidget.tsx` (around lines 757-1129): when `data.outputMedia?.live === true`, the call to `runWithTests` passes `{ captureLiveImage: true }`. On a successful result that contains `png` bytes, create a blob URL (`new Blob([png], { type: 'image/png' })` then `URL.createObjectURL`) and pass it into `OutputMediaBlock` so it overrides the static `media.src` for that mount. Pattern reference: `PlotImageWidget.tsx:203-219` and lines 407-411.",
+        "`OutputMediaBlock` is refactored to accept an optional `displaySrc?: string` override. When provided, it is used in place of `media.src` for the `<img>` element. The `caption` and `alt` are unchanged.",
+        "Blob URL lifecycle: keep a ref to the current live blob URL; revoke the previous one before assigning a new one (`URL.revokeObjectURL`); also revoke on widget unmount. Pattern: `PlotImageWidget.tsx:205-219`.",
+        "Before the first successful Run, the static `outputMedia.src` is displayed as a `# placeholder showing what your output should look like` caption-style hint (lesson author can opt into the placeholder mode by setting `live: true` with a non-empty `src`). After the first successful live Run, the live image replaces it.",
+        "Backward compatibility: any existing lesson where `outputMedia` is set but `live` is missing or `false` renders identically to today — no live capture, no `captureLiveImage` flag, no extra worker work.",
+        "Unit test (Vitest + React Testing Library): render `<CodeWidget />` with `data = { starterCode: 'import matplotlib.pyplot as plt; plt.imshow([[1,2],[3,4]])', tests: [], outputMedia: { kind: 'image', src: '/placeholder.png', live: true } }`. Mock `usePyodide().runWithTests` to resolve with `{ testResults: [], stdout: '', stderr: '', png: new Uint8Array([137, 80, 78, 71]) }`. Click the Run button. Assert the `img` rendered inside `[data-codewidget-output-media]` has `src` starting with `blob:`.",
+        "Unit test: same setup but the mocked `runWithTests` resolves without `png`. After Run, the img.src remains the static `/placeholder.png` (no blob URL).",
+        "Verify in browser using playwright-skill: create a temporary test lesson with a Code section whose `starterCode` is `import matplotlib.pyplot as plt; import numpy as np; plt.imshow(np.random.rand(32, 32), cmap='gray'); plt.axis('off')` and `outputMedia.live: true`. Load the lesson page. Click Run. Screenshot. Assert the `<img data-codewidget-output-img>` `src` attribute starts with `blob:`. Click Reset (if present) — confirm the src reverts to the static reference.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 174,
+      "passes": false,
+      "notes": "Depends on US-173 for the actual edge-detection lesson use case, but the live-output mechanism itself is independent of cv2 and could be tested with pure matplotlib (any Pyodide-executable code that creates a figure works). Re-uses the existing matplotlib capture from `runWithPlotParam` rather than introducing a new code path. Out of scope: live output for video, live output for multiple figures (we capture only the last one), live updates while the learner is typing (only on Run click).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-175",
+      "title": "Edge-detection lessons: input/output inside the Code widget, with live cv2 output replacing static figures",
+      "description": "As a learner of `edge-detection-basics`, I want the input image, the code editor, and the output image rendered as one cohesive section per lesson, with the output computed live from MY code via the cv2-shim — not three separate cards with a static figure marked `# illustrative — the lesson player does not execute it`. The current lesson structure puts `s2-input` (plotImage) and `s4-output` (plotImage) around `s3-code` (code); we collapse them into the code section's `inputs[]` + `outputMedia.live: true`.",
+      "acceptanceCriteria": [
+        "`courses/edge-detection-basics/lessons/sobel-gradients.json`: sections `s2-input` (plotImage) and `s4-output` (plotImage) are deleted. The remaining sections are renumbered so the IDs are sequential (`s1-intro`, `s2-code`, `s3-takeaways`). The code section's `data` gains `inputs: [{ kind: 'image', src: '/api/courses/edge-detection-basics/assets/input-sobel.png', alt: <former s2 alt>, caption: <former s2 caption> }]` and `outputMedia: { kind: 'image', src: '/api/courses/edge-detection-basics/assets/output-sobel.png', alt: <former s4 alt>, caption: <former s4 caption>, live: true }`. Original alt/caption text is preserved verbatim.",
+        "`courses/edge-detection-basics/lessons/canny-edges.json`: same restructure — `s2-input` and `s5-output` deleted, `inputs[]` + `outputMedia.live: true` set on the code section; remaining sections renumbered to `s1-recap`, `s2-pipeline`, `s3-code`, `s4-takeaways`.",
+        "Both code sections gain `data.requiresPackages: ['cv2']` so the worker installs the shim before exec'ing user code.",
+        "`starterCode` and `solution` for both lessons are rewritten to actually execute under Pyodide + cv2-shim: the input is generated synthetically in Python (e.g. for Sobel: `img = np.zeros((256, 256), dtype=np.uint8); img[40:180, 30:120] = 60; ...` to recreate the synthetic still life from `input-sobel.png` — pixel-exact match with the static reference image is NOT required, only structural similarity) so we avoid file I/O against Pyodide's virtual FS. The Sobel solution ends with `plt.imshow(mag, cmap='gray'); plt.axis('off')`. The Canny solution ends with `plt.imshow(edges, cmap='gray'); plt.axis('off')`. Document the chosen approach (synthetic input vs file I/O) in the story's commit message and progress.txt.",
+        "The comment `This snippet is **illustrative** — the lesson player does not execute it.` is removed from `taskMarkdown` in both lessons. It is replaced with a one-line caveat about the cv2 shim: `This lesson uses an in-browser cv2 shim built on scikit-image — visually similar to real OpenCV, but pixel values may differ slightly. See course README for details.`",
+        "Tests on both code sections are updated to verify the user's code numerically rather than `assert True`. For Sobel: `assert mag.dtype == np.uint8`, `assert mag.shape == (256, 256)`, `assert mag.max() == 255`. For Canny: `assert edges.dtype == np.uint8`, `assert set(int(v) for v in np.unique(edges).tolist()) <= {0, 255}`, `assert edges.max() == 255`. Each numeric assertion lives in its own `tests[]` entry with a descriptive name.",
+        "`courses/edge-detection-basics/README.md` gains a short section `## Runtime environment` explaining that `cv2` in these lessons is a Pyodide shim (not real OpenCV), pointing at `src/lib/pyodide/CLAUDE.md` for the technical details, and noting the numeric divergence so learners who run the same code under real OpenCV outside the player understand why pixel values may differ.",
+        "Verify in browser using playwright-skill: navigate to /courses/edge-detection-basics/lessons/sobel-gradients. Assert that there is exactly ONE section of type `code` and ZERO sections of type `plotImage`. Assert that the Inputs panel inside the code section shows an image. Click Run on the starter code; wait for Pyodide ready + cv2 shim load + execution. Assert that the `<img data-codewidget-output-img>` `src` attribute starts with `blob:` (live output took effect). Take a screenshot.",
+        "Verify in browser using playwright-skill: same flow for /courses/edge-detection-basics/lessons/canny-edges. Additionally, after the first Run completes, programmatically edit the editor (CodeMirror) to change `100, 200` to `30, 60`; click Run again; capture the new blob URL; assert the new image bytes differ from the first run's bytes (the output actually responds to learner edits).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 175,
+      "passes": false,
+      "notes": "Depends on US-173 (cv2 shim) and US-174 (live output). The synthetic-input approach (generating the input array in Python rather than fetching the PNG into Pyodide's VFS) keeps this story scoped to one ralph iteration; copying real PNGs into Pyodide's filesystem would be a separate enhancement. The static `outputMedia.src` PNGs (output-sobel.png / output-canny.png) are kept as placeholder reference images for the pre-Run state — they show the learner what the correct output should look like before they click Run.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-176",
+      "title": "Fix: Extend wizard +Add buttons show duplicate '+' (Lucide icon + literal '+' in text)",
+      "description": "As a course author opening the Extend wizard, when I view the schema tree's +Add buttons, each button renders TWO plus signs — one from the inline Lucide `<Plus>` icon and one literal '+' in the button label (e.g. `<Plus icon> + Add module`). Should show only the icon plus the action text.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix: e.g. Playwright or RTL test that loads the Extend wizard with a seeded course, locates each +Add button by data-testid, and asserts button.textContent does NOT contain a literal '+' character (only 'Add module' / 'Add lesson to ...')",
+        "src/app/courses/[slug]/extend/ExtendWizardClient.tsx around line 600: button label changes from '+ Add module' to 'Add module' (the `<Plus size={16}>` icon stays untouched)",
+        "src/app/courses/[slug]/extend/ExtendWizardClient.tsx around line 584: button label changes from `+ Add lesson to ${m.title}` to `Add lesson to ${m.title}` (preserve the `${m.title}` interpolation; the `<Plus size={14}>` icon stays untouched)",
+        "Visual spacing remains correct — the Lucide `<Plus>` icon stays before the text, and the gap between icon and text is unchanged (no padding/gap edits)",
+        "If any existing Playwright/Vitest test asserts the old '+ Add module' / '+ Add lesson to' text, update it to the new text",
+        "Verify in browser using playwright-skill: load /courses/<seeded-slug>/extend; screenshot the schema tree; assert each +Add button's textContent does NOT contain '+' AND assert exactly one `<svg>` (the icon) renders inside each button",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 176,
+      "passes": false,
+      "notes": "Reproduction: open /courses/<any-slug>/extend → schema tree shows '+ Add module' and '+ Add lesson to ...' buttons each with a duplicate plus (Lucide icon + literal '+' in label).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-177",
+      "title": "Fix: Settings menu panel must stay within viewport — scroll internally when content overflows",
+      "description": "As a user on a short viewport (e.g., laptop ~720px tall, or shorter when devtools are open) opening the Settings dropdown from the top bar, content below the viewport bottom is currently inaccessible because the panel has no max-height and does not scroll. Sunset variant selector + text-scale slider fall off-screen when theme is set to 'sunset'.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix: Playwright test sets viewport to 1280x600, sets localStorage `aiLecturer.theme=sunset`, opens the settings dropdown, asserts that (a) the panel's `getBoundingClientRect().bottom` does NOT exceed `window.innerHeight` AND (b) the deepest control (sunset variant selector or the text-scale slider, whichever renders lowest) is reachable via scrolling within the panel",
+        "src/components/SettingsMenu.tsx `panelStyle` (around line 237): add `maxHeight: 'calc(100vh - 80px)'` (80px = top bar height ~64 + 16px safe margin), `overflowY: 'auto'`, AND `overscrollBehavior: 'contain'` so the parent page doesn't scroll when the user scrolls past the panel's edges",
+        "The panel still anchors via `position: absolute; top: calc(100% + 6px); right: 0` (no layout regression for the normal-height case)",
+        "On viewports tall enough to fit all content, no scrollbar is visible (the `maxHeight` is only a cap, not a fixed height)",
+        "Keyboard navigation still works: pressing Tab inside the panel scrolls the focused control into view. Rely on the browser's default `:focus` scroll behavior — do NOT add explicit `scrollIntoView` calls unless the default doesn't work in headless Chromium (note in progress.txt if it does)",
+        "Verify in browser using playwright-skill: (a) load home page at 1280x720 viewport, open settings, screenshot — assert no scrollbar visible inside panel; (b) set viewport to 1280x600, set localStorage theme=sunset, reload, open settings, screenshot — assert panel.getBoundingClientRect().bottom <= window.innerHeight AND that scrolling inside the panel reveals the variant + text-scale controls",
+        "Add a Vitest unit test in src/components/SettingsMenu.test.tsx asserting the rendered panel element's inline style includes `overflow-y: auto` and a `max-height` value",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 177,
+      "passes": false,
+      "notes": "Reproduction: viewport 1280x600 with theme=sunset (which adds the variant section) → variant selector + text-scale slider fall below the fold and are unscrollable.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-178",
+      "title": "Add optional `summary` to LessonRefSchema and update design_course skill to emit module + lesson summaries",
+      "description": "As the Extend wizard (US-179/US-180) and the lesson dashboard, I want each lesson reference in course.json to carry an optional one-line `summary` so the UI can show authors a description next to module + lesson titles. Currently LessonRefSchema has only `slug, title, estimatedMinutes` — there is no place to persist a per-lesson description on the course-level outline. Also: the design_course skill (`scripts/ralph/skills/design_course/SKILL.md`) needs its prompt updated to instruct the agent to emit `summary` on each lesson going forward.",
+      "acceptanceCriteria": [
+        "src/lib/schemas/course.ts LessonRefSchema gains `summary: z.string().optional()` (optional so existing course.json files still parse without migration). Update the derived TS `LessonRef` type accordingly.",
+        "If src/widgets/schemas/ has exported JSON Schemas referencing LessonRef, run `npm run build:schemas` and commit the regenerated output. If course schemas are NOT exported there, skip this AC and note it in progress.txt.",
+        "scripts/ralph/skills/design_course/SKILL.md: update the example output snippet AND any explicit lesson-shape field list to include `summary` on each lesson. Add one short paragraph instructing the agent: 'For each lesson, emit a `summary` field (string, ~100–200 chars, one sentence) describing what the lesson covers. This surfaces in the Extend wizard and course dashboard.'",
+        "If design_course has a structured-output JSON Schema (look for any `*.schema.json` under the skill dir or referenced in SKILL.md), update that schema to add `summary` as an optional string on each lesson item.",
+        "scripts/ralph/skills/generate_lesson/SKILL.md: in the context table that already lists `Module summary    | parent module.summary — useful for framing the lesson`, add a row: `Lesson summary    | parent lessonRef.summary — when present, the author's intent for this lesson; treat as a hint, not a hard spec`. One-line addition only.",
+        "Vitest test in src/lib/schemas/schemas.test.ts (or a new course.test.ts): assert a sample course object WITHOUT `lesson.summary` still passes CourseSchema.parse (backward compatibility). Assert a sample WITH `lesson.summary: 'A one-line description'` parses. Assert `lesson.summary: 123` (wrong type) is REJECTED with a Zod issue.",
+        "Do NOT backfill existing /courses/*/course.json files — they continue to work without summaries. Backfill is out of scope.",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 178,
+      "passes": false,
+      "notes": "Module summaries already work (ModuleSchema.summary is required). Only lessons need the new field. Out of scope: backfilling existing courses; updating regenerate_lesson skill (lesson.summary lives on the outline, not inside the lesson JSON). US-179 (display) and US-180 (+Add form) depend on this story landing first.",
+      "tags": []
+    },
+    {
+      "id": "US-179",
+      "title": "Extend wizard schema tree shows module + lesson summaries below each title",
+      "description": "As a course author reviewing the structure inside the Extend wizard, I want each module row to show its `summary` (already on ModuleSchema, currently not rendered) and each lesson row to show its `summary` (when present, from US-178's new optional field) so I can verify what I'm about to extend without leaving the wizard.",
+      "acceptanceCriteria": [
+        "src/app/courses/[slug]/extend/ExtendWizardClient.tsx: the module header section (the block rendering `m.title` above the lesson `<ul>`) gains a second line `<p>{m.summary}</p>` styled `font-size: var(--fs-sm); color: var(--text-secondary); margin: 4px 0 0; line-height: 1.4`. Render only when `m.summary` is a non-empty string after trim.",
+        "Same component: each lesson `<li>` (around line 559-571, currently `<span title> <span minutes/>`) is restructured so the title + minutes stay on line 1 and `<p>{l.summary}</p>` renders on line 2 with the same styling. Render only when `l.summary` is a non-empty string after trim.",
+        "Layout preserved: the `estimatedMinutes` badge stays on the same line as the lesson title (not pushed down by the summary). Convert the `<li>` from inline flex to `flex-direction: column` if needed; the title+minutes row stays a horizontal flex inside.",
+        "The `data-new` highlight styling (background: var(--accent-soft); border-left: 3px solid var(--accent)) continues to apply to the whole row including the summary line — adjust padding so the highlight reads as one visual block.",
+        "Newly-added items proposed via the +Add dialog from US-180 also render their summary if the form provided one (no separate code path needed — same render).",
+        "Read-only mode (banner 'Cannot extend while generation is active') still renders summaries.",
+        "Verify in browser using playwright-skill: write a fixture course where AT LEAST one module has a non-empty `summary` AND at least one lesson has a non-empty `summary` (a tmp /courses/<slug>/course.json under the project root is fine, OR mutate an existing one for the test then revert). Load /courses/<slug>/extend. Screenshot. Assert summary text appears below the title for both module + lesson. Also test the legacy case using an existing course where lesson.summary is missing — assert the row renders title + minutes only (no empty `<p>` element, no unwanted vertical spacing).",
+        "Vitest test: render the schema tree section with a mocked course containing module.summary + lesson.summary; assert both summaries appear via getByText. Re-render with summaries missing or empty strings; assert no empty `<p>` renders (`container.querySelectorAll('p:empty').length === 0`).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 179,
+      "passes": false,
+      "notes": "Depends on US-178 for the lesson summary field. Module summary already exists in ModuleSchema (required). Existing courses without lesson.summary render the legacy two-piece row (title + minutes) — no fallback text.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-180",
+      "title": "Extend wizard +Add dialogs become structured Title + Summary forms; direct-add to currentProposed (skip /extend agent)",
+      "description": "As a course author, when I click `Add module` or `Add lesson to <module>` in the Extend wizard, I want a form with two fields — Title (string input) and Summary (textarea) — and clicking Add should immediately append the new module or lesson to the visible proposed schema with the typed values. Today the dialog is a single freeform textarea that sends an instruction to the /api/courses/<slug>/extend agent; that agent roundtrip is removed in favor of direct local addition. Generate additions still hits /api/courses/<slug>/extend/apply and triggers the per-lesson generation pipeline.",
+      "acceptanceCriteria": [
+        "Dialog (ExtendWizardClient.tsx around lines 824-848) replaces the single `<textarea>` with two controls: (a) `<input type=\"text\">` labeled `Title` with placeholder `e.g., \"Advanced indexing patterns\"` and `maxLength={120}`; (b) `<textarea rows={3}>` labeled `Summary` with placeholder `One sentence describing what this module/lesson covers.` and `maxLength={300}`. data-testid attributes: `extend-dialog-title` and `extend-dialog-summary`.",
+        "Dialog labels swap by kind: `dialog.kind === 'module'` → field labels `Module title`, `Module summary`; `dialog.kind === 'lesson'` → `Lesson title`, `Lesson summary` (plus the existing context line `Add a lesson under \"<moduleTitle>\"`).",
+        "`Add` button enables iff `title.trim().length > 0` (summary is optional; if empty, the resulting module/lesson omits the `summary` field entirely rather than storing an empty string). The button no longer shows `Adding…` with a spinner — direct-add is synchronous, no network call.",
+        "On Add click for a MODULE: compute `id = slugify(title)` (use src/lib's existing slugify util if one exists, otherwise add a small `src/lib/slugify.ts` that lowercases, replaces non-alphanumerics with `-`, collapses repeats, trims dashes); reject with inline error `A module with this id already exists.` if the id collides with any existing `currentProposed.modules[i].id`; otherwise append `{ id, title: title.trim(), summary: summary.trim() || undefined, lessons: [] }` to `currentProposed.modules` AND push the id into `additions.newModuleIds`. Close dialog.",
+        "On Add click for a LESSON: compute `slug = slugify(title)`; reject with inline error `A lesson with this slug already exists in this module.` on collision (scoped to the parent module's lessons array); otherwise append `{ slug, title: title.trim(), estimatedMinutes: 15, summary: summary.trim() || undefined }` to the parent module's lessons AND push `{ moduleId, lessonSlug: slug, title: title.trim(), estimatedMinutes: 15 }` into `additions.newLessonIds`. `estimatedMinutes` default of 15 is hardcoded (form does NOT expose it — out of scope).",
+        "The /api/courses/<slug>/extend POST call from US-171 is REMOVED from this dialog code path. The endpoint route file itself stays untouched (kept for any external scripts / future agent-driven flows). The wizard no longer calls /extend — only /apply on Generate additions click (unchanged).",
+        "Refinements continuity bookkeeping is GONE: since there is no agent roundtrip from the dialog, there is no `refinements` array to maintain. Drop the related state from the component if present.",
+        "Reset proposal button works the same way (clear back to originally loaded course; clear `additions`). The `Generate additions` button still wires to /apply with the full `currentProposed`.",
+        "Loading state: dialog no longer has a loading/spinner state for the Add click (instant). The 409/500 toast handling that was specific to /extend POST is removed from this dialog.",
+        "UX polish: opening the dialog autofocuses the Title input. Pressing Enter inside the Title input moves focus to the Summary textarea. Pressing Cmd/Ctrl+Enter from anywhere in the dialog triggers Add (when valid).",
+        "Existing tests for US-170/US-171 that mock /api/courses/<slug>/extend and assert the request payload need updating: tests that asserted the agent roundtrip from the wizard are deleted; replace with tests that assert direct-add updates `currentProposed` in component state.",
+        "Verify in browser using playwright-skill: pre-seed a course; open /courses/<slug>/extend. Click Add module. Fill Title `Indexing` + Summary `How to slice and dice tensors`. Click Add. Assert: schema tree now shows a new module `Indexing` with summary line below it, highlighted (data-new='true'). Click Add lesson to Indexing. Fill Title `Boolean masks` + Summary `Filter elements with a boolean tensor`. Click Add. Assert: nested under Indexing, highlighted, with summary visible. Try Add module again with title `Indexing` (collision) → assert inline error appears AND no new module added. Click Reset proposal → confirm → assert both additions are gone.",
+        "Out of scope: editing existing modules/lessons via this dialog; per-row delete of newly-added items (Reset is the only undo); exposing estimatedMinutes in the form; calling /extend from this dialog (intentionally removed).",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 180,
+      "passes": false,
+      "notes": "Depends on US-178 for the LessonRef.summary field. Significant simplification: no more /extend agent calls from the wizard, no refinements bookkeeping. The /apply endpoint stays unchanged — it accepts the proposed schema and enqueues per-lesson generation based on the diff between proposedSchema and on-disk course.json, regardless of how the additions were produced. The user's typed lesson Summary becomes part of the generate_lesson context (wired by US-178's generate_lesson SKILL.md row).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-181",
+      "title": "Replace Sunset variants A and B with two new distinct palettes — Desert Dusk + Alpine Glow (keep C Coastal Sundown)",
+      "description": "As a user toggling the Sunset theme variant in Settings, I want variants A and B to be visually distinct from C and from each other — currently A and B exist as labels but their CSS palettes are too similar. Keep C `Coastal Sundown` exactly as-is. Replace A with `Desert Dusk` (warm sandstone + burnt orange + deep terracotta — drier and warmer than Coastal Sundown) and B with `Alpine Glow` (cool pink + violet + slate-purple — cooler, more dramatic, evening-mountain feel).",
+      "acceptanceCriteria": [
+        "src/components/SettingsMenu.tsx `SUNSET_VARIANT_OPTIONS` (around line 198): update labels so A reads `A — Desert Dusk` and B reads `B — Alpine Glow`. C unchanged (`C — Coastal Sundown`). The keys A/B/C stay as machine identifiers — only labels and palettes change.",
+        "Locate the CSS source for the variants — likely `[data-sunset-variant='A']` / `[data-sunset-variant='B']` selectors in src/styles/tokens.css (verify by grepping the repo for `data-sunset-variant`). Redefine the vars for A to a warm-desert palette (suggested hue range 18-38°; e.g. `--accent: hsl(14 65% 48%)`; `--bg: hsl(28 28% 96%)`; `--text: hsl(20 28% 16%)`; deeper sandstone tones for `--bg-elevated` and `--bg-subtle`). Redefine B to a cool-evening palette (suggested hue range 280-330°; e.g. `--accent: hsl(312 55% 56%)`; `--bg: hsl(260 22% 96%)`; `--text: hsl(258 20% 18%)`; cooler slate-violet for `--bg-elevated` and `--bg-subtle`). Exact colors are at the agent's discretion — requirement: A reads warm/dusty; B reads cool/violet; both visibly distinct from C and from each other.",
+        "Dark-mode handling: grep for `[data-theme='dark'][data-sunset-variant='A']` (and B) selectors. If they exist, update them to keep the warm/cool distinction in dark mode (deeper saturations, darker bg). If they don't exist, note in progress.txt that dark+sunset variant overrides aren't separately defined.",
+        "Contrast check: text-on-bg contrast remains >= 4.5:1 (WCAG AA) for both variants in light and (if applicable) dark mode. Add a one-line CSS comment above each variant's block listing the achieved `--accent`/--bg` and `--text`/--bg` ratios (computed by the agent with any standard contrast formula; the comment is documentation only).",
+        "Variant C (Coastal Sundown) MUST NOT change. Diff inspection: confirm `git diff` shows no edits within the `[data-sunset-variant='C']` block(s). The commit message can call this out explicitly.",
+        "Reset behavior: clicking variant A then B then C live-applies each (no reload required) — applySunsetVariant() already handles this; verify it still does.",
+        "Verify in browser using playwright-skill: load /test-theme (the existing theme demo route). Set localStorage `aiLecturer.theme=sunset`. Reload. Iterate through variants A, B, C via the settings dropdown — screenshot each. Programmatic check: read `getComputedStyle(document.documentElement).getPropertyValue('--accent')` AND `--bg` for each variant; assert all three pairs are different from each other. Also iterate dark mode (theme=dark) and capture variants if the dark-mode overrides exist.",
+        "Update src/components/SettingsMenu.test.tsx if it asserts variant labels — change A and B label strings accordingly. `SUNSET_VARIANT_DEFAULT = 'A'` stays.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 181,
+      "passes": false,
+      "notes": "Single-user local app (per project memory), so changing the default-A palette doesn't affect anyone else's experience. Out of scope: adding more variants beyond A/B/C; renaming variant keys; redesigning C. Author may lightly adjust per-variant `--accent-soft`, gradient stops, or shadow tints if the existing tokens.css uses them — keep changes minimal and inside the variant selector blocks.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-182",
+      "title": "Pre-bake voice samples to /public/voice-samples and have Settings play static MP3 instead of generating audio on click",
+      "description": "As a user previewing TTS voices in the Settings menu, the current flow generates audio on the fly via /api/tts/preview each time a voice's play button is pressed — slow (multi-second TTS latency) and burns the local TTS backend on something that should be a static asset. Ship pre-baked MP3 sample files in /public/voice-samples/<voice>.mp3 and have SettingsMenu play those directly. Keep a graceful fallback to /api/tts/preview if a file is missing.",
+      "acceptanceCriteria": [
+        "New script `scripts/build/generate-voice-samples.ts` (TypeScript, runnable via `npx tsx scripts/build/generate-voice-samples.ts`): for each voice in `VOICE_OPTIONS` (src/components/SettingsMenu.tsx ~line 215), POST to the local /api/tts endpoint with body `{ text: 'Hi, I\\'m <label>. Let\\'s learn together.', voice }` where `<label>` is the voice's `label` from `VOICE_OPTIONS` with any trailing parenthetical stripped (e.g. label `Aria (warm)` → name in sample `Aria`). Write the response bytes to `public/voice-samples/<voice>.mp3` (overwrite if present). Print one log line per voice with the byte size.",
+        "New npm script in package.json: `\"build:voice-samples\": \"tsx scripts/build/generate-voice-samples.ts\"`.",
+        "Create or update `scripts/build/CLAUDE.md` (small file, one screen): document when to run `npm run build:voice-samples` (after changing the voice list or sample-phrase template), the prerequisite (dev server running on localhost:3000 with the TTS backend reachable), and the output location.",
+        "Commit the generated MP3 files for the 3 current voices (expected ~30-80KB each). Add `public/voice-samples/` to git tracking.",
+        "src/components/SettingsMenu.tsx `onVoicePreview` (around line 597): instead of POST /api/tts/preview, build the audio element with `src = '/voice-samples/' + voice + '.mp3'`, play, on `ended` clear `previewingVoice`. On audio `error` event, fall back to the existing /api/tts/preview path so a missing/corrupt file doesn't break the preview UX (also `console.warn` once per voice).",
+        "Remove the `previewCacheRef: Map<TtsVoice, string>` and its blob-URL bookkeeping — no longer needed since the browser HTTP-caches the static MP3. The `previewUrlRef` and `revokeObjectURL` paths are kept ONLY for the fallback path that still hits /api/tts/preview.",
+        "Keep `/api/tts/preview` route as-is. Do not delete the route file or its tests.",
+        "Update src/components/SettingsMenu.test.tsx: remove tests that asserted `/api/tts/preview` is called on voice play; add a test asserting that clicking play sets the audio element's `src` to `/voice-samples/<voice>.mp3` (mock the HTMLAudioElement constructor or inspect the audio element rendered by SettingsMenu).",
+        "Verify in browser using playwright-skill: load home page, open settings. For each of the 3 voices, click the play button. Use Playwright's `page.route()` to intercept network requests; assert NO request to `/api/tts/preview` is made; assert a request to `/voice-samples/<voice>.mp3` is made (resolves with 200). Screenshot the settings panel mid-playback.",
+        "Pre-flight + graceful degradation: at the START of the agent's run, attempt the sample-generation step (start dev server, run `npm run build:voice-samples`). If the TTS backend is unreachable (script exits non-zero, or HTTP error), the agent: (a) commits the script + SettingsMenu changes + CLAUDE.md WITHOUT the MP3 files; (b) writes a clear note in progress.txt — `MP3 samples not generated this run; user must run \\`npm run build:voice-samples\\` once the TTS backend is up. The fallback path (/api/tts/preview) will be used until then.`; (c) the story still passes because the static-file playback + fallback work; the MP3 files are an optimization on top.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 182,
+      "passes": false,
+      "notes": "TTS_VOICE_SAMPLE_TEXT (SettingsMenu.tsx:221) stays as a constant — used by the fallback path. Out of scope: regenerating MP3 samples automatically on voice-list change (manual `npm run build:voice-samples`); per-locale samples (English only); compressing/normalizing MP3 output.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-183",
+      "title": "LessonChat: speak button per assistant message — uses selected TTS voice, audio cached per message, single-playback",
+      "description": "As a learner chatting with the AI tutor inside a lesson, I want a small speaker button on each assistant message so I can hear the reply read aloud in my chosen TTS voice. Clicking the button toggles play/pause for that message. Audio is generated on first play and cached per message so replays are instant. Only one message is audible at a time — playing message B stops message A.",
+      "acceptanceCriteria": [
+        "src/components/LessonChat.tsx: each assistant message in the messages list (role === 'assistant' AND !pending AND !stopped AND non-empty text) renders a small icon button next to the message content (placement: pick whichever fits the existing bubble — adjacent inline or a small footer row below the text). Icon: Lucide `Volume2` when idle, `Pause` when this message is actively playing. data-testid: `lesson-chat-tts-${message.id}`. aria-label cycles between `Read message aloud` and `Pause playback`.",
+        "Click handler: if no audio currently playing for this message, fetch /api/tts with body `{ text: message.text, voice: readTtsVoice() }` (import `readTtsVoice` from `@/lib/client/ttsVoice`). Get back an audio Blob, create object URL, set as src on a single shared `<audio>` element ref (mounted once at panel level), call `.play()`. If audio for this message already lives in the per-message cache (Map<message.id, blob URL>), skip the fetch and play immediately. While fetching, show a small spinner overlay on the icon and disable the button to prevent double-fire.",
+        "Single-playback semantics: if the user clicks speak on message B while message A is playing, pause A and play B. Track `currentlyPlayingMessageId: string | null` in component state; the icon shows `Pause` ONLY on the message whose id matches.",
+        "Pause: clicking the button while audio is playing for the SAME message pauses (does NOT reset `currentTime`). Click again resumes from the paused position.",
+        "Cleanup: on chat panel close OR LessonChat unmount, revoke all cached blob URLs (`URL.revokeObjectURL`), pause the audio element, and clear the cache. New chat session (different course/lesson) starts with an empty cache.",
+        "Error handling: /api/tts non-2xx response → render a small inline error chip below the failing message's text reading `Couldn't read message — try again`, auto-clear after 4s. Failed fetch does NOT enter the cache (next click retries).",
+        "User messages (role === 'user') do NOT get a speak button. Error messages (role === 'error') do NOT get a button. Pending/streaming messages (`pending === true`) and stopped messages (`stopped === true`) do NOT get a button. Whitespace-only text → button hidden.",
+        "Vitest test: render LessonChat with a fixture conversation `[user, assistant, user, assistant(pending), error, assistant]`. Assert exactly 2 speak buttons rendered (the two non-pending non-stopped assistants), and 0 on user/error/pending.",
+        "Vitest test: mock global `fetch` to /api/tts to return a fake audio Blob. Mock `URL.createObjectURL` to return a deterministic blob URL. Click speak on message A. Assert fetch called with body containing message text + the voice from `readTtsVoice` (seeded via localStorage in the test setup). Click speak on message A again — assert NO new fetch (uses cache). Click speak on message B — assert new fetch fires.",
+        "Verify in browser using playwright-skill: open /courses/<seeded-slug>/lessons/<seeded-lesson> with the chat panel open. Use Playwright's `page.route()` to mock /api/tts → return a tiny silent MP3 (~200 bytes; commit a fixture under scripts/ralph/skills/playwright-skill/fixtures/silent.mp3 or generate one inline with a buffer of valid MP3 header). Send a user message; wait for the assistant reply to stream and complete. Assert the speak button is visible. Click speak. Assert `audio.paused === false` OR `audio.currentTime > 0` within 500ms. Click speak again on the same message — assert it pauses (`audio.paused === true`). Send another user message, wait for the second assistant reply; click speak on the second reply — assert the first message's button icon reverts to Volume2 and the second message's button shows Pause.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 183,
+      "passes": false,
+      "notes": "Reuses existing /api/tts endpoint (src/app/api/tts/route.ts) and the client-side selected voice (src/lib/client/ttsVoice.ts:readTtsVoice). No new endpoint needed. Out of scope: auto-play on new replies; reading the entire conversation in one click; per-message voice override (always uses the global selected voice); transcript export with audio. Single-audio-element design avoids race conditions with multiple simultaneously-playing clips.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
