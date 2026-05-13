@@ -63,6 +63,7 @@ import {
   pathForAdvanceTarget,
   resolveAdvanceTarget,
 } from '@/lib/lessons/advance';
+import { bottomBarNextAction } from '@/lib/lessons/bottomBarNext';
 import { usePyodide } from '@/lib/pyodide/client';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson, Section, Source } from '@/lib/schemas/lesson';
@@ -696,6 +697,25 @@ export default function LessonShellPage({
     // auto-advance cancellation for this lesson.
     scheduleAutoAdvance({ force: true });
   }, [slug, lessonSlug, scheduleAutoAdvance]);
+
+  // US-164 — Bottom-bar Next click implicitly marks the current lesson
+  // completed (idempotent) before navigating. Already-finished lessons skip
+  // the mutator and just navigate, so no toggle-off can happen. Reuses
+  // handleMarkComplete so US-079 / US-081 downstream effects (section-pill
+  // counter + section completion persistence via the scheduled auto-advance
+  // patch) fire identically to an explicit Mark-Complete click.
+  const handleBottomBarNext = useCallback(
+    async (targetSlug: string) => {
+      await bottomBarNextAction({
+        finished: lessonStatus === 'finished',
+        markComplete: handleMarkComplete,
+        navigate: () => {
+          router.push(`/courses/${slug}/lessons/${targetSlug}`);
+        },
+      });
+    },
+    [lessonStatus, handleMarkComplete, router, slug],
+  );
 
   // Computes a position offset for each section relative to the main content
   // scroll container's content origin. Plus identifies the "current" section
@@ -1420,6 +1440,7 @@ export default function LessonShellPage({
         status={lessonStatus}
         onMarkComplete={handleMarkComplete}
         onNavigate={handleNavigate}
+        onNavigateNext={handleBottomBarNext}
       />
 
       <WidgetEditPanel
@@ -2784,6 +2805,10 @@ interface BottomBarProps {
   status: LessonStatus;
   onMarkComplete: () => void;
   onNavigate: (slug: string) => void;
+  // US-164 — Separate handler for the Next-side NavButton: implicit
+  // mark-complete + navigate. Falls back to onNavigate to keep behavior
+  // identical if a caller doesn't supply it.
+  onNavigateNext?: (slug: string) => void;
 }
 
 function BottomBar({
@@ -2792,6 +2817,7 @@ function BottomBar({
   status,
   onMarkComplete,
   onNavigate,
+  onNavigateNext,
 }: BottomBarProps) {
   const isFinished = status === 'finished';
   return (
@@ -2819,7 +2845,7 @@ function BottomBar({
       <NavButton
         side="next"
         target={nextLesson}
-        onClick={onNavigate}
+        onClick={onNavigateNext ?? onNavigate}
       />
     </footer>
   );
