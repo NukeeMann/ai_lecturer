@@ -1,0 +1,33 @@
+[2026-05-14T19:04:32+0200] [rate_limit five_hour status=allowed]
+[2026-05-14T19:05:28+0200] [rate_limit five_hour status=allowed]
+[2026-05-14T19:07:47+0200] Now I have enough context. Let me write the helpers.
+[2026-05-14T19:08:39+0200] Now update TheoryWidget. Let me first check the export structure and accent token used:
+[2026-05-14T19:09:43+0200] Now write the tests:
+[2026-05-14T19:09:51+0200] Now the ttsQueue test:
+[2026-05-14T19:10:05+0200] Now the TheoryWidget test:
+[2026-05-14T19:11:02+0200] Typecheck clean. Now run tests:
+[2026-05-14T19:11:08+0200] 3/3 passing. Now run the full test suite:
+[2026-05-14T19:11:24+0200] 1088/1089 pass — the single failure is the known pre-existing ENOTEMPTY race in extendApply.test.ts, unrelated to US-186. Now browser test.
+[2026-05-14T19:11:35+0200] Need to start dev server. Let me first find a course with at least one Theory section to test against:
+[2026-05-14T19:11:43+0200] Good - 4 theory sections. Now start the dev server:
+[2026-05-14T19:14:04+0200] Dev server is up. Let me write the playwright test:
+[2026-05-14T19:14:20+0200] Now write the playwright test:
+[2026-05-14T19:15:22+0200] All browser assertions pass. Let me also verify that fixtures dir is committable (or needs to be checked in):
+[2026-05-14T19:15:28+0200] Good, fixture is tracked. Now let me update prd.json + progress.txt and commit:
+[2026-05-14T19:16:52+0200] Commit is in HEAD with `passes: true` for US-186. Now stop the dev server (PID 18072) and exit:
+[2026-05-14T19:17:07+0200] US-186 done. Commit `8f8e835` on `ralph/us-186` ships:
+
+- **stripForTts** (`src/lib/client/ttsText.ts`) — regex-only markdown noise stripping for TTS.
+- **FIFO TTS queue** (`src/lib/client/ttsQueue.ts`) — module-level `waiting[]` + single `inFlight` + per-`(text,voice)` blob cache, serialises `/api/tts` so no two generations are ever concurrent.
+- **TheoryWidget footer** (`src/widgets/Theory/TheoryWidget.tsx`) — left-aligned primary button with states `Read ▶` / `Queued (n)` / `Generating…` (spinner) / `▶ Replay`, inline `<audio controls>` auto-play once, error chip with 6s auto-clear.
+- Vitest tests for all three (3/3 pass; full suite 1088/1089 — single failure is the pre-existing ENOTEMPTY race in `extendApply.test.ts`).
+- Playwright browser verification: `maxInFlight === 1`, btn2 = `Queued (1)` during btn1 generation, both audio elements eventually render — sequential, not parallel.
+- `prd.json` has `passes: true` for US-186 in this commit.
+[2026-05-14T19:17:07+0200] [result success turns=82 cost=$6.435714499999999] US-186 done. Commit `8f8e835` on `ralph/us-186` ships:
+
+- **stripForTts** (`src/lib/client/ttsText.ts`) — regex-only markdown noise stripping for TTS.
+- **FIFO TTS queue** (`src/lib/client/ttsQueue.ts`) — module-level `waiting[]` + single `inFlight` + per-`(text,voice)` blob cache, serialises `/api/tts` so no two generations are ever concurrent.
+- **TheoryWidget footer** (`src/widgets/Theory/TheoryWidget.tsx`) — left-aligned primary button with states `Read ▶` / `Queued (n)` / `Generating…` (spinner) / `▶ Replay`, inline `<audio controls>` auto-play once, error chip with 6s auto-clear.
+- Vitest tests for all three (3/3 pass; full suite 1088/1089 — single failure is the pre-existing ENOTEMPTY race in `extendApply.test.ts`).
+- Playwright browser verification: `maxInFlight === 1`, btn2 = `Queued (1)` during btn1 generation, both audio elements eventually render — sequential, not parallel.
+- `prd.json` has `passes: true` for US-186 in this commit.
