@@ -36,6 +36,49 @@
       }
     },
     {
+      "id": "s1b-code-io",
+      "title": "Code — input + output media (side-by-side row above editor)",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "**Code widget with `inputs` + `outputMedia`.** Both panels render in a single 50/50 row above the editor; the output panel is `live`, so once you press ▶ Run, the placeholder on the right is replaced by the figure your code produces.\n\n**Task.** Invert the grayscale image mounted at `/inputs/input-gradient.png` (pixel-wise `255 - img`) and display it with `matplotlib`. When your output matches the reference on the right, all three tests pass.",
+        "starterCode": "from PIL import Image\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# The Code widget mounted the input PNG at /inputs/ before this code ran.\nimg = np.array(Image.open('/inputs/input-gradient.png').convert('L'))\n\n# TODO: invert the grayscale image (hint: 255 - img).\ninverted = img  # replace this\n\nplt.imshow(inverted, cmap='gray', vmin=0, vmax=255)\nplt.axis('off')\n",
+        "tests": [
+          {
+            "name": "inverted_dtype_is_uint8",
+            "hidden": true,
+            "body": "assert inverted.dtype == np.uint8"
+          },
+          {
+            "name": "inverted_shape_matches_input",
+            "hidden": true,
+            "body": "assert inverted.shape == img.shape"
+          },
+          {
+            "name": "inverted_pixels_are_255_minus_input",
+            "hidden": true,
+            "body": "assert np.array_equal(inverted, 255 - img)"
+          }
+        ],
+        "solution": "from PIL import Image\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nimg = np.array(Image.open('/inputs/input-gradient.png').convert('L'))\ninverted = (255 - img).astype(np.uint8)\n\nplt.imshow(inverted, cmap='gray', vmin=0, vmax=255)\nplt.axis('off')\n",
+        "requiresPackages": ["Pillow"],
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/smoke-test/assets/io-demo/input-gradient.png",
+            "alt": "256×256 grayscale diagonal gradient — black in the top-left corner, white in the bottom-right corner.",
+            "caption": "Figure 1 — synthetic input mounted at /inputs/input-gradient.png."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/smoke-test/assets/io-demo/output-inverted.png",
+          "alt": "Same 256×256 gradient with the contrast inverted — white in the top-left corner, black in the bottom-right corner.",
+          "caption": "Figure 2 — expected output (255 − input). Replaced live by the matplotlib figure once you Run.",
+          "live": true
+        }
+      }
+    },
+    {
       "id": "s2-sandbox",
       "title": "Sandbox — open-ended Python (no tests, no Submit)",
       "type": "sandbox",

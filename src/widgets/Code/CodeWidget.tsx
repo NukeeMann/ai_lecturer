@@ -528,9 +528,27 @@ const inputsPanelStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: 'var(--space-3)',
-  padding: 'var(--space-4) var(--space-5)',
+};
+
+const ioRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'stretch',
   background: 'var(--bg-subtle)',
   borderBottom: '1px solid var(--border)',
+};
+
+const ioHalfStyle: CSSProperties = {
+  flex: '1 1 50%',
+  minWidth: 0,
+  padding: 'var(--space-4) var(--space-5)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 'var(--space-3)',
+};
+
+const ioHalfWithDividerStyle: CSSProperties = {
+  ...ioHalfStyle,
+  borderRight: '1px solid var(--border)',
 };
 
 const inputsPanelLabelStyle: CSSProperties = {
@@ -543,10 +561,15 @@ const inputsListStyle: CSSProperties = {
   gap: 'var(--space-3)',
 };
 
+const IO_MEDIA_MAX_PX = 320;
+
 const inputMediaStyle: CSSProperties = {
   display: 'block',
-  maxWidth: '100%',
+  width: 'auto',
   height: 'auto',
+  maxWidth: `min(100%, ${IO_MEDIA_MAX_PX}px)`,
+  maxHeight: `${IO_MEDIA_MAX_PX}px`,
+  objectFit: 'contain',
   borderRadius: 'var(--radius-md)',
   border: '1px solid var(--border)',
   background: 'var(--bg-elevated)',
@@ -618,6 +641,51 @@ function InputsPanel({ inputs }: InputsPanelProps) {
           <InputItem key={i} input={input} index={i} />
         ))}
       </div>
+    </div>
+  );
+}
+
+interface IORowProps {
+  inputs: CodeInput[];
+  outputMedia?: CodeOutputMedia;
+  outputDisplaySrc?: string;
+  outputPlaceholderCaption?: string;
+}
+
+function IORow({
+  inputs,
+  outputMedia,
+  outputDisplaySrc,
+  outputPlaceholderCaption,
+}: IORowProps) {
+  const hasInputs = inputs.length > 0;
+  const hasOutput = Boolean(outputMedia);
+  if (!hasInputs && !hasOutput) return null;
+  const splitBoth = hasInputs && hasOutput;
+  return (
+    <div data-codewidget-io-row style={ioRowStyle}>
+      {hasInputs && (
+        <div
+          data-codewidget-io-half
+          data-io-side="input"
+          style={splitBoth ? ioHalfWithDividerStyle : ioHalfStyle}
+        >
+          <InputsPanel inputs={inputs} />
+        </div>
+      )}
+      {hasOutput && outputMedia && (
+        <div
+          data-codewidget-io-half
+          data-io-side="output"
+          style={ioHalfStyle}
+        >
+          <OutputMediaBlock
+            media={outputMedia}
+            displaySrc={outputDisplaySrc}
+            placeholderCaption={outputPlaceholderCaption}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -712,13 +780,17 @@ function InputItem({ input, index }: { input: CodeInput; index: number }) {
 const outputMediaWrapStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
+  alignItems: 'flex-start',
   gap: 4,
 };
 
 const outputMediaStyle: CSSProperties = {
   display: 'block',
-  maxWidth: '100%',
+  width: 'auto',
   height: 'auto',
+  maxWidth: `min(100%, ${IO_MEDIA_MAX_PX}px)`,
+  maxHeight: `${IO_MEDIA_MAX_PX}px`,
+  objectFit: 'contain',
   borderRadius: 'var(--radius-md)',
   border: '1px solid var(--border)',
   background: 'var(--bg-elevated)',
@@ -1256,7 +1328,16 @@ export function CodeWidget({
   return (
     <div ref={confettiOriginRef} data-codewidget-root>
       <Confetti trigger={confettiTrigger} originRef={confettiOriginRef} />
-      {inputs.length > 0 && <InputsPanel inputs={inputs} />}
+      <IORow
+        inputs={inputs}
+        outputMedia={outputMedia}
+        outputDisplaySrc={liveCaptureEnabled ? livePngUrl ?? undefined : undefined}
+        outputPlaceholderCaption={
+          liveCaptureEnabled
+            ? '# placeholder showing what your output should look like'
+            : undefined
+        }
+      />
       <CodeRunner
         starterCode={data.starterCode}
         initialCode={initialCode}
@@ -1269,19 +1350,6 @@ export function CodeWidget({
         actionRunning={submission === 'submitting'}
         runRequiresPackages={data.requiresPackages}
         runInputs={workerInputs.length > 0 ? workerInputs : undefined}
-        outputMediaSlot={
-          outputMedia ? (
-            <OutputMediaBlock
-              media={outputMedia}
-              displaySrc={liveCaptureEnabled ? livePngUrl ?? undefined : undefined}
-              placeholderCaption={
-                liveCaptureEnabled
-                  ? '# placeholder showing what your output should look like'
-                  : undefined
-              }
-            />
-          ) : undefined
-        }
       />
     </div>
   );
