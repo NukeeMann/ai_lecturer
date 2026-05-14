@@ -4019,6 +4019,128 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-184",
+      "title": "LessonChat: STT mic button with hybrid Web Speech / `/api/stt/upload` fallback, transcript fills the chat input",
+      "description": "As a learner chatting with the AI tutor, I want a microphone button next to the chat input so I can dictate my question instead of typing. First click starts capture, second click ends it; the transcribed text is appended to the textarea so I can review/edit it before sending.",
+      "acceptanceCriteria": [
+        "src/components/LessonChat.tsx: render an icon button immediately to the LEFT of the existing textarea (or inside the same input row, before any send button). Icon: Lucide `Mic` when idle, `Square` (stop) when capturing. data-testid: `lesson-chat-stt-toggle`. aria-label cycles between `Start voice input` and `Stop voice input`. Button is enabled whenever the textarea would be enabled (i.e. not while a reply is mid-stream — disable during streaming).",
+        "Hybrid capture strategy in a new helper `src/lib/client/sttCapture.ts` (or inline if it stays under ~120 lines): on toggle-start, check `typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition)`. If present, create an instance with `continuous = true`, `interimResults = true`, `lang` derived from `navigator.language` (fall back to `'en-US'`), and start it. On `onresult`, accumulate `event.results[i][0].transcript` for `isFinal === true` entries into a local buffer; ignore interim results (do not flicker the textarea). On toggle-stop or `onend`, append the final buffer to the existing textarea value (with a single leading space if textarea is non-empty and doesn't end in whitespace) and clear local state.",
+        "Fallback path: if `SpeechRecognition` is undefined, OR if it fires `onerror` with `not-allowed`/`service-not-allowed`/`network`, switch to MediaRecorder identical in shape to src/widgets/SttDemo/SttDemoWidget.tsx: `navigator.mediaDevices.getUserMedia({ audio: true })`, pick a supported mimeType, record until second click, build a `FormData` with the blob under field name `audio`, POST to `/api/stt/upload`, await JSON `{ text }`, then append `text` to textarea same as the Web Speech path. Show a small spinner overlay on the button while uploading.",
+        "Visual state: while recording, show a pulsing red dot adjacent to the icon (data-testid `lesson-chat-stt-recording`); the textarea remains editable so the user can keep typing in parallel.",
+        "Error UX: permission denied / whisper.cpp not installed / network failure → render an inline error chip directly under the input row (data-testid `lesson-chat-stt-error`) with the underlying message (e.g. `Microphone access denied`, `whisper.cpp is not installed`, `Couldn't transcribe — try again`). Chip auto-clears after 5s or when the user clicks the mic again. Existing draft text is NEVER overwritten or lost on error.",
+        "Cleanup: stopping capture must call `recognition.stop()` (Web Speech) AND release any MediaRecorder stream tracks (`stream.getTracks().forEach(t => t.stop())`). Unmounting LessonChat while recording must also tear down.",
+        "Vitest: stub `window.SpeechRecognition` with a fake that records `start`/`stop` calls and fires a synthetic `onresult` final event with text `hello world`. Click the mic, fire the fake result, click the mic again → assert textarea value contains `hello world`. Assert global `fetch` was NOT called.",
+        "Vitest: delete `window.SpeechRecognition` and `window.webkitSpeechRecognition`. Stub `navigator.mediaDevices.getUserMedia` to return a fake stream, stub `MediaRecorder` with a controllable instance, mock `fetch('/api/stt/upload')` to return `{ text: 'fallback text' }`. Click mic, click mic again → assert FormData was POSTed and `fallback text` appended to textarea.",
+        "Vitest: with `SpeechRecognition` stub firing `onerror` with `error: 'not-allowed'`, assert the error chip appears with text matching `/microphone access denied/i` and that the textarea remains unchanged.",
+        "Verify in browser using playwright-skill: open a lesson with the chat panel. Use `page.addInitScript` to inject a fake `window.SpeechRecognition` that, on `.start()`, fires a final result `unit test transcript` after 100ms and calls `onend`. Click the mic button, assert the recording dot appears, click again, assert textarea value equals `unit test transcript`. Then in a second test, delete the SpeechRecognition stub before navigation, mock `/api/stt/upload` via `page.route()` to return `{ text: 'fallback' }`, stub `navigator.mediaDevices.getUserMedia` to return a MediaStream from a generated silent audio track (use `OfflineAudioContext` or `MediaStreamTrackGenerator` — fall back to skipping the assertion if neither works in the headless target and document the skip in the test file comment), click the mic, click again, assert `fallback` lands in textarea.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 184,
+      "passes": false,
+      "notes": "Reference implementation for fallback path: src/widgets/SttDemo/SttDemoWidget.tsx already wires MediaRecorder + /api/stt/upload + supportedMimeType helper. Re-export the mimeType picker into src/lib/client/sttCapture.ts rather than duplicating. Out of scope: live interim transcript shown in the textarea (only finals are appended); language selector UI (auto-derived from navigator.language); persisting user's preferred STT backend; transcription history. The textarea is NOT cleared on capture — transcripts append so a user can mix typing and dictation.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-185",
+      "title": "Themed scrollbars across the app (light/dark/sunset) replacing default browser chrome",
+      "description": "As a user, I want scrollbars that match the app's theme tokens (in all themes — light, dark, sunset variants) so the UI doesn't break visually when content overflows. The default white WebKit scrollbar should never appear.",
+      "acceptanceCriteria": [
+        "Add scrollbar styling to `src/app/globals.css` (or a new `src/styles/scrollbars.css` imported from globals) targeting BOTH WebKit/Blink and Firefox: `::-webkit-scrollbar { width: 10px; height: 10px; }`, `::-webkit-scrollbar-track { background: transparent; }`, `::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }`, `::-webkit-scrollbar-thumb:hover { background: var(--text-quaternary); background-clip: content-box; }`, `::-webkit-scrollbar-corner { background: transparent; }`. For Firefox: `* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }`.",
+        "Rules apply globally — selectors must reach every scrollable region in the app: page-level scroll (`html`, `body`), the side panel, the lesson list, modals/dialogs, the chat panel messages list, code blocks (`<pre>`), the SidePanel, and any `overflow-auto`/`overflow-y-scroll` container. Do not scope to specific component classes.",
+        "All color values must use existing CSS variables from `src/styles/tokens.css` — no hardcoded hex. This means the scrollbar automatically re-themes when the user switches between `[data-theme=\"light\"]`, `[data-theme=\"dark\"]`, `[data-theme=\"sunset\"]` (variants A/B/C), so no per-theme overrides should be necessary unless a theme genuinely needs a different ratio (in which case add a `:root[data-theme=\"...\"]` override that still uses token vars).",
+        "Sanity smoke test in Vitest (or a CSS unit test if the harness supports it): render a component with `<div style={{ height: 50, overflow: 'auto' }}><div style={{ height: 500 }}/></div>`, then `getComputedStyle(document.documentElement).getPropertyValue('scrollbar-width')` returns `'thin'` (jsdom supports the property read even though it doesn't paint).",
+        "Verify in browser using playwright-skill: navigate to a long-content page (course detail with seeded long syllabus, OR seed a lesson with a Theory widget containing >2000 words). Take screenshots at desktop 1280px in `[data-theme=\"light\"]`, `[data-theme=\"dark\"]`, AND `[data-theme=\"sunset\"][data-sunset-variant=\"A\"]` showing the scrollbar visible. Then sample a pixel from the scrollbar-thumb region in each screenshot and assert its RGB is NOT pure white `#fff` (the default). Save screenshots to `/tmp/scrollbar-<theme>.png`.",
+        "Edge case: code blocks (`<pre>`) inside Theory widgets must also use the themed scrollbar when their content overflows horizontally — the global selector `::-webkit-scrollbar` should cover them. Add a Playwright assertion that scrolls a horizontally-overflowing `<pre>` and confirms scrollbar shows.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 185,
+      "passes": false,
+      "notes": "WebKit and Firefox have unrelated scrollbar APIs; both must be styled. CSS variables consumed from src/styles/tokens.css. Out of scope: custom-rendered virtual scrollbars (e.g. a JS overlay); accessibility setting to disable themed scrollbars; per-component overrides. Note: `background-clip: content-box` + transparent border is the standard trick to make a 'pill' thumb with breathing room — keep it; without it the thumb looks like a solid bar.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-186",
+      "title": "Theory widget: footer `Read ▶` TTS button with cross-widget FIFO generation queue",
+      "description": "As a learner reading a Theory section, I want a Read button at the bottom of the widget so I can listen to the content. If I trigger Read on a second Theory widget while the first is still generating, the second should queue up and play when the first finishes — never two concurrent generations.",
+      "acceptanceCriteria": [
+        "src/widgets/Theory/TheoryWidget.tsx: render a footer row BELOW the markdown body (inside the existing `data-theory-body` container or as a sibling — pick whichever keeps the outer card layout consistent with the Code widget's submit footer). The footer is left-aligned (mirror of the Code widget's right-aligned submit). Footer contains a single primary-styled button. States: `Read ▶` (idle), `Queued (n)` where n is its 1-based queue position when waiting, `Generating…` with a spinner when in-flight, `▶ Replay` (or just a play icon + `<audio>`) when ready. data-testid: `theory-tts-button`; aria-label reflects current state.",
+        "On press while idle: enqueue a job `{ id: uuid, text, voice, status: 'queued' }` into a shared module-level queue at `src/lib/client/ttsQueue.ts`. The queue exports `enqueue(text, voice): { id, subscribe(listener) }` and processes one item at a time via an async worker: pop head → POST to `/api/tts` with `{ text, voice }` → receive audio blob → emit `{ status: 'ready', blobUrl }` → next item. The TheoryWidget subscribes to its own job id and re-renders status accordingly.",
+        "Text passed to TTS: derive from `data.markdown` via a `stripForTts(markdown: string): string` helper (new in `src/lib/client/ttsText.ts`) that removes fenced code blocks (```...```), inline code spans, image markdown `![...](...)`, and explicit math delimiters (`$$...$$`, `\\[...\\]`, `\\(...\\)`, `$...$`) replacing math with a single space so prose stays grammatical. Strip leftover markdown syntax (headers `#`, bold `**`, italic `_`, link `[text](url)` → keep `text`) using a minimal regex pass — do NOT pull in a full markdown-to-text dep.",
+        "Voice: read once via `readTtsVoice()` from `src/lib/client/ttsVoice.ts` at enqueue time (locks the voice for that job). Voice change between jobs is honored — the queue is not flushed on voice change but each enqueue captures the then-current voice.",
+        "Cache: keyed by `(text, voice)` → `{ blobUrl, audio?: HTMLAudioElement }` in module-level Map. Subsequent presses on the same widget (text unchanged) with the same voice skip the network and re-render `▶ Replay` immediately. Different voice → re-fetch. Editing the Theory data (different `data.markdown`) invalidates by cache-miss naturally.",
+        "Player: once `status === 'ready'`, render an inline `<audio controls src={blobUrl}>` below the button (data-testid `theory-tts-audio`) and auto-play once. Subsequent presses pause/resume the existing element.",
+        "Error path: `/api/tts` non-2xx OR network error → emit `{ status: 'error', message }` → button reverts to `Read ▶` with a small inline error chip below (data-testid `theory-tts-error`) reading the server message, auto-clearing after 6s. Errored job does NOT enter the cache. Queue advances to the next item.",
+        "Vitest unit test for ttsQueue: with `vi.useFakeTimers()` and a mocked fetch that resolves after 100ms with a deterministic Blob, call `enqueue` three times in immediate succession with different texts. Drive timers forward in 100ms steps. Assert order of completion equals order of enqueue and at no point are two fetches in-flight (track via a counter that fetch mock increments on entry and decrements on resolve — assert max value === 1).",
+        "Vitest test for TheoryWidget: mock the ttsQueue module to expose a controllable promise per job. Render two TheoryWidget instances. Click both Read buttons quickly. Assert button 2 shows `Queued (1)` while button 1 shows `Generating…`. Resolve job 1 → button 1 shows `▶ Replay`, button 2 shows `Generating…`. Resolve job 2 → button 2 shows `▶ Replay`.",
+        "Vitest test for stripForTts: input markdown containing a fenced ```python block, inline `code`, an image `![alt](src)`, a header `# Heading`, a link `[claude](https://x)`, and inline math `$x^2$` → output is the same text with code/image/math removed, header marker gone, link rendered as `claude`. Snapshot the result.",
+        "Verify in browser using playwright-skill: render a lesson with two Theory widgets seeded with distinct prose. Use `page.route('/api/tts')` to delay each response by 800ms and return a small valid MP3 fixture (silent.mp3 under scripts/ralph/skills/playwright-skill/fixtures/, generate if absent — a 200-byte stub will do; if mp3 generation in the test is hard, return a valid WAV with the appropriate Content-Type and confirm the audio element accepts it). Click Read on widget A, then within 100ms click Read on widget B. Assert: at most ONE `/api/tts` request is in-flight at any time (track via `page.on('request')` and `page.on('requestfinished')`); widget B's button shows `Queued (1)` during widget A's generation; both audio elements eventually render; the network log shows two sequential requests, not parallel.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 186,
+      "passes": false,
+      "notes": "Reuses /api/tts and readTtsVoice (same as US-183 chat speak button). The queue is a module-level singleton — DO NOT use React context; React state across unrelated widget trees would force prop drilling. Out of scope: persisting cached blobs across page reloads (cache is in-memory only — revoke blob URLs on `beforeunload`); a global 'pause all' button; download-as-mp3; per-section TTS (one button reads the whole widget's markdown body); concurrent generation with N>1 workers. The button matches the Code widget's submit-footer visual weight but mirrored to the left edge.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-187",
+      "title": "LessonChat: render user AND assistant messages as Markdown + KaTeX + fenced code, share math preprocessor with Theory",
+      "description": "As a learner chatting with the AI tutor, I want both my own messages and the tutor's replies to render Markdown (bold, lists, links, inline/fenced code with syntax highlighting) and LaTeX math, so equations and formatted answers display correctly rather than as raw text.",
+      "acceptanceCriteria": [
+        "Extract Theory's math preprocessing into a shared module `src/lib/client/mathPreprocess.ts` exporting `preprocessMath(markdown: string): string` — the existing logic from src/widgets/Theory/TheoryWidget.tsx (`\\(...\\)` → `$...$`, `\\[...\\]` → `$$\\n...\\n$$`, `$$inline$$` → block form). Update TheoryWidget to import from the new module. Behavior for Theory MUST be byte-identical post-refactor — keep the existing Theory test (or add one) covering a known input/output.",
+        "src/components/LessonChat.tsx: replace any plain-text rendering of `message.text` for `role === 'user'` AND `role === 'assistant'` with `<ReactMarkdown>` using `remarkPlugins={[remarkGfm, remarkMath]}` and `rehypePlugins={[rehypeKatex]}`. Pass the message text through `preprocessMath` first. Apply to non-pending finalized messages AND streaming/pending assistant messages (partial markdown rendered best-effort — incomplete syntax may render as raw, do not crash).",
+        "Code fences in assistant messages render with syntax highlighting. Pick ONE: either `rehype-highlight` (lightweight, default highlight.js theme imported in globals) OR `react-syntax-highlighter` via a `components.code` override. Document the choice in the file's import block. Inline `<code>` is rendered with a muted background chip styled in globals (reuse Theory's inline code styling if it exists, otherwise add a `.prose code` rule).",
+        "Error messages (`role === 'error'`) continue to render as plain text — they are system-emitted strings, not user/model content, and markdown-rendering them risks injection-styled chrome.",
+        "GFM features in scope: tables, task lists, strikethrough, autolinks. Out of scope: HTML passthrough (`react-markdown` defaults are already safe; do NOT enable `rehype-raw`).",
+        "Vitest test (LessonChat): render with a fixture conversation containing one user message `**bold** $x^2$` and one assistant message ```js\\nconsole.log('hi')\\n``` plus inline math `$E=mc^2$`. Assert `<strong>` appears inside both user and assistant bubbles for their respective bold text (use a fixture with bold in both). Assert `.katex` nodes appear in both user and assistant bubbles. Assert a `<pre>` with `language-js` (or equivalent highlight class) appears in the assistant bubble.",
+        "Vitest test (mathPreprocess refactor): two cases — (a) input `\\(x^2\\)` → output `$x^2$`; (b) input `\\[\\sum_i x_i\\]` → output `$$\\n\\sum_i x_i\\n$$`. Same test should pass against both TheoryWidget's import and the new shared module (import the shared one in the test).",
+        "Verify in browser using playwright-skill: open a lesson with the chat panel. POST a user message containing `**hi** $x^2$ \\n\\n\\`\\`\\`python\\nprint('y')\\n\\`\\`\\``. Mock the LLM endpoint to stream back an assistant reply containing `Sure! Here is **the answer**: $E=mc^2$ and:\\n\\n\\`\\`\\`js\\nconst x = 1;\\n\\`\\`\\``. Assert: in the user bubble — `strong` element with text `hi`, `.katex` node, `pre` with `print('y')`; in the assistant bubble — `strong` element with text `the answer`, `.katex` node with formula `E=mc^2`, highlighted `<pre>` containing `const x = 1`.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 187,
+      "passes": false,
+      "notes": "ReactMarkdown, remarkMath, rehypeKatex, remarkGfm are likely already in package.json (used by TheoryWidget) — verify before adding deps. The shared preprocessMath module reduces drift between Theory and chat math rendering. Out of scope: per-message copy-code button; collapsible long code blocks; mermaid diagrams; rendering tool-use blocks (those are surfaced separately by LessonChat structure); Theme-aware highlight.js theme switching. Streaming partial markdown will occasionally show transient raw `**` or unclosed fences — acceptable.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-188",
+      "title": "Sunset variant B: redesign tokens to actually evoke 'Alpine Glow' (cool dawn palette over snow)",
+      "description": "As a user choosing the Sunset / B preset (labeled 'Alpine Glow'), I want the palette to actually feel like alpine glow — cool blue-violet shadows of snowy mountains lit by warm pink/peach dawn — instead of the current pink-on-violet 'magenta dusk' look. The label stays; the CSS tokens change.",
+      "acceptanceCriteria": [
+        "Update the `:root[data-theme=\"sunset\"][data-sunset-variant=\"B\"]` block in src/styles/tokens.css (currently at line ~469) so the palette reads as Alpine Glow: cool blue-violet base (`--bg` in the family of slate/indigo, e.g. `#1a1f3a` — NOT the current violet `#1f0e1e`), with warm dawn accent (`--accent` in the peach/coral/pink range such as `#ff9a76` or `#ffb088`, NOT the current magenta `#f04a8b`). Text colors shift to a warm off-white (`--text` like `#f5e8dc`) so they sit comfortably on the cool base.",
+        "Maintain WCAG AA contrast for body text on `--bg` and `--bg-elevated` — verify with a contrast check (compute ratio in the test, fail under 4.5:1 for normal text). Document the chosen primary colors in a `/* */` comment block at the top of the variant.",
+        "Every existing token defined in the current variant B block must still be defined in the new block (no token removed), so consumers don't fall through to default-theme values. Specifically: --bg, --bg-elevated, --bg-subtle, --bg-hover, --bg-active, --bg-inverse, --border, --border-strong, --border-focus, --text, --text-secondary, --text-tertiary, --text-quaternary, --text-inverse, --text-on-accent, --accent, --accent-hover, --accent-active, --accent-subtle, --accent-subtle-hover, --accent-border, --accent-text, --success, --success-subtle, --success-border, plus any others present at the start of the story (use `git show HEAD:src/styles/tokens.css` to enumerate the baseline).",
+        "Label in src/components/SettingsMenu.tsx for variant B remains `'B — Alpine Glow'` (no rename); only the CSS values shift.",
+        "Update the comment above the block from `(cool violet palette per US-181)` to a new one-liner describing the new palette intent (e.g. `(cool blue-violet snow with warm peach dawn accent — US-188 redesign)`).",
+        "Vitest snapshot test (or extend existing): assert that on `document.documentElement.setAttribute('data-theme', 'sunset')` + `setAttribute('data-sunset-variant', 'B')`, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()` matches the NEW value (whatever you choose; assert against the literal hex you wrote in tokens.css, so the test guards future regressions). Do the same for `--accent`.",
+        "Verify in browser using playwright-skill: open the app, switch theme to Sunset, switch variant to B, take a screenshot of the home page and a lesson page. Visually confirm cool background + warm accent (sample pixels: `--bg` region should have R < G < B ratio characteristic of cool tones; `--accent` region — e.g. the primary CTA — should have R > B characteristic of warm tones). Save as /tmp/alpine-glow-home.png and /tmp/alpine-glow-lesson.png and reference in the progress report.",
+        "Typecheck passes",
+        "Tests pass",
+        "Verify in browser using playwright-skill"
+      ],
+      "priority": 188,
+      "passes": false,
+      "notes": "Current variant B (post US-181) uses a magenta/pink-on-violet palette which doesn't match the 'Alpine Glow' name — the name evokes the optical phenomenon where snowy peaks turn pink/orange in horizontal dawn/dusk light against a cool sky. Out of scope: renaming the variant; changing variants A or C; adding a fourth variant; theme picker UI changes. Keep file-level structure of tokens.css unchanged — only the values inside the B block move.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
