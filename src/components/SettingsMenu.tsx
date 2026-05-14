@@ -681,7 +681,7 @@ export function SettingsMenu({
       audioEl.setAttribute('data-testid', 'settings-voice-preview-audio');
       audioEl.setAttribute('data-voice', target);
       audioEl.setAttribute('data-source', 'static');
-      audioEl.src = `/voice-samples/${target}.mp3`;
+      audioEl.src = `/voice-samples/${target}.wav`;
       audioEl.autoplay = true;
       audioEl.hidden = true;
       audioEl.style.display = 'none';
@@ -697,7 +697,7 @@ export function SettingsMenu({
           warnedMissingSampleRef.current.add(target);
           // eslint-disable-next-line no-console
           console.warn(
-            `[settings] /voice-samples/${target}.mp3 missing or unplayable — falling back to /api/tts/preview.`,
+            `[settings] /voice-samples/${target}.wav missing or unplayable — falling back to /api/tts/preview.`,
           );
         }
         stopActivePreview();
@@ -713,7 +713,7 @@ export function SettingsMenu({
   );
 
   // Tear down any inline preview audio on unmount. (The blob-URL cache from
-  // pre-US-182 is gone — the browser HTTP-caches /voice-samples/<voice>.mp3
+  // pre-US-182 is gone — the browser HTTP-caches /voice-samples/<voice>.wav
   // directly. The fallback path's per-play object URL is revoked inside
   // stopActivePreview.)
   useEffect(() => {

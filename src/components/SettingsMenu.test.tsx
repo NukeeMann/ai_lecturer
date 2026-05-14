@@ -100,7 +100,7 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
     window.removeEventListener(SETTINGS_CHANGE_EVENT, handler);
   });
 
-  it('clicking a play icon points an <audio> element at /voice-samples/<voice>.mp3 (no /api/tts call)', async () => {
+  it('clicking a play icon points an <audio> element at /voice-samples/<voice>.wav (no /api/tts call)', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : (input as Request).url;
       throw new Error(`Unexpected fetch on static-sample path: ${url}`);
@@ -134,7 +134,7 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
       await Promise.resolve();
     });
 
-    // The static-MP3 path makes no /api/tts request.
+    // The static-WAV path makes no /api/tts request.
     expect(fetchMock).not.toHaveBeenCalled();
 
     expect(createdAudioEls.length).toBeGreaterThanOrEqual(1);
@@ -142,7 +142,7 @@ describe('SettingsMenu (US-166) — Voice picker', () => {
     expect(audioEl.getAttribute('data-voice')).toBe('en-male-neutral');
     expect(audioEl.getAttribute('data-source')).toBe('static');
     expect(audioEl.src).toMatch(
-      /\/voice-samples\/en-male-neutral\.mp3$/,
+      /\/voice-samples\/en-male-neutral\.wav$/,
     );
 
     createSpy.mockRestore();

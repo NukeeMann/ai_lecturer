@@ -6,7 +6,7 @@
 // the Coqui TTS backend reachable (`npm run build:voice-samples`). The
 // script POSTs each voice's sample phrase to /api/tts, fetches the resulting
 // audio bytes via /api/tts/audio/<path>, and writes them to
-// public/voice-samples/<voice>.mp3 (overwriting any existing file).
+// public/voice-samples/<voice>.wav (overwriting any existing file).
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -68,7 +68,11 @@ async function generateOne(voice: string, label: string): Promise<number> {
 
   const outDir = path.resolve(process.cwd(), 'public', 'voice-samples');
   await fs.mkdir(outDir, { recursive: true });
-  const outFile = path.join(outDir, `${voice}.mp3`);
+  const outFile = path.join(outDir, `${voice}.wav`);
+  // Coqui XTTS produces WAV (PCM 16-bit). The downstream <audio> element
+  // plays the file directly, so we keep the native format and the .wav
+  // extension — labelling these .mp3 (as the original US-182 AC suggested)
+  // would mislead the static-file MIME negotiation.
   await fs.writeFile(outFile, bytes);
   return bytes.byteLength;
 }
@@ -78,7 +82,7 @@ async function main(): Promise<void> {
   for (const opt of VOICE_OPTIONS) {
     try {
       const bytes = await generateOne(opt.value, opt.label);
-      console.log(`[voice-samples] ${opt.value}.mp3 — ${bytes} bytes`);
+      console.log(`[voice-samples] ${opt.value}.wav — ${bytes} bytes`);
     } catch (err) {
       failures += 1;
       console.error(`[voice-samples] FAILED ${opt.value}: ${(err as Error).message}`);
