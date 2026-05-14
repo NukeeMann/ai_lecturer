@@ -11,12 +11,17 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Maximize2, Minimize2, Pause, Square, Volume2, X } from 'lucide-react';
+import { Maximize2, Mic, Minimize2, Pause, Square, Volume2, X } from 'lucide-react';
 
 import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
 import { modLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { readTtsVoice } from '@/lib/client/ttsVoice';
+import {
+  startSttCapture,
+  type SttCaptureSession,
+  type SttCaptureState,
+} from '@/lib/client/sttCapture';
 
 export interface ChatMessage {
   id: string;
@@ -127,6 +132,15 @@ export function LessonChat({
   // chosen rate persists across messages and across panel re-opens within the
   // component's lifetime.
   const [ttsPlaybackRate, setTtsPlaybackRate] = useState<number>(1);
+  // STT (US-184): mic button drives a hybrid capture session. `sttState`
+  // tracks the lifecycle: idle → recording → (uploading for the fallback
+  // path) → idle. `sttError` is a single inline message that auto-clears
+  // after 5s; the same timer is restarted on each new error so a fresh click
+  // resets the countdown.
+  const sttSessionRef = useRef<SttCaptureSession | null>(null);
+  const sttErrorTimerRef = useRef<number | null>(null);
+  const [sttState, setSttState] = useState<SttCaptureState>('idle');
+  const [sttError, setSttError] = useState<string | null>(null);
   const draftKey = useMemo(
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
@@ -691,6 +705,82 @@ export function LessonChat({
     };
   }, [open, courseSlug, lessonSlug, resetTtsCache]);
 
+  const clearSttError = useCallback(() => {
+    if (sttErrorTimerRef.current !== null) {
+      window.clearTimeout(sttErrorTimerRef.current);
+      sttErrorTimerRef.current = null;
+    }
+    setSttError(null);
+  }, []);
+
+  const setSttErrorTimed = useCallback((msg: string) => {
+    if (sttErrorTimerRef.current !== null) {
+      window.clearTimeout(sttErrorTimerRef.current);
+    }
+    setSttError(msg);
+    sttErrorTimerRef.current = window.setTimeout(() => {
+      setSttError(null);
+      sttErrorTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  const appendTranscriptToDraft = useCallback((text: string) => {
+    const fragment = text.trim();
+    if (fragment.length === 0) return;
+    setDraft((cur) => {
+      if (cur.length === 0) return fragment;
+      const needsSpace = !/\s$/.test(cur);
+      return needsSpace ? `${cur} ${fragment}` : `${cur}${fragment}`;
+    });
+  }, []);
+
+  const handleSttToggle = useCallback(() => {
+    // Mid-session click: end the capture. The session's onStateChange will
+    // flip back to 'idle' once stop()/upload resolves; the textarea update
+    // is driven by onTranscript, never inline here.
+    if (sttState !== 'idle') {
+      sttSessionRef.current?.stop();
+      return;
+    }
+    if (sending) return;
+    clearSttError();
+    const session = startSttCapture({
+      onTranscript: (text) => {
+        appendTranscriptToDraft(text);
+      },
+      onError: (msg) => {
+        setSttErrorTimed(msg);
+      },
+      onStateChange: (next) => {
+        setSttState(next);
+        if (next === 'idle') {
+          sttSessionRef.current = null;
+        }
+      },
+    });
+    sttSessionRef.current = session;
+  }, [
+    appendTranscriptToDraft,
+    clearSttError,
+    sending,
+    setSttErrorTimed,
+    sttState,
+  ]);
+
+  // Tear down any active capture on unmount — releases mic stream tracks and
+  // cancels Web Speech / MediaRecorder without delivering a (likely partial)
+  // transcript to a textarea that's about to disappear.
+  useEffect(() => {
+    return () => {
+      sttSessionRef.current?.dispose();
+      sttSessionRef.current = null;
+      if (sttErrorTimerRef.current !== null) {
+        window.clearTimeout(sttErrorTimerRef.current);
+        sttErrorTimerRef.current = null;
+      }
+    };
+  }, []);
+
   const handleStop = useCallback(() => {
     if (!sending) return;
     userStoppedRef.current = true;
@@ -1054,9 +1144,50 @@ export function LessonChat({
           style={composedTextareaStyle}
         />
         <div style={composedComposerControlsStyle}>
-          <span data-testid="lesson-chat-send-hint" style={hintStyle}>
-            {modLabel(isMac)}+Enter to send
-          </span>
+          <div style={composerLeftStyle}>
+            <button
+              type="button"
+              data-testid="lesson-chat-stt-toggle"
+              aria-label={
+                sttState === 'recording' || sttState === 'uploading'
+                  ? 'Stop voice input'
+                  : 'Start voice input'
+              }
+              aria-pressed={sttState !== 'idle'}
+              data-stt-state={sttState}
+              disabled={sending || sttState === 'uploading'}
+              onClick={handleSttToggle}
+              style={
+                sending || sttState === 'uploading'
+                  ? sttBtnDisabledStyle
+                  : sttState === 'recording'
+                    ? sttBtnActiveStyle
+                    : sttBtnStyle
+              }
+            >
+              {sttState === 'uploading' ? (
+                <span
+                  data-testid="lesson-chat-stt-spinner"
+                  style={sttSpinnerStyle}
+                  aria-hidden
+                />
+              ) : sttState === 'recording' ? (
+                <Square size={12} strokeWidth={2} />
+              ) : (
+                <Mic size={14} strokeWidth={2} />
+              )}
+            </button>
+            {sttState === 'recording' ? (
+              <span
+                data-testid="lesson-chat-stt-recording"
+                style={sttRecordingDotStyle}
+                aria-hidden
+              />
+            ) : null}
+            <span data-testid="lesson-chat-send-hint" style={hintStyle}>
+              {modLabel(isMac)}+Enter to send
+            </span>
+          </div>
           <div style={btnGroupStyle}>
             <button
               type="button"
@@ -1080,6 +1211,15 @@ export function LessonChat({
             </button>
           </div>
         </div>
+        {sttError ? (
+          <span
+            data-testid="lesson-chat-stt-error"
+            role="status"
+            style={sttErrorChipStyle}
+          >
+            {sttError}
+          </span>
+        ) : null}
       </footer>
     </aside>
   );
@@ -1395,6 +1535,10 @@ const lessonChatGlobalKeyframes = `
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+@keyframes lesson-chat-stt-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
 `;
 
 const footerStyle: CSSProperties = {
@@ -1441,6 +1585,81 @@ const btnGroupStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
+};
+
+const composerLeftStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  minWidth: 0,
+  flexShrink: 1,
+};
+
+const sttBtnStyle: CSSProperties = {
+  width: 28,
+  height: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border-strong)',
+  borderRadius: 'var(--radius-sm)',
+  background: 'var(--bg)',
+  color: 'var(--text)',
+  cursor: 'pointer',
+  padding: 0,
+  flexShrink: 0,
+};
+
+const sttBtnActiveStyle: CSSProperties = {
+  ...sttBtnStyle,
+  borderColor: '#dc2626',
+  color: '#dc2626',
+  background: 'var(--bg-subtle)',
+};
+
+const sttBtnDisabledStyle: CSSProperties = {
+  ...sttBtnStyle,
+  borderColor: 'var(--border)',
+  background: 'var(--bg-subtle)',
+  color: 'var(--text-quaternary)',
+  cursor: 'not-allowed',
+  opacity: 0.6,
+};
+
+const sttRecordingDotStyle: CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: '50%',
+  background: '#dc2626',
+  flexShrink: 0,
+  animation: 'lesson-chat-stt-pulse 1s ease-in-out infinite',
+};
+
+const sttSpinnerStyle: CSSProperties = {
+  width: 12,
+  height: 12,
+  borderWidth: 2,
+  borderStyle: 'solid',
+  borderColor: 'var(--border-strong)',
+  borderTopColor: 'var(--accent)',
+  borderRadius: '50%',
+  display: 'inline-block',
+  animation: 'lesson-chat-tts-spin 0.8s linear infinite',
+};
+
+const sttErrorChipStyle: CSSProperties = {
+  display: 'inline-block',
+  fontSize: '11px',
+  color: 'var(--danger-text, #991b1b)',
+  background: 'var(--danger-subtle, #fee2e2)',
+  border: '1px solid var(--danger-border, #fecaca)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '2px 6px',
+  lineHeight: 1.3,
+  marginTop: 2,
+  alignSelf: 'flex-start',
 };
 
 const stopBtnStyle: CSSProperties = {
