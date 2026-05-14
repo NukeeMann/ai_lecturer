@@ -29,15 +29,31 @@ export const SAMPLE_CODE_BOX_BLUR: CodeData = {
 // Demonstrates the optional `inputs[]` and `outputMedia` fields for
 // image-processing exercises: the learner sees an input frame and the
 // expected output frame side by side; tests still verify numerically.
+//
+// Also demonstrates the lesson-authoring contract for the input-mounting
+// feature: any `inputs[]` entry with a resolvable filename is fetched once
+// per lesson and written into Pyodide's VFS at `/inputs/<filename>` before
+// user code runs. Here the `/cameraman.png` URL has basename `cameraman.png`
+// (no explicit `filename` field needed), so the starter code can call
+// `cv2.imread('/inputs/cameraman.png', ...)` directly. Lesson-authoring
+// agents should mirror this pattern: declare the file in `inputs[]` and
+// reference it in `starterCode` via the `/inputs/<basename>` path.
 export const SAMPLE_CODE_THRESHOLD_WITH_MEDIA: CodeData = {
   taskMarkdown:
     'Write `binarise(img)` that returns a 0/255 mask separating foreground from background. Match the expected-output figure shown alongside the editor.',
-  starterCode: `import numpy as np
+  starterCode: `import cv2
+import numpy as np
+
+# The cameraman PNG declared in inputs[] is auto-mounted by the worker at
+# /inputs/cameraman.png — load it the same way you would on disk.
+img = cv2.imread('/inputs/cameraman.png', cv2.IMREAD_GRAYSCALE)
 
 def binarise(img):
     # img: 2D uint8 array
     # return: same-shape uint8 mask whose values are only 0 or 255
     return img
+
+mask = binarise(img)
 `,
   tests: [
     {
@@ -56,11 +72,17 @@ img = np.zeros((4, 5), dtype=np.uint8)
 assert binarise(img).shape == (4, 5)`,
     },
   ],
-  solution: `import numpy as np
+  solution: `import cv2
+import numpy as np
+
+img = cv2.imread('/inputs/cameraman.png', cv2.IMREAD_GRAYSCALE)
 
 def binarise(img):
     return ((img > 127).astype(np.uint8) * 255)
+
+mask = binarise(img)
 `,
+  requiresPackages: ['cv2'],
   inputs: [
     {
       kind: 'image',

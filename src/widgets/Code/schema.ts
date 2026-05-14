@@ -12,11 +12,16 @@ export const CodeInputSchema = z.discriminatedUnion('kind', [
     src: z.string().min(1),
     alt: z.string().optional(),
     caption: z.string().optional(),
+    // Optional override of the virtual filename inside /inputs/ for the
+    // Pyodide worker. When omitted, the runner derives the basename from
+    // `src`. Set this when `src` is opaque (e.g. signed URL with no path).
+    filename: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal('video'),
     src: z.string().min(1),
     caption: z.string().optional(),
+    filename: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal('file'),
@@ -30,6 +35,32 @@ export const CodeInputSchema = z.discriminatedUnion('kind', [
     label: z.string().optional(),
   }),
 ]);
+
+/**
+ * Resolve the virtual filename a Code-widget input mounts at inside the
+ * Pyodide worker's `/inputs/` directory. Returns `null` for kinds that do
+ * not represent a binary file (currently `text`).
+ *
+ * Filename priority:
+ *   1. explicit `filename` field if present
+ *   2. basename of `src` (last `/`-separated segment, query string stripped)
+ *
+ * Returns `null` when neither is usable so callers can decide how to react
+ * (the worker treats nulls as "skip this input").
+ */
+export function inputMountName(input: CodeInput): string | null {
+  if (input.kind === 'text') return null;
+  if ('filename' in input && input.filename) return input.filename;
+  return basenameFromSrc(input.src);
+}
+
+function basenameFromSrc(src: string): string | null {
+  if (!src) return null;
+  // Strip query + fragment so `?token=...` does not become part of the name.
+  const cleaned = src.split('?')[0].split('#')[0];
+  const seg = cleaned.split('/').filter(Boolean).pop();
+  return seg && seg.length > 0 ? seg : null;
+}
 
 export const CodeOutputMediaSchema = z.discriminatedUnion('kind', [
   z.object({

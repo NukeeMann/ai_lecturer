@@ -33,6 +33,8 @@ import {
   type CodeRunnerProgressKey,
 } from './CodeRunner';
 import type { CodeData, CodeInput, CodeOutputMedia, CodeTest } from './schema';
+import { inputMountName } from './schema';
+import type { PyodideInputFile } from '@/lib/pyodide/client';
 
 export interface CodeWidgetProps {
   data: CodeData;
@@ -834,6 +836,22 @@ export function CodeWidget({
   );
   const total = data.tests.length;
 
+  // Lesson-provided files that the Pyodide worker should mount into
+  // `/inputs/<filename>` before user code runs. Skips `kind: 'text'` and any
+  // input whose filename can't be resolved (no explicit filename + opaque
+  // src). Used by both Submit and ▶ Run code paths.
+  const workerInputs = useMemo<PyodideInputFile[]>(() => {
+    if (!data.inputs?.length) return [];
+    const out: PyodideInputFile[] = [];
+    for (const input of data.inputs) {
+      const filename = inputMountName(input);
+      if (!filename) continue;
+      if (input.kind === 'text') continue;
+      out.push({ filename, src: input.src });
+    }
+    return out;
+  }, [data.inputs]);
+
   const allExpanded = useMemo(
     () => total > 0 && data.tests.every((_, i) => expanded[i]),
     [expanded, data.tests, total],
@@ -868,6 +886,7 @@ export function CodeWidget({
         {
           requiresPackages: data.requiresPackages,
           captureLiveImage: liveCaptureEnabled || undefined,
+          inputs: workerInputs.length > 0 ? workerInputs : undefined,
         },
       );
       setStdout(result.stdout ?? '');
@@ -936,6 +955,7 @@ export function CodeWidget({
     alreadyCompleted,
     liveCaptureEnabled,
     setLivePng,
+    workerInputs,
   ]);
 
   // No-tests + live-capture path (US-174): clicking Run does not submit any
@@ -951,6 +971,7 @@ export function CodeWidget({
       const result: RunWithTestsResult = await runWithTests(code, [], {
         requiresPackages: data.requiresPackages,
         captureLiveImage: true,
+        inputs: workerInputs.length > 0 ? workerInputs : undefined,
       });
       setStdout(result.stdout ?? '');
       setStderr(result.stderr ?? '');
@@ -976,7 +997,15 @@ export function CodeWidget({
       setErrorMessage(msg);
       setSubmission('submitted-fail');
     }
-  }, [code, data.requiresPackages, runWithTests, status, submission, setLivePng]);
+  }, [
+    code,
+    data.requiresPackages,
+    runWithTests,
+    status,
+    submission,
+    setLivePng,
+    workerInputs,
+  ]);
 
   const handleReset = useCallback(() => {
     setResults(null);
@@ -1249,6 +1278,8 @@ export function CodeWidget({
         primaryAction={resolvedPrimaryAction}
         outputPlaceholder={placeholder}
         actionRunning={submission === 'submitting'}
+        runRequiresPackages={data.requiresPackages}
+        runInputs={workerInputs.length > 0 ? workerInputs : undefined}
         outputMediaSlot={
           outputMedia ? (
             <OutputMediaBlock

@@ -35,7 +35,7 @@ import numpy as np
 import scipy.ndimage as _ndimage
 import skimage.color as _color
 import skimage.feature as _feature
-import skimage.io as _io
+import skimage.io as _skio
 
 IMREAD_GRAYSCALE = 0
 IMREAD_COLOR = 1
@@ -44,7 +44,7 @@ CV_64F = 6
 
 
 def imread(path, flags=IMREAD_COLOR):
-    img = _io.imread(path)
+    img = _skio.imread(path)
     if flags == IMREAD_GRAYSCALE:
         if img.ndim == 3:
             img = _color.rgb2gray(img)
@@ -53,7 +53,7 @@ def imread(path, flags=IMREAD_COLOR):
 
 
 def imwrite(path, img):
-    _io.imsave(path, img)
+    _skio.imsave(path, img)
     return True
 
 

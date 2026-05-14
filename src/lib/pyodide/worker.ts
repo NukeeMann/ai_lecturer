@@ -17,6 +17,12 @@ interface PyRunOptions {
   globals?: PyProxyLike;
 }
 
+interface PyodideFS {
+  writeFile: (path: string, data: Uint8Array | string) => void;
+  mkdir: (path: string) => void;
+  analyzePath: (path: string) => { exists: boolean };
+}
+
 interface PyodideAPI {
   loadPackage: (names: string | string[]) => Promise<void>;
   runPython: (code: string, options?: PyRunOptions) => unknown;
@@ -27,6 +33,7 @@ interface PyodideAPI {
   };
   setStdout: (opts: { batched?: (s: string) => void }) => void;
   setStderr: (opts: { batched?: (s: string) => void }) => void;
+  FS: PyodideFS;
 }
 
 interface WorkerScope {
@@ -34,6 +41,17 @@ interface WorkerScope {
   postMessage: (msg: unknown, transfer?: Transferable[]) => void;
   addEventListener: (type: string, listener: (e: MessageEvent) => void) => void;
   loadPyodide?: (cfg?: { indexURL?: string }) => Promise<PyodideAPI>;
+}
+
+/**
+ * Lesson-provided file to mount into the Pyodide virtual filesystem at
+ * `/inputs/<filename>` before user code runs. `src` is fetched by the worker
+ * (which has unrestricted access to same-origin URLs) and cached by URL so
+ * repeated runs don't refetch. The cache is cleared on `resetNamespace`.
+ */
+interface WorkerInput {
+  filename: string;
+  src: string;
 }
 
 interface RunRequest {
@@ -51,6 +69,9 @@ interface RunRequest {
   // only meaningful value is 'cv2', which triggers ensureCv2Shim(py) before
   // user code is exec'd.
   requiresPackages?: string[];
+  // Lesson-provided files mounted into Pyodide VFS at /inputs/<filename>
+  // before user code runs. See WorkerInput above.
+  inputs?: WorkerInput[];
   // When true on 'runWithTests', capture any matplotlib figure left open
   // after user code + tests ran and return it as PNG bytes (US-174).
   captureLiveImage?: boolean;
@@ -86,6 +107,74 @@ let cv2PackagesPromise: Promise<void> | null = null;
 // in-place (so the proxy stays valid) and stores the new lesson slug.
 let lessonGlobalsProxy: PyProxyLike | null = null;
 let currentLessonSlug: string | null = null;
+
+// Mount path inside the Pyodide virtual filesystem. Lesson-provided files
+// land here as `/inputs/<filename>` so user code can read them with
+// idiomatic OpenCV-style calls (e.g. `cv2.imread('/inputs/lena.png')`).
+const INPUTS_DIR = '/inputs';
+let inputsDirReady = false;
+// Cached fetched bytes keyed by source URL. Cleared on `resetNamespace`
+// because lesson switches typically change all referenced URLs.
+const inputBytesCache = new Map<string, Uint8Array>();
+// Filenames already written into INPUTS_DIR during this lesson. Lets us
+// skip the FS.writeFile syscall on repeated runs of the same lesson.
+const mountedFilenames = new Set<string>();
+
+function ensureInputsDir(py: PyodideAPI): void {
+  if (inputsDirReady) return;
+  if (!py.FS.analyzePath(INPUTS_DIR).exists) {
+    py.FS.mkdir(INPUTS_DIR);
+  }
+  inputsDirReady = true;
+}
+
+async function fetchInputBytes(src: string): Promise<Uint8Array> {
+  const cached = inputBytesCache.get(src);
+  if (cached) return cached;
+  const res = await fetch(src);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch lesson input ${src}: HTTP ${res.status}`);
+  }
+  const buf = new Uint8Array(await res.arrayBuffer());
+  inputBytesCache.set(src, buf);
+  return buf;
+}
+
+async function mountInputs(
+  py: PyodideAPI,
+  inputs: WorkerInput[] | undefined,
+): Promise<void> {
+  if (!inputs || inputs.length === 0) return;
+  ensureInputsDir(py);
+  // Detect collisions up front — same filename mapped to two URLs in one
+  // payload is an authoring bug; surface it instead of letting the later
+  // write silently shadow the earlier one.
+  const seen = new Map<string, string>();
+  for (const input of inputs) {
+    const prev = seen.get(input.filename);
+    if (prev && prev !== input.src) {
+      throw new Error(
+        `Duplicate input filename "${input.filename}" mapped to both ${prev} and ${input.src}`,
+      );
+    }
+    seen.set(input.filename, input.src);
+  }
+  for (const input of inputs) {
+    const path = `${INPUTS_DIR}/${input.filename}`;
+    if (mountedFilenames.has(input.filename) && inputBytesCache.has(input.src)) {
+      continue;
+    }
+    const bytes = await fetchInputBytes(input.src);
+    py.FS.writeFile(path, bytes);
+    mountedFilenames.add(input.filename);
+  }
+}
+
+function clearMountedInputs(): void {
+  inputBytesCache.clear();
+  mountedFilenames.clear();
+  // Leave the /inputs directory in place — next mount will reuse it.
+}
 
 function loadPyodideOnce(): Promise<PyodideAPI> {
   if (!pyodidePromise) {
@@ -216,7 +305,7 @@ import numpy as np
 import scipy.ndimage as _ndimage
 import skimage.color as _color
 import skimage.feature as _feature
-import skimage.io as _io
+import skimage.io as _skio
 
 IMREAD_GRAYSCALE = 0
 IMREAD_COLOR = 1
@@ -225,7 +314,7 @@ CV_64F = 6
 
 
 def imread(path, flags=IMREAD_COLOR):
-    img = _io.imread(path)
+    img = _skio.imread(path)
     if flags == IMREAD_GRAYSCALE:
         if img.ndim == 3:
             img = _color.rgb2gray(img)
@@ -234,7 +323,7 @@ def imread(path, flags=IMREAD_COLOR):
 
 
 def imwrite(path, img):
-    _io.imsave(path, img)
+    _skio.imsave(path, img)
     return True
 
 
@@ -351,6 +440,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
       try {
         await ensureRunner(py);
         await py.runPythonAsync('__ai_reset_namespace()');
+        clearMountedInputs();
         currentLessonSlug = data.lessonSlug ?? null;
         ctx.postMessage({ id, lessonSlug: currentLessonSlug });
       } catch (err) {
@@ -368,6 +458,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
         if (data.requiresPackages?.includes('cv2')) {
           await ensureCv2Shim(py);
         }
+        await mountInputs(py, data.inputs);
         await py.runPythonAsync(code ?? '', {
           globals: lessonGlobalsProxy ?? undefined,
         });
@@ -461,6 +552,7 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     if (data.captureLiveImage) {
       await ensureLivePngCapture(py);
     }
+    await mountInputs(py, data.inputs);
     py.globals.set('__ai_user_code__', code ?? '');
     py.globals.set('__ai_tests__', tests ?? []);
     let testResults: unknown = [];

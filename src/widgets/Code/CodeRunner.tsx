@@ -37,6 +37,7 @@ import {
   PyodideStopError,
   subscribePyodideRestart,
   usePyodide,
+  type PyodideInputFile,
   type PyodideStopReason,
   type RunResult,
 } from '@/lib/pyodide/client';
@@ -84,6 +85,18 @@ export interface CodeRunnerProps {
    * output (US-114). Used by Code widget to surface inline image/video output.
    */
   outputMediaSlot?: ReactNode;
+  /**
+   * Pyodide packages to ensure before the inline ▶ Run executes user code.
+   * Mirrors the parent widget's `data.requiresPackages` so plain Run picks
+   * up the same `cv2` shim / other preloads as Submit.
+   */
+  runRequiresPackages?: string[];
+  /**
+   * Lesson-provided files to mount into the Pyodide VFS at
+   * `/inputs/<filename>` before the inline ▶ Run executes user code, so
+   * plain Run sees the same files as Submit.
+   */
+  runInputs?: PyodideInputFile[];
 }
 
 const FONT_SIZE = '13px';
@@ -582,6 +595,8 @@ export function CodeRunner({
   outputPlaceholder = 'Press ▶ Run to execute.',
   actionRunning = false,
   outputMediaSlot,
+  runRequiresPackages,
+  runInputs,
 }: CodeRunnerProps) {
   const { status, run, stop } = usePyodide();
   const [code, setCode] = useState<string>(initialCode ?? starterCode);
@@ -605,6 +620,8 @@ export function CodeRunner({
   // so the keymap (set once on mount) can always invoke the latest one.
   const runRef = useRef(run);
   const statusRef = useRef(status);
+  const runRequiresPackagesRef = useRef(runRequiresPackages);
+  const runInputsRef = useRef(runInputs);
 
   useEffect(() => {
     codeRef.current = code;
@@ -615,6 +632,12 @@ export function CodeRunner({
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+  useEffect(() => {
+    runRequiresPackagesRef.current = runRequiresPackages;
+  }, [runRequiresPackages]);
+  useEffect(() => {
+    runInputsRef.current = runInputs;
+  }, [runInputs]);
 
   const handleRun = useCallback(async () => {
     if (statusRef.current !== 'ready' || running) return;
@@ -624,7 +647,12 @@ export function CodeRunner({
     setOutputCollapsed(false);
     setTracebackOpen(false);
     try {
-      const result = await runRef.current(codeRef.current);
+      const inputs = runInputsRef.current;
+      const result = await runRef.current(
+        codeRef.current,
+        runRequiresPackagesRef.current,
+        inputs && inputs.length > 0 ? { inputs } : undefined,
+      );
       setOutput(result);
     } catch (err) {
       if (err instanceof PyodideStopError) {

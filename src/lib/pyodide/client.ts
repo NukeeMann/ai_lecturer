@@ -83,6 +83,17 @@ export interface PyodideTestSpec {
   body: string;
 }
 
+/**
+ * Lesson-provided file mounted into the Pyodide virtual filesystem at
+ * `/inputs/<filename>` before user code runs. The worker fetches `src`
+ * over HTTP once per lesson session and caches the bytes; user Python
+ * code reads them like any other file (e.g. `cv2.imread('/inputs/x.png')`).
+ */
+export interface PyodideInputFile {
+  filename: string;
+  src: string;
+}
+
 interface PendingHandler {
   resolve: (
     value:
@@ -225,13 +236,19 @@ export function stopPyodide(reason: PyodideStopReason = 'user'): void {
 }
 
 type WorkerPayload =
-  | { type: 'run'; code: string; requiresPackages?: string[] }
+  | {
+      type: 'run';
+      code: string;
+      requiresPackages?: string[];
+      inputs?: PyodideInputFile[];
+    }
   | {
       type: 'runWithTests';
       code: string;
       tests: PyodideTestSpec[];
       requiresPackages?: string[];
       captureLiveImage?: boolean;
+      inputs?: PyodideInputFile[];
     }
   | {
       type: 'gaussFilter';
@@ -309,11 +326,27 @@ export interface RunWithTestsOptions {
    * the AGG backend, so callers that don't need it pay nothing (US-174).
    */
   captureLiveImage?: boolean;
+  /**
+   * Lesson-provided files to mount into the Pyodide VFS at
+   * `/inputs/<filename>` before user code runs. Bytes are fetched in the
+   * worker and cached for the duration of the lesson.
+   */
+  inputs?: PyodideInputFile[];
+}
+
+export interface RunOptions {
+  requiresPackages?: string[];
+  /** Same semantics as `RunWithTestsOptions.inputs`. */
+  inputs?: PyodideInputFile[];
 }
 
 export interface UsePyodideReturn {
   status: PyodideStatus;
-  run: (code: string, requiresPackages?: string[]) => Promise<RunResult>;
+  run: (
+    code: string,
+    requiresPackages?: string[],
+    options?: RunOptions,
+  ) => Promise<RunResult>;
   runWithTests: (
     code: string,
     tests: PyodideTestSpec[],
@@ -361,9 +394,14 @@ export function usePyodide(): UsePyodideReturn {
   );
 
   const run = useCallback(
-    (code: string, requiresPackages?: string[]) =>
+    (code: string, requiresPackages?: string[], options?: RunOptions) =>
       callWorker<RunResult>(
-        { type: 'run', code, requiresPackages },
+        {
+          type: 'run',
+          code,
+          requiresPackages,
+          inputs: options?.inputs,
+        },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
       ),
@@ -383,6 +421,7 @@ export function usePyodide(): UsePyodideReturn {
           tests,
           requiresPackages: options?.requiresPackages,
           captureLiveImage: options?.captureLiveImage,
+          inputs: options?.inputs,
         },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
