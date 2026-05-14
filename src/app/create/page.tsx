@@ -96,8 +96,21 @@ interface ActiveRunProgressResp {
   lessons: ActiveRunProgressLessonResp[];
 }
 
+// Mirrors `ResumableRunEntry` from generation.ts — surfaced when the server
+// finds a leftover `.generation-state.json` whose run is no longer live
+// (session-limit failure, crash, power-off). The UI offers a one-click POST
+// to /api/courses/<slug>/resume.
+interface ResumableRunResp {
+  slug: string;
+  name: string;
+  lessonsDone: number;
+  lessonsTotal: number;
+  initStatus: 'pending' | 'done' | 'failed';
+  lastUpdatedAt: string;
+}
+
 type ActiveRunResponse =
-  | { active: false; queue: QueueEntry[] }
+  | { active: false; queue: QueueEntry[]; resumable?: ResumableRunResp[] }
   | {
       active: true;
       slug: string;
@@ -105,6 +118,7 @@ type ActiveRunResponse =
       stage: string;
       queue: QueueEntry[];
       progress?: ActiveRunProgressResp;
+      resumable?: ResumableRunResp[];
     };
 
 interface ActiveRun {
@@ -192,6 +206,11 @@ export default function CreatePage() {
   // on mount; cleared when the user dismisses or resumes.
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  // Courses with a leftover `.generation-state.json` and no live run — shown
+  // as a sibling banner offering one-click POST /<slug>/resume. Dismissals
+  // are keyed by slug so resuming/discarding one entry doesn't hide the rest.
+  const [resumableRuns, setResumableRuns] = useState<ResumableRunResp[]>([]);
+  const [resumableDismissed, setResumableDismissed] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -225,7 +244,9 @@ export default function CreatePage() {
 
   // US-106 — probe the server for an in-flight run on mount. Banner shows
   // unless the user explicitly dismissed it OR they're already inside Stage 6
-  // (resume target — banner would be redundant).
+  // (resume target — banner would be redundant). Also harvests `resumable[]`
+  // so the sibling banner can offer recovery from a session-limit / crash
+  // that ended the run but left `.generation-state.json` on disk.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -248,6 +269,8 @@ export default function CreatePage() {
           // eslint-disable-next-line react-hooks/set-state-in-effect
           setActiveRun(null);
         }
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setResumableRuns(Array.isArray(body?.resumable) ? body.resumable! : []);
       } catch {
         /* best-effort — banner is a UX nicety */
       }
@@ -379,6 +402,16 @@ export default function CreatePage() {
   const onResumeView = stage === 6 && submittedSlug === activeRun?.slug;
   const showResumeBanner = activeRun !== null && !bannerDismissed && !onResumeView;
 
+  // Resumable banners: one per leftover `.generation-state.json` that isn't
+  // the live run. Hidden for the slug currently open in Stage 6 (same noise
+  // argument as the live banner). Per-slug dismissal lets the user clear
+  // one without hiding the rest.
+  const visibleResumable = resumableRuns.filter((r) => {
+    if (resumableDismissed.has(r.slug)) return false;
+    if (stage === 6 && submittedSlug === r.slug) return false;
+    return true;
+  });
+
   return (
     <div style={pageStyle}>
       {showResumeBanner && activeRun && (
@@ -392,6 +425,26 @@ export default function CreatePage() {
           onDismiss={() => setBannerDismissed(true)}
         />
       )}
+      {visibleResumable.map((entry) => (
+        <ResumableRunBanner
+          key={entry.slug}
+          entry={entry}
+          onNavigateToGeneration={(targetSlug) => {
+            setSubmittedSlug(targetSlug);
+            setStage(6);
+          }}
+          onClear={(targetSlug) =>
+            setResumableRuns((prev) => prev.filter((r) => r.slug !== targetSlug))
+          }
+          onDismiss={(targetSlug) =>
+            setResumableDismissed((prev) => {
+              const next = new Set(prev);
+              next.add(targetSlug);
+              return next;
+            })
+          }
+        />
+      ))}
       <header style={headerStyle}>
         <div style={headerSlotStyle}>
           <AppLogoLink />
@@ -1505,6 +1558,238 @@ function ResumeBanner({
       {errorMessage && (
         <div
           data-testid="resume-banner-toast"
+          role="status"
+          style={{
+            marginTop: 6,
+            padding: '6px 10px',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--danger)',
+            color: 'var(--text-on-accent)',
+            fontSize: 'var(--fs-sm)',
+          }}
+        >
+          {errorMessage}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Sticky banner shown when the server reports a leftover `.generation-state.json`
+// for a course whose run is no longer live (Claude session limit, crash, power
+// off). Resume hits POST /api/courses/<slug>/resume; Discard wipes via DELETE
+// /api/courses/<slug>/generation-state. Rendered once per resumable entry —
+// stacked under the live ResumeBanner when both are present.
+function ResumableRunBanner({
+  entry,
+  onNavigateToGeneration,
+  onClear,
+  onDismiss,
+}: {
+  entry: ResumableRunResp;
+  onNavigateToGeneration: (slug: string) => void;
+  onClear: (slug: string) => void;
+  onDismiss: (slug: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((message: string) => {
+    setErrorMessage(message);
+    setTimeout(() => setErrorMessage((curr) => (curr === message ? null : curr)), 4500);
+  }, []);
+
+  const handleResume = useCallback(async () => {
+    if (busy) return;
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(entry.slug)}/resume`,
+        { method: 'POST' },
+      );
+      if (res.ok) {
+        onNavigateToGeneration(entry.slug);
+        return;
+      }
+      let code: string | undefined;
+      let message = `Server returned ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body && typeof body.error === 'string') {
+          code = body.error;
+          message = body.error;
+        }
+      } catch {
+        /* non-JSON */
+      }
+      if (res.status === 409 && code === 'busy') {
+        showToast('Another course generation is in flight — try again once it finishes.');
+        return;
+      }
+      if (res.status === 409 && code === 'no-resumable-state') {
+        // State file vanished between the active-run summary and this click
+        // (concurrent discard from another tab). Drop the entry locally.
+        onClear(entry.slug);
+        return;
+      }
+      if (res.status === 409 && code === 'recently-cancelled') {
+        showToast('This course was cancelled recently — wait a few seconds and try again.');
+        return;
+      }
+      showToast(message);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, entry.slug, onClear, onNavigateToGeneration, showToast]);
+
+  const handleDiscard = useCallback(async () => {
+    if (busy) return;
+    const ok = window.confirm(
+      `Discard the partial generation for ${entry.name}? Lessons already produced will be deleted; init artifacts (research, sources, course outline) are kept.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(entry.slug)}/generation-state`,
+        { method: 'DELETE' },
+      );
+      if (res.status === 204) {
+        onClear(entry.slug);
+        return;
+      }
+      let message = `Server returned ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body && typeof body.error === 'string') message = body.error;
+      } catch {
+        /* non-JSON */
+      }
+      showToast(message);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, entry.name, entry.slug, onClear, showToast]);
+
+  const summary =
+    entry.initStatus === 'failed'
+      ? 'Init stage failed — resume will retry it'
+      : entry.lessonsTotal === 0
+        ? entry.initStatus === 'done'
+          ? 'Course outline ready — resume to generate lessons'
+          : 'Course outline not yet finished'
+        : `${entry.lessonsDone} of ${entry.lessonsTotal} lessons completed`;
+
+  return (
+    <div
+      data-testid="resumable-run-banner"
+      data-resumable-slug={entry.slug}
+      style={{
+        position: 'sticky',
+        top: 0,
+        zIndex: 19,
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 'var(--space-1)',
+        padding: '10px var(--space-6)',
+        background: 'var(--warning-subtle, rgba(217, 119, 6, 0.08))',
+        color: 'var(--warning-text, var(--text))',
+        borderBottom: '1px solid var(--warning, #f59e0b)',
+        fontSize: 'var(--fs-sm)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}
+      >
+        <AlertTriangle size={14} strokeWidth={2} />
+        <span data-testid="resumable-run-banner-text" style={{ flex: 1 }}>
+          Previous generation paused for{' '}
+          <strong data-testid="resumable-run-banner-name">{entry.name}</strong>
+          {' — '}
+          <span style={{ color: 'var(--text-secondary)' }}>{summary}</span>
+        </span>
+        <button
+          type="button"
+          data-testid="resumable-run-banner-resume"
+          onClick={() => void handleResume()}
+          disabled={busy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            height: 30,
+            padding: '0 14px',
+            background: 'var(--accent)',
+            color: 'var(--text-on-accent)',
+            border: 'none',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            cursor: busy ? 'not-allowed' : 'pointer',
+            opacity: busy ? 0.55 : 1,
+          }}
+        >
+          Resume
+          <ArrowRight size={12} strokeWidth={2} />
+        </button>
+        <button
+          type="button"
+          data-testid="resumable-run-banner-discard"
+          onClick={() => void handleDiscard()}
+          disabled={busy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 30,
+            padding: '0 12px',
+            background: 'transparent',
+            color: 'var(--text)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 500,
+            fontFamily: 'inherit',
+            cursor: busy ? 'not-allowed' : 'pointer',
+            opacity: busy ? 0.55 : 1,
+          }}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          data-testid="resumable-run-banner-dismiss"
+          aria-label="Dismiss"
+          onClick={() => onDismiss(entry.slug)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: 4,
+            borderRadius: 'var(--radius-sm)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <X size={14} strokeWidth={2} />
+        </button>
+      </div>
+      {errorMessage && (
+        <div
+          data-testid="resumable-run-banner-toast"
           role="status"
           style={{
             marginTop: 6,
@@ -3427,6 +3712,59 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     onCancelled();
   };
 
+  // Inline recovery from `phase === 'error'`. POSTs to /resume; on success
+  // reloads the page so the existing kickoff useEffect re-attaches a fresh
+  // SSE stream to the new run (POST /generate is idempotent for the active
+  // slug, so it just hands back the run id). Toasts on conflict / missing
+  // state so the user knows why nothing happened.
+  const [resuming, setResuming] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const handleResumeFromError = useCallback(async () => {
+    if (resuming) return;
+    setResuming(true);
+    setResumeError(null);
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(slug)}/resume`,
+        { method: 'POST' },
+      );
+      if (res.ok) {
+        window.location.reload();
+        return;
+      }
+      let code: string | undefined;
+      let message = `Server returned ${res.status}`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body && typeof body.error === 'string') {
+          code = body.error;
+          message = body.error;
+        }
+      } catch {
+        /* non-JSON */
+      }
+      if (res.status === 409 && code === 'no-resumable-state') {
+        setResumeError(
+          'No resumable state on disk — start a fresh generation from Stage 5.',
+        );
+      } else if (res.status === 409 && code === 'busy') {
+        setResumeError(
+          'Another course generation is in flight — try again once it finishes.',
+        );
+      } else if (res.status === 409 && code === 'recently-cancelled') {
+        setResumeError(
+          'This course was cancelled recently — wait a few seconds and try again.',
+        );
+      } else {
+        setResumeError(message);
+      }
+    } catch (err) {
+      setResumeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResuming(false);
+    }
+  }, [resuming, slug]);
+
   const progressPercent = progress && progress.total > 0
     ? Math.min(100, Math.round((progress.current / progress.total) * 100))
     : null;
@@ -3591,8 +3929,18 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
             >
               <div style={{ fontWeight: 600 }}>{errorMessage}</div>
               <div style={{ marginTop: 4, fontSize: 'var(--fs-xs)', opacity: 0.85 }}>
-                Expand any stage below to review its full log.
+                Expand any stage below to review its full log, or click Resume
+                generation to pick up from the last completed stage.
               </div>
+              {resumeError && (
+                <div
+                  data-testid="stage5-resume-error"
+                  role="status"
+                  style={{ marginTop: 8, fontSize: 'var(--fs-xs)', fontWeight: 500 }}
+                >
+                  {resumeError}
+                </div>
+              )}
             </div>
           )}
 
@@ -3662,15 +4010,27 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               </button>
             )}
             {phase === 'error' && (
-              <button
-                type="button"
-                data-testid="stage5-back"
-                onClick={onCancelled}
-                style={ghostBtnStyle}
-              >
-                <ArrowLeft size={14} strokeWidth={2} />
-                Back to approval
-              </button>
+              <>
+                <button
+                  type="button"
+                  data-testid="stage5-resume"
+                  onClick={() => void handleResumeFromError()}
+                  disabled={resuming}
+                  style={primaryBtnStyle(resuming)}
+                >
+                  {resuming ? 'Resuming…' : 'Resume generation'}
+                  <ArrowRight size={14} strokeWidth={2} />
+                </button>
+                <button
+                  type="button"
+                  data-testid="stage5-back"
+                  onClick={onCancelled}
+                  style={ghostBtnStyle}
+                >
+                  <ArrowLeft size={14} strokeWidth={2} />
+                  Back to approval
+                </button>
+              </>
             )}
           </div>
         </div>

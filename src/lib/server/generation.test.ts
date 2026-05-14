@@ -1882,6 +1882,124 @@ describe('getActiveRunSummary (US-106)', () => {
       queue: [],
     });
   });
+
+  // Resumable-scan coverage: any course dir with a `.generation-state.json`
+  // and no live `.generating.json` is surfaced via `resumable[]` so the UI
+  // can offer a one-click resume after a session-limit / crash / power-off.
+  it('surfaces leftover .generation-state.json as a resumable entry when no live marker exists', async () => {
+    const dir = path.join(coursesRoot, 'orphaned');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, '.generation-state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug: 'orphaned',
+        startedAt: '2026-05-04T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-04T00:05:00.000Z',
+        research: { status: 'done' },
+        design: { status: 'done' },
+        lessons: [
+          { slug: 'intro', status: 'done', attempts: 1, finishedAt: '2026-05-04T00:02:00.000Z' },
+          { slug: 'core', status: 'failed', attempts: 3, lastError: 'rate limited' },
+        ],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60000 },
+      }),
+      'utf8',
+    );
+    const summary = await getActiveRunSummary();
+    expect(summary.active).toBe(false);
+    expect(summary.resumable).toEqual([
+      {
+        slug: 'orphaned',
+        name: 'orphaned',
+        lessonsDone: 1,
+        lessonsTotal: 2,
+        initStatus: 'done',
+        lastUpdatedAt: '2026-05-04T00:05:00.000Z',
+      },
+    ]);
+  });
+
+  it('omits resumable[] when no state files exist (preserves the clean-success shape)', async () => {
+    const summary = await getActiveRunSummary();
+    expect(summary).toEqual({ active: false, queue: [] });
+  });
+
+  it('excludes the active slug from resumable[] but lists every other course with a state file', async () => {
+    // Two state files on disk: one belongs to the live in-memory run, the
+    // other is a leftover from a different course. Only the second should
+    // appear in resumable[].
+    const liveDir = path.join(coursesRoot, 'live');
+    const stalledDir = path.join(coursesRoot, 'stalled');
+    await fs.mkdir(liveDir, { recursive: true });
+    await fs.mkdir(stalledDir, { recursive: true });
+    await fs.writeFile(
+      path.join(stalledDir, '.generation-state.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug: 'stalled',
+        startedAt: '2026-05-04T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-04T00:01:00.000Z',
+        research: { status: 'failed', reason: 'rate limited' },
+        design: { status: 'pending' },
+        lessons: [],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60000 },
+      }),
+      'utf8',
+    );
+    // Live in-memory run for 'live' — its state file will land on disk via
+    // persistGenState as soon as the pipeline writes one.
+    const scripted = makeScriptedSpawn();
+    const run = await startGeneration('live', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+    void run;
+    await scripted.nextChild();
+    await new Promise((r) => setImmediate(r));
+
+    const summary = await getActiveRunSummary();
+    expect(summary.active).toBe(true);
+    if (summary.active) {
+      expect(summary.slug).toBe('live');
+    }
+    expect(summary.resumable).toEqual([
+      {
+        slug: 'stalled',
+        name: 'stalled',
+        lessonsDone: 0,
+        lessonsTotal: 0,
+        initStatus: 'failed',
+        lastUpdatedAt: '2026-05-04T00:01:00.000Z',
+      },
+    ]);
+  });
+
+  it('sorts resumable[] newest-first by lastUpdatedAt', async () => {
+    const oldest = path.join(coursesRoot, 'oldest');
+    const middle = path.join(coursesRoot, 'middle');
+    const newest = path.join(coursesRoot, 'newest');
+    await fs.mkdir(oldest, { recursive: true });
+    await fs.mkdir(middle, { recursive: true });
+    await fs.mkdir(newest, { recursive: true });
+    const make = (slug: string, lastUpdatedAt: string) =>
+      JSON.stringify({
+        schemaVersion: 1,
+        slug,
+        startedAt: lastUpdatedAt,
+        lastUpdatedAt,
+        research: { status: 'done' },
+        design: { status: 'done' },
+        lessons: [],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60000 },
+      });
+    await fs.writeFile(path.join(oldest, '.generation-state.json'), make('oldest', '2026-05-01T00:00:00.000Z'), 'utf8');
+    await fs.writeFile(path.join(middle, '.generation-state.json'), make('middle', '2026-05-02T00:00:00.000Z'), 'utf8');
+    await fs.writeFile(path.join(newest, '.generation-state.json'), make('newest', '2026-05-03T00:00:00.000Z'), 'utf8');
+
+    const summary = await getActiveRunSummary();
+    expect(summary.resumable?.map((r) => r.slug)).toEqual(['newest', 'middle', 'oldest']);
+  });
 });
 
 describe('enqueueGeneration / sequential queue (US-107)', () => {

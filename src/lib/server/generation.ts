@@ -176,15 +176,37 @@ export interface ActiveRunProgress {
 }
 
 /**
+ * One course that has a `.generation-state.json` on disk but is NOT the
+ * currently-active run. Produced by scanning course dirs and excluding any
+ * slug whose `.generating.json` PID is still alive (or that matches the
+ * in-memory activeRun). The clean-success path deletes the state file, so a
+ * surviving file means the run either failed, was force-killed (laptop off,
+ * server crash, Claude session limit), or finished with `failedLessons` — in
+ * all of which cases POST /api/courses/<slug>/resume can pick it back up.
+ */
+export interface ResumableRunEntry {
+  slug: string;
+  name: string;
+  lessonsDone: number;
+  lessonsTotal: number;
+  initStatus: 'pending' | 'done' | 'failed';
+  lastUpdatedAt: string;
+}
+
+/**
  * Summary returned by GET /api/courses/active-run (US-106). Lets the /create
  * page detect a still-running generation after a tab/server reload and offer
  * the user a one-click resume. As of US-107 the response also carries the
  * pending queue so callers can show "X in queue" context. US-140 adds an
  * optional `progress` block (only present when `.generation-state.json`
  * from US-136 exists) so the banner can render concrete per-lesson status.
+ * The optional `resumable` list (only present when non-empty) carries any
+ * courses with a leftover `.generation-state.json` whose run is no longer
+ * live — so the banner can offer a one-click POST /<slug>/resume even after
+ * a session-limit / crash / power-off that already cleared activeRun.
  */
 export type ActiveRunSummary =
-  | { active: false; queue: QueueSummaryEntry[] }
+  | { active: false; queue: QueueSummaryEntry[]; resumable?: ResumableRunEntry[] }
   | {
       active: true;
       slug: string;
@@ -192,6 +214,7 @@ export type ActiveRunSummary =
       stage: string;
       queue: QueueSummaryEntry[];
       progress?: ActiveRunProgress;
+      resumable?: ResumableRunEntry[];
     };
 
 /**
@@ -708,71 +731,153 @@ export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
 }
 
 async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
-  if (activeRun && !activeRun.finished) {
-    const slug = activeRun.slug;
-    const stage = activeRun.currentStage ?? 'research_course';
-    const name = await resolveCourseName(slug);
-    const queueSummary = await getQueueSummary();
-    const progress = await readProgressForActiveRun(slug);
-    return progress
-      ? { active: true, slug, name, stage, queue: queueSummary, progress }
-      : { active: true, slug, name, stage, queue: queueSummary };
-  }
+  const queueSummary = await getQueueSummary();
 
-  // Cold-start reconciliation. Scan for `.generating.json` markers — each
-  // identifies a course whose generation was in flight when this process (or
-  // the previous server) last saw it. If the child PID is still alive, the
-  // run is still going; otherwise the marker is stale.
+  // In-memory active run wins over the disk scan — it always reflects the
+  // freshest state. The disk walk below still runs so we can collect
+  // `resumable[]` (every OTHER course with a leftover state file).
+  const activeFromMemory =
+    activeRun && !activeRun.finished
+      ? { slug: activeRun.slug, stage: activeRun.currentStage ?? 'research_course' }
+      : null;
+
   const root = coursesRoot();
   let entries: import('node:fs').Dirent[];
   try {
     entries = await fs.readdir(root, { withFileTypes: true });
   } catch {
-    return { active: false, queue: await getQueueSummary() };
+    // Courses dir missing — can't scan resumable, but still honour an
+    // in-memory active run (would be unusual: active run implies a course
+    // dir exists, but stay defensive).
+    if (activeFromMemory) {
+      const slug = activeFromMemory.slug;
+      const name = await resolveCourseName(slug);
+      const progress = await readProgressForActiveRun(slug);
+      return progress
+        ? { active: true, slug, name, stage: activeFromMemory.stage, queue: queueSummary, progress }
+        : { active: true, slug, name, stage: activeFromMemory.stage, queue: queueSummary };
+    }
+    return { active: false, queue: queueSummary };
   }
+
+  // Single walk: collect (a) the first live-PID cold-start marker — only
+  // meaningful when activeFromMemory is null — and (b) every slug that has a
+  // `.generation-state.json` on disk so we can surface them as resumable.
+  let activeFromMarker: { slug: string; stage: string } | null = null;
+  const stateOwners: string[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name.startsWith('.')) continue; // skip /.drafts/ etc.
-    const markerPath = path.join(root, entry.name, GENERATING_MARKER);
-    let raw: string;
+
+    const dirPath = path.join(root, entry.name);
+    const markerPath = path.join(dirPath, GENERATING_MARKER);
+    const statePath = path.join(dirPath, '.generation-state.json');
+
+    let raw: string | null = null;
     try {
       raw = await fs.readFile(markerPath, 'utf8');
     } catch {
-      continue;
+      /* no marker — that's fine, the dir may still own a state file */
     }
-    let marker: GeneratingMarker;
+    if (raw !== null) {
+      let marker: GeneratingMarker | null = null;
+      try {
+        marker = JSON.parse(raw) as GeneratingMarker;
+      } catch {
+        try {
+          await fs.unlink(markerPath);
+        } catch {
+          /* ignore */
+        }
+        marker = null;
+      }
+      if (marker) {
+        const pidIsDead =
+          typeof marker.childPid === 'number' &&
+          marker.childPid > 0 &&
+          !isPidAlive(marker.childPid);
+        if (pidIsDead) {
+          try {
+            await fs.unlink(markerPath);
+          } catch {
+            /* ignore */
+          }
+        } else if (!activeFromMarker) {
+          const slug =
+            typeof marker.slug === 'string' && marker.slug.length > 0
+              ? marker.slug
+              : entry.name;
+          const stage =
+            (typeof marker.stage === 'string' && marker.stage.length > 0
+              ? marker.stage
+              : null) ??
+            (await deriveStageFromLogs(slug)) ??
+            'research_course';
+          activeFromMarker = { slug, stage };
+        }
+      }
+    }
+
     try {
-      marker = JSON.parse(raw) as GeneratingMarker;
+      await fs.access(statePath);
+      stateOwners.push(entry.name);
     } catch {
-      try {
-        await fs.unlink(markerPath);
-      } catch {
-        /* ignore */
-      }
-      continue;
+      /* no state file — clean course or a fresh run that hasn't persisted yet */
     }
-    if (typeof marker.childPid === 'number' && marker.childPid > 0 && !isPidAlive(marker.childPid)) {
-      try {
-        await fs.unlink(markerPath);
-      } catch {
-        /* ignore */
-      }
-      continue;
-    }
-    const slug = typeof marker.slug === 'string' && marker.slug.length > 0 ? marker.slug : entry.name;
-    const stage =
-      (typeof marker.stage === 'string' && marker.stage.length > 0 ? marker.stage : null) ??
-      (await deriveStageFromLogs(slug)) ??
-      'research_course';
+  }
+
+  const active = activeFromMemory ?? activeFromMarker;
+  const activeSlug = active?.slug ?? null;
+
+  // Build resumable[] from state-file owners that aren't the active run.
+  // Newest-first so the UI surfaces the most recently-paused course at the
+  // top — that's almost always the one the user wants to resume.
+  const resumable: ResumableRunEntry[] = [];
+  for (const slug of stateOwners) {
+    if (activeSlug && slug === activeSlug) continue;
+    const state = await readGenerationState(slug);
+    if (!state) continue;
+    const name = await resolveCourseName(slug);
+    const lessonsDone = state.lessons.filter((l) => l.status === 'done').length;
+    const initStatus: 'pending' | 'done' | 'failed' =
+      state.research.status === 'failed' || state.design.status === 'failed'
+        ? 'failed'
+        : state.design.status === 'done'
+          ? 'done'
+          : 'pending';
+    resumable.push({
+      slug,
+      name,
+      lessonsDone,
+      lessonsTotal: state.lessons.length,
+      initStatus,
+      lastUpdatedAt: state.lastUpdatedAt,
+    });
+  }
+  resumable.sort((a, b) => b.lastUpdatedAt.localeCompare(a.lastUpdatedAt));
+
+  if (active) {
+    const slug = active.slug;
     const name = await resolveCourseName(slug);
     const progress = await readProgressForActiveRun(slug);
-    const queueSummary = await getQueueSummary();
-    return progress
-      ? { active: true, slug, name, stage, queue: queueSummary, progress }
-      : { active: true, slug, name, stage, queue: queueSummary };
+    const out: Extract<ActiveRunSummary, { active: true }> = {
+      active: true,
+      slug,
+      name,
+      stage: active.stage,
+      queue: queueSummary,
+    };
+    if (progress) out.progress = progress;
+    if (resumable.length > 0) out.resumable = resumable;
+    return out;
   }
-  return { active: false, queue: await getQueueSummary() };
+  const out: Extract<ActiveRunSummary, { active: false }> = {
+    active: false,
+    queue: queueSummary,
+  };
+  if (resumable.length > 0) out.resumable = resumable;
+  return out;
 }
 
 /**
