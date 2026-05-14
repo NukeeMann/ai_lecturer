@@ -1,0 +1,26 @@
+[2026-05-14T19:24:59+0200] [rate_limit five_hour status=allowed]
+[2026-05-14T19:26:18+0200] Now I have a clear picture. Let me design the Alpine Glow palette and update the variant B block. I'll start with the CSS, then write the test, then verify in the browser.
+[2026-05-14T19:26:39+0200] Now let me write the vitest test that loads tokens.css into jsdom and verifies the values.
+[2026-05-14T19:27:05+0200] Now typecheck and full suite.
+[2026-05-14T19:27:33+0200] The single failure is the pre-existing flaky `extendApply.test.ts` noted in the prior progress log (ENOTEMPTY rmdir race, unrelated to tokens). Confirming by re-running just that test.
+[2026-05-14T19:27:35+0200] Confirmed flaky. Now browser verification with playwright.
+[2026-05-14T19:30:09+0200] Dev server up. Let me check which lesson page to navigate to.
+[2026-05-14T19:31:44+0200] All checks pass: cool blue-violet bg (#1a1f3a, R<G<B), warm peach accent (#ff9a76, R>B), warm text (#f5e8dc), screenshots saved. Let me view them to confirm the visual result.
+[2026-05-14T19:31:54+0200] Visually confirmed: cool blue-violet background, warm peach "Resume" / "Mark lesson complete" CTAs, warm off-white text. Reads as Alpine Glow, not magenta dusk.
+
+Now let me flip prd.json and commit. First, append progress and then commit.
+[2026-05-14T19:32:02+0200] Good. Now append progress and commit.
+[2026-05-14T19:33:00+0200] US-188 done and committed. Summary:
+
+- **`src/styles/tokens.css`** — variant B block rewritten: cool blue-violet base (`--bg: #1a1f3a`), warm peach dawn accent (`--accent: #ff9a76`), warm off-white text (`--text: #f5e8dc`). All 59 baseline tokens preserved; supporting hues retuned to harmonise with the cool base. Header comment + intro `/* */` block document the chosen primaries and the ~13.5:1 / ~11.8:1 contrast ratios.
+- **`src/styles/sunsetVariantB.test.tsx`** — vitest/jsdom test that injects tokens.css, activates the variant, and asserts (a) literal hex regression guards, (b) R<G<B for `--bg` + R>B for `--accent`, (c) WCAG-AA contrast for body text on both `--bg` and `--bg-elevated`, (d) all 59 baseline tokens still resolve.
+- **Browser-verified** via playwright-skill on home (`/`) and lesson (`/courses/edge-detection-basics/lessons/sobel-gradients`). Screenshots at `/tmp/alpine-glow-home.png` and `/tmp/alpine-glow-lesson.png` — visually cool base with warm peach CTAs.
+- `npm run typecheck` clean; new test 4/4 pass; full `npm test` 1098/1099 (the one failure is the pre-existing flaky `extendApply.test.ts` ENOTEMPTY race, unrelated — passes in isolation).
+- `scripts/ralph/prd.json` — US-188 `passes` flipped to `true`. Committed as `e103559`.
+[2026-05-14T19:33:00+0200] [result success turns=48 cost=$2.2007399999999993] US-188 done and committed. Summary:
+
+- **`src/styles/tokens.css`** — variant B block rewritten: cool blue-violet base (`--bg: #1a1f3a`), warm peach dawn accent (`--accent: #ff9a76`), warm off-white text (`--text: #f5e8dc`). All 59 baseline tokens preserved; supporting hues retuned to harmonise with the cool base. Header comment + intro `/* */` block document the chosen primaries and the ~13.5:1 / ~11.8:1 contrast ratios.
+- **`src/styles/sunsetVariantB.test.tsx`** — vitest/jsdom test that injects tokens.css, activates the variant, and asserts (a) literal hex regression guards, (b) R<G<B for `--bg` + R>B for `--accent`, (c) WCAG-AA contrast for body text on both `--bg` and `--bg-elevated`, (d) all 59 baseline tokens still resolve.
+- **Browser-verified** via playwright-skill on home (`/`) and lesson (`/courses/edge-detection-basics/lessons/sobel-gradients`). Screenshots at `/tmp/alpine-glow-home.png` and `/tmp/alpine-glow-lesson.png` — visually cool base with warm peach CTAs.
+- `npm run typecheck` clean; new test 4/4 pass; full `npm test` 1098/1099 (the one failure is the pre-existing flaky `extendApply.test.ts` ENOTEMPTY race, unrelated — passes in isolation).
+- `scripts/ralph/prd.json` — US-188 `passes` flipped to `true`. Committed as `e103559`.
