@@ -9,6 +9,7 @@ import remarkMath from 'remark-math';
 
 import { Callout, type CalloutTone } from '@/components/Callout';
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { preprocessMath } from '@/lib/client/mathPreprocess';
 import { enqueue, type TtsJobHandle, type TtsJobStatus } from '@/lib/client/ttsQueue';
 import { stripForTts } from '@/lib/client/ttsText';
 import { readTtsVoice } from '@/lib/client/ttsVoice';
@@ -21,13 +22,6 @@ export interface TheoryWidgetProps {
 }
 
 const VALID_TONES: ReadonlySet<CalloutTone> = new Set(['info', 'insight', 'warning', 'danger']);
-
-function preprocessMath(markdown: string): string {
-  return markdown
-    .replace(/\\\(([\s\S]+?)\\\)/g, (_, body: string) => `$${body}$`)
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, body: string) => `$$\n${body}\n$$`)
-    .replace(/\$\$([^\n$]+?)\$\$/g, (_, body: string) => `$$\n${body}\n$$`);
-}
 
 function normalizeTone(raw: unknown): CalloutTone {
   if (typeof raw === 'string' && VALID_TONES.has(raw as CalloutTone)) {

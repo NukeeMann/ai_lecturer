@@ -576,6 +576,89 @@ describe('LessonChat (US-184) — MediaRecorder fallback path', () => {
   });
 });
 
+describe('LessonChat (US-187) — markdown + math + code rendering', () => {
+  it('renders bold, KaTeX, and highlighted code fences in both user and assistant bubbles', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'u-1',
+        role: 'user',
+        text: "**bold** $x^2$\n\n```python\nprint('y')\n```",
+      },
+      {
+        id: 'a-1',
+        role: 'assistant',
+        text: "Sure! Here is **the answer**: $E=mc^2$ and:\n\n```js\nconst x = 1;\n```",
+      },
+    ];
+
+    const { container } = render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={messages}
+      />,
+    );
+
+    const userBubble = container.querySelector(
+      'li[data-role="user"]',
+    ) as HTMLElement;
+    const assistantBubble = container.querySelector(
+      'li[data-role="assistant"]',
+    ) as HTMLElement;
+    expect(userBubble).not.toBeNull();
+    expect(assistantBubble).not.toBeNull();
+
+    // Bold rendered as <strong> on both sides.
+    expect(userBubble.querySelector('strong')?.textContent).toBe('bold');
+    expect(assistantBubble.querySelector('strong')?.textContent).toBe(
+      'the answer',
+    );
+
+    // KaTeX nodes appear in both bubbles.
+    expect(userBubble.querySelector('.katex')).not.toBeNull();
+    expect(assistantBubble.querySelector('.katex')).not.toBeNull();
+
+    // Code fence in the assistant bubble gets rehype-highlight's language
+    // class applied to the inner <code>, wrapped in <pre>.
+    const assistantPre = assistantBubble.querySelector('pre');
+    expect(assistantPre).not.toBeNull();
+    const assistantCode = assistantPre!.querySelector('code');
+    expect(assistantCode?.className ?? '').toMatch(/language-js/);
+    expect(assistantPre!.textContent ?? '').toContain('const x = 1');
+
+    // User-side code fence also renders inside a <pre>.
+    const userPre = userBubble.querySelector('pre');
+    expect(userPre).not.toBeNull();
+    expect(userPre!.textContent ?? '').toContain("print('y')");
+  });
+
+  it('does NOT render markdown for error messages', () => {
+    const messages: ChatMessage[] = [
+      { id: 'e-1', role: 'error', text: '**not bold** $E=mc^2$' },
+    ];
+    const { container } = render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={messages}
+      />,
+    );
+    const errorBubble = container.querySelector(
+      'li[data-role="error"]',
+    ) as HTMLElement;
+    expect(errorBubble).not.toBeNull();
+    expect(errorBubble.querySelector('strong')).toBeNull();
+    expect(errorBubble.querySelector('.katex')).toBeNull();
+    expect(errorBubble.textContent ?? '').toContain('**not bold**');
+  });
+});
+
 describe('LessonChat (US-184) — Web Speech permission-denied error', () => {
   it('renders the error chip with a microphone-access-denied message and leaves draft untouched', async () => {
     const { ctor, instances } = buildFakeSpeechRecognition();
