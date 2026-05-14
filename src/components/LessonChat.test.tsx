@@ -187,3 +187,164 @@ describe('LessonChat (US-183) — speak button per assistant message', () => {
     pauseSpy.mockRestore();
   });
 });
+
+describe('LessonChat TTS — pause/play icon state', () => {
+  it('flips Pause icon back to Play when audio pauses; click again resumes without re-fetching', async () => {
+    const fakeMp3 = new Blob([new Uint8Array([0xff, 0xfb, 0x90, 0x00])], {
+      type: 'audio/mpeg',
+    });
+    const fetchMock = vi.fn(async () => {
+      return new Response(fakeMp3, {
+        status: 200,
+        headers: { 'Content-Type': 'audio/mpeg' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const createSpy = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation(() => 'blob:mock://1');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    // play()/pause() stubs that ALSO dispatch the matching DOM event the way
+    // real <audio> does — this is what drives onPlay/onPause in the component.
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(
+      async function (this: HTMLMediaElement) {
+        Object.defineProperty(this, 'paused', { configurable: true, get: () => false });
+        this.dispatchEvent(new Event('play'));
+      },
+    );
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      Object.defineProperty(this, 'paused', { configurable: true, get: () => true });
+      this.dispatchEvent(new Event('pause'));
+    });
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={FIXTURE}
+      />,
+    );
+
+    const btn = screen.getByTestId('lesson-chat-tts-m-2');
+
+    // First click → fetch + play → icon is Pause.
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(btn.getAttribute('data-state')).toBe('playing');
+    expect(btn.getAttribute('aria-label')).toBe('Pause playback');
+
+    // Second click → pause → icon flips back to Volume2 (paused state, not
+    // idle), aria-label hints at "Resume" so the row reflects that the audio
+    // is loaded but on hold.
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn.getAttribute('data-state')).toBe('paused');
+    expect(btn.getAttribute('aria-label')).toBe('Resume playback');
+
+    // Third click → resume from same position → icon back to Pause, NO new
+    // fetch (cache hit).
+    await act(async () => {
+      fireEvent.click(btn);
+    });
+    expect(btn.getAttribute('data-state')).toBe('playing');
+    expect(btn.getAttribute('aria-label')).toBe('Pause playback');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    createSpy.mockRestore();
+  });
+});
+
+describe('LessonChat TTS — playback-speed slider', () => {
+  it('shows the speed slider once audio is loaded and applies the chosen rate to the audio element', async () => {
+    const fakeMp3 = new Blob([new Uint8Array([0xff, 0xfb, 0x90, 0x00])], {
+      type: 'audio/mpeg',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(fakeMp3, {
+          status: 200,
+          headers: { 'Content-Type': 'audio/mpeg' },
+        }),
+      ),
+    );
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(() => 'blob:mock://1');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(
+      async function (this: HTMLMediaElement) {
+        Object.defineProperty(this, 'paused', { configurable: true, get: () => false });
+        this.dispatchEvent(new Event('play'));
+      },
+    );
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+      this: HTMLMediaElement,
+    ) {
+      Object.defineProperty(this, 'paused', { configurable: true, get: () => true });
+      this.dispatchEvent(new Event('pause'));
+    });
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+        initialMessages={FIXTURE}
+      />,
+    );
+
+    // Slider is NOT in the DOM before the user has generated any audio.
+    expect(screen.queryByTestId('lesson-chat-tts-speed-m-2')).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('lesson-chat-tts-m-2'));
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // After audio has been generated for m-2, the slider appears next to it.
+    const sliderWrap = screen.getByTestId('lesson-chat-tts-speed-m-2');
+    const slider = sliderWrap.querySelector('input[type="range"]') as HTMLInputElement;
+    expect(slider).not.toBeNull();
+    expect(slider.value).toBe('1');
+    expect(slider.min).toBe('0.5');
+    expect(slider.max).toBe('3');
+
+    // Initial readout is "1×".
+    expect(screen.getByTestId('lesson-chat-tts-speed-value-m-2').textContent).toBe('1×');
+
+    // Drag to 2.5× → audio element picks up the new rate live.
+    await act(async () => {
+      fireEvent.change(slider, { target: { value: '2.5' } });
+    });
+    const audioEl = screen.getByTestId('lesson-chat-tts-audio') as HTMLAudioElement;
+    expect(audioEl.playbackRate).toBeCloseTo(2.5);
+    expect(screen.getByTestId('lesson-chat-tts-speed-value-m-2').textContent).toBe(
+      '2.5×',
+    );
+
+    // 3× is the upper cap.
+    await act(async () => {
+      fireEvent.change(slider, { target: { value: '3' } });
+    });
+    expect(audioEl.playbackRate).toBeCloseTo(3);
+    expect(screen.getByTestId('lesson-chat-tts-speed-value-m-2').textContent).toBe('3×');
+  });
+});

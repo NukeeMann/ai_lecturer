@@ -110,8 +110,23 @@ export function LessonChat({
   // same message replaces a stale chip without two timers racing.
   const ttsErrorTimerRef = useRef<Map<string, number>>(new Map());
   const [ttsPlayingId, setTtsPlayingId] = useState<string | null>(null);
+  // Tracks whether the shared <audio> is currently producing sound. Distinct
+  // from `ttsPlayingId`, which marks the "active" (loaded) message and stays
+  // set even when audio is paused — so the resume-from-position click on the
+  // speak button keeps working. Icon state derives from `ttsAudioPlaying`:
+  // Pause icon only when truly playing, Volume2 (=resume) when paused.
+  const [ttsAudioPlaying, setTtsAudioPlaying] = useState<boolean>(false);
   const [ttsLoadingId, setTtsLoadingId] = useState<string | null>(null);
   const [ttsErrorId, setTtsErrorId] = useState<string | null>(null);
+  // Message ids whose audio Blob is cached locally — drives speed-slider
+  // visibility (slider appears once the system has generated audio for that
+  // message, hides when the cache is cleared on panel close).
+  const [ttsLoadedIds, setTtsLoadedIds] = useState<Set<string>>(() => new Set());
+  // Shared playback rate (0.5x–3x) applied to every TTS playback. The user
+  // discovers this slider once any speak button has materialized audio; the
+  // chosen rate persists across messages and across panel re-opens within the
+  // component's lifetime.
+  const [ttsPlaybackRate, setTtsPlaybackRate] = useState<number>(1);
   const draftKey = useMemo(
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
@@ -513,6 +528,14 @@ export function LessonChat({
     [clearTtsErrorTimer],
   );
 
+  // Apply the playback rate to the shared audio element whenever the slider
+  // moves, so a mid-playback drag takes effect immediately.
+  useEffect(() => {
+    const audio = ttsAudioRef.current;
+    if (!audio) return;
+    audio.playbackRate = ttsPlaybackRate;
+  }, [ttsPlaybackRate]);
+
   const resetTtsCache = useCallback(() => {
     const audio = ttsAudioRef.current;
     if (audio) {
@@ -535,8 +558,10 @@ export function LessonChat({
     }
     ttsErrorTimerRef.current.clear();
     setTtsPlayingId(null);
+    setTtsAudioPlaying(false);
     setTtsLoadingId(null);
     setTtsErrorId(null);
+    setTtsLoadedIds(new Set());
   }, []);
 
   const handleSpeak = useCallback(
@@ -569,6 +594,20 @@ export function LessonChat({
 
       const startPlayback = (url: string) => {
         audio.src = url;
+        // Apply the current speed setting and ask the browser to preserve
+        // pitch so 2x / 3x doesn't sound chipmunky. preservesPitch is the
+        // standard property; older WebKit / Firefox builds shipped vendor
+        // prefixes — set all three so the slider works across browsers.
+        audio.playbackRate = ttsPlaybackRate;
+        type WithLegacyPitch = HTMLAudioElement & {
+          preservesPitch?: boolean;
+          mozPreservesPitch?: boolean;
+          webkitPreservesPitch?: boolean;
+        };
+        const a = audio as WithLegacyPitch;
+        a.preservesPitch = true;
+        a.mozPreservesPitch = true;
+        a.webkitPreservesPitch = true;
         setTtsPlayingId(message.id);
         void audio.play().catch(() => {
           flagTtsError(message.id);
@@ -623,6 +662,12 @@ export function LessonChat({
           }
           const url = URL.createObjectURL(blob);
           ttsCacheRef.current.set(message.id, url);
+          setTtsLoadedIds((prev) => {
+            if (prev.has(message.id)) return prev;
+            const next = new Set(prev);
+            next.add(message.id);
+            return next;
+          });
           startPlayback(url);
         } catch {
           flagTtsError(message.id);
@@ -631,7 +676,7 @@ export function LessonChat({
         }
       })();
     },
-    [flagTtsError, ttsPlayingId],
+    [flagTtsError, ttsPlayingId, ttsPlaybackRate],
   );
 
   // Clear cache + revoke object URLs when the panel closes, the chat session
@@ -785,25 +830,26 @@ export function LessonChat({
         ref={ttsAudioRef}
         data-testid="lesson-chat-tts-audio"
         preload="auto"
-        onPlay={() => {
-          // Keep ttsPlayingId honest if .play() resolves after a state reset.
-          if (ttsPlayingId === null) return;
-        }}
+        onPlay={() => setTtsAudioPlaying(true)}
         onPause={() => {
-          // Pause event also fires when audio ends. Only clear when we've
-          // truly reached the end so a manual pause keeps the Pause icon's
-          // resume affordance accurate.
-          const el = ttsAudioRef.current;
-          if (el && el.ended) {
-            setTtsPlayingId(null);
-          }
+          // Toggle the audible flag so the icon flips Pause → Play (resume)
+          // on a manual pause. `ttsPlayingId` stays set so the next click on
+          // the same speak button resumes from the current position rather
+          // than re-fetching from /api/tts. When playback ends naturally, the
+          // onEnded handler below also clears `ttsPlayingId` so the row falls
+          // back to its idle Volume2 state.
+          setTtsAudioPlaying(false);
         }}
-        onEnded={() => setTtsPlayingId(null)}
+        onEnded={() => {
+          setTtsAudioPlaying(false);
+          setTtsPlayingId(null);
+        }}
         onError={() => {
           if (ttsPlayingId) {
             flagTtsError(ttsPlayingId);
             setTtsPlayingId(null);
           }
+          setTtsAudioPlaying(false);
         }}
         style={{ display: 'none' }}
       />
@@ -881,9 +927,12 @@ export function LessonChat({
                 !m.pending &&
                 !m.stopped &&
                 m.text.trim().length > 0;
-              const isPlaying = ttsPlayingId === m.id;
+              const isActive = ttsPlayingId === m.id;
+              const isPlaying = isActive && ttsAudioPlaying;
+              const isPaused = isActive && !ttsAudioPlaying;
               const isLoading = ttsLoadingId === m.id;
               const hasError = ttsErrorId === m.id;
+              const hasLoadedAudio = ttsLoadedIds.has(m.id);
               return (
                 <li
                   key={m.id}
@@ -917,10 +966,16 @@ export function LessonChat({
                               ? 'loading'
                               : isPlaying
                                 ? 'playing'
-                                : 'idle'
+                                : isPaused
+                                  ? 'paused'
+                                  : 'idle'
                           }
                           aria-label={
-                            isPlaying ? 'Pause playback' : 'Read message aloud'
+                            isPlaying
+                              ? 'Pause playback'
+                              : isPaused
+                                ? 'Resume playback'
+                                : 'Read message aloud'
                           }
                           disabled={isLoading}
                           onClick={() => handleSpeak(m)}
@@ -938,6 +993,35 @@ export function LessonChat({
                             <Volume2 size={14} strokeWidth={2} />
                           )}
                         </button>
+                        {hasLoadedAudio ? (
+                          <label
+                            data-testid={`lesson-chat-tts-speed-${m.id}`}
+                            style={ttsSpeedRowStyle}
+                          >
+                            <span style={ttsSpeedLabelStyle} aria-hidden>
+                              Speed
+                            </span>
+                            <input
+                              type="range"
+                              min={0.5}
+                              max={3}
+                              step={0.25}
+                              value={ttsPlaybackRate}
+                              onChange={(e) => {
+                                const next = Number(e.target.value);
+                                if (Number.isFinite(next)) setTtsPlaybackRate(next);
+                              }}
+                              aria-label="Playback speed"
+                              style={ttsSpeedSliderStyle}
+                            />
+                            <span
+                              data-testid={`lesson-chat-tts-speed-value-${m.id}`}
+                              style={ttsSpeedValueStyle}
+                            >
+                              {ttsPlaybackRate.toFixed(2).replace(/\.?0+$/, '')}×
+                            </span>
+                          </label>
+                        ) : null}
                         {hasError ? (
                           <span
                             data-testid={`lesson-chat-tts-error-${m.id}`}
@@ -1234,6 +1318,32 @@ const ttsErrorChipStyle: CSSProperties = {
   borderRadius: 'var(--radius-sm)',
   padding: '2px 6px',
   lineHeight: 1.3,
+};
+
+const ttsSpeedRowStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+  fontSize: '11px',
+  color: 'var(--text-tertiary)',
+  lineHeight: 1.3,
+};
+
+const ttsSpeedLabelStyle: CSSProperties = {
+  userSelect: 'none',
+};
+
+const ttsSpeedSliderStyle: CSSProperties = {
+  width: 80,
+  margin: 0,
+  cursor: 'pointer',
+  accentColor: 'var(--accent)',
+};
+
+const ttsSpeedValueStyle: CSSProperties = {
+  minWidth: 30,
+  textAlign: 'right',
+  fontVariantNumeric: 'tabular-nums',
 };
 
 const stoppedSuffixStyle: CSSProperties = {
