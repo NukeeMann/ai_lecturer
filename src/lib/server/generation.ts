@@ -47,6 +47,10 @@ import { runTts as defaultRunTts, type RunTtsResult } from './tts';
 import { DEFAULT_TTS_VOICE, type TtsRequest } from '@/lib/schemas/tts';
 import { atomicRenameSync, atomicWriteJson } from './atomic';
 import {
+  findMissingLessonAssets,
+  formatMissingAssetsError,
+} from './lessonAssets';
+import {
   assertSafeSlug,
   courseDir,
   courseFile,
@@ -2430,6 +2434,19 @@ async function startGenerationInner(
         // Final write — re-validate with the strict public schema so we
         // never persist a lesson with the sentinel.
         LessonSchema.parse(ttsOutcome.lesson);
+        // Asset-presence gate: a lesson that references a local
+        // `/api/courses/<slug>/assets/...` path which doesn't exist on disk
+        // would render with broken images (the route returns 404). Fail the
+        // attempt and feed the missing list into the retry brief so the agent
+        // materializes the PNGs / inputs / outputMedia before declaring done.
+        const missingAssets = await findMissingLessonAssets(
+          ttsOutcome.lesson,
+          slug,
+        );
+        if (missingAssets.length > 0) {
+          lastError = formatMissingAssetsError(missingAssets);
+          continue;
+        }
         await atomicWriteJson(lessonFile(slug, lessonSlug), ttsOutcome.lesson);
         success = true;
         break;
