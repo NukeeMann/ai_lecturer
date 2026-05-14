@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import "katex/dist/katex.min.css";
+import "highlight.js/styles/github.css";
 import "./globals.css";
 import { GlobalShortcutsHost } from "@/components/GlobalShortcutsHost";
 

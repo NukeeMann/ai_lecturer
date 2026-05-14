@@ -12,10 +12,21 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { Maximize2, Mic, Minimize2, Pause, Square, Volume2, X } from 'lucide-react';
+// Markdown + math + syntax-highlight stack. Code-fence highlighting goes
+// through `rehype-highlight` (lightweight, ships highlight.js's classes which
+// the github theme imported in src/app/layout.tsx styles globally) rather
+// than `react-syntax-highlighter` — no per-render component override required,
+// and the highlight.js classes already integrate with the prose styling.
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import rehypeKatex from 'rehype-katex';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 
 import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
 import { modLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
+import { preprocessMath } from '@/lib/client/mathPreprocess';
 import { readTtsVoice } from '@/lib/client/ttsVoice';
 import {
   startSttCapture,
@@ -1033,7 +1044,11 @@ export function LessonChat({
                 >
                   <div style={assistantColumnStyle}>
                     <div style={bubbleStyle}>
-                      {showTypingDots ? <TypingDots /> : m.text}
+                      {showTypingDots ? (
+                        <TypingDots />
+                      ) : (
+                        <MessageBody message={m} />
+                      )}
                       {m.stopped ? (
                         <>
                           {'\n'}
@@ -1374,7 +1389,6 @@ const userBubbleStyle: CSSProperties = {
   fontSize: 'var(--fs-sm)',
   lineHeight: 1.5,
   fontFamily: 'var(--font-prose)',
-  whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
 
@@ -1387,7 +1401,6 @@ const assistantBubbleStyle: CSSProperties = {
   fontSize: 'var(--fs-sm)',
   lineHeight: 1.5,
   fontFamily: 'var(--font-prose)',
-  whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
 };
 
@@ -1493,6 +1506,32 @@ const stoppedSuffixStyle: CSSProperties = {
   fontSize: 'var(--fs-sm)',
   marginTop: 4,
 };
+
+// Renders a chat message body. `user` and `assistant` messages flow through
+// ReactMarkdown so bold/italics/lists/links/code-fences/inline-and-block math
+// all render correctly. `error` messages stay as plain text — they're system-
+// emitted strings, not user/model content, so markdown chrome would be both
+// unnecessary and a minor injection vector.
+//
+// For streaming partials, ReactMarkdown is called every render with whatever
+// the buffer contains so far; incomplete syntax (e.g. an unclosed code fence)
+// renders as raw text, never crashes.
+function MessageBody({ message }: { message: ChatMessage }) {
+  if (message.role === 'error') {
+    return <>{message.text}</>;
+  }
+  const source = preprocessMath(message.text);
+  return (
+    <div className="lesson-chat-md">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[rehypeKatex, rehypeHighlight]}
+      >
+        {source}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 function TypingDots() {
   return (
