@@ -348,3 +348,271 @@ describe('LessonChat TTS — playback-speed slider', () => {
     expect(screen.getByTestId('lesson-chat-tts-speed-value-m-2').textContent).toBe('3×');
   });
 });
+
+// US-184: STT mic button with hybrid Web Speech / `/api/stt/upload` fallback.
+//
+// Tests below avoid any router/network round-trips by feeding `initialMessages`
+// and stubbing the global capture backends per test.
+
+interface FakeRecognitionResult {
+  isFinal: boolean;
+  0: { transcript: string };
+}
+
+interface FakeRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: FakeRecognitionResult[] }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: ((event: Event) => void) | null;
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+}
+
+function buildFakeSpeechRecognition(): {
+  ctor: () => FakeRecognitionInstance;
+  instances: FakeRecognitionInstance[];
+} {
+  const instances: FakeRecognitionInstance[] = [];
+  const ctor = vi.fn(function FakeRecognition(
+    this: FakeRecognitionInstance,
+  ): FakeRecognitionInstance {
+    const inst: FakeRecognitionInstance = {
+      continuous: false,
+      interimResults: false,
+      lang: '',
+      onresult: null,
+      onerror: null,
+      onend: null,
+      start: vi.fn(),
+      stop: vi.fn(),
+    };
+    instances.push(inst);
+    return inst;
+  }) as unknown as () => FakeRecognitionInstance;
+  return { ctor, instances };
+}
+
+describe('LessonChat (US-184) — Web Speech mic path', () => {
+  it('appends the final transcript to the textarea on click → result → click', async () => {
+    const { ctor, instances } = buildFakeSpeechRecognition();
+    vi.stubGlobal('SpeechRecognition', ctor);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    const mic = screen.getByTestId('lesson-chat-stt-toggle');
+    expect(mic.getAttribute('aria-label')).toBe('Start voice input');
+
+    // First click → recognition.start() called, mic flips to 'recording'.
+    await act(async () => {
+      fireEvent.click(mic);
+    });
+    expect(instances.length).toBe(1);
+    const rec = instances[0]!;
+    expect(rec.start).toHaveBeenCalledTimes(1);
+    expect(rec.continuous).toBe(true);
+    expect(rec.interimResults).toBe(true);
+    expect(mic.getAttribute('aria-label')).toBe('Stop voice input');
+    expect(screen.getByTestId('lesson-chat-stt-recording')).not.toBeNull();
+
+    // Fire a synthetic FINAL onresult event with text `hello world`.
+    await act(async () => {
+      rec.onresult?.({
+        results: [
+          { isFinal: true, 0: { transcript: 'hello world' } },
+        ],
+      });
+    });
+
+    // Second click → recognition.stop() called, transcript appended.
+    await act(async () => {
+      fireEvent.click(mic);
+    });
+    expect(rec.stop).toHaveBeenCalledTimes(1);
+
+    const textarea = screen.getByTestId('lesson-chat-textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('hello world');
+
+    // /api/stt/upload was NOT called — Web Speech path stays purely client-side.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('LessonChat (US-184) — MediaRecorder fallback path', () => {
+  it('uploads to /api/stt/upload and appends the returned text when SpeechRecognition is absent', async () => {
+    // Remove both Web Speech globals so the fallback branch fires.
+    const w = window as unknown as Record<string, unknown>;
+    delete w.SpeechRecognition;
+    delete w.webkitSpeechRecognition;
+
+    // Fake stream with a track whose .stop() we can observe.
+    const trackStop = vi.fn();
+    const fakeTrack = { stop: trackStop } as unknown as MediaStreamTrack;
+    const fakeStream = {
+      getTracks: () => [fakeTrack],
+    } as unknown as MediaStream;
+
+    const getUserMedia = vi.fn(async () => fakeStream);
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: { getUserMedia },
+    });
+
+    // Controllable fake MediaRecorder.
+    let activeRecorder: FakeMediaRecorder | null = null;
+    interface FakeMediaRecorder {
+      state: 'inactive' | 'recording';
+      mimeType: string;
+      ondataavailable: ((event: BlobEvent) => void) | null;
+      onstop: (() => void) | null;
+      start: ReturnType<typeof vi.fn>;
+      stop: () => void;
+    }
+    const ctor = vi.fn(function FakeMediaRecorder(
+      this: FakeMediaRecorder,
+      _stream: MediaStream,
+      _opts?: { mimeType?: string },
+    ) {
+      this.state = 'inactive';
+      this.mimeType = _opts?.mimeType ?? 'audio/webm';
+      this.ondataavailable = null;
+      this.onstop = null;
+      this.start = vi.fn(() => {
+        this.state = 'recording';
+      });
+      this.stop = () => {
+        this.state = 'inactive';
+        // Synthesize a single data chunk, then fire onstop.
+        this.ondataavailable?.({
+          data: new Blob(['fake-audio'], { type: this.mimeType }),
+        } as BlobEvent);
+        this.onstop?.();
+      };
+      activeRecorder = this;
+    });
+    // Static helper on the ctor — our helper probes this.
+    (
+      ctor as unknown as { isTypeSupported: (m: string) => boolean }
+    ).isTypeSupported = () => true;
+    vi.stubGlobal('MediaRecorder', ctor);
+
+    const fetchMock = vi.fn(
+      async (
+        _input: RequestInfo | URL,
+        _init?: RequestInit,
+      ): Promise<Response> => {
+        return new Response(JSON.stringify({ text: 'fallback text' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    const mic = screen.getByTestId('lesson-chat-stt-toggle');
+
+    // First click → getUserMedia + MediaRecorder.start().
+    await act(async () => {
+      fireEvent.click(mic);
+    });
+    await act(async () => {
+      // Let the async getUserMedia / start chain settle.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    expect(activeRecorder).not.toBeNull();
+    expect(activeRecorder!.start).toHaveBeenCalledTimes(1);
+
+    // Second click → recorder.stop() → onstop → uploadAndTranscribe.
+    await act(async () => {
+      fireEvent.click(mic);
+    });
+    await act(async () => {
+      // Drain the upload promise chain.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // FormData posted to /api/stt/upload.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [calledUrl, calledInit] = fetchMock.mock.calls[0]!;
+    expect(calledUrl).toBe('/api/stt/upload');
+    expect(calledInit?.method).toBe('POST');
+    expect(calledInit?.body).toBeInstanceOf(FormData);
+    const body = calledInit!.body as FormData;
+    const audioField = body.get('audio');
+    expect(audioField).toBeInstanceOf(Blob);
+
+    // Stream track released.
+    expect(trackStop).toHaveBeenCalledTimes(1);
+
+    const textarea = screen.getByTestId('lesson-chat-textarea') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('fallback text');
+  });
+});
+
+describe('LessonChat (US-184) — Web Speech permission-denied error', () => {
+  it('renders the error chip with a microphone-access-denied message and leaves draft untouched', async () => {
+    const { ctor, instances } = buildFakeSpeechRecognition();
+    vi.stubGlobal('SpeechRecognition', ctor);
+
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    const mic = screen.getByTestId('lesson-chat-stt-toggle');
+    const textarea = screen.getByTestId('lesson-chat-textarea') as HTMLTextAreaElement;
+
+    // Seed an existing draft to confirm it is NOT overwritten on error.
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: 'preserved draft' } });
+    });
+    expect(textarea.value).toBe('preserved draft');
+
+    await act(async () => {
+      fireEvent.click(mic);
+    });
+    const rec = instances[0]!;
+
+    // Fire the permission-denied error.
+    await act(async () => {
+      rec.onerror?.({ error: 'not-allowed' });
+    });
+
+    const chip = screen.getByTestId('lesson-chat-stt-error');
+    expect(chip.textContent ?? '').toMatch(/microphone access denied/i);
+    // Draft preserved.
+    expect(textarea.value).toBe('preserved draft');
+  });
+});
