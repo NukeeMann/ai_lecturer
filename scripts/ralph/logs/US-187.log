@@ -1,0 +1,31 @@
+[2026-05-14T19:17:35+0200] [rate_limit five_hour status=allowed]
+[2026-05-14T19:18:46+0200] Now I'll create the shared math preprocess module.
+[2026-05-14T19:19:00+0200] Now create the mathPreprocess test:
+[2026-05-14T19:19:47+0200] Now I'll update layout.tsx to import the highlight.js theme, then refactor LessonChat to use markdown rendering.
+[2026-05-14T19:19:51+0200] Now update LessonChat to use markdown rendering:
+[2026-05-14T19:20:03+0200] Now add a `MessageContent` helper and replace the inline text rendering:
+[2026-05-14T19:20:07+0200] Now add the `MessageBody` function near the TypingDots component:
+[2026-05-14T19:20:16+0200] Now I need to update the bubble styles. The `whiteSpace: 'pre-wrap'` will create unwanted whitespace around markdown content. Let me remove it for user/assistant bubbles since markdown handles spacing:
+[2026-05-14T19:20:33+0200] Now add styles for `.lesson-chat-md` to globals.css:
+[2026-05-14T19:21:20+0200] Good - already jsdom. Now run typecheck and tests:
+[2026-05-14T19:21:35+0200] All target tests pass. Now run the full suite:
+[2026-05-14T19:21:50+0200] Full suite passes 1095/1095. Now do the playwright browser test.
+[2026-05-14T19:23:12+0200] All browser assertions pass. Now finalize: update prd.json, append to progress.txt, and commit.
+[2026-05-14T19:24:31+0200] US-187 done. Commit `5a92753` is on `ralph/us-187` with `passes: true` for US-187 in prd.json.
+
+Summary:
+- **Extracted** `preprocessMath` to `src/lib/client/mathPreprocess.ts`; TheoryWidget imports it (byte-identical behavior).
+- **LessonChat** now renders user + assistant messages via `<ReactMarkdown>` with `remark-gfm`, `remark-math`, `rehype-katex`, and `rehype-highlight`. Math is preprocessed with the shared module. `role: 'error'` stays plain text.
+- **highlight.js** github theme imported in `src/app/layout.tsx` (`import 'highlight.js/styles/github.css'`); chosen over `react-syntax-highlighter` for lightness (documented in the LessonChat import block).
+- **globals.css** got a `.lesson-chat-md` block (paragraph rhythm, inline code chip, `<pre>`, lists, tables, KaTeX).
+- **Tests**: new `mathPreprocess.test.ts` (4 cases) + a US-187 describe block in `LessonChat.test.tsx` (markdown/math/code-fence rendering in both bubbles + error-as-plain-text). Full suite: 1095/1095 green; typecheck clean.
+- **Browser test** (playwright): mocked `/api/lesson-chat` SSE, typed the AC's user message, asserted strong/.katex/`<pre>` in user bubble and strong/.katex/`<pre class="hljs language-js">` in assistant bubble. Screenshot at `/tmp/us-187-lesson-chat-md.png`.
+[2026-05-14T19:24:31+0200] [result success turns=63 cost=$4.764473000000001] US-187 done. Commit `5a92753` is on `ralph/us-187` with `passes: true` for US-187 in prd.json.
+
+Summary:
+- **Extracted** `preprocessMath` to `src/lib/client/mathPreprocess.ts`; TheoryWidget imports it (byte-identical behavior).
+- **LessonChat** now renders user + assistant messages via `<ReactMarkdown>` with `remark-gfm`, `remark-math`, `rehype-katex`, and `rehype-highlight`. Math is preprocessed with the shared module. `role: 'error'` stays plain text.
+- **highlight.js** github theme imported in `src/app/layout.tsx` (`import 'highlight.js/styles/github.css'`); chosen over `react-syntax-highlighter` for lightness (documented in the LessonChat import block).
+- **globals.css** got a `.lesson-chat-md` block (paragraph rhythm, inline code chip, `<pre>`, lists, tables, KaTeX).
+- **Tests**: new `mathPreprocess.test.ts` (4 cases) + a US-187 describe block in `LessonChat.test.tsx` (markdown/math/code-fence rendering in both bubbles + error-as-plain-text). Full suite: 1095/1095 green; typecheck clean.
+- **Browser test** (playwright): mocked `/api/lesson-chat` SSE, typed the AC's user message, asserted strong/.katex/`<pre>` in user bubble and strong/.katex/`<pre class="hljs language-js">` in assistant bubble. Screenshot at `/tmp/us-187-lesson-chat-md.png`.
