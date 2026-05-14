@@ -7,8 +7,11 @@ import type { Lesson } from '@/lib/schemas/lesson';
 
 import {
   collectLessonAssets,
+  findLessonAssetIssues,
   findMissingLessonAssets,
+  formatAssetIssuesError,
   formatMissingAssetsError,
+  type AssetIssue,
 } from '@/lib/server/lessonAssets';
 
 const SLUG = 'demo-course';
@@ -40,8 +43,8 @@ afterEach(async () => {
   await fs.rm(coursesRoot, { recursive: true, force: true });
 });
 
-describe('collectLessonAssets', () => {
-  it('extracts plotImage, code inputs/outputMedia, demo imageSrc, video src, and inline theory images', () => {
+describe('collectLessonAssets (local refs only)', () => {
+  it('extracts plotImage, code inputs/outputMedia, demo imageSrc, mp4 video src, and inline theory images', () => {
     const refs = collectLessonAssets(
       lesson([
         {
@@ -51,7 +54,7 @@ describe('collectLessonAssets', () => {
           data: {
             markdown:
               `Look at ![local](/api/courses/${SLUG}/assets/images/inline-1.png) ` +
-              `and ![external](https://example.com/foo.png).`,
+              `and ![youtube-link](https://example.com/foo.png).`,
           },
         },
         {
@@ -94,12 +97,22 @@ describe('collectLessonAssets', () => {
           },
         },
         {
-          id: 'video-1',
+          id: 'video-mp4',
           type: 'video',
-          title: 'Video',
+          title: 'Mp4',
           data: {
             kind: 'mp4',
             src: `/api/courses/${SLUG}/assets/videos/clip.mp4`,
+            autoplay: false,
+          },
+        },
+        {
+          id: 'video-yt',
+          type: 'video',
+          title: 'YouTube',
+          data: {
+            kind: 'youtube',
+            src: 'https://www.youtube.com/watch?v=abc',
             autoplay: false,
           },
         },
@@ -119,17 +132,11 @@ describe('collectLessonAssets', () => {
     );
   });
 
-  it('ignores external URLs and references to other course slugs', () => {
+  it('ignores references that point at another course slug', () => {
     const refs = collectLessonAssets(
       lesson([
         {
-          id: 'plot-1',
-          type: 'plotImage',
-          title: 'External',
-          data: { src: 'https://upload.wikimedia.org/foo.png', alt: 'external' },
-        },
-        {
-          id: 'plot-2',
+          id: 'plot-other',
           type: 'plotImage',
           title: 'Other slug',
           data: {
@@ -144,59 +151,145 @@ describe('collectLessonAssets', () => {
   });
 });
 
-describe('findMissingLessonAssets', () => {
-  it('returns only refs whose files do not exist on disk', async () => {
+describe('findLessonAssetIssues', () => {
+  it('flags missing local files and external image URLs that should be cached locally', async () => {
     await fs.writeFile(
       path.join(coursesRoot, SLUG, 'assets', 'plots', 'present.png'),
       Buffer.from([0]),
     );
-    const missing = await findMissingLessonAssets(
+    const issues = await findLessonAssetIssues(
       lesson([
+        {
+          id: 'theory-with-external',
+          type: 'theory',
+          title: 'External in theory',
+          data: {
+            markdown:
+              'Diagram from Wikipedia: ' +
+              '![pinhole](https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/Pinhole-camera.svg/640px-Pinhole-camera.svg.png).',
+          },
+        },
         {
           id: 'plot-present',
           type: 'plotImage',
-          title: 'Present',
-          data: { src: `/api/courses/${SLUG}/assets/plots/present.png`, alt: 'present' },
+          title: 'Present plot',
+          data: {
+            src: `/api/courses/${SLUG}/assets/plots/present.png`,
+            alt: 'present',
+          },
         },
         {
           id: 'plot-missing',
           type: 'plotImage',
-          title: 'Missing',
-          data: { src: `/api/courses/${SLUG}/assets/plots/missing.png`, alt: 'missing' },
+          title: 'Missing plot',
+          data: {
+            src: `/api/courses/${SLUG}/assets/plots/missing.png`,
+            alt: 'missing',
+          },
         },
       ]),
       SLUG,
     );
-    expect(missing.map((m) => m.relativePath)).toEqual(['assets/plots/missing.png']);
-    expect(missing[0]?.origin).toContain('plotImage');
+
+    const kinds = issues.map((i) => i.kind).sort();
+    expect(kinds).toEqual(['external-image', 'missing-local']);
+    const external = issues.find(
+      (i): i is Extract<AssetIssue, { kind: 'external-image' }> => i.kind === 'external-image',
+    );
+    expect(external?.url).toContain('upload.wikimedia.org');
+    const missing = issues.find(
+      (i): i is Extract<AssetIssue, { kind: 'missing-local' }> => i.kind === 'missing-local',
+    );
+    expect(missing?.relativePath).toBe('assets/plots/missing.png');
   });
 
-  it('returns [] when the lesson references no local assets', async () => {
-    const missing = await findMissingLessonAssets(
+  it('treats YouTube URLs on video sections as valid (only mp4 must be local)', async () => {
+    const issues = await findLessonAssetIssues(
+      lesson([
+        {
+          id: 'v',
+          type: 'video',
+          title: 'YouTube',
+          data: {
+            kind: 'youtube',
+            src: 'https://www.youtube.com/watch?v=abc',
+            autoplay: false,
+          },
+        },
+      ]),
+      SLUG,
+    );
+    expect(issues).toEqual([]);
+  });
+
+  it('returns [] when the lesson has no image references at all', async () => {
+    const issues = await findLessonAssetIssues(
       lesson([
         {
           id: 't',
           type: 'theory',
-          title: 'Theory',
+          title: 'No images',
           data: { markdown: 'No images here, just `inline code`.' },
         },
       ]),
       SLUG,
     );
-    expect(missing).toEqual([]);
+    expect(issues).toEqual([]);
   });
 });
 
-describe('formatMissingAssetsError', () => {
-  it('mentions each missing path and tells the agent how to fix it', () => {
+describe('formatAssetIssuesError', () => {
+  it('lists each issue and gives separate guidance for missing-file vs external-URL fixes', () => {
+    const msg = formatAssetIssuesError([
+      {
+        kind: 'missing-local',
+        relativePath: 'assets/plots/foo-1.png',
+        origin: 'sections[1] (id=plot, type=plotImage).data.src',
+      },
+      {
+        kind: 'external-image',
+        url: 'https://upload.wikimedia.org/x.png',
+        origin: 'sections[0] (id=theory, type=theory).data.markdown image',
+      },
+    ]);
+    expect(msg).toContain('MISSING FILE: assets/plots/foo-1.png');
+    expect(msg).toContain('EXTERNAL URL (must be cached locally): https://upload.wikimedia.org/x.png');
+    expect(msg).toContain('python3');
+    expect(msg).toContain('curl');
+    expect(msg).toContain('assets/images/');
+  });
+});
+
+describe('legacy helpers', () => {
+  it('findMissingLessonAssets still returns only the missing-local subset', async () => {
+    const missing = await findMissingLessonAssets(
+      lesson([
+        {
+          id: 'theory-1',
+          type: 'theory',
+          title: 'External',
+          data: { markdown: '![w](https://upload.wikimedia.org/x.png)' },
+        },
+        {
+          id: 'plot-1',
+          type: 'plotImage',
+          title: 'Missing',
+          data: { src: `/api/courses/${SLUG}/assets/plots/nope.png`, alt: 'm' },
+        },
+      ]),
+      SLUG,
+    );
+    expect(missing.map((m) => m.relativePath)).toEqual(['assets/plots/nope.png']);
+  });
+
+  it('formatMissingAssetsError still works for legacy callers', () => {
     const msg = formatMissingAssetsError([
       {
         relativePath: 'assets/plots/foo-1.png',
         origin: 'sections[1] (id=plot, type=plotImage).data.src',
       },
     ]);
-    expect(msg).toContain('assets/plots/foo-1.png');
-    expect(msg).toContain('plotImage');
+    expect(msg).toContain('foo-1.png');
     expect(msg).toContain('python3');
   });
 });

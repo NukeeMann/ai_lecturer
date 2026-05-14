@@ -47,8 +47,8 @@ import { runTts as defaultRunTts, type RunTtsResult } from './tts';
 import { DEFAULT_TTS_VOICE, type TtsRequest } from '@/lib/schemas/tts';
 import { atomicRenameSync, atomicWriteJson } from './atomic';
 import {
-  findMissingLessonAssets,
-  formatMissingAssetsError,
+  findLessonAssetIssues,
+  formatAssetIssuesError,
 } from './lessonAssets';
 import {
   assertSafeSlug,
@@ -2434,17 +2434,24 @@ async function startGenerationInner(
         // Final write — re-validate with the strict public schema so we
         // never persist a lesson with the sentinel.
         LessonSchema.parse(ttsOutcome.lesson);
-        // Asset-presence gate: a lesson that references a local
-        // `/api/courses/<slug>/assets/...` path which doesn't exist on disk
-        // would render with broken images (the route returns 404). Fail the
-        // attempt and feed the missing list into the retry brief so the agent
-        // materializes the PNGs / inputs / outputMedia before declaring done.
-        const missingAssets = await findMissingLessonAssets(
+        // Asset-presence gate: two failure modes block 'done' here.
+        // 1. A local `/api/courses/<slug>/assets/...` path that doesn't exist
+        //    on disk would 404 from the assets route and render as a broken
+        //    `<img>`.
+        // 2. An external `http(s)://` URL in an image position must be cached
+        //    locally so the course stays offline-viewable and resilient to
+        //    link rot — agents are not allowed to leave Wikipedia / CDN URLs
+        //    in inline theory images, plotImage.src, demo.imageSrc, code
+        //    inputs/outputMedia, or mp4 video.src.
+        // Either failure feeds the issue list back into the retry brief so
+        // the agent knows what to materialize or download before declaring
+        // done.
+        const assetIssues = await findLessonAssetIssues(
           ttsOutcome.lesson,
           slug,
         );
-        if (missingAssets.length > 0) {
-          lastError = formatMissingAssetsError(missingAssets);
+        if (assetIssues.length > 0) {
+          lastError = formatAssetIssuesError(assetIssues);
           continue;
         }
         await atomicWriteJson(lessonFile(slug, lessonSlug), ttsOutcome.lesson);
