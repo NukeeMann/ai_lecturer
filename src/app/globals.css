@@ -36,6 +36,47 @@
   }
 }
 
+/* US-185 — themed scrollbars across the app. Replaces the default white
+   WebKit chrome with a pill thumb that tracks --border-strong (track is
+   transparent so the underlying surface shows through). Firefox uses the
+   parallel `scrollbar-width` / `scrollbar-color` API. Both apply globally
+   via `*` / unscoped `::-webkit-scrollbar` selectors so every scrollable
+   region in the app — page, side panel, modals, chat list, code blocks,
+   any `overflow-auto` container — re-themes automatically when the user
+   switches between [data-theme="light"|"dark"|"sunset"] (incl. variants).
+   Specific overrides (`.lesson-slot-track`, `.gen-log-scroll`) win on
+   specificity, so US-109's hidden slider scrollbar and US-110's terminal
+   log scrollbar are unaffected. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-quaternary);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* App logo link — used in dashboard header and lesson toolbar (US-034). */
 .app-logo-link:hover {
   opacity: 0.8;
