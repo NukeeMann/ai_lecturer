@@ -27,6 +27,7 @@ import {
   Printer,
   RefreshCw,
   Sparkles,
+  X,
 } from 'lucide-react';
 
 import { AppLogoLink } from '@/components/AppLogo';
@@ -697,6 +698,39 @@ export default function LessonShellPage({
     // auto-advance cancellation for this lesson.
     scheduleAutoAdvance({ force: true });
   }, [slug, lessonSlug, scheduleAutoAdvance]);
+
+  // US-165 — Unmark a finished lesson. Mirrors handleMarkComplete with the
+  // inverse status; deliberately does NOT trigger auto-advance, and also
+  // cancels any pending auto-advance so undoing completion sticks.
+  const handleUnmarkComplete = useCallback(async () => {
+    cancelAutoAdvance();
+    setProgress((prev) => {
+      if (!prev) return prev;
+      const courses = { ...prev.courses };
+      const cp = courses[slug]
+        ? { ...courses[slug], lessons: { ...courses[slug].lessons } }
+        : { lessons: {} };
+      const existing = cp.lessons[lessonSlug] ?? { status: 'not_started' as LessonStatus };
+      cp.lessons[lessonSlug] = { ...existing, status: 'not_started' };
+      courses[slug] = cp;
+      return { ...prev, courses };
+    });
+
+    try {
+      await fetch('/api/progress', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          courseSlug: slug,
+          lessonSlug,
+          status: 'not_started',
+        }),
+      });
+    } catch {
+      // Local optimistic update already applied; surfacing the error here
+      // would require an inline toast we don't have yet.
+    }
+  }, [slug, lessonSlug, cancelAutoAdvance]);
 
   // US-164 — Bottom-bar Next click implicitly marks the current lesson
   // completed (idempotent) before navigating. Already-finished lessons skip
@@ -1439,6 +1473,7 @@ export default function LessonShellPage({
         nextLesson={nextLesson}
         status={lessonStatus}
         onMarkComplete={handleMarkComplete}
+        onUnmarkComplete={handleUnmarkComplete}
         onNavigate={handleNavigate}
         onNavigateNext={handleBottomBarNext}
       />
@@ -2804,6 +2839,10 @@ interface BottomBarProps {
   nextLesson: LessonRefMin | null;
   status: LessonStatus;
   onMarkComplete: () => void;
+  // US-165 — Optional unmark handler shown as a faded ✕ next to "Lesson
+  // completed" when the lesson is finished. Optional so legacy callers/tests
+  // that don't supply it still render the bar without the shortcut.
+  onUnmarkComplete?: () => void;
   onNavigate: (slug: string) => void;
   // US-164 — Separate handler for the Next-side NavButton: implicit
   // mark-complete + navigate. Falls back to onNavigate to keep behavior
@@ -2816,6 +2855,7 @@ function BottomBar({
   nextLesson,
   status,
   onMarkComplete,
+  onUnmarkComplete,
   onNavigate,
   onNavigateNext,
 }: BottomBarProps) {
@@ -2841,7 +2881,11 @@ function BottomBar({
         target={prevLesson}
         onClick={onNavigate}
       />
-      <MarkCompleteButton finished={isFinished} onClick={onMarkComplete} />
+      <MarkCompleteButton
+        finished={isFinished}
+        onClick={onMarkComplete}
+        onUnmark={onUnmarkComplete}
+      />
       <NavButton
         side="next"
         target={nextLesson}
@@ -2958,9 +3002,11 @@ function NavButton({
 function MarkCompleteButton({
   finished,
   onClick,
+  onUnmark,
 }: {
   finished: boolean;
   onClick: () => void;
+  onUnmark?: () => void;
 }) {
   const baseStyle: CSSProperties = {
     display: 'inline-flex',
@@ -2980,21 +3026,24 @@ function MarkCompleteButton({
 
   if (finished) {
     return (
-      <button
-        type="button"
-        data-testid="bottom-bar-mark-complete"
-        data-finished="true"
-        onClick={onClick}
-        style={{
-          ...baseStyle,
-          background: 'transparent',
-          color: 'var(--text-secondary)',
-        }}
-        aria-label="Lesson completed"
-      >
-        <Check size={14} strokeWidth={2.25} />
-        Lesson completed
-      </button>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+        <button
+          type="button"
+          data-testid="bottom-bar-mark-complete"
+          data-finished="true"
+          onClick={onClick}
+          style={{
+            ...baseStyle,
+            background: 'transparent',
+            color: 'var(--text-secondary)',
+          }}
+          aria-label="Lesson completed"
+        >
+          <Check size={14} strokeWidth={2.25} />
+          Lesson completed
+        </button>
+        {onUnmark ? <UnmarkCompleteButton onUnmark={onUnmark} /> : null}
+      </div>
     );
   }
 
@@ -3012,6 +3061,45 @@ function MarkCompleteButton({
       aria-label="Mark lesson complete"
     >
       Mark lesson complete
+    </button>
+  );
+}
+
+// US-165 — Faded ✕ shortcut shown only when the lesson is finished. Click
+// stops propagation so toggling the parent "Lesson completed" button stays
+// independent of unmark. At rest the icon is ~45% danger; hover brightens
+// to full danger via a 120ms color transition.
+function UnmarkCompleteButton({ onUnmark }: { onUnmark: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      data-testid="bottom-bar-unmark-complete"
+      aria-label="Unmark lesson as completed"
+      onClick={(e) => {
+        e.stopPropagation();
+        onUnmark();
+      }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onFocus={() => setHover(true)}
+      onBlur={() => setHover(false)}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 4,
+        background: 'transparent',
+        border: 'none',
+        cursor: 'pointer',
+        lineHeight: 1,
+        color: hover
+          ? 'var(--danger)'
+          : 'color-mix(in srgb, var(--danger) 45%, transparent)',
+        transition: 'color 120ms ease',
+      }}
+    >
+      <X size={14} strokeWidth={2.25} />
     </button>
   );
 }

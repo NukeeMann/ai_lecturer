@@ -29,7 +29,7 @@ export const DENSITY_STORAGE_KEY = 'aiLecturer.density';
 export const FONT_STORAGE_KEY = 'aiLecturer.font';
 export const TEXT_SCALE_STORAGE_KEY = 'aiLecturer.textScale';
 export const SUNSET_VARIANT_STORAGE_KEY = 'aiLecturer.sunsetVariant';
-// Ship-first default per US-162 research note (Candidate A "Ember Drive").
+// Ship-first default per US-162 research note (Candidate A "Desert Dusk").
 export const SUNSET_VARIANT_DEFAULT: SunsetVariant = 'A';
 
 export const TEXT_SCALE_MIN = 0.8;
@@ -196,8 +196,8 @@ const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
 ];
 
 const SUNSET_VARIANT_OPTIONS: { value: SunsetVariant; label: string }[] = [
-  { value: 'A', label: 'A — Ember Drive' },
-  { value: 'B', label: 'B — Magenta Dusk' },
+  { value: 'A', label: 'A — Desert Dusk' },
+  { value: 'B', label: 'B — Alpine Glow' },
   { value: 'C', label: 'C — Coastal Sundown' },
 ];
 
