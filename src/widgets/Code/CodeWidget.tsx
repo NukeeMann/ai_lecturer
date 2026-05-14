@@ -875,7 +875,7 @@ export function CodeWidget({
 
   const handleSubmit = useCallback(async () => {
     if (status !== 'ready') return;
-    if (submission === 'submitting' || submission === 'submitted-pass') return;
+    if (submission === 'submitting') return;
     setSubmission('submitting');
     setOutputCollapsed(false);
     setTracebackOpen(false);
@@ -1021,22 +1021,10 @@ export function CodeWidget({
   }, [setLivePng]);
 
   const submitDisabled =
-    status !== 'ready' ||
-    submission === 'submitting' ||
-    submission === 'submitted-pass';
+    status !== 'ready' || submission === 'submitting';
 
-  const primaryAction = useMemo(() => {
-    if (submission === 'submitted-pass') {
-      return {
-        label: 'Submitted ✓',
-        onClick: () => {},
-        disabled: true,
-        variant: 'ghost' as const,
-        testId: 'codewidget-submitted',
-        ariaLabel: 'Tests submitted and passed',
-      };
-    }
-    return {
+  const primaryAction = useMemo(
+    () => ({
       label: submission === 'submitting' ? 'Submitting…' : 'Submit',
       icon: <Check size={14} aria-hidden />,
       onClick: () => {
@@ -1046,8 +1034,9 @@ export function CodeWidget({
       variant: 'primary' as const,
       testId: 'codewidget-submit',
       ariaLabel: 'Submit code and run tests',
-    };
-  }, [submission, handleSubmit, submitDisabled]);
+    }),
+    [submission, handleSubmit, submitDisabled],
+  );
 
   const liveRunDisabled =
     status !== 'ready' || submission === 'submitting';
