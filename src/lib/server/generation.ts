@@ -66,6 +66,7 @@ import {
   writeGenerationState,
   type GenerationState,
 } from './generationState';
+import { loadSecretsEnv } from './secrets';
 
 export interface FailedLesson {
   slug: string;
@@ -1096,7 +1097,8 @@ export function defaultResearchCourseCommand(
     `do the research pass (write /courses/${slug}/research.md and /courses/${slug}/sources.md). ` +
     `Do NOT write /courses/${slug}/course.json — that file belongs to the design_course skill that runs after you. ` +
     `Do not generate lesson content here. ` +
-    `Do NOT touch scripts/ralph/.` +
+    `Do NOT touch scripts/ralph/. ` +
+    `If you need SAR or other imagery from the Copernicus Data Space Ecosystem, the env vars $COPERNICUS_USER and $COPERNICUS_PASSWORD are already set — use them directly via curl/python (e.g. catalogue.dataspace.copernicus.eu OAuth flow). Do NOT ask the user for credentials.` +
     sourcesSection;
   return {
     command: 'claude',
@@ -1215,7 +1217,8 @@ export function defaultLessonCommand(
     `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
     `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
     `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
-    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson.` +
+    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson. ` +
+    `If this lesson needs SAR or other imagery from the Copernicus Data Space Ecosystem, the env vars $COPERNICUS_USER and $COPERNICUS_PASSWORD are already set — use them directly via curl/python (e.g. catalogue.dataspace.copernicus.eu OAuth flow). Do NOT ask the user for credentials.` +
     sourcesSection;
   // Mirrors the retry-context pattern from scripts/ralph/ralph.sh:992-996 —
   // when a previous attempt failed, prepend the failure reason so the agent
@@ -1695,6 +1698,10 @@ async function startGenerationInner(
   const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
+  // Loaded once per run so all spawned `claude -p` children inherit the same
+  // snapshot. Empty record when ~/.ai-lecturer/secrets.env is absent — the
+  // pipeline still works, agents just won't have third-party credentials.
+  const extraEnv = loadSecretsEnv();
   // US-137: when resuming, pull retry/timeout config from the persisted state
   // file (the values frozen at run-1 start) so re-attempts are budgeted
   // consistently. Tests/explicit deps still win so the existing harness can
@@ -1949,7 +1956,7 @@ async function startGenerationInner(
       const spawnOpts: SpawnOptions = {
         cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: process.env,
+        env: { ...process.env, ...extraEnv },
         // Start child in its own process group/session so killChildTree
         // can signal -pid and reach every descendant (claude → Bash → …).
         // Without detached, SIGTERM only hits the top-level claude.
