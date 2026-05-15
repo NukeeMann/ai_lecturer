@@ -1668,6 +1668,27 @@ export async function resumeGeneration(
     throw new GenerationStateMissingError();
   }
 
+  // A user-initiated Resume grants a fresh retry budget to every lesson that
+  // isn't already 'done'. Without this, a session-limit storm that burned
+  // through `lessonMaxRetries + 1` attempts on every lesson leaves resume
+  // unable to retry anything: the per-lesson loop computes remaining = 0 and
+  // emits stage:error → done with non-empty failedLessons, which the wizard
+  // silently redirects past. The attempt counter exists to bound retries
+  // WITHIN a single run; persisting it across an explicit Resume click would
+  // mean a single bad session permanently poisons the course.
+  let resetAny = false;
+  for (const lesson of state.lessons) {
+    if (lesson.status === 'done') continue;
+    lesson.status = 'pending';
+    lesson.attempts = 0;
+    delete lesson.lastError;
+    delete lesson.finishedAt;
+    resetAny = true;
+  }
+  if (resetAny) {
+    await writeGenerationState(slug, state);
+  }
+
   startingGeneration = true;
   startingSlug = slug;
 

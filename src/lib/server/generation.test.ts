@@ -2483,15 +2483,17 @@ describe('resumeGeneration (US-137)', () => {
       inflightSlug: 'two',
     });
 
-    // Lesson 'two' spawns directly — no init re-run.
+    // Lesson 'two' spawns directly — no init re-run. User-initiated Resume
+    // resets attempts on every non-done lesson so the prior inflight attempt
+    // doesn't burn the retry budget; 'two' starts this run at attempt 1.
     const two2 = await scripted2.nextChild();
     let mid: GenerationState | null = null;
     for (let i = 0; i < 100; i++) {
       mid = await readGenerationState('demo');
-      if (mid?.lessons.find((l) => l.slug === 'two')?.attempts === 2) break;
+      if (mid?.lessons.find((l) => l.slug === 'two')?.attempts === 1) break;
       await new Promise((r) => setImmediate(r));
     }
-    expect(mid!.lessons.find((l) => l.slug === 'two')?.attempts).toBe(2);
+    expect(mid!.lessons.find((l) => l.slug === 'two')?.attempts).toBe(1);
     expect(mid!.lessons.find((l) => l.slug === 'two')?.status).toBe('inflight');
     await writeStubLesson('demo', 'two');
     two2.finishWithExit(0);
@@ -2519,8 +2521,12 @@ describe('resumeGeneration (US-137)', () => {
     });
   });
 
-  it('marks a lesson failed without spawning when its remaining attempt budget is 0', async () => {
-    // lessonMaxRetries=2 → 3 total attempts. attempts=3 → remaining=0.
+  it('resets the retry budget on a failed lesson so user-initiated resume spawns it again', async () => {
+    // A previous run burned all 3 attempts (lessonMaxRetries=2 → 3 total)
+    // on 'beta'. Without the resume-time reset, the per-lesson loop would
+    // compute remaining=0 and silently mark 'beta' failed without spawning,
+    // producing a done event the wizard redirects past — i.e. resume would
+    // no-op for a lesson the user explicitly clicked Resume to retry.
     await writeStubCourse('demo', ['alpha', 'beta', 'gamma']);
     await writeStubLesson('demo', 'alpha');
     await writeStubState('demo', {
@@ -2549,27 +2555,30 @@ describe('resumeGeneration (US-137)', () => {
       isExecutableInPath: () => true,
     });
 
-    // Only 'gamma' should spawn — 'alpha' is done, 'beta' has no remaining budget.
+    // Both 'beta' and 'gamma' spawn — 'alpha' is skipped as already-done, but
+    // 'beta' gets a fresh attempt budget on Resume.
+    const beta = await scripted.nextChild();
+    await writeStubLesson('demo', 'beta');
+    beta.finishWithExit(0);
+
     const gamma = await scripted.nextChild();
     await writeStubLesson('demo', 'gamma');
     gamma.finishWithExit(0);
 
     await waitForFinish(run);
 
-    expect(scripted.children.length).toBe(1);
+    expect(scripted.children.length).toBe(2);
 
     const done = run.events.find((e) => e.type === 'done') as
       | { type: 'done'; failedLessons: FailedLesson[] }
       | undefined;
     expect(done).toBeDefined();
-    expect(done?.failedLessons.map((f) => f.slug)).toEqual(['beta']);
-    expect(done?.failedLessons[0]?.reason).toBe('budget burned');
+    expect(done?.failedLessons).toEqual([]);
 
-    // State file is left in place because a lesson failed.
-    const after = await readGenerationState('demo');
-    expect(after).not.toBeNull();
-    expect(after!.lessons.find((l) => l.slug === 'beta')?.status).toBe('failed');
-    expect(after!.lessons.find((l) => l.slug === 'beta')?.attempts).toBe(3);
+    // Clean-success path → state file deleted (no failed lessons remaining).
+    await expect(fs.access(generationStateFile('demo'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 
   it('removes a stale <lesson>.tmp before the spawn but leaves a sibling .json untouched', async () => {
