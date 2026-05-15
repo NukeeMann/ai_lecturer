@@ -807,8 +807,11 @@ export function LessonChat({
     }
   }, [sending]);
 
+  // Panel-scoped: catches Ctrl/Cmd+Enter regardless of which control inside
+  // the chat panel has focus (e.g. the mic button after clicking it), so the
+  // documented "{mod}+Enter to send" shortcut works after STT capture too.
   const handleKeyDown = useCallback(
-    (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    (e: ReactKeyboardEvent<HTMLElement>) => {
       const isMod = e.metaKey || e.ctrlKey;
       if (isMod && e.key === 'Enter') {
         e.preventDefault();
@@ -924,6 +927,7 @@ export function LessonChat({
       data-open="true"
       data-expanded={expanded ? 'true' : 'false'}
       data-active-section-id={activeSectionId ?? ''}
+      onKeyDown={handleKeyDown}
       style={{ ...composedAsideStyle, position: expanded ? 'fixed' : 'relative' }}
     >
       <style>{lessonChatGlobalKeyframes}</style>
@@ -1154,7 +1158,6 @@ export function LessonChat({
           placeholder="Ask about this lesson…"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={handleKeyDown}
           rows={1}
           style={composedTextareaStyle}
         />

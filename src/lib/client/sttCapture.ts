@@ -131,6 +131,11 @@ function startWebSpeechCapture(
   let delivered = false;
   let disposed = false;
   let errored = false;
+  // `event.results` is the SpeechRecognitionResultList accumulated since
+  // `.start()`, so each fresh interim/final event re-exposes every previously
+  // finalised result. Track which indices have already been appended to avoid
+  // pasting the same transcript multiple times into the chat draft.
+  const appendedFinals = new Set<number>();
 
   const deliverTranscript = () => {
     if (delivered || errored || disposed) return;
@@ -149,6 +154,8 @@ function startWebSpeechCapture(
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
       if (!r || !r.isFinal) continue;
+      if (appendedFinals.has(i)) continue;
+      appendedFinals.add(i);
       const alt = r[0];
       const t = alt?.transcript;
       if (typeof t === 'string') finalBuffer += t;
