@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Play } from 'lucide-react';
+import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
@@ -66,6 +66,14 @@ const footerStyle: CSSProperties = {
   background: 'var(--bg-elevated)',
 };
 
+const controlsRowStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 'var(--space-3)',
+  flexWrap: 'wrap',
+  width: '100%',
+};
+
 const buttonBaseStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -104,13 +112,131 @@ const errorChipStyle: CSSProperties = {
   border: '1px solid var(--danger-border, var(--danger))',
 };
 
-const audioStyle: CSSProperties = {
-  width: '100%',
-  maxWidth: 360,
-  height: 36,
+const playerWrapStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 'var(--space-2)',
+  height: 32,
+  padding: '0 10px 0 6px',
+  background: 'var(--bg-subtle)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-full)',
+  flex: '1 1 280px',
+  minWidth: 220,
+  maxWidth: 460,
 };
 
-const KEYFRAMES = '@keyframes theory-tts-spin { to { transform: rotate(360deg); } }';
+const playerToggleStyle: CSSProperties = {
+  width: 24,
+  height: 24,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 'var(--radius-full)',
+  background: 'var(--accent)',
+  color: 'var(--text-on-accent)',
+  border: 'none',
+  cursor: 'pointer',
+  flexShrink: 0,
+  padding: 0,
+};
+
+const playerTimeStyle: CSSProperties = {
+  fontFamily: 'var(--font-mono)',
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--text-tertiary)',
+  fontVariantNumeric: 'tabular-nums',
+  flexShrink: 0,
+  whiteSpace: 'nowrap',
+};
+
+const playerSeekStyle: CSSProperties = {
+  flex: 1,
+  minWidth: 60,
+  height: 4,
+  accentColor: 'var(--accent)',
+  cursor: 'pointer',
+  margin: 0,
+};
+
+const playerMuteStyle: CSSProperties = {
+  width: 22,
+  height: 22,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 'var(--radius-sm)',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  border: 'none',
+  cursor: 'pointer',
+  flexShrink: 0,
+  padding: 0,
+};
+
+const hiddenAudioStyle: CSSProperties = {
+  display: 'none',
+};
+
+const KEYFRAMES = `
+  @keyframes theory-tts-spin { to { transform: rotate(360deg); } }
+  .theory-tts-seek { -webkit-appearance: none; appearance: none; background: transparent; }
+  .theory-tts-seek::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: linear-gradient(
+      to right,
+      var(--accent) 0,
+      var(--accent) var(--theory-tts-progress, 0%),
+      var(--border-strong) var(--theory-tts-progress, 0%),
+      var(--border-strong) 100%
+    );
+  }
+  .theory-tts-seek::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--border-strong);
+  }
+  .theory-tts-seek::-moz-range-progress {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .theory-tts-seek::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-elevated);
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+  }
+  .theory-tts-seek::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg-elevated);
+    box-shadow: var(--shadow-xs);
+    cursor: pointer;
+  }
+  .theory-tts-seek:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-focus);
+    border-radius: var(--radius-full);
+  }
+`;
+
+function formatTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 type ButtonState = 'idle' | TtsJobStatus;
 
@@ -120,6 +246,10 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
   const [queuePos, setQueuePos] = useState<number>(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [muted, setMuted] = useState(false);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -143,6 +273,9 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
     setState('idle');
     setBlobUrl(null);
     setError(null);
+    setIsPlaying(false);
+    setCurrentTime(0);
+    setDuration(0);
     autoplayedUrlRef.current = null;
   }, [data.markdown]);
 
@@ -228,7 +361,7 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
   let label: string;
   if (state === 'queued') label = `Queued (${queuePos})`;
   else if (state === 'generating') label = 'Generating…';
-  else if (state === 'ready') label = '▶ Replay';
+  else if (state === 'ready') label = isPlaying ? '❚❚ Pause' : '▶ Replay';
   else label = 'Read ▶';
 
   const buttonStyle: CSSProperties = {
@@ -236,6 +369,32 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
     opacity: state === 'queued' || state === 'generating' ? 0.85 : 1,
     cursor: state === 'queued' || state === 'generating' ? 'progress' : 'pointer',
   };
+
+  const progressPct =
+    duration > 0 && Number.isFinite(duration) ? (currentTime / duration) * 100 : 0;
+  const seekStyle: CSSProperties = {
+    ...playerSeekStyle,
+    ['--theory-tts-progress' as string]: `${progressPct}%`,
+  };
+
+  function handleSeek(next: number) {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(next)) return;
+    try {
+      audio.currentTime = next;
+    } catch {
+      /* ignore */
+    }
+    setCurrentTime(next);
+  }
+
+  function handleToggleMute() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const next = !muted;
+    audio.muted = next;
+    setMuted(next);
+  }
 
   return (
     <>
@@ -250,31 +409,90 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
         </ReactMarkdown>
       </div>
       <div style={footerStyle}>
-        <button
-          type="button"
-          data-testid="theory-tts-button"
-          aria-label={label}
-          data-state={state}
-          onClick={handleClick}
-          style={buttonStyle}
-        >
-          {state === 'generating' ? <span style={spinnerStyle} aria-hidden /> : null}
-          {state === 'ready' ? <Play size={14} strokeWidth={2.5} aria-hidden /> : null}
-          <span>{label}</span>
-        </button>
+        <div style={controlsRowStyle}>
+          <button
+            type="button"
+            data-testid="theory-tts-button"
+            aria-label={label}
+            data-state={state}
+            onClick={handleClick}
+            style={buttonStyle}
+          >
+            {state === 'generating' ? <span style={spinnerStyle} aria-hidden /> : null}
+            {state === 'ready' ? (
+              isPlaying ? (
+                <Pause size={14} strokeWidth={2.5} aria-hidden fill="currentColor" />
+              ) : (
+                <Play size={14} strokeWidth={2.5} aria-hidden fill="currentColor" />
+              )
+            ) : null}
+            <span>{label}</span>
+          </button>
+          {state === 'ready' && blobUrl ? (
+            <div data-testid="theory-tts-player" style={playerWrapStyle}>
+              <button
+                type="button"
+                data-testid="theory-tts-player-toggle"
+                aria-label={isPlaying ? 'Pause audio' : 'Play audio'}
+                onClick={handleClick}
+                style={playerToggleStyle}
+              >
+                {isPlaying ? (
+                  <Pause size={12} aria-hidden fill="currentColor" />
+                ) : (
+                  <Play size={12} aria-hidden fill="currentColor" />
+                )}
+              </button>
+              <span style={playerTimeStyle} data-testid="theory-tts-current">
+                {formatTime(currentTime)}
+              </span>
+              <input
+                type="range"
+                className="theory-tts-seek"
+                data-testid="theory-tts-seek"
+                min={0}
+                max={Number.isFinite(duration) && duration > 0 ? duration : 0}
+                step={0.01}
+                value={Number.isFinite(currentTime) ? currentTime : 0}
+                onChange={(e) => handleSeek(Number(e.target.value))}
+                aria-label="Seek audio position"
+                style={seekStyle}
+              />
+              <span style={playerTimeStyle} data-testid="theory-tts-duration">
+                {formatTime(duration)}
+              </span>
+              <button
+                type="button"
+                data-testid="theory-tts-mute"
+                aria-label={muted ? 'Unmute audio' : 'Mute audio'}
+                aria-pressed={muted}
+                onClick={handleToggleMute}
+                style={playerMuteStyle}
+              >
+                {muted ? (
+                  <VolumeX size={14} aria-hidden />
+                ) : (
+                  <Volume2 size={14} aria-hidden />
+                )}
+              </button>
+              <audio
+                ref={audioRef}
+                data-testid="theory-tts-audio"
+                src={blobUrl}
+                style={hiddenAudioStyle}
+                onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+                onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime || 0)}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onEnded={() => setIsPlaying(false)}
+              />
+            </div>
+          ) : null}
+        </div>
         {error ? (
           <div role="status" data-testid="theory-tts-error" style={errorChipStyle}>
             {error}
           </div>
-        ) : null}
-        {state === 'ready' && blobUrl ? (
-          <audio
-            ref={audioRef}
-            controls
-            data-testid="theory-tts-audio"
-            src={blobUrl}
-            style={audioStyle}
-          />
         ) : null}
       </div>
     </>
