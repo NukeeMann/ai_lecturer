@@ -3134,6 +3134,100 @@ describe('persistent generation events ndjson + SSE replay (US-138)', () => {
     expect(run2.eventSeqs[0]).toBe(seqAfterRun1 + 1);
     expect(run2.events[0].type).toBe('resumed');
   });
+
+  it("SSE replay for a resumed run skips the prior run's events even with no Last-Event-ID", async () => {
+    // Pre-seed an ndjson whose last entry is a terminal `done` from a prior
+    // run — mirrors what the user sees on disk after a session-limit storm
+    // produces a no-op resume that finalized with non-empty failedLessons.
+    // Without the startSeq floor in the stream route, a fresh EventSource
+    // opening on the new run's id (no Last-Event-ID, no ?from=) would
+    // receive seq 1..3 from disk, including the prior done, and the
+    // wizard's done handler would redirect to the course while the new run
+    // is still actively generating.
+    const slug = 'demo';
+    await fs.mkdir(path.join(coursesRoot, slug), { recursive: true });
+    const priorEntries = [
+      {
+        seq: 1,
+        timestamp: '2026-05-08T00:00:00.000Z',
+        event: { type: 'stage', name: 'research_course', status: 'done' },
+      },
+      {
+        seq: 2,
+        timestamp: '2026-05-08T00:00:01.000Z',
+        event: { type: 'stage', name: 'design_course', status: 'done' },
+      },
+      {
+        seq: 3,
+        timestamp: '2026-05-08T00:00:02.000Z',
+        event: {
+          type: 'done',
+          courseSlug: slug,
+          failedLessons: [{ slug: 'x', reason: 'session limit' }],
+        },
+      },
+    ];
+    await fs.writeFile(
+      eventsLogPath(slug),
+      priorEntries.map((e) => JSON.stringify(e)).join('\n') + '\n',
+      'utf8',
+    );
+
+    await writeStubCourse(slug, ['x']);
+    await fs.writeFile(
+      generationStateFile(slug),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug,
+        startedAt: '2026-05-08T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-08T00:00:00.000Z',
+        research: { status: 'done' },
+        design: { status: 'done' },
+        lessons: [
+          { slug: 'x', status: 'failed', attempts: 3, lastError: 'session limit' },
+        ],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60_000 },
+      }),
+      'utf8',
+    );
+
+    const scripted = makeScriptedSpawn();
+    const run = await resumeGeneration(slug, {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+    });
+
+    // startSeq is frozen at the prior max so the stream route knows where
+    // this run's first event begins.
+    expect(run.startSeq).toBe(3);
+
+    // Drive the lesson to completion so the run finishes cleanly. The
+    // attempt-budget reset (from this same fix) means 'x' actually spawns.
+    const x = await scripted.nextChild();
+    await writeStubLesson(slug, 'x');
+    x.finishWithExit(0);
+    await waitForFinish(run);
+
+    const res = await streamGenerate(
+      new Request(`http://localhost/stream/${run.id}`),
+      { params: Promise.resolve({ id: run.id }) },
+    );
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const ids = [...text.matchAll(/^id: (\d+)$/gm)].map((m) => Number(m[1]));
+
+    // Prior run's seqs (1, 2, 3) must be absent from this stream.
+    expect(ids.includes(1)).toBe(false);
+    expect(ids.includes(2)).toBe(false);
+    expect(ids.includes(3)).toBe(false);
+    // Stream starts at this run's first event.
+    expect(ids[0]).toBe(4);
+    expect(ids[0]).toBeGreaterThan(run.startSeq);
+    // The prior done payload (recognisable by its session-limit reason) is
+    // not in the wire bytes either — defends against any framing that
+    // bypasses the `id:` line check above.
+    expect(text.includes('session limit')).toBe(false);
+  });
 });
 
 describe('isLessonAlreadyValid (US-139)', () => {

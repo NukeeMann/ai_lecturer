@@ -139,6 +139,16 @@ export interface GenerationRun {
    */
   lastSeq: number;
   /**
+   * The value of `lastSeq` BEFORE this run emitted its first event — i.e.
+   * the max seq of all prior runs persisted in the ndjson. Frozen at run
+   * construction time. The SSE replay route uses this to skip events that
+   * belong to earlier (already-finalized) runs; otherwise a fresh
+   * EventSource opening with no Last-Event-ID would receive the prior
+   * run's terminal `done` / `error` event and fire its redirect/error
+   * handler against the new active run.
+   */
+  startSeq: number;
+  /**
    * US-138: parallel array to `events` — `eventSeqs[i]` is the seq id
    * assigned to `events[i]`. Exposed so the SSE replay route can backstop
    * any in-memory event whose ndjson append hadn't been observed by
@@ -1797,6 +1807,7 @@ async function startGenerationInner(
     finished: false,
     currentStage: null,
     lastSeq: initialSeq,
+    startSeq: initialSeq,
     eventSeqs,
     subscribe(listener) {
       listeners.add(listener);

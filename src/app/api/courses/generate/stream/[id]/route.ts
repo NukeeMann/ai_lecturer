@@ -44,7 +44,15 @@ export async function GET(
   if (!run) {
     return NextResponse.json({ error: 'Unknown generation id' }, { status: 404 });
   }
-  const fromSeq = parseFromSeq(req);
+  // The ndjson is per-slug and accumulates across runs (a resume keeps the
+  // file so seq ids stay monotonic). The SSE stream is per-runId though, so
+  // we never want to replay a prior run's events on this run's stream — a
+  // stale `done` from a finalized run would otherwise reach a fresh
+  // EventSource and trigger the wizard's redirect against the new active
+  // run. `run.startSeq` is the last seq emitted before this run started;
+  // floor `fromSeq` at it so older events are filtered out regardless of
+  // what the client requested via Last-Event-ID or ?from=.
+  const fromSeq = Math.max(parseFromSeq(req), run.startSeq);
 
   let unsubscribe: (() => void) | null = null;
   let closed = false;
