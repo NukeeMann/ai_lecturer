@@ -3432,29 +3432,94 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   // even before any live event arrives. AC: "When the generation page is
   // opened mid-run for a slug that already has logs on disk, all completed
   // stages are shown collapsed with their persisted content available".
+  //
+  // The logs index lists every `.log` file on disk, including stale ones
+  // left by previously-aborted runs whose lessons are still 'pending' in
+  // `.generation-state.json`. Marking those as 'done' would falsely fill
+  // the lesson progress bar, so we cross-check against the state file and
+  // (a) drop entries that are still 'pending', (b) map 'inflight' → 'started',
+  // 'failed' → 'error'. When no state file exists (pre-US-136 runs), fall
+  // back to the original "every log = done" hydration.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const res = await fetch(`/api/courses/${encodeURIComponent(slug)}/logs`, {
-          cache: 'no-store',
-        });
-        if (cancelled || !res.ok) return;
-        const data = (await res.json()) as { stages?: { stage: string }[] };
-        if (cancelled || !Array.isArray(data.stages)) return;
-        setStages((prev) => {
-          if (prev.length > 0) return prev; // SSE already added live entries
-          return data.stages!.map((s) => ({
-            name: PIPELINE_STAGE_NAMES.has(s.stage) ? s.stage : `lesson:${s.stage}`,
+        const [logsRes, stateRes] = await Promise.all([
+          fetch(`/api/courses/${encodeURIComponent(slug)}/logs`, { cache: 'no-store' }),
+          fetch(`/api/courses/${encodeURIComponent(slug)}/generation-state`, {
+            cache: 'no-store',
+          }),
+        ]);
+        if (cancelled || !logsRes.ok) return;
+        const logsData = (await logsRes.json()) as { stages?: { stage: string }[] };
+        if (cancelled || !Array.isArray(logsData.stages)) return;
+
+        let stateData:
+          | {
+              research?: { status: 'pending' | 'done' | 'failed' };
+              design?: { status: 'pending' | 'done' | 'failed' };
+              lessons?: { slug: string; status: 'pending' | 'inflight' | 'done' | 'failed' }[];
+            }
+          | null = null;
+        if (stateRes.ok) {
+          try {
+            stateData = await stateRes.json();
+          } catch {
+            stateData = null;
+          }
+        }
+
+        const lessonStatusBySlug = new Map<string, 'pending' | 'inflight' | 'done' | 'failed'>();
+        if (stateData?.lessons) {
+          for (const l of stateData.lessons) lessonStatusBySlug.set(l.slug, l.status);
+        }
+        const initStatusByName: Record<string, 'pending' | 'done' | 'failed'> = {};
+        if (stateData?.research) initStatusByName['research_course'] = stateData.research.status;
+        if (stateData?.design) initStatusByName['design_course'] = stateData.design.status;
+
+        const mapStatus = (
+          state: 'pending' | 'inflight' | 'done' | 'failed',
+        ): StageStatus | null => {
+          if (state === 'pending') return null;
+          if (state === 'inflight') return 'started';
+          if (state === 'failed') return 'error';
+          return 'done';
+        };
+
+        const entries: StageEntry[] = [];
+        for (const s of logsData.stages) {
+          const isPipeline = PIPELINE_STAGE_NAMES.has(s.stage);
+          let status: StageStatus | null = 'done';
+          if (stateData) {
+            if (isPipeline) {
+              const init = initStatusByName[s.stage];
+              // Stages outside the state schema (e.g. coherence-pass) keep
+              // the legacy "log present = done" assumption.
+              if (init !== undefined) status = mapStatus(init);
+            } else {
+              const lessonState = lessonStatusBySlug.get(s.stage);
+              // A log file for a slug that isn't in the curriculum any more
+              // is treated as legacy/done so the user can still inspect it.
+              if (lessonState !== undefined) status = mapStatus(lessonState);
+            }
+          }
+          if (status === null) continue;
+          entries.push({
+            name: isPipeline ? s.stage : `lesson:${s.stage}`,
             diskName: s.stage,
-            status: 'done' as StageStatus,
+            status,
             liveLines: [],
             expanded: false,
             diskContent: null,
             diskLoading: false,
             diskError: null,
             hydrated: true,
-          }));
+          });
+        }
+
+        setStages((prev) => {
+          if (prev.length > 0) return prev; // SSE already added live entries
+          return entries;
         });
       } catch {
         /* hydration is best-effort */

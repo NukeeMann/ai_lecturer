@@ -14,11 +14,40 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { NextResponse } from 'next/server';
 import { getActiveRun } from '@/lib/server/generation';
+import { readGenerationState } from '@/lib/server/generationState';
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
 
 type RouteCtx = { params: Promise<{ slug: string }> };
+
+// Snapshot of `.generation-state.json` for the create-page hydration path.
+// The wizard reads this on mount so pending lessons (which may have stale
+// `.log` files left over from earlier aborted runs) don't get rendered as
+// 'done' in the progress bar. Returns 404 when no state file is present.
+export async function GET(_req: Request, { params }: RouteCtx) {
+  const { slug } = await params;
+
+  try {
+    assertSafeSlug(slug);
+  } catch (err) {
+    if (err instanceof InvalidSlugError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+
+  const state = await readGenerationState(slug);
+  if (!state) {
+    return NextResponse.json({ error: 'not-found' }, { status: 404 });
+  }
+
+  return NextResponse.json({
+    research: state.research,
+    design: state.design,
+    lessons: state.lessons.map((l) => ({ slug: l.slug, status: l.status })),
+  });
+}
 
 async function unlinkIgnoreMissing(file: string): Promise<void> {
   try {
