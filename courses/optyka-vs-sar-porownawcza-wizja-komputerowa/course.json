@@ -1,0 +1,240 @@
+{
+  "schemaVersion": 1,
+  "slug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "title": "Optyka vs SAR: Porównawcza Wizja Komputerowa",
+  "description": "Praktyczny kurs dla inżyniera CV pokazujący side-by-side, jak każda klasyczna technika wizji komputerowej zachowuje się na obrazach optycznych i SAR. Uczysz się przez konfrontację — widzisz dokładnie gdzie klasyka pada na speckle, danych zespolonych i polarymetrii, i czego trzeba żeby ją uratować. Wszystkie widgety działają lokalnie w Pyodide na realnych kafelkach Sentinel-1, MSTAR i SEN12MS.",
+  "accentColor": "indigo",
+  "icon": "satellite",
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Fundamenty SAR i anatomia piksela",
+      "summary": "Skąd bierze się piksel SAR — formowanie obrazu radarem, geometria akwizycji, statystyka speckle oraz anatomia danych zespolonych i polarymetrycznych.",
+      "lessons": [
+        {
+          "slug": "optyka-vs-sar-dwa-rozne-swiaty",
+          "title": "Optyka vs SAR — dwa różne światy",
+          "estimatedMinutes": 15,
+          "summary": "Porównanie scen z kamery i radaru side-by-side; intuicja kiedy SAR daje to, czego optyka nigdy nie zobaczy."
+        },
+        {
+          "slug": "jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji",
+          "title": "Jak powstaje obraz SAR — apertura syntetyczna w intuicji",
+          "estimatedMinutes": 18,
+          "summary": "Range vs azimuth, look angle, slant vs ground range — wizualnie i bez ciężkiej matematyki."
+        },
+        {
+          "slug": "geometria-sar-foreshortening-layover-shadow",
+          "title": "Geometria SAR — foreshortening, layover, shadow",
+          "estimatedMinutes": 15,
+          "summary": "Widget pokazujący jak ten sam teren wygląda na optyce i SAR przy różnych kątach padania."
+        },
+        {
+          "slug": "speckle-dlaczego-to-nie-jest-szum-gaussowski",
+          "title": "Speckle — dlaczego to nie jest szum gaussowski",
+          "estimatedMinutes": 18,
+          "summary": "Szum multiplikatywny vs addytywny; ParametricExplorer histogramu Gauss → Rayleigh → Gamma przy zmianie ENL."
+        },
+        {
+          "slug": "amplituda-i-faza-dane-zespolone-ktorych-nie-ma-w-optyce",
+          "title": "Amplituda i faza — dane zespolone, których nie ma w optyce",
+          "estimatedMinutes": 15,
+          "summary": "Code widget rekonstruujący obraz z magnitudy+fazy; co się dzieje gdy wyzerujesz fazę."
+        },
+        {
+          "slug": "polarymetria-hhhvvvvh-zamiast-rgb",
+          "title": "Polarymetria — HH/HV/VV/VH zamiast RGB",
+          "estimatedMinutes": 18,
+          "summary": "Cztery kanały polaryzacji jako pseudo-RGB; dekompozycja Pauli na realnym kafelku Sentinel-1."
+        },
+        {
+          "slug": "formaty-danych-sar-grd-slc-kalibracja",
+          "title": "Formaty danych SAR — GRD, SLC, kalibracja",
+          "estimatedMinutes": 12,
+          "summary": "Co dostajesz z Sentinel-1, czym różni się GRD od SLC i jak załadować kafelek do numpy."
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "Filtracja — klasyka kontra speckle",
+      "summary": "Klasyczne filtry liniowe i nieliniowe na obrazie kamery vs adaptacyjne filtry SAR-owe (Lee, Frost, NL-means) walczące z szumem mnożnym.",
+      "lessons": [
+        {
+          "slug": "gauss-median-bilateral-na-optyce",
+          "title": "Gauss, median, bilateral na optyce",
+          "estimatedMinutes": 12,
+          "summary": "Szybkie przypomnienie klasycznych filtrów liniowych i nieliniowych na obrazie kamery z ParametricExplorerem σ."
+        },
+        {
+          "slug": "dlaczego-klasyczne-filtry-padaja-na-sar",
+          "title": "Dlaczego klasyczne filtry padają na SAR",
+          "estimatedMinutes": 15,
+          "summary": "Te same filtry uruchomione na kafelku Sentinel-1 — widzisz rozmycie krawędzi i resztkowy speckle."
+        },
+        {
+          "slug": "filtry-sar-owe-lee-frost-refined-lee",
+          "title": "Filtry SAR-owe — Lee, Frost, Refined Lee",
+          "estimatedMinutes": 18,
+          "summary": "Filtry adaptacyjne dla szumu multiplikatywnego; widget porównujący PSNR i ENL przed/po."
+        },
+        {
+          "slug": "non-local-means-i-nowoczesne-despeckling",
+          "title": "Non-Local Means i nowoczesne despeckling",
+          "estimatedMinutes": 15,
+          "summary": "NL-means na SAR vs klasyczny Lee; kiedy warto, kiedy nie warto płacić czasem obliczeń."
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "title": "Krawędzie, tekstura i widmo",
+      "summary": "Detektory krawędzi i deskryptory tekstury na optyce i SAR oraz analiza widma FFT — gdzie klasyka pada na speckle i co ją zastępuje.",
+      "lessons": [
+        {
+          "slug": "canny-i-sobel-na-optyce-vs-sar",
+          "title": "Canny i Sobel na optyce vs SAR",
+          "estimatedMinutes": 15,
+          "summary": "Widget pokazujący eksplozję fałszywych krawędzi gdy Canny trafia na speckle."
+        },
+        {
+          "slug": "cfar-edge-i-detektor-touziego",
+          "title": "CFAR-edge i detektor Touziego",
+          "estimatedMinutes": 18,
+          "summary": "Detektory krawędzi zaprojektowane dla statystyki multiplikatywnej; porównanie z Cannym na tym samym kafelku."
+        },
+        {
+          "slug": "tekstura-glcm-haralick-lbp",
+          "title": "Tekstura — GLCM, Haralick, LBP",
+          "estimatedMinutes": 18,
+          "summary": "Które deskryptory tekstury przeżywają na SAR; widget liczący mapy tekstury na parze optyka+SAR."
+        },
+        {
+          "slug": "fft-banded-patterns-w-widmie-sar",
+          "title": "FFT — banded patterns w widmie SAR",
+          "estimatedMinutes": 15,
+          "summary": "Spektrum obrazu optycznego vs charakterystyczne paski azimuth/range w SAR; widget FFT side-by-side."
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "title": "Segmentacja, detekcja obiektów i zmian",
+      "summary": "Progowanie, segmentacja regionów, detekcja obiektów (statki, pojazdy) i zmian czasowych — Otsu vs CFAR, log-ratio vs difference, koherencja interferometryczna jako sygnał zmiany.",
+      "lessons": [
+        {
+          "slug": "thresholding-otsu-vs-cfar",
+          "title": "Thresholding — Otsu vs CFAR",
+          "estimatedMinutes": 15,
+          "summary": "Dlaczego Otsu zawodzi na rozkładzie Gamma; CFAR jako adaptacyjny próg dopasowany do statystyki SAR."
+        },
+        {
+          "slug": "watershed-mean-shift-k-means-na-obu-modalnosciach",
+          "title": "Watershed, mean-shift, k-means na obu modalnościach",
+          "estimatedMinutes": 18,
+          "summary": "Segmentacja regionów na optyce i SAR; k-means po statystykach lokalnych zamiast po pikselach."
+        },
+        {
+          "slug": "blob-mser-klasyczna-detekcja-na-optyce",
+          "title": "Blob, MSER, klasyczna detekcja na optyce",
+          "estimatedMinutes": 15,
+          "summary": "Przypomnienie klasyki detekcji obiektów; widget z detekcją statków na obrazie Sentinel-2."
+        },
+        {
+          "slug": "cfar-detekcja-statkow-na-morzu",
+          "title": "CFAR — detekcja statków na morzu",
+          "estimatedMinutes": 20,
+          "summary": "Constant False Alarm Rate na kafelku Sentinel-1; ParametricExplorer progu Pfa i okna guard/training."
+        },
+        {
+          "slug": "detekcja-pojazdow-na-ladzie",
+          "title": "Detekcja pojazdów na lądzie",
+          "estimatedMinutes": 15,
+          "summary": "Trudniejszy przypadek niż statki na wodzie — clutter, false alarms, kiedy CFAR nie wystarczy."
+        },
+        {
+          "slug": "change-detection-optyka-vs-sar",
+          "title": "Change detection — optyka vs SAR",
+          "estimatedMinutes": 18,
+          "summary": "Difference image na optyce vs log-ratio na SAR; widget porównujący dwie daty tej samej sceny."
+        },
+        {
+          "slug": "koherencja-interferometryczna-jako-sygna-zmiany",
+          "title": "Koherencja interferometryczna jako sygnał zmiany",
+          "estimatedMinutes": 18,
+          "summary": "Para SLC i mapa koherencji; co znaczy spadek koherencji i dlaczego optyka tak nie potrafi."
+        }
+      ]
+    },
+    {
+      "id": "m5",
+      "title": "InSAR, polarymetria i deep learning w przeglądarce",
+      "summary": "InSAR jako pomiar deformacji milimetrowej, pseudo-RGB polarymetryczny Pauli oraz inferencja modeli DL — despeckler SAR-DRN i klasyfikator MSTAR — w onnxruntime-web.",
+      "lessons": [
+        {
+          "slug": "faza-interferometryczna-pomiar-deformacji",
+          "title": "Faza interferometryczna — pomiar deformacji",
+          "estimatedMinutes": 18,
+          "summary": "Intuicja interferometrii: prążki fazy jako mapa przemieszczeń milimetrowych; widget rozwijający fazę."
+        },
+        {
+          "slug": "dekompozycja-pauli-pseudo-rgb-dla-sar",
+          "title": "Dekompozycja Pauli — pseudo-RGB dla SAR",
+          "estimatedMinutes": 15,
+          "summary": "Surface/double-bounce/volume jako trzy kanały koloru; widget na pełnopolarymetrycznym kafelku."
+        },
+        {
+          "slug": "jak-trenuje-sie-modele-dla-sar-pipeline-od-a-do-z",
+          "title": "Jak trenuje się modele dla SAR — pipeline od A do Z",
+          "estimatedMinutes": 18,
+          "summary": "Przegląd procesu treningu: dane, augmentacje specyficzne dla SAR, loss functions, ewaluacja — bez uruchamiania treningu."
+        },
+        {
+          "slug": "despeckling-z-onnx-sar-drn-w-przegladarce",
+          "title": "Despeckling z ONNX — SAR-DRN w przeglądarce",
+          "estimatedMinutes": 20,
+          "summary": "Lekki model despecklera odpalany w onnxruntime-web; widget liczący PSNR i ENL przed/po."
+        },
+        {
+          "slug": "klasyfikacja-pojazdow-mstar-onnx-inference",
+          "title": "Klasyfikacja pojazdów MSTAR — ONNX inference",
+          "estimatedMinutes": 20,
+          "summary": "Klasyfikator chipów MSTAR w przeglądarce; widget z accuracy per-class i macierzą pomyłek."
+        }
+      ]
+    },
+    {
+      "id": "m6",
+      "title": "Capstone — porównawcza analiza portu",
+      "summary": "Synteza kursu na parze Sentinel-1 + Sentinel-2 portu morskiego: niezależne pipeline'y detekcji statków na optyce i SAR plus raport „kiedy radar, kiedy kamera, kiedy oba”.",
+      "lessons": [
+        {
+          "slug": "setup-sceny-para-sentinel-1-sentinel-2-z-sen12ms",
+          "title": "Setup sceny — para Sentinel-1 + Sentinel-2 z SEN12MS",
+          "estimatedMinutes": 15,
+          "summary": "Ładowanie i kalibracja pary optyka+SAR tej samej sceny portowej; co widać na każdej modalności."
+        },
+        {
+          "slug": "pipeline-optyczny-detekcja-statkow",
+          "title": "Pipeline optyczny — detekcja statków",
+          "estimatedMinutes": 18,
+          "summary": "Klasyczny pipeline CV na Sentinel-2: segmentacja wody, blob detection, filtracja po rozmiarze."
+        },
+        {
+          "slug": "pipeline-sar-cfar-morfologia-klasyfikator",
+          "title": "Pipeline SAR — CFAR + morfologia + klasyfikator",
+          "estimatedMinutes": 20,
+          "summary": "CFAR na VV, czyszczenie morfologiczne, klasyfikacja ONNX; porównanie wyników z pipeline'em optycznym."
+        },
+        {
+          "slug": "synteza-kiedy-radar-kiedy-kamera-kiedy-oba",
+          "title": "Synteza — kiedy radar, kiedy kamera, kiedy oba",
+          "estimatedMinutes": 15,
+          "summary": "Krótki raport: co dał SAR czego nie da optyka, gdzie się uzupełniają; intuicja kiedy sięgnąć po który sensor."
+        }
+      ]
+    }
+  ],
+  "createdAt": "2026-05-15T11:30:00.000Z",
+  "updatedAt": "2026-05-15T11:30:00.000Z"
+}

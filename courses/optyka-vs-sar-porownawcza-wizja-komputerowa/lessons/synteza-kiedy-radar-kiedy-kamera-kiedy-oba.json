@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "slug": "synteza-kiedy-radar-kiedy-kamera-kiedy-oba",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m6",
+  "title": "Synteza — kiedy radar, kiedy kamera, kiedy oba",
+  "eyebrow": "CAPSTONE",
+  "description": "Krótki raport zamykający capstone: co dał SAR czego nie da optyka, gdzie się uzupełniają, i jak na piśmie zdecydować, po który sensor sięgnąć dla konkretnego zadania. Macierz decyzyjna, cztery operacyjne scenariusze i sandbox do fuzji wyników z lekcji 6.2 i 6.3.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "rachunek-za-capstone",
+      "title": "Rachunek za capstone: dwa pipeline'y, jeden kafelek, ten sam 8/8",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Capstone rozłożył się na trzy lekcje. W *6.1* załadowaliśmy parę SEN12MS — Sentinel-2 RGB i Sentinel-1 VV/VH tego samego portu, 256×256 px nad ośmioma statkami z `classes == 1`. W *6.2* zbudowaliśmy **trzyetapowy** pipeline optyczny (woda → `blob_log` → filtr po promieniu) i dostaliśmy **8 z 8** trafień przy 53 surowych kandydatach `blob_log`. W *6.3* zbudowaliśmy **czteroetapowy** pipeline SAR-owy (CFAR + maska σ⁰ → close/open → klasyfikator $A \\cdot c \\cdot \\mathrm{SNR}$) i też dostaliśmy **8 z 8** — tym razem przy 8 zwartych blob'ach po morfologii. Liczbowo — *remis*.\n\n![Schemat poziomy sześciu kafelków pipeline'u SAR ułożonych jeden po drugim, połączonych strzałkami: (1) granatowy 'Sentinel-1 VV - sigma zero linear'; (2) niebieski 'CA-CFAR alfa*mu_bg'; (3) zielony 'Maska ladu sigma0_mean > -8 dB'; (4) pomarańczowy 'Morfologia close 3x3 / open 2x2'; (5) czerwony 'Klasyfikator A * cp * SNR'; (6) ciemnogranatowy 'Statki bbox + score'. Pod schematem podpis: optyka miala 3 stagey woda -> blob -> filtr, SAR potrzebuje 4 - stopien klasyfikatora to cena za prace na speckled tle.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pipeline-sar-flow-diagram.png)\n\nSynteza nie żyje jednak w tym remisie. Żyje w **trzech rzeczach, których nasz kafelek nie sprawdził** — i to one są morałem całego kursu, nie sam wynik 8/8:\n\n1. **Pora dnia i pogoda.** Wybraliśmy bezchmurną akwizycję południową. W realnej operacji Hamburg ma pełne pokrycie chmurowe ~50% nocy nad Bałtykiem; w styczniu cały tydzień bywa optycznie *martwy*. Wtedy pipeline 6.2 zwraca pustą tablicę niezależnie od progu lumy, a pipeline 6.3 dalej daje 8/8.\n2. **Geometria celu względem nabrzeża.** Wszystkie nasze statki były na wodzie ≥ 20 px od brzegu. Statek zacumowany do nabrzeża wpada do *każdej* maski wody w optyce (luma jego kadłuba $\\approx 0{,}47 > 0{,}15$) **i** do *każdej* maski lądu w SAR (lokalna $\\bar\\sigma^0 > -8$ dB w oknie 21×21 wokół nabrzeża) — tu *obie* modalności razem tracą cel.\n3. **Co właściwie jest celem.** Pipeline detekcji statków rozwiązuje *jedno* zadanie. Dla detekcji deformacji wału przeciwpowodziowego mm/rok (*5.1*), dla klasyfikacji typu pokrycia po kolorze, dla rapid-mappingu po powodzi — równowaga między modalnościami jest *jakościowo* inna i nie da się jej odczytać z naszego pojedynczego wyniku.\n\nSynteza to nie wybór „która lepsza\". To **mapowanie zadania na sensor** z świadomością, gdzie każdy z nich pada."
+      }
+    },
+    {
+      "id": "oba-pipeliny-na-jednym-kafelku",
+      "title": "Trzy panele: gdzie się zgadzają, gdzie się uzupełniają",
+      "description": "Te same dwie warstwy detekcji (zielone kółka = pipeline optyczny z 6.2, pomarańczowe bboxy = pipeline SAR z 6.3) narysowane raz na widoku optycznym, raz na widoku SAR, plus słupki agreement nad 8 ground-truth statkami. Na tym konkretnym kafelku oba pipeline'y się zgadzają — to jest punkt wyjścia do dyskusji „kiedy to się zmienia\".",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/synteza-kiedy-radar-kiedy-kamera-kiedy-oba-1.png",
+        "alt": "Trzy panele 1x3 obok siebie. Panel (1) 'Widok optyczny (Sentinel-2 RGB)': kolorowy 256x256 px kafelek portu - granatowa woda po lewej dwoch trzecich, jasna kolorowa zabudowa portowa po prawej; na obrazie narysowane 53 zielone kola (pipeline optyczny z 6.2) skupione nad osmioma statkami w wodzie, plus 8 pomaranczowych bboxow (pipeline SAR z 6.3) dokladnie nad tymi samymi statkami; biale przerywane okregi truth pokrywaja sie z zielonymi i pomaranczowymi w idealnej kolokacji. Panel (2) 'Widok SAR (Sentinel-1 VV sqrt sigma0)': ten sam kadr 256x256 w skali szarosci - ciemne speckled morze, jasne nabrzeze; te same 53 zielone kola i 8 pomaranczowych bboxow przeniesione na widok SAR - wszystkie znow pokrywaja te same osiem statkow, choc widac, ze swieca jaskrawo na SAR. Panel (3) 'Zgodnosc na 8 truth statkach': slupkowy bar chart z 4 kolumnami: niebieski 'oba pipeliny' = 8, zielony 'tylko optyka' = 0, pomaranczowy 'tylko SAR' = 0, szary 'nikt' = 0. Tytul calej figury: 'Synteza capstone'u: dwa niezalezne pipeline'y na tym samym kafelku SEN12MS - gdzie sie zgadzaja, gdzie sie uzupelniaja'. Wszystkie panele obrazu maja tick labels co 64 px i opisy osi 'kolumna [px]' i 'wiersz [px]'.",
+        "caption": "Rys. 1. Trzy panele synteza. (1) widok optyczny z naniesionymi obiema warstwami detekcji + truth, (2) ten sam zestaw narysowany na widoku SAR — żeby zobaczyć kolokację geometryczną w obu modalnościach, (3) macierz zgodności nad 8 truth statkami: oba pipeline'y trafiły wszystkie 8. Remis 8/8 jest *właśnie tym*, co skłania do pytania: po co dwa pipeline'y, skoro każdy działa sam? Odpowiedź jest w macierzy decyzyjnej i quizie poniżej — nasz kafelek był łatwy, świat operacyjny nie jest.",
+        "sourceCode": "from pathlib import Path\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\nfrom scipy.ndimage import (binary_opening, binary_closing, binary_dilation,\n                           binary_fill_holes, label as ndi_label, uniform_filter)\nfrom scipy.special import gammaincinv\nfrom skimage.feature import blob_log\n\nROOT = Path(\"/home/nukeemann/projects/ai_lecturer/courses/\"\n            \"optyka-vs-sar-porownawcza-wizja-komputerowa\")\nNPZ = ROOT / \"assets/inputs/setup-sceny-sen12ms-pair.npz\"\nOUT = ROOT / \"assets/plots/synteza-kiedy-radar-kiedy-kamera-kiedy-oba-1.png\"\n\n\ndef detect_ships_optical(rgb_uint16):\n    H, W = rgb_uint16.shape[1], rgb_uint16.shape[2]\n    rgb = np.zeros((H, W, 3), dtype=np.float32)\n    for c in range(3):\n        a, b = np.percentile(rgb_uint16[c].astype(np.float32), [2, 98])\n        rgb[..., c] = ((rgb_uint16[c].astype(np.float32) - a) /\n                       max(b - a, 1e-9)).clip(0, 1)\n    luma = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]\n    water = luma < 0.15\n    water = binary_opening(water, iterations=1)\n    water = binary_closing(water, iterations=2)\n    water_buf = binary_dilation(water, iterations=5)\n    raw = blob_log(luma.astype(np.float32),\n                   min_sigma=1.5, max_sigma=8.0, num_sigma=10, threshold=0.03)\n    if raw.size > 0:\n        raw = raw.astype(np.float32)\n        raw[:, 2] = raw[:, 2] * np.sqrt(2.0)\n    else:\n        raw = np.zeros((0, 3), dtype=np.float32)\n    keep = [tuple(map(float, (y, x, r))) for (y, x, r) in raw\n            if (2.0 <= r <= 8.0) and water_buf[int(round(y)), int(round(x))]]\n    dets = (np.array(keep, dtype=np.float32) if keep\n            else np.zeros((0, 3), dtype=np.float32))\n    return dets, rgb\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf, ng = fs * fs, gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode=\"reflect\")\n    mu_guard = uniform_filter(img, size=gs, mode=\"reflect\")\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef land_mask_from_sar(vv, win=21, thr_db=-8.0):\n    db = 10.0 * np.log10(np.clip(vv, 1e-6, None))\n    mean_db = uniform_filter(db, size=win, mode=\"reflect\")\n    land = mean_db > thr_db\n    land = binary_closing(land, structure=np.ones((5, 5), bool))\n    land = binary_fill_holes(land)\n    return land\n\n\ndef detect_ships_sar(vv):\n    vv = np.asarray(vv, dtype=np.float32)\n    land = land_mask_from_sar(vv)\n    raw = ca_cfar(vv, win=10, guard=4, pfa=1e-4, L=4)\n    raw &= ~land\n    closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    lab, n = ndi_label(opened)\n    water_only = ~land & ~opened\n    bg = float(np.median(vv[water_only])) if water_only.any() else 1e-6\n    keep = []\n    for i in range(1, n + 1):\n        comp = (lab == i)\n        A = int(comp.sum())\n        if not (4 <= A <= 400):\n            continue\n        ys, xs = np.where(comp)\n        h = int(ys.max() - ys.min() + 1)\n        w = int(xs.max() - xs.min() + 1)\n        c = A / max(h * w, 1)\n        if c < 0.40:\n            continue\n        snr = float(vv[comp].mean()) / max(bg, 1e-6)\n        if snr < 100.0:\n            continue\n        cy = float((ys.max() + ys.min()) / 2.0)\n        cx = float((xs.max() + xs.min()) / 2.0)\n        keep.append([cy, cx, float(h), float(w), snr])\n    return (np.array(keep, dtype=np.float32) if keep\n            else np.zeros((0, 5), dtype=np.float32))\n\n\ndata = np.load(NPZ)\nvv = data[\"s1_vv_linear\"]\ns2 = data[\"s2_rgb\"]\nclasses = data[\"classes\"]\nH, W = vv.shape\n\noptical_dets, rgb = detect_ships_optical(s2)\nsar_dets = detect_ships_sar(vv)\n\nlab_t, n_truth = ndi_label(classes == 1)\ntruth = []\nfor i in range(1, n_truth + 1):\n    ys, xs = np.where(lab_t == i)\n    truth.append([\n        float((ys.min() + ys.max()) / 2.0),\n        float((xs.min() + xs.max()) / 2.0),\n        float(max(ys.max() - ys.min() + 1, xs.max() - xs.min() + 1)) * 0.6,\n    ])\ntruth = np.array(truth, dtype=np.float32)\n\n\ndef hits_optical(dets, truth):\n    out = np.zeros(len(truth), dtype=bool)\n    for ti, (ty, tx, tsize) in enumerate(truth):\n        for (dy, dx, _r) in dets:\n            if np.hypot(dy - ty, dx - tx) <= max(tsize, 3.0):\n                out[ti] = True\n                break\n    return out\n\n\ndef hits_sar(dets, truth):\n    out = np.zeros(len(truth), dtype=bool)\n    for ti, (ty, tx, tsize) in enumerate(truth):\n        for (dy, dx, dh, dw, _snr) in dets:\n            if np.hypot(dy - ty, dx - tx) <= max(tsize, 3.0):\n                out[ti] = True\n                break\n    return out\n\n\nhits_o = hits_optical(optical_dets, truth)\nhits_s = hits_sar(sar_dets, truth)\nboth = hits_o & hits_s\nopt_only = hits_o & ~hits_s\nsar_only = hits_s & ~hits_o\nnone = ~hits_o & ~hits_s\n\ndisp = np.sqrt(np.clip(vv, 0.0, None))\nvmax_disp = float(np.percentile(disp, 99.0))\n\nfig, axes = plt.subplots(1, 3, figsize=(15.5, 5.0))\n\n\ndef draw_dets(ax):\n    for (y, x, r) in optical_dets:\n        ax.add_patch(mpatches.Circle(\n            (x, y), max(r, 3.0), fill=False,\n            edgecolor=\"#2cb24a\", linewidth=1.5))\n    for (cy, cx, h, w, snr) in sar_dets:\n        ax.add_patch(mpatches.Rectangle(\n            (cx - w / 2 - 1, cy - h / 2 - 1), w + 2, h + 2,\n            fill=False, edgecolor=\"#ff6a00\", linewidth=1.4))\n    for (y, x, r) in truth:\n        ax.add_patch(mpatches.Circle(\n            (x, y), r, fill=False,\n            edgecolor=\"#ffffff\", linewidth=0.8, linestyle=\"--\"))\n\n\naxes[0].imshow(rgb, origin=\"upper\")\ndraw_dets(axes[0])\naxes[0].set_title(\n    f\"(1) Widok optyczny (Sentinel-2 RGB)\\n\"\n    f\"zielone kola: pipeline 6.2 ({len(optical_dets)})  |  \"\n    f\"pomaranczowe bbox: pipeline 6.3 ({len(sar_dets)})\",\n    fontsize=10,\n)\n\naxes[1].imshow(disp, cmap=\"gray\", vmin=0, vmax=vmax_disp, origin=\"upper\")\ndraw_dets(axes[1])\naxes[1].set_title(\n    f\"(2) Widok SAR (Sentinel-1 VV sqrt sigma0)\\n\"\n    f\"te same dwa zbiory detekcji na drugiej modalnosci\",\n    fontsize=10,\n)\n\ncounts = [int(both.sum()), int(opt_only.sum()),\n          int(sar_only.sum()), int(none.sum())]\nlabels = [\"oba\\npipeline'y\", \"tylko\\noptyka\", \"tylko\\nSAR\", \"nikt\"]\ncolors = [\"#3a8ddd\", \"#2cb24a\", \"#ff6a00\", \"#999999\"]\nbars = axes[2].bar(labels, counts, color=colors,\n                   edgecolor=\"#222222\", linewidth=0.6)\naxes[2].set_title(\n    f\"(3) Zgodnosc na {len(truth)} truth statkach\\n\"\n    f\"oba: {counts[0]} / O-only: {counts[1]} / \"\n    f\"S-only: {counts[2]} / nikt: {counts[3]}\",\n    fontsize=10,\n)\naxes[2].set_ylabel(\"liczba prawdziwych statkow\")\naxes[2].set_xlabel(\"ktore pipeline'y zlapaly\")\naxes[2].set_ylim(0, max(len(truth), max(counts) + 1) + 0.5)\naxes[2].grid(True, alpha=0.3, axis=\"y\")\nfor b, c in zip(bars, counts):\n    axes[2].text(b.get_x() + b.get_width() / 2, b.get_height() + 0.1,\n                 str(c), ha=\"center\", fontsize=11)\n\nfor ax in axes[:2]:\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    ax.set_xticks([0, 64, 128, 192, 255])\n    ax.set_yticks([0, 64, 128, 192, 255])\n    ax.tick_params(labelsize=8)\n\nfig.suptitle(\n    \"Synteza capstone'u: dwa niezalezne pipeline'y na tym samym kafelku \"\n    \"SEN12MS - gdzie sie zgadzaja, gdzie sie uzupelniaja\",\n    fontsize=11.5,\n)\nfig.tight_layout(rect=[0, 0, 1, 0.92])\nfig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "decision-framework",
+      "title": "Trzy reżimy: SAR-only, optical-only, fusion-required",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2016.2561021",
+          "title": "Data fusion and remote sensing — An ever-growing relationship",
+          "kind": "paper",
+          "author": "Michael Schmitt, Xiao Xiang Zhu",
+          "year": 2016
+        },
+        {
+          "url": "https://doi.org/10.1016/j.inffus.2022.04.001",
+          "title": "Multi-modal remote sensing image fusion: A comprehensive survey",
+          "kind": "paper",
+          "author": "Hao Zhang, Han Xu, Xin Tian, Junjun Jiang, Jiayi Ma",
+          "year": 2022
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Operacyjna intuicja, którą ten kurs zostawia, da się sprowadzić do **trzech reżimów** — i to one, nie wynik kafelka, są tym, co warto zapamiętać.\n\n![Side-by-side zestawienie tej samej sceny portowej Hamburga z dwoch sensorow: po lewej Sentinel-2 RGB - kolorowe nabrzeze, jasne kontenerowce na ciemnej wodzie, czesciowo przeswietlone chmury w prawym gornym rogu; po prawej Sentinel-1 GRD VV w skali szarosci - ta sama geometria portu, ale chmury znikaja kompletnie, woda jest jednorodnie ciemna z drobna tekstura speckle, statki swieca jasno jasniejszymi prostokatami. Pod podpis: oba sensory rejestruja te sama scene, ale niosa kompletnie rozna informacje.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/hamburg-optical-vs-sar-side-by-side.png)\n\n**Reżim 1 — sięgnij po SAR.** Zawsze, gdy zachodzi **co najmniej jedno** z: (a) brak światła słonecznego — noc, sezon polarny; (b) gęste pokrycie chmurowe w oknie czasowym — tropiki, monsun, Hamburg w styczniu; (c) pomiar zmian fazowych sub-cm — InSAR z *4.7* i *5.1*, deformacje sejsmiczne, osiadanie terenu; (d) niezależność od albedo / koloru — interesuje cię *struktura* terenu (chropowatość, dwuodbicie, objętość), nie *materiał*. Optyka *fizycznie nie potrafi* zrobić żadnej z tych rzeczy — to nie kwestia algorytmu, tylko sensora.\n\n**Reżim 2 — sięgnij po optykę.** Gdy zadanie wymaga (a) dyskryminacji po kolorze lub spektrum (gatunek roślinności po NDVI, typ pokrycia, klasy land-use), (b) interpretowalności wizualnej dla operatora nie-eksperta — analityk *zobaczy* kontenerowiec, nie *wywnioskuje* z bloba σ⁰, (c) bardzo wysokiej rozdzielczości — Pléiades 0.5 m vs Sentinel-1 GRD HR 10 m, (d) braku budżetu na drugi stack przetwarzania — kalibracja, despeckling i statystyka multiplikatywna z modułów 1–4 to *druga* specjalizacja, której zespół musi się nauczyć.\n\n**Reżim 3 — fuzja jest cenniejsza niż każda modalność z osobna.** Gdy chcesz *jednoczesnej* odporności (SAR pod chmurami) i informacji semantycznej (optyka po słońcu), gdy SAR sygnalizuje *zmianę* (log-ratio z *4.6*, koherencja z *4.7*) a optyka *typ* (powódź vs susza vs pożar w rapid-response), albo gdy detekcja wymaga *koniunkcji* warunków — *„statek to: bright na SAR ∧ jasna plama na S2 ∧ ruch między akwizycjami\"*. To jest reżim *capstone'u w wersji produkcyjnej*: oba pipeline'y biegną równolegle, downstream łączy je przez **AND** (high precision) albo **OR** (high recall), zależnie od tego, co kosztuje drożej — false positive czy false negative."
+      }
+    },
+    {
+      "id": "decision-matrix",
+      "title": "Macierz decyzyjna: scenariusz → wybór sensora",
+      "description": "Dwanaście typowych zadań w teledetekcji, dla każdego: rekomendowany sensor (SAR / optyka / fuzja) i jednoźdaniowe uzasadnienie odwołujące się do konkretnej lekcji kursu. Sortuj kolumnę „sensor\", żeby zobaczyć, gdzie SAR dominuje monopolistycznie, a gdzie optyka jest *fizycznie konieczna*.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "scenario",
+            "label": "Scenariusz",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "sensor",
+            "label": "Sensor",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "rationale",
+            "label": "Dlaczego (z odsyłaczem do lekcji)",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "scenario": "Rapid-mapping po powodzi pod gęstym zachmurzeniem (24 h SLA)",
+            "sensor": "SAR-only",
+            "rationale": "Optyka zwraca pustą scenę. SAR Sentinel-1 zbiera tę samą akwizycję niezależnie od chmur i pory dnia — log-ratio z 4.6 wyciąga zmianę water-mask między datami pre- i post-event."
+          },
+          {
+            "scenario": "Monitoring osiadania nasypu kolejowego ~5 mm/rok",
+            "sensor": "SAR-only (InSAR)",
+            "rationale": "Optyka fizycznie nie mierzy fazy elektromagnetycznej — patrz 5.1. Para SLC + interferogram + unwrap daje mapę przemieszczeń milimetrowych; żaden algorytm CV na optyce tego nie zastąpi."
+          },
+          {
+            "scenario": "Klasyfikacja gatunku upraw w sezonie wegetacyjnym",
+            "sensor": "Optyka (NDVI, hyperspektrum) + SAR jako uzupełnienie",
+            "rationale": "Spektrum widzialne + NIR niesie informację o chlorofilu, której SAR nie ma. SAR VV/VH dodaje strukturę (wysokość kanopii) — pomocne, ale nie pierwotne."
+          },
+          {
+            "scenario": "Detekcja statków na otwartym morzu, dzień, jasne niebo",
+            "sensor": "Oba (remis 8/8 w naszym capstone)",
+            "rationale": "Pipeline 6.2 i 6.3 dały identyczny wynik na naszym kafelku SEN12MS. Wybierasz po koszcie operacyjnym — optyka tańsza, SAR uodparnia na chmury w przyszłej akwizycji."
+          },
+          {
+            "scenario": "Detekcja statków zacumowanych przy nabrzeżu",
+            "sensor": "Optyka (z zastrzeżeniem) lub fuzja AIS",
+            "rationale": "Optyka traci statek w masce wody przez bufor dilation; SAR traci w masce lądu σ⁰ > -8 dB w oknie 21×21. To wspólna ślepa plamka — w produkcji wymaga AIS lub klasyfikatora downstream pracującego na sub-tile'ach blisko brzegu (Crisp 2004)."
+          },
+          {
+            "scenario": "ATR pojazdów wojskowych w terenie zalesionym",
+            "sensor": "SAR-only (MSTAR-style ATR z 5.5)",
+            "rationale": "Optyka przez korony drzew nie przebije; SAR pasma C/X widzi pojazdy między pniami przez double-bounce. Klasyfikator ONNX z 5.5 przyjmuje chip 64×64 i daje P(klasa) — to ten sam pattern, który tu replikujesz."
+          },
+          {
+            "scenario": "Klasyfikacja typu pokrycia w mieście (urban land-use)",
+            "sensor": "Fuzja optyka + SAR",
+            "rationale": "Optyka daje kolor i materiał dachu; SAR Pauli z 5.2 daje mechanizm rozpraszania — beton vs blacha vs cegła mają różną sygnaturę polarymetryczną. Razem klasyfikacja jest 5–10 p.p. lepsza niż samej optyki (Schmitt & Zhu 2016)."
+          },
+          {
+            "scenario": "Detekcja deforestacji w Amazonii podczas pory deszczowej",
+            "sensor": "SAR-only",
+            "rationale": "Pora deszczowa = stałe chmury, optyka martwa przez tygodnie. SAR Sentinel-1 daje zachowanie czasowe (koherencja z 4.7) — wycięcie lasu = nagły wzrost amplitudy + spadek koherencji."
+          },
+          {
+            "scenario": "Detekcja zmian linii brzegowej w skali dekady",
+            "sensor": "Optyka (Landsat, Sentinel-2)",
+            "rationale": "Wielodekadowa stabilna archiwa optyczna (Landsat od 1972). SAR ma 11 lat dla Sentinel-1 (2014+) — krócej. Tu archiwum decyduje."
+          },
+          {
+            "scenario": "Monitoring szybkości lodowca (offset tracking)",
+            "sensor": "SAR (speckle tracking) lub optyka (feature tracking)",
+            "rationale": "Optyka działa, gdy są chmury rzadkie i tekstura widoczna. SAR daje pomiar speckle-trackingiem niezależny od oświetlenia — wybór po dostępności akwizycji w oknie czasowym, nie po jakości."
+          },
+          {
+            "scenario": "Wykrycie wycieku ropy na morzu",
+            "sensor": "SAR-preferowany",
+            "rationale": "Wyciek tłumi kapilarne fale powierzchni morza, więc obszar daje ciemny patch na SAR (low σ⁰ — sea is normally rough). Optyka go zobaczy tylko w bardzo specyficznym kącie słońca; SAR w każdym."
+          },
+          {
+            "scenario": "Mapowanie chmur i predykcja pogody",
+            "sensor": "Optyka (geostationary, np. Meteosat)",
+            "rationale": "Chmury to dokładnie to, co SAR przepuszcza bez echa; pasywne sensory optyczne / IR mierzą temperaturę szczytu chmur i są jedynym sensownym sensorem dla tego zadania."
+          }
+        ],
+        "initialSort": {
+          "key": "sensor",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "quiz-cztery-scenariusze",
+      "title": "Sprawdź się: cztery operacyjne scenariusze",
+      "description": "Cztery decyzje sensora w realnych warunkach. Zaznacz wszystkie odpowiedzi, które są **rozsądnym** wyborem dla zadania (czasami więcej niż jedna). Distraktory wzięto z najczęstszych przekonań „bo zwykle tak się robi\".",
+      "type": "quiz",
+      "data": {
+        "question": "Twój zespół dostaje cztery zadania od klientów. Dla każdego musisz zaproponować sensor. **Zaznacz wszystkie stwierdzenia, które są PRAWDZIWE — tzn. opisany wybór jest sensowny dla danego zadania**.",
+        "options": [
+          "(A) Klient chce mapę zalanych ulic Hanoi 18 godzin po przejściu cyklonu, przy 100% pokryciu chmurowym. Wybór: Sentinel-1 GRD VV + log-ratio z lekcji 4.6 na akwizycjach pre/post-event.",
+          "(B) Klient chce mapę osiadania nasypu autostrady ~3 mm/rok przez 5 lat. Wybór: stack archiwalnych obrazów Sentinel-2 RGB i klasyczna analiza zmian piksela.",
+          "(C) Klient chce automatyczną klasyfikację gatunku zbóż (pszenica vs jęczmień vs kukurydza) w 1000 polach. Wybór: Sentinel-2 NDVI + indeksy spektralne, z Sentinel-1 VV/VH jako dodatkowym kanałem dla struktury kanopii (fuzja).",
+          "(D) Klient chce wykryć statki w porcie Rotterdam o godzinie 03:00 w bezchmurną noc styczniową. Wybór: Sentinel-2 RGB + pipeline z lekcji 6.2, bo „w bezchmurną noc optyka działa zawsze\"."
+        ],
+        "correct": [
+          0,
+          2
+        ],
+        "explanation": "**(A) prawda** — to klasyczny scenariusz rapid-mappingu po powodzi: optyka jest *fizycznie martwa* pod 100% chmurami, a Sentinel-1 zbiera tę samą scenę co 12 dni niezależnie od pogody. Log-ratio $\\Delta = \\log(\\text{VV}_\\text{post}/\\text{VV}_\\text{pre})$ z lekcji 4.6 wyciąga zalania jako gwałtowny spadek σ⁰ (woda jest *gładka* radarowo, asfalt *chropowaty*). To dokładnie ten reżim, w którym SAR ma monopol — żaden algorytm CV na optyce nie zwróci niczego z czarnego prostokąta.\n\n**(B) FAŁSZ** — Sentinel-2 RGB *fizycznie nie mierzy* sub-centymetrowego ruchu pionowego nasypu; piksel S2 ma 10 m i widzi tylko gradient *radiometryczny*, nie geometryczny. Pomiar 3 mm/rok wymaga interferometrycznego SAR (lekcja 5.1) — para SLC, interferogram, unwrap. Klasyfikator pikseli na archiwum optyki da co najwyżej fluktuacje pogodowe / wegetacyjne / oświetleniowe rzędu metrów, *nigdy* deformacji milimetrowej. To jest pole, gdzie pytanie „a może da się optyką?\" jest pytaniem do *fizyki*, nie do algorytmu.\n\n**(C) prawda** — gatunki zbóż różnią się przede wszystkim *kolorem i chlorofilem* w sezonie, co optyka (S2 z NDVI, EVI, NDRE) wyłapuje pierwotnie. SAR VV/VH dodaje informację o wysokości kanopii i strukturze łodyg — sam by nie odróżnił pszenicy od jęczmienia, ale w fuzji *uzupełnia* spektrum (Schmitt & Zhu 2016 pokazują 5–8 p.p. poprawy w klasyfikacji land-use). To czysty reżim 3 z poprzedniej sekcji: fuzja > każda z osobna.\n\n**(D) FAŁSZ — pułapka „bezchmurna noc\"** — kluczowe słowo to *noc*. Sentinel-2 jest sensorem **pasywnym** — mierzy *odbite światło słoneczne*. O 03:00 nad Rotterdamem słońca nie ma; piksel S2 jest *czarny* niezależnie od chmur. Pipeline 6.2 dostanie obraz z `luma < 0.15` wszędzie, maska wody pokryje całą scenę, `blob_log` znajdzie zero blobów. *Aktywny* sensor (Sentinel-1) ma własne oświetlenie mikrofalowe — to *dlatego* SAR rośnie w monitorowaniu portów: zbiera w nocy, kiedy AIS-spoofing jest najczęstszy. „Bezchmurna noc\" to mylący slot, w który wpadają początkujący w teledetekcji.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-fuzja-detekcji",
+      "title": "Sandbox: fuzja AND / OR na wynikach z 6.2 i 6.3",
+      "description": "Bez testów. Bierzesz oba pipeline'y z capstone'u i łączysz ich detekcje: AND (high precision: detekcja musi być w obu) lub OR (high recall: wystarczy w jednym). Sprawdź, co się dzieje, gdy zaszumisz wejście — symuluj pojawienie się chmur na optyce lub zwiększ pfa CFAR.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import (binary_opening, binary_closing, binary_dilation,\n                           binary_fill_holes, label, uniform_filter)\nfrom scipy.special import gammaincinv\nfrom skimage.feature import blob_log\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\n# === Dane SEN12MS z lekcji 6.1 ===\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nvv = data['s1_vv_linear']\ns2 = data['s2_rgb']\nclasses = data['classes']\nH, W = vv.shape\n\n# === Pokretla synthesizowanych warunkow operacyjnych ===\nCLOUD_LEVEL = 0.0     # 0.0 = bezchmurnie, 0.6 = pol kafelka pod chmurami (optyka pada)\nNOISE_LEVEL = 1.0     # 1.0 = oryginalne SAR, 3.0 = sygnal silniej speckled\nPFA = 1e-4            # podnies do 1e-3 -> wiecej speckle-spikes; obniz do 1e-6 -> wypadaja slabsze statki\nFUSION_MODE = 'OR'   # 'AND' = wysoka precision; 'OR' = wysoki recall; 'OPT' / 'SAR' = tylko jedna modalnosc\n\n# === Symulacja pogodowa: czesc kafelka pod chmurami ===\nif CLOUD_LEVEL > 0:\n    cloud_mask = np.zeros((H, W), dtype=bool)\n    cloud_mask[:int(H * CLOUD_LEVEL), :] = True\n    s2 = s2.astype(np.float32).copy()\n    for c in range(3):\n        s2[c, cloud_mask] = s2[c].max() * 0.95  # bialy szum chmury\n    s2 = s2.astype(np.uint16)\n\n# === Symulacja: dodatkowy speckle na SAR ===\nif NOISE_LEVEL > 1.0:\n    rng = np.random.default_rng(0)\n    speckle = rng.gamma(shape=1.0, scale=NOISE_LEVEL, size=vv.shape).astype(np.float32)\n    vv = (vv * speckle / NOISE_LEVEL).astype(np.float32)\n\n# === Pipeline 6.2: optyczny ===\nrgb = np.zeros((H, W, 3), dtype=np.float32)\nfor c in range(3):\n    a, b = np.percentile(s2[c].astype(np.float32), [2, 98])\n    rgb[..., c] = ((s2[c].astype(np.float32) - a) / max(b - a, 1e-9)).clip(0, 1)\nluma = 0.299*rgb[...,0] + 0.587*rgb[...,1] + 0.114*rgb[...,2]\nwater = binary_dilation(\n    binary_closing(binary_opening(luma < 0.15, iterations=1), iterations=2),\n    iterations=5,\n)\nraw_blobs = blob_log(luma.astype(np.float32), min_sigma=1.5, max_sigma=8.0,\n                     num_sigma=10, threshold=0.03)\nopt_dets = []\nif raw_blobs.size > 0:\n    raw_blobs[:, 2] *= np.sqrt(2.0)\n    for (y, x, r) in raw_blobs:\n        if 2.0 <= r <= 8.0 and water[int(round(y)), int(round(x))]:\n            opt_dets.append((float(y), float(x), float(r)))\n\n# === Pipeline 6.3: SAR ===\ndef ca_cfar(img, win, guard, pfa, L):\n    fs, gs = 2*win+1, 2*guard+1\n    nf, ng = fs*fs, gs*gs\n    mu_full = uniform_filter(img.astype(np.float32), size=fs, mode='reflect')\n    mu_guard = uniform_filter(img.astype(np.float32), size=gs, mode='reflect')\n    mu_train = (nf*mu_full - ng*mu_guard) / (nf - ng)\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\ndb = 10*np.log10(np.clip(vv, 1e-6, None))\nland = binary_fill_holes(binary_closing(\n    uniform_filter(db, size=21, mode='reflect') > -8.0,\n    structure=np.ones((5, 5), bool),\n))\nraw_cfar = ca_cfar(vv, 10, 4, PFA, 4) & ~land\nopened = binary_opening(binary_closing(raw_cfar, np.ones((3,3), bool)),\n                        np.ones((2,2), bool))\nlab, n = label(opened)\nbg = float(np.median(vv[~land & ~opened])) if (~land & ~opened).any() else 1e-6\nsar_dets = []\nfor i in range(1, n+1):\n    comp = (lab == i)\n    A = int(comp.sum())\n    if not (4 <= A <= 400):\n        continue\n    ys, xs = np.where(comp)\n    h, w = int(ys.ptp()+1), int(xs.ptp()+1)\n    c = A / max(h*w, 1)\n    if c < 0.40:\n        continue\n    snr = float(vv[comp].mean()) / max(bg, 1e-6)\n    if snr < 100.0:\n        continue\n    cy, cx = float((ys.min()+ys.max())/2), float((xs.min()+xs.max())/2)\n    sar_dets.append((cy, cx, float(h), float(w), snr))\n\n# === Fuzja: porownaj zbiory detekcji ===\ndef cross_match(opt, sar, radius=8.0):\n    \"\"\"Dla kazdej detekcji optycznej szukamy SAR-owej w promieniu radius.\"\"\"\n    matched_opt = [False] * len(opt)\n    matched_sar = [False] * len(sar)\n    pairs = []\n    for i, (oy, ox, _) in enumerate(opt):\n        for j, (sy, sx, _, _, _) in enumerate(sar):\n            if np.hypot(oy - sy, ox - sx) <= radius:\n                matched_opt[i] = True\n                matched_sar[j] = True\n                pairs.append((i, j))\n                break\n    return matched_opt, matched_sar, pairs\n\nm_opt, m_sar, pairs = cross_match(opt_dets, sar_dets)\n\nif FUSION_MODE == 'AND':\n    fused_centers = [(opt_dets[i][:2]) for (i, _) in pairs]\nelif FUSION_MODE == 'OR':\n    fused_centers = [d[:2] for d in opt_dets]\n    for j, s in enumerate(sar_dets):\n        if not m_sar[j]:\n            fused_centers.append((s[0], s[1]))\nelif FUSION_MODE == 'OPT':\n    fused_centers = [d[:2] for d in opt_dets]\nelif FUSION_MODE == 'SAR':\n    fused_centers = [(s[0], s[1]) for s in sar_dets]\nelse:\n    raise ValueError(f'Nieznany FUSION_MODE: {FUSION_MODE}')\n\n# === Ewaluacja przeciwko truth ===\nlab_t, n_t = label(classes == 1)\ntruth_centers = []\nfor i in range(1, n_t+1):\n    ys, xs = np.where(lab_t == i)\n    truth_centers.append(((ys.min()+ys.max())/2, (xs.min()+xs.max())/2,\n                          max(ys.ptp()+1, xs.ptp()+1) * 0.6))\nhit = 0\nfor (ty, tx, tsize) in truth_centers:\n    for (fy, fx) in fused_centers:\n        if np.hypot(fy - ty, fx - tx) <= max(tsize, 3.0):\n            hit += 1\n            break\n\nprint(f'CLOUD_LEVEL={CLOUD_LEVEL}, NOISE_LEVEL={NOISE_LEVEL}, PFA={PFA}, FUSION_MODE={FUSION_MODE}')\nprint(f'optyka: {len(opt_dets)} detekcji   |   SAR: {len(sar_dets)} detekcji   |   po fuzji: {len(fused_centers)}')\nprint(f'pokryto truth: {hit} / {n_t}   |   FP (szacunek): {max(0, len(fused_centers) - hit)}')\n\n# === Wizualizacja ===\ndisp = np.sqrt(np.clip(vv, 0.0, None))\nvmax_disp = float(np.percentile(disp, 99.0))\nfig, axes = plt.subplots(1, 2, figsize=(11.5, 5.5), constrained_layout=True)\n\naxes[0].imshow(rgb, origin='upper')\nfor (y, x, r) in opt_dets:\n    axes[0].add_patch(mpatches.Circle((x, y), max(r, 3.0), fill=False,\n                                      edgecolor='#2cb24a', linewidth=1.4))\nfor (cy, cx, h, w, snr) in sar_dets:\n    axes[0].add_patch(mpatches.Rectangle((cx - w/2 - 1, cy - h/2 - 1), w + 2, h + 2,\n                                         fill=False, edgecolor='#ff6a00', linewidth=1.3))\naxes[0].set_title(f'Wejscie optyka (CLOUD={CLOUD_LEVEL}) + obie detekcje', fontsize=10)\naxes[0].set_xlabel('kolumna [px]'); axes[0].set_ylabel('wiersz [px]')\n\naxes[1].imshow(disp, cmap='gray', vmin=0, vmax=vmax_disp, origin='upper')\nfor (fy, fx) in fused_centers:\n    axes[1].add_patch(mpatches.Circle((fx, fy), 6.0, fill=False,\n                                      edgecolor='#3a8ddd', linewidth=2.0))\nfor (ty, tx, tsize) in truth_centers:\n    axes[1].add_patch(mpatches.Circle((tx, ty), tsize, fill=False,\n                                      edgecolor='#ffffff', linewidth=0.8, linestyle='--'))\naxes[1].set_title(f'Wynik fuzji [{FUSION_MODE}]: {len(fused_centers)} det, pokryto {hit}/{n_t}', fontsize=10)\naxes[1].set_xlabel('kolumna [px]'); axes[1].set_ylabel('wiersz [px]')\nplt.show()\n",
+        "encouragement": "Zacznij od `CLOUD_LEVEL=0.6` i porównaj `FUSION_MODE='OPT'` vs `'SAR'` vs `'OR'` — zobaczysz, że pod chmurami sama optyka zwraca pustkę, a fuzja OR utrzymuje recall dzięki SAR. Potem podnieś `NOISE_LEVEL` do 3.0 i przełącz na `FUSION_MODE='AND'` — wysoka precision wymaga zgody obu modalności, więc dodatkowy szum SAR wycina FP, ale również część prawdziwych statków."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2016.2561021",
+      "title": "Data fusion and remote sensing — An ever-growing relationship",
+      "kind": "paper",
+      "author": "Michael Schmitt, Xiao Xiang Zhu",
+      "year": 2016
+    },
+    {
+      "url": "https://doi.org/10.1016/j.inffus.2022.04.001",
+      "title": "Multi-modal remote sensing image fusion: A comprehensive survey",
+      "kind": "paper",
+      "author": "Hao Zhang, Han Xu, Xin Tian, Junjun Jiang, Jiayi Ma",
+      "year": 2022
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1038/s41586-019-0912-1",
+      "title": "Deep learning and process understanding for data-driven Earth system science",
+      "kind": "paper",
+      "author": "Markus Reichstein, Gustau Camps-Valls, Bjorn Stevens, Martin Jung, Joachim Denzler, Nuno Carvalhais, Prabhat",
+      "year": 2019
+    },
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 Applications — ESA SentiWiki",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+{
+  "schemaVersion": 1,
+  "slug": "blob-mser-klasyczna-detekcja-na-optyce",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Blob, MSER, klasyczna detekcja na optyce",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Krótkie przypomnienie klasycznych detektorów obiektów na obrazie optycznym (LoG, DoG, DoH, MSER) oraz hands-on widget z detekcją statków na syntetycznej scenie Sentinel-2-like. Mocno kontrastowe tło (woda) + skupione, jasne obiekty (kadłuby) to dosłownie podręcznikowy regime dla `blob_log` ze scikit-image — i właśnie dlatego klasyka tutaj jeszcze działa. W kolejnej lekcji ten sam typ celów spotkamy na kafelku Sentinel-1 i zobaczymy, dlaczego CFAR musi przejąć rolę progu.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "blob-w-przestrzeni-skali",
+      "title": "Blob jako lokalne ekstremum w przestrzeni skali",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/A:1008045108935",
+          "title": "Feature detection with automatic scale selection",
+          "kind": "paper",
+          "author": "Tony Lindeberg",
+          "year": 1998
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Słowo „blob\" jest celowo nieformalne — chodzi o **lokalnie jasną (lub ciemną) plamę** o ograniczonym rozmiarze, wyraźnie odróżniającą się od otoczenia: statek na ciemnej wodzie, jądro komórkowe na tle preparatu, krater na powierzchni planety. Klasyczna wizja komputerowa daje na to trzy kanoniczne narzędzia, które łączy ta sama idea: **przeszukaj obraz po skali i znajdź miejsca, gdzie sygnał konkretnego rozmiaru bije w oczy**.\n\n![Syntetyczna scena Sentinel-2-like 192×128 px: górne 2/3 to ciemne morze z lekkim szumem foto + sześć rozproszonych jasnych obiektów (statki różnej wielkości); dolne 1/3 to jasny pas lądu. Klasyczny regime dla detektora blobów: ostry kontrast obiekt vs tło, kilka rozmiarów celu jednocześnie.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/blob-mser-ships-optical-input.png)\n\n- **LoG (Laplacian of Gaussian)** — najpierw wygładź obraz filtrem Gaussa o skali $\\sigma$, potem policz Laplacian: $\\mathcal{L}(x, y; \\sigma) = \\sigma^2 \\, \\nabla^2 G_\\sigma * I$. Mnożnik $\\sigma^2$ to **normalizacja skali** Lindeberga (1998) — bez niej odpowiedź byłaby tym mniejsza, im większa skala, i nie dałoby się porównywać blobów różnych rozmiarów. Maksimum lokalne $\\mathcal{L}$ wzdłuż trzech osi $(x, y, \\sigma)$ to detekcja blobu: pozycja $(x, y)$ + promień $r \\approx \\sigma\\sqrt{2}$.\n- **DoG (Difference of Gaussians)** — tania aproksymacja LoG: $G_{k\\sigma} - G_\\sigma$ dla małego $k$ (typowo $k = 1{,}6$). To właśnie dolny szczebel piramidy SIFT-a. W praktyce daje niemal identyczne detekcje co LoG, kilkukrotnie szybciej.\n- **DoH (Determinant of Hessian)** — zamiast trace'a operatora Hessego (= Laplacian) bierzemy *wyznacznik*. Reaguje na blob-i-tylko-blob, ignorując wydłużone struktury (krawędzie), co bywa zaletą.\n\nW Pythonie wszystkie trzy są w jednej linijce: `skimage.feature.blob_log`, `blob_dog`, `blob_doh`. Zwracają tablicę `(N, 3)` z kolumnami `[y, x, sigma]` — pozycję centroidu i skalę, na której był maksymalny."
+      }
+    },
+    {
+      "id": "log-scale-space-figure",
+      "title": "Skalowana odpowiedź LoG na trzech blobach o różnych promieniach",
+      "description": "Przepuszczamy obraz z trzema blobami przez znormalizowany filtr LoG przy trzech wartościach σ. Szczyt odpowiedzi pojawia się dokładnie tam, gdzie σ pasuje do promienia bloba — to mechaniczna odpowiedź na pytanie „jak duża jest ta plama?\".",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/A:1008045108935",
+          "title": "Feature detection with automatic scale selection",
+          "kind": "paper",
+          "author": "Tony Lindeberg",
+          "year": 1998
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/blob-mser-klasyczna-detekcja-na-optyce-1.png",
+        "alt": "Cztery panele obok siebie 1×4. Panel (1): obraz wejściowy 200×600, czarne tło, trzy jasne Gaussowskie bloby w jednym poziomym rzędzie — mały (σ=5 px, x≈100), średni (σ=12 px, x≈300), duży (σ=24 px, x≈500); osie x [px] 0–600, y [px] 0–200, tytuł „Wejscie: 3 bloby (r=5, 12, 24 px)\". Panele (2)–(4): znormalizowana odpowiedź LoG -σ² ∇²G*I dla σ=5, σ=12 i σ=24 odpowiednio, kolormapa RdBu_r z czerwonym = silna dodatnia odpowiedź na środku bloba, niebieski pierścień = przeciwznak na obrzeżu, kremowe tło. W panelu σ=5 silny czerwony szczyt jest tylko na małym blobie (x≈100), pozostałe są blade. W panelu σ=12 najmocniejszy szczyt jest na średnim blobie (x≈300), z wyraźnym niebieskim pierścieniem wokół. W panelu σ=24 najmocniejszy szczyt jest na dużym blobie (x≈500). Wszystkie cztery panele mają widoczne osie x [px] (0, 100, 200, 300, 400, 500, 600) i y [px] (0, 100, 200), wspólny pasek kolorów po prawej z etykietą −σ²∇²G_σ * I [−], zakres ok. −0,5 do +0,5. Tytuł całości: „Skala dobiera się sama: normalizowana odpowiedz LoG wyrasta tam, gdzie sigma pasuje do promienia bloba\".",
+        "caption": "Rys. 1. Znormalizowana odpowiedź LoG na trzech Gaussowskich blobach. Każdy z trzech wyborów σ „rezonuje\" dokładnie z jednym blobem — i to jest właśnie *automatyczny dobór skali* Lindeberga: detektor szuka maksimum nie tylko po (x, y), ale i po σ.",
+        "sourceCode": "import os\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import gaussian_laplace\n\nROOT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa\"\n)\nPLOTS = f\"{ROOT}/assets/plots\"\nos.makedirs(PLOTS, exist_ok=True)\n\nH, W = 200, 600\nyy, xx = np.indices((H, W))\nimg = np.zeros((H, W), dtype=np.float32)\n\ncenters = [(100, 100, 5.0), (100, 300, 12.0), (100, 500, 24.0)]\nfor (cy, cx, r) in centers:\n    g = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2.0 * r ** 2))\n    img = np.maximum(img, g.astype(np.float32))\n\nsigmas_to_show = [5.0, 12.0, 24.0]\nresponses = []\nfor sigma in sigmas_to_show:\n    log = gaussian_laplace(img, sigma=sigma)\n    norm_log = -(sigma ** 2) * log\n    responses.append(norm_log)\n\nvmax = max(abs(r).max() for r in responses)\nvmin = -vmax\n\nfig, axes = plt.subplots(1, 4, figsize=(14.5, 3.6), constrained_layout=True)\n\naxes[0].imshow(img, cmap=\"gray\", vmin=0, vmax=1, aspect=\"equal\")\naxes[0].set_title(\"Wejscie: 3 bloby (r=5, 12, 24 px)\", fontsize=10)\naxes[0].set_xlabel(\"x [px]\")\naxes[0].set_ylabel(\"y [px]\")\n\ntitles = [\n    \"Norm. LoG, sigma=5 -- szczyt na malym blobie\",\n    \"Norm. LoG, sigma=12 -- szczyt na srednim\",\n    \"Norm. LoG, sigma=24 -- szczyt na duzym\",\n]\nfor ax, resp, title in zip(axes[1:], responses, titles):\n    im = ax.imshow(resp, cmap=\"RdBu_r\", vmin=vmin, vmax=vmax, aspect=\"equal\")\n    ax.set_title(title, fontsize=10)\n    ax.set_xlabel(\"x [px]\")\n    ax.set_ylabel(\"y [px]\")\n\ncbar = fig.colorbar(im, ax=axes[1:].tolist(), shrink=0.85, pad=0.02)\ncbar.set_label(r\"$-\\sigma^2 \\, \\nabla^2 G_\\sigma * I$ [-]\", fontsize=9)\n\nfig.suptitle(\n    \"Skala dobiera sie sama: normalizowana odpowiedz LoG wyrasta tam, \"\n    \"gdzie sigma pasuje do promienia bloba\",\n    fontsize=11,\n)\n\nout = f\"{PLOTS}/blob-mser-klasyczna-detekcja-na-optyce-1.png\"\nfig.savefig(out, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\nprint(\"OK:\", out)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-ktory-detektor",
+      "title": "Sprawdź: który detektor wybrać",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na typową scenę portową z optyki Sentinel-2 (10 m/piksel): osiem statków różnej długości na tle wody, plus kilka boi (znacznie mniejsze, niemal punktowe) i jedna falochronowa **wydłużona** struktura (mola). Chcesz złapać statki, **ignorować falochron** i mieć szansę dostać też boje. Który klasyczny detektor jest dla tej konkretnej sytuacji najbezpieczniejszym pierwszym wyborem?",
+        "options": [
+          "`blob_log` (Laplacian of Gaussian) z wąskim zakresem σ ∈ [2, 4] — szybki i wystarczy zawęzić skalę, żeby wykluczyć wszystko poza statkami.",
+          "`blob_doh` (Determinant of Hessian) z `min_sigma=2`, `max_sigma=12` — DoH reaguje na *prawdziwe* bloby (`det(H) > 0` wymaga obu krzywizn tego samego znaku) i ignoruje wydłużone struktury jak mola.",
+          "MSER z konserwatywnym `delta` — śledzi stabilne regiony przez sweep progu, więc nie wymaga znajomości skali; jeśli statki są stabilne w `delta` kolejnych progach, wyłoni je niezależnie od kształtu.",
+          "Globalne progowanie Otsu na obrazie z odjętym tłem — jasne piksele to statki, koniec; LoG/DoH/MSER są tu nadinżynierią."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "**(B) DoH jest najczystszą odpowiedzią** dla zadanej kombinacji: chcesz objąć skalami od boi do statków, ale **wytniemy wydłużone struktury** (mola). Dokładnie to robi wyznacznik Hessego — `det(H) = λ₁·λ₂` jest duży tylko gdy *obie* krzywizny mają ten sam znak (lokalny ekstremum 2D), a na krawędzi/wydłużonym pasie jedna z krzywizn jest niemal zerowa, więc detektor go pomija. To samo `min_sigma=2, max_sigma=12` co LoG, ale „blob-i-tylko-blob\". (A) LoG też zadziała, ale w wąskim zakresie σ ∈ [2, 4] **zgubisz większe statki** — a `blob_log` przy szerokim zakresie zacznie reagować na pasy mola (Laplacian to trace, podpisuje też wydłużone hot-spoty). (C) MSER jest świetny tam, gdzie kształt jest nieregularny i nie znamy skali, ale dla statków na monotonnym tle to **nadinżynieria** — i bez dostrojonego `delta` często wciąga sam pas mola jako jeden duży „stabilny\" region. (D) Otsu jest globalny i bezskalowy — odróżni piksele jasne od ciemnych, ale **nie da Ci pozycji ani promienia** poszczególnych celów, tylko maskę binarną; przy boi 1-2 px obok statku 12 px to brak rozdzielenia obiektów. Sensem klasycznych detektorów blob jest właśnie *„daj mi listę (y, x, r)\"*, czego Otsu z definicji nie potrafi.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "mser-stabilnosc-progu",
+      "title": "MSER — regiony stabilne wobec progu",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1016/S0262-8856(04)00021-4",
+          "title": "Robust wide-baseline stereo from maximally stable extremal regions",
+          "kind": "paper",
+          "author": "Jiří Matas, Ondřej Chum, Martin Urban, Tomáš Pajdla",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "LoG / DoG / DoH zakładają „blob ≈ Gauss\". To często zbyt restrykcyjne — kadłub statku z lotu ptaka jest **elipsą** lub **prostokątem**, a nie kulką. **MSER** (Matas i in., 2004) zrzuca założenie o kształcie i pyta inaczej: *które regiony obrazu są stabilne wobec **zmiany progu**?*\n\nIntuicja w trzech krokach. Po pierwsze: weź obraz w skali szarości i przepuść go przez **sweep progu** $t = 0, 1, 2, \\dots, 255$. Po drugie: dla każdego $t$ wyznacz binarną maskę pikseli o intensywności $> t$ i wyciągnij **spójne składowe**. Po trzecie: śledź, jak **pole** każdego regionu zmienia się ze wzrostem $t$. MSER zachowuje te regiony, których pole zmienia się **wolno** w pewnym oknie $\\Delta$ — czyli takie, które *przeżywają* sweep bez gwałtownego topnienia ani gwałtownego sklejenia z sąsiadem.\n\n![Cztery panele 1×4 ilustrujące działanie MSER na syntetycznej scenie. Panel (1): obraz wejściowy 480×140 z trzema Gaussowskimi blobami o różnej jasności i wielkości na ciemnym tle (region A — duży i jaskrawy; region B — bardzo duży; region C — mały i ciemniejszy). Panele (2)–(4): trzy progi t = 0.25, 0.45, 0.65 z czerwonym wypełnieniem pikseli powyżej progu i etykietą pola powierzchni A: ..., B: ..., C: ... px². Region A: pole 3061→1649→829 px² (szybki spadek). Region B: pole 6792→4418→2093 px² (też duży spadek). Region C: pole 529→293→145 px² (najmniejszy, też się topi). Tytuł: „MSER: śledzimy pole regionów ekstremalnych przy sweep'ie progu — region A jest 'maksymalnie stabilny' (pole zmienia się wolno), C i B znikają / rosną szybciej.\"](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/mser-threshold-sweep-demo.png)\n\nKluczowa formuła stabilności jest prosta — niech $Q_i$ to region przy progu $t_i$, wtedy:\n\n$$ q(i) \\;=\\; \\frac{|Q_{i + \\Delta} \\;\\setminus\\; Q_{i - \\Delta}|}{|Q_i|} $$\n\nRegion z **lokalnym minimum** $q(i)$ wzdłuż $t$ to MSER: w sąsiedztwie progu $t_i$ pole prawie się nie zmienia. Co ważne, MSER jest **niezależny od kształtu** (bierze dowolny connected component) i niewrażliwy na monotonne przekształcenia jasności (np. globalny gamma). W praktyce w scenie portowej daje to listę regionów-statków z bardzo dobrym konturem, kosztem reaktywności na nierównomierne tło (każde lokalne minimum jasności tła może wygenerować fałszywy MSER)."
+      }
+    },
+    {
+      "id": "exercise-detect-ships",
+      "title": "Zaimplementuj `detect_ships` — LoG na syntetycznej scenie portowej",
+      "description": "Po lewej: syntetyczny kafelek 256×256 z ośmioma jasnymi obiektami (statki z modulacją Gaussowsko-eliptyczną) na ciemnym tle (woda z szumem foto), L=∞ (zero speckle — to jest scena optyczna, nie SAR). Po prawej: referencyjna detekcja, każdy statek otoczony zielonym okręgiem o promieniu zwróconym przez `blob_log`.",
+      "sources": [
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.blob_log",
+          "title": "skimage.feature.blob_log — scikit-image documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d0/d7a/classcv_1_1SimpleBlobDetector.html",
+          "title": "OpenCV — SimpleBlobDetector class reference",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `detect_ships(img)` wykrywającą jasne, skupione obiekty na ciemnym tle. Zwróć tablicę kształtu `(N, 3)` z kolumnami `[y, x, r]` (promień, **nie** sigma — przelicz `r = sigma * sqrt(2)`).\n\nReguły:\n\n- Normalizuj wejście do zakresu $[0, 1]$ przez dzielenie przez `max(img.max(), 1e-6)`.\n- Użyj `skimage.feature.blob_log` z parametrami `min_sigma=2.0`, `max_sigma=12.0`, `num_sigma=8`, `threshold=0.04`.\n- Jeśli wynik jest pusty, zwróć `np.zeros((0, 3), dtype=np.float32)`.\n- Konwertuj kolumnę 2 z sigma na promień: `r = sigma * sqrt(2)`.\n- Zwracaj `np.ndarray` `dtype=np.float32`.\n\n```python\nimport numpy as np\ndata = np.load('/inputs/blob-harbor-synthetic.npz')\nblobs = detect_ships(data['image'])\nblobs.shape[1] == 3   # True\n6 <= blobs.shape[0] <= 14   # True (truth ma 8 statków; trochę luzu na duplikaty)\n```\n\nTesty weryfikują (a) format wyjścia, (b) liczbę wykrytych blobów w okolicach prawdy (truth = 8), (c) **stosunek detekcji znajdujących prawdę**: dla ≥ 6 z 8 prawdziwych statków musi istnieć detekcja w odległości ≤ $2 r_{truth}$ od centrum.",
+        "starterCode": "import numpy as np\nfrom skimage.feature import blob_log\n\n\ndef detect_ships(img):\n    \"\"\"Wykrywa jasne bloby (statki) na ciemnym tle (woda).\n\n    img: np.ndarray shape (H, W), float-like, jasne piksele = obiekty\n    zwraca: np.ndarray shape (N, 3) z kolumnami [y, x, r] (r = promien w px),\n            dtype=np.float32\n    \"\"\"\n    img = np.asarray(img, dtype=np.float32)\n    # TODO 1: znormalizuj img do [0, 1]:\n    #     img = img / max(float(img.max()), 1e-6)\n    # TODO 2: wywolaj skimage.feature.blob_log z parametrami:\n    #     min_sigma=2.0, max_sigma=12.0, num_sigma=8, threshold=0.04\n    #     blobs = blob_log(img, ...)\n    # TODO 3: jesli blobs.size == 0, zwroc np.zeros((0, 3), dtype=np.float32)\n    # TODO 4: przekonwertuj sigma na promien:  blobs[:, 2] *= sqrt(2)\n    # TODO 5: zwroc blobs.astype(np.float32)\n    return np.zeros((0, 3), dtype=np.float32)\n\n\n# --- Preview: detekcja na syntetycznej scenie portowej ---\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\ndata = np.load(\"/inputs/blob-harbor-synthetic.npz\")\nimage = data[\"image\"]\ntruth = data[\"truth\"]   # (8, 3) -> [y, x, r]\n\nblobs = detect_ships(image)\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.0), constrained_layout=True)\naxes[0].imshow(image, cmap=\"gray\")\naxes[0].set_title(\"Wejscie: syntetyczna scena portowa\", fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(image, cmap=\"gray\")\nfor (y, x, r) in blobs:\n    c = mpatches.Circle((x, y), r, fill=False, edgecolor=\"#2cb24a\", linewidth=1.5)\n    axes[1].add_patch(c)\nfor (y, x, r) in truth:\n    c = mpatches.Circle((x, y), r, fill=False, edgecolor=\"#e07c00\",\n                        linewidth=1.0, linestyle=\"--\")\n    axes[1].add_patch(c)\naxes[1].set_title(\n    f\"detect_ships -> {len(blobs)} blobow (zielone) vs truth ({len(truth)}, pomar.)\",\n    fontsize=10,\n)\naxes[1].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_n_by_3_float_array",
+            "body": "import numpy as np\nimg = np.zeros((40, 40), dtype=np.float32)\nyy, xx = np.indices((40, 40))\nimg += np.exp(-((yy - 20) ** 2 + (xx - 20) ** 2) / 18.0).astype(np.float32)\nout = detect_ships(img)\nout = np.asarray(out)\nassert out.ndim == 2 and out.shape[1] == 3, f'oczekiwano (N, 3), otrzymano {out.shape}'\nassert out.dtype == np.float32, f'oczekiwano dtype float32, otrzymano {out.dtype}'\nassert out.shape[0] >= 1, 'pojedynczy jasny gauss w srodku obrazu powinien byc wykryty jako blob'",
+            "hidden": false
+          },
+          {
+            "name": "detects_reasonable_count_on_synthetic_harbor",
+            "body": "import numpy as np\ndata = np.load('/inputs/blob-harbor-synthetic.npz')\nblobs = np.asarray(detect_ships(data['image']))\nn = blobs.shape[0]\n# Truth ma 8 statkow. Tolerujemy duplikaty i pomyleniec sasiadow ±. Sprawdz parametry blob_log z teorii.\nassert 6 <= n <= 16, (\n    f'liczba detekcji = {n}; oczekiwano 6-16 dla syntetycznej sceny z 8 statkami. '\n    f'Sprawdz min_sigma/max_sigma/threshold (kanonicznie 2.0 / 12.0 / 0.04).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_at_least_6_of_8_truth_centers",
+            "body": "import numpy as np\ndata = np.load('/inputs/blob-harbor-synthetic.npz')\ntruth = data['truth']           # (8, 3) -> [y, x, r]\nblobs = np.asarray(detect_ships(data['image']))\nassert blobs.size > 0, 'brak detekcji'\nmatched = 0\nfor (ty, tx, tr) in truth:\n    dy = blobs[:, 0] - ty\n    dx = blobs[:, 1] - tx\n    d = np.sqrt(dy * dy + dx * dx)\n    if (d <= 2.0 * tr).any():\n        matched += 1\nassert matched >= 6, (\n    f'dopasowano {matched}/8 prawdziwych statkow (detekcja w promieniu 2*r_truth). '\n    f'Oczekiwane >= 6. Najczestsze przyczyny: (a) brak normalizacji do [0, 1] przed blob_log, '\n    f'(b) zbyt wysoki threshold ucina slabsze cele, (c) brak przeliczenia sigma -> r.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom skimage.feature import blob_log\n\n\ndef detect_ships(img):\n    img = np.asarray(img, dtype=np.float32)\n    img = img / max(float(img.max()), 1e-6)\n    blobs = blob_log(\n        img,\n        min_sigma=2.0,\n        max_sigma=12.0,\n        num_sigma=8,\n        threshold=0.04,\n    )\n    if blobs.size == 0:\n        return np.zeros((0, 3), dtype=np.float32)\n    blobs = np.asarray(blobs, dtype=np.float32)\n    blobs[:, 2] = blobs[:, 2] * np.sqrt(2.0)\n    return blobs.astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/blob-harbor-synthetic.png",
+            "alt": "Syntetyczna scena 256×256, ciemne tło (woda z lekkim szumem foto), osiem jasnych eliptycznych obiektów rozproszonych po obrazie — kadłuby statków różnej długości i orientacji. Brak speckle, kontrast wysoki — to scena optyczna, nie SAR.",
+            "caption": "Wejście: syntetyczna scena Sentinel-2-like z 8 statkami na wodzie (.npz zawiera klucze 'image' i 'truth')."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/blob-harbor-synthetic.npz",
+            "filename": "blob-harbor-synthetic.npz",
+            "caption": ".npz z kluczami 'image' (float32, 256×256) i 'truth' (float32, 8×3 — [y, x, r] dla 8 statków)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/blob-harbor-expected.png",
+          "alt": "Ta sama scena 256×256 co na wejściu, ale z dorysowanymi zielonymi okręgami wokół każdego z ośmiu statków — okręgi mają promienie odpowiadające skali wykrycia (sigma * sqrt(2)). Wszystkie 8 prawdziwych statków zostało wykrytych; brak fałszywych alarmów na tle.",
+          "caption": "Cel: tak ma wyglądać scena po `detect_ships(image)` — każdy statek otoczony zielonym okręgiem o promieniu zwróconym przez `blob_log`.",
+          "live": true
+        },
+        "requiresPackages": [
+          "scikit-image"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-tune-blob-log",
+      "title": "Spróbuj: jak parametry zmieniają wynik",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom skimage.feature import blob_log\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\ndata = np.load(\"/inputs/blob-harbor-synthetic.npz\")\nimage = data[\"image\"]\ntruth = data[\"truth\"]\n\n# Cztery uchwyty do pokrecenia:\nmin_sigma = 2.0       # zmniejsz do 1.0 -> wylapie boje; zwieksz do 4.0 -> zignoruje male cele\nmax_sigma = 12.0      # zwieksz do 20 -> moze wlapac wieksze plamy (np. mola); zmniejsz -> tylko male statki\nnum_sigma = 8         # rozdzielczosc skali: 4 (szybciej, mniej dokladnie) ... 16 (wolniej, dokladniej)\nthreshold = 0.04      # obnizenie wpuszcza slabsze cele (i wiecej falszywek);\n                      # podwyzszenie zostawia tylko najjasniejsze\n\nimg = image / max(float(image.max()), 1e-6)\nblobs = blob_log(img, min_sigma=min_sigma, max_sigma=max_sigma,\n                 num_sigma=num_sigma, threshold=threshold)\nif blobs.size > 0:\n    blobs[:, 2] *= np.sqrt(2.0)\n\nprint(f\"min_sigma={min_sigma}, max_sigma={max_sigma}, \"\n      f\"num_sigma={num_sigma}, threshold={threshold}\")\nprint(f\"liczba detekcji: {len(blobs)} (truth = {len(truth)})\")\n\nfig, ax = plt.subplots(1, 1, figsize=(6.0, 6.0), constrained_layout=True)\nax.imshow(image, cmap=\"gray\")\nfor (y, x, r) in blobs:\n    ax.add_patch(mpatches.Circle((x, y), r, fill=False,\n                                 edgecolor=\"#2cb24a\", linewidth=1.5))\nfor (y, x, r) in truth:\n    ax.add_patch(mpatches.Circle((x, y), r, fill=False,\n                                 edgecolor=\"#e07c00\",\n                                 linewidth=1.0, linestyle=\"--\"))\nax.set_title(f\"detekcji: {len(blobs)} | truth: {len(truth)}\", fontsize=10)\nax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Spróbuj `threshold=0.01` — zobaczysz, jak na obrazie zaczynają wyrastać dziesiątki fałszywych detekcji w szumie tła. Potem podnieś go do `0.10` — większość statków zniknie, zostaną tylko najjaśniejsze. To jest dokładnie ten kompromis, który CFAR w następnej lekcji rozwiąże adaptacyjnie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1023/A:1008045108935",
+      "title": "Feature detection with automatic scale selection",
+      "kind": "paper",
+      "author": "Tony Lindeberg",
+      "year": 1998
+    },
+    {
+      "url": "https://doi.org/10.1016/S0262-8856(04)00021-4",
+      "title": "Robust wide-baseline stereo from maximally stable extremal regions",
+      "kind": "paper",
+      "author": "Jiří Matas, Ondřej Chum, Martin Urban, Tomáš Pajdla",
+      "year": 2004
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.blob_log",
+      "title": "skimage.feature.blob_log — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d0/d7a/classcv_1_1SimpleBlobDetector.html",
+      "title": "OpenCV — SimpleBlobDetector class reference",
+      "kind": "article"
+    }
+  ]
+}

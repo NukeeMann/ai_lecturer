@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "slug": "cfar-detekcja-statkow-na-morzu",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "CFAR — detekcja statków na morzu",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Maritime ship detection to klasyczny use-case CFAR-u: morze daje statystycznie jednorodne tło Gamma, a metalowe statki świecą 10–50× nad sea-clutter. W tej lekcji budujesz pełny mini-pipeline (CFAR → maska lądu → morfologia → filtr po polu) na syntetycznym kafelku VV i kalibrujesz pokrętła Pfa / guard / training tak, by trzymać recall przy ograniczonym budżecie false-alarmów.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "morze-to-tlo-statki-to-cele",
+      "title": "Morze ciemne, statki jasne — dlaczego maritime to wymarzony use-case",
+      "sources": [
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 Maritime Monitoring — ESA SentiWiki",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z lekcji *4.1 Thresholding — Otsu vs CFAR* znasz już CA-CFAR: $T(i,j) = \\alpha \\cdot \\mu_\\text{bg}(i,j)$ z $\\alpha = \\operatorname{gammaincinv}(L,\\, 1 - P_\\text{fa})/L$. Dla tej sceny ($L = 4$, $P_\\text{fa} = 10^{-4}$) wychodzi $\\alpha \\approx 3{,}98$.\n\nTa lekcja pokazuje, **gdzie** ten kontrakt naprawdę śpiewa: detekcja statków na otwartym morzu. Spójrz na realny kafelek Sentinel-1 VV nad portem Rotterdam:\n\n![Quicklook VV-polarymetrycznego kafelka Sentinel-1 nad portem Rotterdam. Na większości obrazu rozciąga się ciemnoszare morze (niski sygnał wsteczny od gładkiej powierzchni wody w paśmie C), a po prawej stronie biegnie pasmo jasnoszarego lądu portowego z bardzo jasnymi nabrzeżami (corner reflectors). W otwartym morzu widać kilkadziesiąt jasnych punktów / krótkich pasm rozsianych po obrazie — to statki o RCS dziesiątki razy wyższym od tła wody. Większe statki tworzą wyraźne wydłużone jasne plamy, mniejsze — pojedyncze jasne piksele.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-rotterdam-port-quicklook.png)\n\nTrzy własności sceny morskiej sprawiają, że CFAR działa tu lepiej niż w jakimkolwiek innym kontekście:\n\n- **Tło jest statystycznie jednorodne.** Otwarte morze w paśmie C ma sigma-zero rzędu $-20 \\pm 3$ dB i przez większość kafelka trzyma się jednej $\\mu_\\text{bg}$. Założenie CFAR-u (jeden rozkład Gamma w oknie training) jest realnie spełnione.\n- **Cele są ostre i jasne.** Metalowy kadłub statku to corner-reflector dla mikrofal — RCS sięga $30$–$40$ dB nad clutterem morza. Stosunek $I_\\text{cel}/\\mu_\\text{bg}$ rzędu $10^3$ przelatuje przez próg z dużym zapasem.\n- **Sea-state zmienia $\\mu_\\text{bg}$, ale nie shape rozkładu.** Wzburzone morze podnosi $\\mu_\\text{bg}$, ale kształt Gamma$(L)$ zostaje. Skoro $T$ jest **proporcjonalne** do $\\mu_\\text{bg}$, kontrakt $P_\\text{fa}$ się utrzymuje — w przeciwieństwie do progu globalnego, który zalałby się false-alarmami przy każdej burzy.\n\nPrzy $\\alpha \\approx 3{,}98$ z poprzedniego akapitu wszystko, co jest cztery razy jaśniejsze od lokalnej $\\mu_\\text{bg}$, ląduje na liście kandydatów. To jest **dolna granica** trudności w SAR; lekcja *4.5 Detekcja pojazdów na lądzie* pokaże, dlaczego ten sam operator pada na clutter lądu."
+      }
+    },
+    {
+      "id": "guard-window-sizing",
+      "title": "Guard ring vs rozmiar statku — efekt samoosłonięcia",
+      "description": "Trzy uruchomienia CA-CFAR na tym samym wycinku (dwa duże statki + jeden średni), $\\text{win}=10$, $P_\\text{fa}=10^{-4}$, $L=4$. Zmienia się tylko półbok guard ringu.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/cfar-detekcja-statkow-na-morzu-1.png",
+        "alt": "Sześciopanelowa siatka 2x3. Górny rząd — trzy panele 140x140 px tego samego wycinka syntetycznego kafelka SAR (jasne dwa duże statki i jeden średni na speckled tle morza), z nałożoną zieloną maską detekcji CA-CFAR przy guard ∈ {1, 4, 8}. Lewy panel (guard=1, 3x3) — detekcje pokrywają tylko piksele brzegowe statków; centra są ciemne, co tworzy efekt 'wydrążonych' bbox. Środkowy panel (guard=4, 9x9) — detekcje wypełniają całe statki czystą zieloną maską, kilka pojedynczych pikseli FP w tle. Prawy panel (guard=8, 17x17) — detekcje znów degradują: brzegi statków robią się rozmyte, training ring zaczyna łapać sąsiednie cele. Dolny rząd — trzy panele tekstowe z metrykami: 'pokrycie statków (recall)' i 'piksele tła nad progiem (FP)' dla każdego guard, plus jednozdaniowy diagnostyczny komentarz w kolorze pasującym do trendu. Tytuł nadrzędny: 'Wpływ guard ring na detekcję dużego statku (win=10, Pfa=1e-4, L=4) / Zielone piksele — detekcje CA-CFAR; jasne kafle to dwa duże statki + jeden średni w kadrze.'",
+        "caption": "Rys. 1. Mechanizm „samoosłonięcia”: gdy guard jest mniejszy niż statek, jego własne piksele wpadają do training ringu i zawyżają $\\mu_\\text{bg}$ — próg lokalnie rośnie, środek statku spada poniżej $T$ i znika z maski. Gdy guard jest **za szeroki**, training ring jest spychany na obrzeże i łapie sąsiednie cele (kolejny statek 20 px obok też podnosi $\\mu_\\text{bg}$). Sweetspot to **guard ≳ promień największego oczekiwanego statku + 1–2 px marginesu** — tu $9\\times 9$ obejmuje czysto duże statki (do 10×18 px) z niewielkim zapasem.",
+        "sourceCode": "from pathlib import Path\n\nimport numpy as np\nimport matplotlib\n\nmatplotlib.use('Agg')\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\nfrom scipy.special import gammaincinv\n\nINPUTS = Path(\n    '/home/nukeemann/projects/ai_lecturer/courses/'\n    'optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs'\n)\nPLOTS = Path(\n    '/home/nukeemann/projects/ai_lecturer/courses/'\n    'optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots'\n)\nPLOTS.mkdir(parents=True, exist_ok=True)\nOUT = PLOTS / 'cfar-detekcja-statkow-na-morzu-1.png'\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\nd = np.load(INPUTS / 'cfar-ships-sentinel1-vv-tile.npz')\nintensity = d['intensity']\nship_truth = d['ship_truth']\nL = int(d['L'])\npfa = 1e-4\nwin = 10\n\ncrop = slice(20, 160), slice(180, 320)\nimg_crop = intensity[crop]\ntruth_crop = ship_truth[crop]\ndisp = np.sqrt(np.clip(img_crop, 0, None))\nvmax_disp = float(np.percentile(disp, 99.5))\n\nguards = [1, 4, 8]\nlabels = [\n    'guard = 1  (3x3 - za maly)',\n    'guard = 4  (9x9 - dopasowany)',\n    'guard = 8  (17x17 - szeroki)',\n]\n\nfig, axes = plt.subplots(\n    2, 3, figsize=(11.5, 7.6), constrained_layout=True,\n    gridspec_kw={'height_ratios': [1.0, 1.0]},\n)\n\nfor col, (g, lab) in enumerate(zip(guards, labels)):\n    mask_full = ca_cfar(intensity, win=win, guard=g, pfa=pfa, L=L)\n    mask = mask_full[crop]\n    rgb = np.stack([disp, disp, disp], axis=-1) / max(vmax_disp, 1e-6)\n    rgb = np.clip(rgb, 0, 1)\n    rgb[mask, 0] = 0.05\n    rgb[mask, 1] = 1.0\n    rgb[mask, 2] = 0.05\n    axes[0, col].imshow(rgb)\n    axes[0, col].set_title(lab, fontsize=10.5)\n    axes[0, col].set_xlabel('kolumna [px]')\n    axes[0, col].set_ylabel('wiersz [px]')\n    axes[0, col].set_xticks([0, 35, 70, 105, 140])\n    axes[0, col].set_xticklabels([180, 215, 250, 285, 320])\n    axes[0, col].set_yticks([0, 35, 70, 105, 140])\n    axes[0, col].set_yticklabels([20, 55, 90, 125, 160])\n    cov = float((mask & truth_crop).sum()) / max(int(truth_crop.sum()), 1)\n    fp_pix = int((mask & ~truth_crop).sum())\n    axes[1, col].axis('off')\n    axes[1, col].text(\n        0.5, 0.85,\n        f'pokrycie statkow (recall): {cov*100:.0f}%',\n        ha='center', va='center', fontsize=12, fontweight='bold',\n    )\n    axes[1, col].text(\n        0.5, 0.55,\n        f'piksele tla nad progiem (FP): {fp_pix}',\n        ha='center', va='center', fontsize=11,\n    )\n    if col == 0:\n        axes[1, col].text(\n            0.5, 0.20,\n            'Statek samooslania -\\nenergia celu w trainingu\\nwindy prog w gore.',\n            ha='center', va='center', fontsize=10, color='#a83a2f',\n        )\n    elif col == 1:\n        axes[1, col].text(\n            0.5, 0.20,\n            'Guard ~ rozmiar statku +\\nmargines bezpieczenstwa ->\\nczyste pokrycie.',\n            ha='center', va='center', fontsize=10, color='#1a7a3a',\n        )\n    else:\n        axes[1, col].text(\n            0.5, 0.20,\n            'Zbyt szeroki guard pochlania\\nsasiadow - training zostaje\\nz brzegowymi pikselami.',\n            ha='center', va='center', fontsize=10, color='#a87a1a',\n        )\n\nfig.suptitle(\n    'Wplyw guard ring na detekcje duzego statku (win = 10, Pfa=1e-4, L=4)\\n'\n    'Zielone piksele - detekcje CA-CFAR; jasne kafle to dwa duze statki + jeden sredni w kadrze.',\n    fontsize=11.5,\n)\n\nfig.savefig(OUT, dpi=110, bbox_inches='tight')\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "detect-ships-pipeline",
+      "title": "Zaimplementuj `detect_ships` — CFAR + maska lądu + morfologia + filtr pola",
+      "description": "Wejście — syntetyczny kafelek Sentinel-1 VV (384×384, Gamma $L=4$) z 11 statkami trzech rozmiarów, smugą lądu w rogu i kilkoma jasnymi clutter-targetami. Cel — odtworzyć finalną maskę bbox-ów byte-for-byte z referencyjną maską z `/inputs/`.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.951095",
+          "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+          "kind": "paper",
+          "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+          "year": 2001
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+          "title": "Ship Surveillance with TerraSAR-X",
+          "kind": "paper",
+          "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+          "year": 2011
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Złóż pełny mini-pipeline detekcji statków. Funkcja\n\n```\ndetect_ships(intensity, land_mask, win=10, guard=4, pfa=1e-4, L=4, min_area=4)\n```\n\nzwraca maskę boolowską o kształcie `intensity.shape`, gdzie `True` oznacza piksel należący do **wykrytego, post-processowanego statku**.\n\nKroki, w tej kolejności:\n\n1. **CA-CFAR** z parametrami `win`, `guard`, `pfa`, `L` — dokładnie tak samo jak w *4.1*. Próg $T = \\alpha \\cdot \\mu_\\text{train}$, $\\alpha = \\operatorname{gammaincinv}(L, 1 - P_\\text{fa})/L$.\n2. **Wytnij ląd**: `raw &= ~land_mask`. (Pixele lądu mają inną statystykę — bez maski CFAR by je w większości oflagował.)\n3. **Morfologiczne domknięcie**: `scipy.ndimage.binary_closing` ze strukturą $3\\times 3$ (`np.ones((3, 3), bool)`) — łączy sąsiadujące detekcje w jeden blob.\n4. **Otwieranie**: `scipy.ndimage.binary_opening` ze strukturą $2\\times 2$ (`np.ones((2, 2), bool)`) — usuwa pojedyncze speckle-spikes, które przeżyły CFAR.\n5. **Filtracja po polu**: `scipy.ndimage.label`, potem dla każdej komponenty policz `area = comp.sum()`. Zachowaj tylko `area >= min_area`.\n\n```\n>>> d = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\n>>> mask = detect_ships(d['intensity'], d['land_mask'])\n>>> int(mask.sum())\n570\n```\n\nTesty weryfikują (a) shape + dtype maski, (b) brak detekcji na lądzie, (c) recall ≥ 9 z 11 prawdziwych statków, (d) maska zgadza się byte-for-byte z referencyjną `final_mask` z `/inputs/cfar-ships-detection-expected.npz`.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect_ships(intensity, land_mask, win=10, guard=4, pfa=1e-4, L=4, min_area=4):\n    \"\"\"Pelny mini-pipeline detekcji statkow.\n\n    Zwraca maske bool o tym samym ksztalcie co intensity. True = pixel\n    nalezacy do wykrytego (po morfologii i filtrze pola) statku.\n    \"\"\"\n    # 1) CFAR\n    raw = ca_cfar(intensity, win=win, guard=guard, pfa=pfa, L=L)\n    # 2) TODO: wytnij lad: raw &= ~land_mask\n    # 3) TODO: closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    # 4) TODO: opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    # 5) TODO: lab, n = label(opened); zachowaj komponenty area >= min_area\n    return np.zeros_like(intensity, dtype=bool)\n\n\n# --- Preview na realnym kafelku ---\nimport matplotlib.pyplot as plt\n\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nintensity = d['intensity']\nland_mask = d['land_mask']\nship_truth = d['ship_truth']\n\nmask = detect_ships(intensity, land_mask)\nlab_truth, n_truth = label(ship_truth)\nlab_det, n_det = label(mask)\nrecall_hits = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nprint(f'detekcje  : {int(mask.sum())} px w {n_det} blobach')\nprint(f'recall    : {recall_hits} / {n_truth} statkow')\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.3), constrained_layout=True)\ndisp = np.sqrt(np.clip(intensity, 0, None))\naxes[0].imshow(disp, cmap='gray', vmin=0, vmax=float(np.percentile(disp, 99.5)))\naxes[0].set_title('Wejscie: SAR VV (sqrt)')\naxes[0].set_axis_off()\naxes[0].contour(land_mask, levels=[0.5], colors='#3aa8d8', linewidths=1.2)\nrgb = np.stack([disp, disp, disp], -1) / max(disp.max(), 1e-6)\nrgb = np.clip(rgb, 0, 1)\nrgb[mask] = [0.1, 1.0, 0.1]\naxes[1].imshow(rgb)\naxes[1].set_title(f'Detekcje  ({n_det} blobow, recall {recall_hits}/{n_truth})')\naxes[1].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_bool_mask_with_same_shape",
+            "body": "import numpy as np\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nmask = detect_ships(d['intensity'], d['land_mask'])\nassert hasattr(mask, 'shape') and mask.shape == d['intensity'].shape, f'shape={getattr(mask, \"shape\", None)}'\nassert mask.dtype == np.bool_, f'dtype={mask.dtype}, oczekiwano bool'",
+            "hidden": false
+          },
+          {
+            "name": "no_detections_on_land",
+            "body": "import numpy as np\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nmask = detect_ships(d['intensity'], d['land_mask'])\nleak = int((mask & d['land_mask']).sum())\nassert leak == 0, (\n    f'maska zawiera {leak} pikseli na ladzie; sprawdz, czy po CFAR wykonujesz raw &= ~land_mask '\n    f'(land_mask True = lad).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "recalls_most_real_vessels",
+            "body": "import numpy as np\nfrom scipy.ndimage import label\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nmask = detect_ships(d['intensity'], d['land_mask'])\nlab_truth, n_truth = label(d['ship_truth'])\nhits = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nassert hits >= 9, (\n    f'wykryto {hits}/{n_truth} statkow; oczekiwano co najmniej 9. '\n    f'Sprawdz kolejnosc krokow: CFAR -> land mask -> closing -> opening -> filtr pola, '\n    f'oraz ze min_area=4 (nie 16).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_mask_byte_for_byte",
+            "body": "import numpy as np\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nref = np.load('/inputs/cfar-ships-detection-expected.npz')['final_mask']\nmask = detect_ships(d['intensity'], d['land_mask'])\nassert mask.shape == ref.shape\ndiff = int((mask != ref).sum())\nassert diff == 0, (\n    f'maska rozni sie od referencyjnej w {diff} pikselach. '\n    f'Sprawdz: closing -> opening kolejnosc, structure 3x3 dla closing i 2x2 dla opening, '\n    f'min_area=4, padding mode=\"reflect\" w uniform_filter.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect_ships(intensity, land_mask, win=10, guard=4, pfa=1e-4, L=4, min_area=4):\n    raw = ca_cfar(intensity, win=win, guard=guard, pfa=pfa, L=L)\n    raw = raw & ~land_mask\n    closed = binary_closing(raw, structure=np.ones((3, 3), dtype=bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), dtype=bool))\n    lab, n = label(opened)\n    keep = np.zeros_like(opened, dtype=bool)\n    for i in range(1, n + 1):\n        comp = lab == i\n        if int(comp.sum()) >= min_area:\n            keep |= comp\n    return keep\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/cfar-ships-sentinel1-vv-tile.png",
+            "alt": "Podgląd syntetycznego kafelka Sentinel-1 VV 384×384 w skali szarości (sqrt-brightness). Większość obrazu zajmuje speckled ciemne morze (Gamma L=4, średnia R≈0,18); po prawym dolnym rogu widoczna jaśniejsza smuga lądu w postaci łuku. Po morzu rozsiane 11 jasnych obiektów trzech rozmiarów (małe boaty ~2×2 px, średnie statki ~5×8 px, duże ~10×16 px) plus kilka jednopikselowych bardzo jasnych clutter-targetów (oil rigi).",
+            "caption": "Podgląd kafelka VV (sqrt-brightness)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/cfar-ships-sentinel1-vv-tile.npz",
+            "filename": "cfar-ships-sentinel1-vv-tile.npz",
+            "caption": ".npz: 'intensity' (float32, 384×384, intensywność liniowa), 'R' (float32, mapa odbiciowości ground-truth), 'ship_truth' (bool, 384×384, prawdziwe piksele statków), 'clutter_truth' (bool, jasne clutter-targety), 'land_mask' (bool, smuga lądu), 'L' (=4)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/cfar-ships-detection-expected.npz",
+            "filename": "cfar-ships-detection-expected.npz",
+            "caption": ".npz: 'raw_mask' (bool, CFAR bez post-processingu), 'final_mask' (bool, referencyjny output `detect_ships` z domyślnymi parametrami), 'bboxes' (int32, lista [r0, c0, r1, c1]), 'alpha' (≈3,98), 'L' (=4)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/cfar-ships-detection-expected.png",
+          "alt": "Dwa panele obok siebie 384×384. Lewy panel: wejście — kafelek SAR VV w sqrt-brightness, jasna smuga lądu w prawym dolnym rogu obwiedziona cienką niebieską linią konturu. Prawy panel: maska detekcji w kolorze zielonym narysowana na tym samym podkładzie sqrt-brightness; nad każdą prawdziwą pozycją statku narysowany żółty prostokąt bbox z marginesem 2 px. Detekcje pokrywają 10 z 11 statków pełnymi zielonymi plamami, brak detekcji na lądzie i pojedyncza FP-plama nad jednym z oil-rigów. Pod prawym panelem podpis 'Detekcja detect_ships(win=10, guard=4, pfa=1e-4): 10/11 statków, 1 FP'.",
+          "caption": "Cel: tak ma wyglądać `detect_ships(intensity, land_mask)` z domyślnymi parametrami. 10/11 statków, 1 FP (jasny clutter-target widoczny też w `clutter_truth`).",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "co-psuje-detekcje",
+      "title": "Beyond CFAR — co psuje detekcję na realnym Sentinel-1",
+      "sources": [
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Syntetyczny kafelek z ćwiczenia jest celowo czysty: jedno morze, jeden ENL, jeden kawałek lądu. Realny Sentinel-1 GRD wprowadza cztery systematyczne problemy, których sam CFAR nie rozwiąże:\n\n![Quicklook VV-polarymetrycznego kafelka Sentinel-1 nad Hamburgiem i ujściem Łaby. W lewej połowie obrazu jasnoszary teren miejski i portowy z bardzo jasnymi, prawie białymi punktami (corner-reflectorowe nabrzeża, magazyny, dźwigi); po prawej rozciąga się ciemne wody Łaby z kilkoma jasnymi statkami i widocznymi pasmowymi wzorami fal/wake'ów za nimi. Wzdłuż linii brzegowej widoczny ostry gradient jasności między lądem a wodą — to jest dokładnie ten obszar, w którym CFAR bez maski lądu generuje gęstą plamę false-alarmów.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-hamburg-quicklook.png)\n\n| Problem | Co widać w masce CFAR | Standardowy fix |\n|---|---|---|\n| **Bleed lądu** | gęsta plama detekcji wzdłuż linii brzegowej | maska wektorowa (OSM coastline, GSHHG) zaaplikowana **przed** CFAR-em; w lekcji robimy `raw &= ~land_mask` |\n| **Strong scatterers** (oil rigi, boje, narożniki nabrzeży) | pojedyncze stałe punkty znacznie nad sea-clutterem | discrimination po **rozmiarze** (filtr `min_area`) lub po **stabilności czasowej** w stacku zdjęć — punkt, który stoi w tym samym miejscu we wszystkich akwizycjach, to infrastruktura, nie statek |\n| **Wakes & sea-state inhomogeneity** | front wzburzonego morza ma wyższe $\\mu_\\text{bg}$, krawędź podnosi próg w sąsiedztwie i tnie słabe cele | większy `win` (training szerszy niż charakterystyczna skala homogeniczności) **lub** OS-CFAR zamiast CA-CFAR (mediana zamiast średniej — odporna na heterogeniczne tło) |\n| **Aspect-zależny RCS** | duży statek ustawiony bokiem do radaru świeci, dziobem — znika; ten sam statek na dwóch przelotach ma różną sygnaturę | brak operacyjnego fixu na poziomie CFAR — to wymaga albo wielokątowych obserwacji, albo klasyfikatora downstream (moduł 5: MSTAR ONNX) |\n\nDwa praktyczne wnioski:\n\n- **CFAR daje *kandydatów*, nie *detekcji*.** Pełny pipeline operacyjny (np. ESA Maritime Monitoring) zawsze ma za CFAR-em warstwę dyskryminacji: rozmiar, geometria (długość/szerokość bbox), stabilność czasowa, opcjonalnie klasyfikator CNN.\n- **`min_area` to twoje najtańsze sito.** Większość false-alarmów po CFAR-ze to pojedyncze speckle-spikes (1–2 piksele). Filtr `area >= 4` (jak w ćwiczeniu) odsiewa je nieproporcjonalnie tanio do kosztu — bez ruszania $P_\\text{fa}$, bez utraty pokrycia średnich i dużych statków."
+      }
+    },
+    {
+      "id": "quiz-tuning",
+      "title": "Sprawdź: kalibracja Pfa, guard i lądu",
+      "type": "quiz",
+      "data": {
+        "question": "Twój operator widzi za dużo false-alarmów na maszynie produkcyjnej. Które z poniższych interwencji **mają sens** w kontekście CFAR-owego pipeline detekcji statków na morzu? Wybierz wszystkie poprawne.",
+        "options": [
+          "Zmniejszyć $P_\\text{fa}$ z $10^{-3}$ do $10^{-4}$. Próg $T = \\alpha \\cdot \\mu_\\text{bg}$ wzrośnie (większe $\\alpha$), spadnie liczba false-alarmów, ale spadnie też pokrycie słabych celów.",
+          "Podnieść `min_area` z 4 do 16 px. Pojedyncze speckle-spikes znikną tanio, ale małe boaty (~2×2 px) zostaną też wycięte — to świadomy trade-off między czystością a pokryciem małych jednostek.",
+          "Powiększyć guard z 4 do 12 px (przy `win` = 10). To gwarantuje, że żaden statek nie wpadnie do training ringu, więc detekcja będzie idealna niezależnie od wielkości celu.",
+          "Założyć maskę wektorową lądu (OSM coastline) **przed** CFAR-em. CFAR i tak wynapcyje krawędź lądu detekcjami — ograniczenie obszaru analizy do otwartego morza usuwa ten cały reżim false-alarmów bez ruszania pozostałych parametrów.",
+          "Zostać przy CA-CFAR i zwiększyć `win`, gdy w scenie są fronty sea-state (np. wzburzony front przy stałym wietrze). Szerszy training uśredni heterogeniczność tła. Alternatywnie: przełączyć się na OS-CFAR (mediana zamiast średniej), który jest odporny na lokalne anomalie."
+        ],
+        "correct": [
+          0,
+          1,
+          3,
+          4
+        ],
+        "explanation": "**(A) prawda** — $\\alpha = \\operatorname{gammaincinv}(L, 1 - P_\\text{fa})/L$ jest monotonicznie rosnąca względem $1 - P_\\text{fa}$. Z $P_\\text{fa} = 10^{-3}$ na $10^{-4}$ przy $L = 4$ $\\alpha$ rośnie z $3{,}27$ do $3{,}98$ — false-alarmy spadają ~10×, ale słabsze cele tuż nad poprzednim progiem znikną.\n\n**(B) prawda** — to przepustowy, tani filtr. W ćwiczeniu `min_area = 4` odcina sam-pikselowe speckle bez ruszania średnich/dużych statków. `min_area = 16` zacząłby zjadać małe boaty 2×2 i 2×3 px — czasem ta cena jest akceptowalna (np. monitoring tylko dużych jednostek powyżej $20$ m), czasem nie. To **świadoma decyzja operacyjna**, nie błąd.\n\n**(D) prawda** — bleed lądu to dominujący reżim false-alarmów na realnym kafelku Sentinel-1 z portem. Maska wektorowa (OSM, GSHHG, lub policzona z DEM + thresh) ucina ten problem u źródła i jest standardową praktyką w produkcji (zob. ESA Maritime Monitoring).\n\n**(E) prawda** — to dokładnie scenariusz, w którym wymyślono OS-CFAR. Średnia training w CA-CFAR jest wrażliwa na lokalne anomalie (front, bliski statek wewnątrz training ringu); mediana w OS-CFAR jest odporna. Powiększenie `win` to słabszy, ale tańszy fix tego samego problemu.\n\n**(C) fałsz** — to typowa pułapka „więcej zawsze lepiej”. Spójrz na panel `guard = 8` z Rys. 1: zbyt szeroki guard spycha training ring na obrzeże okna, gdzie zaczyna łapać **sąsiednie statki** (cluster statków w porcie!) i sąsiednie regiony heterogeniczne. Rekomendowana praktyka to **guard ≈ promień największego oczekiwanego statku + 1–2 px**, nie „im więcej, tym lepiej”.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "explore-pfa-guard",
+      "title": "Eksploruj: handel Pfa za pokrycie, guard za samoosłonięcie",
+      "description": "ParametricExplorer uruchamiający `detect_ships` z trzema pokrętłami: $P_\\text{fa}$, półbok guard, półbok pełnego okna. Output: side-by-side maska prawdy vs maska detekcji + recall i FP-count.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\nimport matplotlib.pyplot as plt\n\nd = np.load('/inputs/cfar-ships-sentinel1-vv-tile.npz')\nintensity = d['intensity']\nland_mask = d['land_mask']\nship_truth = d['ship_truth']\nL = int(d['L'])\nH, W = intensity.shape\ndisp = np.sqrt(np.clip(intensity, 0, None))\nvmax_disp = float(np.percentile(disp, 99.5))\nlab_truth, n_truth = label(ship_truth)\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf = fs * fs\n    ng = gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode='reflect')\n    mu_guard = uniform_filter(img, size=gs, mode='reflect')\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect_ships(intensity, land_mask, win, guard, pfa, L, min_area=4):\n    raw = ca_cfar(intensity, win=win, guard=guard, pfa=pfa, L=L)\n    raw = raw & ~land_mask\n    closed = binary_closing(raw, structure=np.ones((3, 3), dtype=bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), dtype=bool))\n    lab_, n_ = label(opened)\n    keep = np.zeros_like(opened, dtype=bool)\n    for i in range(1, n_ + 1):\n        comp = lab_ == i\n        if int(comp.sum()) >= min_area:\n            keep |= comp\n    return keep\n",
+        "renderCode": "mask = detect_ships(intensity, land_mask, win=int(win), guard=int(guard), pfa=float(pfa), L=L)\nlab_det, n_det = label(mask)\nrecall_hits = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nfp_blobs = sum(1 for i in range(1, n_det + 1) if not ((lab_det == i) & ship_truth).any())\nalpha = float(gammaincinv(L, 1 - float(pfa)) / L)\n\nfig, axes = plt.subplots(1, 2, figsize=(9.2, 4.6), constrained_layout=True)\nrgb_truth = np.stack([disp, disp, disp], -1) / max(disp.max(), 1e-6)\nrgb_truth = np.clip(rgb_truth, 0, 1)\nrgb_truth[ship_truth] = [1.0, 0.85, 0.1]\naxes[0].imshow(rgb_truth)\naxes[0].set_title(f'Prawda: {n_truth} statkow (zolte)', fontsize=10)\naxes[0].set_axis_off()\naxes[0].contour(land_mask, levels=[0.5], colors='#3aa8d8', linewidths=1.0)\n\nrgb_det = np.stack([disp, disp, disp], -1) / max(disp.max(), 1e-6)\nrgb_det = np.clip(rgb_det, 0, 1)\nrgb_det[mask] = [0.1, 1.0, 0.1]\naxes[1].imshow(rgb_det)\naxes[1].set_title(\n    f'Detekcje  win={int(win)} guard={int(guard)} pfa={float(pfa):.0e}\\n'\n    f'recall = {recall_hits}/{n_truth}   FP blobow = {fp_blobs}   alpha = {alpha:.2f}',\n    fontsize=10,\n)\naxes[1].set_axis_off()\naxes[1].contour(land_mask, levels=[0.5], colors='#3aa8d8', linewidths=1.0)\nplt.show()\n",
+        "params": [
+          {
+            "name": "pfa",
+            "label": "Pfa (target false-alarm rate)",
+            "type": "slider",
+            "min": -6,
+            "max": -2,
+            "step": 1,
+            "default": -4
+          },
+          {
+            "name": "guard",
+            "label": "guard (polbok guard ringu)",
+            "type": "slider",
+            "min": 1,
+            "max": 10,
+            "step": 1,
+            "default": 4
+          },
+          {
+            "name": "win",
+            "label": "win (polbok pelnego okna)",
+            "type": "slider",
+            "min": 6,
+            "max": 16,
+            "step": 1,
+            "default": 10
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 250
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/36.951095",
+      "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+      "kind": "paper",
+      "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+      "year": 2001
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+      "title": "Ship Surveillance with TerraSAR-X",
+      "kind": "paper",
+      "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+      "year": 2011
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 Maritime Monitoring — ESA SentiWiki",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

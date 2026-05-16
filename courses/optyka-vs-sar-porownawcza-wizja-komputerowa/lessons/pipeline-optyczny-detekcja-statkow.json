@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "slug": "pipeline-optyczny-detekcja-statkow",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m6",
+  "title": "Pipeline optyczny — detekcja statków",
+  "eyebrow": "CAPSTONE",
+  "description": "Pierwszy z dwóch pipeline'ów capstone'u: detekcja statków na kafelku Sentinel-2 z SEN12MS. Trzy klasyczne kroki — maska wody (luma + morfologia), `blob_log` w przestrzeni skali i filtr (woda AND rozmiar). Wynik tej lekcji pójdzie obok wyniku pipeline'u SAR-owego w lekcji 6.3, więc każda decyzja (próg wody, zakres σ, dolny limit promienia) ma zaważyć na fairnessie porównania.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "trzy-etapy-pipeline",
+      "title": "Trzy etapy pipeline'u optycznego: woda → blob → filtr",
+      "sources": [
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Wreszcie pełna scena, pełna intencja: wykrywamy statki na **realnym kafelku Sentinel-2** z poprzedniej lekcji (SEN12MS, 256×256 px nad portem). To jest *optyczna połowa* capstone'u — w 6.3 ten sam port zobaczymy okiem Sentinela-1 i porównamy wyniki side-by-side. Reżim, w którym tu pracujemy, jest *podręcznikowo wygodny dla klasycznej wizji*: jasne, lokalnie skupione obiekty (kadłuby) na ciemnym, jednorodnym tle (woda) bez szumu multiplikatywnego. Dokładnie taki regime opisuje Crisp (2004, rozdział 5) jako klasyczny baseline dla detekcji obiektów na optyce.\n\n![Schemat trzyetapowego pipeline'u optycznego: wejscie S2 RGB -> (1) maska wody luma<0.15 z morfologia -> (2) blob_log w przestrzeni skali -> (3) filtr woda AND rozmiar w promieniach. Strzalki miedzy etapami pokazuja, jak kolejne kroki ucinaja zbior kandydatow.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pipeline-optyczny-flow-diagram.png)\n\nNasz pipeline ma **trzy świadomie rozdzielone etapy** — żaden z nich nie próbuje rozwiązać problemu sam, ale każdy redukuje przestrzeń kandydatów o około rząd wielkości:\n\n1. **Maska wody.** Statek na nabrzeżu albo dach budynku to nie cel. Najpierw więc decydujemy, *gdzie wolno* szukać. Przy braku pasma NIR-owego — Sentinel-2 ma B08, ale w SEN12MS dostajemy tylko B04/B03/B02 — używamy heurystyki opartej na **lumie**: woda jest najciemniejszą rzeczą w scenie portowej. Próg + otwarcie/zamknięcie + lekkie *zbuforowanie* (dilation), żeby jasne piksele statków-w-wodzie nie wypadły z maski.\n2. **`blob_log` w przestrzeni skali.** Klasyczny detektor blobów Lindeberga uruchamiamy na **całym** kafelku, nie tylko na masce. To celowe: pokaże nam *jaką pracę naprawdę wykona maska* — odrzuci dziesiątki blobów z lądu.\n3. **Filtr: woda AND rozmiar.** Centrum bloba musi leżeć w (zbuforowanej) masce wody **oraz** promień musi mieścić się w $[r_{\\min}, r_{\\max}]$. Pierwszy warunek wycina cele na lądzie; drugi — sub-pikselowe blaski fali i nadmiernie duże refleksy nabrzeży."
+      }
+    },
+    {
+      "id": "cztery-klatki-pipeline",
+      "title": "Cztery klatki: pipeline na realnym SEN12MS",
+      "description": "Każdy z czterech paneli to ten sam kafelek 256×256 px na innym etapie pipeline'u. Przyglądnij się, ile blobów odrzuca każda klatka — to jest właśnie ten kompromis liczba-vs-jakość, który CFAR w lekcji 6.3 rozwiąże adaptacyjnie.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/pipeline-optyczny-detekcja-statkow-1.png",
+        "alt": "Cztery panele 1x4 obok siebie, kazdy 256x256 px. Panel (1): Sentinel-2 RGB tej samej sceny portowej co w lekcji 6.1 — woda granat, kontenerowce jasne, nabrzeze szare, zabudowa kolorowa. Panel (2): maska wody jako jasnoniebieska plaszczyzna, gdzie 'jasniejszy odcien' to bufor (dilation 5 px) i ciemniejszy to oryginalna maska luma<0.15 — woda zajmuje ok. 70% kadru, kontur idzie wzdluz linii brzegowej i obejmuje wszystkie statki w buforze. Panel (3): ten sam S2 RGB z dorysowanymi cienkimi pomaranczowymi okregami 162 surowych detekcji blob_log — bloby sa wszedzie: na statkach, ale takze na nabrzezu, dachach, krawedziach. Panel (4): ten sam S2 RGB z grubymi zielonymi okregami 53 detekcji po filtrze (woda AND r in [2, 8] px) oraz cienkimi bialymi przerywanymi okregami 8 statkow-truth z bbox-owymi promieniami — wszystkie 8 truth pokrytych, brak detekcji na ladzie. Tytul calej figury: 'Pipeline optyczny detekcji statkow na S2 (SEN12MS): RGB -> maska wody -> blob_log -> filtr (woda AND rozmiar)'.",
+        "caption": "Rys. 1. Pipeline w czterech klatkach. (1) wejście, (2) maska wody z buforem, (3) 162 surowe kandydaty `blob_log` na całej scenie, (4) 53 detekcje po filtrze — wszystkie 8 prawdziwych statków znalezione, lądowe fałszywe alarmy zniknęły.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\nfrom pathlib import Path\nfrom scipy.ndimage import binary_opening, binary_closing, binary_dilation, label as ndi_label\nfrom skimage.feature import blob_log\n\nROOT = Path(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa\"\n)\nNPZ = ROOT / \"assets/inputs/setup-sceny-sen12ms-pair.npz\"\nOUT = ROOT / \"assets/plots/pipeline-optyczny-detekcja-statkow-1.png\"\n\ndata = np.load(NPZ)\ns2 = data[\"s2_rgb\"]\nclasses = data[\"classes\"]\nH, W = s2.shape[1], s2.shape[2]\n\n\ndef percentile_stretch(arr, lo=2, hi=98):\n    a, b = np.percentile(arr.astype(np.float32), [lo, hi])\n    return ((arr.astype(np.float32) - a) / max(b - a, 1e-9)).clip(0, 1)\n\n\nrgb = np.zeros((H, W, 3), dtype=np.float32)\nfor c in range(3):\n    rgb[..., c] = percentile_stretch(s2[c])\nluma = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]\n\nWATER_THRESH = 0.15\nDILATE_ITERS = 5\nwater = luma < WATER_THRESH\nwater = binary_opening(water, iterations=1)\nwater = binary_closing(water, iterations=2)\nwater_buf = binary_dilation(water, iterations=DILATE_ITERS)\n\nraw = blob_log(luma.astype(np.float32),\n               min_sigma=1.5, max_sigma=8.0, num_sigma=10, threshold=0.03)\nif raw.size > 0:\n    raw = raw.astype(np.float32)\n    raw[:, 2] = raw[:, 2] * np.sqrt(2.0)\nelse:\n    raw = np.zeros((0, 3), dtype=np.float32)\n\nR_MIN, R_MAX = 2.0, 8.0\nkeep_mask = np.array(\n    [\n        (R_MIN <= r <= R_MAX) and water_buf[int(round(y)), int(round(x))]\n        for (y, x, r) in raw\n    ],\n    dtype=bool,\n)\nfiltered = raw[keep_mask] if raw.size else raw\n\ntruth_lab, n_truth = ndi_label(classes == 1)\ntruth = []\nfor i in range(1, n_truth + 1):\n    ys, xs = np.where(truth_lab == i)\n    truth.append([float(ys.mean()), float(xs.mean()),\n                  0.5 * float(np.hypot(ys.ptp() + 1, xs.ptp() + 1))])\ntruth = np.array(truth, dtype=np.float32)\n\nfig, axes = plt.subplots(1, 4, figsize=(15.5, 4.4))\n\naxes[0].imshow(rgb, origin=\"upper\")\naxes[0].set_title(\"(1) Wejscie: S2 RGB\\n8 statkow ukrytych w wodzie\", fontsize=10)\naxes[0].set_xlabel(\"kolumna [px]\")\naxes[0].set_ylabel(\"wiersz [px]\")\n\naxes[1].imshow(water_buf, cmap=\"Blues\", origin=\"upper\", vmin=0, vmax=1)\naxes[1].imshow(water, cmap=\"Blues\", origin=\"upper\", vmin=0, vmax=1, alpha=0.6)\naxes[1].set_title(\n    f\"(2) Maska wody (jasniejsza = buffer)\\n\"\n    f\"luma<{WATER_THRESH:.2f} + open/close + dilate {DILATE_ITERS}\",\n    fontsize=10,\n)\naxes[1].set_xlabel(\"kolumna [px]\")\naxes[1].set_ylabel(\"wiersz [px]\")\n\naxes[2].imshow(rgb, origin=\"upper\")\nfor (y, x, r) in raw:\n    axes[2].add_patch(mpatches.Circle((x, y), r, fill=False,\n                                      edgecolor=\"#e07c00\", linewidth=1.0, alpha=0.85))\naxes[2].set_title(\n    f\"(3) blob_log na PELNYM obrazie\\nsurowe kandydaty: {len(raw)}\",\n    fontsize=10,\n)\naxes[2].set_xlabel(\"kolumna [px]\")\naxes[2].set_ylabel(\"wiersz [px]\")\n\naxes[3].imshow(rgb, origin=\"upper\")\nfor (y, x, r) in filtered:\n    axes[3].add_patch(mpatches.Circle((x, y), r, fill=False,\n                                      edgecolor=\"#2cb24a\", linewidth=1.6))\nfor (y, x, r) in truth:\n    axes[3].add_patch(mpatches.Circle((x, y), r, fill=False,\n                                      edgecolor=\"#ffffff\", linewidth=0.8, linestyle=\"--\"))\naxes[3].set_title(\n    f\"(4) Filtr: woda AND r in [{R_MIN:.0f},{R_MAX:.0f}] px\\n\"\n    f\"detekcji: {len(filtered)} / truth: {len(truth)}\",\n    fontsize=10,\n)\naxes[3].set_xlabel(\"kolumna [px]\")\naxes[3].set_ylabel(\"wiersz [px]\")\n\nfor ax in axes:\n    ax.tick_params(labelsize=8)\n\nfig.suptitle(\n    \"Pipeline optyczny detekcji statkow na S2 (SEN12MS): \"\n    \"RGB -> maska wody -> blob_log -> filtr (woda AND rozmiar)\",\n    fontsize=11,\n)\nfig.tight_layout(rect=[0, 0, 1, 0.93])\nfig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\nprint(\"OK:\", OUT)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "maska-wody-bez-nir",
+      "title": "Krok 1: maska wody bez NIR — heurystyka luma + bufor",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s2-mission",
+          "title": "Sentinel-2 User Guide (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W operacyjnych pipeline'ach optycznej teledetekcji statkową maskę wody buduje się zwykle z **indeksu NDWI** (McFeeters 1996): $\\mathrm{NDWI} = (B_\\text{Green} - B_\\text{NIR}) / (B_\\text{Green} + B_\\text{NIR})$. NDWI elegancko rozjeżdża dwie kategorie: woda silnie absorbuje NIR, więc ma duże dodatnie NDWI; roślinność i nieprzepuszczalne powierzchnie odbijają NIR, więc NDWI spada do zera albo poniżej. W *naszym* SEN12MS dostajemy jednak tylko trzy pasma widzialne (B04 / B03 / B02). NIR-u brak — i to jest punkt, w którym uczy się życiowej rzeczy: **gdy brakuje fizycznie poprawnego sygnału, używamy najsilniejszej heurystyki, jaka działa, i dokumentujemy, gdzie się rozpada.**\n\nDla naszego kafelka portu heurystyka jest prosta: **woda to najciemniejsza rzecz w scenie**. Liczymy lumę:\n\n$$ Y = 0{,}299\\,R + 0{,}587\\,G + 0{,}114\\,B $$\n\n(współczynniki ITU-R BT.601 — to po prostu standardowa konwersja RGB → szarość). Histogram lumy nad portem jest *bimodalny*: woda zbita w wąskim peaku poniżej 0,1, ląd rozciąga się od 0,3 do 1,0. Próg $Y < 0{,}15$ jest bezpiecznym wodorozdziałem.\n\n![Histogram wartosci lumy 0.299R+0.587G+0.114B dla calego kafelka 256x256 nad portem. Widoczne dwa wyrazne piki: bardzo waski i wysoki przy luma~0.04 (woda) oraz drugi, szerszy przy luma 0.5-0.9 (lad / nabrzeze / dachy). Czerwona przerywana pionowa kreska na luma=0.15 oznacza prog wody. Bardzo niewiele pikseli ma luma pomiedzy 0.15 a 0.3 — to ostatecznie czyni prog bezpiecznym.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pipeline-optyczny-luma-bimodal.png)\n\nDwa techniczne dodatki, bez których maska wciąga albo gubi cele:\n\n- **Otwarcie + zamknięcie** (3×3) usuwa pojedyncze izolowane piksele wody w cieniu nabrzeża i zamyka 1-pikselowe dziury w wodzie. To kosmetyka, ale bez niej miałbyś setki mikro-komponentów.\n- **Buforowanie (dilation o 5 px)** — kluczowe. **Wnętrze kadłuba statku ma jasność ok. 0,47**, więc samo `Y < 0{,}15` odcięłoby je od maski. Dilation o promień typowej szerokości statku sprawia, że *piksele blisko wody* też zaliczają się do maski. Bez tego stanu Twój pipeline pomyli 3 z 8 statków z lądem."
+      }
+    },
+    {
+      "id": "exercise-detect-ships-optical",
+      "title": "Zaimplementuj `detect_ships_optical` — pełny pipeline na SEN12MS",
+      "description": "Po lewej: oryginalny S2 RGB z 8 statkami. Po prawej: oczekiwany wynik — wszystkie statki obwiedzione zielonymi okręgami, brak detekcji na lądzie. Korzystasz z tej samej `setup-sceny-sen12ms-pair.npz`, którą załadowaliśmy w 6.1.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1023/A:1008045108935",
+          "title": "Feature detection with automatic scale selection",
+          "kind": "paper",
+          "author": "Tony Lindeberg",
+          "year": 1998
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.blob_log",
+          "title": "skimage.feature.blob_log — scikit-image documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `detect_ships_optical(s2_rgb_uint16)` realizującą **pełny trzy-etapowy pipeline** detekcji statków:\n\n- **wejście:** `np.ndarray` o kształcie `(3, 256, 256)`, `dtype=uint16`, kanały *channels-first* `(R, G, B)` w jednostkach DN (0–10000).\n- **wyjście:** `np.ndarray` o kształcie `(N, 3)`, `dtype=np.float32`, kolumny `[y, x, r]` (promień w pikselach). Pusta tablica `np.zeros((0, 3), dtype=np.float32)` gdy nic nie wykryto.\n\nKroki, dokładnie w tej kolejności:\n\n1. **Stretch + luma.** Dla każdego z trzech kanałów policz percentyl `[2, 98]` i przesktaluj do `[0, 1]` (`np.clip(...)` po normalizacji). Potem zsumuj wg ITU-R BT.601: `luma = 0.299*R + 0.587*G + 0.114*B`.\n2. **Maska wody.** `water = luma < 0.15`, potem `binary_opening(water, iterations=1)`, `binary_closing(water, iterations=2)`, a na końcu `binary_dilation(water, iterations=5)` (to jest ten *bufor*, który wpuszcza piksele statków).\n3. **`blob_log` na pełnej `luma`.** Parametry: `min_sigma=1.5`, `max_sigma=8.0`, `num_sigma=10`, `threshold=0.03`. Zwraca `(N, 3)` z kolumną `sigma` — przekonwertuj na promień: `r = sigma * sqrt(2)`. Jeśli `blob_log` zwrócił pustą tablicę, zwróć `np.zeros((0, 3), dtype=np.float32)`.\n4. **Filtr `woda AND rozmiar`.** Zachowaj blob jeśli: (a) `2.0 <= r <= 8.0` **oraz** (b) `water[int(round(y)), int(round(x))]` jest `True` (czyli centrum bloba leży w *zbuforowanej* masce wody).\n\n```\n>>> data = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\n>>> blobs = detect_ships_optical(data['s2_rgb'])\n>>> blobs.shape[1] == 3 and blobs.dtype == np.float32   # True\n>>> 6 <= blobs.shape[0] <= 80                            # True\n```\n\nTesty weryfikują (a) format i `dtype`, (b) liczbę detekcji w realistycznym zakresie, (c) **pokrycie ground-truth** — co najmniej 7 z 8 prawdziwych statków (`classes == 1`) musi mieć detekcję w odległości $\\leq 3 \\cdot r_\\text{truth}$ od centrum.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing, binary_dilation\nfrom skimage.feature import blob_log\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\nNPZ_PATH = '/inputs/setup-sceny-sen12ms-pair.npz'\n\n\ndef detect_ships_optical(s2_rgb_uint16):\n    \"\"\"Wykryj statki na kafelku Sentinel-2.\n\n    s2_rgb_uint16: np.ndarray (3, H, W) uint16 -- kanaly B04/B03/B02 (R, G, B) w DN.\n    zwraca: np.ndarray (N, 3) float32 -- kolumny [y, x, r] (promien w pikselach).\n    \"\"\"\n    s2 = np.asarray(s2_rgb_uint16)\n    H, W = s2.shape[1], s2.shape[2]\n\n    # === Krok 1: stretch percentylowy 2-98 per kanal + luma BT.601 ===\n    rgb = np.zeros((H, W, 3), dtype=np.float32)\n    for c in range(3):\n        lo, hi = np.percentile(s2[c].astype(np.float32), [2, 98])\n        # TODO: rgb[..., c] = np.clip((s2[c].astype(np.float32) - lo) / max(hi - lo, 1e-9), 0.0, 1.0)\n        pass\n    # TODO: luma = 0.299*rgb[..., 0] + 0.587*rgb[..., 1] + 0.114*rgb[..., 2]\n    luma = np.zeros((H, W), dtype=np.float32)\n\n    # === Krok 2: maska wody luma<0.15 + opening + closing + dilation 5 ===\n    # TODO: water = luma < 0.15\n    # TODO: water = binary_opening(water, iterations=1)\n    # TODO: water = binary_closing(water, iterations=2)\n    # TODO: water = binary_dilation(water, iterations=5)\n    water = np.zeros((H, W), dtype=bool)\n\n    # === Krok 3: blob_log na pelnej lumie, sigma -> r ===\n    # TODO: blobs = blob_log(luma.astype(np.float32), min_sigma=1.5, max_sigma=8.0,\n    #                       num_sigma=10, threshold=0.03)\n    # TODO: if blobs.size == 0: return np.zeros((0, 3), dtype=np.float32)\n    # TODO: blobs = blobs.astype(np.float32);  blobs[:, 2] *= np.sqrt(2.0)\n    blobs = np.zeros((0, 3), dtype=np.float32)\n\n    # === Krok 4: filtr woda AND r in [2.0, 8.0] ===\n    R_MIN, R_MAX = 2.0, 8.0\n    keep = []\n    for (y, x, r) in blobs:\n        # TODO: jesli r poza [R_MIN, R_MAX] -> pomin\n        # TODO: yi = int(round(y)); xi = int(round(x))\n        # TODO: jesli yi/xi poza zakresem albo water[yi, xi] == False -> pomin\n        # TODO: keep.append([y, x, r])\n        pass\n    return np.array(keep, dtype=np.float32) if keep else np.zeros((0, 3), dtype=np.float32)\n\n\n# --- Preview: detekcja na realnym SEN12MS ---\ndata = np.load(NPZ_PATH)\nrgb_u16 = data['s2_rgb']\nclasses = data['classes']\n\nblobs = detect_ships_optical(rgb_u16)\n\n# Stretch RGB do wyswietlenia\nH, W = rgb_u16.shape[1], rgb_u16.shape[2]\nrgb_disp = np.zeros((H, W, 3), dtype=np.float32)\nfor c in range(3):\n    lo, hi = np.percentile(rgb_u16[c].astype(np.float32), [2, 98])\n    rgb_disp[..., c] = np.clip((rgb_u16[c].astype(np.float32) - lo) / max(hi - lo, 1e-9), 0, 1)\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.4), constrained_layout=True)\naxes[0].imshow(rgb_disp, origin='upper')\naxes[0].set_title('Wejscie: S2 RGB (B04/B03/B02)', fontsize=10)\naxes[0].set_xlabel('kolumna [px]')\naxes[0].set_ylabel('wiersz [px]')\n\naxes[1].imshow(rgb_disp, origin='upper')\nfor (y, x, r) in blobs:\n    axes[1].add_patch(mpatches.Circle((x, y), r, fill=False, edgecolor='#2cb24a', linewidth=1.6))\nfrom scipy.ndimage import label as _ndi_label\nlab_t, n_t = _ndi_label(classes == 1)\nfor i in range(1, n_t + 1):\n    ys, xs = np.where(lab_t == i)\n    cy, cx = float(ys.mean()), float(xs.mean())\n    rr = 0.5 * float(np.hypot(ys.ptp() + 1, xs.ptp() + 1))\n    axes[1].add_patch(mpatches.Circle((cx, cy), rr, fill=False,\n                                      edgecolor='#ffffff', linewidth=0.8, linestyle='--'))\naxes[1].set_title(\n    f'detect_ships_optical: zielone = detekcja ({len(blobs)}), biale = truth ({n_t})',\n    fontsize=10,\n)\naxes[1].set_xlabel('kolumna [px]')\naxes[1].set_ylabel('wiersz [px]')\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_n_by_3_float32",
+            "body": "import numpy as np\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = detect_ships_optical(data['s2_rgb'])\nout = np.asarray(out)\nassert out.ndim == 2 and out.shape[1] == 3, f'oczekiwano shape (N, 3), otrzymano {out.shape}'\nassert out.dtype == np.float32, f'oczekiwano dtype float32, otrzymano {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "detection_count_in_realistic_range",
+            "body": "import numpy as np\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = np.asarray(detect_ships_optical(data['s2_rgb']))\nn = out.shape[0]\nassert 6 <= n <= 80, (\n    f'liczba detekcji = {n}; oczekiwano 6-80 dla referencyjnych parametrow pipeline. '\n    f'Czeste przyczyny: (a) niewlasciwy prog water (0.15 to wartosc referencyjna), '\n    f'(b) brak dilation maski wody (statki nie zalapuja sie do maski), '\n    f'(c) zbyt wysoki threshold w blob_log (kanonicznie 0.03).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_at_least_7_of_8_truth_ships",
+            "body": "import numpy as np\nfrom scipy.ndimage import label as _ndi_label\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = np.asarray(detect_ships_optical(data['s2_rgb']))\nassert out.size > 0, 'brak detekcji'\nlab_t, n_t = _ndi_label(data['classes'] == 1)\ntruth = []\nfor i in range(1, n_t + 1):\n    ys, xs = np.where(lab_t == i)\n    truth.append([float(ys.mean()), float(xs.mean()),\n                  0.5 * float(np.hypot(ys.ptp() + 1, xs.ptp() + 1))])\ntruth = np.array(truth, dtype=np.float32)\nmatched = 0\nfor (ty, tx, tr) in truth:\n    d = np.hypot(out[:, 0] - ty, out[:, 1] - tx)\n    if (d <= 3.0 * tr).any():\n        matched += 1\nassert matched >= 7, (\n    f'pokryto {matched}/{int(n_t)} prawdziwych statkow (`classes == 1`). '\n    f'Oczekiwane >= 7. Najczestsze przyczyny: (a) brak dilation maski wody -- jasne centra '\n    f'statkow (luma ~0.47) wypadaja z maski bez bufora, (b) niewlasciwa konwersja sigma -> r '\n    f'(zapomniany sqrt(2) lub nadpisanie kolumny), (c) zly zakres R_MIN/R_MAX (referencyjnie [2, 8]).'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing, binary_dilation\nfrom skimage.feature import blob_log\n\n\ndef detect_ships_optical(s2_rgb_uint16):\n    s2 = np.asarray(s2_rgb_uint16)\n    H, W = s2.shape[1], s2.shape[2]\n\n    rgb = np.zeros((H, W, 3), dtype=np.float32)\n    for c in range(3):\n        lo, hi = np.percentile(s2[c].astype(np.float32), [2, 98])\n        rgb[..., c] = np.clip((s2[c].astype(np.float32) - lo) / max(hi - lo, 1e-9), 0.0, 1.0)\n    luma = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]\n\n    water = luma < 0.15\n    water = binary_opening(water, iterations=1)\n    water = binary_closing(water, iterations=2)\n    water = binary_dilation(water, iterations=5)\n\n    blobs = blob_log(luma.astype(np.float32),\n                     min_sigma=1.5, max_sigma=8.0, num_sigma=10, threshold=0.03)\n    if blobs.size == 0:\n        return np.zeros((0, 3), dtype=np.float32)\n    blobs = blobs.astype(np.float32)\n    blobs[:, 2] = blobs[:, 2] * np.sqrt(2.0)\n\n    R_MIN, R_MAX = 2.0, 8.0\n    keep = []\n    for (y, x, r) in blobs:\n        if not (R_MIN <= r <= R_MAX):\n            continue\n        yi, xi = int(round(y)), int(round(x))\n        if not (0 <= yi < H and 0 <= xi < W):\n            continue\n        if not water[yi, xi]:\n            continue\n        keep.append([y, x, r])\n    return np.array(keep, dtype=np.float32) if keep else np.zeros((0, 3), dtype=np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pipeline-optyczny-input.png",
+            "alt": "Sentinel-2 RGB (B04/B03/B02) 256x256 px nad portem morskim po stretch'u percentylowym 2-98: woda granat zajmuje ok. 70% kadru, kolorowe nabrzeze i zabudowa w prawej dolnej cwiartce, osiem maleńkich jasnych prostokątów-statków rozsianych po obszarze wody.",
+            "caption": "Wejście: kafelek S2 RGB z SEN12MS — ten sam, który ładowaliśmy w 6.1."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair.npz",
+            "filename": "setup-sceny-sen12ms-pair.npz",
+            "caption": "Para SEN12MS z 6.1: klucze `s2_rgb` (uint16, 3×256×256), `s1_vv_linear`, `s1_vh_linear`, `classes` (truth label per piksel — 1 = statek)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pipeline-optyczny-expected.png",
+          "alt": "Ten sam kafelek S2 RGB 256x256 co na wejsciu, z dorysowanymi grubymi zielonymi okregami w miejscach wykrytych statkow (ok. 50 okregow skupionych w 8 lokalizacjach) oraz cienkimi bialymi przerywanymi okregami o promieniach z bbox-a kazdego z 8 prawdziwych statkow (truth). Wszystkie 8 prawdziwych statkow zostalo pokrytych przez detekcje; brak detekcji na ladzie (prawa dolna cwiartka).",
+          "caption": "Cel: tak ma wyglądać scena po `detect_ships_optical(rgb)` — wszystkie 8 statków pokryte, lądowe fałszywe alarmy odcięte filtrem woda+rozmiar.",
+          "live": true
+        },
+        "requiresPackages": [
+          "scikit-image"
+        ]
+      }
+    },
+    {
+      "id": "quiz-gdzie-pipeline-peknie",
+      "title": "Gdzie ten pipeline pęknie?",
+      "description": "Wszystkie cztery scenariusze są realistyczne — zaznacz te, w których nasz konkretny pipeline (luma<0.15 + open/close/dilate + blob_log + filtr woda AND r∈[2,8]) zacznie zauważalnie zawodzić.",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na cztery realne rozszerzenia tej samej sceny portowej. W których z nich nasz dokładnie ten pipeline (`luma<0.15`, opening/closing, dilation 5, `blob_log` σ∈[1.5, 8], filtr `woda AND r∈[2, 8]`) **zauważalnie się rozpada**? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Bezchmurny dzień, ale silne fale w basenie portowym podnoszą lokalną lumę wody do 0.25–0.35 na grzbietach fal.",
+          "Część kadru pokrywają **chmury cirrus** (luma 0.3–0.5 na powierzchni morza) — uczeń próbuje wykryć statki pod chmurami.",
+          "Scenę powiększono digital-zoomem 2×: ten sam port, ale każdy statek zajmuje teraz 60 × 8 px zamiast 30 × 4 px.",
+          "Identyczna scena, ale z innego dnia, w którym **woda jest bardzo gładka** i ma jednorodnie niską lumę 0.02–0.05 (np. ranek bez wiatru)."
+        ],
+        "correct": [
+          0,
+          1,
+          2
+        ],
+        "explanation": "**(A) Tak** — grzbiety fal o lumie 0.25–0.35 wypadają z maski wody (`luma < 0.15`), więc statki na falujacej wodzie tracą bufor maski i `blob_log` może je oznaczyć jako *poza wodą*. Klasyczna lekcja: heurystyka oparta na pojedynczym progu jasności wkurzy się natychmiast, gdy stan morza wzrośnie. **(B) Tak, drastycznie** — chmura cirrus podnosi lokalną lumę powyżej 0.15, więc cały region pod chmurą jest klasyfikowany jako *ląd*. To **fundamentalny limit optyki**, nie pipeline'u — i dokładnie ten przypadek, w którym SAR z 6.3 jest niezastąpiony. **(C) Tak** — po digital-zoomie statki zajmują obszary o promieniu ~10–15 px, czyli **poza naszym `R_MAX = 8`**. Filtr rozmiaru je odrzuci. Lekcja: parametry pipeline'u nie skalują się automatycznie z rozdzielczością — albo skalujemy `R_MIN/R_MAX`, albo trzymamy stałe GSD. **(D)** to jedyna opcja **fałszywa**: gładka woda z lumą 0.02–0.05 jest *jeszcze łatwiejszym* przypadkiem dla pipeline'u — maska wody jest perfekcyjnie czysta, kontrast statek-woda jeszcze większy, fałszywe alarmy maleją. To wręcz najlepszy regime dla optyki. Co dokładnie znaczy: nasz pipeline jest dobrym baseline'em, ale jego trzy główne kruche punkty to **stan morza, zachmurzenie i rozdzielczość** — i dokładnie dlatego porównanie z SAR w 6.3 (który nie zależy od żadnego z tych trzech czynników) jest tak pouczające.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-pokrec-progami",
+      "title": "Pokręć progami i obejrzyj, co ginie",
+      "description": "Ten sam kafelek SEN12MS, bez testów. Każde pokrętło zmienia inną kruchość pipeline'u — zobacz, gdzie wskoczą fałszywe alarmy, a gdzie zaczną znikać prawdziwe statki.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_opening, binary_closing, binary_dilation\nfrom skimage.feature import blob_log\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nrgb_u16 = data['s2_rgb']\nclasses = data['classes']\nH, W = rgb_u16.shape[1], rgb_u16.shape[2]\n\nrgb = np.zeros((H, W, 3), dtype=np.float32)\nfor c in range(3):\n    lo, hi = np.percentile(rgb_u16[c].astype(np.float32), [2, 98])\n    rgb[..., c] = np.clip((rgb_u16[c].astype(np.float32) - lo) / max(hi - lo, 1e-9), 0, 1)\nluma = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]\n\n# === Pokretla pipeline'u ===\nWATER_THRESH = 0.15   # podnies do 0.25 -> wody wpadnie znacznie wiecej, w tym jasne nabrzeze\n                      # obniz do 0.05  -> czesc wody wypadnie z maski, statki zaczna byc 'na ladzie'\nDILATE_ITERS = 5      # zwieksz do 12  -> maska siegnie nabrzeza; zmniejsz do 0 -> statki wypadna z maski\nMIN_SIGMA = 1.5       # zmniejsz do 0.8 -> kazda grzywa fali bedzie blobem\nTHRESHOLD = 0.03      # podnies do 0.10 -> ginie ok. polowy detekcji; obniz do 0.01 -> dziesiatki falszywek\nR_MIN, R_MAX = 2.0, 8.0   # zmien na 5..8 -> tylko duze statki przejda\n\n# Stage 1: water mask\nwm = luma < WATER_THRESH\nwm = binary_opening(wm, iterations=1)\nwm = binary_closing(wm, iterations=2)\nif DILATE_ITERS > 0:\n    wm = binary_dilation(wm, iterations=DILATE_ITERS)\n\n# Stage 2: blob_log\nblobs = blob_log(luma.astype(np.float32), min_sigma=MIN_SIGMA, max_sigma=8.0,\n                 num_sigma=10, threshold=THRESHOLD)\nif blobs.size > 0:\n    blobs = blobs.astype(np.float32)\n    blobs[:, 2] = blobs[:, 2] * np.sqrt(2.0)\nelse:\n    blobs = np.zeros((0, 3), dtype=np.float32)\n\n# Stage 3: filter\nkept = []\nfor (y, x, r) in blobs:\n    if not (R_MIN <= r <= R_MAX):\n        continue\n    yi, xi = int(round(y)), int(round(x))\n    if not (0 <= yi < H and 0 <= xi < W):\n        continue\n    if not wm[yi, xi]:\n        continue\n    kept.append([y, x, r])\nkept = np.array(kept, dtype=np.float32) if kept else np.zeros((0, 3), dtype=np.float32)\n\nprint(f'WATER_THRESH={WATER_THRESH}, DILATE_ITERS={DILATE_ITERS}, '\n      f'MIN_SIGMA={MIN_SIGMA}, THRESHOLD={THRESHOLD}, R_MIN={R_MIN}, R_MAX={R_MAX}')\nprint(f'surowe bloby: {len(blobs)}, po filtrze: {len(kept)}')\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.4), constrained_layout=True)\naxes[0].imshow(wm, cmap='Blues', origin='upper')\naxes[0].set_title(f'Maska wody (thr={WATER_THRESH}, dilate={DILATE_ITERS})', fontsize=10)\naxes[0].set_xlabel('kolumna [px]')\naxes[0].set_ylabel('wiersz [px]')\n\naxes[1].imshow(rgb, origin='upper')\nfor (y, x, r) in kept:\n    axes[1].add_patch(mpatches.Circle((x, y), r, fill=False,\n                                      edgecolor='#2cb24a', linewidth=1.6))\naxes[1].set_title(f'Detekcje: {len(kept)} (truth = 8)', fontsize=10)\naxes[1].set_xlabel('kolumna [px]')\naxes[1].set_ylabel('wiersz [px]')\nplt.show()\n",
+        "encouragement": "Zacznij od `THRESHOLD=0.01` przy `DILATE_ITERS=0` — zobaczysz, jak na falującym tle wskakują dziesiątki fałszywek; potem stopniowo podnoś próg i przywróć dilation, a poczujesz, w którym momencie obraz robi się 'pipeline-czysty'."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+      "title": "Ship Surveillance with TerraSAR-X",
+      "kind": "paper",
+      "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+      "year": 2011
+    },
+    {
+      "url": "https://doi.org/10.1023/A:1008045108935",
+      "title": "Feature detection with automatic scale selection",
+      "kind": "paper",
+      "author": "Tony Lindeberg",
+      "year": 1998
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.blob_log",
+      "title": "skimage.feature.blob_log — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s2-mission",
+      "title": "Sentinel-2 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s2-applications",
+      "title": "Sentinel-2 — Maritime applications (ESA SentiWiki)",
+      "kind": "article"
+    }
+  ]
+}

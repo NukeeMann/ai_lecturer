@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 1,
+  "slug": "polarymetria-hhhvvvvh-zamiast-rgb",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Polarymetria — HH/HV/VV/VH zamiast RGB",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Cztery polaryzacje radaru nie sa „kolorem koloru\" SAR — koduja mechanizm fizyczny rozpraszania (powierzchniowe, podwojne odbicie, wolumetryczne). Zobaczymy fizyke H/V, schemat TX/RX, mechanizmy scattering, a potem wlasnorecznie zaimplementujesz dekompozycje Pauli — pseudo-RGB SAR — na syntetycznej scenie z trzema rejonami (woda / las / miasto).",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "intro-h-v",
+      "title": "Cztery kombinacje TX/RX, nie trzy kanaly koloru",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Radar_polarimetry",
+          "title": "Radar polarimetry — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+          "title": "Sentinel-1 Polarimetry overview (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Obraz optyczny ma trzy kanaly — R, G, B — ktore koduja **kolor** kazdego piksela: ile czerwonego, zielonego i niebieskiego swiatla odbilo sie od powierzchni. Trzy liczby skorelowane przez fizyke widma odbicia: lisc zielony, asfalt szary, woda lekko niebieska.\n\nSAR pracuje w pasmie mikrofalowym (Sentinel-1: pasmo C, $\\lambda \\approx 5{,}547$ cm) i ma **inny stopien swobody niz kolor** — **polaryzacje** fali elektromagnetycznej. Polaryzacja to po prostu orientacja drgan pola elektrycznego $E$ fali. Dla fali liniowej mozliwe sa dwie ortogonalne polaryzacje: **H** (drgania w plaszczyznie poziomej) i **V** (drgania w plaszczyznie pionowej). Wiazka radarowa propaguje wzdluz osi nadir-cel, a pole $E$ oscyluje *prostopadle* do tej osi.\n\n![Dwa panele obok siebie ilustrujace liniowe polaryzacje fali EM: lewy panel pokazuje fale spolaryzowana H — czerwona sinusoida wzdluz osi propagacji z poziomymi strzalkami wskazujacymi orientacje pola elektrycznego w plaszczyznie poziomej; prawy panel pokazuje fale spolaryzowana V — niebieska sinusoida wzdluz tej samej osi z pionowymi strzalkami wskazujacymi orientacje pola elektrycznego w plaszczyznie pionowej; ten sam okres i ta sama amplituda w obu panelach podkreslaja, ze rozni je wylacznie orientacja pola E](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/polarization-h-v-waves.png)\n\nSentinel-1 moze *wyemitowac* impuls w polaryzacji H albo V (jedna naraz, wybor w cyklu repetycji) i *odebrac* echo w obu polaryzacjach jednoczesnie. Dla kazdego piksela mamy wiec do czterech mozliwych kombinacji TX/RX, oznaczanych dwoma literami — **pierwsza = nadawana (TX), druga = odbierana (RX)**:\n\n- **HH** — TX H, RX H (co-polaryzacja)\n- **HV** — TX H, RX V (cross-polaryzacja)\n- **VH** — TX V, RX H (cross-polaryzacja)\n- **VV** — TX V, RX V (co-polaryzacja)\n\nW praktyce Sentinel-1 nad ladem (tryb IW) rejestruje tylko pare VV+VH (albo HH+HV) — pelnopolarymetryczne dane HH/HV/VV/VH sa domena RADARSAT-2 i ALOS-2 PALSAR. Niezaleznie od liczby kanalow, **te cztery liczby nie sa kolorem RGB** — kazda z nich koduje *mechanizm fizyczny rozpraszania* w pasmie mikrofalowym, nie spektrum widzialne odbitego swiatla."
+      }
+    },
+    {
+      "id": "tx-rx-matrix",
+      "title": "Macierz polarymetryczna SAR: schemat TX/RX",
+      "description": "Cztery kombinacje (TX, RX) — kazdy panel pokazuje, jaka polaryzacja wychodzi z anteny i jaka wraca. HH i VV to co-pol; HV i VH to cross-pol.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/polarymetria-hhhvvvvh-zamiast-rgb-1.png",
+        "alt": "Cztery panele 2x2 ilustrujace cztery kombinacje TX/RX SAR. Lewy gorny panel HH (co-pol, TX H -> RX H): prostokat 'SAR' w lewym gornym rogu, prostokat 'cel' w prawym dolnym, czerwona strzalka (TX) leci od SAR do celu z poziomym dwukierunkowym wektorem polaryzacji w polowie, niebieska strzalka (RX) wraca z poziomym wektorem polaryzacji. Prawy gorny panel HV (cross-pol, TX H -> RX V): czerwona TX z poziomym wektorem, niebieska RX z pionowym wektorem. Lewy dolny panel VH (cross-pol, TX V -> RX H): czerwona TX z pionowym wektorem, niebieska RX z poziomym. Prawy dolny panel VV (co-pol, TX V -> RX V): obie strzalki z wektorami pionowymi. Kazdy panel ma siatke 10x10, osie x i y w jednostkach umownych i tytul z nazwa kombinacji",
+        "caption": "Rys. 1. Cztery kombinacje TX/RX SAR. Konwencja: pierwsza litera = polaryzacja nadawana, druga = polaryzacja odbierana. HH i VV to co-pol (zachowanie polaryzacji), HV i VH to cross-pol (przelaczenie pomiedzy H i V).",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport numpy as np\n\nLABELS = [\n    (\"HH\", \"H\", \"H\", \"co-pol\"),\n    (\"HV\", \"H\", \"V\", \"cross-pol\"),\n    (\"VH\", \"V\", \"H\", \"cross-pol\"),\n    (\"VV\", \"V\", \"V\", \"co-pol\"),\n]\n\nfig, axes = plt.subplots(2, 2, figsize=(10.5, 8.0))\naxes = axes.ravel()\n\nfor ax, (name, tx, rx, kind) in zip(axes, LABELS):\n    ax.set_xlim(0, 10)\n    ax.set_ylim(0, 10)\n    ax.set_aspect(\"equal\")\n    ax.set_xticks(np.arange(0, 11, 2))\n    ax.set_yticks(np.arange(0, 11, 2))\n    ax.set_xlabel(\"x [a.u.]\")\n    ax.set_ylabel(\"y [a.u.]\")\n    ax.set_title(f\"{name} ({kind}): TX {tx} -> RX {rx}\", fontsize=12)\n    ax.grid(True, alpha=0.3)\n\n    ax.add_patch(plt.Rectangle((0.5, 7.8), 1.4, 1.0, facecolor=\"#444\", edgecolor=\"black\"))\n    ax.text(1.2, 8.3, \"SAR\", color=\"white\", fontsize=8, ha=\"center\", va=\"center\")\n\n    ax.add_patch(plt.Rectangle((8.0, 2.5), 1.2, 1.2, facecolor=\"#cccccc\", edgecolor=\"black\"))\n    ax.text(8.6, 3.1, \"cel\", color=\"black\", fontsize=8, ha=\"center\", va=\"center\")\n\n    ax.annotate(\"\", xy=(7.9, 3.0), xytext=(1.9, 8.0),\n                arrowprops=dict(arrowstyle=\"->\", color=\"#c0392b\", lw=1.8))\n    midx, midy = 4.9, 5.5\n    if tx == \"H\":\n        ax.annotate(\"\", xy=(midx + 0.7, midy), xytext=(midx - 0.7, midy),\n                    arrowprops=dict(arrowstyle=\"<->\", color=\"#c0392b\", lw=2.2))\n        ax.text(midx, midy - 0.7, f\"TX {tx}\", color=\"#c0392b\", fontsize=9, ha=\"center\")\n    else:\n        ax.annotate(\"\", xy=(midx, midy + 0.7), xytext=(midx, midy - 0.7),\n                    arrowprops=dict(arrowstyle=\"<->\", color=\"#c0392b\", lw=2.2))\n        ax.text(midx + 0.8, midy, f\"TX {tx}\", color=\"#c0392b\", fontsize=9, va=\"center\")\n\n    ax.annotate(\"\", xy=(1.9, 7.7), xytext=(7.9, 2.7),\n                arrowprops=dict(arrowstyle=\"->\", color=\"#2b6cb0\", lw=1.8))\n    midx2, midy2 = 5.1, 5.0\n    if rx == \"H\":\n        ax.annotate(\"\", xy=(midx2 + 0.7, midy2 - 0.7), xytext=(midx2 - 0.7, midy2 - 0.7),\n                    arrowprops=dict(arrowstyle=\"<->\", color=\"#2b6cb0\", lw=2.2))\n        ax.text(midx2, midy2 - 1.4, f\"RX {rx}\", color=\"#2b6cb0\", fontsize=9, ha=\"center\")\n    else:\n        ax.annotate(\"\", xy=(midx2 - 0.5, midy2 + 0.7), xytext=(midx2 - 0.5, midy2 - 0.7),\n                    arrowprops=dict(arrowstyle=\"<->\", color=\"#2b6cb0\", lw=2.2))\n        ax.text(midx2 - 1.4, midy2, f\"RX {rx}\", color=\"#2b6cb0\", fontsize=9, va=\"center\")\n\nfig.suptitle(\n    \"Macierz polarymetryczna SAR: cztery kombinacje TX/RX zamiast trzech kanalow RGB\",\n    fontsize=13,\n)\nplt.tight_layout(rect=[0, 0, 1, 0.94])\nplt.savefig(\"polarymetria-hhhvvvvh-zamiast-rgb-1.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "rgb-misconception-quiz",
+      "title": "Sprawdz: czy HH/HV/VV/VH to RGB radaru?",
+      "type": "quiz",
+      "data": {
+        "question": "Ktore stwierdzenia o czterech polaryzacjach HH/HV/VV/VH w produkcie SAR sa PRAWDZIWE? (zaznacz wszystkie pasujace)",
+        "options": [
+          "HH/HV/VV/VH to po prostu cztery kanaly koloru SAR — odpowiednik R, G, B oraz alfa-kanalu w grafice komputerowej; mozna je traktowac jak warstwy RGBA i interpretowac spektralnie.",
+          "Pierwsza litera oznacza polaryzacje, w ktorej radar nadaje impuls, druga — polaryzacje, w ktorej mierzy echo. HV znaczy wiec „nadaj H, odbierz V\" (cross-polaryzacja).",
+          "Sentinel-1 nad ladem (tryb IW) zazwyczaj rejestruje pelne quad-pol HH/HV/VV/VH; pelnopolarymetryczne dane sa standardem dla tej misji nad obszarami zaludnionymi.",
+          "Cztery kombinacje TX/RX koduja *mechanizm rozpraszania* mikrofal (powierzchniowe, podwojne odbicie, wolumetryczne), a nie barwe w spektrum widzialnym — to fundamentalnie inna informacja niz w RGB."
+        ],
+        "correct": [
+          1,
+          3
+        ],
+        "explanation": "Opcja 1 jest falszywa: RGB to model spektralny w pasmie widzialnym (intensywnosci swiatla czerwonego, zielonego i niebieskiego); polarymetria SAR koduje orientacje pola elektrycznego mikrofali — fundamentalnie inna fizyka. Pomylenie polaryzacji z kolorem to klasyczny pulapka tej dziedziny. Opcja 2 jest prawdziwa: konwencja ESA, Wikipedii i wiekszosci podrecznikow (Cumming & Wong, Lee & Pottier) — pierwsza litera = TX, druga = RX. HV to TX H -> RX V (cross-pol). Opcja 3 jest falszywa: Sentinel-1 nad ladem w trybie IW nadaje TYLKO jedna polaryzacje naraz (H albo V) i odbiera w obu, wiec dostajemy dual-pol VV+VH (lub HH+HV), nigdy quad-pol. Pelna quad-pol HH/HV/VV/VH to domena RADARSAT-2 (Quad-Pol mode) i ALOS-2 PALSAR-2. To wlasnie dlatego dekompozycje Pauli na 'czystym' Sentinel-1 robi sie w wariancie zubozonym (tylko VV+VH). Opcja 4 jest prawdziwa i jest sercem calej lekcji: surface / double-bounce / volume to trzy ortogonalne mechanizmy fizyczne, ktorych RGB nie kodują w ogole.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "pauli-decomposition",
+      "title": "Mechanizmy rozpraszania i dekompozycja Pauliego",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.485127",
+          "title": "A review of target decomposition theorems in radar polarimetry",
+          "kind": "paper",
+          "author": "Shane R. Cloude and Eric Pottier",
+          "year": 1996
+        },
+        {
+          "url": "https://www.routledge.com/Polarimetric-Radar-Imaging-From-Basics-to-Applications/Lee-Pottier/p/book/9781420054972",
+          "title": "Polarimetric Radar Imaging: From Basics to Applications, Ch. 2-3",
+          "kind": "book",
+          "author": "Jong-Sen Lee and Eric Pottier",
+          "year": 2009
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Dlaczego cztery polaryzacje sa naprawde uzyteczne? Bo **rozne mechanizmy rozpraszania zachowuja sie roznie wzgledem H i V** — i ta roznica jest deterministyczna sygnatura fizyczna, nie szumem. Trzy kanonicznе mechanizmy:\n\n**Surface scattering — powierzchnia odbijajaca** (gladka woda, mokry asfalt, golе podloze). Powierzchnia odbija fale prawie jak lustro, orientacja polaryzacji jest zachowana. Konsekwencja: $HH \\approx VV$ (z ta sama faza) i $HV \\approx 0$ (zaden cross-pol).\n\n**Double-bounce — odbicie dwukrotne** (sciana budynku + grunt, dihedry, pnie drzew + ziemia). Dwa odbicia od ortogonalnych powierzchni odwracaja faze co-polaryzacji o $\\pi$ — sciana i grunt zachowuja sie jak para luster, ale dla pola elektrycznego zorientowanego rownolegle do osi krawedzi nastepuje dodatkowe odwrocenie znaku. Konsekwencja: $HH \\approx -VV$. Cross-pol pozostaje niewielki. To dlatego porty, miasta i ogrodzenia swieca jak lampy na obrazach SAR.\n\n**Volume scattering — wolumetryczne** (korona lasu, ssniezne czaszki, zaroski). Wewnatrz losowo zorientowanej masy rozpraszaczy kazda padajaca polaryzacja jest czesciowo przeksztalcana w ortogonalna. Cross-pol staje sie znaczny: $|HV| \\approx |VH| \\gg 0$, podczas gdy $|HH|$ i $|VV|$ pozostaja umiarkowane i nieskorelowane fazowo.\n\n**Dekompozycja Pauli** (Cloude i Pottier, 1996) przeklada te trzy mechanizmy na trzy syntetyczne kanaly:\n\n$$ \\alpha = \\frac{HH + VV}{\\sqrt{2}}, \\quad \\beta = \\frac{HH - VV}{\\sqrt{2}}, \\quad \\gamma = \\frac{HV + VH}{\\sqrt{2}} $$\n\nWyswietlajac amplitudy ($|\\beta|$, $|\\gamma|$, $|\\alpha|$) jako trzy kanaly (R, G, B) obrazu, dostajemy **pseudo-RGB SAR** w ktorym kolor *odczytuje fizyke sceny*:\n\n| kanal | formula        | mechanizm        | typowa scena            |\n|-------|----------------|------------------|-------------------------|\n| R     | $\\|HH-VV\\|$    | double-bounce    | budynki, port, miasto   |\n| G     | $\\|HV+VH\\|$    | volume           | las, zarosla, gleba sucha |\n| B     | $\\|HH+VV\\|$    | surface          | woda, asfalt, mokre pola |\n\n![Synthetic Pauli pseudo-RGB obrazek 192x256 px z trzema pionowymi pasmami: lewa trzecia czesc niebieska (woda, dominuje kanal B = |HH+VV|, surface scattering), srodkowa zielona (las, dominuje kanal G = |HV+VH|, volume scattering), prawa czerwona (miasto, dominuje kanal R = |HH-VV|, double-bounce); na kazdym pasmie biala etykieta informuje, ktory kanal i mechanizm rozpraszania dominuje](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pauli-rgb-synthetic-scene.png)\n\nTo nie jest „prawdziwy kolor\" — to **bezposredni odczyt fizyki sceny** w trzech ortogonalnych mechanizmach. Za chwile zaimplementujesz dekompozycje w numpy na syntetycznej scenie z trzema rejonami."
+      }
+    },
+    {
+      "id": "match-pauli-mechanisms",
+      "title": "Dopasuj kanal Pauli do mechanizmu rozpraszania",
+      "description": "Trzy syntetyczne kanaly Pauliego, trzy mechanizmy fizyczne, trzy typowe sceny z Sentinel-1. Polacz w trojki.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Dopasuj kazdy kanal dekompozycji Pauli do mechanizmu rozpraszania, ktory on dominuje wykrywa, i typowej sceny.",
+        "items": [
+          {
+            "id": "alpha",
+            "label": "|HH + VV| / sqrt(2)  (alfa)"
+          },
+          {
+            "id": "beta",
+            "label": "|HH - VV| / sqrt(2)  (beta)"
+          },
+          {
+            "id": "gamma",
+            "label": "|HV + VH| / sqrt(2)  (gamma)"
+          }
+        ],
+        "zones": [
+          {
+            "id": "surface",
+            "label": "Surface scattering — gladka woda, mokry asfalt, gleba",
+            "accepts": [
+              "alpha"
+            ]
+          },
+          {
+            "id": "double_bounce",
+            "label": "Double-bounce — sciana + grunt, dihedry, port, miasto",
+            "accepts": [
+              "beta"
+            ]
+          },
+          {
+            "id": "volume",
+            "label": "Volume scattering — korona lasu, snieg, gesta zarosla",
+            "accepts": [
+              "gamma"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Surface scattering (gladka powierzchnia, lustro) zachowuje faze co-polaryzacji — HH i VV wracaja w fazie, wiec |HH+VV| jest duzy. To kanal alfa, niebieski w pseudo-RGB Pauliego. Double-bounce (sciana + grunt dihedralnie) odwraca faze co-pol o pi — HH i VV wracaja w przeciwfazie, wiec |HH+VV| sie kasuje, a |HH-VV| sie wzmacnia. To kanal beta, czerwony. Volume scattering (chaotyczne rozpraszacze w bryle) wyprodukuje znaczacy cross-pol — fala spolaryzowana H wraca czesciowo jako V i na odwrot, wiec |HV+VH| jest duzy. To kanal gamma, zielony."
+      }
+    },
+    {
+      "id": "exercise-pauli-rgb",
+      "title": "Zaimplementuj `pauli_rgb` na syntetycznej scenie",
+      "description": "Wczytaj 4 kanaly zespolone z /inputs/synthetic-quadpol-pauli.npz, zlóż Pauli pseudo-RGB i porownaj z oczekiwanym wynikiem po prawej.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.485127",
+          "title": "A review of target decomposition theorems in radar polarimetry",
+          "kind": "paper",
+          "author": "Shane R. Cloude and Eric Pottier",
+          "year": 1996
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcje `pauli_rgb(HH, HV, VV, VH)`, ktora przyjmuje cztery zespolone tablice `numpy` (kazda o ksztalcie `(H, W)`) reprezentujace cztery kanaly polarymetryczne syntetycznej sceny SAR i zwraca tablice **`(H, W, 3)` typu `uint8`** — Pauli pseudo-RGB:\n\n- **R** = $|HH - VV| / \\sqrt{2}$  ->  double-bounce (czerwony)\n- **G** = $(|HV| + |VH|) / \\sqrt{2}$  ->  volume scattering (zielony)\n- **B** = $|HH + VV| / \\sqrt{2}$  ->  surface scattering (niebieski)\n\n**Wazne:** kazdy kanal znormalizuj OSOBNO do zakresu `[0, 255]` (per-channel min-max), dopiero po normalizacji zrzutuj na `uint8` i zlozysz przez `np.stack(..., axis=-1)`. Wynik to standardowa tablica RGB, ktora `plt.imshow` wyswietli z czerwonym = miasto, zielonym = las, niebieskim = woda.\n\n```\nrgb = pauli_rgb(HH, HV, VV, VH)\nassert rgb.shape == (HH.shape[0], HH.shape[1], 3)\nassert rgb.dtype == np.uint8\n```\n\nPo zaimplementowaniu — kliknij ▶ Run. Statyczny obraz z prawej zostanie zastapiony twoim wyrenderowanym wynikiem; powinienes zobaczyc dokladnie trzy pionowe pasy (niebieski, zielony, czerwony).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Wczytaj syntetyczna scene quad-pol z 4 kanalami zespolonymi.\n# Wszystkie tablice maja taki sam ksztalt (H, W) = (192, 256) i dtype complex64.\ndata = np.load('/inputs/synthetic-quadpol-pauli.npz')\nHH = data['HH']\nHV = data['HV']\nVV = data['VV']\nVH = data['VH']\n\ndef pauli_rgb(HH, HV, VV, VH):\n    \"\"\"Zwroc tablice (H, W, 3) typu uint8 — Pauli pseudo-RGB.\n\n    R = |HH - VV| / sqrt(2)     -> double-bounce (czerwony)\n    G = (|HV| + |VH|) / sqrt(2) -> volume scattering (zielony)\n    B = |HH + VV| / sqrt(2)     -> surface scattering (niebieski)\n\n    Kazdy kanal znormalizuj per-channel min-max do 0..255, zlozysz przez np.stack.\n    \"\"\"\n    # TODO: zaimplementuj formuly Pauliego i normalizacje per-channel\n    return np.zeros(HH.shape + (3,), dtype=np.uint8)\n\n\nrgb = pauli_rgb(HH, HV, VV, VH)\n\nfig, ax = plt.subplots(figsize=(9, 6.5))\nax.imshow(rgb)\nax.set_title('Pauli pseudo-RGB: R=|HH-VV|, G=|HV+VH|, B=|HH+VV|')\nax.set_xlabel('kolumna [piksel]')\nax.set_ylabel('wiersz [piksel]')\nplt.show()\n",
+        "tests": [
+          {
+            "name": "shape_dtype_and_range",
+            "body": "import numpy as np\nHH = np.ones((6, 8), dtype=complex)\nHV = np.zeros((6, 8), dtype=complex)\nVV = np.ones((6, 8), dtype=complex)\nVH = np.zeros((6, 8), dtype=complex)\nout = pauli_rgb(HH, HV, VV, VH)\nassert out.shape == (6, 8, 3), f'expected (6,8,3), got {out.shape}'\nassert out.dtype == np.uint8, f'expected uint8, got {out.dtype}'\nassert int(out.min()) >= 0 and int(out.max()) <= 255",
+            "hidden": false
+          },
+          {
+            "name": "pure_surface_yields_blue_only",
+            "body": "import numpy as np\nHH = np.ones((6, 8), dtype=complex)\nHV = np.zeros((6, 8), dtype=complex)\nVV = np.ones((6, 8), dtype=complex)\nVH = np.zeros((6, 8), dtype=complex)\nout = pauli_rgb(HH, HV, VV, VH)\nassert (out[..., 0] == 0).all(), 'R channel should be zero when HH=VV'\nassert (out[..., 1] == 0).all(), 'G channel should be zero when HV=VH=0'\nassert (out[..., 2] == 255).all(), 'B channel should be max when HH+VV is the only non-zero combo'",
+            "hidden": true
+          },
+          {
+            "name": "pure_double_bounce_yields_red_no_blue",
+            "body": "import numpy as np\nHH = np.ones((6, 8), dtype=complex)\nHV = np.zeros((6, 8), dtype=complex)\nVV = -np.ones((6, 8), dtype=complex)\nVH = np.zeros((6, 8), dtype=complex)\nout = pauli_rgb(HH, HV, VV, VH)\nassert (out[..., 0] == 255).all(), 'R channel should be max when HH=-VV'\nassert (out[..., 2] == 0).all(), 'B channel should be zero when HH+VV cancels'",
+            "hidden": true
+          },
+          {
+            "name": "pure_volume_yields_green",
+            "body": "import numpy as np\nHH = np.zeros((6, 8), dtype=complex)\nHV = np.ones((6, 8), dtype=complex)\nVV = np.zeros((6, 8), dtype=complex)\nVH = np.ones((6, 8), dtype=complex)\nout = pauli_rgb(HH, HV, VV, VH)\nassert (out[..., 1] == 255).all(), 'G channel should be max when HV+VH dominate'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\ndef pauli_rgb(HH, HV, VV, VH):\n    r = np.abs(HH - VV) / np.sqrt(2.0)\n    g = (np.abs(HV) + np.abs(VH)) / np.sqrt(2.0)\n    b = np.abs(HH + VV) / np.sqrt(2.0)\n\n    def to_uint8(channel):\n        peak = float(np.max(channel))\n        if peak <= 0:\n            return np.zeros_like(channel, dtype=np.uint8)\n        scaled = np.clip(channel / peak, 0.0, 1.0)\n        return (scaled * 255.0).astype(np.uint8)\n\n    return np.stack([to_uint8(r), to_uint8(g), to_uint8(b)], axis=-1)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/synthetic-quadpol-pauli-channels.png",
+            "alt": "Cztery panele 2x2 pokazujace amplitudy |HH|, |HV|, |VH|, |VV| syntetycznej sceny quad-pol o rozmiarze 192x256 piksela; obraz podzielony pionowo na trzy pasy: woda (lewa trzecia, ciemniejsza), las (srodek, srednio jasna i ziarnista) i miasto (prawa, najjasniejsza); panele co-pol (HH i VV) sa wyrazne nad woda i miastem, panele cross-pol (HV i VH) zaglaszaja w lesie",
+            "caption": "Wejscie: cztery amplitudy polarymetryczne syntetycznej sceny. Twoja funkcja ma na ich podstawie zlozyc Pauli pseudo-RGB."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/synthetic-quadpol-pauli.npz",
+            "filename": "synthetic-quadpol-pauli.npz",
+            "caption": "synthetic-quadpol-pauli.npz — cztery zespolone tablice (HH, HV, VV, VH) o ksztalcie (192, 256) i dtype complex64; zaladuj przez np.load('/inputs/...')"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/synthetic-quadpol-pauli-expected.png",
+          "alt": "Oczekiwany wynik dekompozycji Pauli na syntetycznej scenie: obraz 192x256 px w pseudo-RGB z trzema czytelnymi pionowymi pasami — niebieski po lewej (woda, surface scattering, kanal B = |HH+VV|), zielony w srodku (las, volume scattering, kanal G = |HV+VH|), czerwony po prawej (miasto, double-bounce, kanal R = |HH-VV|); pod obrazem legenda z trzema barwnymi znacznikami opisujacymi przypisanie kolor -> mechanizm",
+          "caption": "Oczekiwany wynik: gdy zaimplementujesz pauli_rgb poprawnie, otrzymasz trzy czyste pasy kolorow, kazdy odpowiadajacy innemu mechanizmowi rozpraszania.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "sandbox-pauli-variants",
+      "title": "Sandbox: zmien wagi i normalizacje",
+      "description": "Bez testow i ocen — wyprobuj wlasne formuly i porownuj wizualnie.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/synthetic-quadpol-pauli.npz')\nHH, HV, VV, VH = data['HH'], data['HV'], data['VV'], data['VH']\n\n# Pomysly do eksploracji bez gradingu:\n#  1) Zamiast amplitudy uzyj intensywnosci (kwadratu amplitudy):\n#       r = np.abs(HH - VV)**2 / 2.0\n#     Pasy ostrzeja? Speckle bardziej widoczny?\n#  2) Sproboj multi-look averaging (uśrednianie po sasiednich pikselach,\n#     np. 3x3) przed Pauli — porownaj ENL przed i po.\n#  3) Zamien role kanalow (np. polóż |HV+VH| na R) i zobacz, jak zmienia\n#     sie interpretacja sceny.\n#  4) Dolaczy normalizacje globalna (jeden peak dla wszystkich trzech\n#     kanalow) zamiast per-channel. Co teraz widac, czego wczesniej nie?\n\nrgb = np.zeros(HH.shape + (3,), dtype=np.uint8)\n# TODO: spersonalizuj formule Pauli i wlasna normalizacje\n\nfig, ax = plt.subplots(figsize=(9, 6.5))\nax.imshow(rgb)\nax.set_title('Sandbox: Twoja wlasna dekompozycja')\nax.set_xlabel('kolumna [piksel]')\nax.set_ylabel('wiersz [piksel]')\nplt.show()\n",
+        "encouragement": "Podmien intensywnosc na amplitude, sproboj multi-look averaging, albo zamien role kanalow — patrz, jak zmienia sie odczyt sceny."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/36.485127",
+      "title": "A review of target decomposition theorems in radar polarimetry",
+      "kind": "paper",
+      "author": "Shane R. Cloude and Eric Pottier",
+      "year": 1996
+    },
+    {
+      "url": "https://www.routledge.com/Polarimetric-Radar-Imaging-From-Basics-to-Applications/Lee-Pottier/p/book/9781420054972",
+      "title": "Polarimetric Radar Imaging: From Basics to Applications, Ch. 2-3",
+      "kind": "book",
+      "author": "Jong-Sen Lee and Eric Pottier",
+      "year": 2009
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 Polarimetry overview (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Radar_polarimetry",
+      "title": "Radar polarimetry — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

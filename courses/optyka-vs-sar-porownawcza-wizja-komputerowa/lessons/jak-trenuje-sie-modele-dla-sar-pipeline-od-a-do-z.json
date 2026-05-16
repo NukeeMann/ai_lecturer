@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "slug": "jak-trenuje-sie-modele-dla-sar-pipeline-od-a-do-z",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m5",
+  "title": "Jak trenuje się modele dla SAR — pipeline od A do Z",
+  "eyebrow": "DEEP LEARNING NA SAR",
+  "description": "Trening despecklera SAR z lotu ptaka wygląda jak trening ResNeta na kotach; z bliska każda dekada — dane, augmentacje, loss, ewaluacja — pęka inaczej, bo speckle jest mnożny, ground truth nie istnieje, a klasyczna augmentacja SE(2) niszczy statystykę. Przeglądamy pipeline od A do Z bez uruchamiania treningu, a interaktywnie implementujesz kanoniczny krok `__getitem__` SARowego datasetu.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "intuition-sar-vs-imagenet",
+      "title": "Cztery różnice: trening SAR vs trening na ImageNecie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2017.2762307",
+          "title": "Deep learning in remote sensing: A comprehensive review and list of resources",
+          "kind": "paper",
+          "author": "Xiao Xiang Zhu et al.",
+          "year": 2017
+        },
+        {
+          "url": "https://doi.org/10.3390/rs10020196",
+          "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+          "kind": "paper",
+          "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+          "year": 2018
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Trenowanie modelu wizji komputerowej dla SAR wygląda **z lotu ptaka tak samo** jak trenowanie ResNet'a do klasyfikacji kotów: zbierasz dane, definiujesz funkcję straty, robisz pętlę treningową, ewaluujesz. Z bliska — każdy z tych pięciu kroków pęka inaczej, bo dane mają inną statystykę i inną fizykę.\n\n![Po lewej czysty cameraman (target). Po prawej ten sam obraz z syntetycznie nałożonym multiplikatywnym szumem Gamma o L=4 (input). Suptitle: \"Supervised pair: target + input — surowiec treningowy despecklera. Sieć uczy się mapowania input → target na milionach takich par.\"](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/training-data-pair-clean-speckled.png)\n\nCztery różnice, których nigdy nie spotkasz na ImageNecie:\n\n- **Brak „idealnego\" ground truth.** Czystego obrazu *przed* speckle nie ma — speckle nie jest błędem akwizycji, jest fundamentalną cechą koherencyjnego obrazowania (lekcja 1.4). Najczęstsze obejścia: **multi-look as clean** (uśrednij N spojrzeń, traktuj jako pseudo-clean), **syntetyczny speckle na obrazach optycznych** (weź Sentinel-2 lub naturalny obraz, nałóż Gamma(L)), albo **simulator-based** (Cumming & Wong-style raw signal simulation z modelem speckle).\n- **Augmentacje z grupy D4, nie SE(2).** Klasyczny ResNet trenuje się z `RandomRotation(±15°)` + `ColorJitter(0.4)` + `RandomResizedCrop`. Na SAR żadne z tych trzech **nie wolno bez zastrzeżeń**: rotacja pod-pikselowa interpoluje wartości, niszcząc rozkład Gamma; „color jitter\" zmienia *absolutny* poziom sigma0/beta0, który koduje fizykę odbicia, nie urok plenerowy; resize-crop zmienia rozdzielczość przestrzenną, co przesuwa pasmo speckle. Bezpieczne są tylko **D4** (cztery rotacje k·90° + dwa flipy) i **re-draw speckle** z innego seeda Gamma.\n- **Loss funkcje liczone w log-domain.** Dla szumu mnożnego MSE/L1 w domenie liniowej *systematycznie* faworyzuje jasne piksele (więcej kwadratu absolutnej różnicy = większa pochodna gradientu). Standard SAR-DRN'u: L1 lub Charbonnier na $\\log(I+\\epsilon)$ — gradient jest skalowany przez $1/I$, co matematycznie kompensuje multiplikatywność.\n- **Inne metryki ewaluacji.** PSNR względem clean'a działa, ale to nie wystarczy — musisz **niezależnie** zmierzyć ENL na płaskim regionie (czy szum zniknął), zachowanie krawędzi (np. Pratt's FOM), i — jeśli to klasyfikator — accuracy per-class plus macierz pomyłek (bo MSTAR ma silnie skorelowane klasy: BMP2 vs BTR70 vs T72 są wizualnie podobne).\n"
+      }
+    },
+    {
+      "id": "training-curves-plot",
+      "title": "Krzywe treningowe despecklera: loss + PSNR + ENL",
+      "description": "Trzy zsynchronizowane krzywe vs epoka: train loss (lewy), val PSNR (środkowy), val ENL na płaskim regionie nieba (prawy). Linia przerywana w panelach 2 i 3 to baseline speckled input — model startuje od niej i ma się od niej oddalić.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/jak-trenuje-sie-modele-dla-sar-pipeline-od-a-do-z-1.png",
+        "alt": "Trzy wykresy obok siebie, każdy z osią X 'Epoka [-]' z tickami 1/5/10/15/20/25/30. Lewy: train loss [-] vs epoka, krzywa zaczyna od ~0,42 i spada eksponencjalnie do plateau ~0,05 około epoki 20, kolor czerwony, marker kółka, oś Y 0,0–0,5, grid włączony, legenda 'train L1(log)' w prawym górnym rogu. Środkowy: val PSNR [dB] vs epoka, rośnie od ~17,2 dB do plateau ~22,6 dB, kolor niebieski, marker kwadrat, oś Y 14–24, linia przerywana szara na 15,14 dB (baseline speckled input), legenda 'val PSNR' + 'baseline (speckled input)' w prawym dolnym rogu. Prawy: val ENL na płaskim regionie [-] vs epoka, rośnie od ~30 do ~520, kolor zielony, marker trójkąt, oś Y 0–600, linia przerywana szara na 16 (baseline), legenda 'val ENL (sky patch)' + 'baseline (speckled input)' w prawym dolnym rogu. Suptitle u góry: 'Krzywe treningowe despecklera SAR (syntetyczne, dla ilustracji): loss spada, ale na walidacji obserwujesz NIEZALEŻNIE metrykę per-piksel (PSNR) I SAR-specyficzną metrykę statystyki (ENL na płaskim regionie).'",
+        "caption": "Rys. 1. Krzywe treningowe despecklera SAR (synthetyczne, dla ilustracji). Zwróć uwagę: nie wystarczy patrzeć tylko na train loss — walidacyjne PSNR mówi o per-piksel'owej zgodności z clean'em, ENL niezależnie o tym, czy szum naprawdę zniknął. Best-by-PSNR-epoch (np. 15) ≠ best-by-ENL-epoch (np. 27).",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(20260516)\nepochs = np.arange(1, 31)\nn = epochs.size\n\n# Synthetic train loss: exponential decay + noise floor (typical SAR-DRN train)\ntrain_loss = 0.42 * np.exp(-epochs / 8.0) + 0.045 + rng.normal(0.0, 0.004, n)\n\n# Synthetic val PSNR (dB): rises from ~17 to ~22 then plateaus\nval_psnr = 22.6 - 5.4 * np.exp(-epochs / 6.5) + rng.normal(0.0, 0.10, n)\n\n# Synthetic val ENL on flat region: starts at speckled level ~16, climbs to ~520\nval_enl = 16 + 510 * (1 - np.exp(-epochs / 7.5)) + rng.normal(0.0, 14.0, n)\nval_enl = np.clip(val_enl, 16, None)\n\nfig, axes = plt.subplots(1, 3, figsize=(12.5, 4.2), constrained_layout=True)\n\nax = axes[0]\nax.plot(epochs, train_loss, marker=\"o\", markersize=4, linewidth=1.6,\n        color=\"tab:red\", label=\"train L1(log)\")\nax.set_xlabel(\"Epoka [-]\")\nax.set_ylabel(\"Train loss [-]\")\nax.set_title(\"Funkcja straty (treningowa)\")\nax.set_xticks([1, 5, 10, 15, 20, 25, 30])\nax.set_ylim(0.0, 0.5)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=9)\n\nax = axes[1]\nax.plot(epochs, val_psnr, marker=\"s\", markersize=4, linewidth=1.6,\n        color=\"tab:blue\", label=\"val PSNR\")\nax.axhline(15.14, color=\"grey\", linestyle=\"--\", linewidth=1.0,\n           label=\"baseline (speckled input)\")\nax.set_xlabel(\"Epoka [-]\")\nax.set_ylabel(\"Val PSNR [dB]\")\nax.set_title(\"Metryka per-piksel (PSNR wzgledem clean)\")\nax.set_xticks([1, 5, 10, 15, 20, 25, 30])\nax.set_ylim(14, 24)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower right\", fontsize=9)\n\nax = axes[2]\nax.plot(epochs, val_enl, marker=\"^\", markersize=4, linewidth=1.6,\n        color=\"tab:green\", label=\"val ENL (sky patch)\")\nax.axhline(16, color=\"grey\", linestyle=\"--\", linewidth=1.0,\n           label=\"baseline (speckled input)\")\nax.set_xlabel(\"Epoka [-]\")\nax.set_ylabel(\"Val ENL na plaskim regionie [-]\")\nax.set_title(\"Metryka SAR-specyficzna (ENL na plaskim niebie)\")\nax.set_xticks([1, 5, 10, 15, 20, 25, 30])\nax.set_ylim(0, 600)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower right\", fontsize=9)\n\nfig.suptitle(\n    \"Krzywe treningowe despecklera SAR (synthetyczne, dla ilustracji): loss spada,\\n\"\n    \"ale na walidacji obserwujesz NIEZALEZNIE metryke per-piksel (PSNR) I \"\n    \"SAR-specyficzna metryke statystyki (ENL na plaskim regionie).\",\n    fontsize=11,\n)\nfig.savefig(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"jak-trenuje-sie-modele-dla-sar-pipeline-od-a-do-z-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "data-and-augmentations",
+      "title": "Dataset i augmentacje SAR-safe",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1906.07789",
+          "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery",
+          "kind": "paper",
+          "author": "Michael Schmitt, Lloyd Haydn Hughes, Chunping Qiu, Xiao Xiang Zhu",
+          "year": 2019
+        },
+        {
+          "url": "https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html",
+          "title": "PyTorch — Training a Classifier tutorial",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W projekcie despecklera (SAR-DRN, SAR-CNN) Twój `Dataset` w PyTorchu wygląda zaskakująco prosto — bo cała dziwność SAR'u siedzi w `__getitem__` w augmentacjach.\n\n![Sześciopanelowy grid 2×3 z tym samym cameramanem. Górny rząd (zielone tytuły OK): (1) original clean amplitude, (2) flip lewy↔prawy, (3) rot 90° (D4 symmetry), (4) re-draw speckle z innym seedem Gamma(L=4). Dolny rząd (czerwone tytuły ZŁE): (5) rotacja 37° (widoczne rozmazane piksele po interpolacji bilinearnej) i (6) jasność ×1,6 + 0,1 (kafelek przepalony, kontrast zniekształcony).](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sar-augmentations-grid.png)\n\n```python\n# Referencyjny pipeline treningowy SAR-DRN (offline, w PyTorchu — NIE w Pyodide):\nimport torch\nimport torch.nn as nn\nfrom torch.utils.data import Dataset, DataLoader\n\nclass SARDespeckleDataset(Dataset):\n    def __init__(self, clean_tiles, L=4, rng=None):\n        self.clean = clean_tiles          # (N, H, W) float32, amp w [0, 1]\n        self.L = L\n        self.rng = rng or np.random.default_rng()\n\n    def __getitem__(self, idx):\n        clean = self.clean[idx]\n        # 1) D4 spatial symmetry (ZADNYCH SE(2) rotacji!)\n        if self.rng.random() < 0.5: clean = np.fliplr(clean).copy()\n        if self.rng.random() < 0.5: clean = np.flipud(clean).copy()\n        k = int(self.rng.integers(0, 4))\n        clean = np.rot90(clean, k=k).copy()\n        # 2) Multiplikatywny szum Gamma (re-draw z innego seeda — augmentacja noise'a)\n        I_clean = clean ** 2                                   # amp -> intensity\n        speckle = self.rng.gamma(shape=self.L, scale=1.0/self.L, size=clean.shape)\n        I_speck = I_clean * speckle\n        speckled = np.clip(np.sqrt(I_speck), 0.0, 1.0).astype(np.float32)\n        # 3) Log-domain wejscia (kompensuje multiplikatywnosc gradientu)\n        eps = 1e-3\n        return (\n            torch.from_numpy(np.log(speckled + eps)).unsqueeze(0),  # input\n            torch.from_numpy(np.log(clean + eps)).unsqueeze(0),     # target\n        )\n```\n\nTrzy decyzje warto rozpakować jawnie:\n\n- **Re-draw speckle to też augmentacja.** Klasycznie augmentacja dotyczy *przestrzeni* (rotacja, crop). Tu drugi wymiar augmentacji to **noise sample** — ten sam clean'owy patch z dwoma różnymi draw'ami z Gamma daje sieci dwa różne treningowe przykłady „jak ten sam target wygląda z różnymi realizacjami szumu\".\n- **`log(x + eps)` zamiast `log(x)`.** Bez `eps` jeden zerowy piksel (a SAR ma realne zera po kalibracji) wysadza training NaN'em po pierwszej epoce. `eps = 1e-3` jest pragmatyczne, ale waliduj że Twój preprocessing nigdy nie obcina realnego sygnału.\n- **Bez `transforms.Normalize(mean, std)`.** ResNetowy mean/std subtraction zakłada addytywny szum gaussowski; na SAR po `log()` rozkład jest ~Gauss'owski, ale **mean/std ZALEŻY od L** (lekcja 1.4). Bezpieczniej trzymać dane w `[0, 1]` i pozwolić BatchNormowi w sieci nauczyć się skalowania samemu.\n"
+      }
+    },
+    {
+      "id": "code-sar-augment",
+      "title": "Zaimplementuj `sar_augment` — kanoniczny krok `__getitem__` SARowego datasetu",
+      "description": "Wejście: czysty kafelek cameraman (256×256, amplituda w [0,1]). Wyjście: para (target, input) gotowa dla supervised despecklera — z D4 augmentacją + mnożnym Gamma speckle. Testy zweryfikują kształt, determinizm pod seedem, multiplikatywność szumu i to, że nie używasz nie-D4 rotacji.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs10020196",
+          "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+          "kind": "paper",
+          "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+          "year": 2018
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `sar_augment(clean, rng, target_enl=4.0)` — kanoniczny krok `__getitem__` z `SARDespeckleDataset` w numpy, bez PyTorcha:\n\n- `clean`: `np.ndarray (H, W)`, `float32`, amplituda znormalizowana w `[0, 1]`,\n- `rng`: `np.random.Generator` (dla powtarzalności w testach),\n- `target_enl`: float — kształt Gammy speckle (`L`, typowo 3–8).\n\nWymagane kroki (testy je weryfikują):\n\n1. zacznij od `aug = clean.astype(np.float32)`,\n2. z prawdopodobieństwem 0,5 zastosuj `aug = np.fliplr(aug).copy()`,\n3. z prawdopodobieństwem 0,5 zastosuj `aug = np.flipud(aug).copy()`,\n4. wylosuj `k = int(rng.integers(0, 4))` i `aug = np.rot90(aug, k=k).copy()`,\n5. konwertuj `aug` na intensywność: `intensity = aug * aug`,\n6. wygeneruj multiplikatywny szum: `speckle = rng.gamma(shape=target_enl, scale=1.0/target_enl, size=aug.shape).astype(np.float32)`,\n7. nałóż szum i wróć do amplitudy: `speckled = np.clip(np.sqrt(intensity * speckle), 0.0, 1.0).astype(np.float32)`,\n8. zwróć `(aug.astype(np.float32), speckled)` — parę `(target, input)` dla supervised learning.\n\n```python\nrng = np.random.default_rng(0)\nclean = np.full((48, 48), 0.5, dtype=np.float32)\ntarget, inp = sar_augment(clean, rng, target_enl=4.0)\ntarget.shape, inp.shape  # ((48, 48), (48, 48))\n```\n\n`starterCode` zawiera preview, który załaduje cameramana z lekcji 2.1 i wygeneruje 4 augmented pary obok siebie, byś mógł zobaczyć, jak każda iteracja `__getitem__` daje sieci inny przykład treningowy.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef sar_augment(clean, rng, target_enl=4.0):\n    \"\"\"\n    Augmentacja SAR-safe: D4 symetrie + multiplikatywny szum Gamma.\n\n    clean:      np.ndarray (H, W), float32, amplituda w [0, 1]\n    rng:        np.random.Generator\n    target_enl: float — kszt. Gammy speckle (L), typowo 3..8\n\n    Zwraca: (clean_aug, speckled_aug) — para float32 (H, W) dla supervised learning.\n    \"\"\"\n    # TODO:\n    #  1) aug = clean.astype(float32)\n    #  2) if rng.random() < 0.5: aug = np.fliplr(aug).copy()\n    #  3) if rng.random() < 0.5: aug = np.flipud(aug).copy()\n    #  4) k = int(rng.integers(0, 4)); aug = np.rot90(aug, k=k).copy()\n    #  5) intensity = aug * aug\n    #  6) speckle = rng.gamma(shape=target_enl, scale=1/target_enl, size=aug.shape).astype(float32)\n    #  7) speckled = clip(sqrt(intensity * speckle), 0, 1).astype(float32)\n    #  8) return (aug.astype(float32), speckled)\n    return clean.astype(np.float32), clean.astype(np.float32)\n\n\n# --- Preview: 4 augmented pary na cameramanie z lekcji 2.1 ---\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean_tile = ref[\"clean\"].astype(np.float32)\n\nrng = np.random.default_rng(42)\nfig, axes = plt.subplots(2, 4, figsize=(11.0, 5.5), constrained_layout=True)\nfor col in range(4):\n    target, inp = sar_augment(clean_tile, rng, target_enl=4.0)\n    axes[0, col].imshow(target, cmap=\"gray\", vmin=0, vmax=1)\n    axes[0, col].set_title(f\"target #{col + 1}\", fontsize=9)\n    axes[0, col].set_axis_off()\n    axes[1, col].imshow(inp, cmap=\"gray\", vmin=0, vmax=1)\n    axes[1, col].set_title(f\"input #{col + 1}\", fontsize=9)\n    axes[1, col].set_axis_off()\nfig.suptitle(\"Cztery niezalezne wywolania sar_augment — kazde to inny przyklad treningowy\",\n             fontsize=10)\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_two_float32_arrays_in_unit_range",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nclean = np.full((48, 48), 0.5, dtype=np.float32)\ntarget, inp = sar_augment(clean, rng, target_enl=4.0)\nassert target.shape == clean.shape, f\"target shape: {target.shape}\"\nassert inp.shape == clean.shape, f\"input shape: {inp.shape}\"\nassert target.dtype == np.float32, f\"target dtype: {target.dtype}\"\nassert inp.dtype == np.float32, f\"input dtype: {inp.dtype}\"\nassert 0.0 <= float(inp.min()) and float(inp.max()) <= 1.0, (\n    f\"speckled poza [0, 1]: min={inp.min()}, max={inp.max()}\"\n)\n",
+            "hidden": false
+          },
+          {
+            "name": "deterministic_under_fixed_seed",
+            "body": "import numpy as np\nclean = np.linspace(0.1, 0.9, 32 * 32).reshape(32, 32).astype(np.float32)\nt1, i1 = sar_augment(clean, np.random.default_rng(123), target_enl=4.0)\nt2, i2 = sar_augment(clean, np.random.default_rng(123), target_enl=4.0)\nassert np.array_equal(t1, t2), \"target nie jest deterministyczny pod tym samym seedem\"\nassert np.array_equal(i1, i2), \"input nie jest deterministyczny pod tym samym seedem\"\n",
+            "hidden": true
+          },
+          {
+            "name": "noise_is_multiplicative_gamma",
+            "body": "import numpy as np\n# Plaski region clean = const 0.5 → intensity_in = 0.25.\n# Jezeli speckle jest mnozny Gamma(L), to (I_out / I_in) ~ Gamma(L)\n# o sredniej 1.0 i wariancji 1/L. Usredniamy po 8 trialach, by uciszyc draw.\nrng = np.random.default_rng(7)\nL = 4.0\nclean = np.full((128, 128), 0.5, dtype=np.float32)\nratios_var = []\nfor _ in range(8):\n    _, inp = sar_augment(clean, rng, target_enl=L)\n    I_in = clean * clean\n    I_out = inp * inp\n    ratios_var.append(float((I_out / I_in).var()))\nmean_var = sum(ratios_var) / len(ratios_var)\nexpected = 1.0 / L\nassert 0.5 * expected < mean_var < 2.0 * expected, (\n    f\"speckle nie jest mnozny Gamma(L={L}): mean var(I_out/I_in)={mean_var:.3f}, \"\n    f\"expected ~{expected:.3f}\"\n)\n",
+            "hidden": true
+          },
+          {
+            "name": "uses_only_d4_rotations",
+            "body": "import numpy as np\n# Eye matrix: zera/jedynki. D4 (flip + rot90·k) zachowuje wartosci 0/1,\n# arbitralna rotacja (interpolacja bilinearna) wprowadzilaby wartosci posrednie.\nrng = np.random.default_rng(55)\nclean = np.eye(32, dtype=np.float32)\nfor trial in range(20):\n    target, _ = sar_augment(clean, rng, target_enl=4.0)\n    vals = set(float(v) for v in np.unique(target))\n    bad = vals - {0.0, 1.0}\n    assert not bad, f\"trial {trial}: nie-D4 rotacja, znaleziono wartosci posrednie {bad}\"\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef sar_augment(clean, rng, target_enl=4.0):\n    aug = clean.astype(np.float32)\n    if rng.random() < 0.5:\n        aug = np.fliplr(aug).copy()\n    if rng.random() < 0.5:\n        aug = np.flipud(aug).copy()\n    k = int(rng.integers(0, 4))\n    aug = np.rot90(aug, k=k).copy()\n    intensity = aug * aug\n    speckle = rng.gamma(shape=target_enl, scale=1.0 / target_enl,\n                        size=aug.shape).astype(np.float32)\n    speckled = np.clip(np.sqrt(intensity * speckle), 0.0, 1.0).astype(np.float32)\n    return aug.astype(np.float32), speckled\n",
+        "inputs": [
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": "Cameraman 256×256 (clean + speckled L=4) — reużyty z lekcji 2.1."
+          }
+        ]
+      }
+    },
+    {
+      "id": "loss-and-evaluation",
+      "title": "Loss treningowy ≠ metryka ewaluacji",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1016/j.isprsjprs.2019.04.015",
+          "title": "Deep learning in remote sensing applications: A meta-analysis and review",
+          "kind": "paper",
+          "author": "Lei Ma, Yu Liu, Xueliang Zhang, Yuanxin Ye, Gaofei Yin, Brian Alan Johnson",
+          "year": 2019
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z perspektywy pętli treningowej wszystko jest funkcją straty — to ona definiuje *co* model się uczy. Z perspektywy postępu projektu to **metryki ewaluacji** mówią Ci, czy model staje się lepszy. Dla SAR te dwa zbiory są celowo rozłączone.\n\n![Trzy panele tego samego cameramana po despeckling'u. Lewy: speckled input (PSNR=15,14 dB, ENL(sky)=15,8). Środkowy: Denoiser A — Gaussian σ=2,8 (PSNR=16,10 dB, ENL(sky)=995) — tło wyjątkowo gładkie, ale rysy twarzy kamerzysty rozmyte. Prawy: Denoiser B — median 7×7 (PSNR=15,85 dB, ENL(sky)=412) — krawędzie ostre, tło nieco bardziej ziarniste niż A. Sam PSNR i sam ENL niezgodne pokazują różne „wygrywające\" denoisery — trzeba patrzeć na oba i na obraz.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/psnr-vs-enl-tradeoff.png)\n\n**Loss treningowy** ($L_1$, Charbonnier, czasem hybrydowy z perceptualnym) to *gradient*. Wybierasz go tak, by **gradient płynął w dobrą stronę** dla statystyki Twoich danych. Dla mnożnego szumu Gamma to oznacza: licz $L_1$ na $\\log(I + \\epsilon)$, nie na $I$. Bez log-transformacji jeden jasny piksel z silnym speckle dominuje wsteczną propagację — sieć optymalizuje rzadkie outlier'y kosztem reszty obrazu.\n\n| metryka              | mierzy                              | kiedy używać              | kiedy pada                                |\n|----------------------|-------------------------------------|---------------------------|-------------------------------------------|\n| **PSNR** [dB]        | błąd per-piksel względem clean      | porównanie metod          | nie widzi struktury (rozmyte = high PSNR) |\n| **ENL** na płaskim   | residualny speckle na flat patchu   | sanity-check despeckler   | nie mówi nic o krawędziach                |\n| **Pratt's FOM**      | zachowanie krawędzi                 | edge-aware despeckling    | wymaga manual ground-truth edges          |\n| **Accuracy / kappa** | klasyfikacja per-class              | MSTAR, land-cover         | maskuje class imbalance                   |\n| **Confusion matrix** | które klasy się mylą                | MSTAR — BMP2 vs T72       | nieczytelna gdy >20 klas                  |\n\n**Ewaluacja klasyfikatora MSTAR** (lekcja 5.5) wymaga jeszcze jednej ostrożności: standardowy split MSTAR ma osobne kąty padania w train (17°) i test (15°). To celowe — sprawdza generalizację po geometrii, nie tylko po wzorzu. **Nigdy nie raportuj „99% accuracy na MSTAR\"** bez zaznaczenia trybu (SOC: Standard Operating Conditions, vs EOC: Extended — różne kąty, konfiguracje wersji pojazdu). Wynik 99% na pomieszanym splicie to artefakt data leakage'u.\n\nCykl iteracji w praktyce: krótki run (5–10 epok) → spojrzenie na trzy krzywe (loss, PSNR, ENL) **plus** wzrokowa inspekcja kilku przykładów walidacyjnych → korekta loss'a / augmentacji / scheduler'a. Statyczna „best epoch by val PSNR\" rzadko jest najlepsza dla finalnego pipeline'u — bo PSNR za nią często chowa pre-overfit na konkretną realizację speckle, której nie zobaczysz na inferencji.\n"
+      }
+    },
+    {
+      "id": "check-misconceptions",
+      "title": "Quick check: co jest bezpieczne, a co łamie statystykę SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Trenujesz despeckler SAR (input: speckled amplituda Sentinel-1 GRD, target: wielo-spojrzeniowa pseudo-clean amplituda). Które z poniższych decyzji są **bezpieczne** dla statystyki SAR? Zaznacz wszystkie poprawne.",
+        "options": [
+          "Augmentacja: `RandomRotation(degrees=±15)` z bilinear interpolation w torchvision.",
+          "Augmentacja: cztery rotacje k·90° + dwa flipy (lewy↔prawy, góra↔dół) — czyli grupa D4.",
+          "Loss: `L1Loss()` na surowej amplitudzie wejściowej (bez log-transformacji).",
+          "Loss: `L1Loss()` na `log(amplituda + 1e-3)` zarówno dla outputu, jak i targetu.",
+          "Ewaluacja: tylko PSNR względem clean'a, bo PSNR jest standardową metryką w computer vision.",
+          "Ewaluacja: PSNR + ENL na płaskim regionie + wzrokowy przegląd 8–16 przykładów z walidacji."
+        ],
+        "correct": [
+          1,
+          3,
+          5
+        ],
+        "explanation": "Opcja 0 łamie statystykę — bilinear interpolation pod-pikselowa miesza sąsiednie wartości i niszczy rozkład Gamma. Opcja 1 (D4) jest jedyną bezpieczną grupą transformacji spatial, która zachowuje siatkę pikseli SAR. Opcja 2 jest zła, bo gradient L1 na surowej amplitudzie skaluje się z jasnością piksela — sieć optymalizuje jasne outlier'y; opcja 3 (log-domain L1) jest standardem SAR-DRN'u, bo log zamienia mnożny szum w addytywny i balansuje gradient po jasności. Opcja 4 (sam PSNR) maskuje residualny speckle — denoiser, który nie nauczył się usuwać szumu, ale dobrze interpoluje krawędzie, dostanie dobry PSNR i kompletnie zły ENL. Opcja 5 (PSNR + ENL + visual) to minimum dla raportowalnego wyniku.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-explore-L",
+      "title": "Eksperymentuj: jak L (ENL) zmienia trudność zadania despeckling",
+      "description": "Bez testów, bez gradingu — zmień listę L_values, dodaj L=1 (single-look, ekstremum), spróbuj własnej augmentacji (random crop, log-domain wejście) i zobacz jak intensywność szumu wpływa na to, co Twoja sieć musi się nauczyć.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef sar_augment(clean, rng, target_enl=4.0):\n    \"\"\"Twoja referencyjna implementacja z poprzedniego zadania.\"\"\"\n    aug = clean.astype(np.float32)\n    if rng.random() < 0.5:\n        aug = np.fliplr(aug).copy()\n    if rng.random() < 0.5:\n        aug = np.flipud(aug).copy()\n    k = int(rng.integers(0, 4))\n    aug = np.rot90(aug, k=k).copy()\n    intensity = aug * aug\n    speckle = rng.gamma(shape=target_enl, scale=1.0 / target_enl,\n                        size=aug.shape).astype(np.float32)\n    speckled = np.clip(np.sqrt(intensity * speckle), 0.0, 1.0).astype(np.float32)\n    return aug.astype(np.float32), speckled\n\n\n# Czysty kafelek do eksperymentowania\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean_tile = ref[\"clean\"].astype(np.float32)\n\n\n# === Eksperyment: porownaj efekt L=2 (mocny szum) vs L=10 (slaby szum) ===\n# Zmien wartosci L, dodaj wlasne, sprobuj L=1 (extremalny single-look),\n# albo zaimplementuj wlasna augmentacje (np. random crop z paddingu zamiast rotacji).\n\nrng = np.random.default_rng(2026)\nL_values = [2.0, 4.0, 10.0]\n\nfig, axes = plt.subplots(2, len(L_values), figsize=(3.5 * len(L_values), 6.5),\n                         constrained_layout=True)\nfor col, L in enumerate(L_values):\n    target, inp = sar_augment(clean_tile, rng, target_enl=L)\n    axes[0, col].imshow(target, cmap=\"gray\", vmin=0, vmax=1)\n    axes[0, col].set_title(f\"target (L={L:g})\", fontsize=10)\n    axes[0, col].set_axis_off()\n    axes[1, col].imshow(inp, cmap=\"gray\", vmin=0, vmax=1)\n    enl = (inp[5:45, 5:80].mean() / inp[5:45, 5:80].std()) ** 2\n    axes[1, col].set_title(f\"input (L={L:g}, ENL_sky~{enl:.0f})\", fontsize=10)\n    axes[1, col].set_axis_off()\nfig.suptitle(\"Jak L (ENL) wplywa na trudnosc treningu despecklera\", fontsize=11)\nplt.show()\n",
+        "encouragement": "Przesuń L w stronę 1 i zobacz, kiedy speckle staje się tak silny, że nawet wzrokowo trudno powiedzieć, co jest pod spodem — to dokładnie ten reżim, w którym SAR-DRN i SAR-CNN mają największą wartość dodaną."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2017.2762307",
+      "title": "Deep learning in remote sensing: A comprehensive review and list of resources",
+      "kind": "paper",
+      "author": "Xiao Xiang Zhu, Devis Tuia, Lichao Mou, Gui-Song Xia, Liangpei Zhang, Feng Xu, Friedrich Fraundorfer",
+      "year": 2017
+    },
+    {
+      "url": "https://doi.org/10.1016/j.isprsjprs.2019.04.015",
+      "title": "Deep learning in remote sensing applications: A meta-analysis and review",
+      "kind": "paper",
+      "author": "Lei Ma, Yu Liu, Xueliang Zhang, Yuanxin Ye, Gaofei Yin, Brian Alan Johnson",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.3390/rs10020196",
+      "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+      "kind": "paper",
+      "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+      "year": 2018
+    },
+    {
+      "url": "https://arxiv.org/abs/1906.07789",
+      "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery",
+      "kind": "paper",
+      "author": "Michael Schmitt, Lloyd Haydn Hughes, Chunping Qiu, Xiao Xiang Zhu",
+      "year": 2019
+    },
+    {
+      "url": "https://pytorch.org/tutorials/beginner/blitz/cifar10_tutorial.html",
+      "title": "PyTorch — Training a Classifier tutorial",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+=== Attempt 1 — 2026-05-16T09:30:05.639Z ===
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← File content (28270 tokens) exceeds maximum allowed tokens (25000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole f…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 400	  - has a **descriptive `name`** like `"returns_zero_for_empty_input"` or `"handles_negative_numbers"` — not `"t1"`/`"test_a"`.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	# Sources: Optyka vs SAR — Porównawcza Wizja Komputerowa
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wiz…)
+← 196 /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/research.md
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	# Research: Optyka vs SAR — Porównawcza Wizja Komputerowa
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-…)
+← assets
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-…)
+← /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/:
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-…)
+← /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/:
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	{
+Now I have enough context to author the lesson. Let me draft the asset generation script and produce the chips, bundle, plot, and diagrams.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: cat /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts /home/n…)
+← import { z } from 'zod';
+I'll write the asset generation script to /tmp and execute it.
+→ Write(file_path: /tmp/gen_mstar_assets.py)
+← File created successfully at: /tmp/gen_mstar_assets.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_mstar_assets.py 2>&1)
+← Generated 400 chips (50/class), shape=(400, 64, 64)
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wi…)
+← -rw-r--r-- 1 nukeemann nukeemann  133097 May 16 11:35 /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/mstar-eight-classes-chip-grid.png
+→ Bash(command: python3 -c "
+import numpy as np
+b = np.load('courses/optyka-vs-sar-porownawcza-w…)
+← Keys: ['chips', 'true_labels', 'pred_probs', 'class_names']
+Now I'll generate the lesson JSON using a Python helper script — this avoids manual JSON escaping pitfalls.
+→ Write(file_path: /tmp/gen_mstar_lesson.py)
+← File created successfully at: /tmp/gen_mstar_lesson.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_mstar_lesson.py)
+← Wrote /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/lessons/klasyfikacja-pojazdow-mstar-onnx-inference.json
+Now let me validate the lesson against the LessonSchema.
+→ Bash(command: npx tsx -e "
+import * as fs from 'node:fs';
+const path = 'courses/optyka-vs-sar-…)
+← Exit code 1
+→ Bash(command: npx tsx -e "
+import { LessonSchema } from './src/lib/schemas/lesson';
+import * a…)
+← OK: courses/optyka-vs-sar-porownawcza-wizja-komputerowa/lessons/klasyfikacja-pojazdow-mstar-onnx-inference.json
+Let me verify the assets exist and the theory word counts are in range.
+→ Bash(command: python3 << 'EOF'
+import json, re, os, pathlib
+
+p = "courses/optyka-vs-sar-porown…)
+← Exit code 1
+→ Bash(command: python3 -c "
+import json
+p = 'courses/optyka-vs-sar-porownawcza-wizja-komputerow…)
+← "![Pięcioetapowy schemat pipeline'u inferencji klasyfikatora MSTAR w przeglądarce, ułożony poziomo i połączony strzałkami: (1) wejście — chip 64x64 px float32 amplituda SAR; (2) Preprocess JS — podzie…
+→ Bash(command: python3 << 'EOF'
+import json, re, os
+
+p = "courses/optyka-vs-sar-porownawcza-wiz…)
+← Theory inline images:
+Now let me verify the code widget solution actually works against the bundle (the tests should pass with the reference solution):
+→ Bash(command: python3 << 'EOF'
+"""Smoke-test that the lesson's solution actually passes the le…)
+← Loaded solution; defining ['np', 'compute_classification_metrics']
+Let me run the plotImage sourceCode straight from the JSON to confirm it reproduces the saved PNG byte-for-byte:
+→ Bash(command: python3 << 'EOF'
+import json, hashlib, os
+p = "courses/optyka-vs-sar-porownawcza…)
+← Before: 137c4525c10120c26fc9ac4ab443d22b843ae039b1024ff7f83d714c0a3fabf5
+Lesson is complete and validated. Summary:
+**File:** `/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/lessons/klasyfikacja-pojazdow-mstar-onnx-inference.json`
+**Structure:** 6 sections — theory → plotImage → theory → code → quiz → sandbox (2 theory beats + 4 widgets; no consecutive theories; ends on widget).
+**Pedagogical arc:**
+1. **theory (`mstar-co-i-dlaczego`)** — MSTAR as the canonical ATR benchmark, the 8-class chip family, *why* it's stage 3 of the ATR pipeline (cross-references the previous `detekcja-pojazdow-na-ladzie` lesson), with an inline grid of all 8 synthetic class chips. **278 words.**
+2. **plotImage** — dual-panel confusion matrix (counts + row-normalized recall) over 400 chips, showing the tank-vs-tank and APC-vs-APC intra-family confusion plus 100% recall on ZIL131 (truck) and D7 (bulldozer).
+3. **theory (`pipeline-onnxruntime-web`)** — JS-side inference pipeline (chip → preprocess → `session.run` → softmax + argmax), reference JS snippet, three silent-failure modes (off-centre chip, depression mismatch, normalization mismatch), with an inline pipeline-diagram figure. **294 words.**
+4. **code** — implement `compute_classification_metrics(pred_probs, true_labels, num_classes)` returning `{accuracy, per_class_accuracy, confusion_matrix}`; 4 tests (one visible smoke + 3 hidden, including byte-precise checks against the precomputed bundle); runnable reference solution.
+5. **quiz (multi-select, 4/5 correct)** — distinguishes MSTAR-accuracy from end-to-end production accuracy, depression shift, intra-family confusion semantics, and OOD chips when the pre-screener is sloppy.
+6. **sandbox** — confidence-threshold (reject-option) sweep that visualises coverage-vs-accuracy on the Pareto front.
+**Assets generated (all local, all present on disk):**
+- `assets/inputs/mstar-classifier-bundle.npz` — 400 chips, true labels, simulated softmax outputs (overall accuracy 90.75%), class names
+- `assets/inputs/mstar-classifier-bundle-{input,expected}.png`
+- `assets/images/mstar-{eight-classes-chip-grid,onnx-pipeline-diagram}.png`
+- `assets/plots/klasyfikacja-pojazdow-mstar-onnx-inference-1.png` — confusion matrix; plotImage `sourceCode` reproduces it byte-for-byte (verified via SHA-256)
+**Sources (6, all stable):** Chen 2016 (TGRS paper), MSTAR SDMS/AFRL, Novak 1997 (MIT Lincoln Lab paper), ONNX Runtime Web docs, Oliver & Quegan textbook, scikit-learn `confusion_matrix` docs.
+`LessonSchema.safeParse` returns success; all 4 code tests pass against the reference solution under a Pyodide-style `/inputs/` mount.
+[result success (725.4s)]

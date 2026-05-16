@@ -1,0 +1,196 @@
+{
+  "schemaVersion": 1,
+  "slug": "formaty-danych-sar-grd-slc-kalibracja",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Formaty danych SAR — GRD, SLC, kalibracja",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Co tak naprawdę pobierasz z Copernicus Data Space, czym różni się GRD od SLC i jak wycisnąć z surowych DN fizyczne sigma-nought w decybelach — krótka, praktyczna lekcja przed pierwszym kodem produkcyjnym.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "co-dostajesz-z-sentinel-1",
+      "title": "Co dostajesz z Sentinel-1: trzy poziomy tego samego echa",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+          "title": "Sentinel-1 Level-1 product specification (ESA SentiWiki)",
+          "kind": "article"
+        },
+        {
+          "url": "https://documentation.dataspace.copernicus.eu/Data/SentinelMissions/Sentinel1.html",
+          "title": "Copernicus Data Space — Sentinel-1 documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Klikasz „Download\" na Copernicus Data Space i dostajesz **plik `.SAFE.zip`** (1–8 GB). To, co jest w środku, zależy od tego, jaki **Level produktu** wybrałeś. W praktyce CV liczą się trzy:\n\n- **Level-0** — surowe echa radarowe sprzed ogniskowania apertury syntetycznej. Praktycznie nigdy ich nie używasz (potrzeba pełnego SAR processora). Wspomniany dla kompletu.\n- **Level-1 SLC** *(Single Look Complex)* — **zespolony** obraz w geometrii **slant range × azimuth**. Każdy piksel to liczba zespolona $z = a + b\\,i$ (dwa razy 16 bitów = 4 bajty). Faza jest zachowana — bez tego nie ma interferometrii, koherencji ani polarymetrii pełnej.\n- **Level-1 GRD** *(Ground Range Detected)* — **amplitudowy** obraz w geometrii **ground range × azimuth**. Każdy piksel to jedna 16-bitowa liczba bez znaku — Digital Number, **DN**. Faza jest **wyrzucona**, kilka spojrzeń jest uśrednionych (multi-look), a obraz jest przerzucony na płaszczyznę ziemi.\n\n![Quicklook produktu Sentinel-1A IW SLC nad Hamburgiem z 2024-10-10 — szare, ziarniste obrazy trzech sub-swathów (IW1/IW2/IW3) przedstawione obok siebie z widoczną granicą lądu i wody, charakterystycznym speckle i poziomymi przerwami między burst'ami azimuth](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-hamburg-slc-quicklook.png)\n\n*(Quicklook: Copernicus Sentinel-1 SLC, 2024-10-10, contains modified Copernicus data.)*\n\nIntuicja **GRD ≈ obrazek**, **SLC ≈ sygnał**:\n\n| | **GRD** | **SLC** |\n|---|---|---|\n| Typ piksela | `uint16` (DN) | `complex64` lub para `int16+int16` |\n| Faza | wyrzucona | zachowana |\n| Geometria | ground range | slant range |\n| Multi-look | tak (≈ 4–6 spojrzeń) | nie (single look) |\n| Rozmiar pliku | ~1 GB / scena | ~8 GB / scena |\n| Do czego | klasyfikacja, detekcja, change | InSAR, koherencja, polarymetria |\n\nW dalszej części kursu **80% widgetów dostanie kafelek GRD** — bo dla detekcji statków, segmentacji i klasyfikacji faza nie jest potrzebna. SLC pojawi się dopiero w lekcjach o danych zespolonych, polarymetrii Pauli i interferometrii."
+      }
+    },
+    {
+      "id": "grd-vs-slc-figure",
+      "title": "Ten sam piksel, dwie reprezentacje",
+      "description": "Symulacja didaktyczna: cztery panele tej samej sceny pokazują, ile informacji niesie SLC w porównaniu do GRD.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/formaty-danych-sar-grd-slc-kalibracja-2.png",
+        "alt": "Cztery panele 192x192 px tej samej sceny SAR. Panel 1: GRD amplituda (multi-look 4x4) — gładki obraz z wodą (ciemne tło), polem (szare), wegetacją (jaśniejszy pas) i punktem miejskim (jasny kwadrat) w skali szarości. Panel 2: SLC część rzeczywista — ten sam układ, ale z pełną ziarnistością speckle bez multi-look. Panel 3: SLC część urojona — wygląda statystycznie jak Re, też z pełnym speckle. Panel 4: SLC faza arg(z) w paletce twilight, pokryta diagonalnymi prążkami od ramki fazowej slant range/azimuth, kolorbar od -π do +π rad.",
+        "caption": "Rys. 1. GRD trzyma jedną liczbę na piksel (skwantyzowane DN po multi-look); SLC trzyma dwie (Re + Im, czyli amplitudę i fazę). Faza jednego SLC wygląda na pierwszy rzut oka „losowo\", ale dopiero ona pozwala na interferometrię i koherencję między dwoma przelotami.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(7)\nH = W = 192\n\n# Synthesize an underlying \"true\" reflectivity scene: water (dark), field\n# (medium), urban patch (bright), with a strip of vegetation.\nR = np.full((H, W), 0.05, dtype=float)         # water everywhere\nR[20:170, 20:170] = 0.25                       # field\nR[60:120, 60:140] = 0.45                       # vegetation strip\nR[80:110, 80:120] = 1.10                       # urban patch (double-bounce)\n\n# Per-pixel deterministic phase that varies smoothly across the scene\n# (a stand-in for slant-range phase ramp + topography).\nyy, xx = np.indices((H, W)) / H\nphi = 2.0 * np.pi * (3.0 * yy + 2.5 * xx)\n\n# A coherent SLC pixel is sum of many random scatterers within the resolution\n# cell. Approximate by a circular complex Gaussian with variance = R; this\n# yields amplitude with Rayleigh statistics and fully developed speckle when\n# we form magnitude.\nre = rng.normal(0.0, 1.0, size=(H, W)) * np.sqrt(R / 2)\nim = rng.normal(0.0, 1.0, size=(H, W)) * np.sqrt(R / 2)\nslc_re = re * np.cos(phi) - im * np.sin(phi)\nslc_im = re * np.sin(phi) + im * np.cos(phi)\nslc = slc_re + 1j * slc_im\n\n# GRD (in this didactic model) = squared magnitude averaged over a small\n# block (multi-look) -> intensity with reduced speckle.\ndef block_mean(a, k):\n    h, w = a.shape\n    return a.reshape(h // k, k, w // k, k).mean(axis=(1, 3))\n\nintensity = np.abs(slc) ** 2\ngrd = block_mean(intensity, 4)\n# stretch to a DN-like 0..255 visual scale via per-image percentile.\ndef stretch(x, lo=2, hi=98):\n    a, b = np.percentile(x, [lo, hi])\n    y = np.clip((x - a) / max(b - a, 1e-9), 0, 1)\n    return y\n\nfig, axes = plt.subplots(1, 4, figsize=(13, 4))\n\naxes[0].imshow(stretch(np.abs(grd)), cmap=\"gray\", origin=\"upper\")\naxes[0].set_title(\"GRD: amplituda (multi-look)\\nshape = (H/4, W/4), real\")\naxes[0].set_xlabel(\"ground range [px]\")\naxes[0].set_ylabel(\"azimuth [px]\")\n\naxes[1].imshow(stretch(slc_re), cmap=\"gray\", origin=\"upper\")\naxes[1].set_title(\"SLC: cz\\u0119\\u015b\\u0107 rzeczywista\\nshape = (H, W), complex64\")\naxes[1].set_xlabel(\"slant range [px]\")\naxes[1].set_ylabel(\"azimuth [px]\")\n\naxes[2].imshow(stretch(slc_im), cmap=\"gray\", origin=\"upper\")\naxes[2].set_title(\"SLC: cz\\u0119\\u015b\\u0107 urojona\\nshape = (H, W), complex64\")\naxes[2].set_xlabel(\"slant range [px]\")\naxes[2].set_ylabel(\"azimuth [px]\")\n\nphase = np.angle(slc)\nim3 = axes[3].imshow(phase, cmap=\"twilight\", origin=\"upper\", vmin=-np.pi, vmax=np.pi)\naxes[3].set_title(\"SLC: faza arg(z)\\n[-\\u03c0, \\u03c0] rad\")\naxes[3].set_xlabel(\"slant range [px]\")\naxes[3].set_ylabel(\"azimuth [px]\")\ncbar = fig.colorbar(im3, ax=axes[3], fraction=0.045, pad=0.04)\ncbar.set_label(\"rad\")\n\nfor ax in axes:\n    ax.tick_params(labelsize=8)\n\nfig.suptitle(\"Ten sam piksel SAR w dw\\u00f3ch produktach Sentinel-1: GRD trzyma jedn\\u0105 liczb\\u0119; SLC trzyma dwie (Re + Im, czyli A\\u00b7e^{i\\u03c6})\", fontsize=11)\nfig.tight_layout(rect=[0, 0, 1, 0.94])\n\nfig.savefig(\"formaty-danych-sar-grd-slc-kalibracja-2.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-grd-vs-slc",
+      "title": "Szybkie sprawdzenie: który produkt zamawiasz?",
+      "description": "Trzy zadania, które trafiają na biurko — który Level Sentinel-1 musisz zamówić, żeby je w ogóle ruszyć?",
+      "type": "quiz",
+      "data": {
+        "question": "W których z poniższych zadań *musisz* zamówić **SLC** (a GRD nie wystarczy)? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Wykrycie statków na morzu w pojedynczej scenie Sentinel-1 nad portem.",
+          "Pomiar milimetrowego osiadania mostu między dwoma przelotami satelity tego samego toru.",
+          "Mapa land-cover (woda / pole / miasto) na pojedynczej scenie.",
+          "Mapa koherencji interferometrycznej między dwoma datami tej samej sceny."
+        ],
+        "correct": [
+          1,
+          3
+        ],
+        "explanation": "Interferometria i koherencja **wymagają fazy** — a fazę trzyma tylko SLC; GRD ją wyrzuca podczas detekcji amplitudowej. Detekcja statków (1) i klasyfikacja land-cover (3) operują na intensywności wstecznego rozpraszania, więc multi-look amplitudowy GRD jest dla nich wystarczający (i jest 4–8× mniejszy od SLC). Reguła kciuka: jeśli pytanie brzmi „jak coś wygląda na obrazie?\" — GRD; jeśli „jak się zmienia między dwoma przelotami w sensie fazy?\" — SLC.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "kalibracja-dn-to-nie-sigma0",
+      "title": "Kalibracja radiometryczna: DN to nie sigma-nought",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 Radiometric Calibration (ESA SentiWiki)",
+          "kind": "article"
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images, Ch. 3",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Otworzyłeś GRD, dostałeś tablicę `uint16`. Wartości od kilkudziesięciu do kilku tysięcy. **Co one znaczą fizycznie?**\n\nNic — dopóki nie skalibrujesz. Surowe **Digital Number** zależą od wzmacniaczy odbiornika, automatycznej regulacji wzmocnienia (AGC) i ścieżki dat orbity. To samo pole rolnicze może mieć w jednej scenie `DN ≈ 1200`, w drugiej `DN ≈ 850` — bez kalibracji nieporównywalne.\n\n![Quicklook produktu Sentinel-1A IW GRD nad Hamburgiem — pełna scena GRD przerzucona na ground range, z czytelną linią brzegową Łaby, jasnymi punktami zabudowy portowej i ciemnym (bo gładkim) korytem rzeki](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-hamburg-quicklook.png)\n\n*(Quicklook: Copernicus Sentinel-1 GRD nad Hamburgiem — przykładowa scena, na której będziemy pracować w kolejnych modułach.)*\n\nKonwersja DN → fizyczne wsteczne rozpraszanie (**sigma-nought**, $\\sigma^0$) wygląda tak:\n\n$$ \\sigma^0 = \\frac{\\mathrm{DN}^2}{A_\\sigma^2} $$\n\nGdzie $A_\\sigma$ to **calibration LUT** dostarczana w pliku XML wewnątrz `.SAFE/annotation/calibration/calibration-*.xml`. LUT zmienia się gładko przez range (bliżej satelity inny niż dalej) i jest interpolowana per piksel. W praktyce pracujemy w decybelach, bo $\\sigma^0$ obejmuje 4–5 rzędów wielkości:\n\n$$ \\sigma^0_{dB} = 10 \\log_{10}\\!\\left(\\frac{\\mathrm{DN}^2}{A_\\sigma^2}\\right) $$\n\nW dokumentacji ESA spotkasz **trzy „nought\"**, różniące się powierzchnią, do której znormalizowano echo:\n\n- **$\\beta^0$** *(beta-nought)* — per slant area; surowy, najbliższy radarowi.\n- **$\\sigma^0$** *(sigma-nought)* — per ground area; standard dla większości aplikacji.\n- **$\\gamma^0$** *(gamma-nought)* — znormalizowany przez $\\cos(\\theta_{inc})$; znosi zależność od kąta padania, użyteczny w terenie górzystym.\n\nKażdy ma własną LUT w tym samym XML-u. Wybór zależy od tego, czy potem porównujesz dwie sceny (zwykle $\\sigma^0$) czy modelujesz topografię (wtedy $\\gamma^0$). Bez tej kalibracji „mean(DN) wczoraj\" vs „mean(DN) dziś\" to **dwie różne jednostki**, nieporównywalne. Po kalibracji $-8$ dB nad polem dziś i $-8$ dB jutro znaczy *to samo*."
+      }
+    },
+    {
+      "id": "calibration-curve",
+      "title": "Krzywa kalibracji: DN → σ⁰ [dB]",
+      "description": "Dla typowego A_σ = 600 (swath IW): jak DN przekłada się na fizyczne dB i gdzie leżą typowe rodzaje pokrycia terenu.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/formaty-danych-sar-grd-slc-kalibracja-1.png",
+        "alt": "Wykres krzywej kalibracji: oś X to Digital Number (DN) od 0 do 6200, oś Y to sigma0 w decybelach od -30 do +12. Czarna krzywa rośnie monotonicznie według wzoru sigma0_dB = 10*log10(DN^2 / A^2) z A=600. Trzy poziome pasma kolorów oznaczają typowe zakresy: niebieskie pasmo dla wody spokojnej (-25 do -15 dB), zielone dla wegetacji (-15 do -7 dB), pomarańczowe dla obszarów miejskich i metalicznych (-5 do +5 dB). Dwa punkty referencyjne anotowane: DN=300 -> sigma0 = -6.0 dB, DN=1500 -> sigma0 = +7.96 dB.",
+        "caption": "Rys. 2. Krzywa kalibracji DN → σ⁰[dB] dla typowego A_σ=600 w swath IW. Fizyczne pasma trzech rodzajów pokrycia terenu pokazują, dlaczego σ⁰ ≈ −20 dB to woda, a σ⁰ ≈ +5 dB to żelazne dachy.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Calibration: sigma0 (linear) = DN^2 / A_sigma^2  ->  in dB: 10*log10(DN^2/A_sigma^2)\n# Sentinel-1 GRD typical A_sigma is around a few hundred (depends on incidence).\n# We pick a representative A_sigma = 600 to draw the dB curve.\nA = 600.0\nDN = np.linspace(50, 6000, 400)\nsigma0_db = 10.0 * np.log10((DN ** 2) / (A ** 2))\n\n# Mark a few canonical land-cover sigma0 dB ranges on the right axis as\n# horizontal bands so the learner sees what each DN actually corresponds to.\nbands = [\n    (\"Calm water\",       -25, -15, \"#3b82f6\"),\n    (\"Vegetation\",       -15,  -7, \"#10b981\"),\n    (\"Urban / metallic\",  -5,  +5, \"#f59e0b\"),\n]\n\nfig, ax = plt.subplots(figsize=(8, 5))\nfor label, lo, hi, color in bands:\n    ax.axhspan(lo, hi, alpha=0.12, color=color, label=f\"{label}: {lo}\\u2026{hi} dB\")\n\nax.plot(DN, sigma0_db, color=\"#1f2937\", linewidth=2.0,\n        label=r\"$\\sigma^0_{dB}=10\\log_{10}\\!\\left(\\mathrm{DN}^2 / A_\\sigma^2\\right)$\")\n\n# Annotate two reference DN values, showing the resulting dB.\nfor dn_ref in (300, 1500):\n    db_ref = 10.0 * np.log10((dn_ref ** 2) / (A ** 2))\n    ax.plot([dn_ref], [db_ref], \"o\", color=\"#1f2937\", markersize=5)\n    ax.annotate(f\"DN={dn_ref}\\n\\u03c3\\u2070={db_ref:+.1f} dB\",\n                xy=(dn_ref, db_ref), xytext=(dn_ref + 250, db_ref + 2.5),\n                fontsize=9,\n                arrowprops=dict(arrowstyle=\"-\", color=\"#6b7280\", lw=0.8))\n\nax.set_xlabel(\"Digital Number (DN, surowy odczyt z produktu Sentinel-1 GRD)\")\nax.set_ylabel(r\"$\\sigma^0$ [dB]  (po kalibracji radiometrycznej)\")\nax.set_title(\"Kalibracja Sentinel-1: surowe DN \\u2192 wstecznie rozpraszane $\\\\sigma^0$ [dB]\\n($A_\\\\sigma=600$, typowe dla swath IW)\")\nax.set_xlim(0, 6200)\nax.set_ylim(-30, 12)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower right\", fontsize=9, framealpha=0.95)\n\nfig.savefig(\"formaty-danych-sar-grd-slc-kalibracja-1.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "exercise-skalibruj-tile",
+      "title": "Skalibruj wycinek GRD do σ⁰ [dB]",
+      "description": "Realny pipeline w 5 linijkach numpy: NPZ z DN + LUT → mapa σ⁰ w decybelach.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Wycinek 64×64 px Sentinel-1 GRD jest zapisany jako `.npz` w `/inputs/sentinel1-grd-dn-tile.npz` z dwiema tablicami:\n\n- `dn` — `uint16`, surowy Digital Number (kształt `(64, 64)`).\n- `a_sigma` — `float32`, calibration LUT $A_\\sigma$ rozpiętą po range (też `(64, 64)`).\n\nNapisz funkcję `calibrate_sigma0_db(dn, a_sigma) -> np.ndarray`, która zwraca tablicę $\\sigma^0_{dB}$ tego samego kształtu, zgodnie z wzorem:\n\n$$ \\sigma^0_{dB} = 10 \\log_{10}\\!\\left(\\frac{\\mathrm{DN}^2}{A_\\sigma^2}\\right) $$\n\nWskazówki:\n\n1. **Castuj `dn` do `float64` przed kwadratem** — `uint16 ** 2` przepełni się dla DN > 255.\n2. Użyj `np.maximum(..., 1e-12)` przed `log10`, żeby zabezpieczyć się przed `log(0)` na pikselach z zerowym DN (rzadkie, ale zdarza się na cieniu radarowym).\n3. Wynik nie powinien być w żadnym miejscu większy niż ~`+10 dB` ani mniejszy niż ~`-30 dB` dla typowej sceny IW.\n\nPo skalibrowaniu narysuj wynik przez `plt.imshow(sigma0_db, cmap='gray', vmin=-25, vmax=5)` — powinien przypominać mapę po prawej stronie panela referencyjnego powyżej.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\ndn = data['dn']            # uint16, shape (64, 64)\na_sigma = data['a_sigma']  # float32, shape (64, 64), waha sie po range\n\nprint('dn dtype:', dn.dtype, 'min/max:', dn.min(), dn.max())\nprint('a_sigma min/max:', a_sigma.min(), a_sigma.max())\n\ndef calibrate_sigma0_db(dn, a_sigma):\n    \"\"\"\n    Skalibruj surowe DN Sentinel-1 GRD do sigma-nought w decybelach.\n\n    dn       : np.ndarray (uint16) -- surowe Digital Number\n    a_sigma  : np.ndarray (float)  -- calibration LUT A_sigma per piksel\n\n    Zwroc np.ndarray (float64) tej samej shape, zawierajacy\n    sigma0_dB = 10 * log10(DN^2 / A_sigma^2).\n    \"\"\"\n    # TODO: castuj dn do float64, policz sigma0 = (DN/A_sigma)^2,\n    # zabezpiecz log10 przed zerem i wroc 10*log10(...).\n    return np.zeros_like(dn, dtype=float)\n\nsigma0_db = calibrate_sigma0_db(dn, a_sigma)\nprint('sigma0_db min/max/mean:',\n      round(float(sigma0_db.min()), 2),\n      round(float(sigma0_db.max()), 2),\n      round(float(sigma0_db.mean()), 2))\n\nfig, ax = plt.subplots(figsize=(5, 4.2))\nim = ax.imshow(sigma0_db, cmap='gray', vmin=-25, vmax=5, origin='upper')\nax.set_title('sigma0 [dB] po kalibracji')\nax.set_xlabel('ground range [px]')\nax.set_ylabel('azimuth [px]')\nfig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='dB')\nfig.tight_layout()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "shape_and_dtype_preserved",
+            "body": "import numpy as np\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\nout = calibrate_sigma0_db(data['dn'], data['a_sigma'])\nassert out.shape == (64, 64), f'shape mismatch: {out.shape}'\nassert np.issubdtype(out.dtype, np.floating), f'expected float, got {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "range_within_physical_bounds",
+            "body": "import numpy as np\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\nout = calibrate_sigma0_db(data['dn'], data['a_sigma'])\nassert out.min() > -40.0 and out.max() < 15.0, (\n    f'sigma0_dB poza fizycznymi granicami: min={out.min():.2f}, max={out.max():.2f}'\n)",
+            "hidden": true
+          },
+          {
+            "name": "water_patch_is_dark",
+            "body": "import numpy as np\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\nout = calibrate_sigma0_db(data['dn'], data['a_sigma'])\n# rogi 10x10 w lewym gornym = woda; sigma0_dB powinno byc okolo -15 dB\nwater = out[0:10, 0:10].mean()\nassert -20.0 < water < -10.0, f'water mean dB nietypowe: {water:.2f}'",
+            "hidden": true
+          },
+          {
+            "name": "urban_patch_is_bright",
+            "body": "import numpy as np\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\nout = calibrate_sigma0_db(data['dn'], data['a_sigma'])\n# centralny patch 28:36, 28:36 = miasto; sigma0_dB powinno byc okolo 0 dB\nurban = out[28:36, 28:36].mean()\nassert -3.0 < urban < 4.0, f'urban mean dB nietypowe: {urban:.2f}'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\ndn = data['dn']\na_sigma = data['a_sigma']\n\ndef calibrate_sigma0_db(dn, a_sigma):\n    dn_f = dn.astype(np.float64)\n    sigma0 = (dn_f * dn_f) / (a_sigma.astype(np.float64) ** 2)\n    return 10.0 * np.log10(np.maximum(sigma0, 1e-12))\n\nsigma0_db = calibrate_sigma0_db(dn, a_sigma)\nprint('sigma0_db min/max/mean:',\n      round(float(sigma0_db.min()), 2),\n      round(float(sigma0_db.max()), 2),\n      round(float(sigma0_db.mean()), 2))\n\nfig, ax = plt.subplots(figsize=(5, 4.2))\nim = ax.imshow(sigma0_db, cmap='gray', vmin=-25, vmax=5, origin='upper')\nax.set_title('sigma0 [dB] po kalibracji')\nax.set_xlabel('ground range [px]')\nax.set_ylabel('azimuth [px]')\nfig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='dB')\nfig.tight_layout()\nplt.show()\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sentinel1-grd-dn-tile-input.png",
+            "alt": "Dwa panele 64x64 px obok siebie. Lewy: surowe DN w skali szarości z kolorbarem od ~40 do ~1100 — widać scene z ciemnym tłem (woda) i jasniejszym kwadratem w środku (miasto). Prawy: ten sam wycinek po kalibracji do sigma0 [dB], skala -25 do +5 dB, kolorbar oznaczony 'dB'.",
+            "caption": "Wejście (lewy): surowy GRD; oczekiwany wynik (prawy): mapa σ⁰ [dB]."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sentinel1-grd-sigma0-expected.png",
+          "alt": "Wycinek 64x64 px po kalibracji do sigma0 w decybelach: woda po obu stronach jest ciemna (~-15 dB), centralny patch miejski jasny (~0 dB), pasma wegetacji średnio-szare (~-7 dB), kolorbar pionowy oznaczony 'dB'.",
+          "caption": "Oczekiwany wynik: σ⁰ [dB] po kalibracji surowego DN.",
+          "live": true
+        },
+        "requiresPackages": []
+      }
+    },
+    {
+      "id": "sandbox-baw-sie-kalibracja",
+      "title": "Pobaw się z kalibracją",
+      "description": "Bez testów: zmień A_σ, przełącz na β⁰, narysuj histogram σ⁰ — zobacz, jak każda decyzja zmienia obrazek.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/sentinel1-grd-dn-tile.npz')\ndn = data['dn'].astype(np.float64)\na_sigma = data['a_sigma'].astype(np.float64)\n\n# Pobaw sie:\n#  - Co sie stanie jezeli pomylisz sie i uzyjesz stalej A_sigma = 600 zamiast LUT?\n#    Czy mapa wyglada inaczej w ground range (lewo-prawo)?\n#  - Sprobuj policzyc beta-nought: beta0 = DN^2 / A_beta^2\n#    (uzyj prostego A_beta = a_sigma * 1.05 jako proxy).\n#  - Narysuj histogram sigma0_dB i zobacz, ze ma dlugi ogon w prawo.\n#\n# Kazda zmiana ucisnie inny rejon obrazu -- to dokladnie te decyzje, ktore\n# w realnym pipeline'ie podejmujesz raz, na poczatku, i potem juz tylko\n# spokojnie przetwarzasz dalej.\n\nsigma0_db_lut = 10.0 * np.log10(np.maximum((dn ** 2) / (a_sigma ** 2), 1e-12))\nprint('sigma0_db (LUT) mean/std:',\n      round(sigma0_db_lut.mean(), 2),\n      round(sigma0_db_lut.std(), 2))\n",
+        "encouragement": "Zmień A_σ z LUT na stałą i zobacz, czy odróżnisz wodę od pól bez korekty po range — to jest dokładnie ten moment, w którym intuicyjnie odpowiadasz na pytanie „dlaczego ESA dostarcza LUT, a nie skalar\"."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+      "title": "Sentinel-1 Level-1 GRD product specification (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 Radiometric Calibration (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://documentation.dataspace.copernicus.eu/Data/SentinelMissions/Sentinel1.html",
+      "title": "Copernicus Data Space Ecosystem — Sentinel-1 documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://asf.alaska.edu/datasets/daac/sentinel-1/",
+      "title": "ASF — Sentinel-1 Product Types",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images, Ch. 3 (data and calibration)",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    }
+  ]
+}

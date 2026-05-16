@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "slug": "klasyfikacja-pojazdow-mstar-onnx-inference",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m5",
+  "title": "Klasyfikacja pojazdów MSTAR — ONNX inference",
+  "eyebrow": "INSAR, POLARYMETRIA I DEEP LEARNING",
+  "description": "Trzeci stopień ATR: po CFAR-ze (4.5) i dyskryminatorze po polu masz kandydatów wielkości pojazdu — ale część z nich to corner-reflektory. Tutaj wycinasz chip 64x64 wokół każdego kandydata i puszczasz przez 8-klasowy klasyfikator CNN w przeglądarce (`onnxruntime-web`). Zobaczysz, dlaczego MSTAR jest *kanonicznym* benchmarkiem ATR od 1996 r., gdzie wewnątrzrodzinne mylenie czołg-vs-czołg i APC-vs-APC jest fundamentalne, jak zaimplementować macierz pomyłek i per-class recall na surowych softmax outputs, i co reject-option robi z coverage vs accuracy.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "mstar-co-i-dlaczego",
+      "title": "MSTAR — kanoniczny benchmark klasyfikacji pojazdów SAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target classification using the deep convolutional networks for SAR images",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        },
+        {
+          "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+          "title": "MSTAR Dataset documentation (SDMS AFRL)",
+          "kind": "article"
+        },
+        {
+          "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+          "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+          "kind": "paper",
+          "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+          "year": 1997
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Dotarliśmy do **trzeciego stopnia ATR** z lekcji *4.5*. CFAR daje kandydatów, dyskryminator po polu odsiewa duże struktury i pojedyncze speckle-spike'y — ale **nie odróżnia pojazdu od corner-reflektora wielkości pojazdu**. To rozróżnienie wymaga klasyfikatora chipów, który patrzy na sygnaturę 64x64 px wokół każdego kandydata i zwraca etykietę klasy.\n\n![Osiem MSTAR-podobnych chipów 64x64 px, po jednym z każdej klasy: BMP2, BTR70, BRDM2 (lekkie pojazdy opancerzone — kompaktowy jasny prostokąt + krótki cień), T72, T62, ZSU234 (czołgi — większy korpus + jasna wieża centralnie + długi cień), ZIL131 (ciężarówka — wąski, długi pojazd z jaśniejszą kabiną z jednej strony), D7 (spychacz — krępy korpus z jasnym ostrzem od frontu i krótkim cieniem). Tło każdego chipa to speckle z rozkładu Gamma L=4. Cień każdego pojazdu pokazany down-range (po prawej stronie sylwetki).](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/mstar-eight-classes-chip-grid.png)\n\n**MSTAR** (Moving and Stationary Target Acquisition and Recognition) to zbiór wycentrowanych chipów X-band SAR pojazdów wojskowych zebrany w połowie lat 90. przez Sandia / AFRL i opublikowany do badań nad ATR. Dlaczego on, a nie nowsze datasety:\n\n- **Standaryzacja od 1996.** Setki opublikowanych prac używają **tego samego split'u** train@17° vs test@15° depresji, więc wyniki klasyfikatorów są bezpośrednio porównywalne. Każda nowa architektura jest mierzona przeciwko tym samym chipom.\n- **Wycentrowane chipy, jednorodne tło.** To celowe ułatwienie: MSTAR mierzy *klasyfikator*, nie *detektor*. Twoim zadaniem nie jest znaleźć pojazd — masz go już wycentrowanego w 64x64 px. Mierzysz **rozróżnianie klas**, nie pełny pipeline od piksela do etykiety.\n- **Wiele kątów azymutu na klasę.** Każda klasa zawiera chipy z pełnego zakresu 0-360° azymutu satelity — klasyfikator musi nauczyć się sygnatury *niezależnej od orientacji pojazdu*. To dlatego prosta CNN bez augmentacji rotacyjnej często osiąga 90+%, ale głębsza sieć z augmentacją D4 (lekcja 5.3) sięga 99%+ (Chen et al., 2016).\n\n**Kluczowa rzecz, której MSTAR *nie* mierzy:** end-to-end ATR na pełnej scenie. Realny piksel z pełnego kafelka Sentinel-1 nie ma korner-reflektora w środku 64x64 px ramki — to dopiero **musisz wycentrować (stopień 1+2 ATR)**. Wysokie accuracy na MSTAR nie znaczy, że Twój klasyfikator zadziała w produkcji bez działającego pre-screenera. Mylenie tych dwóch ról to klasyczny błąd: $99{,}5\\%$ na MSTAR + $30\\%$ recall pre-screenera = $\\le 30\\%$ end-to-end recall na realnej scenie.\n"
+      }
+    },
+    {
+      "id": "macierz-pomylek-osmem",
+      "title": "Macierz pomyłek: czołgi mylą się z czołgami, APC z APC",
+      "description": "Wynik 8-klasowego klasyfikatora MSTAR-like na 400 chipach (50/klasa, overall accuracy ~90,8%). Lewy panel pokazuje surowe zliczenia; prawy — recall znormalizowany po wierszu prawdziwych klas. Diagonala = trafienia, off-diagonal = pomyłki.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/klasyfikacja-pojazdow-mstar-onnx-inference-1.png",
+        "alt": "Dwa panele macierzy pomyłek 8x8 obok siebie dla 8 klas MSTAR-podobnych (BMP2, BTR70, BRDM2, T72, T62, ZSU234, ZIL131, D7), 400 chipów (50 na klasę). Lewy panel 'Macierz pomyłek (liczba próbek)' — heatmapa viridis: ciemnofioletowe tło z jasnozieloną/żółtą wyraźną diagonalą (44, 48, 43, 42, 44, 42, 50, 50). Off-diagonal wartości głównie 0, ale wyraźnie widoczne klastry niezerowych wartości w lewym górnym rogu (3x3 blok BMP2/BTR70/BRDM2: 3, 3, 2, 5, 2 itd.) oraz w środku (3x3 blok T72/T62/ZSU234: 2, 6, 2, 4, 5, 3). Cała kolumna i wiersz dla ZIL131 (6) i D7 (7) są puste poza diagonalą (50 i 50 na diagonali, reszta = 0). Wartości numeryczne wypisane w każdej komórce. Prawy panel 'Macierz pomyłek (znormalizowana po wierszu)' — heatmapa magma: diagonala 0,88-1,00 jasnożółta, off-diagonal 0,00-0,12 ciemnofioletowa. Te same wewnątrzrodzinne klastry wewnątrz APC i czołgów widoczne jako jaśniejsze plamy ~0,04-0,12. Osie obu paneli: 'Predicted class' (X) i 'True class' (Y), tick labels obracane o 45° ha=right dla X, prosto dla Y. Tytuł nad obydwoma: 'MSTAR-like (8 klas, N=400): overall accuracy = 90,8%. Lewy panel: surowe zliczenia. Prawy: znormalizowana po wierszu (jak często klasa True idzie do każdej Predicted).'",
+        "caption": "Rys. 1. Mylenia nie są równomierne: wewnątrz rodziny czołgów (T72/T62/ZSU234) i wewnątrz rodziny APC (BMP2/BTR70/BRDM2) klasyfikator regularnie się waha — sygnatury są fizycznie podobne (rozmiar korpusu, długość cienia). Ciężarówka (ZIL131) i spychacz (D7) są geometrycznie odróżnialne od wszystkich pozostałych klas i osiągają 100% recall. To **strukturalna**, a nie globalna własność jakości klasyfikatora — trening trzeba zaprojektować pod te konkretne pary.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nbundle = np.load(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/\"\n    \"mstar-classifier-bundle.npz\"\n)\ntrue_labels = bundle[\"true_labels\"]\npred_probs = bundle[\"pred_probs\"]\nclass_names = [str(s) for s in bundle[\"class_names\"]]\nn_classes = len(class_names)\n\npredictions = pred_probs.argmax(axis=1)\noverall_acc = float((predictions == true_labels).mean())\n\ncm = np.zeros((n_classes, n_classes), dtype=np.int32)\nfor t, p in zip(true_labels, predictions):\n    cm[int(t), int(p)] += 1\nrow_sums = cm.sum(axis=1, keepdims=True)\ncm_norm = cm / np.maximum(row_sums, 1)\n\nfig, axes = plt.subplots(1, 2, figsize=(13.5, 6.2), constrained_layout=True)\n\nax = axes[0]\nim0 = ax.imshow(cm, cmap=\"viridis\", aspect=\"auto\", vmin=0, vmax=cm.max())\nax.set_xticks(np.arange(n_classes))\nax.set_yticks(np.arange(n_classes))\nax.set_xticklabels(class_names, rotation=45, ha=\"right\", fontsize=9)\nax.set_yticklabels(class_names, fontsize=9)\nax.set_xlabel(\"Predicted class [-]\")\nax.set_ylabel(\"True class [-]\")\nax.set_title(\"Macierz pomylek (liczba probek)\")\nfor i in range(n_classes):\n    for j in range(n_classes):\n        v = int(cm[i, j])\n        ax.text(j, i, str(v), ha=\"center\", va=\"center\",\n                color=\"white\" if v < cm.max() * 0.6 else \"black\",\n                fontsize=8.5)\nplt.colorbar(im0, ax=ax, label=\"Liczba probek [-]\")\n\nax = axes[1]\nim1 = ax.imshow(cm_norm, cmap=\"magma\", aspect=\"auto\", vmin=0, vmax=1)\nax.set_xticks(np.arange(n_classes))\nax.set_yticks(np.arange(n_classes))\nax.set_xticklabels(class_names, rotation=45, ha=\"right\", fontsize=9)\nax.set_yticklabels(class_names, fontsize=9)\nax.set_xlabel(\"Predicted class [-]\")\nax.set_ylabel(\"True class [-]\")\nax.set_title(\"Macierz pomylek (znormalizowana po wierszu)\")\nfor i in range(n_classes):\n    for j in range(n_classes):\n        v = float(cm_norm[i, j])\n        ax.text(j, i, f\"{v:.2f}\", ha=\"center\", va=\"center\",\n                color=\"white\" if v < 0.55 else \"black\", fontsize=8.5)\nplt.colorbar(im1, ax=ax, label=\"Recall (frakcja klasy True) [-]\")\n\nfig.suptitle(\n    f\"MSTAR-like (8 klas, N={int(cm.sum())}): overall accuracy = {overall_acc*100:.1f}%.\\n\"\n    \"Lewy panel: surowe zliczenia. Prawy: znormalizowana po wierszu (jak czesto klasa True idzie do kazdej Predicted).\",\n    fontsize=11,\n)\n\nimport pathlib\nout = pathlib.Path(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"klasyfikacja-pojazdow-mstar-onnx-inference-1.png\"\n)\nout.parent.mkdir(parents=True, exist_ok=True)\nfig.savefig(out, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "pipeline-onnxruntime-web",
+      "title": "Pipeline inferencji: chip → preprocess → onnxruntime-web → softmax",
+      "sources": [
+        {
+          "url": "https://onnxruntime.ai/docs/tutorials/web/",
+          "title": "ONNX Runtime Web — official documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target classification using the deep convolutional networks for SAR images",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyfikator MSTAR jest niemal komicznie prosty pod względem inżynieryjnym — to **jedna sieć konwolucyjna na jedno wejście**, bez detektora, bez post-processingu, bez śledzenia czasowego. Cała aplikacyjna trudność jest w treningu offline (augmentacje, depresja, regularyzacja), nie w inferencji. Stąd inferencja świetnie nadaje się do uruchomienia w przeglądarce przez `onnxruntime-web`.\n\n![Pięcioetapowy schemat pipeline'u inferencji klasyfikatora MSTAR w przeglądarce, ułożony poziomo i połączony strzałkami: (1) wejście — chip 64x64 px float32 amplituda SAR; (2) Preprocess JS — podzielenie przez wartość max chipa, zbudowanie tensora NCHW [1,1,64,64]; (3) onnxruntime-web — ort.InferenceSession.run({input: tensor}) zwraca Float32Array długości 8 (logits); (4) Postprocess JS — softmax + argmax dają klasę + confidence; (5) UI — wpis do macierzy pomyłek, live update. Pod schematem podpis: trening offline w PyTorch/TensorFlow, eksport .onnx (~0.3-2 MB wag), serwowane jako statyczny plik z /public/models/.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/mstar-onnx-pipeline-diagram.png)\n\nReferencyjny snippet (NIE w Pyodide — to JavaScript w przeglądarce):\n\n```javascript\nimport * as ort from \"onnxruntime-web\";\n\nconst session = await ort.InferenceSession.create(\"/models/mstar-cnn.onnx\");\nconst CLASSES = [\"BMP2\", \"BTR70\", \"BRDM2\", \"T72\", \"T62\",\n                 \"ZSU234\", \"ZIL131\", \"D7\"];\n\nasync function classifyChip(chipFloat /* Float32Array length 64*64, w [0, max] */) {\n  // 1) Preprocess: per-chip max-normalize, NCHW float32\n  let cmax = 0;\n  for (let i = 0; i < chipFloat.length; i++)\n    if (chipFloat[i] > cmax) cmax = chipFloat[i];\n  const scale = cmax > 1e-6 ? cmax : 1.0;\n  const x = new Float32Array(chipFloat.length);\n  for (let i = 0; i < chipFloat.length; i++) x[i] = chipFloat[i] / scale;\n  const tensor = new ort.Tensor(\"float32\", x, [1, 1, 64, 64]);\n\n  // 2) session.run — closed box; zwraca logits [1, 8]\n  const out = await session.run({ input: tensor });\n  const logits = out.logits.data; // Float32Array length 8\n\n  // 3) Softmax + argmax\n  let m = -Infinity; for (const v of logits) if (v > m) m = v;\n  const e = logits.map(v => Math.exp(v - m));\n  const z = e.reduce((a, b) => a + b, 0);\n  const probs = e.map(v => v / z);\n  let best = 0; for (let i = 1; i < probs.length; i++)\n    if (probs[i] > probs[best]) best = i;\n  return { label: CLASSES[best], confidence: probs[best], probs };\n}\n```\n\nTrzy klasyczne pułapki, które złamią ten pipeline po cichu — bez `throw`, ale ze złą etykietą:\n\n- **Niewycentrowany chip.** Jeśli stopień 1+2 ATR zwraca bbox z błędem $\\pm 8$ px, pojazd nie jest wycentrowany w 64x64 — klasyfikator widzi *róg* sylwetki + dużo speckle tła. MSTAR był trenowany tylko na *wycentrowanych* chipach, więc accuracy spada do *random* (~12,5% dla 8 klas) na takich wejściach.\n- **Mismatch depresji.** Trening na 17°, test na 30° depresji — kąt obserwacji zmienia długość cienia i kształt sylwetki. Chen 2016 raportuje spadek accuracy z $>99\\%$ na 17°/15° do $\\sim 85\\%$ przy szerokim spread'zie depresji. To **nie** jest wina sieci; to fundamentalny problem domain shift.\n- **Normalizacja per-chip vs per-dataset.** Niektóre referencyjne CNN-y normalizują przez globalny $\\max$ datasetu (jeden skalar), inne per-chip. Pomyłka tych dwóch konwencji daje obraz, który po preprocess wygląda 'dziwnie ciemny' lub 'dziwnie jasny' — sieć dostaje wejście spoza dystrybucji treningowej i prognozuje losowo.\n"
+      }
+    },
+    {
+      "id": "code-compute-metrics",
+      "title": "Zaimplementuj `compute_classification_metrics` — accuracy + per-class + confusion matrix",
+      "description": "Po lewej cztery chipy 64x64 z bundle (po jednym z różnych klas) i podgląd surowego softmax-output z onnxruntime-web; po prawej oczekiwany kształt macierzy pomyłek 8x8. Twoja funkcja przyjmuje cały zbiór pred_probs + true_labels i zwraca trzy spójne pola (accuracy, per_class_accuracy, confusion_matrix). Testy weryfikują wartości na precomputed bundle'u i oczekiwane wewnątrzrodzinne mylenie czołgów.",
+      "sources": [
+        {
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.confusion_matrix.html",
+          "title": "sklearn.metrics.confusion_matrix — scikit-learn documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target classification using the deep convolutional networks for SAR images",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `compute_classification_metrics(pred_probs, true_labels, num_classes)` zwracającą **słownik** z trzema kluczami: `accuracy`, `per_class_accuracy`, `confusion_matrix`.\n\nArgumenty:\n\n- `pred_probs`: `np.ndarray (N, num_classes)` float32 — softmax outputs z ONNX (każdy wiersz sumuje się do 1, ale Twoja funkcja **nie** powinna tego zakładać — `argmax` jest niezależny od skali).\n- `true_labels`: `np.ndarray (N,)` int32 — etykiety prawdziwych klas w `[0, num_classes)`.\n- `num_classes`: `int` — liczba klas (8 dla MSTAR w tym kursie).\n\nCo dokładnie zwracasz:\n\n1. **`accuracy`**: `float` — frakcja poprawnych klasyfikacji ($\\mathrm{argmax}(pred\\_probs) == true\\_labels$).\n2. **`per_class_accuracy`**: `np.ndarray (num_classes,)` float32 — recall każdej klasy (diagonal macierzy pomyłek / suma wiersza). Dla klasy bez próbek (`row_sum == 0`) zwróć `0.0`, nie `nan` — `nan` psuje agregację i serializację.\n3. **`confusion_matrix`**: `np.ndarray (num_classes, num_classes)` int32. **Konwencja wierszowo-kolumnowa**: $\\mathrm{cm}[i, j]$ = liczba próbek, których prawdziwa klasa to $i$, a przewidziana to $j$. Diagonala = trafienia; off-diagonal = pomyłki.\n\n```\n>>> bundle = np.load('/inputs/mstar-classifier-bundle.npz')\n>>> m = compute_classification_metrics(\n...     bundle['pred_probs'], bundle['true_labels'], num_classes=8)\n>>> round(m['accuracy'], 4)\n0.9075\n>>> m['confusion_matrix'].sum(axis=1).tolist()\n[50, 50, 50, 50, 50, 50, 50, 50]\n```\n\nTesty weryfikują (a) shape + dtype każdego pola, (b) suma macierzy pomyłek = N, (c) `accuracy` == sum(diag) / N, (d) overall accuracy i per-class recall zgadzają się z wartościami policzonymi offline dla `mstar-classifier-bundle.npz`.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef compute_classification_metrics(pred_probs, true_labels, num_classes):\n    \"\"\"Klasyczna piatka metryk z softmax outputu klasyfikatora.\n\n    pred_probs:    np.ndarray (N, num_classes) float32 — softmax z ONNX\n    true_labels:   np.ndarray (N,) int — true class indices in [0, num_classes)\n    num_classes:   int — liczba klas\n\n    Zwraca dict z kluczami 'accuracy', 'per_class_accuracy', 'confusion_matrix'.\n    \"\"\"\n    # TODO:\n    #   predictions = pred_probs.argmax(axis=1)\n    #   accuracy = float((predictions == true_labels).mean())\n    #\n    #   cm = np.zeros((num_classes, num_classes), dtype=np.int32)\n    #   for t, p in zip(true_labels, predictions):\n    #       cm[int(t), int(p)] += 1\n    #\n    #   per_class = np.zeros(num_classes, dtype=np.float32)\n    #   for c in range(num_classes):\n    #       row = int(cm[c].sum())\n    #       per_class[c] = (cm[c, c] / row) if row > 0 else 0.0\n    #\n    #   return {\n    #       'accuracy': accuracy,\n    #       'per_class_accuracy': per_class,\n    #       'confusion_matrix': cm,\n    #   }\n    return {\n        \"accuracy\": 0.0,\n        \"per_class_accuracy\": np.zeros(num_classes, dtype=np.float32),\n        \"confusion_matrix\": np.zeros((num_classes, num_classes), dtype=np.int32),\n    }\n\n\n# --- Preview na realnym bundle z onnxruntime-web ---\nbundle = np.load(\"/inputs/mstar-classifier-bundle.npz\")\nclass_names = [str(s) for s in bundle[\"class_names\"]]\nnum_classes = len(class_names)\n\nm = compute_classification_metrics(\n    bundle[\"pred_probs\"], bundle[\"true_labels\"], num_classes\n)\nprint(f\"  accuracy = {m['accuracy']:.4f}\")\nfor ci, name in enumerate(class_names):\n    print(f\"  {name:>7s}: recall = {m['per_class_accuracy'][ci]:.3f}\")\n\ncm = m[\"confusion_matrix\"]\nfig, ax = plt.subplots(figsize=(7.0, 6.0), constrained_layout=True)\nim = ax.imshow(cm, cmap=\"viridis\", aspect=\"auto\")\nax.set_xticks(np.arange(num_classes))\nax.set_yticks(np.arange(num_classes))\nax.set_xticklabels(class_names, rotation=45, ha=\"right\", fontsize=9)\nax.set_yticklabels(class_names, fontsize=9)\nax.set_xlabel(\"Predicted class [-]\")\nax.set_ylabel(\"True class [-]\")\nax.set_title(f\"Macierz pomylek (acc={m['accuracy']*100:.1f}%)\")\nfor i in range(num_classes):\n    for j in range(num_classes):\n        v = int(cm[i, j])\n        if v > 0:\n            ax.text(j, i, str(v), ha=\"center\", va=\"center\",\n                    color=\"white\" if v < cm.max() * 0.6 else \"black\",\n                    fontsize=8.5)\nplt.colorbar(im, ax=ax, label=\"Liczba probek [-]\")\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_dict_with_correct_shapes_and_dtypes",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nK = 5\nprobs = rng.random((30, K)).astype(np.float32)\nprobs = probs / probs.sum(axis=1, keepdims=True)\nlabels = rng.integers(0, K, size=30).astype(np.int32)\nout = compute_classification_metrics(probs, labels, K)\nassert isinstance(out, dict), f'oczekiwano dict, dostalem {type(out).__name__}'\nfor k in ('accuracy', 'per_class_accuracy', 'confusion_matrix'):\n    assert k in out, f'brak klucza {k!r}'\nassert isinstance(out['accuracy'], float)\nassert out['per_class_accuracy'].shape == (K,), f\"per_class shape={out['per_class_accuracy'].shape}\"\nassert out['confusion_matrix'].shape == (K, K), f\"cm shape={out['confusion_matrix'].shape}\"\nassert out['confusion_matrix'].dtype.kind in 'iu', f\"cm dtype={out['confusion_matrix'].dtype}\"\n",
+            "hidden": false
+          },
+          {
+            "name": "confusion_matrix_row_sums_equal_n_samples",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nK = 4\nN = 40\nprobs = rng.random((N, K)).astype(np.float32)\nlabels = rng.integers(0, K, size=N).astype(np.int32)\nout = compute_classification_metrics(probs, labels, K)\ncm = out['confusion_matrix']\n# Suma kazdego wiersza powinna byc rowna liczbie probek tej prawdziwej klasy\nfor c in range(K):\n    expected = int((labels == c).sum())\n    actual = int(cm[c].sum())\n    assert actual == expected, (\n        f'wiersz {c}: cm.sum()={actual}, ale liczba probek klasy {c} = {expected}. '\n        f'Sprawdz konwencje cm[true, pred]: jesli zapisujesz cm[pred, true], suma KOLUMNY zgadza sie z label-count, nie WIERSZA.'\n    )\n# Suma calej macierzy = N\nassert int(cm.sum()) == N, f'cm.sum()={int(cm.sum())}, expected {N}'\n",
+            "hidden": true
+          },
+          {
+            "name": "accuracy_matches_diagonal_over_total",
+            "body": "import numpy as np\n# Recznie zbudowane probs: 4 probki, 3 klasy, znamy odpowiedzi.\nprobs = np.array([\n    [0.7, 0.2, 0.1],  # pred=0\n    [0.1, 0.8, 0.1],  # pred=1\n    [0.3, 0.3, 0.4],  # pred=2\n    [0.5, 0.4, 0.1],  # pred=0\n], dtype=np.float32)\nlabels = np.array([0, 1, 1, 0], dtype=np.int32)  # 3 trafione, 1 pomylka\nout = compute_classification_metrics(probs, labels, num_classes=3)\nassert abs(out['accuracy'] - 0.75) < 1e-6, f\"accuracy={out['accuracy']}\"\ncm = out['confusion_matrix']\n# Diagonala suma = 3 (poprawne)\nassert int(np.trace(cm)) == 3, f\"diag sum = {int(np.trace(cm))}, expected 3\"\n# Pojedyncza pomylka: prawdziwa klasa 1, przewidziana 2\nassert int(cm[1, 2]) == 1, f\"cm[1,2]={int(cm[1,2])}; sprawdz kierunek konwencji cm[true, pred]\"\n",
+            "hidden": true
+          },
+          {
+            "name": "matches_offline_values_on_mstar_bundle",
+            "body": "import numpy as np\nbundle = np.load('/inputs/mstar-classifier-bundle.npz')\nK = int(len(bundle['class_names']))\nout = compute_classification_metrics(\n    bundle['pred_probs'], bundle['true_labels'], K\n)\n# Wartosci policzone offline na tym samym bundle:\nassert abs(out['accuracy'] - 0.9075) < 1e-3, (\n    f\"accuracy={out['accuracy']:.4f}, expected ~0.9075. \"\n    f\"Sprawdz, czy uzywasz argmax po osi 1 (axis=1), a nie axis=0.\"\n)\n# Per-class recall: ZIL131 (idx=6) i D7 (idx=7) powinny byc 1.00 (najprostsze klasy);\n# T72 (idx=3) najgorszy ~0.84 (wewnatrzrodzinne mylenie z T62 i ZSU234).\npca = out['per_class_accuracy']\nassert pca[6] > 0.98 and pca[7] > 0.98, (\n    f'per_class[6]={pca[6]:.3f}, per_class[7]={pca[7]:.3f}, oczekiwano >0.98 dla obu (ZIL131 i D7).'\n)\nassert 0.80 <= pca[3] <= 0.90, (\n    f'per_class[3] (T72) = {pca[3]:.3f}, oczekiwano w przedziale 0.80..0.90 — wewnatrzrodzinne mylenie czolgow.'\n)\n# Off-diagonal sprawdzenie: czolg T72 (idx=3) najczesciej myli sie z ZSU234 (idx=5).\ncm = out['confusion_matrix']\nassert cm[3, 5] >= 3, f'cm[T72, ZSU234] = {int(cm[3, 5])}, oczekiwano >= 3 (charakterystyczne wewnatrzrodzinne mylenie).'\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef compute_classification_metrics(pred_probs, true_labels, num_classes):\n    predictions = pred_probs.argmax(axis=1)\n    accuracy = float((predictions == true_labels).mean())\n\n    cm = np.zeros((num_classes, num_classes), dtype=np.int32)\n    for t, p in zip(true_labels, predictions):\n        cm[int(t), int(p)] += 1\n\n    per_class = np.zeros(num_classes, dtype=np.float32)\n    for c in range(num_classes):\n        row = int(cm[c].sum())\n        per_class[c] = (cm[c, c] / row) if row > 0 else 0.0\n\n    return {\n        \"accuracy\": accuracy,\n        \"per_class_accuracy\": per_class,\n        \"confusion_matrix\": cm,\n    }\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/mstar-classifier-bundle-input.png",
+            "alt": "Podgląd bundle: 4 chipy MSTAR-podobne 64x64 w skali szarości (sqrt-brightness, vmin=0, vmax=1) ułożone w jednym rzędzie, każdy z labelem 'true=<NAZWA_KLASY>' nad nim (np. 'true=BMP2', 'true=T72', 'true=ZIL131', 'true=D7'). Tytuł nad rzędem: 'Bundle: 400 chipów 64x64 + softmax 400x8 (precomputed ONNX output)'. Cienie pojazdów widoczne po prawej stronie sylwetek (down-range), tło Gamma L=4 speckle.",
+            "caption": "Bundle: 4 z 400 chipów + softmax outputs (precomputed ONNX)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/mstar-classifier-bundle.npz",
+            "filename": "mstar-classifier-bundle.npz",
+            "caption": ".npz: 'chips' (float32, 400x64x64, amplituda SAR), 'true_labels' (int32, 400), 'pred_probs' (float32, 400x8, softmax z onnxruntime-web), 'class_names' (U8, 8: BMP2/BTR70/BRDM2/T72/T62/ZSU234/ZIL131/D7)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/mstar-classifier-bundle-expected.png",
+          "alt": "Macierz pomyłek 8x8 jako heatmapa viridis dla precomputed ONNX outputu na 400 chipach MSTAR-like. Diagonala jasnozielona/żółta (44, 48, 43, 42, 44, 42, 50, 50). Off-diagonal głównie ciemnofioletowa (0), z dwoma wyraźnymi klastrami niezerowych wartości: lewym górnym 3x3 (APCs: BMP2/BTR70/BRDM2) i środkowym 3x3 (tanks: T72/T62/ZSU234). Wartości numeryczne wypisane w każdej komórce. Osie: 'Predicted class' (X, rotated 45°) i 'True class' (Y). Tytuł: 'Oczekiwany output: macierz pomyłek 8x8 (overall acc=90,8%)'. Colorbar po prawej z etykietą 'Liczba próbek [-]'.",
+          "caption": "Cel: tak ma wyglądać macierz pomyłek z compute_classification_metrics na precomputed bundle.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "quiz-mstar-pitfalls",
+      "title": "Sprawdź: gdzie MSTAR-99% nie znaczy 99% end-to-end",
+      "type": "quiz",
+      "data": {
+        "question": "Twój zespół deklaruje produkcyjny detektor pojazdów: CFAR + dyskryminator (lekcja 4.5) → wycięcie chipa 64x64 → klasyfikator CNN trenowany na MSTAR (accuracy 99,2% raportowane z paper'a). Kierownictwo pyta: \"czemu raport operacyjny pokazuje 30% missed detections i 25% false-class alarmów?\". Które z poniższych stwierdzeń są zgodne z tym, co pokazała ta lekcja (i lekcja 4.5)? Zaznacz wszystkie poprawne.",
+        "options": [
+          "MSTAR-accuracy mierzy *klasyfikator* na wycentrowanych chipach z jednorodnym tłem — nie mierzy pre-screenera CFAR. Jeśli stopień 1+2 ma 30% missed detections, end-to-end recall jest ograniczony do ≤ 70%, niezależnie czy klasyfikator ma 99% czy 99,9%.",
+          "Skoro Chen 2016 raportuje 99,2% na 10-klasowym splicie MSTAR, każdy klasyfikator CNN trenowany na MSTAR będzie miał ≥ 99% accuracy w produkcji.",
+          "Mismatch depresji (trening na 17°, scena produkcyjna 30°) potrafi obniżyć accuracy klasyfikatora MSTAR z 99% do ~85% nawet zanim dojdzie do problemu z pre-screenerem — to fundamentalny problem domain shift, nie błąd implementacji.",
+          "Klasyfikator MSTAR mylił się głównie wewnątrz rodzin (tanks z tankami, APCs z APCs); produkcyjny false-class alarm to często *poprawnie wykryty pojazd, źle sklasyfikowany wewnątrz rodziny* — nie pełna pomyłka pojazd vs clutter.",
+          "Jeśli stopień 1+2 zwróci bbox z błędem ±8 px (pojazd nie wycentrowany w 64x64 px), klasyfikator MSTAR-trained widzi obraz spoza dystrybucji treningowej i jego accuracy spada do okolic random (~12,5% dla 8 klas) — niezależnie od jakości samej sieci."
+        ],
+        "correct": [
+          0,
+          2,
+          3,
+          4
+        ],
+        "explanation": "**(A) prawda** — to centralna teza tej lekcji i lekcji 4.5. MSTAR celowo separuje klasyfikator od detektora (chipy są pre-cropped, jednolite tło). 99% na MSTAR i 30% missed detections w stopniu 1+2 daje 0,7 × 0,99 = ~69% end-to-end recall, w najlepszym razie.\n\n**(C) prawda** — Chen 2016 jasno podaje degradację przy mismatch depresji (99% → ~85% dla wide-spread). To **domain shift**, nie problem inżynieryjny; rozwiązanie to augmentacja depresji w treningu i/lub osobny model per pasmo kątów, nie 'jeszcze głębszy ResNet'.\n\n**(D) prawda** — to dokładnie to, co widać na Rys. 1: dwa klastry off-diagonal (APCs i tanks) trzymają w sobie większość pomyłek. Operacyjnie znaczy to, że false-class alarm jest często mniej dramatyczny niż false-detection — 'wykryto T72, faktycznie T62' to wciąż 'wykryto czołg', który operator zaakceptuje. 'Wykryto pojazd, faktycznie corner-reflektor' (false-detection ze stopnia 1+2) jest gorszy.\n\n**(E) prawda** — niewycentrowany chip to klasyczny *out-of-distribution* dla MSTAR-trained sieci: trening widzi pojazd zawsze w środku 64x64; piksele tła w narożnikach. Na chipie ±8 px off-center pojazd jest w narożniku, gdzie sieć oczekuje 'tła'. To **nie** jest argument przeciw klasyfikatorowi, tylko argument za jakością stopnia 1+2 lokalizacji.\n\n**(B) fałsz** — to klasyczne mylenie *test-set accuracy* z *production accuracy*. Chen 2016 podaje liczbę dla *splita test'a* 10-klasowego, z konkretnymi pasmami depresji, wycentrowanymi chipami i tłem treningowym. Każda z tych asumpcji łamie się produkcyjnie.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-reject-option",
+      "title": "Eksperymentuj: reject-option — coverage vs accuracy",
+      "description": "Bez testów, bez gradingu — zmieniaj wartości w liście THRESHOLDS i obserwuj Pareto coverage vs accuracy_kept. Sensownie wybrany próg pozwala oddać operatorowi tylko 'pewne' predykcje (resztę odrzucić jako abstain / eskalować do recenzji ludzkiej).",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef compute_classification_metrics(pred_probs, true_labels, num_classes):\n    \"\"\"Twoja referencyjna implementacja z poprzedniego zadania.\"\"\"\n    predictions = pred_probs.argmax(axis=1)\n    accuracy = float((predictions == true_labels).mean())\n    cm = np.zeros((num_classes, num_classes), dtype=np.int32)\n    for t, p in zip(true_labels, predictions):\n        cm[int(t), int(p)] += 1\n    per_class = np.zeros(num_classes, dtype=np.float32)\n    for c in range(num_classes):\n        row = int(cm[c].sum())\n        per_class[c] = (cm[c, c] / row) if row > 0 else 0.0\n    return {\"accuracy\": accuracy, \"per_class_accuracy\": per_class, \"confusion_matrix\": cm}\n\n\nbundle = np.load(\"/inputs/mstar-classifier-bundle.npz\")\npred_probs = bundle[\"pred_probs\"]\ntrue_labels = bundle[\"true_labels\"]\nclass_names = [str(s) for s in bundle[\"class_names\"]]\nK = len(class_names)\nN = len(true_labels)\n\n# === Reject-option: zmieniaj prog confidence i obserwuj coverage vs accuracy ===\n# Tip: w produkcji oddajesz operatorowi tylko predykcje powyzej progu;\n# dla nizszych podajesz \"abstain\" lub eskalujesz do recenzji ludzkiej.\n\nTHRESHOLDS = [0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90]\nmax_probs = pred_probs.max(axis=1)\npredictions = pred_probs.argmax(axis=1)\n\nprint(f\"  thr   coverage   acc_kept\")\nprint(f\"  ---   --------   --------\")\ncoverages = []\naccs_kept = []\nfor thr in THRESHOLDS:\n    keep = max_probs >= thr\n    n_keep = int(keep.sum())\n    cov = n_keep / N\n    if n_keep > 0:\n        acc_kept = float((predictions[keep] == true_labels[keep]).mean())\n    else:\n        acc_kept = float(\"nan\")\n    coverages.append(cov)\n    accs_kept.append(acc_kept)\n    print(f\"  {thr:.2f}   {cov*100:5.1f}%    {acc_kept*100:5.1f}%\")\n\n# Wizualizacja Pareto: coverage vs accuracy_on_kept\nfig, ax = plt.subplots(figsize=(8.0, 5.0), constrained_layout=True)\nax.plot([c * 100 for c in coverages], [a * 100 for a in accs_kept],\n        marker=\"o\", linewidth=1.6, color=\"#3a5fa5\")\nfor thr, c, a in zip(THRESHOLDS, coverages, accs_kept):\n    ax.annotate(f\"thr={thr:.2f}\", (c * 100, a * 100),\n                textcoords=\"offset points\", xytext=(6, 4), fontsize=9)\nax.set_xlabel(\"Coverage [%] (frakcja chipow ponad progiem)\")\nax.set_ylabel(\"Accuracy na zachowanych [%]\")\nax.set_title(\"Reject-option: coverage vs accuracy na zachowanych chipach\")\nax.grid(True, alpha=0.3)\nax.set_xlim(0, 100)\nax.set_ylim(80, 101)\nplt.show()\n",
+        "encouragement": "Spróbuj znaleźć próg, który daje >98% accuracy na zachowanych chipach — i zauważ, ile coverage musisz dla niego poświęcić."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+      "title": "Target classification using the deep convolutional networks for SAR images",
+      "kind": "paper",
+      "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+      "year": 2016
+    },
+    {
+      "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+      "title": "MSTAR Dataset documentation (SDMS AFRL)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+      "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+      "kind": "paper",
+      "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+      "year": 1997
+    },
+    {
+      "url": "https://onnxruntime.ai/docs/tutorials/web/",
+      "title": "ONNX Runtime Web — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://scikit-learn.org/stable/modules/generated/sklearn.metrics.confusion_matrix.html",
+      "title": "sklearn.metrics.confusion_matrix — scikit-learn documentation",
+      "kind": "article"
+    }
+  ]
+}

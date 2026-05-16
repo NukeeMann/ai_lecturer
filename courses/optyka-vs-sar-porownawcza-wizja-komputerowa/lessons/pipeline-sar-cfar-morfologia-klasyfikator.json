@@ -1,0 +1,300 @@
+{
+  "schemaVersion": 1,
+  "slug": "pipeline-sar-cfar-morfologia-klasyfikator",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m6",
+  "title": "Pipeline SAR — CFAR + morfologia + klasyfikator",
+  "eyebrow": "CAPSTONE",
+  "description": "Druga połowa capstone'u: ten sam kafelek SEN12MS, ale tym razem przez oko Sentinela-1. Składasz czteroetapowy pipeline (CFAR → maska lądu z σ⁰ → close/open → klasyfikator komponentów po polu/zwartości/SNR) i porównujesz wynik z pipeline'em optycznym z 6.2. Cel: zobaczyć, co SAR daje za darmo (działa pod chmurami, niezależny od oświetlenia), a za co płaci czwartym etapem (klasyfikator, którego optyka nie potrzebuje).",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "intro-cztery-etapy",
+      "title": "Cztery etapy zamiast trzech — co SAR robi inaczej niż optyka",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.951095",
+          "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+          "kind": "paper",
+          "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+          "year": 2001
+        },
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Patrzymy na ten sam kafelek, co w 6.2 — port SEN12MS, 256×256 px, 8 statków na truth. Tym razem **wchodzimy od strony Sentinela-1 VV**, nie S2 RGB. Cała pedagogika lekcji żyje w jednym zdaniu: optyczny pipeline miał **trzy etapy** (woda → blob → filtr), SAR-owy musi mieć **cztery** — i czwarty (klasyfikator komponentów) nie jest dekoracją, tylko ceną za szum multiplikatywny.\n\n![Schemat poziomy szesciu kafelkow ulozonych jeden po drugim, polaczonych strzalkami: (1) granatowy Sentinel-1 VV - sigma zero linear; (2) niebieski CA-CFAR alfa*mu_bg; (3) zielony Maska ladu sigma0_mean > -8 dB; (4) pomaranczowy Morfologia close 3x3 / open 2x2; (5) czerwony Klasyfikator A * c * SNR; (6) ciemnogranatowy Statki bbox + score. Pod schematem podpis: Optyka miala 3 stagey woda -> blob -> filtr, SAR potrzebuje 4 - stopien klasyfikatora to cena za prace na speckled tle.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pipeline-sar-flow-diagram.png)\n\nDla każdego stage'u: co robi i **dlaczego optyka go nie potrzebuje**.\n\n1. **CA-CFAR na VV.** Lokalna $\\mu_\\text{bg}$ + analityczny $\\alpha = \\operatorname{gammaincinv}(L, 1 - P_\\text{fa})/L$ dają próg $T = \\alpha \\cdot \\mu_\\text{bg}$. Optyka mogła sobie pozwolić na **stały** próg jasności (`luma < 0.15`), bo szum jest addytywny i jednorodny. Na SAR szum jest *mnożny* — bez adaptacyjnego progu albo zalewasz się FP w jasnych regionach, albo gubisz cele w ciemnych.\n2. **Maska lądu z σ⁰.** **Buduj ją bezpośrednio z SAR**, nie z optyki: nabrzeża mają $\\bar\\sigma^0 > -8$ dB, woda $-20 \\pm 3$ dB. Próg na `uniform_filter(10·log₁₀(VV), 21) > -8 dB` + closing + fill. Optyka radzi sobie heurystyką lumy, ale tam ten sam piksel pełni **dwie role** — woda (próg) i statek-w-wodzie (po dilation). Z σ⁰ tej dwuznaczności nie ma: statek to marginalny ułamek okna $21\\times 21$, nie wpłynie na mean.\n3. **Morfologia close 3×3 / open 2×2.** Ten sam zestaw co w *4.5*: closing scala sąsiadujące piksele w blob, opening kasuje pojedyncze speckle-spike'i, które przeżyły CFAR. Optyka tego nie potrzebuje, bo `blob_log` operuje w *przestrzeni skali* — 1-pikselowe spike'i nie utrzymują się przez stack σ.\n4. **Klasyfikator komponentów.** Każdy blob ocenia funkcja decyzyjna oparta na **trzech cechach**: pole $A$, zwartość $c = A / (h \\cdot w)$, $\\mathrm{SNR} = \\mu_\\text{cel} / \\mu_\\text{water}$. Statek to *jednoczesny* fakt: rozsądny rozmiar, zwarty (nie linia ścieku z portu), wyraźnie świeci nad medianą wody. To kanon Wackermana (2001); w produkcji często zastępuje go mała CNN-ka w `onnxruntime-web` (jak MSTAR z *5.5*), ale prosty discriminator jest tańszy o trzy rzędy wielkości i tu wystarcza."
+      }
+    },
+    {
+      "id": "pipeline-cztery-klatki",
+      "title": "Cztery klatki: pipeline SAR na realnym SEN12MS",
+      "description": "Ten sam kafelek 256×256, ale tym razem od strony Sentinela-1 VV. Każdy panel to inny etap pipeline'u — przyjrzyj się, jak surowy karawan CFAR (panel 2) zostaje uporządkowany w 8 czystych blobów (panel 3) i jak klasyfikator zostawia 8 detekcji pokrywających truth (panel 4).",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/pipeline-sar-cfar-morfologia-klasyfikator-1.png",
+        "alt": "Cztery panele 1x4 obok siebie, kazdy 256x256 px nad tym samym kafelkiem SEN12MS od strony Sentinela-1 VV. Panel (1) 'Wejscie: S1 VV (sqrt sigma0)': obraz w skali szarosci - ciemne speckled morze po lewej, jasna zwarta plama nabrzeza i zabudowy portowej po prawej; w wodzie widac 8 podluznych jasnych prostokatow-statkow rozsianych po obszarze. Panel (2) 'CA-CFAR raw + maska ladu': ten sam obraz pokryty czerwonym overlayem pikselowych detekcji CFAR (~900 px nad progiem) - widac sciagnely gronami nad statkami plus rozsiane pojedyncze speckle-spikes; niebieski kontur zaznacza maske ladu derived-from-sigma0, ciasno obejmujaca brzeg portu. Panel (3) 'Po land mask + close 3x3 / open 2x2': te same statki widoczne teraz jako 8 czystych pomaranczowych zwartych blobow (~750 px w 8 komponentach); pojedyncze speckle-spikes z panelu 2 znikely; ladowa polowa kadru wyciszona przez maske ladu. Panel (4) 'Klasyfikator: A in [4,400], c >= 0.4, SNR >= 100': osiem grubych zielonych prostokatow bbox pokrywa wszystkie 8 statkow, kazdy z marginesem; nad kazdym narysowany cienki bialy przerywany prostokat bbox-a ground-truth. Detekcje: 8 / truth: 8. Caly tytul: 'Pipeline SAR detekcji statkow na S1 VV (SEN12MS): VV -> CFAR + land mask -> morfologia -> klasyfikator komponentow'. Wszystkie panele maja tick labels co 64 px i opisy osi 'kolumna [px]' i 'wiersz [px]'.",
+        "caption": "Rys. 1. Pełny pipeline SAR w czterech klatkach. (1) wejście VV, (2) CA-CFAR raw + maska lądu z σ⁰, (3) po morfologii close/open — 8 czystych blobów, (4) po klasyfikatorze A·c·SNR — 8 detekcji pokrywających wszystkie 8 ground-truth statków, zero false-alarmów na lądzie. Porównaj z Rys. 1 z lekcji 6.2: optyka też dała 8/8, ale potrzebowała trzech etapów; tutaj ostatni etap jest *jakościowo* inny — to klasyfikator, nie filtr-po-rozmiarze.",
+        "sourceCode": "from pathlib import Path\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\nfrom scipy.ndimage import (binary_closing, binary_opening, binary_fill_holes,\n                           label as ndi_label, uniform_filter)\nfrom scipy.special import gammaincinv\n\nROOT = Path(\"/home/nukeemann/projects/ai_lecturer/courses/\"\n            \"optyka-vs-sar-porownawcza-wizja-komputerowa\")\nNPZ = ROOT / \"assets/inputs/setup-sceny-sen12ms-pair.npz\"\nOUT = ROOT / \"assets/plots/pipeline-sar-cfar-morfologia-klasyfikator-1.png\"\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf, ng = fs * fs, gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode=\"reflect\")\n    mu_guard = uniform_filter(img, size=gs, mode=\"reflect\")\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef land_mask_from_sar(vv, win=21, thr_db=-8.0):\n    db = 10.0 * np.log10(np.clip(vv, 1e-6, None))\n    mean_db = uniform_filter(db, size=win, mode=\"reflect\")\n    land = mean_db > thr_db\n    land = binary_closing(land, structure=np.ones((5, 5), bool))\n    land = binary_fill_holes(land)\n    return land\n\n\ndef detect_ships_sar(vv):\n    land = land_mask_from_sar(vv)\n    raw = ca_cfar(vv, win=10, guard=4, pfa=1e-4, L=4)\n    raw &= ~land\n    closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    lab, n = ndi_label(opened)\n    water_only = ~land & ~opened\n    bg = float(np.median(vv[water_only])) if water_only.any() else 1e-6\n    keep = []\n    for i in range(1, n + 1):\n        comp = (lab == i)\n        area = int(comp.sum())\n        if not (4 <= area <= 400):\n            continue\n        ys, xs = np.where(comp)\n        h = int(ys.max() - ys.min() + 1)\n        w = int(xs.max() - xs.min() + 1)\n        compactness = area / max(h * w, 1)\n        if compactness < 0.40:\n            continue\n        mean = float(vv[comp].mean())\n        snr = mean / max(bg, 1e-6)\n        if snr < 100.0:\n            continue\n        cy = float((ys.max() + ys.min()) / 2.0)\n        cx = float((xs.max() + xs.min()) / 2.0)\n        keep.append([cy, cx, float(h), float(w), snr])\n    return (np.array(keep, dtype=np.float32) if keep\n            else np.zeros((0, 5), dtype=np.float32))\n\n\ndata = np.load(NPZ)\nvv = data[\"s1_vv_linear\"]\nclasses = data[\"classes\"]\nH, W = vv.shape\n\ndisp = np.sqrt(np.clip(vv, 0.0, None))\nvmax_disp = float(np.percentile(disp, 99.0))\n\nland = land_mask_from_sar(vv)\nraw_cfar = ca_cfar(vv, win=10, guard=4, pfa=1e-4, L=4)\nraw_no_land = raw_cfar & ~land\nclosed = binary_closing(raw_no_land, structure=np.ones((3, 3), bool))\nopened = binary_opening(closed, structure=np.ones((2, 2), bool))\ndetections = detect_ships_sar(vv)\n\nlab_truth, n_truth = ndi_label(classes == 1)\ntruth_boxes = []\nfor i in range(1, n_truth + 1):\n    comp = (lab_truth == i)\n    ys, xs = np.where(comp)\n    truth_boxes.append((int(ys.min()), int(xs.min()),\n                        int(ys.max()), int(xs.max())))\n\nfig, axes = plt.subplots(1, 4, figsize=(16.5, 4.6))\n\naxes[0].imshow(disp, cmap=\"gray\", vmin=0, vmax=vmax_disp, origin=\"upper\")\naxes[0].set_title(\"(1) Wejscie: S1 VV (sqrt sigma0)\\n\"\n                  \"speckled morze + jasna infrastruktura portu\", fontsize=10)\n\naxes[1].imshow(disp, cmap=\"gray\", vmin=0, vmax=vmax_disp, origin=\"upper\")\nov = np.zeros((H, W, 4), dtype=np.float32)\nov[raw_cfar, :] = [1.0, 0.20, 0.20, 0.55]\naxes[1].imshow(ov, origin=\"upper\")\naxes[1].contour(land, levels=[0.5], colors=\"#3aa8d8\", linewidths=1.1)\naxes[1].set_title(f\"(2) CA-CFAR raw + maska ladu\\n{int(raw_cfar.sum())} pikseli nad progiem\",\n                  fontsize=10)\n\naxes[2].imshow(disp, cmap=\"gray\", vmin=0, vmax=vmax_disp, origin=\"upper\")\nov2 = np.zeros((H, W, 4), dtype=np.float32)\nov2[opened, :] = [1.0, 0.5, 0.0, 0.85]\naxes[2].imshow(ov2, origin=\"upper\")\nn_blobs = int(ndi_label(opened)[1])\naxes[2].set_title(\n    f\"(3) Po land mask + close 3x3 / open 2x2\\n{int(opened.sum())} px w {n_blobs} blobach\",\n    fontsize=10,\n)\n\naxes[3].imshow(disp, cmap=\"gray\", vmin=0, vmax=vmax_disp, origin=\"upper\")\nfor (cy, cx, h, w, snr) in detections:\n    y0 = cy - h / 2 - 1\n    x0 = cx - w / 2 - 1\n    axes[3].add_patch(mpatches.Rectangle(\n        (x0, y0), w + 2, h + 2, fill=False,\n        edgecolor=\"#2cdc4a\", linewidth=1.8,\n    ))\nfor (y0t, x0t, y1t, x1t) in truth_boxes:\n    axes[3].add_patch(mpatches.Rectangle(\n        (x0t - 1.5, y0t - 1.5), x1t - x0t + 3, y1t - y0t + 3,\n        fill=False, edgecolor=\"#ffffff\", linewidth=0.8, linestyle=\"--\",\n    ))\naxes[3].set_title(\n    f\"(4) Klasyfikator: A in [4,400], c >= 0.4, SNR >= 100\\n\"\n    f\"detekcji: {len(detections)} / truth: {len(truth_boxes)}\", fontsize=10,\n)\n\nfor ax in axes:\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    ax.set_xticks([0, 64, 128, 192, 255])\n    ax.set_yticks([0, 64, 128, 192, 255])\n    ax.tick_params(labelsize=8)\n\nfig.suptitle(\n    \"Pipeline SAR detekcji statkow na S1 VV (SEN12MS): \"\n    \"VV -> CFAR + land mask -> morfologia -> klasyfikator komponentow\",\n    fontsize=11.5,\n)\nfig.tight_layout(rect=[0, 0, 1, 0.93])\nfig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "klasyfikator-trzy-cechy",
+      "title": "Krok 4: klasyfikator komponentów — trzy cechy, jedna decyzja",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.951095",
+          "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+          "kind": "paper",
+          "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+          "year": 2001
+        },
+        {
+          "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+          "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+          "kind": "paper",
+          "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+          "year": 1997
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Po close/open zostaje **kilkadziesiąt komponentów** — każdy *potencjalnie* statek. Wackerman et al. (2001, Radarsat-1) i Novak et al. (1997, MIT/Lincoln Lab) zgodnie pokazują kanoniczne rozwiązanie: licz **trzy cechy interpretowalne** i puść je przez prosty *and-gate*. Nie sieć, nie SVM, nie XGBoost — na 5–50 komponentów per kafelek one overfitują albo nic nie wnoszą.\n\nDla komponentu $C$:\n\n- **Pole** $A = |C|$. Statek w Sentinel-1 GRD HR (~10 m/px): od 4 px (kuter ~6×6 m) do ~400 px (frachtowiec 200×20 m). Poniżej — speckle; powyżej — nabrzeże / front fali.\n- **Zwartość** $c = A / (h \\cdot w)$, $h, w$ to wymiary bbox. Statek to wydłużony, ale *zwarty* prostokąt — $c \\gtrsim 0{,}4$. Strumień ścieku z portu lub plama zanieczyszczeń ma $c \\ll 0{,}3$.\n- **SNR** $= \\mu_C / \\mathrm{median}(\\mathrm{VV}_\\text{water})$ (mediana liczona po `~land & ~opened`). Statki świecą $\\sim 10^3$–$10^4$× jaśniej niż sea-clutter; próg $\\mathrm{SNR} \\geq 100$ wycina rezydualne speckle-spike'i, które przeżyły CFAR.\n\n$$ \\boxed{\\;\\mathrm{ship}(C) \\;=\\; (4 \\leq A \\leq 400) \\;\\wedge\\; (c \\geq 0{,}4) \\;\\wedge\\; (\\mathrm{SNR} \\geq 100)\\;} $$\n\nTrzy kalibracje, o których warto pamiętać:\n\n- **$A_\\min$, $A_\\max$ zależą od GSD.** S1 GRD HR ma ~10 m/px; TerraSAR-X (1 m/px) wymaga $A$ × 100. *Nie* przenoś liczb między sensorami bez przeliczenia.\n- **Próg $c$ nie jest stały po polaryzacji.** W VV bbox statku jest gęsty; w HV dominuje *volume scattering* i ten sam statek ma $c \\sim 0{,}3$. Przy przejściu na pełną polarymetrię (*5.2 Pauli*) przekalibruj per kanał.\n- **W produkcji $\\mathrm{SNR} \\geq 100$ często zastępuje CNN.** To dokładnie nisza MSTAR z *5.5* — wycinasz chip 64×64 wokół centrum, puszczasz przez `onnxruntime-web` (~5 MB wag, ~10 ms/chip) i dostajesz `P(ship|chip)`. CNN bije progi o 5–10 p.p. recall przy tym samym FP, ale kosztuje 10⁴× więcej flopsów. Na 8-statkowy kafelek — zbędna; na full-scene Sentinel-1 z 10⁴ kandydatów — konieczna."
+      }
+    },
+    {
+      "id": "implement-detect-ships-sar",
+      "title": "Zaimplementuj `detect_ships_sar` — pełny czteroetapowy pipeline",
+      "description": "Po lewej kafelek S1 VV w sqrt-σ⁰; po prawej oczekiwany wynik — wszystkie 8 statków obwiedzionych zielonymi bbox-ami, brak detekcji w obrębie nabrzeża / lądu. Korzystasz z tej samej `setup-sceny-sen12ms-pair.npz`, którą widziałeś już w 6.1 i 6.2.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.951095",
+          "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+          "kind": "paper",
+          "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+          "year": 2001
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 Maritime Monitoring — ESA SentiWiki",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `detect_ships_sar(vv_linear)` realizującą **pełny czteroetapowy pipeline** detekcji statków na Sentinel-1 VV.\n\n- **wejście:** `np.ndarray` o kształcie `(256, 256)`, `dtype=float32`, σ⁰ liniowy (klucz `s1_vv_linear` z `setup-sceny-sen12ms-pair.npz`).\n- **wyjście:** `np.ndarray` o kształcie `(N, 5)`, `dtype=np.float32`, kolumny `[cy, cx, h, w, snr]` (środek bbox + jego wymiary w px + score SNR). Pusta tablica `np.zeros((0, 5), dtype=np.float32)` gdy nic nie wykryto.\n\nKroki, dokładnie w tej kolejności:\n\n1. **Maska lądu z σ⁰.** Policz `db = 10 * log10(clip(vv, 1e-6, None))`, potem `mean_db = uniform_filter(db, size=21, mode='reflect')` i progowanie `land = mean_db > -8`. Dodaj `binary_closing(land, np.ones((5,5), bool))` i `binary_fill_holes(land)` — to zamyka dziury, które robi okno 21×21 wokół jaśniejszych obiektów na morzu.\n2. **CA-CFAR** z parametrami `win=10, guard=4, pfa=1e-4, L=4` — kanoniczne wartości z lekcji *4.5*. Wytnij ląd: `raw &= ~land`.\n3. **Morfologia.** `closed = binary_closing(raw, np.ones((3,3), bool))`, potem `opened = binary_opening(closed, np.ones((2,2), bool))`.\n4. **Klasyfikator komponentów.** Zlabeluj `lab, n = label(opened)`. Policz `bg = median(vv[~land & ~opened])` (mediana czystej wody). Dla każdego komponentu $C$ policz:\n   - `A = comp.sum()` (pole)\n   - `h = ys.max() - ys.min() + 1`, `w = xs.max() - xs.min() + 1`\n   - `c = A / (h * w)` (zwartość)\n   - `snr = vv[comp].mean() / max(bg, 1e-6)` (SNR vs woda)\n\n   **Zachowaj komponent** wtedy i tylko wtedy, gdy: `4 <= A <= 400` **oraz** `c >= 0.4` **oraz** `snr >= 100`. Dla zachowanych komponentów wpisz `[cy, cx, h, w, snr]`, gdzie `cy = (ys.min() + ys.max()) / 2`, `cx = (xs.min() + xs.max()) / 2`.\n\n```\n>>> data = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\n>>> dets = detect_ships_sar(data['s1_vv_linear'])\n>>> dets.shape[1] == 5 and dets.dtype == np.float32\nTrue\n>>> dets.shape[0]\n8\n```\n\nTesty weryfikują (a) format i `dtype` wyjścia, (b) liczba detekcji w `[6, 25]`, (c) **pokrycie ground-truth** — co najmniej 7 z 8 prawdziwych statków (`classes == 1`) musi mieć detekcję w odległości $\\leq \\max(h, w)$ od centrum, (d) brak detekcji na lądzie (sprawdzane przez maskę σ⁰ wewnątrz testu).",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import (binary_closing, binary_opening, binary_fill_holes,\n                           label, uniform_filter)\nfrom scipy.special import gammaincinv\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\nNPZ_PATH = '/inputs/setup-sceny-sen12ms-pair.npz'\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf, ng = fs * fs, gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode='reflect')\n    mu_guard = uniform_filter(img, size=gs, mode='reflect')\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef land_mask_from_sar(vv, win=21, thr_db=-8.0):\n    \"\"\"Maska ladu z lokalnej sredniej sigma0 (dB).\"\"\"\n    db = 10.0 * np.log10(np.clip(vv, 1e-6, None))\n    mean_db = uniform_filter(db, size=win, mode='reflect')\n    land = mean_db > thr_db\n    land = binary_closing(land, structure=np.ones((5, 5), bool))\n    land = binary_fill_holes(land)\n    return land\n\n\ndef detect_ships_sar(vv_linear):\n    \"\"\"Czteroetapowy pipeline detekcji statkow na Sentinel-1 VV.\n\n    vv_linear: np.ndarray (H, W) float32 -- sigma0 liniowy.\n    zwraca:    np.ndarray (N, 5) float32 -- [cy, cx, h, w, snr] per detekcja.\n    \"\"\"\n    vv = np.asarray(vv_linear, dtype=np.float32)\n    H, W = vv.shape\n\n    # === Krok 1: maska ladu z sigma0 ===\n    # TODO: land = land_mask_from_sar(vv)\n    land = np.zeros((H, W), dtype=bool)\n\n    # === Krok 2: CA-CFAR + wyciecie ladu ===\n    # TODO: raw = ca_cfar(vv, win=10, guard=4, pfa=1e-4, L=4)\n    # TODO: raw = raw & ~land\n    raw = np.zeros((H, W), dtype=bool)\n\n    # === Krok 3: morfologia close 3x3 / open 2x2 ===\n    # TODO: closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    # TODO: opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    opened = np.zeros((H, W), dtype=bool)\n\n    # === Krok 4: klasyfikator komponentow ===\n    # TODO: lab, n = label(opened)\n    # TODO: water_only = ~land & ~opened\n    # TODO: bg = float(np.median(vv[water_only])) if water_only.any() else 1e-6\n    keep = []\n    # for i in range(1, n + 1):\n    #     comp = (lab == i)\n    #     A = int(comp.sum())\n    #     if not (4 <= A <= 400):\n    #         continue\n    #     ys, xs = np.where(comp)\n    #     h = int(ys.max() - ys.min() + 1)\n    #     w = int(xs.max() - xs.min() + 1)\n    #     c = A / max(h * w, 1)\n    #     if c < 0.40:\n    #         continue\n    #     snr = float(vv[comp].mean()) / max(bg, 1e-6)\n    #     if snr < 100.0:\n    #         continue\n    #     cy = float((ys.max() + ys.min()) / 2.0)\n    #     cx = float((xs.max() + xs.min()) / 2.0)\n    #     keep.append([cy, cx, float(h), float(w), snr])\n    return (np.array(keep, dtype=np.float32) if keep\n            else np.zeros((0, 5), dtype=np.float32))\n\n\n# --- Preview: detekcja na realnym kafelku SEN12MS ---\ndata = np.load(NPZ_PATH)\nvv = data['s1_vv_linear']\nclasses = data['classes']\ndetections = detect_ships_sar(vv)\nprint(f'detekcji: {detections.shape[0]}  truth: {int((classes == 1).any(axis=0).sum() > 0)} *)')\nprint('(* faktyczna liczba truth = 8 komponentow; sprawdza to test)')\n\ndisp = np.sqrt(np.clip(vv, 0.0, None))\nvmax_disp = float(np.percentile(disp, 99.0))\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.4), constrained_layout=True)\naxes[0].imshow(disp, cmap='gray', vmin=0, vmax=vmax_disp, origin='upper')\naxes[0].set_title('Wejscie: S1 VV (sqrt sigma0)', fontsize=10)\naxes[0].set_xlabel('kolumna [px]'); axes[0].set_ylabel('wiersz [px]')\n\naxes[1].imshow(disp, cmap='gray', vmin=0, vmax=vmax_disp, origin='upper')\nfor (cy, cx, h, w, snr) in detections:\n    rect = mpatches.Rectangle((cx - w/2 - 1, cy - h/2 - 1), w + 2, h + 2,\n                              fill=False, edgecolor='#2cdc4a', linewidth=1.8)\n    axes[1].add_patch(rect)\nfrom scipy.ndimage import label as _ndl\nlab_t, n_t = _ndl(classes == 1)\nfor i in range(1, n_t + 1):\n    ys, xs = np.where(lab_t == i)\n    rect = mpatches.Rectangle((xs.min() - 1.5, ys.min() - 1.5),\n                              xs.max() - xs.min() + 3, ys.max() - ys.min() + 3,\n                              fill=False, edgecolor='#ffffff', linewidth=0.8, linestyle='--')\n    axes[1].add_patch(rect)\naxes[1].set_title(f'detect_ships_sar: zielone = {len(detections)}, biale = truth {n_t}',\n                  fontsize=10)\naxes[1].set_xlabel('kolumna [px]'); axes[1].set_ylabel('wiersz [px]')\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_n_by_5_float32",
+            "body": "import numpy as np\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = detect_ships_sar(data['s1_vv_linear'])\nout = np.asarray(out)\nassert out.ndim == 2 and out.shape[1] == 5, f'oczekiwano shape (N, 5), otrzymano {out.shape}'\nassert out.dtype == np.float32, f'oczekiwano dtype float32, otrzymano {out.dtype}'",
+            "hidden": false
+          },
+          {
+            "name": "detection_count_in_realistic_range",
+            "body": "import numpy as np\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = np.asarray(detect_ships_sar(data['s1_vv_linear']))\nn = out.shape[0]\nassert 6 <= n <= 25, (\n    f'liczba detekcji = {n}; oczekiwano 6-25 dla referencyjnych parametrow pipeline. '\n    f'Czeste przyczyny: (a) zla maska ladu (-8 dB to wartosc referencyjna), '\n    f'(b) brak filtra zwartosci (c >= 0.4) -- linie nabrzeza wpadaja, '\n    f'(c) zbyt niski prog SNR (referencyjnie 100) lub zly bg (median wody, nie cala maska).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_at_least_7_of_8_truth_ships",
+            "body": "import numpy as np\nfrom scipy.ndimage import label as _ndl\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nout = np.asarray(detect_ships_sar(data['s1_vv_linear']))\nassert out.size > 0, 'brak detekcji'\nlab_t, n_t = _ndl(data['classes'] == 1)\ntruth = []\nfor i in range(1, n_t + 1):\n    ys, xs = np.where(lab_t == i)\n    truth.append([float((ys.min() + ys.max()) / 2),\n                  float((xs.min() + xs.max()) / 2),\n                  float(max(ys.max() - ys.min() + 1, xs.max() - xs.min() + 1))])\ntruth = np.array(truth, dtype=np.float32)\nmatched = 0\nfor (ty, tx, tsize) in truth:\n    d = np.hypot(out[:, 0] - ty, out[:, 1] - tx)\n    if (d <= tsize).any():\n        matched += 1\nassert matched >= 7, (\n    f'pokryto {matched}/{int(n_t)} prawdziwych statkow (`classes == 1`). '\n    f'Oczekiwane >= 7. Najczestsze przyczyny: (a) zbyt agresywny prog ladu '\n    f'(czesc statkow przy nabrzezu wypada), (b) zbyt wysoki prog SNR, '\n    f'(c) brak kroku close 3x3 (slabe statki sa dziurawe i nie zlapane).'\n)",
+            "hidden": true
+          },
+          {
+            "name": "no_detection_centers_on_land",
+            "body": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_fill_holes, uniform_filter\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nvv = data['s1_vv_linear']\ndb = 10.0 * np.log10(np.clip(vv, 1e-6, None))\nmean_db = uniform_filter(db, size=21, mode='reflect')\nland_ref = mean_db > -8.0\nland_ref = binary_closing(land_ref, structure=np.ones((5, 5), bool))\nland_ref = binary_fill_holes(land_ref)\nout = np.asarray(detect_ships_sar(vv))\nleak = 0\nfor (cy, cx, h, w, snr) in out:\n    yi, xi = int(round(cy)), int(round(cx))\n    if 0 <= yi < land_ref.shape[0] and 0 <= xi < land_ref.shape[1] and bool(land_ref[yi, xi]):\n        leak += 1\nassert leak == 0, (\n    f'maska zawiera {leak} detekcji, ktorych centrum lezy na ladzie. '\n    f'Sprawdz, czy po CFAR wykonujesz raw &= ~land z maski sigma0.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import (binary_closing, binary_opening, binary_fill_holes,\n                           label, uniform_filter)\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf, ng = fs * fs, gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode='reflect')\n    mu_guard = uniform_filter(img, size=gs, mode='reflect')\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef land_mask_from_sar(vv, win=21, thr_db=-8.0):\n    db = 10.0 * np.log10(np.clip(vv, 1e-6, None))\n    mean_db = uniform_filter(db, size=win, mode='reflect')\n    land = mean_db > thr_db\n    land = binary_closing(land, structure=np.ones((5, 5), bool))\n    land = binary_fill_holes(land)\n    return land\n\n\ndef detect_ships_sar(vv_linear):\n    vv = np.asarray(vv_linear, dtype=np.float32)\n    land = land_mask_from_sar(vv)\n    raw = ca_cfar(vv, win=10, guard=4, pfa=1e-4, L=4)\n    raw = raw & ~land\n    closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    lab, n = label(opened)\n    water_only = ~land & ~opened\n    bg = float(np.median(vv[water_only])) if water_only.any() else 1e-6\n    keep = []\n    for i in range(1, n + 1):\n        comp = (lab == i)\n        A = int(comp.sum())\n        if not (4 <= A <= 400):\n            continue\n        ys, xs = np.where(comp)\n        h = int(ys.max() - ys.min() + 1)\n        w = int(xs.max() - xs.min() + 1)\n        c = A / max(h * w, 1)\n        if c < 0.40:\n            continue\n        snr = float(vv[comp].mean()) / max(bg, 1e-6)\n        if snr < 100.0:\n            continue\n        cy = float((ys.max() + ys.min()) / 2.0)\n        cx = float((xs.max() + xs.min()) / 2.0)\n        keep.append([cy, cx, float(h), float(w), snr])\n    return (np.array(keep, dtype=np.float32) if keep\n            else np.zeros((0, 5), dtype=np.float32))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pipeline-sar-input.png",
+            "alt": "Kafelek Sentinel-1 VV 256x256 px w sqrt-sigma0, ten sam co w 6.1 i 6.2 od strony Sentinela-1. Ciemne speckled morze zajmuje lewa dwie trzecie kadru; jasna, zwarta plama nabrzeza i zabudowy portowej w prawej trzeciej. W wodzie widac osiem maleńkich jasnych podluznych prostokatow - statkow o sigma0 dziesiatki razy wyzszym niz sea-clutter. Jasnosc skalowana do percentyla 99.",
+            "caption": "Wejście: kafelek Sentinel-1 VV z SEN12MS — ten sam, który ładowaliśmy w 6.1."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair.npz",
+            "filename": "setup-sceny-sen12ms-pair.npz",
+            "caption": "Para SEN12MS z 6.1: klucze `s2_rgb` (uint16, 3×256×256), `s1_vv_linear` (float32, 256×256, σ⁰ liniowy), `s1_vh_linear`, `classes` (truth label per piksel — 1 = statek)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pipeline-sar-expected.png",
+          "alt": "Ten sam kafelek S1 VV 256x256 co na wejsciu, z dorysowanymi grubymi zielonymi bbox'ami w miejscach wykrytych statkow (osiem prostokatow rozsianych w lewej dwoch trzecich kadru) oraz cienkimi bialymi przerywanymi prostokatami truth dla kazdego z 8 prawdziwych statkow. Wszystkie 8 truth pokryte. Po prawej stronie obrazu, w obrebie jasnego nabrzeza, zero detekcji - bo nabrzeze jest wyciete przez maske ladu.",
+          "caption": "Cel: tak ma wyglądać scena po `detect_ships_sar(vv_linear)` — 8 detekcji pokrywających wszystkie 8 truth, brak detekcji na lądzie.",
+          "live": true
+        },
+        "requiresPackages": [
+          "scipy",
+          "scikit-image"
+        ]
+      }
+    },
+    {
+      "id": "quiz-sar-vs-optyka",
+      "title": "Sprawdź: dlaczego pipeline SAR potrzebuje czterech kroków",
+      "description": "Cztery porównawcze stwierdzenia o pipeline SAR-owym z tej lekcji i optycznym z 6.2. Zaznacz te, które są **prawdziwe** w realnym deploy'u.",
+      "type": "quiz",
+      "data": {
+        "question": "Twój zespół decyduje, kiedy uruchamiać pipeline SAR-owy (ta lekcja), kiedy optyczny (6.2), a kiedy oba. Które z poniższych stwierdzeń są **prawdziwe** w realnym deploy'u na Sentinel-1 + Sentinel-2 nad portem morskim? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Pipeline SAR działa pod chmurami, w nocy i nie wymaga oświetlenia — to są regimy, w których optyczny z 6.2 zwraca zera niezależnie od progu lumy.",
+          "Statek zacumowany przy nabrzeżu jest *łatwiejszy* dla pipeline'u SAR niż dla optycznego: optyczna maska wody go odetnie, SAR-owa maska z $\\sigma^0$ też go odetnie, więc obie modalności tracą.",
+          "Pipeline SAR potrzebuje czwartego etapu (klasyfikatora komponentów), bo szum mnożny w wodzie generuje rezydualne speckle-spikes, które przeżywają CFAR; pipeline optyczny działa na addytywnym szumie i `blob_log` Lindeberga je sam odsiewa.",
+          "Można uprościć pipeline SAR do trzech etapów (bez klasyfikatora), zaostrzając `pfa` z $10^{-4}$ do $10^{-6}$. CFAR wtedy nie wypuści żadnego speckle-spike'a, więc klasyfikator nie jest potrzebny."
+        ],
+        "correct": [
+          0,
+          1,
+          2
+        ],
+        "explanation": "**(A) prawda** — Sentinel-1 jest aktywnym sensorem mikrofalowym i działa niezależnie od pory dnia / chmur. To jest *główny* powód, dla którego SAR istnieje obok optyki: 6.2 zawodzi w 4/12 miesięcy nad Hamburgiem przez zachmurzenie, SAR-owy daje sygnał codziennie.\n\n**(B) prawda, niestety symetrycznie** — ship 4 w naszym kafelku (10 m × 30 m statek przy nabrzeżu) ma luma ~0.47 w optyce (włącza się do bufora-wody dilation'u) i jednocześnie $\\bar\\sigma^0 > -8$ dB w SAR (wpada w maskę lądu po $21\\times 21$ uśrednieniu). To **jest** rzeczywista ślepa plamka klasycznego pipeline'u i wymaga albo (i) ramki czasowej (statek się rusza, nabrzeże nie), albo (ii) klasyfikatora downstream pracującego na sub-tile-ach blisko brzegu, albo (iii) sygnału AIS — ale **nie samego pipeline'u CV**. W naszym kafelku ship 4 jest tylko częściowo w masce lądu, więc kawałek wystaje na morze i da się go wykryć, ale w gorszej geometrii statek schowałby się całkowicie.\n\n**(C) prawda** — CFAR przy $P_\\text{fa} = 10^{-4}$ z definicji wypuszcza ~$10^{-4}$ false-alarm rate na piksel, czyli ~6 px na kafelku 256×256 px tylko od statystyki. Closing/opening je redukuje, ale rezydualne 1-2 px speckle-spike'i przeżywają (zwłaszcza takie, które są blisko prawdziwych celów). Klasyfikator komponentów (zwartość + SNR) je odsiewa po cechach geometrycznych i radiometrycznych jednocześnie. Optyka tego problemu nie ma, bo `blob_log` operuje w *przestrzeni skali* — pojedynczy piksel nie przeżywa konwolucji LoG przez stack wielu σ.\n\n**(D) fałsz** — to klasyczna pułapka „więcej selektywny próg = lepiej”. Z $P_\\text{fa} = 10^{-4} \\to 10^{-6}$ przy $L=4$ $\\alpha$ rośnie z $3{,}98$ do $5{,}55$, czyli próg ~40% wyższy. False-alarmy faktycznie spadną, ale **razem z słabszymi celami**: ship 1 (najmniejszy w naszym kafelku, SNR ~26 vs water-mean) przy $P_\\text{fa} = 10^{-6}$ wypada poniżej progu i jest tracony. Klasyfikator pozwala trzymać $P_\\text{fa}$ wysoko (luźny CFAR) i jednocześnie utrzymać niskie false-positive rate — to dlatego pipeline SAR ma cztery etapy, a nie trzy.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "table-optyka-vs-sar",
+      "title": "Porównanie: pipeline optyczny (6.2) vs pipeline SAR (6.3)",
+      "description": "Side-by-side rachunek za pełny capstone — co dał optyczny pipeline, co dał SAR-owy, i gdzie się różnią architekturalnie. Sortuj kolumny, by zobaczyć, w których aspektach obie modalności są niemal równe (rezultat liczbowy: 8/8 ↔ 8/8), a w których pipeline jest **strukturalnie** inny (liczba etapów, źródło maski lądu, czwarty etap).",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "aspect",
+            "label": "Aspekt",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "optical",
+            "label": "Pipeline optyczny (6.2)",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "sar",
+            "label": "Pipeline SAR (6.3)",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "aspect": "Sensor wejściowy",
+            "optical": "Sentinel-2 RGB (B04/B03/B02), pasywny optyczny",
+            "sar": "Sentinel-1 VV σ⁰, aktywny mikrofalowy"
+          },
+          {
+            "aspect": "Liczba etapów",
+            "optical": "3 (woda → blob → filtr)",
+            "sar": "4 (CFAR → land → morfologia → klasyfikator)"
+          },
+          {
+            "aspect": "Próg detekcji",
+            "optical": "globalny: blob_log threshold 0.03 w luma [0,1]",
+            "sar": "lokalny: CA-CFAR α·μ_bg, α≈3.98 (Pfa=1e-4, L=4)"
+          },
+          {
+            "aspect": "Źródło maski wody / lądu",
+            "optical": "luma < 0.15 + open/close + dilation 5 px",
+            "sar": "uniform_filter(σ⁰_dB, 21) > -8 dB + closing + fill"
+          },
+          {
+            "aspect": "Liczba detekcji na naszym kafelku",
+            "optical": "8 z 8 truth (z 53 surowych blob_log)",
+            "sar": "8 z 8 truth (z 8 komponentów po morfologii)"
+          },
+          {
+            "aspect": "Najsłabszy regime",
+            "optical": "chmury, noc, wzburzone fale (luma > 0.15)",
+            "sar": "statki przy nabrzeżu (σ⁰ nabrzeża dominuje okno)"
+          },
+          {
+            "aspect": "Koszt obliczeniowy (256×256)",
+            "optical": "~30 ms (blob_log w przestrzeni skali)",
+            "sar": "~80 ms (CFAR + 21×21 land + morfologia)"
+          },
+          {
+            "aspect": "Klasyfikator w pipeline",
+            "optical": "filtr po promieniu (r∈[2,8] px) — geometryczny",
+            "sar": "A∈[4,400], compactness≥0.4, SNR≥100 — radiometryczny"
+          },
+          {
+            "aspect": "Ścieżka rozszerzenia do CNN",
+            "optical": "MaskR-CNN / SegFormer na cały kafelek",
+            "sar": "MSTAR-style klasyfikator chipów per komponent (5.5)"
+          }
+        ],
+        "initialSort": {
+          "key": "aspect",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "sandbox-tuning",
+      "title": "Sandbox: pokręć progami i obejrzyj, co ginie",
+      "description": "Ten sam kafelek SEN12MS od strony S1, bez testów. Każde pokrętło zmienia inną kruchość pipeline'u SAR-owego — zobacz, kiedy klasyfikator zaczyna wypuszczać clutter i kiedy wypuszcza statki.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import (binary_closing, binary_opening, binary_fill_holes,\n                           label, uniform_filter)\nfrom scipy.special import gammaincinv\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\nvv = data['s1_vv_linear']\nclasses = data['classes']\nH, W = vv.shape\ndisp = np.sqrt(np.clip(vv, 0.0, None))\nvmax_disp = float(np.percentile(disp, 99.0))\n\n# === Pokretla pipeline'u ===\nLAND_THR_DB = -8.0  # podnies do -4  -> wiecej falszywego ladu  (uciekaja statki przy nabrzezu)\n                    # obniz do -12   -> mniej ladu (zostaje wieksza powierzchnia wody dla CFAR)\nPFA = 1e-4          # podnies do 1e-3 -> wiecej speckle-spikes (klasyfikator musi dzialac mocniej)\n                    # obniz do 1e-6  -> wypadaja slabsze statki (ship 1)\nMIN_AREA = 4        # podnies do 16  -> ginie mniejszy ship 1; obniz do 1 -> wpadaja speckle\nMIN_COMPACTNESS = 0.40  # podnies do 0.7 -> tylko bardzo kwadratowe blob'y; obniz do 0.2 -> linie i smugi\nMIN_SNR = 100.0     # podnies do 500  -> tylko najjasniejsze statki; obniz do 20 -> wpada clutter\n\n# Stage 1: maska ladu\ndb = 10.0 * np.log10(np.clip(vv, 1e-6, None))\nmean_db = uniform_filter(db, size=21, mode='reflect')\nland = mean_db > LAND_THR_DB\nland = binary_closing(land, structure=np.ones((5, 5), bool))\nland = binary_fill_holes(land)\n\n# Stage 2: CA-CFAR\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf, ng = fs * fs, gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode='reflect')\n    mu_guard = uniform_filter(img, size=gs, mode='reflect')\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\nraw = ca_cfar(vv, win=10, guard=4, pfa=PFA, L=4)\nraw &= ~land\n\n# Stage 3: morfologia\nclosed = binary_closing(raw, structure=np.ones((3, 3), bool))\nopened = binary_opening(closed, structure=np.ones((2, 2), bool))\n\n# Stage 4: klasyfikator\nlab, n = label(opened)\nwater_only = ~land & ~opened\nbg = float(np.median(vv[water_only])) if water_only.any() else 1e-6\n\nkept = []\nrejected = []\nfor i in range(1, n + 1):\n    comp = (lab == i)\n    A = int(comp.sum())\n    ys, xs = np.where(comp)\n    h = int(ys.max() - ys.min() + 1)\n    w = int(xs.max() - xs.min() + 1)\n    c = A / max(h * w, 1)\n    snr = float(vv[comp].mean()) / max(bg, 1e-6)\n    cy = float((ys.max() + ys.min()) / 2.0)\n    cx = float((xs.max() + xs.min()) / 2.0)\n    ok = (MIN_AREA <= A <= 400) and (c >= MIN_COMPACTNESS) and (snr >= MIN_SNR)\n    (kept if ok else rejected).append((cy, cx, h, w, snr, A, c))\n\nprint(f'LAND_THR_DB={LAND_THR_DB}, PFA={PFA}, MIN_AREA={MIN_AREA}, '\n      f'MIN_CP={MIN_COMPACTNESS}, MIN_SNR={MIN_SNR}')\nprint(f'land coverage: {land.mean()*100:.1f}%, raw CFAR: {raw.sum()}, '\n      f'po morfologii: {opened.sum()} px / {n} blobow')\nprint(f'klasyfikator zachowal: {len(kept)} / odrzucil: {len(rejected)}')\n\nfig, axes = plt.subplots(1, 2, figsize=(11.5, 5.4), constrained_layout=True)\naxes[0].imshow(disp, cmap='gray', vmin=0, vmax=vmax_disp, origin='upper')\naxes[0].contour(land, levels=[0.5], colors='#3aa8d8', linewidths=1.0)\naxes[0].set_title(f'Maska ladu (thr={LAND_THR_DB} dB) + raw CFAR', fontsize=10)\nov = np.zeros((H, W, 4), dtype=np.float32)\nov[raw, :] = [1.0, 0.20, 0.20, 0.55]\naxes[0].imshow(ov, origin='upper')\naxes[0].set_xlabel('kolumna [px]'); axes[0].set_ylabel('wiersz [px]')\n\naxes[1].imshow(disp, cmap='gray', vmin=0, vmax=vmax_disp, origin='upper')\nfor (cy, cx, h, w, snr, A, c) in kept:\n    rect = mpatches.Rectangle((cx - w/2 - 1, cy - h/2 - 1), w + 2, h + 2,\n                              fill=False, edgecolor='#2cdc4a', linewidth=1.8)\n    axes[1].add_patch(rect)\nfor (cy, cx, h, w, snr, A, c) in rejected:\n    rect = mpatches.Rectangle((cx - w/2 - 1, cy - h/2 - 1), w + 2, h + 2,\n                              fill=False, edgecolor='#cf3939', linewidth=1.0, linestyle=':')\n    axes[1].add_patch(rect)\naxes[1].set_title(f'Detekcje (zielone): {len(kept)}, odrzucone (czerwone): {len(rejected)}',\n                  fontsize=10)\naxes[1].set_xlabel('kolumna [px]'); axes[1].set_ylabel('wiersz [px]')\nplt.show()\n",
+        "encouragement": "Zacznij od `MIN_SNR=20` przy `MIN_COMPACTNESS=0.2` — zobacz, ile clutteru wpuszczasz; potem podnoś progi i obserwuj, w którym momencie najmniejszy ship 1 (SNR≈1400 w referencji) zaczyna się obawiać, że pojadą po niego razem ze speckle-spike'ami."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/36.951095",
+      "title": "Automatic detection of ships in Radarsat-1 SAR imagery",
+      "kind": "paper",
+      "author": "Christopher C. Wackerman, Karl S. Friedman, William G. Pichel, Pablo Clemente-Colón, Xiaofeng Li",
+      "year": 2001
+    },
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+      "title": "Ship Surveillance with TerraSAR-X",
+      "kind": "paper",
+      "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+      "year": 2011
+    },
+    {
+      "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+      "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+      "kind": "paper",
+      "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+      "year": 1997
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 Maritime Monitoring — ESA SentiWiki",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

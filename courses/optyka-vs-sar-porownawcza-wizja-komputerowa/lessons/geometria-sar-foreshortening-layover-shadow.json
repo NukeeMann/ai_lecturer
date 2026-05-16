@@ -1,0 +1,226 @@
+{
+  "schemaVersion": 1,
+  "slug": "geometria-sar-foreshortening-layover-shadow",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Geometria SAR — foreshortening, layover, shadow",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Dlaczego ten sam stok wygląda inaczej na obrazie Sentinel-1 niż na zdjęciu kamery — trzy artefakty geometryczne SAR, jednolinijkowa reguła α vs θ kiedy każdy się pojawia, i mały klasyfikator, którym można zamaskować na DEM strefy „geometria do niczego\".",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "slant-projection-intro",
+      "title": "Slant range projection — pinhole'a tu nie ma",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — Chapter 2",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Obraz z kamery to projekcja perspektywiczna — każdy ground point ląduje w *jednym* pikselu i kolejność po wierszu/kolumnie odpowiada kolejności na płaszczyźnie sceny. SAR projektuje inaczej: pozycja piksela wzdłuż osi range to **czas powrotu echa**, czyli wprost slant range (odległość skośna satelita → cel). Konsekwencja jest dramatyczna i całkowicie wbudowana w fizykę — *nie da się* jej odfiltrować, można tylko zrozumieć.\n\n![Schematyczny widok boczny: satelita Sentinel-1 na wysokości oznaczonej jako h, zwrócony pod look angle theta = 35° do nadiru, oświetla grzbiet złożony z trzech segmentów: niski łagodny przedwzgórzek (lewa strona, alpha ≈ 15°) oznaczony niebieską strzałką jako FORESHORTENING, główny stromy szczyt (alpha > theta) oznaczony czerwoną strzałką jako LAYOVER, oraz zacieniony tylny stok z zakreskowaną szarą strefą cienia oznaczoną jako SHADOW — wszystkie trzy artefakty na jednej geometrii](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/terrain-artifacts-overview.png)\n\nWyobraź sobie wzgórze i radar lecący gdzieś z boku, pod look angle $\\theta$ liczonym od nadiru. Trzy ground points — podstawa frontowa stoku, szczyt, podstawa tylna — *nie* lądują w slant range proporcjonalnie do swojej pozycji ground. Lądują tam, gdzie wypada ich slant distance od satelity. Dla stromego frontu **szczyt może być slantowo bliżej** niż jego własna podstawa; dla zbyt stromego tyłu wiązka **w ogóle do niego nie dociera**.\n\nStąd trzy charakterystyczne efekty, które każdy widzi na pierwszej scenie Sentinel-1 nad terenem górzystym:\n\n- **Foreshortening** — front stoku zwrócony do radaru jest *skompresowany* w slant range. Kolejność pikseli zachowana, ale stok wygląda na krótszy niż w rzeczywistości (i zwykle jaśniejszy, bo energia spada na mniejszą liczbę pikseli).\n- **Layover** — front stoku tak stromy, że szczyt jest skośnie bliżej satelity niż podstawa: w obrazie kolejność jest **odwrócona**, szczyt „nakłada się\" na teren przed stokiem.\n- **Shadow** — tylny stok zbyt stromy lub przeszkoda za przeszkodą: wiązka nie ma linii widzenia, w obrazie pojawia się czarna strefa bez echa.\n\nTe artefakty *nie* są szumem do odfiltrowania — niosą informację o terenie i look angle. Klasyczne filtry CV są tu bezsilne; trzeba sięgnąć po DEM i ortorektyfikację, albo zaakceptować geometrię i ją zinterpretować."
+      }
+    },
+    {
+      "id": "three-artifacts-schematic",
+      "title": "Foreshortening, layover, shadow — schemat boczny",
+      "description": "Trzy panele dla tego samego theta = 35°; zmienia się wyłącznie geometria stoku.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/geometria-sar-foreshortening-layover-shadow-1.png",
+        "alt": "Trzy panele schematu bocznego dla wspólnego look angle theta = 35° (zaznaczonego zielonym łukiem przy ikonce satelity SAR w lewej górnej części każdego panelu). Panel 1 (Foreshortening): łagodny niebieski trójkąt wzgórza (alpha_front = 15° < theta) ze szczytem 1.4 m i podstawą od x ≈ -2.7 do x = 2.5; niebieska linia do podstawy i czerwona do szczytu. Panel 2 (Layover): stromy różowy trójkąt (alpha_front = 55° > theta), wysokość 1.8 m, podstawy bardzo blisko siebie, czerwona linia do szczytu jest krótsza od niebieskiej do podstawy. Panel 3 (Shadow): zielony trójkąt z bardzo stromym tylnym stokiem (alpha_back = 70° > 90°−theta = 55°), za nim zakreskowana ciemnoszara strefa cienia na osi ground range oznaczona etykietą „strefa cienia\" i czerwona przerywana linia kontynuacji wiązki ze szczytu na ziemię. Osie obu paneli skalowane w jednostkach umownych [au], wysokość do 7.5, ground range od -3.5 do 5.5.",
+        "caption": "Rys. 1. Te same parametry akwizycji (theta = 35°), trzy różne stoki — trzy różne artefakty. Foreshortening kompresuje stok; layover odwraca kolejność szczyt/podstawa; shadow wycina obszar bez echa za grani.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Three-panel side-view schematic of the three SAR geometric artefacts.\n# Common look angle theta = 35 deg; each panel changes only the hill profile.\n# Panels share the same satellite position, ground line and axis scaling so the\n# learner can compare the geometry directly.\ntheta_deg = 35.0\ntheta = np.deg2rad(theta_deg)\nsat_x, sat_y = -3.0, 6.5\n\nfig, axes = plt.subplots(1, 3, figsize=(14.0, 4.8))\n\n\ndef draw_panel(ax, alpha_front, alpha_back, hill_h, peak_x, title, callout,\n               fill_color, mark_shadow=False):\n    af = np.deg2rad(alpha_front)\n    ab = np.deg2rad(alpha_back)\n    left = peak_x - hill_h / np.tan(af)\n    right = peak_x + hill_h / np.tan(ab)\n    # Ground line.\n    ax.plot([-3.5, 5.5], [0, 0], color=\"#444444\", linewidth=1.0)\n    # Hill polygon.\n    ax.fill([left, peak_x, right], [0, hill_h, 0],\n            color=fill_color, alpha=0.75, edgecolor=\"#222222\", linewidth=1.2)\n    # Satellite + nadir line.\n    ax.plot(sat_x, sat_y, marker=\"^\", markersize=13, color=\"black\")\n    ax.annotate(\"SAR\", xy=(sat_x, sat_y),\n                xytext=(sat_x + 0.15, sat_y + 0.25), fontsize=10)\n    ax.plot([sat_x, sat_x], [sat_y, 0], linestyle=\":\",\n            color=\"#888888\", linewidth=0.8)\n    # theta arc.\n    r_arc = 1.0\n    t = np.linspace(-np.pi / 2, -np.pi / 2 + theta, 30)\n    ax.plot(sat_x + r_arc * np.cos(t), sat_y + r_arc * np.sin(t),\n            color=\"#2ca02c\", linewidth=1.2)\n    ax.annotate(f\"theta = {theta_deg:.0f} deg\",\n                xy=(sat_x + 0.6, sat_y - 1.3),\n                fontsize=9, color=\"#2ca02c\")\n    # Rays to base, peak, back.\n    for tx, ty, color, label in [\n        (left, 0.0, \"#1f77b4\", \"podstawa\"),\n        (peak_x, hill_h, \"#d62728\", \"szczyt\"),\n        (right, 0.0, \"#2ca02c\", \"tyl\"),\n    ]:\n        ax.plot([sat_x, tx], [sat_y, ty], color=color,\n                linewidth=1.3, alpha=0.85)\n        ax.plot(tx, ty, marker=\"o\", color=color, markersize=6)\n        offset_y = -0.35 if ty == 0.0 else 0.15\n        ax.annotate(label, xy=(tx, ty),\n                    xytext=(tx + 0.05, ty + offset_y),\n                    fontsize=9, color=color)\n    # Shadow shading on panel 3 (where back slope blocks line of sight).\n    if mark_shadow:\n        dx = peak_x - sat_x\n        dy = hill_h - sat_y\n        if dy < 0:\n            t_far = -sat_y / dy\n            far_x = sat_x + dx * t_far\n            if far_x > right:\n                ax.fill_between([right, far_x], -0.05, 0.10,\n                                color=\"#444444\", alpha=0.55, hatch=\"///\",\n                                edgecolor=\"#222222\", linewidth=0.3)\n                ax.annotate(\"strefa cienia\",\n                            xy=((right + far_x) / 2, 0.05),\n                            xytext=((right + far_x) / 2, 1.1),\n                            fontsize=9, color=\"#444444\", ha=\"center\",\n                            arrowprops=dict(arrowstyle=\"->\",\n                                            color=\"#444444\", lw=0.8))\n                ax.plot([peak_x, far_x], [hill_h, 0], linestyle=\"--\",\n                        color=\"#d62728\", linewidth=1.0, alpha=0.55)\n    ax.set_title(title, fontsize=11)\n    ax.text(0.03, 0.97, callout, transform=ax.transAxes, fontsize=9,\n            verticalalignment=\"top\",\n            bbox=dict(boxstyle=\"round,pad=0.4\",\n                      facecolor=\"#fff5cc\", alpha=0.95))\n    ax.set_xlim(-3.5, 5.5)\n    ax.set_ylim(-0.6, 7.5)\n    ax.set_aspect(\"equal\")\n    ax.set_xlabel(\"ground range [au]\")\n    ax.set_ylabel(\"wysokosc [au]\")\n    ax.grid(True, alpha=0.3)\n\n\n# Panel 1: Foreshortening (gentle front, alpha_front = 15 deg < theta).\ndraw_panel(axes[0], alpha_front=15.0, alpha_back=60.0,\n           hill_h=1.4, peak_x=2.5,\n           title=\"Foreshortening (alpha_front = 15 deg < theta)\",\n           callout=\"Lagodny front zwrocony do radaru.\\n\"\n                   \"Kolejnosc slant zachowana,\\n\"\n                   \"ale stok jest skompresowany\\n\"\n                   \"w obrazie.\",\n           fill_color=\"#bbd2e8\")\n# Panel 2: Layover (steep front, alpha_front = 55 deg > theta).\ndraw_panel(axes[1], alpha_front=55.0, alpha_back=55.0,\n           hill_h=1.8, peak_x=2.0,\n           title=\"Layover (alpha_front = 55 deg > theta)\",\n           callout=\"Stromy front: szczyt jest skosnie\\n\"\n                   \"blizej radaru niz podstawa.\\n\"\n                   \"Kolejnosc slant odwrocona —\\n\"\n                   \"szczyt 'wchodzi' na podstawe.\",\n           fill_color=\"#f3c5c5\")\n# Panel 3: Shadow (back slope steeper than 90 - theta).\ndraw_panel(axes[2], alpha_front=25.0, alpha_back=70.0,\n           hill_h=1.7, peak_x=1.5,\n           title=\"Shadow (alpha_back = 70 deg > 90 - theta = 55 deg)\",\n           callout=\"Tylny stok zbyt stromy:\\n\"\n                   \"brak linii widzenia z radaru.\\n\"\n                   \"Obszar bez echa.\",\n           fill_color=\"#c7e3c0\", mark_shadow=True)\n\nfig.suptitle(\n    f\"Trzy geometryczne artefakty SAR — schemat boczny \"\n    f\"(theta = {theta_deg:.0f} deg)\",\n    fontsize=13,\n)\nplt.tight_layout(rect=[0, 0, 1, 0.94])\nplt.savefig(\"geometria-sar-foreshortening-layover-shadow-1.png\", dpi=110,\n            bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-artifact-rules",
+      "title": "Sprawdź: kiedy się pojawiają?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o geometrii SAR są poprawne dla theta ≈ 35° (typowy Sentinel-1 IW)? Wybierz wszystkie pasujące.",
+        "options": [
+          "Layover występuje, gdy nachylenie frontu stoku α przekracza look angle θ — szczyt jest skośnie bliżej radaru niż jego podstawa.",
+          "Foreshortening dotyczy wyłącznie tylnych stoków (odwróconych od radaru).",
+          "Cień radarowy można rzetelnie zrekonstruować interpolacją z sąsiednich pikseli — to po prostu brakujące dane.",
+          "Wybór większego look angle (np. θ ≈ 45°) redukuje obszary layoveru, ale jednocześnie powiększa strefy cienia na tylnych stokach."
+        ],
+        "correct": [
+          0,
+          3
+        ],
+        "explanation": "Opcje 1 i 4 są poprawne. (1) — to literalna definicja layoveru: warunek α > θ powoduje, że slant od satelity do szczytu jest mniejszy niż slant do podstawy, więc kolejność pikseli się odwraca. (4) — z reguł foreshortening (α < θ), layover (α > θ) i shadow (|α_back| > 90°−θ) wynika, że zwiększanie θ przesuwa stoki z reżimu layoveru do foreshorteningu (mniej layoveru), ale obniża próg shadow do 90°−θ, więc coraz łagodniejsze tylne stoki wpadają w cień. Opcja 2 jest błędna — foreshortening to ZAWSZE front zwrócony do radaru przy α < θ; tylne stoki dają shadow lub normalne odwzorowanie, nie foreshortening. Opcja 3 jest błędna — shadow to brak echa, czyli brak informacji; interpolacja zmyśla wartości, nie odtwarza ich. Aby uzyskać te piksele, trzeba sięgnąć po inną orbitę (descending zamiast ascending) albo DEM + ortorektyfikację.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "phase-diagram-rules",
+      "title": "Reguła α vs θ — kiedy każdy z trzech artefaktów",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 SAR Geometric Distortion (ESA SentiWiki)",
+          "kind": "article"
+        },
+        {
+          "url": "https://asf.alaska.edu/information/sar-information/sar-image-geometry/",
+          "title": "ASF — SAR Image Geometry",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar#Geometric_distortion",
+          "title": "Synthetic-aperture radar — Geometric distortion (Wikipedia)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Reguła jest jednolinijkowa i wystarczy ją zapamiętać raz. Niech $\\theta$ to look angle (od nadiru), a $\\alpha$ to nachylenie stoku (od poziomu), znakowane: $\\alpha > 0$ na froncie zwróconym do radaru, $\\alpha < 0$ na tylnym stoku.\n\n$$ \\text{foreshortening: } 0 < \\alpha < \\theta \\quad\\big|\\quad \\text{layover: } \\alpha > \\theta \\quad\\big|\\quad \\text{shadow: } |\\alpha| > 90° - \\theta \\text{ (tylny stok)} $$\n\n![Diagram fazowy w płaszczyźnie (theta, alpha): oś X look angle theta od 15 do 65 stopni, oś Y nachylenie stoku alpha od -90 do +90 stopni; niebieski klin foreshortening dla 0 < alpha < theta, różowy obszar layover dla alpha > theta, zielony pas normal back slope dla -(90-theta) < alpha < 0, szary obszar shadow dla alpha_back > 90-theta; pionowy zielony pas oznaczający zakres Sentinel-1 IW (29-46°) i trzy punkty robocze (alpha=15°, alpha=55°, alpha_back=70°) przy theta=35° wskazujące odpowiednio na foreshortening, layover i shadow](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/slope-vs-look-angle-regions.png)\n\nTrzy obserwacje, które ratują czas, gdy ktoś każe „dobrać orbitę pod scenę\":\n\n- **Mniejsze $\\theta$ (bliżej nadiru)** — łatwiej spełnić warunek $\\alpha > \\theta$, więc *więcej* layoveru. Jednocześnie warunek $|\\alpha| > 90° - \\theta$ staje się trudniejszy, więc *mniej* cienia. Akwizycja stromo z góry maksymalizuje deformacje na froncie i odkrywa tylne stoki.\n- **Większe $\\theta$ (bardziej skośnie)** — odwrotnie: mniej layoveru (stoki muszą być naprawdę pionowe, by się złożyły), ale szybciej rośnie shadow. Dla Sentinel-1 IW (zakres $29°$–$46°$) terenowi pasują ortorektyfikacja lub akwizycja z **przeciwnej orbity** (pas wstępujący vs zstępujący) — to, co na jednej jest layoverem, na drugiej często jest widoczne normalnie.\n- **Granica $\\alpha = \\theta$ to layover threshold** — przy nim front stoku rzutuje się w *jeden* piksel slant range (zerowa szerokość). To moment „katastroficzny\" — tuż obok granicy zachowanie obrazu zmienia się jakościowo, więc analizy wrażliwe na geometrię (np. detekcja krawędzi grzbietu) tracą sens w okolicach tego progu."
+      }
+    },
+    {
+      "id": "look-angle-parametric",
+      "title": "Ten sam grzbiet, trzy look angles — jak slant się zmienia",
+      "description": "Profil terenu na górze, slant range offset względem g=0 na dole. Layover dla θ=25° widać jako niemonotoniczność krzywej.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/geometria-sar-foreshortening-layover-shadow-2.png",
+        "alt": "Dwupanelowy wykres parametryczny. Górny panel pokazuje profil terenu — szary trójkątny grzbiet od ground range ≈ 7 do ≈ 15 km, szczyt na 10 km i wysokości 2.5 km, z etykietą „peak\" przy szczycie; stromy front (alpha = 40°) po lewej i łagodniejszy tył (alpha = 25°) po prawej. Dolny panel pokazuje slant range offset (slant minus slant przy ground range = 0) w funkcji ground range dla h_sat = 693 km (Sentinel-1) i trzech look angles: czerwona krzywa theta = 25° wyraźnie niemonotoniczna na froncie (slant maleje wchodząc w stok — adnotacja „layover dla theta = 25°: slant maleje gdy wchodzimy w front stoku\"), zielona theta = 35° prawie liniowa z lekkim załamaniem na froncie, niebieska theta = 50° monotoniczna ale z mniejszym nachyleniem na froncie (adnotacja „foreshortening dla theta = 50°: slant rośnie, ale wolniej niż na płaskim\"). Oś X obu paneli od 0 do 20 km.",
+        "caption": "Rys. 2. Ten sam grzbiet, trzy look angles. Przy θ = 25° krzywa slant maleje na froncie — to layover. Przy θ = 50° krzywa rośnie, ale nachylenie jest mniejsze niż na płaskim — to foreshortening. Pośrodku, dla θ = 35°, jesteśmy bardzo blisko progu α = θ.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Parametric plot showing how the same hill projects to slant range for\n# three look angles. Top panel: terrain elevation profile vs ground range.\n# Bottom panel: slant range offset (slant minus its value at ground range = 0)\n# vs ground range for theta = 25, 35, 50 deg. Layover surfaces as a\n# non-monotone (locally decreasing) segment in the slant curve.\ndef hill_profile(g):\n    af = np.deg2rad(40.0)\n    ab = np.deg2rad(25.0)\n    peak_x = 10.0\n    peak_h = 2.5  # km\n    g = np.asarray(g, dtype=float)\n    h = np.zeros_like(g)\n    base_front = peak_x - peak_h / np.tan(af)\n    base_back = peak_x + peak_h / np.tan(ab)\n    front_mask = (g >= base_front) & (g < peak_x)\n    back_mask = (g >= peak_x) & (g <= base_back)\n    h[front_mask] = (g[front_mask] - base_front) * np.tan(af)\n    h[back_mask] = peak_h - (g[back_mask] - peak_x) * np.tan(ab)\n    return h\n\n\nh_sat_km = 693.0  # Sentinel-1 nominal orbit altitude.\nlook_angles = [25.0, 35.0, 50.0]\ncolors = [\"#d62728\", \"#2ca02c\", \"#1f77b4\"]\n\ng = np.linspace(0.0, 20.0, 2000)\nh = hill_profile(g)\n\nfig, (ax_top, ax_bot) = plt.subplots(\n    2, 1, figsize=(10.0, 8.5),\n    gridspec_kw={\"height_ratios\": [1, 2.2]})\n\n# Top: hill profile.\nax_top.fill_between(g, 0, h, color=\"#cccccc\", alpha=0.75,\n                    edgecolor=\"#222222\", linewidth=1.0)\nax_top.set_xlim(0, 20)\nax_top.set_ylim(0, 3.2)\nax_top.set_xlabel(\"Ground range [km]\")\nax_top.set_ylabel(\"Wysokosc [km]\")\nax_top.set_title(\n    \"Profil terenu: stromy front (alpha_front = 40 deg) i lagodny tyl \"\n    \"(alpha_back = 25 deg)\")\nax_top.grid(True, alpha=0.3)\nax_top.annotate(\"peak\", xy=(10.0, 2.5), xytext=(10.3, 2.7),\n                fontsize=10, color=\"#222222\")\n\n# Bottom: slant range offset vs ground range for each theta.\nax_bot.set_xlim(0, 20)\nax_bot.set_xlabel(\"Ground range [km]\")\nax_bot.set_ylabel(\"Slant range offset wzgledem g=0 [km]\")\nax_bot.set_title(\n    \"Projekcja slant range dla roznych look angles \"\n    \"(h_sat = 693 km, Sentinel-1)\")\nax_bot.grid(True, alpha=0.3)\n\nfor theta_deg, color in zip(look_angles, colors):\n    theta = np.deg2rad(theta_deg)\n    sat_x_nadir = -h_sat_km * np.tan(theta)\n    slant = np.hypot(g - sat_x_nadir, h - h_sat_km)\n    slant_offset = slant - slant[0]\n    ax_bot.plot(g, slant_offset, color=color, linewidth=2.0,\n                label=f\"theta = {theta_deg:.0f} deg\")\n\nax_bot.legend(loc=\"lower right\", fontsize=10)\n\n# Annotate layover in the theta=25 curve (front slope is non-monotone).\ntheta_low = np.deg2rad(25.0)\nsat_x_nadir_low = -h_sat_km * np.tan(theta_low)\nslant_low = np.hypot(g - sat_x_nadir_low, h - h_sat_km)\nslant_low_off = slant_low - slant_low[0]\nfront_mask = (g >= 7.0) & (g <= 10.3)\ng_front = g[front_mask]\ns_front = slant_low_off[front_mask]\nidx_min_slant = int(np.argmin(s_front))\nax_bot.annotate(\n    \"layover dla theta = 25 deg:\\nslant maleje gdy wchodzimy\\nw front stoku\",\n    xy=(g_front[idx_min_slant], s_front[idx_min_slant]),\n    xytext=(1.5, s_front[idx_min_slant] + 0.6),\n    fontsize=10, color=\"#d62728\",\n    arrowprops=dict(arrowstyle=\"->\", color=\"#d62728\", lw=1.0))\n\n# For theta=50, no layover — monotone curve. Label the foreshortening\n# regime: slope segment slope vs flat segment slope.\ntheta_hi = np.deg2rad(50.0)\nsat_x_nadir_hi = -h_sat_km * np.tan(theta_hi)\nslant_hi = np.hypot(g - sat_x_nadir_hi, h - h_sat_km)\nslant_hi_off = slant_hi - slant_hi[0]\nfront_mask_hi = (g >= 7.0) & (g <= 10.0)\ng_front_hi = g[front_mask_hi]\ns_front_hi = slant_hi_off[front_mask_hi]\nax_bot.annotate(\n    \"foreshortening dla theta = 50 deg:\\nslant rosnie, ale wolniej\\nniz na plaskim\",\n    xy=(g_front_hi[len(g_front_hi) // 2], s_front_hi[len(g_front_hi) // 2]),\n    xytext=(11.5, s_front_hi[0] - 0.6),\n    fontsize=10, color=\"#1f77b4\",\n    arrowprops=dict(arrowstyle=\"->\", color=\"#1f77b4\", lw=1.0))\n\nplt.tight_layout()\nplt.savefig(\"geometria-sar-foreshortening-layover-shadow-2.png\",\n            dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "match-scenario-to-artifact",
+      "title": "Dopasuj scenariusz terenu do artefaktu",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przyporządkuj każdy opisany przypadek terenu do artefaktu geometrycznego, który zobaczysz w obrazie SAR przy theta = 35°.",
+        "items": [
+          {
+            "id": "gentle-front",
+            "label": "Wzgórze o frontowym stoku α ≈ 15° zwróconym do radaru; tylny stok łagodny, otoczenie płaskie."
+          },
+          {
+            "id": "steep-front",
+            "label": "Górska grań o frontowym stoku α ≈ 55° zwróconym do radaru; szczyt wysoki, podstawa odległa."
+          },
+          {
+            "id": "steep-back",
+            "label": "Klif o pionowym tylnym stoku (α_back ≈ 80°) odwróconym od radaru; front łagodny, otoczenie płaskie."
+          }
+        ],
+        "zones": [
+          {
+            "id": "foreshortening",
+            "label": "Foreshortening",
+            "accepts": [
+              "gentle-front"
+            ]
+          },
+          {
+            "id": "layover",
+            "label": "Layover",
+            "accepts": [
+              "steep-front"
+            ]
+          },
+          {
+            "id": "shadow",
+            "label": "Shadow",
+            "accepts": [
+              "steep-back"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Łagodny front (α=15° < θ=35°) wpada w klin foreshorteningu — stok jest skompresowany, ale kolejność slant zachowana. Stromy front (α=55° > θ=35°) spełnia warunek layoveru: szczyt jest skośnie bliżej radaru niż jego podstawa. Pionowy tylny stok (α_back=80° > 90°−θ=55°) wchodzi w reżim shadow — wiązka nie ma linii widzenia."
+      }
+    },
+    {
+      "id": "exercise-classify",
+      "title": "Zaklasyfikuj stok do artefaktu",
+      "description": "Funkcja-klasyfikator, której wynik można potem nałożyć na DEM jako maskę „gdzie geometria jest do niczego\".",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 SAR Geometric Distortion (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `classify_slope_artifact(alpha_deg, theta_deg)`, która dla lokalnego stoku o nachyleniu `alpha_deg` (znakowane: `>0` na froncie zwróconym do radaru, `<0` na tylnym stoku, `0` na płaskim terenie) i look angle radaru `theta_deg` (od nadiru, zawsze dodatni i mniejszy od 90°) zwraca jeden z czterech łańcuchów:\n\n- `'foreshortening'` — gdy `0 < alpha_deg < theta_deg`\n- `'layover'` — gdy `alpha_deg >= theta_deg`\n- `'shadow'` — gdy `alpha_deg < 0` i `abs(alpha_deg) > 90 - theta_deg`\n- `'normal'` — w pozostałych przypadkach (płaski teren lub łagodny tylny stok)\n\nReguła ma trafiać dokładnie na granicach: `alpha == theta` to już `layover`, a `abs(alpha) == 90 - theta` na tylnym stoku to wciąż `normal` (warunek jest *ostry*).\n\n```\nclassify_slope_artifact(15.0, 35.0)   # 'foreshortening'\nclassify_slope_artifact(55.0, 35.0)   # 'layover'\nclassify_slope_artifact(-70.0, 35.0)  # 'shadow'\nclassify_slope_artifact(0.0, 35.0)    # 'normal'\n```",
+        "starterCode": "def classify_slope_artifact(alpha_deg, theta_deg):\n    \"\"\"Zwraca artefakt geometryczny SAR dla danego stoku i look angle.\n\n    alpha_deg : float, nachylenie stoku w stopniach.\n                >0  - front zwrocony do radaru\n                <0  - tylny stok, odwrocony\n                0   - plaski teren\n    theta_deg : float, look angle radaru od nadiru, w stopniach (0, 90).\n\n    Zwraca: 'foreshortening' | 'layover' | 'shadow' | 'normal'.\n    \"\"\"\n    # TODO: zaimplementuj logike wg regul w opisie zadania.\n    return 'normal'\n",
+        "tests": [
+          {
+            "name": "flat_terrain_is_normal",
+            "body": "assert classify_slope_artifact(0.0, 35.0) == 'normal'",
+            "hidden": false
+          },
+          {
+            "name": "gentle_front_is_foreshortening",
+            "body": "assert classify_slope_artifact(15.0, 35.0) == 'foreshortening'",
+            "hidden": true
+          },
+          {
+            "name": "alpha_equals_theta_is_layover",
+            "body": "assert classify_slope_artifact(35.0, 35.0) == 'layover'",
+            "hidden": true
+          },
+          {
+            "name": "steep_back_slope_is_shadow",
+            "body": "assert classify_slope_artifact(-70.0, 35.0) == 'shadow'",
+            "hidden": true
+          }
+        ],
+        "solution": "def classify_slope_artifact(alpha_deg, theta_deg):\n    if alpha_deg > 0:\n        if alpha_deg < theta_deg:\n            return 'foreshortening'\n        return 'layover'\n    if alpha_deg < 0 and abs(alpha_deg) > 90 - theta_deg:\n        return 'shadow'\n    return 'normal'\n"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 SAR Geometric Distortion (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://asf.alaska.edu/information/sar-information/sar-image-geometry/",
+      "title": "ASF — SAR Image Geometry",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar#Geometric_distortion",
+      "title": "Synthetic-aperture radar — Geometric distortion (Wikipedia)",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 2",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    }
+  ]
+}

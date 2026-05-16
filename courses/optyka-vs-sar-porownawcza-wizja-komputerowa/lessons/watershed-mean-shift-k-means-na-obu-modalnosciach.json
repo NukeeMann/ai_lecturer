@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "slug": "watershed-mean-shift-k-means-na-obu-modalnosciach",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Watershed, mean-shift, k-means na obu modalnościach",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Trzy klasyczne segmentacje regionów (k-means, mean-shift, watershed) zostały zaprojektowane przy milczącym założeniu, że piksele tej samej powierzchni mają zbliżoną intensywność. SAR to założenie łamie codziennie — speckle daje 50% CV w jednorodnym obszarze (przy L=4), więc każdy z tych algorytmów uruchomiony na surowych pikselach SAR produkuje setki mikro-segmentów zamiast trzech regionów. Lekcja pokazuje to ramię w ramię z optyką i daje Ci wzorzec naprawczy: cechą wejściową k-means nie ma być piksel, lecz para `(local_mean, local_CV)` z okna, którą zaimplementujesz w widgecie.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "klasyczna-segmentacja-i-zalozenie-pikselowe",
+      "title": "Trzy klasyki segmentacji regionów — i milczące założenie, które łamie speckle",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/34.1000236",
+          "title": "Mean shift: A robust approach toward feature space analysis",
+          "kind": "paper",
+          "author": "Dorin Comaniciu and Peter Meer",
+          "year": 2002
+        },
+        {
+          "url": "https://doi.org/10.1109/TIT.1982.1056489",
+          "title": "Least squares quantization in PCM",
+          "kind": "paper",
+          "author": "Stuart P. Lloyd",
+          "year": 1982
+        },
+        {
+          "url": "https://link.springer.com/chapter/10.1007/978-3-642-87005-0_24",
+          "title": "The Watershed Transformation Applied to Image Segmentation",
+          "kind": "paper",
+          "author": "Serge Beucher and Fernand Meyer",
+          "year": 1992
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Trzy klasyki segmentacji regionów — **k-means** (Lloyd 1982), **mean-shift** (Comaniciu & Meer 2002), **watershed** (Beucher & Meyer 1992) — niosą każda inny algorytm, ale wszystkie stoją na tym samym, milczącym założeniu:\n\n> *Piksele należące do tego samego regionu mają **zbliżoną intensywność** (lub kolor) — różnice są dryfem oświetlenia, ewentualnie addytywnym, gaussowskim szumem.*\n\nKonkretnie:\n\n- **k-means** klasteryzuje wektor cech piksela (typowo $[I]$ lub $[R, G, B, x, y]$) względem euklidesowej odległości — czyli karze różnice intensywności wewnątrz klastra kwadratem.\n- **mean-shift** szuka **lokalnych maksimów gęstości** w tej samej przestrzeni cech — region to bassen przyciągania jednego maksimum.\n- **watershed** traktuje obraz (lub jego gradient) jako mapę topograficzną i zalewa go od minimów; segment = basen wodny. Każde **lokalne minimum** intensywności staje się początkiem nowego basenu.\n\nNa optyce to założenie trzyma się rozsądnie: szum kamery jest addytywny, gaussowski, o stosunkowo małym CV (rzędu paru procent), a krawędzie obiektów to wyraźne nieciągłości intensywności.\n\n![Cztery panele 2×2 ilustrujące klasyczną segmentację regionów na optyce vs SAR. (a) optyczny obraz 'coins' ze skimage — monety jasnoszare na ciemnym tle. (b) ten sam obraz po k-means k=3 — czysto wydzielone trzy klasy: tło, krawędzie monet, wnętrza monet. (c) syntetyczny kafelek SAR 256×256 z trzema poziomymi regionami R∈{0.20, 0.55, 0.95} i wtopionym okrągłym jasnym obiektem + ciemny klin — po k-means k=3 na surowych pikselach widać niemal losowy szachownicowy wzór klas, regiony NIE wyłaniają się. (d) ten sam kafelek SAR po watershed — kilkaset małych segmentów-kropek wynikających z tego, że każde lokalne maksimum speckle uruchomiło osobny basen. Tytuł 'Klasyczna segmentacja regionów: optyka vs SAR'.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/segmentation-optical-vs-sar-4panel.png)\n\nNa SAR to założenie **łamie się od pierwszego piksela**. W jednorodnym obszarze o reflektywności $R$ piksel intensywności ma rozkład $\\operatorname{Gamma}(L,\\, R/L)$ — czyli CV $= 1/\\sqrt{L}$ ($50\\%$ dla $L=4$, $100\\%$ dla SLC). Dwóch sąsiadów na tym samym morzu może mieć $I_1 = 0{,}05$ i $I_2 = 0{,}9$ — nie dlatego, że to są różne obiekty, tylko dlatego, że tak działa speckle. Konsekwencje są przewidywalne: k-means buduje klastry **odpowiadające percentylom histogramu speckle**, mean-shift osadza maksima gęstości w przypadkowych mikro-modach szumu, a watershed eksploduje na kilkaset segmentów — po jednym na każde lokalne maksimum speckle."
+      }
+    },
+    {
+      "id": "feature-space-scatter",
+      "title": "Przestrzeń cech — dlaczego surowy piksel rozdziela trzy regiony, a para (μ, CV) tak",
+      "description": "Po lewej: histogramy intensywności trzech regionów synthetycznego SAR — Gamma(L=4) z R∈{0.20, 0.55, 0.95}. Po prawej: scatter w przestrzeni cech (μ, CV) z okna 9×9 — te same piksele oznaczone kolorem regionu, ale tym razem rozseparowane w klastry.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/watershed-mean-shift-k-means-na-obu-modalnosciach-1.png",
+        "alt": "Dwa panele obok siebie. Lewy: histogram intensywności I dla trzech regionów synthetycznego SAR — region 0 (R=0,20) niebieski, region 1 (R=0,55) pomarańczowy, region 2 (R=0,95) zielony — wszystkie Gamma(L=4). Oś X 'Intensywność I' 0–3, oś Y 'Gęstość prawd.' 0–4. Trzy krzywe znacząco zachodzą na siebie, środkowy region (pomarańczowy) jest niemal całkowicie pokryty przez lewą krzywą i lewy ogon prawej — globalny próg w jednej osi nie rozdzieliłby regionów. Prawy panel: scatter plot pikseli (po jednej próbce na piksel z 6000), oś X 'Lokalna średnia μ [-]' 0–1,6, oś Y 'Lokalny CV = σ/μ [-]' 0–0,9. Każdy piksel kolorowany po prawdziwej klasie. Trzy chmury punktów wyraźnie się oddzielają wzdłuż osi μ: niebieska chmura przy μ≈0,2, pomarańczowa przy μ≈0,55, zielona przy μ≈0,95 — wszystkie skupione wokół poziomej linii CV ≈ 0,5 (= 1/√L dla L=4), pokazanej różową przerywaną linią. Krawędzie regionów dają cienki pas punktów o wyższym CV (krawędziowe okna miks dwóch reflektywności). Tytuł całości: 'Przestrzeń cech: surowy piksel vs lokalne statystyki (μ, CV) z okna 9×9 na syntetycznym kafelku SAR L=4'. Siatki jasnoszare, legendy w prawym górnym rogu obu paneli.",
+        "caption": "Rys. 1. Po lewej trzy regiony Gamma(L=4) są w surowym histogramie nierozróżnialne — to dlatego k-means na pikselach robi klastry-percentyle, a nie regiony. Po prawej cechy (μ, CV) z okna 9×9 zbijają speckle do jednej wartości μ na region, a CV potwierdza, czy okno jest w jednorodnym tle (CV ≈ 1/√L) czy na krawędzi (CV znacząco wyższy).",
+        "sourceCode": "import os\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\n\nROOT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa\"\n)\nPLOTS = f\"{ROOT}/assets/plots\"\nos.makedirs(PLOTS, exist_ok=True)\n\nH = W = 256\nrng = np.random.default_rng(11)\n\nR_map = np.zeros((H, W), dtype=np.float32)\ntruth = np.zeros((H, W), dtype=np.int32)\nR_map[:90, :] = 0.20\ntruth[:90, :] = 0\nR_map[90:175, :] = 0.55\ntruth[90:175, :] = 1\nR_map[175:, :] = 0.95\ntruth[175:, :] = 2\n\nyy, xx = np.indices((H, W))\nblob_mask = (yy - 140) ** 2 + (xx - 180) ** 2 < 32 ** 2\nR_map[blob_mask] = 0.95\ntruth[blob_mask] = 2\nwedge_mask = (xx < 70) & (yy > 100) & (yy < 160) & (yy - 100 > (70 - xx))\nR_map[wedge_mask] = 0.20\ntruth[wedge_mask] = 0\n\nL = 4\nintensity = rng.gamma(shape=L, scale=R_map / L).astype(np.float32)\n\nmu = uniform_filter(intensity, size=9, mode=\"reflect\")\nmu2 = uniform_filter(intensity * intensity, size=9, mode=\"reflect\")\nvar = np.clip(mu2 - mu * mu, a_min=0.0, a_max=None)\ncv = np.sqrt(var) / (mu + 1e-6)\n\nsample_idx = rng.choice(H * W, size=6000, replace=False)\ntruth_flat = truth.ravel()[sample_idx]\nintensity_flat = intensity.ravel()[sample_idx]\nmu_flat = mu.ravel()[sample_idx]\ncv_flat = cv.ravel()[sample_idx]\n\nregion_names = [\"region 0 (R=0.20)\", \"region 1 (R=0.55)\", \"region 2 (R=0.95)\"]\nregion_colors = [\"#3a6dc5\", \"#e07c00\", \"#3a8e3a\"]\n\nfig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0), constrained_layout=True)\n\nbins = np.linspace(0, 3.0, 80)\nfor region in range(3):\n    mask = truth_flat == region\n    axes[0].hist(intensity_flat[mask], bins=bins, alpha=0.5,\n                 color=region_colors[region], density=True,\n                 label=region_names[region])\naxes[0].set_xlim(0, 3.0)\naxes[0].set_xlabel(\"Intensywnosc I [-]\")\naxes[0].set_ylabel(\"Gestosc prawd. [-]\")\naxes[0].set_title(\"(a) Surowy piksel SAR -- rozklady Gamma(L=4)\\n\"\n                  \"trzech regionow sie NAKLADAJA\", fontsize=11)\naxes[0].grid(True, alpha=0.3)\naxes[0].legend(fontsize=9, loc=\"upper right\")\n\nfor region in range(3):\n    mask = truth_flat == region\n    axes[1].scatter(mu_flat[mask], cv_flat[mask], s=6,\n                    color=region_colors[region], alpha=0.45,\n                    label=region_names[region])\naxes[1].set_xlim(0, 1.6)\naxes[1].set_ylim(0, 0.9)\naxes[1].set_xlabel(\"Lokalna srednia mu [-]\")\naxes[1].set_ylabel(\"Lokalny CV = sigma/mu [-]\")\naxes[1].set_title(\"(b) Cechy (mu, CV) z okna 9x9 --\\n\"\n                  \"trzy regiony SEPARUJA SIE wzdluz osi mu\", fontsize=11)\naxes[1].grid(True, alpha=0.3)\ncv_ref = 1.0 / np.sqrt(L)\naxes[1].axhline(cv_ref, color=\"#a23a8e\", linestyle=\"--\", linewidth=1.5,\n                label=f\"CV jednorodnego tla = 1/sqrt(L) = {cv_ref:.2f}\")\naxes[1].legend(fontsize=9, loc=\"upper right\")\n\nfig.suptitle(\n    \"Przestrzen cech: surowy piksel vs lokalne statystyki (mu, CV) z okna 9x9 \"\n    \"na syntetycznym kafelku SAR L=4\",\n    fontsize=12,\n)\nfig.savefig(\n    f\"{PLOTS}/watershed-mean-shift-k-means-na-obu-modalnosciach-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-co-zrobic-z-kmeans-na-sar",
+      "title": "Sprawdź: jak naprawić k-means na SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na lewy panel Rys. 1 (histogramy trzech regionów się nakładają) i prawy panel (cechy (μ, CV) rozdzielają je czysto). Twój kolega proponuje cztery sposoby ratunku dla k-means na kafelku SAR. **Która** strategia jest jednocześnie *skuteczna* i *zachowuje gwarancje statystyczne* (CV regionu pozostaje przewidywalne 1/√L)? Wybierz jedną.",
+        "options": [
+          "Najpierw odfiltrować obraz filtrem Lee'a (despeckling), potem uruchomić k-means na *przefiltrowanych pikselach* — Lee zmniejsza wariancję wewnątrzregionową, więc histogramy się rozsuwają.",
+          "Zlogarytmować obraz: `J = log(I + 1)` zamienia mnożny szum Gamma w bliski Gaussowi addytywny — dalej standardowy k-means na pikselach `J` rozdzieli regiony.",
+          "Zamienić cechę piksela na **lokalne statystyki** z okna $w \\times w$: `feature = (local_mean(I), local_CV(I))`, znormalizować po obu osiach i dopiero wtedy k-means. Speckle uśrednia się w μ, CV pełni rolę detektora krawędzi i tekstury.",
+          "Uruchomić k-means osobno w każdym oknie 32×32, potem skleić wyniki — lokalny k-means widzi mniej tła, więc bardziej kontrastowo separuje cele od szumu."
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "**(C) jest poprawną odpowiedzią** i z konkretnego powodu, którego widać na Rys. 1 prawy panel: cechy $(\\mu, \\text{CV})$ z okna $9 \\times 9$ zbijają wariancję speckle do **jednej skalarnej wartości μ na region** (zgodnie z tym, że średnia $\\operatorname{Gamma}(L, R/L)$ to $R$), a $\\text{CV} \\approx 1/\\sqrt{L}$ w jednorodnym obszarze i znacząco rośnie tylko na krawędziach. To są cechy, które k-means *naprawdę* powinien klastryzować. Co więcej, CV ma **interpretację statystyczną** — wiesz, jaką wartość oczekujesz pod $H_0$ (jednorodne tło) — i możesz tej granicy użyć jako progu krawędziowego (Touzi style). (A) — Lee zmniejsza CV w obrębie regionu, ale **rozmywa krawędzie** (zwłaszcza klasyczny Lee bez Refined): k-means po Lee'm gubi cienkie struktury (klin w naszym kafelku) i traci CV jako sygnał krawędzi. Bywa praktycznie OK, ale nie jest *strukturalnie* poprawne. (B) — `log` Gamma to **Gumbel**, nie Gauss, więc histogramy *nie* stają się gaussowskimi i nie rozsuwają się wystarczająco; w dodatku pojedyncza transformacja jednowymiarowa nie generuje nowych wymiarów cech — wciąż klastryzujesz po piksel-percentylu. (D) — lokalny k-means w oknie 32×32 nadal nie zmienia natury cechy (piksel-intensywność), więc *wewnątrz* okna histogram trzech sąsiadujących regionów jest podobnie zlewający jak globalnie; w dodatku doklejasz nowy problem: niespójność etykiet między oknami. (C) zostaje jedynym rozwiązaniem, które jednocześnie *separuje regiony*, *zachowuje krawędzie* (CV pęka tam, gdzie μ się zmienia) i *daje statystyczny prior* dla diagnostyki.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "lokalne-statystyki-ratuja-kmeans",
+      "title": "Lokalne statystyki jako cecha — μ uśrednia speckle, CV mówi „tu jest krawędź”",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital image enhancement and noise filtering by use of local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        },
+        {
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html",
+          "title": "sklearn.cluster.KMeans — scikit-learn documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zamiast karmić k-means **pojedynczym pikselem**, zamieniamy każdy piksel na **dwuwymiarową cechę** wyliczoną z okna $w \\times w$ wokół niego:\n\n$$ \\mu(i, j) \\;=\\; \\frac{1}{w^2} \\sum_{(p, q) \\in W_{ij}} I(p, q) \\qquad \\text{CV}(i, j) \\;=\\; \\frac{\\sigma(i, j)}{\\mu(i, j)} $$\n\ngdzie $\\sigma^2 = \\overline{I^2} - \\bar I^2$ w tym samym oknie. Każda cecha niesie inną informację:\n\n- **μ jest estymatą $R$**. Średnia z $w^2 = 81$ pikseli $\\operatorname{Gamma}(L, R/L)$ ma odchylenie $\\approx R/\\sqrt{L \\cdot w^2}$ — dla $L=4, w=9$ to $\\approx R/18$, więc regiony różniące się o $\\geq 30\\%$ w $R$ są w μ rozdzielne **z marginesem kilku odchyleń**. To efekt z prawego panelu Rys. 1: trzy chmury punktów w osi μ siedzą wokół $0{,}20$, $0{,}55$, $0{,}95$ — tak samo jak prawdziwe $R$.\n- **CV jest detektorem nie-jednorodności**. Pod $H_0$ (okno w jednorodnym tle) $\\text{CV} \\to 1/\\sqrt{L}$ — dla $L=4$ to $0{,}50$. Wartości $\\gg 0{,}7$ sygnalizują, że okno **przecina krawędź** lub trafia na cel punktowy. To samo rozumowanie stoi za filtrem Lee (1980) i każdym ratio-based detektorem krawędzi.\n\n![Trzy panele 1×3. (a) syntetyczny kafelek SAR 256×256 z trzema poziomymi regionami, blobem i klinem; pomarańczowy kwadrat 9×9 zaznaczony przy współrzędnych (130, 200) ilustrujący okno wokół przykładowego piksela. Tytuł '(a) Wejście: intensywność SAR — piksel + okno 9×9 wokół niego'. (b) ten sam kafelek po lokalnej średniej μ z okna 9×9 — speckle wyraźnie uśredniony, trzy stripes oraz okrągły blob i klin widoczne jako gładkie regiony o trzech odcieniach szarości; tytuł '(b) Cecha μ — lokalna średnia (speckle uśredniony, regiony widoczne)' z paskiem skali. (c) mapa lokalnego CV z okna 9×9 jako heatmapa magma — niemal jednolite ciemne tło z jasnymi jasnopomarańczowymi/żółtymi liniami dokładnie tam, gdzie są krawędzie regionów (poziome granice 90 i 175, krawędź blobu, krawędzie klina); tytuł '(c) Cecha CV — lokalny coeff. of var. (rośnie na krawędziach)' z paskiem skali 0–0,7. Tytuł całości: 'Lokalne statystyki: każdy piksel zastępujemy parą (μ, CV) z okna 9×9'.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/local-stats-feature-window.png)\n\nPrzed wrzuceniem do `KMeans` **znormalizuj** obie cechy do z-score — inaczej euklides zdominuje cecha z większym zakresem. $w \\in \\{7, 9, 11\\}$ jest słodkim spotem: większe okna lepiej tłumią speckle, ale rozmywają krawędzie."
+      }
+    },
+    {
+      "id": "code-kmeans-local-stats",
+      "title": "Zaimplementuj `kmeans_local_stats_segment` — cechy (μ, CV) + k-means",
+      "description": "Po lewej: syntetyczny kafelek SAR 256×256 (Gamma L=4) z trzema poziomymi regionami (R∈{0.20, 0.55, 0.95}) + okrągły blob i ciemny klin. Po prawej: referencyjna mapa segmentacji `kmeans_local_stats_segment(intensity, window=9, k=3, seed=0)`, którą ma odtworzyć Twoja implementacja (z dokładnością do permutacji etykiet).",
+      "sources": [
+        {
+          "url": "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html",
+          "title": "sklearn.cluster.KMeans — scikit-learn documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.uniform_filter.html",
+          "title": "scipy.ndimage.uniform_filter — SciPy documentation (sliding-window mean)",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `kmeans_local_stats_segment(img, window, k, seed)` segmentującą obraz **przez k-means na lokalnych statystykach** (a nie na pikselach).\n\nReguły:\n\n- **Cecha μ**: lokalna średnia z okna $w \\times w$. Użyj `scipy.ndimage.uniform_filter(img, size=window, mode=\"reflect\")`. **Konwencja**: w tej lekcji `window` to *cały bok* okna — inaczej niż `win` w lekcjach CFAR (4.1, 4.4, 4.5, 6.3), gdzie `win` to półbok (pełny bok $= 2 \\cdot \\text{win} + 1$).\n- **Cecha CV**: $\\text{CV} = \\sigma / \\mu$, gdzie $\\sigma = \\sqrt{\\overline{I^2} - \\bar I^2}$ w tym samym oknie. Zabezpiecz `var = clip(var, 0, None)` i mianownik `mu + 1e-6`.\n- **Macierz cech** kształtu `(H*W, 2)`: kolumna 0 to flatten μ, kolumna 1 to flatten CV.\n- **Normalizacja** każdej kolumny do z-score: odejmij średnią kolumny, podziel przez (odchylenie + 1e-6).\n- **k-means**: `sklearn.cluster.KMeans(n_clusters=k, n_init=10, random_state=seed)` na znormalizowanych cechach, `fit_predict`.\n- **Re-mapuj etykiety** po średniej intensywności w klastrze (cluster z najniższą średnią → label 0, …, z najwyższą → label k−1) — tylko po to, by wynik był deterministyczny względem kolejności klastrów.\n- **Zwracaj** `np.ndarray` shape `img.shape`, dtype int (np.int32).\n\n```python\nintensity = np.load('/inputs/watershed-kmeans-3regions-sar.npz')['intensity']\nlabels = kmeans_local_stats_segment(intensity, window=9, k=3, seed=0)\nlabels.shape == intensity.shape   # True\nset(np.unique(labels).tolist())   # {0, 1, 2}\n```\n\nTesty weryfikują (a) shape + dtype + zakres etykiet, (b) na czystym 3-poziomowym tle Gamma cechy lokalne wyciągają regiony z dokładnością ≥ 90% (best-permutation), (c) na referencyjnym kafelku w `/inputs/watershed-kmeans-3regions-sar.npz` best-permutation accuracy ≥ 0,65 (próg ustawiony konserwatywnie ze względu na speckle blobu i klina).",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom sklearn.cluster import KMeans\n\n\ndef kmeans_local_stats_segment(img, window=9, k=3, seed=0):\n    \"\"\"k-means segmentacja po cechach (lokalna srednia, lokalny CV).\n\n    img: np.ndarray float, intensywnosc SAR (lub optyczna)\n    window: rozmiar okna (np. 7, 9, 11)\n    k: liczba klastrow\n    seed: ziarno losowe dla KMeans (random_state)\n\n    Zwraca: np.ndarray int kszta3lu img.shape z etykietami 0..k-1,\n    re-mapowanymi po sredniej intensywnosci w klastrze.\n    \"\"\"\n    img = np.asarray(img, dtype=np.float32)\n    # TODO 1: oblicz mu (lokalna srednia) i CV (lokalny coeff of var)\n    #         mu  = uniform_filter(img, size=window, mode=\"reflect\")\n    #         mu2 = uniform_filter(img * img, size=window, mode=\"reflect\")\n    #         var = clip(mu2 - mu*mu, 0, None);  sigma = sqrt(var)\n    #         cv  = sigma / (mu + 1e-6)\n    # TODO 2: zbuduj features ksztaltu (H*W, 2): kolumna 0 = mu.ravel(),\n    #         kolumna 1 = cv.ravel()\n    # TODO 3: znormalizuj kazda kolumne do z-score\n    # TODO 4: km = KMeans(n_clusters=k, n_init=10, random_state=seed)\n    #         labels = km.fit_predict(features_std).reshape(img.shape)\n    # TODO 5: re-mapuj etykiety po sredniej intensywnosci klastra\n    #         (najciemniejszy klaster -> 0, najjasniejszy -> k-1)\n    return np.zeros_like(img, dtype=np.int32)\n\n\n# --- Preview: segmentacja syntetycznego kafelka SAR ---\nimport matplotlib.pyplot as plt\n\ndata = np.load(\"/inputs/watershed-kmeans-3regions-sar.npz\")\nintensity = data[\"intensity\"]\ntruth = data[\"truth\"]\n\nlabels = kmeans_local_stats_segment(intensity, window=9, k=3, seed=0)\n\n# best-permutation accuracy:\nfrom itertools import permutations\nbest = 0.0\nfor perm in permutations(range(3)):\n    remap = np.array(perm)\n    acc = float(np.mean(remap[labels] == truth))\n    if acc > best:\n        best = acc\nprint(f\"unikalne etykiety: {sorted(np.unique(labels).tolist())}\")\nprint(f\"best-perm accuracy vs truth: {best:.3f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11.5, 4.0), constrained_layout=True)\naxes[0].imshow(intensity, cmap=\"gray\", vmin=0, vmax=2.2)\naxes[0].set_title(\"Wejscie: SAR Gamma(L=4)\", fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(truth, cmap=\"viridis\", vmin=0, vmax=2)\naxes[1].set_title(\"Truth (3 regiony)\", fontsize=10)\naxes[1].set_axis_off()\naxes[2].imshow(labels, cmap=\"viridis\", vmin=0, vmax=2)\naxes[2].set_title(f\"k-means (mu, CV): acc={best:.2f}\", fontsize=10)\naxes[2].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_int_labels_with_correct_shape_and_range",
+            "body": "import numpy as np\nimg = np.ones((50, 50), dtype=np.float32) * 0.4\nimg[:, 25:] = 0.9\nout = kmeans_local_stats_segment(img, window=5, k=2, seed=0)\nout = np.asarray(out)\nassert out.shape == img.shape, f'shape={out.shape}, oczekiwano {img.shape}'\nassert out.dtype.kind in ('i', 'u'), f'dtype={out.dtype}, oczekiwano typ calkowity'\nunique = sorted(np.unique(out).tolist())\nassert all(0 <= u < 2 for u in unique), f'etykiety poza 0..k-1: {unique}'\nassert len(unique) == 2, f'liczba unikalnych etykiet = {len(unique)}, oczekiwano 2 (pelne pokrycie k klastrow)'",
+            "hidden": false
+          },
+          {
+            "name": "separates_water_vs_land_cleanly_with_k2",
+            "body": "import numpy as np\nfrom itertools import permutations\nrng = np.random.default_rng(0)\nL = 4\nH = W = 96\nR = np.full((H, W), 0.20, dtype=np.float32)\nR[H // 2:, :] = 0.80\nintensity = rng.gamma(shape=L, scale=R / L).astype(np.float32)\ntruth = np.zeros((H, W), dtype=np.int32)\ntruth[H // 2:, :] = 1\npred = np.asarray(kmeans_local_stats_segment(intensity, window=7, k=2, seed=0))\nbest = 0.0\nfor perm in permutations(range(2)):\n    remap = np.array(perm)\n    acc = float(np.mean(remap[pred] == truth))\n    if acc > best:\n        best = acc\nassert best >= 0.95, (\n    f'best-perm accuracy = {best:.3f}; scenariusz woda (R=0.20) vs lad (R=0.80), k=2 '\n    f'powinien byc w cechach (mu, CV) prawie idealnie rozdzielony (>= 0.95). '\n    f'Sprawdz: czy uzywasz uniform_filter (a nie np.mean bez okna), czy CV liczysz w tym samym oknie co mu.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "best_perm_accuracy_on_reference_sar_tile",
+            "body": "import numpy as np\nfrom itertools import permutations\ndata = np.load('/inputs/watershed-kmeans-3regions-sar.npz')\nintensity = data['intensity']\ntruth = data['truth']\npred = np.asarray(kmeans_local_stats_segment(intensity, window=9, k=3, seed=0))\nassert pred.shape == intensity.shape and pred.dtype.kind in ('i', 'u')\nbest = 0.0\nfor perm in permutations(range(3)):\n    remap = np.array(perm)\n    acc = float(np.mean(remap[pred] == truth))\n    if acc > best:\n        best = acc\nassert best >= 0.65, (\n    f'best-perm accuracy = {best:.3f} na referencyjnym kafelku z blobem i klinem. '\n    f'Oczekiwane >= 0.65. Najczesciej winowajcami sa: (a) brak normalizacji cech '\n    f'(mu dominuje euklidesa), (b) policzenie CV w innym oknie niz mu, '\n    f'(c) brak re-mapowania etykiet po jasnosci klastra.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom sklearn.cluster import KMeans\n\n\ndef kmeans_local_stats_segment(img, window=9, k=3, seed=0):\n    img = np.asarray(img, dtype=np.float32)\n    mu = uniform_filter(img, size=window, mode=\"reflect\")\n    mu2 = uniform_filter(img * img, size=window, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, a_min=0.0, a_max=None)\n    sigma = np.sqrt(var)\n    cv = sigma / (mu + 1e-6)\n\n    features = np.stack([mu.ravel(), cv.ravel()], axis=1).astype(np.float32)\n    features_std = (features - features.mean(axis=0)) / (features.std(axis=0) + 1e-6)\n\n    km = KMeans(n_clusters=k, n_init=10, random_state=seed)\n    raw_labels = km.fit_predict(features_std).reshape(img.shape).astype(np.int32)\n\n    cluster_mean_intensity = np.array([\n        float(img[raw_labels == c].mean()) if np.any(raw_labels == c) else 0.0\n        for c in range(k)\n    ])\n    order = np.argsort(cluster_mean_intensity)\n    remap = np.zeros(k, dtype=np.int32)\n    for new_label, old_label in enumerate(order):\n        remap[old_label] = new_label\n    return remap[raw_labels].astype(np.int32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/watershed-kmeans-3regions-sar.png",
+            "alt": "Syntetyczny kafelek SAR 256×256 (Gamma L=4) z trzema poziomymi regionami: górne 90 wierszy ciemne (R=0,20), środkowe wiersze średnio jasne (R=0,55), dolne wiersze bardzo jasne (R=0,95). Po prawej stronie środkowego regionu wtopiony okrągły jasny blob (R=0,95) o promieniu 32 px wystający w region 2. Po lewej stronie środkowego regionu trójkątny ciemny klin (R=0,20) wystający w region 1. Wszędzie wyraźna ziarnistość speckle Gamma.",
+            "caption": "Wejście: syntetyczny SAR Gamma(L=4) 256×256, 3 regiony + blob + klin (kafelek + truth + R w pliku .npz)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/watershed-kmeans-3regions-sar.npz",
+            "filename": "watershed-kmeans-3regions-sar.npz",
+            "caption": ".npz z kluczami 'intensity' (float32, 256×256), 'truth' (int32, 256×256 — etykiety 0/1/2) i 'R' (float32 — mapa reflektywności)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/watershed-kmeans-expected-labels.npz",
+            "filename": "watershed-kmeans-expected-labels.npz",
+            "caption": ".npz z kluczem 'labels' (int32, 256×256) — referencyjna segmentacja `kmeans_local_stats_segment(intensity, window=9, k=3, seed=0)`."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/watershed-kmeans-expected-labels.png",
+          "alt": "Mapa segmentacji 256×256, kolormapa viridis, trzy etykiety 0/1/2. Górna 1/3 obrazu prawie jednolicie ciemnofioletowa (etykieta 0 — region R=0,20), środkowa 1/3 zielonkawa (etykieta 1 — region R=0,55), dolna 1/3 jasnożółta (etykieta 2 — region R=0,95). Wtopiony jasnożółty okrągły blob w prawej stronie środkowego regionu (poprawnie zaklasyfikowany do regionu 2). Ciemnofioletowy trójkątny klin w lewej stronie środkowego regionu (poprawnie zaklasyfikowany do regionu 0). Na krawędziach regionów cienki pas pikseli o pomyłkach etykiet (efekt mieszanki cech (μ, CV) na granicy okna).",
+          "caption": "Cel: tak ma wyglądać `kmeans_local_stats_segment(intensity, window=9, k=3, seed=0)`. Trzy regiony rozdzielone, blob i klin poprawnie przypisane — z lekkim rozmyciem na granicach (efekt okna 9×9).",
+          "live": true
+        },
+        "requiresPackages": [
+          "scipy",
+          "scikit-learn"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-okno-i-k",
+      "title": "Spróbuj: jak okno i k zmieniają wynik",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom sklearn.cluster import KMeans\nimport matplotlib.pyplot as plt\nfrom itertools import permutations\n\n\ndef kmeans_local_stats_segment(img, window=9, k=3, seed=0):\n    img = np.asarray(img, dtype=np.float32)\n    mu = uniform_filter(img, size=window, mode=\"reflect\")\n    mu2 = uniform_filter(img * img, size=window, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, a_min=0.0, a_max=None)\n    sigma = np.sqrt(var)\n    cv = sigma / (mu + 1e-6)\n    features = np.stack([mu.ravel(), cv.ravel()], axis=1).astype(np.float32)\n    features_std = (features - features.mean(axis=0)) / (features.std(axis=0) + 1e-6)\n    km = KMeans(n_clusters=k, n_init=10, random_state=seed)\n    raw_labels = km.fit_predict(features_std).reshape(img.shape).astype(np.int32)\n    cluster_mean_intensity = np.array([\n        float(img[raw_labels == c].mean()) if np.any(raw_labels == c) else 0.0\n        for c in range(k)\n    ])\n    order = np.argsort(cluster_mean_intensity)\n    remap = np.zeros(k, dtype=np.int32)\n    for new_label, old_label in enumerate(order):\n        remap[old_label] = new_label\n    return remap[raw_labels].astype(np.int32)\n\n\ndata = np.load(\"/inputs/watershed-kmeans-3regions-sar.npz\")\nintensity = data[\"intensity\"]\ntruth = data[\"truth\"]\n\n# Cztery uchwyty:\nwindow = 9       # 3, 5, 7, 9, 11, 15, 21 -- wiekszy = gladziej, ale rozmywa krawedzie\nk = 3            # 2 (zlewa regiony), 3 (truth), 4-5 (wycina blob / klin osobno?)\nseed = 0\n\nlabels = kmeans_local_stats_segment(intensity, window=window, k=k, seed=seed)\n\nbest = 0.0\nif k == 3:\n    for perm in permutations(range(3)):\n        remap = np.array(perm)\n        acc = float(np.mean(remap[labels] == truth))\n        if acc > best:\n            best = acc\n    print(f\"window={window}, k={k}: best-perm acc = {best:.3f}\")\nelse:\n    print(f\"window={window}, k={k}: brak truth dla k != 3, ogladaj wizualnie\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11.5, 4.0), constrained_layout=True)\naxes[0].imshow(intensity, cmap=\"gray\", vmin=0, vmax=2.2)\naxes[0].set_title(\"Wejscie: SAR Gamma(L=4)\", fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(truth, cmap=\"viridis\", vmin=0, vmax=2)\naxes[1].set_title(\"Truth (3 regiony)\", fontsize=10)\naxes[1].set_axis_off()\naxes[2].imshow(labels, cmap=\"viridis\", vmin=0, vmax=max(2, k - 1))\naxes[2].set_title(f\"k-means (mu, CV) w={window}, k={k}\", fontsize=10)\naxes[2].set_axis_off()\nplt.show()\n",
+        "encouragement": "Spróbuj `window=3` (zobaczysz, że μ nie nadąża uśrednić speckle i wyniki są szumowe), potem `window=21` (krawędzie regionów się rozmywają o pół okna). Daj `k=4` lub `k=5` i zobacz, czy blob i klin wskoczą do osobnych klastrów — to wskazówka, że cecha CV niesie informację, której μ samo nie oddaje."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/34.1000236",
+      "title": "Mean shift: A robust approach toward feature space analysis",
+      "kind": "paper",
+      "author": "Dorin Comaniciu and Peter Meer",
+      "year": 2002
+    },
+    {
+      "url": "https://doi.org/10.1109/TIT.1982.1056489",
+      "title": "Least squares quantization in PCM",
+      "kind": "paper",
+      "author": "Stuart P. Lloyd",
+      "year": 1982
+    },
+    {
+      "url": "https://link.springer.com/chapter/10.1007/978-3-642-87005-0_24",
+      "title": "The Watershed Transformation Applied to Image Segmentation",
+      "kind": "paper",
+      "author": "Serge Beucher and Fernand Meyer",
+      "year": 1992
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+      "title": "Digital image enhancement and noise filtering by use of local statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html",
+      "title": "sklearn.cluster.KMeans — scikit-learn documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.scipy.org/doc/scipy/reference/generated/scipy.ndimage.uniform_filter.html",
+      "title": "scipy.ndimage.uniform_filter — SciPy documentation (sliding-window mean)",
+      "kind": "article"
+    }
+  ]
+}

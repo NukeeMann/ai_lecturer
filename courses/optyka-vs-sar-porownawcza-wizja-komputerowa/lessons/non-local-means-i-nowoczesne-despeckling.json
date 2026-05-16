@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "slug": "non-local-means-i-nowoczesne-despeckling",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m2",
+  "title": "Non-Local Means i nowoczesne despeckling",
+  "eyebrow": "FILTRACJA — KLASYKA KONTRA SPECKLE",
+  "description": "Lee i Frost adaptują się do *lokalnej* statystyki w oknie 7×7. Non-Local Means (Buades 2005) idzie krok dalej: zamiast wagi po dystansie, waga po PODOBIEŃSTWIE patcha — szukamy w całym obrazie miejsc z taką samą fakturą i uśredniamy je razem. Zobaczysz mapę wag NL-means, dlaczego klasyczny NL-means kuleje na multiplikatywnym szumie SAR, i zaimplementujesz wariant w log-domain, który dla cameramana L=4 wbije ENL ponad 2× wyżej niż Lee — kosztem rzędu wielkości dłuższego czasu obliczeń.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "patch-zamiast-pikseli",
+      "title": "Patch zamiast pikseli — czemu NL-means jest „non-local”",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/CVPR.2005.38",
+          "title": "A non-local algorithm for image denoising",
+          "kind": "paper",
+          "author": "Antoni Buades, Bartomeu Coll, Jean-Michel Morel",
+          "year": 2005
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W lekcji 2.3 widzieliśmy filtr Lee MMSE: jedna formuła, dwie statystyki **lokalne** ($\\mu$ i $\\sigma^2$ liczone w oknie 7×7 wokół piksela). Cała siła Lee'a sprowadza się do tego, że waga $b$ adaptuje się do **lokalnego** współczynnika zmienności. To „lokalne” jest jednak zarazem jego ograniczeniem — dwa piksele oddalone o 200 px, ale leżące na **identycznej teksturze** (np. dwa skrawki tej samej wody, dwa fragmenty tego samego pola), są dla Lee'a niewidocznie podobne: każdy ma swój własny patch i swoje własne lokalne statystyki, które się nie spotykają.\n\n![Speckled cameraman z czterema patche'ami 9×9: target na płaszczu kamerzysty (czerwona ramka) plus trzy kandydaci — dwa podobne dystansowo na ciemnym płaszczu (zielone ramki) i jeden niepodobny na jasnym niebie (żółta ramka). Pod spodem zoom każdego patcha z liczbową odległością ‖P-P‖² do targetu i wynikającą wagą NL-means w. Podobne patche dostają wagi w ≈ 0,4–0,7; niepodobny patch z nieba dostaje w ≈ 0,000.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/nl-means-patch-similarity.png)\n\n**Non-Local Means** (Buades, Coll, Morel — CVPR 2005) zaczyna od innego pytania: skoro w obrazie często **powtarzają się** podobne wzorce (gładkie regiony wody, wzór dachu, ząbki płotu), to czemu liczymy „lokalną średnią” tylko z bezpośrednich sąsiadów? Zamiast tego: weź patch $P_x$ wokół docelowego piksela $x$, przeszukaj cały obraz (lub duże okno wyszukiwania) za **patche'ami podobnymi** $P_y$, i policz wagi:\n\n$$ w(x, y) = \\exp\\!\\left(-\\frac{\\lVert P_x - P_y \\rVert_2^2}{h^2}\\right),\\qquad \\hat u(x) = \\frac{\\sum_y w(x, y)\\, v(y)}{\\sum_y w(x, y)} $$\n\ngdzie $v$ to obserwowana intensywność, a $h$ — bandwidth „jak ostry jest filtr” (uwaga: to *inny* $h$ niż altitude satelity z 1.2/1.3 — w obrębie tej lekcji $h$ zawsze oznacza bandwidth NL-means). Trzy parametry rządzą całą metodą:\n\n| parametr         | znaczenie                                  | typowe wartości             |\n|------------------|--------------------------------------------|-----------------------------|\n| `patch_size`     | bok patcha porównawczego                   | 5×5 lub 7×7                 |\n| `patch_distance` | promień okna wyszukiwania (15×15 dla 7)    | 5–11 px                     |\n| `h`              | bandwidth podobieństwa                     | 0,04–0,15 (po normalizacji) |\n\nKrawędzie **nie są** specjalnie chronione — wynikają „za darmo” z faktu, że patch po jednej stronie krawędzi jest niepodobny do patcha po drugiej i dostaje wagę bliską zeru. Cena: kosztowne obliczenia, $O(N \\cdot S \\cdot P^2)$, gdzie $S$ to rozmiar okna wyszukiwania, a $P$ — bok patcha. Dla 256×256 z `patch_size=5`, `patch_distance=7` to ok. **kilkadziesiąt razy** wolniej niż Lee 7×7.\n"
+      }
+    },
+    {
+      "id": "weight-map-plot",
+      "title": "Mapa wag NL-means wokół jednego piksela",
+      "description": "Lewy panel: target na płaszczu kamerzysty z patchem 9×9. Prawy: heatmapa wag w(target, y, x) policzona dla każdego piksela obrazu — bright = patch wokół (y, x) jest podobny do patcha wokół targetu.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/non-local-means-i-nowoczesne-despeckling-1.png",
+        "alt": "Dwa panele obok siebie. Lewy: speckled cameraman 256×256 (L=4) z czerwoną kropką w pikselu (130, 110) na płaszczu kamerzysty i czerwoną ramką 9×9 wokół niego oznaczającą patch porównawczy. Osie X i Y opisane 'kolumna [px]' / 'wiersz [px]' z tickami 0/64/128/192/255. Prawy: heatmapa wag NL-means w(target, y, x) policzona w pełnej rozdzielczości 256×256 z h=0,10. Kolorystyka viridis: ciemne pole (waga ≈ 0) na niebie i jasnych regionach, gradient zieleni na statywie, jaskrawożółte plamy w innych miejscach na płaszczu kamerzysty — pokazujące, że patch z (130, 110) ma najsilniejsze podobieństwo do INNYCH fragmentów tego samego płaszcza, oddalonych o 50–100 px, a nie tylko do bezpośrednich sąsiadów. Skala kolorów po prawej z etykietą 'waga w [-]'.",
+        "caption": "Rys. 1. Mapa wag NL-means wokół jednego piksela. Najjaśniejsze plamy poza centralnym patchem to inne fragmenty płaszcza kamerzysty — geograficznie odległe, ale o podobnej fakturze. Stąd „non-local”: filtr nie ma horyzontu wokół piksela.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom matplotlib.patches import Rectangle\n\nref = np.load(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/\"\n    \"assets/inputs/sar-classical-cameraman-clean.npz\"\n)\nspeckled = ref[\"speckled\"].astype(np.float32)\nH, W = speckled.shape\n\nty, tx = 130, 110\npatch_radius = 4\nP = 2 * patch_radius + 1\n\npadded = np.pad(speckled, patch_radius, mode=\"reflect\")\nref_patch = padded[ty:ty + P, tx:tx + P]\n\nh = 0.10\nweights = np.zeros((H, W), dtype=np.float32)\nfor y in range(H):\n    for x in range(W):\n        cur = padded[y:y + P, x:x + P]\n        d2 = np.mean((ref_patch - cur) ** 2)\n        weights[y, x] = np.exp(-d2 / (h * h))\n\nweights[ty, tx] = 0.0\nvmax = float(np.percentile(weights, 99.5))\n\nfig, axes = plt.subplots(1, 2, figsize=(11.0, 5.0), constrained_layout=True)\nfor ax in axes:\n    ax.set_xticks([0, 64, 128, 192, 255])\n    ax.set_yticks([0, 64, 128, 192, 255])\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n\naxes[0].imshow(speckled, cmap=\"gray\", vmin=0.0, vmax=1.0)\naxes[0].scatter([tx], [ty], s=70, c=\"red\", edgecolors=\"white\", linewidths=1.5, zorder=5)\naxes[0].add_patch(Rectangle(\n    (tx - patch_radius - 0.5, ty - patch_radius - 0.5), P, P,\n    edgecolor=\"red\", facecolor=\"none\", linewidth=1.6, zorder=4,\n))\naxes[0].set_title(f\"Speckled cameraman (L=4)\\nTarget = ({ty}, {tx}), patch {P}x{P}\", fontsize=10)\n\nim = axes[1].imshow(weights, cmap=\"viridis\", vmin=0.0, vmax=vmax)\naxes[1].scatter([tx], [ty], s=70, c=\"red\", edgecolors=\"white\", linewidths=1.5, zorder=5)\naxes[1].set_title(\n    \"Mapa wag NL-means w(target, y, x)\\n\"\n    \"= exp(-||P_target - P_(y,x)||^2 / h^2),  h = 0.10\",\n    fontsize=10,\n)\ncbar = fig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.03)\ncbar.set_label(\"waga w [-]\")\n\nfig.suptitle(\n    \"NL-means: czemu 'non-local' — najjasniejsze wagi to inne piksele \"\n    \"z podobna lokalna tekstura, nie sasiadzy w przestrzeni\",\n    fontsize=11,\n)\nfig.savefig(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"non-local-means-i-nowoczesne-despeckling-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "nl-means-na-sar",
+      "title": "NL-means na SAR — log-domain, PPB, SAR-BM3D",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TIP.2009.2028078",
+          "title": "Iterative weighted maximum likelihood denoising with probabilistic patch-based weights",
+          "kind": "paper",
+          "author": "Charles-Alban Deledalle, Loïc Denis, Florence Tupin",
+          "year": 2009
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2011.2161586",
+          "title": "A nonlocal SAR image denoising algorithm based on LLMMSE wavelet shrinkage",
+          "kind": "paper",
+          "author": "Sara Parrilli, Mariana Poderico, Cesario Vincenzo Angelino, Luisa Verdoliva",
+          "year": 2012
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+          "title": "skimage.restoration.denoise_nl_means — official documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyczny NL-means jest **MAP-estymatorem dla addytywnego szumu gaussowskiego** — odległość patchowa $\\lVert P_x - P_y\\rVert_2^2$ jest wprost log-likelihood'em modelu Gaussa. Dla SAR ten model jest zły z dwóch powodów:\n\n- **Szum jest mnożny, nie addytywny** ($I = R \\cdot N$ z lekcji *1.4*). Ten sam materiał (las, woda) ma inną *absolutną* wariancję w jasnych regionach niż w ciemnych. Patche o identycznej teksturze, ale z dwóch różnych poziomów jasności, dostają nieproporcjonalnie różne odległości L2.\n- **Statystyka amplitudy jest Rayleigh / Gamma**, nie Gauss. L2 nie jest poprawną miarą podobieństwa rozkładów Gamma — można skonstruować patche o identycznej średniej i wariancji, których prawdopodobieństwo bycia „z tego samego procesu” Gamma jest skrajnie różne.\n\nSą dwa pragmatyczne wyjścia. **Pierwsze (mniej eleganckie, ale szybkie i dostępne w `scikit-image`): zrób NL-means w domenie logarytmu.** Logarytm zamienia mnożny szum w addytywny ($\\log I = \\log R + \\log N$); wtedy klasyczny NL-means na $\\log I$ ma sens, a wynik wraca do skali liniowej przez `exp`. Dokładnie ten wariant zaimplementujesz w widgecie poniżej.\n\n![Cztery panele obok siebie z tym samym kafelkiem cameraman 256×256, każdy z dolnym podtytułem PSNR i ENL na płaskim niebie. Panel 1 — czysty referencyjny cameraman: PSNR=+inf, ENL=inf. Panel 2 — Speckled L=4: ostre ziarno, PSNR=15,14 dB, ENL=15,8. Panel 3 — Lee 7×7: tło wygładzone, krawędzie zachowane, PSNR=16,84 dB, ENL=482. Panel 4 — NL-means w log-domain z h=0,06, patch=5×5, search=15×15: tło wyraźnie GŁADSZE niż na Lee (mniej resztkowego ziarna), kontury kamerzysty co najmniej tak ostre, PSNR=16,02 dB, ENL=1043. Lee daje minimalnie lepsze PSNR; NL-means daje ponad 2× wyższe ENL kosztem rzędu wielkości dłuższego czasu obliczeń.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/nl-means-vs-lee-quad.png)\n\n**Drugie (eleganckie, ale poza zasięgiem przeglądarki): SAR-specific patch similarity.** Deledalle, Denis & Tupin (2009) wprowadzili **PPB** (Probabilistic Patch-Based) — odległość patchowa wyprowadzona wprost z log-likelihood'u Gamma. Parrilli et al. (2012) zaadaptowali BM3D do SAR (**SAR-BM3D**), gdzie próg podobieństwa i waga estymatora MMSE wynika z modelu Gamma. Oba dają **lepsze ENL i lepsze PSNR niż log-domain NL-means**, ale wymagają specjalistycznych implementacji (zwykle MATLAB lub natywny C++). W przeglądarce nie ma ich Pyodide-owej wersji — zatrzymujemy się na log-domain NL-means jako sensownym kompromisie *„chcę dydaktycznie pokazać NL-means na SAR”*.\n\nPraktyczny morał: NL-means **dziedziczy z Lee'em po krawędziach** (oba zachowują je dobrze), a **wygrywa nad nim na płaskim regionie** — jeśli następny stage to detekcja CFAR lub klasyfikator regionów, dwukrotnie wyższy ENL znacząco zmniejsza false-alarm rate. Płacisz za to czasem.\n"
+      }
+    },
+    {
+      "id": "code-nl-means-log-domain",
+      "title": "Zaimplementuj NL-means dla SAR w log-domain",
+      "description": "Po lewej zaszumiony cameraman z lekcji 2.3, po prawej cel po NL-means w log-domain. Twoja funkcja ma odtworzyć wynik — testy zmierzą ENL i porównają wyjście z referencyjnym pipeline'em log-domain.",
+      "sources": [
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+          "title": "skimage.restoration.denoise_nl_means — official documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/CVPR.2005.38",
+          "title": "A non-local algorithm for image denoising",
+          "kind": "paper",
+          "author": "Antoni Buades, Bartomeu Coll, Jean-Michel Morel",
+          "year": 2005
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `nl_means_sar(img, h, patch_size, patch_distance)`:\n\n- `img`: `np.ndarray (H, W)`, `dtype=float32`, znormalizowana amplituda w `[0, 1]`,\n- `h`: float — bandwidth podobieństwa NL-means (typowo 0,04–0,15),\n- `patch_size`: int — bok patcha porównawczego (5 lub 7),\n- `patch_distance`: int — promień okna wyszukiwania (5–11; pełne okno = `2*patch_distance + 1`).\n\nKroki implementacji (wszystkie wymagane — testy weryfikują, że pipeline log-domain został zastosowany):\n\n1. przejdź do logarytmu: `log_img = np.log(np.clip(img, 1e-3, None))`,\n2. znormalizuj zakres do `[0, 1]`: $s_{\\min} = \\log\\!I_{\\min},\\; s_{\\max} = \\log\\!I_{\\max}$, `norm = (log_img - s_min) / (s_max - s_min)`,\n3. wywołaj `skimage.restoration.denoise_nl_means(norm, h=h, patch_size=patch_size, patch_distance=patch_distance, channel_axis=None, fast_mode=True)`,\n4. odwróć normalizację i logarytm: `out = np.clip(np.exp(den * (s_max - s_min) + s_min), 0, 1)`,\n5. zwróć `out.astype(np.float32)` o tym samym kształcie co wejście.\n\n```python\nimg = np.linspace(0.1, 0.9, 32 * 32).reshape(32, 32).astype(np.float32)\nout = nl_means_sar(img, h=0.10, patch_size=5, patch_distance=5)\nout.shape, out.dtype  # ((32, 32), dtype('float32'))\n```\n\nW `starterCode` masz preview, który wczyta zaszumiony cameraman z lekcji 2.3 i puści Twoje `nl_means_sar` z `h=0,06`, `patch_size=5`, `patch_distance=7`. Powinieneś zobaczyć **ENL na niebie skaczący ~50× względem wejścia**, a wynikowy obraz wzrokowo pokrywający się z `outputMedia` po prawej.\n",
+        "starterCode": "import numpy as np\nfrom PIL import Image\nimport matplotlib.pyplot as plt\nfrom skimage.restoration import denoise_nl_means\n\n\ndef nl_means_sar(img, h, patch_size, patch_distance):\n    \"\"\"\n    NL-means dla amplitudowego SAR w domenie logarytmu.\n\n    img:            np.ndarray (H, W), float32, w [0, 1]\n    h:              float — bandwidth NL-means (typowo 0.04 .. 0.15)\n    patch_size:     int   — bok patcha (5 lub 7)\n    patch_distance: int   — promien okna wyszukiwania (5 .. 11)\n\n    Zwraca: np.ndarray (H, W), float32, w [0, 1].\n    \"\"\"\n    # TODO:\n    #   1) eps = 1e-3; log_img = np.log(np.clip(img, eps, None)).astype(float32)\n    #   2) s_min, s_max = float(log_img.min()), float(log_img.max())\n    #   3) norm = (log_img - s_min) / max(s_max - s_min, 1e-6)\n    #   4) den  = denoise_nl_means(norm, h=h, patch_size=patch_size,\n    #                              patch_distance=patch_distance,\n    #                              channel_axis=None, fast_mode=True)\n    #   5) out_log = den * (s_max - s_min) + s_min\n    #   6) return clip(exp(out_log), 0, 1).astype(float32)\n    return img.astype(np.float32)\n\n\n# --- Preview na realnym kafelku SAR ---\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\n\nout = nl_means_sar(speckled, h=0.06, patch_size=5, patch_distance=7)\n\n\ndef psnr(a, b, peak=1.0):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(peak * peak / mse)\n\n\ndef enl(p):\n    m, s = float(p.mean()), float(p.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"PSNR(speckled) = {psnr(speckled, clean):6.2f} dB    ENL(sky) = {enl(speckled[SKY]):8.2f}\")\nprint(f\"PSNR(nl-means) = {psnr(out, clean):6.2f} dB    ENL(sky) = {enl(out[SKY]):8.2f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(10.5, 3.6), constrained_layout=True)\nfor ax, (img, ttl) in zip(\n    axes,\n    [\n        (clean, \"Czysty (ref)\"),\n        (speckled, \"Speckled (L=4)\"),\n        (out, \"Po NL-means (h=0.06)\"),\n    ],\n):\n    ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_float32_same_shape",
+            "body": "import numpy as np\nimg = np.linspace(0.1, 0.9, 32 * 32).reshape(32, 32).astype(np.float32)\nout = nl_means_sar(img, h=0.10, patch_size=5, patch_distance=5)\nassert out.shape == img.shape, f'shape: {out.shape}'\nassert out.dtype == np.float32, f'dtype: {out.dtype}'\nassert float(out.min()) >= 0.0 and float(out.max()) <= 1.0, (\n    f'wartosci poza [0, 1]: min={out.min()}, max={out.max()}'\n)\n",
+            "hidden": false
+          },
+          {
+            "name": "homogeneous_region_collapses_to_smooth",
+            "body": "import numpy as np\nrng = np.random.default_rng(2)\nL = 4\nflat = np.full((48, 48), 0.5, dtype=np.float32)\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=flat.shape).astype(np.float32)\nimg = np.clip(np.sqrt(flat * flat * speckle), 0.0, 1.0).astype(np.float32)\nout = nl_means_sar(img, h=0.10, patch_size=5, patch_distance=5)\nassert out.var() < 0.25 * img.var(), (\n    f'NL-means nie wygladzil plaskiego regionu: '\n    f'var_in={img.var():.4f}, var_out={out.var():.4f}'\n)\n",
+            "hidden": true
+          },
+          {
+            "name": "log_domain_pipeline_matches_reference",
+            "body": "import numpy as np\nfrom skimage.restoration import denoise_nl_means\nrng = np.random.default_rng(3)\nflat = np.full((40, 40), 0.5, dtype=np.float32)\nspeckle = rng.gamma(shape=4, scale=0.25, size=flat.shape).astype(np.float32)\nimg = np.clip(np.sqrt(flat * flat * speckle), 0.0, 1.0).astype(np.float32)\nout = nl_means_sar(img, h=0.10, patch_size=5, patch_distance=5)\n# Reference: same op in log-domain via skimage\neps = 1e-3\nli = np.log(np.clip(img, eps, None)).astype(np.float32)\nlo, hi = float(li.min()), float(li.max())\nn = (li - lo) / max(hi - lo, 1e-6)\nden = denoise_nl_means(n, h=0.10, patch_size=5, patch_distance=5, channel_axis=None, fast_mode=True)\nref = np.clip(np.exp(den * (hi - lo) + lo), 0.0, 1.0).astype(np.float32)\nmax_diff = float(np.max(np.abs(out - ref)))\nassert max_diff < 0.02, (\n    f'log-domain pipeline rozni sie od referencji o {max_diff:.4f}; '\n    f'sprawdz czy zastosowales log -> normalize -> denoise_nl_means -> denormalize -> exp.'\n)\n",
+            "hidden": true
+          },
+          {
+            "name": "enl_grows_at_least_5x_on_cameraman_sky",
+            "body": "import numpy as np\nfrom PIL import Image\nspeckled = np.asarray(\n    Image.open('/inputs/sar-classical-cameraman-speckled.png').convert('L'),\n    dtype=np.float32,\n) / 255.0\nout = nl_means_sar(speckled, h=0.06, patch_size=5, patch_distance=7)\ndef enl(p):\n    m, s = float(p.mean()), float(p.std())\n    return float('inf') if s < 1e-9 else (m / s) ** 2\nSKY = (slice(5, 45), slice(5, 80))\nenl_in = enl(speckled[SKY])\nenl_out = enl(out[SKY])\nassert enl_out > 5.0 * enl_in, (\n    f'ENL po NL-means powinno wzrosnac >5x na plaskim niebie, '\n    f'a wzroslo z {enl_in:.2f} do {enl_out:.2f}'\n)\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom skimage.restoration import denoise_nl_means\n\n\ndef nl_means_sar(img, h, patch_size, patch_distance):\n    eps = 1e-3\n    log_img = np.log(np.clip(img, eps, None)).astype(np.float32)\n    s_min = float(log_img.min())\n    s_max = float(log_img.max())\n    norm = (log_img - s_min) / max(s_max - s_min, 1e-6)\n    den = denoise_nl_means(\n        norm, h=h, patch_size=patch_size, patch_distance=patch_distance,\n        channel_axis=None, fast_mode=True,\n    )\n    out_log = den * (s_max - s_min) + s_min\n    return np.clip(np.exp(out_log), 0.0, 1.0).astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-speckled.png",
+            "alt": "Kafelek SAR-podobny 256×256: cameraman po multi-look Gamma speckle z L=4 spojrzeniami — wyraźna ziarnistość na całym obrazie, kontury kamerzysty częściowo zatarte przez szum.",
+            "caption": "Wejście: kafelek SAR (ten sam co w lekcji 2.3 / 2.2)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": "Referencja .npz z kluczami 'clean', 'speckled', 'L' — używana do liczenia PSNR."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-nlmeans-cameraman-expected.png",
+          "alt": "Ten sam kafelek po NL-means w log-domain z h=0,06, patch_size=5, patch_distance=7: tło nieba i mundur kamerzysty są wyraźnie GŁADSZE niż po Lee 7×7 z lekcji 2.3 (resztkowego ziarna prawie nie widać), a krawędzie sylwetki, statywu i obiektywu pozostają ostre — typowy NL-means trade: wyższe ENL na płaskim regionie kosztem rzędu wielkości dłuższego czasu obliczeń.",
+          "caption": "Cel: tak ma wyglądać `out` — ENL na niebie ~1000+, krawędzie zachowane."
+        },
+        "requiresPackages": [
+          "Pillow",
+          "scikit-image"
+        ]
+      }
+    },
+    {
+      "id": "quiz-nl-means-vs-lee",
+      "title": "Quick check: NL-means vs Lee — kiedy warto?",
+      "type": "quiz",
+      "data": {
+        "question": "Na podstawie czteropanelowego porównania (PSNR / ENL) i intuicji *jak* działa NL-means — które z poniższych stwierdzeń są **prawdziwe**? Zaznacz wszystkie pasujące.",
+        "options": [
+          "NL-means zwykle daje wyższe ENL na płaskich regionach niż Lee przy porównywalnym (lub nieznacznie gorszym) PSNR — dlatego jest pożądany przed CFAR-em, gdzie liczy się jednorodność tła.",
+          "NL-means ma wbudowaną ochronę krawędzi: patche po dwóch stronach krawędzi są niepodobne, dostają wagi bliskie zera i nie psują kontury — bez żadnej dodatkowej heurystyki krawędziowej.",
+          "Skoro `denoise_nl_means` jest zaprojektowany dla addytywnego szumu gaussowskiego, to można go puścić *bezpośrednio* na surowym kafelku SAR i będzie działać tak samo dobrze jak w log-domain.",
+          "PPB (Deledalle 2009) i SAR-BM3D (Parrilli 2012) zwykle pokonują log-domain NL-means na obu metrykach (PSNR i ENL), ale wymagają specjalistycznych implementacji — w przeglądarce realnie zostajemy z log-domain wariantem."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Odpowiedź (0) trafia w istotę: 4-panelowy porównawczy obrazek pokazuje Lee 16,84 dB / ENL≈482 vs NL-means 16,02 dB / ENL≈1043 — PSNR niemal taki sam, ENL ponad dwukrotnie wyższe. Dla pipeline'u CFAR (lub jakiegokolwiek progowania na statystykę tła) ten zysk ENL znacząco redukuje false-alarm rate. Odpowiedź (1) jest dokładnie tym, co pokazała mapa wag z plotu wcześniej — patch po przeciwnej stronie krawędzi ma duże ‖P-P‖² i wagę bliską zeru, więc średnia ważona po tej stronie krawędzi po prostu nie miesza się z drugą stroną. Brak heurystyki, brak `b = (CV²-CN²)/CV²` — czysta konsekwencja podobieństwa patchowego. Odpowiedź (2) jest **fałszywa**: bezpośrednie `denoise_nl_means` na multiplikatywnym szumie traktuje L2 jako log-likelihood Gaussa, więc patche w jasnych regionach (większa absolutna wariancja) dostają systematycznie większe odległości niż patche w ciemnych regionach o tej samej teksturze — filtr „nie widzi” podobieństwa między tymi samymi materiałami w różnych poziomach jasności. Log-domain prostuje rozkład Gamma tak, że podobieństwo patchowe znowu ma sens. Odpowiedź (3) jest prawdziwa i zarazem podsumowuje moduł 2: PPB i SAR-BM3D są lepsze, ale w Pyodide nie mamy ich implementacji — log-domain NL-means jest naszym praktycznym kompromisem.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-tweak-nlm",
+      "title": "Sandbox: pokombinuj z `h`, `patch_size`, `patch_distance`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom PIL import Image\nimport matplotlib.pyplot as plt\nfrom skimage.restoration import denoise_nl_means\n\n\ndef nl_means_sar(img, h, patch_size, patch_distance):\n    eps = 1e-3\n    log_img = np.log(np.clip(img, eps, None)).astype(np.float32)\n    s_min = float(log_img.min())\n    s_max = float(log_img.max())\n    norm = (log_img - s_min) / max(s_max - s_min, 1e-6)\n    den = denoise_nl_means(\n        norm, h=h, patch_size=patch_size, patch_distance=patch_distance,\n        channel_axis=None, fast_mode=True,\n    )\n    out_log = den * (s_max - s_min) + s_min\n    return np.clip(np.exp(out_log), 0.0, 1.0).astype(np.float32)\n\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\n\n# --- pokrec tymi trzema parametrami ---\nh = 0.06               # mniejsze h -> mniej wygladzania, ostrzej, mniej ENL\npatch_size = 5         # 7 -> wieksza ochrona tekstury, wolniej\npatch_distance = 7     # 11 -> lepsza ENL, znacznie wolniej\n\n# Bez log-domain: wstaw `denoise_nl_means(speckled, ...)` zamiast nl_means_sar\n# i zobacz jak NL-means zachowuje sie na surowym multiplikatywnym szumie.\nout = nl_means_sar(speckled, h=h, patch_size=patch_size, patch_distance=patch_distance)\n\n\ndef psnr(a, b):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n\n\ndef enl(p):\n    m, s = float(p.mean()), float(p.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"h={h}, patch_size={patch_size}, patch_distance={patch_distance}\")\nprint(f\"PSNR speckled = {psnr(speckled, clean):.2f} dB    ENL(sky) = {enl(speckled[SKY]):.2f}\")\nprint(f\"PSNR nl-means = {psnr(out, clean):.2f} dB    ENL(sky) = {enl(out[SKY]):.2f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11, 3.6), constrained_layout=True)\nfor ax, (im, ttl) in zip(\n    axes,\n    [(clean, \"Czysty (ref)\"), (speckled, \"Speckled\"), (out, f\"NL-means h={h}, ps={patch_size}, pd={patch_distance}\")],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Spróbuj h=0,15 (więcej wygładzania) i porównaj ENL i ostrość krawędzi z domyślnym h=0,06; potem wywal log-domain (puść `denoise_nl_means` na surowym kafelku) i zobacz, jak NL-means traktuje multiplikatywny szum bez prostowania."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/CVPR.2005.38",
+      "title": "A non-local algorithm for image denoising",
+      "kind": "paper",
+      "author": "Antoni Buades, Bartomeu Coll, Jean-Michel Morel",
+      "year": 2005
+    },
+    {
+      "url": "https://doi.org/10.1109/TIP.2009.2028078",
+      "title": "Iterative weighted maximum likelihood denoising with probabilistic patch-based weights (PPB / NL-SAR)",
+      "kind": "paper",
+      "author": "Charles-Alban Deledalle, Loïc Denis, Florence Tupin",
+      "year": 2009
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2011.2161586",
+      "title": "A nonlocal SAR image denoising algorithm based on LLMMSE wavelet shrinkage (SAR-BM3D)",
+      "kind": "paper",
+      "author": "Sara Parrilli, Mariana Poderico, Cesario Vincenzo Angelino, Luisa Verdoliva",
+      "year": 2012
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+      "title": "skimage.restoration.denoise_nl_means — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 5",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    }
+  ]
+}

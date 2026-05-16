@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "slug": "tekstura-glcm-haralick-lbp",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m3",
+  "title": "Tekstura — GLCM, Haralick, LBP",
+  "eyebrow": "KRAWĘDZIE I TEKSTURA",
+  "description": "Po krawędziach (Canny vs Touzi) wjeżdżamy w deskryptory tekstury. GLCM-Haralick zlicza pary sąsiednich jasności i wyciąga z nich contrast/dissimilarity/homogeneity/energy — pokazujemy, że multiplikatywny speckle drastycznie przesuwa wszystkie cztery na *jednorodnym* fragmencie SAR. Następnie wprowadzamy LBP — kodowanie *znaków różnic* sąsiadów, niezmienniczo monotoniczne — i implementujesz klasyczny LBP-3×3, weryfikowany piksel-w-piksel względem referencji.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "glcm-i-haralick",
+      "title": "GLCM, Haralick: liczyć pary, nie piksele",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Textural features for image classification",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+          "year": 1973
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z poprzedniej lekcji wiesz, że Touzi liczy *stosunek dwóch sąsiednich średnich*. Tekstura idzie krok dalej: zamiast jednej liczby na piksel pyta o **rozkład par sąsiadów** w lokalnym oknie. Gładkie niebo i marmurowy blat mogą mieć tę samą średnią jasność, ale różnią się tym, jak *często* sąsiad piksela 120 ma wartość 120 vs 80 — to drugorzędna statystyka, której gradient czy histogram nie widzą.\n\nKlasyczna reprezentacja tej statystyki to **GLCM** (Gray-Level Co-occurrence Matrix). Dla obrazu skwantowanego na $L$ poziomów, GLCM o przesunięciu $(\\Delta x, \\Delta y)$ jest macierzą $L \\times L$:\n\n$$ G[i, j] \\;=\\; \\#\\,\\{(x, y) : I(x, y) = i \\;\\land\\; I(x + \\Delta x, y + \\Delta y) = j\\} $$\n\n— ile razy *piksel o jasności $i$* ma sąsiada o jasności $j$ w danym kierunku. Symetryzujemy ($G \\leftarrow G + G^\\top$) i normalizujemy ($\\sum G = 1$), żeby dostać rozkład prawdopodobieństwa par.\n\n![Diagram dwupanelowy. Lewy panel: kwadratowy patch 5×5 z czterema poziomami szarości (0,1,2,3) z nadrukowanymi cyframi w każdym pikselu i czerwoną ramką wokół pary sąsiadów (1, 2) w wierszu 1 oraz strzałką pokazującą kierunek d=1, θ=0°. Tytuł lewego panelu „Toy patch 5×5 (4 poziomy szarości: 0,1,2,3)\\\". Prawy panel: macierz GLCM 4×4 w skali niebieskiej z liczbami w każdej komórce — wartości {(0,0):1, (0,1):2, (1,1):3, (1,2):4, (2,1):4, (2,2):4, (2,3):3, (3,3):3}, komórka (1, 2) podświetlona czerwoną ramką. Tytuł prawego panelu „GLCM(d=1, theta=0 deg) — liczniki par sąsiednich pikseli\\\". Po prawej skala kolorów 0–4.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/glcm-toy-coocurrence.png)\n\nZ tej macierzy Haralick (1973) wyciągnął **deskryptory** — pojedyncze liczby agregujące rozkład par. W tym kursie używamy czterech najczęstszych:\n\n| Deskryptor       | Formuła                                       | Co mierzy                                       |\n|------------------|-----------------------------------------------|-------------------------------------------------|\n| **Contrast**     | $\\sum_{i,j} (i - j)^2 \\cdot G[i, j]$           | Średni kwadrat różnicy sąsiadów — wysokie dla ostrej tekstury |\n| **Dissimilarity**| $\\sum_{i,j} |i - j| \\cdot G[i, j]$            | Średnia bezwzględna różnica sąsiadów            |\n| **Homogeneity**  | $\\sum_{i,j} \\frac{G[i, j]}{1 + (i - j)^2}$    | Koncentracja masy blisko diagonali — wysokie dla gładkich obszarów |\n| **Energy**       | $\\sum_{i,j} G[i, j]^2$                        | „Skupienie\\\" rozkładu — wysokie gdy kilka par dominuje |\n\nW praktyce uśredniamy po $\\theta \\in \\{0°, 45°, 90°, 135°\\}$ albo po $\\{0°, 90°\\}$ (jak w tej lekcji), żeby deskryptor nie zależał od orientacji okna względem sceny. Następna sekcja pokazuje, *dlaczego* SAR-owy speckle psuje wszystkie cztery na tym samym fragmencie sceny."
+      }
+    },
+    {
+      "id": "plot-haralick-optyka-vs-sar",
+      "title": "Cztery deskryptory na uniformowym fragmencie nieba",
+      "description": "Ten sam fragment 32×32 wycięty z czystego i speckled cameramana. GLCM liczone z d=1, uśrednione po θ ∈ {0°, 90°}, 32 poziomy szarości. Wartości słupków są surowymi wynikami `skimage.feature.graycoprops`.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/tekstura-glcm-haralick-lbp-1.png",
+        "alt": "Trzy panele obok siebie. Lewy: szary patch 32×32 z fragmentu nieba na czystym cameramanie, niemal jednolity (mu=207,7, sigma=2,52), osie 'kolumna [px]' i 'wiersz [px]' z tickami {0, 8, 16, 24, 31}. Środkowy: ten sam fragment ze speckledowanego cameramana (Gamma L=4, mu=161,4, sigma=40,19) — wyraźna szachownica losowych jasnych i ciemnych pikseli, te same osie. Prawy: wykres słupkowy 4 deskryptorów Haralicka (contrast, dissimilarity, homogeneity, energy) — dla każdego dwa słupki obok siebie: granatowy 'optyka (czyste)' i czerwony 'SAR (speckled)'. Optyka: contrast≈0,09, dissimilarity≈0,09, homogeneity≈0,95, energy≈0,65. SAR: contrast≈49,87, dissimilarity≈5,62, homogeneity≈0,16, energy≈0,06. Oś Y 'wartość [-]', oś X 'deskryptor Haralicka'. Legenda w prawym górnym rogu. Wartości podpisane nad słupkami.",
+        "caption": "Rys. 1. Lewy: optyczne 32×32 niebo (jednolite). Środek: ten sam fragment ze speckle (Gamma L=4). Prawy: cztery deskryptory Haralicka — speckle podbija `contrast` o ≈ 535×, a `homogeneity` i `energy` spadają w okolice zera. Te same piksele sceny, dwa różne światy dla klasyfikatora tekstury.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\nfrom skimage.feature import graycomatrix, graycoprops\n\nROOT = \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets\"\nclean = np.asarray(\n    Image.open(f\"{ROOT}/inputs/tekstura-cameraman-clean.png\").convert(\"L\")\n)\nspeckled = np.asarray(\n    Image.open(f\"{ROOT}/inputs/tekstura-cameraman-speckled.png\").convert(\"L\")\n)\n\n# Wybierz jednorodny fragment nieba 32x32 (rzad 16, kolumna 8).\ny0, x0 = 16, 8\nopt = clean[y0:y0 + 32, x0:x0 + 32]\nsar = speckled[y0:y0 + 32, x0:x0 + 32]\n\n# Skwantyzuj na 32 poziomy szarosci dla GLCM (256 -> 32).\nLEVELS = 32\n\ndef quantize(img):\n    return np.clip(\n        (img.astype(np.float32) / 256.0 * LEVELS).astype(np.uint8),\n        0, LEVELS - 1,\n    )\n\nglcm_opt = graycomatrix(\n    quantize(opt), distances=[1], angles=[0, np.pi / 2],\n    levels=LEVELS, symmetric=True, normed=True,\n)\nglcm_sar = graycomatrix(\n    quantize(sar), distances=[1], angles=[0, np.pi / 2],\n    levels=LEVELS, symmetric=True, normed=True,\n)\n\ndescriptors = [\"contrast\", \"dissimilarity\", \"homogeneity\", \"energy\"]\nopt_vals = [float(graycoprops(glcm_opt, d).mean()) for d in descriptors]\nsar_vals = [float(graycoprops(glcm_sar, d).mean()) for d in descriptors]\n\nfig, axes = plt.subplots(1, 3, figsize=(14.0, 4.9), constrained_layout=True)\n\naxes[0].imshow(opt, cmap=\"gray\", vmin=0, vmax=255)\naxes[0].set_title(\n    f\"Optyka - fragment 32x32 (czysty)\\n\"\n    f\"mu={opt.mean():.1f}, sigma={opt.std():.2f}\"\n)\naxes[0].set_xlabel(\"kolumna [px]\")\naxes[0].set_ylabel(\"wiersz [px]\")\naxes[0].set_xticks([0, 8, 16, 24, 31])\naxes[0].set_yticks([0, 8, 16, 24, 31])\n\naxes[1].imshow(sar, cmap=\"gray\", vmin=0, vmax=255)\naxes[1].set_title(\n    f\"SAR - ten sam fragment (multi-look Gamma L=4)\\n\"\n    f\"mu={sar.mean():.1f}, sigma={sar.std():.2f}\"\n)\naxes[1].set_xlabel(\"kolumna [px]\")\naxes[1].set_ylabel(\"wiersz [px]\")\naxes[1].set_xticks([0, 8, 16, 24, 31])\naxes[1].set_yticks([0, 8, 16, 24, 31])\n\nx = np.arange(len(descriptors))\nwidth = 0.36\nbars_opt = axes[2].bar(\n    x - width / 2, opt_vals, width,\n    label=\"optyka (czyste)\", color=\"#3a3a8e\",\n)\nbars_sar = axes[2].bar(\n    x + width / 2, sar_vals, width,\n    label=\"SAR (speckled)\", color=\"#c54a4a\",\n)\naxes[2].set_xticks(x, descriptors)\naxes[2].set_xlabel(\"deskryptor Haralicka\")\naxes[2].set_ylabel(\"wartosc [-]\")\naxes[2].set_title(\n    \"Cztery deskryptory Haralicka na tym samym fragmencie\\n\"\n    \"(GLCM d=1, srednia po theta in {0, 90 deg}, 32 poziomy)\"\n)\naxes[2].legend(loc=\"upper right\")\naxes[2].grid(True, alpha=0.3, axis=\"y\")\ny_top = max(opt_vals + sar_vals)\nfor bars, vals in [(bars_opt, opt_vals), (bars_sar, sar_vals)]:\n    for b, v in zip(bars, vals):\n        axes[2].text(\n            b.get_x() + b.get_width() / 2,\n            v + y_top * 0.01,\n            f\"{v:.2f}\",\n            ha=\"center\", va=\"bottom\", fontsize=9,\n        )\n\nfig.savefig(\n    f\"{ROOT}/plots/tekstura-glcm-haralick-lbp-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-czytanie-haralick",
+      "title": "Sprawdź: co mówi nam wykres słupkowy",
+      "type": "quiz",
+      "data": {
+        "question": "Spójrz na cztery pary słupków powyżej. Fragment 32×32 wybrany na obu obrazach to ten *sam jednorodny kawałek nieba* — różni się wyłącznie tym, że jeden jest „czysty\" (optyka), a drugi przeszedł przez Gamma-speckle z L=4 (SAR). Które z poniższych stwierdzeń poprawnie interpretują wykres? Wybierz **wszystkie**, które prawdziwie opisują dane.",
+        "options": [
+          "Speckle podbija `contrast` Haralicka z ≈ 0,09 do ≈ 49,9 — ponad 500-krotnie — mimo że to ten sam fragment sceny. Klasyfikator karmiony surowym `contrast` interpretowałby jednorodne niebo na SAR jako *teksturę bardziej szorstką* niż prawdziwe pole albo las na optyce.",
+          "`Homogeneity` spada z ≈ 0,95 (optyka) do ≈ 0,16 (SAR), a `energy` z ≈ 0,65 do ≈ 0,06. To te same fragmenty sceny, więc cała różnica jest *artefaktem speckle*, nie różnicą tekstury terenu — wszystkie cztery deskryptory są na uniform tile SAR-owym nieinformatywne.",
+          "Wystarczy znormalizować deskryptory dzieląc je przez lokalną średnią `mu` — wówczas `contrast` SAR-owy zejdzie do poziomu optycznego i deskryptory Haralicka będą działać tak samo na obu modalnościach.",
+          "Punkty optyki na wykresie pokazują dwa porządki: `homogeneity` i `energy` są blisko 1 (gładka tekstura ⇒ masa skoncentrowana na diagonali GLCM), a `contrast` i `dissimilarity` blisko 0 (brak ostrych różnic sąsiednich jasności). Wartości potwierdzają intuicję z definicji Haralicka."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Sedno tej lekcji jest na wykresie. **(A) jest prawda**: 0,09 → 49,87 to wzrost contrastu o czynnik ≈ 535×, wynikający wyłącznie ze statystyki Gamma-speckle (par sąsiadów (i, j) jest teraz *dużo dalej od diagonali*). **(B) jest prawda i to jest *puenta* lekcji**: skoro homogeneity / energy też spadają o kilka razy na tym samym fragmencie sceny, **żaden** z czterech klasycznych deskryptorów nie odróżnia teraz tekstury terenu od tekstury samego szumu — są zdominowane przez speckle. **(D) jest prawda**: wartości optyki dokładnie odpowiadają definicjom — gładka tekstura ma masę GLCM skoncentrowaną na (i ≈ j), więc czynnik $1/(1+(i-j)^2)$ jest ≈ 1, a $(i-j)^2$ ≈ 0. **(C) jest fałszywe i to częsta pułapka**: speckle jest *multiplikatywny*, więc dzielenie przez `mu` nie skraca go w `contrast = sum (i-j)^2 G[i,j]` — rozkład Gamma ma constant CV (a nie constant sigma), więc nawet po normalizacji `contrast` zostaje proporcjonalny do kwadratu CV. Prawdziwe rozwiązania (zobacz Anys & He 1995): albo despeckling *przed* GLCM (Lee/Frost w poprzedniej lekcji), albo zamiana deskryptora na taki, który jest niewrażliwy na *amplitudę* — co prowadzi nas wprost do LBP w następnej sekcji.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "lbp-intuicja",
+      "title": "LBP: znak różnicy zamiast wartości",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.2002.1017623",
+          "title": "Multiresolution gray-scale and rotation invariant texture classification with local binary patterns",
+          "kind": "paper",
+          "author": "Timo Ojala, Matti Pietikäinen, Topi Mäenpää",
+          "year": 2002
+        },
+        {
+          "url": "https://doi.org/10.1109/36.477189",
+          "title": "Evaluation of textural and multipolarization radar features for crop classification",
+          "kind": "paper",
+          "author": "Hatem Anys, D.-C. He",
+          "year": 1995
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro GLCM-Haralick pada na speckle, potrzebujemy deskryptora, który *nie patrzy na same wartości jasności*, lecz na **porządek między sąsiadami**. Logika jest prosta: jeśli mnożysz cały lokalny patch przez wspólny czynnik szumu (model multiplikatywny), to *kolejność* wartości w oknie zostaje zachowana — bo $a < b \\iff N \\cdot a < N \\cdot b$ dla $N > 0$. Wystarczy więc kodować *znaki różnic* sąsiadów względem centrum, nie ich wartości.\n\nTo dokładnie idea **LBP** (Local Binary Pattern), Ojala 2002. W wersji podstawowej:\n\n1. Dla każdego piksela $c$ rozważ 3×3 okno z 8 sąsiadami $n_0, n_1, \\dots, n_7$.\n2. Dla każdego sąsiada policz bit: $b_k = 1$ jeśli $n_k \\ge c$, w przeciwnym razie $0$.\n3. Sklej osiem bitów w bajt — to **kod LBP** w przedziale $[0, 255]$.\n\n![Trzy panele obok siebie. Panel 1 (Krok 1): okno 3×3 z wartościami {7, 8, 9; 1, 5, 6; 2, 3, 4}, czerwona ramka wokół środkowego piksela c=5, etykieta „okno 3×3 z centrum c=5\\\". Panel 2 (Krok 2): ten sam patch z kolorowanymi sąsiadami — czerwone tło dla bitów `1` (sąsiad ≥ 5: trzech górnych 7,8,9 plus prawy 6), niebieskie tło dla `0` (sąsiad < 5: lewy 1, dolne 2,3,4), żółte tło na centrum z napisem „c=5\\\", w każdej komórce wartość binarna i wyjaśnienie (np. „1 (7>=5)\\\"). Panel 3 (Krok 3): tekst „Obejdź sąsiadów zgodnie z ruchem wskazówek (NW, N, NE, E, SE, S, SW, W) → Bity: 1 1 1 1 0 0 0 0 → Słowo 8-bitowe: 11110000₂ → LBP(c) = 240\\\" plus mała uwaga „Liczba przejść 0→1 lub 1→0 w pierścieniu == 2 ⇒ wzorzec UNIFORM\\\".](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/lbp-encoding-3x3.png)\n\nZ tego kodu wyciąga się histogram po lokalnym oknie (zwykle 16×16 albo 32×32) i traktuje jako **deskryptor tekstury**. Co ważne:\n\n- Kod LBP jest **niezmienniczy względem monotonicznych transformacji jasności** — pomnożenie obrazu przez stałą $N$ daje *ten sam kod*. To bezpośredni argument za odpornością na multiplikatywny speckle.\n- Wariant **uniform LBP** (Ojala 2002) liczy wzorce z $\\le 2$ przejściami 0→1 lub 1→0 w pierścieniu sąsiadów — pozostałe wrzuca do jednego „kosza\\\". 8 sąsiadów daje 58 wzorców uniform + 1 koszt = 59 koszy. To redukcja wymiaru i znaczne zmniejszenie wariancji estymaty histogramu.\n- **Co LBP traci** w porównaniu z GLCM: skalę różnicy jasności. Para sąsiadów (10, 11) i (10, 250) ma ten sam znak różnicy, więc dostaje ten sam bit. W zastosowaniach gdzie istotny jest *kontrast* (a nie tylko *konfiguracja*) — łączymy LBP z miarą lokalnego kontrastu (LBP + var), ale to już rozszerzenie.\n\nW kolejnej sekcji piszesz **pełną implementację** klasycznego LBP-3×3 w jednym numpy'owym przebiegu, weryfikujesz wartość per piksel na patch'u testowym, a potem sprawdzasz że dostajesz dokładnie tę samą mapę co referencja zapisana w `/inputs/tekstura-lbp-3x3-expected.npz` dla speckled cameramana."
+      }
+    },
+    {
+      "id": "code-lbp-3x3",
+      "title": "Zaimplementuj `lbp_3x3` — 8 sąsiadów CW od NW, bit `n >= c`",
+      "description": "Po lewej: speckled cameraman. Po prawej: referencyjna mapa LBP-3×3 (hsv) którą musisz odtworzyć. Reguły kodowania w taskMarkdown są tak ścisłe, że test 4 weryfikuje *dokładną* zgodność per piksel.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.2002.1017623",
+          "title": "Multiresolution gray-scale and rotation invariant texture classification with local binary patterns",
+          "kind": "paper",
+          "author": "Timo Ojala, Matti Pietikäinen, Topi Mäenpää",
+          "year": 2002
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.local_binary_pattern",
+          "title": "skimage.feature.local_binary_pattern — scikit-image documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `lbp_3x3(img)` zwracającą **mapę kodów LBP** (`np.ndarray`, `dtype=np.uint8`, kształt jak `img`) dla obrazu w skali szarości `uint8`.\n\nSpecyfikacja kodowania (musi dokładnie zgadzać się z referencją):\n\n- Dla każdego piksela $c$ rozważ 3×3 okno z 8 sąsiadami.\n- Obejdź sąsiadów **zgodnie z ruchem wskazówek zegara, zaczynając od NW**: kolejność `[NW, N, NE, E, SE, S, SW, W]`.\n- Pierwszy w kolejności sąsiad zapisuje **najbardziej znaczący bit** (bit 7), ostatni — bit 0.\n- Bit $b_k = 1$ jeśli $n_k \\ge c$, w przeciwnym razie $0$. **Uwaga**: warunek to $\\ge$ (nie ostre `>`).\n- Na brzegach obrazu używaj paddingu `mode='edge'` (replikacja).\n- Wynik to `uint8` w przedziale `[0, 255]`.\n\nPrzykład jednopikselowy: patch z centrum 5 i sąsiadami `[7, 8, 9; 1, 5, 6; 2, 3, 4]` (jak w diagramie powyżej):\n\n- Bity (msb→lsb) = `[NW=7>=5, N=8>=5, NE=9>=5, E=6>=5, SE=4>=5, S=3>=5, SW=2>=5, W=1>=5]` = `[1, 1, 1, 1, 0, 0, 0, 0]`.\n- Słowo 8-bitowe: `11110000₂` = `240`.\n\nTesty weryfikują (a) shape/dtype, (b) wartość na kontrolowanym patch'u 3×3, (c) zachowanie na obrazie stałym (`lbp == 255` wszędzie, bo każdy sąsiad ≥ centrum), (d) dokładną zgodność z referencyjną mapą `/inputs/tekstura-lbp-3x3-expected.npz` (klucz `lbp`) na speckled cameramanie.",
+        "starterCode": "import numpy as np\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\n\ndef lbp_3x3(img):\n    \"\"\"\n    Zwroc mape kodow LBP (uint8, shape == img.shape) dla obrazu uint8.\n\n    Kolejnosc sasiadow CW od NW: NW, N, NE, E, SE, S, SW, W.\n    Pierwszy w kolejnosci pisze bit 7, ostatni - bit 0.\n    Warunek bitu: n >= c.\n    Padding: 'edge' (replikacja).\n    \"\"\"\n    # TODO: zaimplementuj kodowanie LBP.\n    return np.zeros_like(img, dtype=np.uint8)\n\n\n# --- Preview: LBP na speckled cameranie ---\nspeckled = np.asarray(\n    Image.open(\"/inputs/tekstura-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.uint8,\n)\nlbp = lbp_3x3(speckled)\n\nprint(f\"lbp shape: {lbp.shape}\")\nprint(f\"lbp dtype: {lbp.dtype}\")\nprint(f\"lbp range: [{lbp.min()}, {lbp.max()}]\")\n\n# Porownanie z referencja zapisana w /inputs/\nref = np.load(\"/inputs/tekstura-lbp-3x3-expected.npz\")[\"lbp\"]\ndiff = (lbp != ref).sum()\nprint(f\"liczba roznic od referencji: {diff} / {ref.size}\")\n\nfig, axes = plt.subplots(1, 2, figsize=(9.0, 4.5), constrained_layout=True)\naxes[0].imshow(speckled, cmap=\"gray\", vmin=0, vmax=255)\naxes[0].set_title(\"Wejscie: speckled cameraman\", fontsize=10)\naxes[0].set_axis_off()\nim = axes[1].imshow(lbp, cmap=\"hsv\", vmin=0, vmax=255)\naxes[1].set_title(\"LBP-3x3 (Twoja implementacja)\", fontsize=10)\naxes[1].set_axis_off()\nfig.colorbar(im, ax=axes[1], shrink=0.85, label=\"kod LBP\")\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_uint8_array_with_same_shape",
+            "body": "import numpy as np\nimg = np.array([[10, 20, 30], [40, 50, 60], [70, 80, 90]], dtype=np.uint8)\nout = lbp_3x3(img)\nassert hasattr(out, 'shape') and out.shape == img.shape, f'shape={getattr(out, \"shape\", None)}, expected {img.shape}'\nassert out.dtype == np.uint8, f'dtype={out.dtype}, oczekiwano uint8'\nassert np.all(out <= 255), 'wszystkie wartosci powinny byc w [0, 255]'",
+            "hidden": false
+          },
+          {
+            "name": "constant_image_returns_all_255",
+            "body": "import numpy as np\nimg = np.full((12, 12), 100, dtype=np.uint8)\nout = lbp_3x3(img)\nassert (out == 255).all(), (\n    f'dla obrazu stalego wszyscy sasiedzi sa >= centrum -> kazdy bit = 1 -> LBP = 255; '\n    f'min={out.min()}, max={out.max()}. Sprawdz: czy warunek to >=, a nie >?'\n)",
+            "hidden": true
+          },
+          {
+            "name": "controlled_patch_matches_diagram",
+            "body": "import numpy as np\n# Patch dokladnie jak w diagramie ,,Krok 1'': c=5, sasiedzi [7,8,9; 1,5,6; 2,3,4]\npatch = np.array([[7, 8, 9], [1, 5, 6], [2, 3, 4]], dtype=np.uint8)\nout = lbp_3x3(patch)\n# Bity (msb-first) CW od NW: NW=7>=5 N=8>=5 NE=9>=5 E=6>=5 SE=4>=5 S=3>=5 SW=2>=5 W=1>=5\n#                            =  1     1      1      1      0      0      0      0  -> 11110000_2 = 240\nassert out[1, 1] == 240, (\n    f'patch z diagramu: oczekiwano LBP[1,1]=240, dostalem {out[1, 1]}. '\n    f'Sprawdz: kolejnosc CW od NW, msb-first, warunek >='\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_on_speckled_cameraman",
+            "body": "import numpy as np\nfrom PIL import Image\nspeckled = np.asarray(\n    Image.open('/inputs/tekstura-cameraman-speckled.png').convert('L'),\n    dtype=np.uint8,\n)\nref = np.load('/inputs/tekstura-lbp-3x3-expected.npz')['lbp']\ngot = lbp_3x3(speckled)\nassert got.shape == ref.shape, f'shape={got.shape}, ref={ref.shape}'\nassert got.dtype == np.uint8, f'dtype={got.dtype}, oczekiwano uint8'\nn_diff = int((got != ref).sum())\nassert n_diff == 0, (\n    f'mapa LBP rozni sie od referencyjnej w {n_diff} pikselach. '\n    f'Sprawdz: padding edge, kolejnosc CW od NW, bit 7 = NW, warunek >=.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef lbp_3x3(img):\n    H, W = img.shape\n    pad = np.pad(img.astype(np.int16), 1, mode=\"edge\")\n    cc = pad[1:-1, 1:-1]\n    # Kolejnosc CW od NW: NW, N, NE, E, SE, S, SW, W -> bity 7..0\n    offsets = [\n        (-1, -1), (-1, 0), (-1, 1),\n        (0, 1),\n        (1, 1), (1, 0), (1, -1),\n        (0, -1),\n    ]\n    out = np.zeros((H, W), dtype=np.uint8)\n    for bit, (dy, dx) in enumerate(offsets):\n        n = pad[1 + dy:1 + dy + H, 1 + dx:1 + dx + W]\n        out |= ((n >= cc).astype(np.uint8) << (7 - bit))\n    return out\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/tekstura-cameraman-speckled.png",
+            "alt": "Cameraman 256×256 ze speckle (multi-look Gamma L=4) — widoczna sylwetka kamerzysty ze statywem, niebo i horyzont, z mocnym ziarnem szumu rozsianym po całym obrazie.",
+            "caption": "Wejście: speckled cameraman (multi-look Gamma L=4)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/tekstura-lbp-3x3-expected.npz",
+            "filename": "tekstura-lbp-3x3-expected.npz",
+            "caption": ".npz z kluczem 'lbp' (uint8, 256×256) — referencyjna mapa kodów LBP, używana w teście numerycznym."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/tekstura-lbp-3x3-expected.png",
+          "alt": "Mapa LBP 256×256 wyrenderowana w skali kolorów HSV: chaotyczny kalejdoskop wielobarwnych pikseli pokrywających cały obraz. Sylwetka kamerzysty i horyzont są ledwie widoczne — speckle rozsiał kody LBP do całego zakresu [0, 255], przez co histogram traci moc dyskryminacyjną. Po prawej skala kolorów od 0 do 255 z etykietą „kod LBP\".",
+          "caption": "Cel: tak ma wyglądać `lbp_3x3(speckled)` w wizualizacji HSV. Sam fakt, że obraz wygląda jak losowy szum kolorów na płaskich obszarach, jest *informacją* — uczy nas, że LBP-default na SAR też ulega speckle, choć w inny sposób niż GLCM. Naprawa: uniform LBP (sandbox poniżej)."
+        },
+        "requiresPackages": [
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-uniform-lbp",
+      "title": "Spróbuj: uniform LBP na optyce i SAR — co ratuje, czego nie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom PIL import Image\nfrom skimage.feature import local_binary_pattern\nimport matplotlib.pyplot as plt\n\n\ndef load_gray(path):\n    return np.asarray(Image.open(path).convert(\"L\"), dtype=np.uint8)\n\n\nclean = load_gray(\"/inputs/tekstura-cameraman-clean.png\")\nspeckled = load_gray(\"/inputs/tekstura-cameraman-speckled.png\")\n\n# Trzy uchwyty: liczba sasiadow P, promien R, metoda LBP.\n# Method 'uniform' -> 0..P+1, gdzie wartosc P+1 = wzorce non-uniform.\nP = 8\nR = 1\nmethod = \"uniform\"\n\nlbp_opt = local_binary_pattern(clean, P, R, method=method).astype(np.uint8)\nlbp_sar = local_binary_pattern(speckled, P, R, method=method).astype(np.uint8)\n\n# Ile pikseli wpadlo do ,,kosza'' non-uniform na kazdej modalnosci?\nnonuni_opt = (lbp_opt == P + 1).mean() * 100\nnonuni_sar = (lbp_sar == P + 1).mean() * 100\nprint(f\"P={P}, R={R}, method={method}\")\nprint(f\"  % non-uniform na optyce:  {nonuni_opt:5.1f}%\")\nprint(f\"  % non-uniform na SAR:     {nonuni_sar:5.1f}%\")\n\nfig, axes = plt.subplots(2, 2, figsize=(8.6, 8.4), constrained_layout=True)\naxes[0, 0].imshow(clean, cmap=\"gray\", vmin=0, vmax=255)\naxes[0, 0].set_title(\"Optyka - wejscie\", fontsize=10)\naxes[0, 0].set_axis_off()\n\naxes[0, 1].imshow(lbp_opt, cmap=\"jet\", vmin=0, vmax=P + 1)\naxes[0, 1].set_title(f\"uniform LBP(P={P}, R={R}) optyki\", fontsize=10)\naxes[0, 1].set_axis_off()\n\naxes[1, 0].imshow(speckled, cmap=\"gray\", vmin=0, vmax=255)\naxes[1, 0].set_title(\"SAR - wejscie (Gamma L=4)\", fontsize=10)\naxes[1, 0].set_axis_off()\n\nim = axes[1, 1].imshow(lbp_sar, cmap=\"jet\", vmin=0, vmax=P + 1)\naxes[1, 1].set_title(f\"uniform LBP(P={P}, R={R}) SAR\", fontsize=10)\naxes[1, 1].set_axis_off()\nfig.colorbar(im, ax=axes[1, 1], shrink=0.85, label=f\"kod uniform (0..P, P+1=non-uniform)\")\nplt.show()\n",
+        "encouragement": "Zacznij od `P=8, R=1` — zauważ, że na optyce kosz non-uniform łapie ~19% pikseli (głównie krawędzie sylwetki i sprzętu), a na SAR ~24% — *kilka punktów procentowych więcej*, mniej niż katastrofa GLCM-Haralicka. Następnie spróbuj `P=16, R=2`: większy promień uśrednia speckle przed kodowaniem, ale traci cienkie krawędzie. Gdzie jest punkt równowagi dla TWOJEGO klasyfikatora?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+      "title": "Textural features for image classification",
+      "kind": "paper",
+      "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+      "year": 1973
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.2002.1017623",
+      "title": "Multiresolution gray-scale and rotation invariant texture classification with local binary patterns",
+      "kind": "paper",
+      "author": "Timo Ojala, Matti Pietikäinen, Topi Mäenpää",
+      "year": 2002
+    },
+    {
+      "url": "https://doi.org/10.1109/36.477189",
+      "title": "Evaluation of textural and multipolarization radar features for crop classification",
+      "kind": "paper",
+      "author": "Hatem Anys, D.-C. He",
+      "year": 1995
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+      "title": "skimage.feature.graycomatrix — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.local_binary_pattern",
+      "title": "skimage.feature.local_binary_pattern — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    }
+  ]
+}

@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "slug": "faza-interferometryczna-pomiar-deformacji",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m5",
+  "title": "Faza interferometryczna — pomiar deformacji",
+  "eyebrow": "INSAR I DEEP LEARNING",
+  "description": "Z pary SLC i jednoliniowej formuły $\\varphi_{int} = \\arg(z_1 \\cdot \\bar z_2) = 4\\pi \\Delta r / \\lambda$ InSAR mierzy ruch terenu wzdłuż linii widzenia satelity z dokładnością $\\lambda/2$ — $2{,}77$ cm na jeden pełny prążek w paśmie C Sentinela-1. Ta lekcja pokazuje, jak czytać prążki, wprowadza phase unwrapping w 1D, i daje ParametricExplorer, w którym widzisz, jak ten sam $6$-centymetrowy bowl daje inną liczbę prążków w C-, X- i L-paśmie.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "phase-difference-intuition",
+      "title": "Prążki = mapa deformacji modulo λ/2",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1038/364138a0",
+          "title": "The displacement field of the Landers earthquake mapped by radar interferometry",
+          "kind": "paper",
+          "author": "Didier Massonnet, Marc Rossi, César Carmona, Frédéric Adragna, Gilles Peltzer, Kurt Feigl, Thierry Rabaute",
+          "year": 1993
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        },
+        {
+          "url": "https://www.esa.int/esapub/tm/tm19/TM-19_ptA.pdf",
+          "title": "InSAR Principles: Guidelines for SAR Interferometry Processing and Interpretation (ESA TM-19)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W lekcji 4.7 zobaczyliśmy, że **moduł** średniego iloczynu krzyżowego $|\\langle z_1 \\bar z_2\\rangle|$ daje koherencję — sygnał *stabilności* fazy między dwoma przelotami. W tej lekcji robimy następny krok: oglądamy **fazę** tego samego iloczynu i czytamy z niej deformację terenu w skali milimetrów. Optyka tego pomiaru nie wykona — pojedynczy piksel optyczny nie ma fazy (lekcja 1.5), a klasyczna fotogrametria pracuje na *pixelowej* dyspartości rzędu kilkudziesięciu cm. InSAR widzi $\\lambda/2 \\approx 2{,}77$ cm na **jeden pełny prążek** w Sentinelu-1 — i ułamek tego, jeśli umiemy odczytać fazę pod-prążkową.\n\n**Formuła interferogramu** jest jednoliniowa. Bierzemy parę SLC $z_1$ i $z_2$ tej samej sceny zarejestrowanych w odstępie kilku-kilkudziesięciu dni, mnożymy element po elemencie:\n\n$$ \\varphi_{\\text{int}}(i, j) \\;=\\; \\arg\\bigl(z_1(i, j) \\cdot \\overline{z_2(i, j)}\\bigr) \\;\\equiv\\; \\varphi_1 - \\varphi_2 \\pmod{2\\pi} $$\n\nJeśli między akwizycjami piksel $(i, j)$ przesunął się o $\\Delta r$ wzdłuż linii widzenia satelity (LOS — Line Of Sight), impuls przeleciał drogę krótszą o $2\\Delta r$ (round-trip: tam i z powrotem). Zmiana fazy to:\n\n$$ \\varphi_{\\text{int}} \\;=\\; \\frac{2\\pi}{\\lambda} \\cdot 2\\Delta r \\;=\\; \\frac{4\\pi}{\\lambda}\\,\\Delta r \\pmod{2\\pi} $$\n\nStąd **sensytywność**: jeden pełny prążek 2π odpowiada $\\Delta r = \\lambda/2$. Dla Sentinela-1 ($\\lambda = 5{,}547$ cm, pasmo C) to dokładnie $2{,}77$ cm; dla TerraSAR-X ($\\lambda = 3{,}1$ cm) — $1{,}55$ cm; dla ALOS-2 L-band ($\\lambda = 23{,}6$ cm) — $11{,}8$ cm.\n\n![Klasyczna mapa prążków interferometrycznych z trzęsienia ziemi Hector Mine 1999 r. (Mojave Desert, Kalifornia). Kolorowa mapa pokazuje koncentryczne prążki tęczowe (cyjan-żółty-magenta-zielony) wokół centralnego epicentrum, gdzie zerwała się powierzchnia. Każdy pełny obrót koloru = 2π zmiany fazy = 10 cm range displacement. Legenda na obrazie pokazuje skalę: 10 cm na pełny cykl koloru.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/insar-hectormine-fringes.jpg)\n\nPowyżej — kanoniczny interferogram NASA JPL z trzęsienia Hector Mine (1999, M7.1). Każdy obrót barwnika cyjan-żółty-magenta to **jeden pełny 2π prążek**, czyli ok. $5$ cm deformacji LOS (interferogram pokazany w skali full-cycle $\\sim$10 cm range, czyli $2 \\times \\lambda/2$ pasma C). Tam, gdzie prążki są **gęste**, gradient deformacji jest stromy; tam gdzie zlewają się w jeden kolor — teren się **nie ruszył**."
+      }
+    },
+    {
+      "id": "synthetic-interferogram-figure",
+      "title": "Od d(x, y) w cm do wrapped interferogramu",
+      "description": "Syntetyczna deformacja Gaussowska (+6 cm i -2,5 cm) → ciągła faza 4π d / λ → wrapped interferogram → realistyczny wariant z szumem fazowym przy |γ|=0,85.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/faza-interferometryczna-pomiar-deformacji-1.png",
+        "alt": "Cztery panele 256x256 obok siebie. (a) Mapa deformacji LOS d(x, y) w cm w skali RdBu_r od -6,5 do +6,5 cm: duża czerwona plama (+6 cm subsydencja w stronę satelity) w lewym górnym ćwiartce, mniejsza niebieska plama (-2,5 cm uplift) w prawym dolnym, tło białe (0 cm); colorbar oznakowany 'd [cm]'. (b) Faza ciągła φ = 4π d / λ z λ = 5,547 cm (Sentinel-1 C-band) w skali viridis: ten sam kształt co (a), ale wartości w radianach — peak około +13,6 rad. (c) Wrapped interferogram w skali twilight cyclical (-π do π): widać teraz koncentryczne prążki dookoła centrum dużej plamy (około 2-3 pełne prążki) i mniejszą strukturę dookoła małej plamy. (d) Realistyczny wariant: ten sam wrapped + szum fazowy odpowiadający koherencji |γ|=0,85 — prążki są wciąż czytelne, ale brzeg pikseli strzępi się, kolory między prążkami nie są idealnie gładkie.",
+        "caption": "Rys. 1. Cała ścieżka InSAR: od fizycznej deformacji d(x, y) w cm przez ciągłą fazę 4π d / λ do mierzalnego wrapped interferogramu i jego realistycznej wersji z szumem fazowym.",
+        "sourceCode": "import os\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n\nOUT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"faza-interferometryczna-pomiar-deformacji-1.png\"\n)\n\n\ndef main():\n    H, W = 256, 256\n    y, x = np.mgrid[0:H, 0:W].astype(np.float32)\n    cy1, cx1, A1, s1 = 95.0, 105.0, 6.0, 28.0\n    cy2, cx2, A2, s2 = 175.0, 175.0, -2.5, 22.0\n    d = (\n        A1 * np.exp(-((x - cx1) ** 2 + (y - cy1) ** 2) / (2 * s1 ** 2))\n        + A2 * np.exp(-((x - cx2) ** 2 + (y - cy2) ** 2) / (2 * s2 ** 2))\n    )\n\n    lam_cm = 5.547\n    phi_cont = 4.0 * np.pi * d / lam_cm\n    phi_wrap = (phi_cont + np.pi) % (2 * np.pi) - np.pi\n\n    rng = np.random.default_rng(20260516)\n    gamma = 0.85\n    noise_sigma = np.sqrt((1.0 - gamma ** 2) / (2.0 * gamma ** 2))\n    phi_noisy = phi_wrap + rng.normal(scale=noise_sigma, size=phi_wrap.shape)\n    phi_noisy = (phi_noisy + np.pi) % (2 * np.pi) - np.pi\n\n    fig, axes = plt.subplots(1, 4, figsize=(15.5, 4.2), constrained_layout=True)\n\n    ax = axes[0]\n    vmax = max(abs(A1), abs(A2)) + 0.5\n    im = ax.imshow(d, cmap=\"RdBu_r\", vmin=-vmax, vmax=vmax)\n    ax.set_title(\"(a) Deformacja LOS  d(x, y)\\n\"\n                 \"  +6,0 cm w stronę satelity, -2,5 cm od niego\",\n                 fontsize=10)\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    cb = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)\n    cb.set_label(\"d  [cm]\")\n\n    ax = axes[1]\n    im = ax.imshow(phi_cont, cmap=\"viridis\")\n    ax.set_title(\n        \"(b) Faza ciagła  φ = 4π d / λ\\n\"\n        \"        (λ = 5,547 cm — Sentinel-1 C-band)\",\n        fontsize=10)\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    cb = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)\n    cb.set_label(\"φ  [rad]\")\n\n    ax = axes[2]\n    im = ax.imshow(phi_wrap, cmap=\"twilight\", vmin=-np.pi, vmax=np.pi)\n    ax.set_title(\n        \"(c) Wrapped interferogram\\n\"\n        \"       1 prazek = λ/2 = 2,77 cm w LOS\",\n        fontsize=10)\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    cb = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,\n                      ticks=[-np.pi, 0, np.pi])\n    cb.set_label(\"arg(z1·conj(z2))  [rad]\")\n    cb.ax.set_yticklabels([r\"$-\\pi$\", \"0\", r\"$\\pi$\"])\n\n    ax = axes[3]\n    im = ax.imshow(phi_noisy, cmap=\"twilight\", vmin=-np.pi, vmax=np.pi)\n    ax.set_title(\n        \"(d) Realistyczne: szum fazowy przy |γ|=0,85\\n\"\n        \"         prążki wciąż czytelne, ale strzępią się\",\n        fontsize=10)\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    cb = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04,\n                      ticks=[-np.pi, 0, np.pi])\n    cb.set_label(\"arg(z1·conj(z2))  [rad]\")\n    cb.ax.set_yticklabels([r\"$-\\pi$\", \"0\", r\"$\\pi$\"])\n\n    fig.suptitle(\n        \"Faza interferometryczna jako mapa deformacji — \"\n        \"od d(x, y) w cm do prążków modulo 2π\",\n        fontsize=12,\n    )\n    fig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\n    plt.close(fig)\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "bands-and-deformation-explorer",
+      "title": "Ten sam ruch terenu w X / C / L paśmie",
+      "description": "Przesuń peak_def_cm i przełącz pasmo. Ta sama deformacja generuje więcej prążków w paśmie X (krótka fala) niż w paśmie L (długa fala) — to wzór λ/2 sensytywności w działaniu.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Wavelengths (cm) for canonical SAR bands.\nLAMBDA_CM = {\n    \"X-band (TerraSAR-X, λ=3,1 cm)\": 3.1,\n    \"C-band (Sentinel-1, λ=5,547 cm)\": 5.547,\n    \"L-band (ALOS-2, λ=23,6 cm)\": 23.6,\n}\n\n# Fixed scene geometry: a Gaussian subsidence bowl on a 200x200 grid.\nH, W = 200, 200\nyy, xx = np.mgrid[0:H, 0:W].astype(np.float32)\nCY, CX, SIGMA = 100.0, 100.0, 38.0\nRADIAL = np.exp(-((xx - CX) ** 2 + (yy - CY) ** 2) / (2 * SIGMA ** 2))\n\n# A column index for the cross-section profile.\nPROFILE_COL = int(CX)\n",
+        "renderCode": "lam_cm = LAMBDA_CM[band]\n# Deformation toward the satellite: max = peak_def_cm at the centre.\nd = peak_def_cm * RADIAL\n\n# Interferometric phase: round-trip path delay -> 4 pi d / lam.\nphi_cont = 4.0 * np.pi * d / lam_cm\nphi_wrap = (phi_cont + np.pi) % (2 * np.pi) - np.pi\n\n# How many full 2pi fringes from centre to edge:\npeak_phase_rad = float(phi_cont.max())\nn_fringes = peak_phase_rad / (2 * np.pi)\nlos_per_fringe_cm = lam_cm / 2.0\n\nfig = plt.figure(figsize=(11.5, 4.6))\ngs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 1.1])\n\nax0 = fig.add_subplot(gs[0, 0])\nvmax = max(peak_def_cm, 0.5)\nim0 = ax0.imshow(d, cmap=\"RdBu_r\", vmin=-vmax, vmax=vmax)\nax0.set_title(f\"(a) Deformacja LOS\\n  peak = {peak_def_cm:.1f} cm\")\nax0.set_xlabel(\"kolumna [px]\")\nax0.set_ylabel(\"wiersz [px]\")\ncb0 = plt.colorbar(im0, ax=ax0, fraction=0.046, pad=0.04)\ncb0.set_label(\"d  [cm]\")\n\nax1 = fig.add_subplot(gs[0, 1])\nim1 = ax1.imshow(phi_wrap, cmap=\"twilight\", vmin=-np.pi, vmax=np.pi)\nax1.set_title(\n    f\"(b) Wrapped interferogram\\n\"\n    f\"   {n_fringes:.1f} pelnych prążków, λ/2 = {los_per_fringe_cm:.2f} cm\")\nax1.set_xlabel(\"kolumna [px]\")\nax1.set_ylabel(\"wiersz [px]\")\ncb1 = plt.colorbar(im1, ax=ax1, fraction=0.046, pad=0.04,\n                   ticks=[-np.pi, 0, np.pi])\ncb1.set_label(\"φ_int  [rad]\")\ncb1.ax.set_yticklabels([r\"$-\\pi$\", \"0\", r\"$\\pi$\"])\n\nax2 = fig.add_subplot(gs[0, 2])\nprofile_phi_wrap = phi_wrap[:, PROFILE_COL]\nprofile_phi_cont = phi_cont[:, PROFILE_COL]\nrows = np.arange(H)\nax2.plot(rows, profile_phi_cont, color=\"#1f77b4\", linewidth=2.0,\n         label=r\"φ ciągła = 4π d / λ\")\nax2.plot(rows, profile_phi_wrap, color=\"#d62728\", linewidth=1.2,\n         label=r\"φ_wrap ∈ (-π, π]\")\nax2.axhline(np.pi, color=\"black\", linestyle=\":\", linewidth=0.6)\nax2.axhline(-np.pi, color=\"black\", linestyle=\":\", linewidth=0.6)\nax2.set_title(\"(c) Profil pionowy przez centrum\")\nax2.set_xlabel(\"wiersz [px]\")\nax2.set_ylabel(\"faza [rad]\")\nax2.grid(True, alpha=0.3)\nax2.legend(loc=\"upper right\", fontsize=9)\n\nfig.suptitle(\n    f\"InSAR: ten sam {peak_def_cm:.1f} cm bowl w {band.split(' (')[0]}  →  \"\n    f\"{n_fringes:.1f} prążków\",\n    fontsize=11,\n)\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "peak_def_cm",
+            "label": "Peak deformacji LOS [cm]",
+            "type": "slider",
+            "min": 0.5,
+            "max": 20,
+            "step": 0.5,
+            "default": 6
+          },
+          {
+            "name": "band",
+            "label": "Pasmo radarowe (i długość fali λ)",
+            "type": "select",
+            "default": "C-band (Sentinel-1, λ=5,547 cm)",
+            "options": [
+              "X-band (TerraSAR-X, λ=3,1 cm)",
+              "C-band (Sentinel-1, λ=5,547 cm)",
+              "L-band (ALOS-2, λ=23,6 cm)"
+            ]
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "phase-unwrapping",
+      "title": "Phase unwrapping — z wrapped do ciągłej deformacji",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1364/AO.21.002470",
+          "title": "Analysis of the phase unwrapping algorithm",
+          "kind": "paper",
+          "author": "Kazuyoshi Itoh",
+          "year": 1982
+        },
+        {
+          "url": "https://www.wiley.com/en-us/Two+Dimensional+Phase+Unwrapping%3A+Theory%2C+Algorithms%2C+and+Software-p-9780471249351",
+          "title": "Two-Dimensional Phase Unwrapping: Theory, Algorithms, and Software",
+          "kind": "book",
+          "author": "Dennis C. Ghiglia and Mark D. Pritt",
+          "year": 1998
+        },
+        {
+          "url": "https://link.springer.com/book/10.1007/0-306-47633-9",
+          "title": "Radar Interferometry: Data Interpretation and Error Analysis",
+          "kind": "book",
+          "author": "Ramon F. Hanssen",
+          "year": 2001
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Powyższy interferogram pokazał piękną mapę prążków — ale jeśli celem jest **ile centymetrów** deformacji w każdym punkcie, prążki muszą zostać *rozplecione*. Faza zmierzona z $\\arg(z_1 \\bar z_2)$ żyje w $(-\\pi, \\pi]$. Co dzieje się, gdy prawdziwa deformacja jest większa niż $\\lambda/4$ w jednym pikselu?\n\n![Lewy panel: dwie krzywe na wykresie 1D fazy. Niebieska, gładka, parabolopodobna ciągła faza φ_cont = 4π d / λ — rośnie monotonicznie do ~7,9 rad w środku, potem opada. Czerwona, fragmentaryczna φ_wrap ∈ (-π, π] — w miejscu gdzie niebieska przekracza π (~3,14 rad), czerwona spada gwałtownie do -π, kontynuując rosnąco. Pokazuje skoki ±2π. Dwie czarne kropkowane poziome linie na ±π. Prawy panel: ta sama niebieska ciągła krzywa pokryta dokładnie zieloną przerywaną — rezultat algorytmu Itoh'a, idealnie odzyskuje ciągłą fazę z czerwonej wrapped.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/wrap-unwrap-1d-illustration.png)\n\n**Problem zwijania** — gdy faza ciągła $\\varphi_{\\text{cont}} = 4\\pi d / \\lambda$ przekracza $\\pi$, znika jeden pełny obrót — pomiar przeskakuje do $-\\pi$ i rośnie dalej. Dla $1$-piksela $4$ cm subsydencji w Sentinelu-1 ciągła faza wynosi $4\\pi \\cdot 4 / 5{,}547 \\approx 9{,}1$ rad $= 2{,}9$ prążka — zwinięta zostanie do `9.06 mod 2π ≈ 0.34 rad`. Bez kontekstu sąsiadów nie wiesz, że minęło 1, 2 czy 3 cykle.\n\n**Algorytm Itoha (1982)** rozwiązuje 1D unwrap z jedną subtelnością. Bierze różnice sąsiednich próbek $d_k = \\varphi_{k+1} - \\varphi_k$ — to są małe liczby, **chyba że** trafiamy na skok między $+\\pi$ a $-\\pi$, gdzie $d_k \\approx 2\\pi$ albo $-2\\pi$. Trzeba **zwinąć każdą różnicę** modulo $2\\pi$ (do $(-\\pi, \\pi]$), żeby dostać prawdziwą lokalną zmianę. Potem sumujemy zwinięte różnice — i mamy ciągłą fazę. Dwie linijki numpy.\n\n**2D unwrap to inny problem.** W 2D nie istnieje jedna „kanoniczna\" droga sumowania — wynik zależy od ścieżki, jeśli mamy szum lub *rezydua* (skoki fazy powyżej $2\\pi$ w sąsiednich pikselach). Algorytmy produkcyjne — Goldsteina (branch-cuts), MCF (minimum cost flow), SNAPHU — używają teorii grafów do globalnego zminimalizowania zaburzeń. To nie temat tej lekcji; ale dobrze wiedzieć, że *koherencja* z lekcji 4.7 jest tu wagą: piksele o niskim $|\\gamma|$ to pierwsze miejsca, w których 2D unwrap się myli."
+      }
+    },
+    {
+      "id": "exercise-unwrap-1d",
+      "title": "Zaimplementuj `unwrap_phase_1d` (Itoh, 1982)",
+      "description": "Profil 1D wrapped phase (N=512) z syntetycznej deformacji w paśmie C-band. Cel — odzyskać ciągłą fazę algorytmem Itoha i przeliczyć ją na centymetry.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1364/AO.21.002470",
+          "title": "Analysis of the phase unwrapping algorithm",
+          "kind": "paper",
+          "author": "Kazuyoshi Itoh",
+          "year": 1982
+        },
+        {
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.unwrap.html",
+          "title": "numpy.unwrap — NumPy documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **1D phase unwrapping** — odzyskanie ciągłej fazy z wektora zmierzonego modulo 2π.\n\nFunkcja `unwrap_phase_1d(wrapped)` przyjmuje tablicę `np.float32` o kształcie `(N,)` (zwiniętą fazę w przedziale `(-π, π]`) i zwraca tablicę `np.float32` tego samego kształtu — ciągłą fazę zaczynającą się od `wrapped[0]`.\n\nAlgorytm Itoha (1982) — najprostszy 1D unwrap:\n\n1. Policz różnice sąsiednich próbek: `d = np.diff(wrapped)`.\n2. **Zwiń każdą różnicę** do `(-π, π]`: `d_wrapped = (d + π) mod 2π − π`. To zamienia skok np. `+5,8 rad` na faktyczne `+5,8 − 2π = −0,48 rad`.\n3. Skumuluj zwinięte różnice: `cum = np.cumsum(d_wrapped)`.\n4. Zwróć `wrapped[0] + [0, cum[0], cum[1], ...]` — czyli pierwszą próbkę nietkniętą plus kumulacja.\n\n```\n>>> data = np.load('/inputs/faza-interferometryczna-unwrap-1d.npz')\n>>> unwrapped = unwrap_phase_1d(data['wrapped'])\n>>> float(np.mean(np.abs(unwrapped - data['truth_unwrap'])))\n< 0.05\n```\n\nWejście — syntetyczny profil 1D (N=512) odpowiadający subsydencji o szczycie +4 cm i drugiej mniejszej deformacji +1,6 cm, w paśmie C-band Sentinela-1 (λ=5,547 cm), z dodatkowym szumem fazowym jak przy koherencji |γ|=0,92.\n\nPo przeszłej funkcji uzupełnij `unwrap_to_deformation_cm(unwrapped, lam_cm)` która konwertuje radiany na cm LOS deformacji: `d = unwrapped · λ / (4π)`. Funkcja jest na końcu pliku — jest banalna, ale podkreśla, że unwrap fazy i odzyskanie cm to **dwa osobne kroki**.\n\nTesty weryfikują (a) shape + dtype + zachowanie pierwszej próbki, (b) zgodność z `np.unwrap` (referencyjny algorytm w numpy implementuje to samo Itoh'a), (c) konwersja radianów na cm odzyskuje truth z błędem < 0,1 cm.\n",
+        "starterCode": "import numpy as np\n\n\ndef unwrap_phase_1d(wrapped):\n    \"\"\"1D phase unwrap algorytmem Itoha.\n\n    Algorytm:\n      1) d = np.diff(wrapped)               # roznice sasiadow\n      2) d_w = (d + pi) % (2*pi) - pi       # zwiniete do (-pi, pi]\n      3) cum = np.cumsum(d_w)\n      4) return wrapped[0] + concat([0], cum)\n    \"\"\"\n    # TODO: napisz unwrap'a wg powyzszego algorytmu i zwroc float32 1D\n    return wrapped.astype(np.float32)\n\n\ndef unwrap_to_deformation_cm(unwrapped, lam_cm):\n    \"\"\"Konwersja fazy interferometrycznej (rad) na deformacje LOS (cm).\n\n    Wzor: d_cm = unwrapped * lam_cm / (4 * pi).\n    \"\"\"\n    # TODO: zwroc tablice float32 z deformacja w cm\n    return np.zeros_like(unwrapped, dtype=np.float32)\n\n\n# --- Preview: unwrap 1D na syntetycznym profilu C-band ---\nimport matplotlib.pyplot as plt\n\ndata = np.load(\"/inputs/faza-interferometryczna-unwrap-1d.npz\")\nwrapped = data[\"wrapped\"]\ntruth_unwrap = data[\"truth_unwrap\"]\ntruth_def_cm = data[\"truth_def_cm\"]\nlam_cm = float(data[\"lam_cm\"])\nx = data[\"x\"]\n\nunwrapped = unwrap_phase_1d(wrapped)\nd_cm = unwrap_to_deformation_cm(unwrapped, lam_cm)\n\nprint(f\"wrapped.shape:  {wrapped.shape}  dtype={wrapped.dtype}\")\nprint(f\"unwrapped.shape:{unwrapped.shape}  dtype={unwrapped.dtype}\")\nprint(f\"mean|unwrap - truth|:  {np.mean(np.abs(unwrapped - truth_unwrap)):.4f} rad\")\nprint(f\"mean|d_cm   - truth|:  {np.mean(np.abs(d_cm - truth_def_cm)):.4f} cm\")\nprint(f\"peak d_cm (Twoja):  {d_cm.max():.2f} cm   |  truth: {truth_def_cm.max():.2f} cm\")\n\nfig, axes = plt.subplots(1, 2, figsize=(11.5, 4.0), constrained_layout=True)\nax = axes[0]\nax.plot(x, wrapped, color=\"#d62728\", linewidth=1.2, label=\"wrapped (wejście)\")\nax.axhline(np.pi, color=\"black\", linestyle=\":\", linewidth=0.6)\nax.axhline(-np.pi, color=\"black\", linestyle=\":\", linewidth=0.6)\nax.set_title(\"(a) wrapped phase\")\nax.set_xlabel(\"pozycja x [-]\")\nax.set_ylabel(\"φ_wrap [rad]\")\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=9)\n\nax = axes[1]\nax.plot(x, truth_unwrap, color=\"#1f77b4\", linewidth=2.0, label=\"truth unwrap\")\nax.plot(x, unwrapped, color=\"#2ca02c\", linewidth=1.2, linestyle=\"--\",\n        label=\"Twoja unwrap_phase_1d\")\nax2 = ax.twinx()\nax2.plot(x, d_cm, color=\"#888888\", linewidth=1.0, linestyle=\":\",\n         label=\"Twoja deformacja [cm]\")\nax2.set_ylabel(\"d [cm]\", color=\"#666666\")\nax.set_title(\"(b) unwrap + konwersja na deformacje LOS\")\nax.set_xlabel(\"pozycja x [-]\")\nax.set_ylabel(\"faza [rad]\")\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper left\", fontsize=9)\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_float32_1d_with_same_shape",
+            "body": "import numpy as np\ndata = np.load('/inputs/faza-interferometryczna-unwrap-1d.npz')\nu = unwrap_phase_1d(data['wrapped'])\nassert hasattr(u, 'shape') and u.shape == data['wrapped'].shape, f'shape={getattr(u, \"shape\", None)}, oczekiwano {data[\"wrapped\"].shape}'\nassert u.dtype == np.float32, f'dtype={u.dtype}, oczekiwano float32 — rzutuj na .astype(np.float32) na koncu'\nassert abs(float(u[0]) - float(data['wrapped'][0])) < 1e-5, f'unwrap[0]={float(u[0]):.4f}, oczekiwano wrapped[0]={float(data[\"wrapped\"][0]):.4f} — pierwsza probka ma zostac nietknieta'",
+            "hidden": false
+          },
+          {
+            "name": "matches_numpy_unwrap_reference",
+            "body": "import numpy as np\ndata = np.load('/inputs/faza-interferometryczna-unwrap-1d.npz')\nu = unwrap_phase_1d(data['wrapped'])\nref = np.unwrap(data['wrapped'].astype(np.float64)).astype(np.float32)\nerr = float(np.max(np.abs(u - ref)))\nassert err < 1e-3, f'maks roznica od np.unwrap = {err:.4e} rad, oczekiwano < 1e-3. Sprawdz, czy *najpierw* liczysz np.diff a *potem* zwijasz do (-pi, pi] — NIE odwrotnie.'",
+            "hidden": true
+          },
+          {
+            "name": "deformation_recovered_within_one_mm",
+            "body": "import numpy as np\ndata = np.load('/inputs/faza-interferometryczna-unwrap-1d.npz')\nu = unwrap_phase_1d(data['wrapped'])\nlam = float(data['lam_cm'])\nd_cm = unwrap_to_deformation_cm(u, lam)\nerr = float(np.mean(np.abs(d_cm - data['truth_def_cm'])))\nassert err < 0.1, f'sredni blad deformacji = {err:.4f} cm, oczekiwano < 0,1 cm (1 mm). Sprawdz formule d = unwrapped * lam_cm / (4 * pi) — w **mianowniku jest 4 pi**, nie 2 pi (factor 2 z round-trip).'\npeak_err = abs(float(d_cm.max()) - float(data['truth_def_cm'].max()))\nassert peak_err < 0.2, f'blad peak deformacji = {peak_err:.4f} cm, oczekiwano < 0,2 cm'",
+            "hidden": true
+          },
+          {
+            "name": "handles_constant_input_as_constant_output",
+            "body": "import numpy as np\nflat = np.full(64, 0.37, dtype=np.float32)\nu = unwrap_phase_1d(flat)\nassert u.shape == flat.shape, f'shape={u.shape}'\nassert float(np.max(np.abs(u - 0.37))) < 1e-5, f'na stalym wejsciu unwrap powinien zwrocic stalą wartosc; got max|u-0.37|={float(np.max(np.abs(u - 0.37))):.4e}'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef unwrap_phase_1d(wrapped):\n    \"\"\"1D phase unwrap algorytmem Itoha — kumulatywne roznice mod 2 pi.\"\"\"\n    w = wrapped.astype(np.float32)\n    diffs = np.diff(w)\n    diffs = ((diffs + np.pi) % (2.0 * np.pi) - np.pi).astype(np.float32)\n    cum = np.cumsum(diffs).astype(np.float32)\n    out = np.empty_like(w)\n    out[0] = w[0]\n    out[1:] = w[0] + cum\n    return out\n\n\ndef unwrap_to_deformation_cm(unwrapped, lam_cm):\n    \"\"\"LOS deformacja: d = unwrapped * lam / (4 pi).\"\"\"\n    return (unwrapped.astype(np.float32) * (lam_cm / (4.0 * np.pi))).astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/faza-interferometryczna-unwrap-1d.png",
+            "alt": "Podgląd wejścia: lewy panel — czerwona, postrzępiona wrapped phase w przedziale (-π, π] dla syntetycznego profilu 1D z dwoma deformacjami; prawy panel — niebieska ciągła truth unwrap rosnąca do około 9 rad oraz szara prawa-oś deformacja w cm rosnąca do 4 cm.",
+            "caption": "Podgląd: wrapped (lewo) + truth_unwrap + truth_def_cm (prawo)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/faza-interferometryczna-unwrap-1d.npz",
+            "filename": "faza-interferometryczna-unwrap-1d.npz",
+            "caption": ".npz: `wrapped` (float32 N=512 — zwinięta faza), `truth_unwrap` (float32 N=512 — referencyjny unwrap), `truth_def_cm` (float32 N=512 — referencyjna deformacja LOS w cm), `x` (float32 N=512), `lam_cm` (float32 = 5,547 — długość fali Sentinel-1 C-band)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/faza-interferometryczna-unwrap-1d.png",
+          "alt": "Cel: prawy panel pokazuje, jak ma wyglądać Twój wynik — niebieska ciągła truth_unwrap (peak ~9 rad) ma być odzyskana z czerwonego, postrzępionego sygnału wrapped z lewego panelu; deformacja w cm (szara prawa-oś) ma sięgać peak'u 4 cm.",
+          "caption": "Cel: `unwrap_phase_1d(wrapped)` ma zwrócić zieloną krzywą zgodną z `truth_unwrap` (atol < 1e-3 rad)."
+        }
+      }
+    },
+    {
+      "id": "concept-check-insar",
+      "title": "Sprawdź: co mierzy InSAR — i czego nie mierzy?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o interferometrii Sentinel-1 (C-band, λ ≈ 5,547 cm) są PRAWDZIWE? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Jeden pełny prążek 2π w interferogramie Sentinel-1 odpowiada ≈ 2,77 cm deformacji wzdłuż linii widzenia satelity (LOS) — niezależnie od kierunku w którym ten ruch zachodzi w terenie.",
+          "Faza pojedynczego piksela SLC nad jednorodnym terenem jest niemal losowa; deformacyjną informację niesie dopiero RÓŻNICA faz dwóch akwizycji tej samej sceny, czyli arg(z₁·conj(z₂)).",
+          "Bo Sentinel-1 mierzy LOS displacement, gdy budynek osiada pionowo o Δh = 5 cm, faza interferometryczna wzrośnie dokładnie o 4π · 5 / 5,547 ≈ 11,3 rad — niezależnie od kąta padania θ.",
+          "Phase unwrapping w 1D jest jednoznaczny (algorytm Itoha rozwiązuje go w dwóch linijkach), ale w 2D zależy od ścieżki — algorytmy produkcyjne (Goldstein, SNAPHU) używają koherencji jako wagi, bo piksele o niskim |γ| są pierwszym źródłem błędu."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Opcja A jest prawdziwa: λ/2 = 5,547/2 ≈ 2,77 cm jest wyłącznie pochodną długości fali i round-trip (faktor 4π = 2 · 2π w mianowniku). InSAR mierzy **rzut deformacji na linię widzenia satelity** — to ten ważny szczegół, do którego wraca opcja C. Opcja B jest prawdziwa (powtórka z lekcji 1.5 i 4.7): bezwzględna faza wygląda jak biały szum, ale różnica faz dwóch SLC tego samego terenu jest deterministyczną funkcją zmiany drogi optycznej między datami. Opcja C jest **fałszywa** — to klasyczna pułapka. Sentinel-1 mierzy ruch wzdłuż LOS, nie ruch pionowy. Dla pionowego osiadania Δh przy kącie padania θ (typowo θ ≈ 33-43° dla Sentinela-1) rzut na LOS to Δh · cos(θ), więc 5 cm pionowo daje około 4 cm LOS-owej zmiany, a nie pełne 5 cm. Niezależność od θ jest fałszywa — to dlatego do analizy pionowej subsydencji potrzebuje się **dwóch geometrii** (ascending + descending) i rozkłada się LOS na pionową i poziomą. Opcja D jest prawdziwa: w 1D suma zwiniętych różnic daje jednoznaczny wynik, ale w 2D obejście rezydualnej osobliwości po różnych ścieżkach generuje różne wyniki. SNAPHU, Goldstein i MCF globalnie minimalizują koszt z wagami pochodzącymi właśnie z koherencji.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1038/364138a0",
+      "title": "The displacement field of the Landers earthquake mapped by radar interferometry",
+      "kind": "paper",
+      "author": "Didier Massonnet, Marc Rossi, César Carmona, Frédéric Adragna, Gilles Peltzer, Kurt Feigl, Thierry Rabaute",
+      "year": 1993
+    },
+    {
+      "url": "https://doi.org/10.1088/0266-5611/14/4/001",
+      "title": "Synthetic aperture radar interferometry",
+      "kind": "paper",
+      "author": "Richard Bamler, Philipp Hartl",
+      "year": 1998
+    },
+    {
+      "url": "https://link.springer.com/book/10.1007/0-306-47633-9",
+      "title": "Radar Interferometry: Data Interpretation and Error Analysis",
+      "kind": "book",
+      "author": "Ramon F. Hanssen",
+      "year": 2001
+    },
+    {
+      "url": "https://www.esa.int/esapub/tm/tm19/TM-19_ptA.pdf",
+      "title": "InSAR Principles: Guidelines for SAR Interferometry Processing and Interpretation (ESA TM-19)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1364/AO.21.002470",
+      "title": "Analysis of the phase unwrapping algorithm",
+      "kind": "paper",
+      "author": "Kazuyoshi Itoh",
+      "year": 1982
+    },
+    {
+      "url": "https://www.wiley.com/en-us/Two+Dimensional+Phase+Unwrapping%3A+Theory%2C+Algorithms%2C+and+Software-p-9780471249351",
+      "title": "Two-Dimensional Phase Unwrapping: Theory, Algorithms, and Software",
+      "kind": "book",
+      "author": "Dennis C. Ghiglia and Mark D. Pritt",
+      "year": 1998
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 User Guide (ESA)",
+      "kind": "article"
+    }
+  ]
+}

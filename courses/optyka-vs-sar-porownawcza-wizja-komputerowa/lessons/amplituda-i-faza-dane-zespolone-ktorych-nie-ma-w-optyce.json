@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "slug": "amplituda-i-faza-dane-zespolone-ktorych-nie-ma-w-optyce",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Amplituda i faza — dane zespolone, których nie ma w optyce",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Piksel produktu Sentinel-1 SLC to nie liczba — to liczba zespolona z = A·exp(iφ). Pokażemy fizycznie, skąd bierze się faza w radarze i dlaczego optyka jej nie ma, na realnym (syntetycznym) kafelku zobaczymy, że faza pojedynczego SLC wygląda jak biały szum, a w eksperymencie Oppenheima w numpy sprawdzimy, że to mimo wszystko faza, nie amplituda, niesie strukturę obrazu — fundament intuicji potrzebnej do InSAR.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "phasor-intuition",
+      "title": "Piksel SLC jest liczbą zespoloną — phasor na płaszczyźnie",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+          "title": "Sentinel-1 SLC product specification (ESA SentiWiki)",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Optyka i SAR widzą tę samą scenę przez dwa zupełnie różne sensory — i ta różnica wraca w bardzo konkretnym miejscu: w tym, **co siedzi w jednym pikselu**.\n\nKamera optyczna (Sentinel-2, fotografia, twój telefon) integruje przychodzące fotony przez okno kilku–kilkudziesięciu mikrosekund. Każdy foton ma fazę optyczną, ale miliony fotonów nadchodzą w przypadkowych chwilach i ich fazy się uśredniają w nic — fizycznie *zostaje tylko liczba rzeczywista*, intensywność. Pikselu optycznego nie da się sensownie opisać jako liczby zespolonej, bo faza została zniszczona przez integrację i koherencja czasowa źródła (Słońca) jest mikroskopijna.\n\nRadar SAR pracuje **koherentnie**. Sentinel-1 emituje impuls mikrofalowy o znanej, ściśle zdefiniowanej fazie nadawczej, czeka kilkaset mikrosekund i mierzy to samo echo, które wraca — wraz z jego przesunięciem fazowym względem nadanego sygnału. Każdy piksel produktu SLC (Single Look Complex) jest dlatego liczbą zespoloną:\n\n$$ z = A \\cdot e^{i\\varphi} $$\n\ngdzie **amplituda** $A = |z|$ koduje *ile* energii wróciło (po kwadracie i kalibracji wyświetlamy to jako „standardowy\" obraz radarowy), a **faza** $\\varphi = \\arg(z) \\in (-\\pi, \\pi]$ koduje *jak daleko* impuls przeleciał, modulo długość fali $\\lambda \\approx 5{,}547$ cm dla pasma C Sentinela-1.\n\n![Wektor zespolony z = A·exp(i·phi) narysowany na płaszczyźnie z osiami Re(z) i Im(z): czerwona strzałka z początku układu o długości A pod kątem phi od osi rzeczywistej; zielony łuk oznacza kąt phi; niebieskie przerywane linie pokazują projekcje A·cos(phi) na oś rzeczywistą i A·sin(phi) na urojoną; szary okrąg jednostkowy w tle](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/phasor-on-complex-plane.png)\n\nPhasor — wektor o długości $A$ pod kątem $\\varphi$ na płaszczyźnie zespolonej — to wszystko, co musisz wizualnie zapamiętać. **Faza nie jest dodatkowym „dziwnym\" polem; jest po prostu kątem strzałki**, którą satelita zmierzył wracając z trasy do celu i z powrotem. Cała reszta lekcji (i pół InSAR-u) sprowadza się do pytania: *co ten kąt znaczy, kiedy zaczynasz porównywać dwa SLC z różnych dat?*"
+      }
+    },
+    {
+      "id": "amplitude-vs-phase-figure",
+      "title": "Ten sam SLC w dwóch widokach: amplituda vs faza",
+      "description": "Syntetyczny single-look complex z dwoma rejonami o różnej reflektywności (R=0.2 i R=1.5). Po lewej |z|, po prawej arg(z) — porównaj, ile informacji widać w każdym z nich.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/amplituda-i-faza-dane-zespolone-ktorych-nie-ma-w-optyce-1.png",
+        "alt": "Dwa panele 160x240 px obok siebie. Lewy: amplituda |z| jednowzorowego SLC z syntetycznej sceny — wyraźnie widać dwa pionowe pasy: ciemny po lewej (mała reflektywność, średnia amplituda ~0.4) i jasny po prawej (większa reflektywność, średnia amplituda ~1.1) z charakterystyczną ziarnistą teksturą speckle. Prawy: faza arg(z) tego samego SLC w kolorystyce twilight w zakresie -pi do pi — całkowicie jednorodny kolorowy szum bez rozpoznawalnej granicy między rejonami, faza wygląda na próbkę z rozkładu jednostajnego na (-pi, pi].",
+        "caption": "Rys. 1. Ten sam syntetyczny SLC z dwoma rejonami o różnej reflektywności R w dwóch widokach. Amplituda (lewo) pokazuje granicę między rejonami; faza pojedynczego SLC (prawo) wygląda jak czysty szum na rozkładzie jednostajnym — granica regionu w fazie znika.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(20260515)\nH, W = 160, 240\nR = np.full((H, W), 0.2, dtype=float)\nR[:, W // 2:] = 1.5\nX = rng.normal(size=(H, W))\nY = rng.normal(size=(H, W))\nz = np.sqrt(R / 2.0) * (X + 1j * Y)\namplitude = np.abs(z)\nphase = np.angle(z)\n\nfig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))\n\nim0 = axes[0].imshow(amplitude, cmap=\"gray\", vmin=0, vmax=2.0, aspect=\"equal\")\naxes[0].set_title(r\"Amplituda $A = |z|$ — to widzisz w GRD\")\naxes[0].set_xlabel(\"kolumna [piksel]\")\naxes[0].set_ylabel(\"wiersz [piksel]\")\naxes[0].set_xticks([0, W // 2, W - 1])\naxes[0].set_yticks([0, H // 2, H - 1])\ncb0 = plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)\ncb0.set_label(\"|z|\")\n\nim1 = axes[1].imshow(phase, cmap=\"twilight\", vmin=-np.pi, vmax=np.pi, aspect=\"equal\")\naxes[1].set_title(r\"Faza $\\varphi = \\arg(z)$ — wyglada na losowa\")\naxes[1].set_xlabel(\"kolumna [piksel]\")\naxes[1].set_ylabel(\"wiersz [piksel]\")\naxes[1].set_xticks([0, W // 2, W - 1])\naxes[1].set_yticks([0, H // 2, H - 1])\ncb1 = plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04,\n                   ticks=[-np.pi, 0, np.pi])\ncb1.set_label(\"arg(z) [rad]\")\ncb1.ax.set_yticklabels([r\"$-\\pi$\", \"0\", r\"$\\pi$\"])\n\nfig.suptitle(\"Ten sam syntetyczny SLC w dwoch widokach: amplituda vs faza\")\nplt.tight_layout(rect=[0, 0, 1, 0.94])\nplt.savefig(\"amplituda-i-faza-dane-zespolone-ktorych-nie-ma-w-optyce-1.png\",\n            dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "phase-misconceptions-quiz",
+      "title": "Sprawdź: co właściwie niesie faza SLC?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o pikselu z = A·exp(iφ) z produktu Sentinel-1 SLC są PRAWDZIWE? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Optyczny piksel z Sentinel-2 również ma fazę optyczną, tylko nie jest ona zapisywana w produkcie — wystarczy odpowiedni format pliku, żeby ją odzyskać.",
+          "Faza pojedynczego piksela SLC nad jednorodnym obszarem (np. spokojnym polem) jest w praktyce niemal losowa i ma rozkład prawie jednostajny na przedziale (-π, π].",
+          "Faza JEDNEGO SLC jest słabo użyteczna, ale różnica faz dwóch akwizycji tej samej sceny (interferogram) niesie informację o deformacji terenu w skali ułamka długości fali — mm-cm.",
+          "HH/HV/VV/VH to cztery „kanały koloru SAR\", a faza to po prostu piąty kanał kolorystyczny, który dodajemy do RGB jak alfa-kanał."
+        ],
+        "correct": [
+          1,
+          2
+        ],
+        "explanation": "Opcja 1 jest fałszywa: piksel optyczny powstaje z koherentnej integracji setek miliardów fotonów w oknie kilku-kilkudziesięciu mikrosekund. Faza optyczna nie tyle nie jest zapisana, co jest **fizycznie niszczona** przez integrację (źródło — Słońce — ma mikroskopijną koherencję czasową, więc fazy poszczególnych fotonów się losowo uśredniają). Żaden format pliku tego nie odwróci. Opcja 2 jest prawdziwa: dla obszaru jednorodnego suma phasorów tysięcy drobnych rozpraszaczy w komórce rozdzielczości produkuje wypadkową fazę o niemal jednostajnym rozkładzie na (-π, π] — to ta sama fizyka, która generuje speckle w amplitudzie. To dlatego pojedyncza mapa fazowa wygląda jak czysty szum. Opcja 3 jest prawdziwa: bezwzględna faza jest losowa, ale **różnica** faz dwóch akwizycji tej samej sceny (interferogram) jest deterministyczną funkcją zmiany drogi optycznej między datami — modulo 2π. Po usunięciu komponentu topograficznego pozostaje komponent deformacyjny mierzony w mm-cm. To fundament InSAR (m5). Opcja 4 jest fałszywa: HH/HV/VV/VH to cztery realne kombinacje polaryzacji nadawanej i odbieranej, niosące informację o mechanizmie rozpraszania — nie są kanałami koloru. Faza nie jest kanałem koloru w ogóle; jest **kątem każdego z tych czterech zespolonych pomiarów** osobno. Pomylenie polarymetrii z 'kolorem SAR' to klasyczna pułapka — wracamy do niej w lekcji 1.6.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "oppenheim-experiment",
+      "title": "Faza FFT niesie strukturę — eksperyment Oppenheima i Lima",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/PROC.1981.12022",
+          "title": "The importance of phase in signals",
+          "kind": "paper",
+          "author": "Alan V. Oppenheim and Jae S. Lim",
+          "year": 1981
+        },
+        {
+          "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+          "title": "Digital Processing of Synthetic Aperture Radar Data — Chapter 4",
+          "kind": "book",
+          "author": "Ian G. Cumming and Frank H. Wong",
+          "year": 2005
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Pierwsze spotkanie z fazą SLC bywa rozczarowujące. Wyświetlasz `np.angle(z)` jednego kafelka Sentinela-1 i widzisz **idealny szum** — kolorowa kasza wypełniająca cały zakres $(-\\pi, \\pi]$ niemal jednostajnie. Stąd częsta misconception:\n\n> *„Faza pojedynczego SLC wygląda na losową, więc można ją wyrzucić.\"*\n\nTo prawda, że *bezwzględna* faza pojedynczego piksela jest pseudo-losowa — wynika z sumy phasorów tysięcy drobnych rozpraszaczy w komórce rozdzielczości, każdy z lekko inną drogą optyczną. Ale wniosek „można ją wyrzucić\" jest **głęboko zły** z dwóch niezależnych powodów.\n\n**Powód pierwszy — różnica faz.** Faza jednego obrazu jest losowa, ale faza *różnicy* dwóch SLC tej samej sceny zarejestrowanych w odstępie dni-tygodni (interferogram) **nie jest losowa**: koduje sub-falowy ruch terenu — mm-cm deformacji, milimetrowy zsuw, tonącą platformę wiertniczą, oddychanie wulkanu. To podstawa InSAR (moduł 5) i koherencji interferometrycznej (moduł 4). Wyrzucając fazę SLC, świadomie tracisz dostęp do klasy zjawisk, których optyka nigdy nie zmierzy.\n\n**Powód drugi — faza FFT obrazu niesie strukturę.** Klasyczny eksperyment Oppenheima i Lima (1981): weź dwa obrazy A i B, policz ich FFT, **wymień** moduł A z fazą B i wykonaj IFFT. Wynik wygląda jak B, nie A. **Faza wygrywa**, bo to ona koduje położenie krawędzi i strukturę przestrzenną — moduł niesie głównie kontrast i ogólny rozkład częstotliwości.\n\n![Eksperyment fazowy Oppenheima na dwóch obrazach z napisami AI i SAR w czterech panelach: u góry oryginały (lewo: 'AI', prawo: 'SAR'); na dole dwie rekonstrukcje IFFT po wymianie modułu i fazy — po lewej wynik z modułem z 'AI' i fazą z 'SAR' wyraźnie pokazuje litery 'SAR'; po prawej wynik z modułem z 'SAR' i fazą z 'AI' wyraźnie pokazuje litery 'AI'. Faza wygrywa.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/oppenheim-phase-swap-experiment.png)\n\nZa chwilę odtworzysz ten eksperyment w 5 linijkach numpy. Cel: zbudować mięśniową pamięć, że **faza FFT nie jest dekoracją** — i przygotować intuicję do tego, dlaczego faza SLC w ogóle warta jest, by ją zapisać, kalibrować i przenosić między akwizycjami."
+      }
+    },
+    {
+      "id": "exercise-phase-swap",
+      "title": "Zaimplementuj `swap_magnitude_phase` — przeszczep fazy w FFT",
+      "description": "Wczytaj dwa obrazki z /inputs/, weź moduł widma jednego i fazę widma drugiego, policz IFFT i zobacz, który napis przeżyje rekonstrukcję.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/PROC.1981.12022",
+          "title": "The importance of phase in signals",
+          "kind": "paper",
+          "author": "Alan V. Oppenheim and Jae S. Lim",
+          "year": 1981
+        },
+        {
+          "url": "https://numpy.org/doc/stable/reference/routines.fft.html",
+          "title": "numpy.fft — Discrete Fourier Transform routines",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Klasyczny eksperyment Oppenheima & Lima (1981) pokazuje, że **faza FFT obrazu niesie jego strukturę**, a amplituda FFT — głównie kontrast i rozkład częstotliwości. Sprawdźmy to ręcznie na dwóch wczytanych obrazach.\n\nZaimplementuj funkcję:\n\n```\nswap_magnitude_phase(image_mag, image_phase) -> numpy.ndarray\n```\n\nktóra:\n\n1. Liczy 2D FFT obu obrazów (`numpy.fft.fft2`).\n2. Bierze **moduł** widma z `image_mag` (`numpy.abs`).\n3. Bierze **fazę** widma z `image_phase` (`numpy.angle`).\n4. Składa nowe widmo $F' = |F_{\\text{mag}}|\\cdot e^{i\\,\\arg F_{\\text{phase}}}$.\n5. Liczy odwrotne 2D FFT (`numpy.fft.ifft2`) i **zwraca część rzeczywistą** (`numpy.real`) jako tablicę o tym samym kształcie co wejściowe obrazy.\n\nPo stronie panelu masz dwa wejściowe obrazki (`AI` i `SAR`, każdy 128×128 px). Pyodide automatycznie montuje je w wirtualnym katalogu `/inputs/`, więc otwierasz je tak:\n\n```python\nfrom PIL import Image\nimport numpy as np\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\n```\n\nPo prawej widzisz **oczekiwany wynik** dla wywołania `swap_magnitude_phase(img_AI, img_SAR)` — moduł zaczerpnięty z `AI`, faza z `SAR`. Mimo że amplituda pochodzi z napisu „AI\", w rekonstrukcji jasno widać literki **„SAR\"** — bo to faza niesie strukturę, a nie amplituda. Twoje rozwiązanie powinno tę figurę odtworzyć (przycisk **▶ Run** podmieni statyczny obraz na to, co naprawdę wyprodukował Twój kod).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\n# Wczytujemy oba kafelki (Pyodide montuje je w /inputs/).\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\n\n\ndef swap_magnitude_phase(image_mag, image_phase):\n    # image_mag, image_phase: numpy.ndarray, real, ten sam shape (np. 128 x 128).\n    # Zwroc real numpy.ndarray o tym samym shape, z |F| z image_mag i arg(F) z image_phase.\n    #\n    # Krok 1: F_mag   = np.fft.fft2(image_mag)\n    # Krok 2: F_phase = np.fft.fft2(image_phase)\n    # Krok 3: nowe widmo F' = |F_mag| * exp(1j * arg(F_phase))\n    # Krok 4: zwroc np.real(np.fft.ifft2(F'))\n    raise NotImplementedError(\"Uzupelnij implementacje swap_magnitude_phase.\")\n\n\n# Wizualizacja (zostawiamy, zeby plot pojawil sie po prawej zamiast statycznego obrazka).\nresult = swap_magnitude_phase(img_AI, img_SAR)\nplt.figure(figsize=(5.2, 5.2))\nplt.imshow(result, cmap='gray')\nplt.title(\"|F(AI)| z faza F(SAR) -> widac literki 'SAR'\")\nplt.xlabel(\"kolumna [piksel]\")\nplt.ylabel(\"wiersz [piksel]\")\nplt.tight_layout()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "wynik_ma_wlasciwy_shape_i_jest_rzeczywisty",
+            "body": "import numpy as np\nfrom PIL import Image\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\nout = swap_magnitude_phase(img_AI, img_SAR)\nassert hasattr(out, 'shape'), 'swap_magnitude_phase musi zwracac numpy.ndarray, nie {!r}'.format(type(out))\nassert out.shape == img_AI.shape, f'shape wyjscia {out.shape} != shape wejscia {img_AI.shape}'\n# Wynik IFFT z Hermitowsko symetrycznym widmem jest rzeczywisty po np.real;\n# dopuszczamy zarowno float32, float64, jak i complex jesli np.real(...) nie zostalo wywolane.\nassert np.iscomplexobj(out) is False or np.max(np.abs(out.imag)) < 1e-6, \\\n    'wynik powinien byc rzeczywisty (zastosuj np.real(np.fft.ifft2(...)))'",
+            "hidden": false
+          },
+          {
+            "name": "swap_z_soba_samym_zwraca_oryginal",
+            "body": "import numpy as np\nfrom PIL import Image\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\n# swap(x, x) musi odtworzyc x: |F(x)| * exp(i*arg(F(x))) == F(x), wiec IFFT zwraca x.\nout = np.asarray(swap_magnitude_phase(img_AI, img_AI), dtype=float)\nassert np.allclose(out, img_AI, atol=1e-6), \\\n    f'swap_magnitude_phase(x, x) powinno zwrocic x; max blad = {np.max(np.abs(out - img_AI)):.3e}'",
+            "hidden": true
+          },
+          {
+            "name": "modul_widma_pochodzi_z_image_mag",
+            "body": "import numpy as np\nfrom PIL import Image\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\nout = np.asarray(swap_magnitude_phase(img_AI, img_SAR), dtype=float)\n# Modul widma wyjsciowego musi byc rowny modulowi widma image_mag.\nF_out = np.fft.fft2(out)\nF_AI = np.fft.fft2(img_AI)\nerr = float(np.max(np.abs(np.abs(F_out) - np.abs(F_AI))))\nref = float(np.max(np.abs(F_AI)))\nassert err / (ref + 1e-12) < 1e-6, \\\n    f'|F(wyjscie)| powinno byc rowne |F(image_mag)|; relatywny blad = {err / (ref + 1e-12):.3e}'",
+            "hidden": true
+          },
+          {
+            "name": "faza_widma_pochodzi_z_image_phase",
+            "body": "import numpy as np\nfrom PIL import Image\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\nout = np.asarray(swap_magnitude_phase(img_AI, img_SAR), dtype=float)\nF_out = np.fft.fft2(out)\nF_SAR = np.fft.fft2(img_SAR)\n# Faza widma wyjsciowego musi byc rowna fazie widma image_phase wszedzie tam,\n# gdzie obie amplitudy sa znaczace (poza prazkami liczbowymi zerami).\nref = float(np.max(np.abs(F_SAR)))\nmask = (np.abs(F_SAR) > 1e-3 * ref) & (np.abs(F_out) > 1e-3 * ref)\ndiff = np.angle(F_out[mask] * np.conj(F_SAR[mask]))\nmax_diff = float(np.max(np.abs(diff))) if mask.any() else 0.0\nassert max_diff < 1e-4, \\\n    f'arg(F(wyjscie)) powinno byc rowne arg(F(image_phase)); max |delta phi| = {max_diff:.3e} rad'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\n\n\ndef swap_magnitude_phase(image_mag, image_phase):\n    F_mag = np.fft.fft2(image_mag)\n    F_phase = np.fft.fft2(image_phase)\n    magnitude = np.abs(F_mag)\n    phase = np.angle(F_phase)\n    F_new = magnitude * np.exp(1j * phase)\n    return np.real(np.fft.ifft2(F_new))\n\n\nresult = swap_magnitude_phase(img_AI, img_SAR)\nplt.figure(figsize=(5.2, 5.2))\nplt.imshow(result, cmap='gray')\nplt.title(\"|F(AI)| z faza F(SAR) -> widac literki 'SAR'\")\nplt.xlabel(\"kolumna [piksel]\")\nplt.ylabel(\"wiersz [piksel]\")\nplt.tight_layout()\nplt.show()\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/test-image-fft-AI.png",
+            "alt": "Obraz 128x128 grayscale z czarnym pogrubionym napisem 'AI' wycentrowanym na białym tle.",
+            "caption": "image_mag (zaczerpniemy z niego moduł widma)"
+          },
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/test-image-fft-SAR.png",
+            "alt": "Obraz 128x128 grayscale z czarnym pogrubionym napisem 'SAR' wycentrowanym na białym tle.",
+            "caption": "image_phase (zaczerpniemy z niego fazę widma)"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/test-image-fft-expected-swap.png",
+          "alt": "Rekonstrukcja IFFT 128x128 grayscale: mimo że moduł widma zaczerpnięto z obrazu z napisem 'AI', w wynikowym obrazie wyraźnie czytelne są ciemne kontury liter 'SAR' na umiarkowanie jasnym tle — faza wygrywa.",
+          "caption": "Oczekiwany wynik swap_magnitude_phase(img_AI, img_SAR) — faza z 'SAR' rządzi.",
+          "live": true
+        },
+        "requiresPackages": [
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-phase-experiments",
+      "title": "Spróbuj sam: co się stanie, gdy wyzerujesz fazę?",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\nimg_AI = np.array(Image.open('/inputs/test-image-fft-AI.png').convert('L'), dtype=float)\nimg_SAR = np.array(Image.open('/inputs/test-image-fft-SAR.png').convert('L'), dtype=float)\n\n\ndef swap_magnitude_phase(image_mag, image_phase):\n    F_mag = np.fft.fft2(image_mag)\n    F_phase = np.fft.fft2(image_phase)\n    return np.real(np.fft.ifft2(np.abs(F_mag) * np.exp(1j * np.angle(F_phase))))\n\n\n# Eksperyment 1: faza wyzerowana -> samo widmo amplitudowe rekombinowane bez fazy.\n# Co zostanie z obrazu, jezeli wyrzucimy faze i ustawimy ja na 0 wszedzie?\ndef zero_phase(image):\n    F = np.fft.fft2(image)\n    return np.real(np.fft.ifft2(np.abs(F)))\n\n\n# Eksperyment 2: amplituda stala (=1) -> sama faza odbudowuje strukture.\ndef unit_magnitude(image):\n    F = np.fft.fft2(image)\n    return np.real(np.fft.ifft2(np.exp(1j * np.angle(F))))\n\n\nfig, axes = plt.subplots(1, 4, figsize=(15.0, 4.0))\npanels = [\n    (img_AI, \"oryginal 'AI'\"),\n    (swap_magnitude_phase(img_AI, img_SAR), \"|F(AI)| + arg(F(SAR))\"),\n    (zero_phase(img_AI),    \"|F(AI)| z faza = 0  ->  symetryczny duch\"),\n    (unit_magnitude(img_AI), \"|F| = 1 z faza F(AI)  ->  ostre krawedzie 'AI'\"),\n]\nfor ax, (img, title) in zip(axes, panels):\n    ax.imshow(img, cmap='gray')\n    ax.set_title(title, fontsize=10)\n    ax.set_xticks([]); ax.set_yticks([])\n\nplt.tight_layout()\nplt.show()\n\n# Spróbuj sam:\n#   - zamien role: swap_magnitude_phase(img_SAR, img_AI) — co wygrywa?\n#   - dodaj losowy szum do amplitudy widma: F = np.abs(F) * (1 + 0.3*rng.normal(...))\n#     -> zobacz, ile faza musi 'unieść' samodzielnie.\n#   - sprawdz, jak zachowuje sie obraz przy permutacji fazy (np.random.shuffle).\n",
+        "encouragement": "Pokombinuj z fazą — wyzeruj ją, przetasuj losowo, zostaw samą; sprawdź, kiedy obraz znika, a kiedy się broni."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+      "title": "Sentinel-1 SLC product specification (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+      "title": "Digital Processing of Synthetic Aperture Radar Data",
+      "kind": "book",
+      "author": "Ian G. Cumming and Frank H. Wong",
+      "year": 2005
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1109/PROC.1981.12022",
+      "title": "The importance of phase in signals",
+      "kind": "paper",
+      "author": "Alan V. Oppenheim and Jae S. Lim",
+      "year": 1981
+    },
+    {
+      "url": "https://numpy.org/doc/stable/reference/routines.fft.html",
+      "title": "numpy.fft — Discrete Fourier Transform routines",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

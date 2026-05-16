@@ -1,0 +1,208 @@
+{
+  "schemaVersion": 1,
+  "slug": "canny-i-sobel-na-optyce-vs-sar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m3",
+  "title": "Canny i Sobel na optyce vs SAR",
+  "eyebrow": "KRAWĘDZIE I TEKSTURA",
+  "description": "Te same dwa detektory krawędzi — Sobel i Canny — uruchomione najpierw na czystym cameramanie, potem na tym samym kafelku po Gamma speckle. Widzisz, jak na SAR liczba pikseli krawędzi rośnie 2-3× i jak gradient eksploduje równomiernie w całym obrazie — i wiesz już, dlaczego potrzebujemy ratio-edge detektorów typu Touzi (następna lekcja).",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "sobel-canny-recap",
+      "title": "Sobel i Canny — szybkie przypomnienie na optyce",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1986.4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John Canny",
+          "year": 1986
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Sobel_operator",
+          "title": "Sobel operator — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zanim zobaczymy, jak Canny rozbija się o speckle, ustalmy fundament — **oba detektory zakładają model szumu addytywnego, niezależnego od jasności piksela**. Sobel liczy dyskretne pochodne kierunkowe konwolucją kernela 3×3, a magnituda gradientu $G = \\sqrt{G_x^2 + G_y^2}$ jest kandydatem na „mocną krawędź\". Canny owija to w pełen pipeline:\n\n1. **Wygładzenie Gaussem** (zwykle $\\sigma \\approx 1$) — żeby pochodne nie reagowały na pojedyncze piksele.\n2. **Sobel** wzdłuż osi x i y, magnituda i kierunek gradientu.\n3. **Non-maximum suppression** wzdłuż kierunku gradientu — zostawia tylko lokalne maksima.\n4. **Hysteresis thresholding** z dwoma progami: piksel powyżej `high` jest krawędzią; piksel między `low` i `high` jest krawędzią tylko jeśli sąsiaduje z innym powyżej `high`.\n\n![Trzy panele 256×256 obrazu cameraman obok siebie: po lewej czysty obraz w skali szarości (kontrastowa sylwetka operatora na tle nieba i statywu); w środku magnituda gradientu Sobela — wyraźne jasne pasma wzdłuż konturów postaci, statywu i horyzontu, ciemne tło na płaskim niebie; po prawej binarna mapa krawędzi Canny — cienkie białe kontury sylwetki, statywu i budynków, czarne tło na płaskim niebie.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/canny-sobel-optics-recap.png)\n\nNa **optyce** to działa, bo szum kamery jest *addytywny gaussowski* — w obszarze gładkim odchylenie standardowe pixela wynosi `~σ_n`, niezależnie od jego wartości średniej. Sobel rzuca więc te same kilka procent szumu na cały obraz, Gauss z kroku 1 łatwo to wytłumia, a hysteresis wybiera ostre maksima w miejscach prawdziwych krawędzi. W rezultacie pikseli krawędzi jest typowo `5–10%` powierzchni obrazu — ta liczba jest naszą bazą porównawczą do następnej sekcji."
+      }
+    },
+    {
+      "id": "profil-gradientu",
+      "title": "Profil 1D: gradient sygnału optycznego vs SAR",
+      "description": "Pojedynczy wiersz obrazu cameraman pokazany na obu modalnościach — i Sobel po nim. Na jednym wykresie widać, dlaczego progowanie gradientu, które działa na optyce, na SAR rzuca tysiące fałszywych alarmów.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/canny-i-sobel-na-optyce-vs-sar-1.png",
+        "alt": "Wykres złożony z dwóch wykresów liniowych jeden nad drugim, dzielących wspólną oś X. Oś X: indeks kolumny od 0 do 255 (px). Górny panel — amplituda w zakresie -0,05 do 1,1: niebieska linia to czysty cameraman (gładko zmienia się od ~0,55 na lewo, spada do ~0,15 między kolumnami 100-180 — sylwetka operatora, wraca do ~0,7 po prawej, kilka stromych ale czystych skoków); czerwona linia to SAR (Gamma L=4) — porusza się wokół tej samej trajektorii, ale skacze góra-dół ±0,3 niemal na każdej kolumnie. Dolny panel — magnituda gradientu Sobela (oś Y od 0 do ~3): niebieski Sobel(optyka) ma 3-4 wyraźne piki o wysokości 1,5-2,5 dokładnie tam, gdzie czysty sygnał gwałtownie zmienia wartość, a w obszarach gładkich jest praktycznie zero; czerwony Sobel(SAR) jest ciągłym lasem pików o wysokości 0,5-2 na każdej kolumnie — gradient eksploduje wszędzie, nie tylko na krawędziach. Siatka jasnoszara, legenda w prawym górnym rogu każdego panelu.",
+        "caption": "Rys. 1. Sobel(I) wzdłuż jednego wiersza obrazu: na optyce gradient jest zerowy poza paru wyraźnymi krawędziami; na SAR — niezerowy wszędzie. Globalny próg, który na optyce ładnie wybierze 3-4 prawdziwe krawędzie, na SAR poda dziesiątki fałszywych.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\nfrom scipy.ndimage import sobel\n\nROOT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa\"\n)\nclean = np.load(ROOT + \"/assets/inputs/sar-classical-cameraman-clean.npz\")[\n    \"clean\"\n].astype(np.float32)\nspeckled = np.asarray(\n    Image.open(ROOT + \"/assets/inputs/sar-classical-cameraman-speckled.png\").convert(\n        \"L\"\n    ),\n    dtype=np.float32,\n) / 255.0\n\nROW = 100  # przecina sylwetke kamerzysty + plaski front\nxs = np.arange(clean.shape[1])\n\ndef sobel_mag(img):\n    return np.hypot(sobel(img, axis=0), sobel(img, axis=1))\n\ngrad_clean = sobel_mag(clean)\ngrad_speckled = sobel_mag(speckled)\n\nfig, (ax_top, ax_bot) = plt.subplots(\n    2, 1, figsize=(9.2, 6.4), constrained_layout=True, sharex=True\n)\nax_top.plot(\n    xs, clean[ROW, :], color=\"#1f77b4\", lw=1.6, label=\"optyka (czysty cameraman)\"\n)\nax_top.plot(\n    xs, speckled[ROW, :], color=\"#d62728\", lw=1.0, alpha=0.9, label=\"SAR (Gamma L=4)\"\n)\nax_top.set_ylabel(\"amplituda [-]\")\nax_top.set_title(\n    \"Profil 1D wiersza nr 100: ten sam sygnal, ale na SAR pikseli skacze gora-dol\"\n)\nax_top.set_ylim(-0.05, 1.1)\nax_top.grid(True, alpha=0.3)\nax_top.legend(loc=\"upper right\", fontsize=9)\n\nax_bot.plot(\n    xs,\n    grad_clean[ROW, :],\n    color=\"#1f77b4\",\n    lw=1.6,\n    label=\"|Sobel(optyka)| - 3-4 wyrazne piki = krawedzie\",\n)\nax_bot.plot(\n    xs,\n    grad_speckled[ROW, :],\n    color=\"#d62728\",\n    lw=1.0,\n    alpha=0.9,\n    label=\"|Sobel(SAR)| - dziesiatki pikow w kazdym miejscu\",\n)\nax_bot.set_xlabel(\"kolumna [px]\")\nax_bot.set_ylabel(\"magnituda gradientu [-]\")\nax_bot.set_title(\n    \"Sobel(I) tego samego wiersza - na SAR gradient eksploduje wszedzie, nie tylko na krawedziach\"\n)\nax_bot.set_xlim(0, clean.shape[1] - 1)\nax_bot.set_ylim(0, max(grad_speckled[ROW, :].max(), grad_clean[ROW, :].max()) * 1.05)\nax_bot.grid(True, alpha=0.3)\nax_bot.legend(loc=\"upper right\", fontsize=9)\n\nfig.savefig(\n    ROOT + \"/assets/plots/canny-i-sobel-na-optyce-vs-sar-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\nplt.close(fig)\nprint(\"OK\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "dlaczego-eksploduje",
+      "title": "Dlaczego gradient eksploduje na speckle",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.3036",
+          "title": "A statistical and geometrical edge detector for SAR images",
+          "kind": "paper",
+          "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+          "year": 1988
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Spójrzmy na pochodną sygnału SAR z modelu multiplikatywnego $I_{\\text{obs}} = R \\cdot N$, gdzie $R$ to prawdziwa odbiciowość, a $N$ to szum speckle o $\\mathbb{E}[N] = 1$, $\\operatorname{Var}[N] = 1/L$:\n\n$$\\frac{\\partial I_{\\text{obs}}}{\\partial x} \\;=\\; \\underbrace{\\frac{\\partial R}{\\partial x} \\cdot N}_{\\text{prawdziwa krawędź modulowana szumem}} \\;+\\; \\underbrace{R \\cdot \\frac{\\partial N}{\\partial x}}_{\\text{,,gradient samego szumu''}}$$\n\nDrugi człon jest zabójczy z trzech naraz powodów:\n\n- **Jest niezerowy wszędzie.** $N$ to losowa realizacja Gamma — sąsiednie piksele są niezależne, więc ich różnica `~Gamma - Gamma` ma rozkład o ogonach sięgających daleko od zera. Sobel na czystym speckle (płaski region) daje magnitudę porównywalną z magnitudą na prawdziwej krawędzi optyki.\n- **Skaluje się z jasnością.** Mnożnik $R$ z przodu sprawia, że jasne obszary mają większy „gradient szumu\" niż ciemne, mimo że *frakcyjny* poziom szumu jest identyczny. Globalny próg `high_threshold` Canny'ego jest więc systematycznie *zbyt restrykcyjny* w cieniach i *zbyt liberalny* w światłach.\n- **Wygładzenie Gaussem nie pomaga.** Pre-blur z kroku 1 Canny'ego redukuje wariancję $N$ proporcjonalnie do rozmiaru okna — ale jednocześnie *równie silnie* rozmywa prawdziwą krawędź $\\partial R / \\partial x$. SNR nie rośnie, krawędź się tępi, a fałszywe krawędzie i tak przechodzą sito.\n\n![Obraz złożony z czterech paneli ułożonych w siatkę 2×2. Górny rząd: po lewej czysty cameraman (sylwetka operatora ostro odcięta od jasnego nieba), po prawej Canny zaaplikowany na czysty cameraman — cienkie, dobrze zorganizowane białe kontury postaci, statywu i horyzontu na całkowicie czarnym tle, około 6700 pikseli krawędzi. Dolny rząd: po lewej ten sam cameraman po Gamma speckle L=4 (ziarnistość na całym obrazie), po prawej Canny na speckled — gęsty „dywan\" białych pikseli rozsianych po całej powierzchni obrazu, w tym po obszarach które na czystej referencji były jednorodne (niebo); kontury postaci są dalej widoczne, ale toną w lesie fałszywych alarmów; około 17600 pikseli krawędzi (2,6× więcej niż na czystej optyce).](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/canny-edges-optics-vs-sar-2x2.png)\n\nWniosek operacyjny: każdy detektor oparty na **różnicy** wartości pikseli będzie się rozpadał na SAR. Dobra wiadomość — krawędź pozostała w obrazie, tylko musimy szukać jej inaczej. W następnej lekcji wprowadzimy detektor Touziego, który zamiast różnicy `I_1 - I_2` patrzy na **stosunek** `I_1 / I_2` średnich w dwóch sąsiednich półoknach — a stosunek dwóch zmiennych Gamma ma rozkład *niezależny od $R$* (CFAR w sensie statystyki mnożnej)."
+      }
+    },
+    {
+      "id": "quiz-dlaczego-pada",
+      "title": "Sprawdź: który diagnoza jest poprawna",
+      "type": "quiz",
+      "data": {
+        "question": "Po obejrzeniu wykresu profilu 1D oraz panelu 2×2 z Canny — który z poniższych opisów najlepiej oddaje, dlaczego ten sam detektor Canny (sigma=1, low=0.10, high=0.20) daje czyste kontury na optyce, a na SAR generuje gęsty „dywan\" fałszywych krawędzi? Wybierz **jedną** odpowiedź.",
+        "options": [
+          "Canny nie wygładził obrazu wystarczająco — wystarczy podnieść `sigma` z 1 do 3 lub 4 i fałszywe krawędzie znikną bez utraty prawdziwych konturów.",
+          "Niech mnie diabli — to po prostu kwestia progów. Trzeba podnieść `high_threshold` z 0.20 do 0.45 i większość fałszywych alarmów odpadnie, a prawdziwe krawędzie zostaną.",
+          "Sobel zakłada szum addytywny o stałej wariancji. Na SAR `Var(N)` skaluje się z `R²`, więc gradient `R·∂N/∂x` jest niezerowy wszędzie i porównywalny z gradientem prawdziwej krawędzi `∂R/∂x · N`. Żaden globalny próg ani pre-blur nie rozdziela tych dwóch źródeł — potrzebny jest operator oparty na **stosunku** średnich (Touzi), nie na różnicy.",
+          "Speckle to po prostu impulsowy szum sól-pieprz — wystarczy filtr medianowy 3×3 przed Cannym i wszystko wróci do normy."
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "Najgłębszy problem leży w **modelu szumu**, nie w doborze parametrów. Z rozwinięcia pochodnej `∂I_obs/∂x = ∂R/∂x · N + R · ∂N/∂x` widać, że drugi człon jest niezerowy wszędzie, a jego wartość skaluje się z `R` (jasnością piksela), więc globalny próg dla Canny'ego nie ma sensu. Dystraktor (A) myli efekt z przyczyną — pre-blur Gaussem redukuje wariancję szumu, ale **równie silnie** rozmywa prawdziwy gradient $\\partial R / \\partial x$, więc SNR się nie poprawia. (B) podnoszenie `high_threshold` faktycznie zredukuje liczbę fałszywych alarmów, ale **proporcjonalnie** wytnie też prawdziwe krawędzie w ciemnych obszarach (gdzie ich amplituda jest niska, bo $|∂R/∂x|$ skaluje się z $R$) — kompromis, którego nie da się dobrać globalnie. (D) myli rozkład speckle (Gamma, gładko rozłożony) z rozkładem impulsowym (kilka skrajnych outlierów na czystym tle); median 3×3 na Gamma-szumie zachowuje się prawie jak liniowy filtr o małej apodyzacji — przerabialiśmy to w poprzednim module. Właściwa odpowiedź to detektor oparty na statystyce mnożnej — stosunek średnich w dwóch półoknach (Touzi, 1988), którego rozkład jest *niezależny od $R$*. To następna lekcja.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "code-canny-na-obu-modalnosciach",
+      "title": "Zaaplikuj Canny do obu obrazów i zmierz „eksplozję\" fałszywych krawędzi",
+      "description": "Po lewej masz speckled cameraman (z poprzedniej lekcji modułu 2). Po prawej — referencyjny output Canny'ego na tym samym kafelku. Twoja funkcja `apply_canny` użyje kanonicznych parametrów z teorii i powinna odtworzyć ten wynik 1:1.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1986.4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John Canny",
+          "year": 1986
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.canny",
+          "title": "skimage.feature.canny — scikit-image documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `apply_canny(img)`, która zwraca **binarną mapę krawędzi** (`np.ndarray`, `dtype=bool`, kształt jak `img`) dla obrazu w skali szarości `float32 ∈ [0, 1]`. Użyj `skimage.feature.canny` z **kanonicznymi parametrami** ustalonymi w teorii:\n\n- `sigma = 1.0`\n- `low_threshold = 0.10`\n- `high_threshold = 0.20`\n\n```python\nimg = np.zeros((8, 8), dtype=np.float32); img[3, :] = 1.0\nout = apply_canny(img)\nout.shape == (8, 8) and out.dtype == bool  # True\n```\n\nPreview w `starterCode` wczyta dwie wersje cameramana (czystą i speckled) z `/inputs/`, zaaplikuje Twoją funkcję na każdą, policzy liczbę pikseli krawędzi i wyświetli 4 panele obok siebie. Testy weryfikują, że (a) zwracasz `bool` o tym samym kształcie, (b) na czystej optyce liczba krawędzi mieści się w typowym przedziale 3500-11000 px, (c) na SAR liczba pikseli krawędzi jest co najmniej **1,6× większa** niż na optyce — to ilościowe odbicie „dywanu\" z teorii.",
+        "starterCode": "import numpy as np\nfrom skimage.feature import canny\n\ndef apply_canny(img):\n    \"\"\"\n    Zwroc binarna mape krawedzi Canny dla obrazu w skali szarosci\n    (float32 w [0, 1]). Uzyj parametrow kanonicznych z teorii:\n        sigma=1.0, low_threshold=0.10, high_threshold=0.20\n    Wynikiem ma byc np.ndarray dtype=bool i shape == img.shape.\n    \"\"\"\n    # TODO: jedna linia wystarczy.\n    return np.zeros_like(img, dtype=bool)\n\n\n# --- Preview: Canny na czystej optyce vs Canny na SAR ---\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\n\nedges_clean = apply_canny(clean)\nedges_speckled = apply_canny(speckled)\n\nn_clean = int(edges_clean.sum())\nn_speckled = int(edges_speckled.sum())\nratio = n_speckled / max(n_clean, 1)\nprint(f\"Canny na optyce:    {n_clean:5d} pikseli krawedzi\")\nprint(f\"Canny na SAR:       {n_speckled:5d} pikseli krawedzi\")\nprint(f\"Stosunek SAR/optyka:  {ratio:.2f}x  (powinno byc znaczaco > 1)\")\n\nfig, axes = plt.subplots(2, 2, figsize=(8.8, 8.8), constrained_layout=True)\nfor ax, (im, ttl, cmap, vmm) in zip(\n    axes.ravel(),\n    [\n        (clean, \"Optyka - wejscie\", \"gray\", (0, 1)),\n        (edges_clean, f\"Canny(optyka) - {n_clean} px\", \"gray\", (None, None)),\n        (speckled, \"SAR - wejscie (Gamma L=4)\", \"gray\", (0, 1)),\n        (\n            edges_speckled,\n            f\"Canny(SAR) - {n_speckled} px ({ratio:.1f}x)\",\n            \"gray\",\n            (None, None),\n        ),\n    ],\n):\n    ax.imshow(im, cmap=cmap, vmin=vmm[0], vmax=vmm[1])\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_bool_array_with_same_shape",
+            "body": "import numpy as np\nimg = np.zeros((32, 32), dtype=np.float32)\nimg[16, :] = 1.0  # pojedyncza pozioma krawedz\nout = apply_canny(img)\nassert hasattr(out, 'shape') and out.shape == img.shape, f'shape={getattr(out, \"shape\", None)}'\nassert out.dtype == bool, f'dtype={out.dtype}, oczekiwano bool'\nassert out.any(), 'na obrazie z pojedyncza krawedzia powinny byc wykryte jakies krawedzie'",
+            "hidden": false
+          },
+          {
+            "name": "canonical_params_detect_clean_cameraman_edges",
+            "body": "import numpy as np\nref = np.load('/inputs/sar-classical-cameraman-clean.npz')\nclean = ref['clean'].astype(np.float32)\nedges = apply_canny(clean)\nn = int(edges.sum())\n# Na czystym cameramanie z sigma=1, low=0.10, high=0.20 oczekujemy\n# kilku tysiecy pikseli krawedzi (typowo 5-10% obrazu 256x256 = 65536).\nassert 3500 < n < 11000, f'liczba pikseli krawedzi na czystej optyce = {n}; '\\\n    'oczekiwano w przedziale 3500-11000 (jak w teorii). Sprawdz parametry sigma/low/high.'",
+            "hidden": true
+          },
+          {
+            "name": "speckle_explodes_edge_count_at_least_1p6x",
+            "body": "import numpy as np\nfrom PIL import Image\nref = np.load('/inputs/sar-classical-cameraman-clean.npz')\nclean = ref['clean'].astype(np.float32)\nspeckled = np.asarray(\n    Image.open('/inputs/sar-classical-cameraman-speckled.png').convert('L'),\n    dtype=np.float32,\n) / 255.0\ne_clean = int(apply_canny(clean).sum())\ne_sar = int(apply_canny(speckled).sum())\nratio = e_sar / max(e_clean, 1)\nassert ratio >= 1.6, (\n    f'Canny na SAR powinien dac znaczaco wiecej pikseli krawedzi niz na optyce; '\n    f'otrzymano stosunek SAR/optyka = {ratio:.2f} (oczekiwano >= 1.6)'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_skimage_canny_on_clean_tile",
+            "body": "import numpy as np\nfrom skimage.feature import canny\nref = np.load('/inputs/sar-classical-cameraman-clean.npz')\nclean = ref['clean'].astype(np.float32)\nexpected = canny(clean, sigma=1.0, low_threshold=0.10, high_threshold=0.20)\ngot = apply_canny(clean)\nagree = float((got == expected).mean())\n# Dopuszczamy ~1% drift jesli ktos uzyl odrobine innej konwencji float;\n# rdzen powinien byc identyczny.\nassert agree >= 0.99, f'zgodnosc z referencyjnym skimage.feature.canny = {agree:.3f} < 0.99'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom skimage.feature import canny\n\ndef apply_canny(img):\n    return canny(\n        img.astype(np.float32),\n        sigma=1.0,\n        low_threshold=0.10,\n        high_threshold=0.20,\n    ).astype(bool)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-speckled.png",
+            "alt": "Kafelek SAR-podobny 256×256: cameraman po multi-look Gamma speckle (L=4 spojrzenia) — wyraźna ziarnistość na całym obrazie, kontury kamerzysty częściowo zatarte przez szum.",
+            "caption": "Wejście SAR (speckled cameraman, ten sam co w module 2)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": ".npz z kluczami 'clean' i 'speckled' (oba float32, 256×256) — czysta referencja optyczna używana w teorii i testach."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/canny-on-sar-expected-edges.png",
+          "alt": "Binarna mapa krawędzi: na czarnym tle gęsto rozsiane białe piksele tworzące „dywan\" — kontury sylwetki kamerzysty są jeszcze widoczne jako gęstsze skupiska, ale toną w lesie fałszywych alarmów rozrzuconych po całej powierzchni obrazu (~17600 pikseli krawędzi).",
+          "caption": "Cel: tak ma wyglądać Canny(speckled, sigma=1, low=0.10, high=0.20) — i tak właśnie wygląda klasyka „pierwszego strzału\" detekcji krawędzi na SAR."
+        },
+        "requiresPackages": [
+          "scikit-image",
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-sprobuj-uratowac-canny",
+      "title": "Spróbuj „uratować\" Canny na SAR — pre-blur, progi, median przed Cannym",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom skimage.feature import canny\nfrom scipy.ndimage import median_filter\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\n\n# Sproboj \"uratowac\" Canny na SAR. Cztery uchwyty:\n#   - sigma : pre-blur Gaussem; wieksze => mniej szumu, ale rozmyte krawedzie\n#   - low, high : progi hysteresis (wieksze => mniej krawedzi, ale takze\n#                 mniej prawdziwych w ciemnych obszarach)\n#   - pre_median : czy zaaplikowac filtr median 3x3 przed Cannym\nsigma = 1.0\nlow, high = 0.10, 0.20\npre_median = False\n\nimg = median_filter(speckled, size=3) if pre_median else speckled\nedges = canny(img, sigma=sigma, low_threshold=low, high_threshold=high)\nedges_clean = canny(clean, sigma=sigma, low_threshold=low, high_threshold=high)\n\nn_sar, n_opt = int(edges.sum()), int(edges_clean.sum())\nprint(f\"sigma={sigma}, low={low}, high={high}, pre_median={pre_median}\")\nprint(f\"  Canny(optyka):  {n_opt:5d} px\")\nprint(f\"  Canny(SAR):     {n_sar:5d} px   \"\n      f\"(stosunek SAR/optyka = {n_sar / max(n_opt, 1):.2f}x)\")\n\nfig, axes = plt.subplots(1, 2, figsize=(9, 4.6), constrained_layout=True)\naxes[0].imshow(edges_clean, cmap=\"gray\")\naxes[0].set_title(f\"Canny(optyka) - {n_opt} px\", fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(edges, cmap=\"gray\")\naxes[1].set_title(f\"Canny(SAR) - {n_sar} px\", fontsize=10)\naxes[1].set_axis_off()\nplt.show()\n",
+        "encouragement": "Pokręć `high` w górę do 0.4-0.5 i `sigma` do 3-4 — w którym momencie stosunek SAR/optyka zaczyna spadać, ale za cenę utraty prawdziwych krawędzi sylwetki na optyce?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1986.4767851",
+      "title": "A Computational Approach to Edge Detection",
+      "kind": "paper",
+      "author": "John Canny",
+      "year": 1986
+    },
+    {
+      "url": "https://doi.org/10.1109/36.3036",
+      "title": "A statistical and geometrical edge detector for SAR images",
+      "kind": "paper",
+      "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+      "year": 1988
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Sobel_operator",
+      "title": "Sobel operator — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.canny",
+      "title": "skimage.feature.canny — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+      "title": "OpenCV — Canny Edge Detection tutorial",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 7",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    }
+  ]
+}

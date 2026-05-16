@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "slug": "cfar-edge-i-detektor-touziego",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m3",
+  "title": "CFAR-edge i detektor Touziego",
+  "eyebrow": "KRAWĘDZIE I TEKSTURA",
+  "description": "Ten sam speckled cameraman, dwie filozofie detekcji krawędzi: Canny — różnica wartości pikseli, rozpada się na szumie mnożnym; Touzi — stosunek dwóch sąsiednich średnich, statystyka *niezależna* od jasności sceny. Implementujesz operator Touziego w 4 orientacjach, a potem zamieniasz jego ciągłą siłę w binarną decyzję o krawędzi za pomocą CFAR — progu skalibrowanego z konkretnego target false-alarm rate.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "stosunek-vs-roznica",
+      "title": "Dlaczego stosunek, a nie różnica",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.3036",
+          "title": "A statistical and geometrical edge detector for SAR images",
+          "kind": "paper",
+          "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+          "year": 1988
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z poprzedniej lekcji wiesz, że Canny dosłownie pada na speckle, bo pochodna `∂I/∂x` zawiera człon `R·∂N/∂x`, który skaluje się z lokalną jasnością $R$. Każdy próg na *różnicy* wartości pikseli jest więc lokalnie skalibrowany — globalnie nie działa. Touzi (1988) zadał właściwe pytanie: czy istnieje **funkcja sąsiednich średnich**, której rozkład *nie zależy* od $R$, a mimo to reaguje na obecność krawędzi?\n\nTak. Pod modelem multiplikatywnym $I = R \\cdot N$ z $\\mathbb{E}[N]=1$ i wielo-spojrzeniową statystyką Gamma o kształcie $L$, średnia z $n$ niezależnych pikseli ma rozkład $\\operatorname{Gamma}(Ln, R/(Ln))$. Dla dwóch sąsiednich półokien stosunek\n\n$$ r \\;=\\; \\frac{\\min(\\mu_1, \\mu_2)}{\\max(\\mu_1, \\mu_2)} \\;\\in\\; (0,\\, 1] $$\n\nma rozkład **niezależny od $R$** — w idealnej teorii to wariant rozkładu $F$-Snedecora o $(2Ln, 2Ln)$ stopniach swobody. Stała jasność sceny się skraca: liczy się tylko *proporcja* dwóch średnich, nie ich poziom. Ten brak zależności od $R$ to dokładnie własność **CFAR** (Constant False Alarm Rate): jeden próg działa tak samo na ciemnym morzu i na jasnym piasku, bo statystyka testowa jest jednorodna w obrazie.\n\nIntuicja jest prosta: w obszarze jednorodnym $\\mu_1 \\approx \\mu_2$ z dokładnością do speckle, więc $r \\to 1$. Na krawędzi $\\mu_1$ i $\\mu_2$ próbkują *różne* odbiciowości i $r$ wyraźnie spada. **Siłę krawędzi** definiujemy więc jako\n\n$$ s \\;=\\; 1 - r \\;\\in\\; [0,\\, 1) $$\n\ngdzie $s \\approx 0$ to gładkie tło, a $s$ bliskie $1$ to ostra dyskontynuacja.\n\n![Diagram pojedynczego okna 9×9 Touziego z podziałem pionowym: lewa połowa zamalowana na czerwono z dużą etykietą μ_1, prawa połowa na niebiesko z etykietą μ_2, środkowy wiersz w szarości jako pomijany kandydat na krawędź. Pod oknem podpis „Środkowy wiersz pomijany (kandydat na krawędź)\". Tytuł nad oknem: „Okno Touziego 9×9, podział pionowy: dwie połowy → dwie średnie → jeden stosunek r = min/max\".](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/touzi-window-two-halves.png)\n\nNastępna sekcja zamienia ten teoretyczny argument w empiryczny — porównuje dwa histogramy na tych samych regionach speckle: rozkład $|\\mu_1 - \\mu_2|$ (zmienia się z $R$) i rozkład $r$ (nie zmienia się z $R$)."
+      }
+    },
+    {
+      "id": "hist-diff-vs-ratio",
+      "title": "Histogramy: dlaczego stosunek jest CFAR, a różnica nie",
+      "description": "Symulacja Monte Carlo: 30 000 par półokien (n=25 pikseli każde, Gamma L=4) na regionie ciemnym (R=0,20) i jasnym (R=0,80). Po lewej rozkład |μ₁ − μ₂|, po prawej rozkład r = min/max.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/cfar-edge-i-detektor-touziego-1.png",
+        "alt": "Dwa wykresy obok siebie. Lewy panel: histogramy gęstości |μ₁−μ₂| (oś X w jednostkach intensywności od 0 do 0,16, oś Y gęstość prawdopodobieństwa od 0 do ok. 60). Dwa rozkłady: niebieski (ciemny region, R=0,20) skoncentrowany blisko 0 z modą ok. 0,015 i ogonem zanikającym do 0,06; czerwony (jasny region, R=0,80) z modą ok. 0,06 i ogonem do 0,16. Rozkłady są wyraźnie różne — czerwony jest cztery razy szerszy i przesunięty w prawo. Tytuł: „Różnica średnich: rozkłady zależą od R\". Prawy panel: histogramy gęstości r = min(μ₁,μ₂)/max(μ₁,μ₂) (oś X od 0,6 do 1,0, oś Y gęstość od 0 do ok. 7). Oba rozkłady (niebieski i czerwony) leżą *niemal idealnie na sobie*, ze szczytem ok. 0,93 i ogonem zanikającym poniżej 0,7. Tytuł: „Stosunek średnich: rozkłady identyczne, niezależnie od R\". Obie siatki jasnoszare; oba panele z legendą rozróżniającą region ciemny (R=0,20) i jasny (R=0,80).",
+        "caption": "Rys. 1. Po lewej: |μ₁−μ₂| na regionie ciemnym i jasnym — dwa rozkłady, dwa konieczne progi. Po prawej: r=min/max — jeden rozkład, jeden próg działa wszędzie. To jest cała mechanika CFAR w jednym obrazku.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(7)\nL = 4\nN = 30000\nhalf = 25  # liczba pikseli w polowinie okna\nR_dark = 0.20\nR_bright = 0.80\n\n# Srednia z half * L niezaleznych pikseli Gamma(1, R) -> Gamma(L*half, R/(L*half)).\ndef gamma_pair(R):\n    mu1 = rng.gamma(shape=L * half, scale=R / (L * half), size=N)\n    mu2 = rng.gamma(shape=L * half, scale=R / (L * half), size=N)\n    return mu1, mu2\n\nd_mu1, d_mu2 = gamma_pair(R_dark)\nb_mu1, b_mu2 = gamma_pair(R_bright)\ndiff_dark = np.abs(d_mu1 - d_mu2)\ndiff_bright = np.abs(b_mu1 - b_mu2)\nratio_dark = np.minimum(d_mu1, d_mu2) / np.maximum(d_mu1, d_mu2)\nratio_bright = np.minimum(b_mu1, b_mu2) / np.maximum(b_mu1, b_mu2)\n\nfig, (axL, axR) = plt.subplots(\n    1, 2, figsize=(11.0, 4.4), constrained_layout=True\n)\nbins_diff = np.linspace(0, 0.16, 60)\naxL.hist(diff_dark, bins=bins_diff, alpha=0.7, color=\"#3a3a8e\",\n         label=f\"region ciemny (R={R_dark:.2f})\", density=True)\naxL.hist(diff_bright, bins=bins_diff, alpha=0.55, color=\"#c54a4a\",\n         label=f\"region jasny (R={R_bright:.2f})\", density=True)\naxL.set_xlim(0, 0.16)\naxL.set_xlabel(r\"$|\\mu_1 - \\mu_2|$  [jednostki intensywności]\")\naxL.set_ylabel(\"gęstość prawdopodobieństwa [-]\")\naxL.set_title(\n    \"Różnica średnich: rozkłady zależą od R\\n\"\n    \"(jaśniejsza scena ⇒ większe |diff|; jeden próg nie obsłuży obu)\"\n)\naxL.grid(True, alpha=0.3)\naxL.legend(loc=\"upper right\", fontsize=9)\n\nbins_ratio = np.linspace(0.6, 1.0, 60)\naxR.hist(ratio_dark, bins=bins_ratio, alpha=0.7, color=\"#3a3a8e\",\n         label=f\"region ciemny (R={R_dark:.2f})\", density=True)\naxR.hist(ratio_bright, bins=bins_ratio, alpha=0.55, color=\"#c54a4a\",\n         label=f\"region jasny (R={R_bright:.2f})\", density=True)\naxR.set_xlim(0.6, 1.0)\naxR.set_xlabel(r\"$r = \\min(\\mu_1, \\mu_2) / \\max(\\mu_1, \\mu_2)$  [-]\")\naxR.set_ylabel(\"gęstość prawdopodobieństwa [-]\")\naxR.set_title(\n    \"Stosunek średnich: rozkłady identyczne, niezależnie od R\\n\"\n    \"(CFAR — jeden próg działa wszędzie)\"\n)\naxR.grid(True, alpha=0.3)\naxR.legend(loc=\"upper left\", fontsize=9)\n\nfig.savefig(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/cfar-edge-i-detektor-touziego-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "algorytm-touzi",
+      "title": "Algorytm Touziego — okno, 4 orientacje, jeden stosunek",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.3036",
+          "title": "A statistical and geometrical edge detector for SAR images",
+          "kind": "paper",
+          "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+          "year": 1988
+        },
+        {
+          "url": "https://doi.org/10.1109/36.673674",
+          "title": "An optimal multiedge detector for SAR image segmentation",
+          "kind": "paper",
+          "author": "Roger Fjørtoft, Armand Lopes, Patrick Marthon, Eliane Cubero-Castan",
+          "year": 1998
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "OK, idea jest jasna — używamy stosunku, nie różnicy. Teraz konkretny algorytm, krok po kroku:\n\n1. **Wybierz rozmiar okna $2w+1$** (typowo `w=3`, czyli okno 7×7). Większe okno ⇒ stabilniejsza estymata średnich (mniej szumu w $\\mu_i$), ale gorzej lokalizuje cienkie krawędzie i wprowadza więcej rozmazania w okolicy rzeczywistych granic.\n2. **Dla każdego piksela** wytnij okno i podziel je na dwie sąsiednie połowy zgodnie z jedną z czterech orientacji $\\theta \\in \\{0°, 45°, 90°, 135°\\}$. Centralny wiersz / kolumna / przekątna jest pomijana — to *kandydat na krawędź*, którego wartości nie wliczamy do żadnej z półwind, żeby nie skażały estymaty którejkolwiek strony.\n3. **Policz średnie** obu połówek $\\mu_1, \\mu_2$ i ratio-strength dla tej orientacji:\n\n$$ s_\\theta \\;=\\; 1 - \\frac{\\min(\\mu_1, \\mu_2)}{\\max(\\mu_1, \\mu_2)} $$\n\n4. **Połącz orientacje**: ostateczna siła krawędzi w pikselu to\n\n$$ s \\;=\\; \\max_{\\theta} \\, s_\\theta $$\n\nBierzemy maksimum, bo szukamy *jakiejkolwiek* orientacji, dla której obie półwindy są wyraźnie różne — krawędź ma być wykryta niezależnie od kierunku w obrazie.\n\n![Cztery panele obok siebie pokazujące kwadrat 9×9 podzielony na dwie sąsiednie połowy w czterech orientacjach: pionowo (lewa-prawa, podpis „pionowy\"), poziomo (góra-dół, „poziomy\"), \\\\ ukośnie z dolnym lewym vs górnym prawym trójkątem („↖ ukośny\") oraz / ukośnie z górnym lewym vs dolnym prawym trójkątem („↗ ukośny\"). W każdej orientacji jedna połowa zamalowana na czerwono, druga na niebiesko, oś środkowa zaznaczona szarością jako pomijana. Tytuł nadrzędny: „Cztery orientacje pól-okien Touziego — siła krawędzi = max po θ ∈ {0°, 45°, 90°, 135°}\".](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/touzi-four-orientations.png)\n\nW numpy z `sliding_window_view` całość mieści się w ~25 linijkach — to dokładnie ten ćwiczeniowy kod piszesz dwa widgety niżej. Klasyczny Touzi używa 4 orientacji; rozszerzenia do 6 (Fjørtoft, 1998) lub 8 orientacji marginalnie poprawiają detekcję krawędzi pod nietypowym kątem, ale podwajają koszt obliczeń — w kursie zostajemy przy klasycznej czwórce.\n\n> **Uwaga implementacyjna.** Dla małych $w$ (np. `w=2`) ratio-strength jest zaszumione i daje gęstsze fałszywe alarmy; dla dużych $w$ (np. `w=7`) krawędzie się tępią i podwójnie reagują (raz, gdy okno wchodzi na granicę, drugi raz gdy schodzi). `w=3` to typowy kompromis dla Sentinel-1 GRD przy `L=4`."
+      }
+    },
+    {
+      "id": "quiz-stosunek-vs-roznica",
+      "title": "Sprawdź: dlaczego ratio-edge jest CFAR",
+      "type": "quiz",
+      "data": {
+        "question": "Spójrz na lewy i prawy panel histogramu (sekcja powyżej). Który z poniższych opisów najlepiej oddaje, dlaczego ratio-edge Touziego ma własność CFAR, a klasyczny Canny / Sobel jej nie ma? Wybierz **jedną** odpowiedź.",
+        "options": [
+          "Stosunek `r = min(μ₁, μ₂) / max(μ₁, μ₂)` jest zawsze ograniczony do `[0, 1]`, więc po prostu mniej fluktuuje od `|μ₁ − μ₂|`. Wystarczy znormalizować gradient Sobela przez `max(|G|)` w obrazie i Canny też będzie CFAR.",
+          "Ratio-edge jest CFAR, bo wspólny mnożnik `R` *skraca się* w `μ₁ / μ₂` — rozkład `r` zależy tylko od liczby spojrzeń `L` i wielkości półwind, nie od poziomu jasności sceny. W `|μ₁ − μ₂|` mnożnik `R` zostaje w środku, więc rozkład różnicy rozszerza się proporcjonalnie do `R` (jasny region ⇒ większe |diff|), i jeden globalny próg nigdy nie obsłuży obu regionów.",
+          "Canny pada, bo używa pre-blur Gaussem — gdybyśmy zastąpili Gaussa filtrem Lee przed Cannym, sam Canny stałby się CFAR i nie potrzebowalibyśmy Touziego.",
+          "Histogram po prawej pokazuje, że stosunek jest CFAR *tylko* dla `L=4`. Dla innych ENL (`L=1`, `L=8`) rozkład `r` różniłby się między regionami ciemnym i jasnym tak samo jak rozkład różnicy."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Sedno CFAR leży w **algebraicznej własności stosunku Gamma'owych średnich**: jeśli $\\mu_1 \\sim \\operatorname{Gamma}(Ln, R/(Ln))$ i $\\mu_2 \\sim \\operatorname{Gamma}(Ln, R/(Ln))$, to $\\mu_1/\\mu_2$ ma rozkład *niezależny od $R$* (jest to wariant $F$-Snedecora). Dlatego prawy panel histogramu pokazuje dwa rozkłady leżące idealnie na sobie — region ciemny i jasny nie różnią się statystycznie pod $H_0$. W rozkładzie różnicy `|μ₁ − μ₂|` $R$ pozostaje jako multiplikatywny czynnik skalujący wariancję — i widać to wyraźnie w lewym panelu (czerwony rozkład 4× szerszy od niebieskiego). Dystraktor (A) myli ograniczenie zakresu z niezależnością rozkładu — *to nie to samo*; normalizacja gradientu przez `max(|G|)` w obrazie nie usuwa lokalnej zależności od $R$. (C) myli efekt z przyczyną — filtr Lee na pre-blur zmniejszyłby wariancję, ale nie usunąłby liniowej zależności rozkładu różnicy od $R$. (D) jest po prostu fałszywe: CFAR-owa własność stosunku trzyma się dla **dowolnego $L > 0$**; histogram po prawej byłby tak samo zlepiony dla `L=1` lub `L=8`, tyle że szerszy lub węższy. To jest fundament, na którym opiera się każda implementacja Touzi-podobnego detektora.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "code-touzi-strength",
+      "title": "Zaimplementuj `touzi_edge_strength` — okno 7×7, 4 orientacje, max po θ",
+      "description": "Po lewej masz speckled cameraman (ten sam co w lekcji Canny). Po prawej — referencyjna mapa siły krawędzi Touziego, którą musisz odtworzyć. Twoja funkcja działa per piksel i zwraca float32 w [0, 1].",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.3036",
+          "title": "A statistical and geometrical edge detector for SAR images",
+          "kind": "paper",
+          "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+          "year": 1988
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `touzi_edge_strength(img, w=3)` która zwraca **mapę siły krawędzi** Touziego (`np.ndarray`, `dtype=float32`, kształt jak `img`) dla obrazu w skali szarości `float32 ∈ [0, 1]`.\n\nReguły:\n\n- Okno ma rozmiar $(2w+1) \\times (2w+1)$ — przy `w=3` to 7×7.\n- Dla każdej z 4 orientacji ($\\theta \\in \\{0°, 45°, 90°, 135°\\}$) dziel okno na dwie sąsiednie połowy: **lewa/prawa**, **góra/dół**, **przekątna `\\\\`** (dolny-lewy trójkąt vs górny-prawy), **przekątna `/`** (górny-lewy vs dolny-prawy). Centralny wiersz / kolumna / przekątna *nie wlicza się* do żadnej z półwind.\n- Licz średnie $\\mu_1, \\mu_2$ obu połówek i siłę dla danej orientacji $s_\\theta = 1 - \\min(\\mu_1, \\mu_2) / \\max(\\mu_1, \\mu_2)$.\n- Wynik końcowy to $s = \\max_\\theta s_\\theta$ (element-wise).\n- Na brzegach obrazu padding `mode='edge'` (replikacja).\n\n```\nimg = np.ones((10, 10), dtype=np.float32) * 0.5\nimg[:, 5:] = 0.8                  # pionowa krawedz w kolumnie 5\ns = touzi_edge_strength(img, w=3)\ns[5, 5] > 0.30                    # True — krawedz wyraznie wykryta\ns[2, 2] < 0.05                    # True — gladkie tlo\n```\n\nTesty weryfikują (a) shape/dtype, (b) `s ≈ 0` na regionie jednorodnym, (c) `s` jest wysokie wzdłuż syntetycznej krawędzi krokowej, (d) wynik na speckled cameraman zgadza się z mapą referencyjną zapisaną w `/inputs/touzi-edge-strength-cameraman-expected.npz` z dokładnością `atol=1e-5`.",
+        "starterCode": "import numpy as np\nfrom numpy.lib.stride_tricks import sliding_window_view\n\n\ndef touzi_edge_strength(img, w=3):\n    \"\"\"\n    Zwroc mape sily krawedzi Touziego (float32, shape == img.shape)\n    dla obrazu szarosci float32 w [0, 1].\n\n    Okno: (2w+1) x (2w+1).\n    Dla kazdej z 4 orientacji (pionowa, pozioma, \\\\, /) podziel okno\n    na dwie polowy (centralny wiersz/kolumna/przekatna *pomijana*),\n    polic srednie mu1, mu2, sile s_theta = 1 - min/max.\n    Zwroc max po orientacjach.\n    Padding: 'edge' (replikacja).\n    \"\"\"\n    size = 2 * w + 1\n    img = img.astype(np.float32)\n    # TODO: padding 'edge' o szerokosci w\n    # TODO: sliding_window_view -> okna ksztaltu (H, W, size, size)\n    # TODO: cztery pary masek polowek (pionowa, pozioma, \\\\, /)\n    # TODO: dla kazdej orientacji: mu1, mu2 -> s_theta\n    # TODO: zwroc max po orientacjach jako float32\n    return np.zeros_like(img, dtype=np.float32)\n\n\n# --- Preview: Touzi strength na speckled cameraman ---\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\n\nstrength = touzi_edge_strength(speckled, w=3)\nprint(f\"strength shape:  {strength.shape}\")\nprint(f\"strength dtype:  {strength.dtype}\")\nprint(f\"strength range:  [{strength.min():.4f}, {strength.max():.4f}]\")\nprint(f\"strength mean:   {strength.mean():.4f}\")\n\nfig, axes = plt.subplots(1, 2, figsize=(9.2, 4.6), constrained_layout=True)\naxes[0].imshow(speckled, cmap=\"gray\", vmin=0, vmax=1)\naxes[0].set_title(\"Wejscie: speckled cameraman\", fontsize=10)\naxes[0].set_axis_off()\nim = axes[1].imshow(strength, cmap=\"magma\", vmin=0, vmax=max(strength.max(), 1e-3))\naxes[1].set_title(\n    f\"Touzi strength (w=3, 4 orientacje) - max={strength.max():.3f}\",\n    fontsize=10,\n)\naxes[1].set_axis_off()\nfig.colorbar(im, ax=axes[1], shrink=0.85, label=\"1 - min/max\")\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_float32_array_with_same_shape",
+            "body": "import numpy as np\nimg = np.ones((24, 24), dtype=np.float32) * 0.5\nimg[:, 12:] = 0.8\nout = touzi_edge_strength(img, w=3)\nassert hasattr(out, 'shape') and out.shape == img.shape, f'shape={getattr(out, \"shape\", None)}, expected {img.shape}'\nassert out.dtype == np.float32, f'dtype={out.dtype}, oczekiwano float32'\nassert np.all(out >= 0.0) and np.all(out <= 1.0 + 1e-6), 'wartosci powinny byc w [0, 1]'",
+            "hidden": false
+          },
+          {
+            "name": "flat_region_gives_low_strength",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nflat = (np.ones((48, 48), dtype=np.float32) * 0.5\n        + rng.normal(0, 0.01, size=(48, 48)).astype(np.float32))\ns = touzi_edge_strength(flat, w=3)\ninner = s[5:-5, 5:-5]  # ignoruj brzegi (replikacja)\nassert inner.mean() < 0.10, (\n    f'na regionie prawie jednorodnym srednia sila powinna byc niska; '\n    f'srednia = {inner.mean():.4f} (oczekiwano < 0.10)'\n)",
+            "hidden": true
+          },
+          {
+            "name": "step_edge_is_detected",
+            "body": "import numpy as np\nimg = np.ones((40, 40), dtype=np.float32) * 0.20\nimg[:, 20:] = 0.80  # pionowa krawedz krokowa w kolumnie 20\ns = touzi_edge_strength(img, w=3)\ncolumn_along_edge = s[10:-10, 20]\nassert column_along_edge.min() > 0.50, (\n    f'sila krawedzi wzdluz krokowej granicy powinna byc wysoka; '\n    f'min wzdluz krawedzi = {column_along_edge.min():.4f} (oczekiwano > 0.50)'\n)\nfar_from_edge = s[10:-10, 5]\nassert far_from_edge.max() < 0.05, (\n    f'daleko od krawedzi sila powinna byc prawie zero; '\n    f'max = {far_from_edge.max():.4f} (oczekiwano < 0.05)'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_on_speckled_cameraman",
+            "body": "import numpy as np\nfrom PIL import Image\nspeckled = np.asarray(\n    Image.open('/inputs/sar-classical-cameraman-speckled.png').convert('L'),\n    dtype=np.float32,\n) / 255.0\nref = np.load('/inputs/touzi-edge-strength-cameraman-expected.npz')['strength']\ngot = touzi_edge_strength(speckled, w=3)\nassert got.shape == ref.shape, f'shape={got.shape}, ref={ref.shape}'\ndiff = np.abs(got.astype(np.float32) - ref.astype(np.float32))\nassert diff.max() < 1e-4, (\n    f'mapa sily krawedzi rozni sie od referencyjnej; '\n    f'max|diff| = {diff.max():.6f} (oczekiwano < 1e-4). '\n    f'Sprawdz: padding edge, kolejnosc orientacji, definicja masek polowek.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom numpy.lib.stride_tricks import sliding_window_view\n\n\ndef touzi_edge_strength(img, w=3):\n    size = 2 * w + 1\n    img = img.astype(np.float32)\n    pad = np.pad(img, w, mode='edge')\n    windows = sliding_window_view(pad, (size, size))  # (H, W, size, size)\n\n    yy, xx = np.mgrid[0:size, 0:size]\n    # cztery pary masek polowek; centralny wiersz/kolumna/przekatna pomijane\n    pairs = [\n        (yy < w,             yy > w),              # pozioma (gora/dol)\n        (xx < w,             xx > w),              # pionowa (lewa/prawa)\n        (yy > xx,            yy < xx),             # \\\\ ukosna\n        ((yy + xx) < size - 1, (yy + xx) > size - 1),  # / ukosna\n    ]\n\n    strength = np.zeros(img.shape, dtype=np.float32)\n    eps = 1e-6\n    for m1, m2 in pairs:\n        mu1 = (windows * m1).sum(axis=(-2, -1)) / m1.sum()\n        mu2 = (windows * m2).sum(axis=(-2, -1)) / m2.sum()\n        lo = np.minimum(mu1, mu2)\n        hi = np.maximum(mu1, mu2)\n        s_theta = 1.0 - lo / (hi + eps)\n        strength = np.maximum(strength, s_theta.astype(np.float32))\n    return strength\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-speckled.png",
+            "alt": "Kafelek SAR-podobny 256×256: cameraman po multi-look Gamma speckle (L=4) — wyraźna ziarnistość na całym obrazie, kontury sylwetki częściowo zatarte przez szum.",
+            "caption": "Wejście: speckled cameraman (Gamma L=4, ten sam co w lekcji Canny)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/touzi-edge-strength-cameraman-expected.npz",
+            "filename": "touzi-edge-strength-cameraman-expected.npz",
+            "caption": ".npz z kluczem 'strength' (float32, 256×256) — referencyjna mapa Touziego dla `w=3`, używana w teście numerycznym."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/touzi-edge-strength-cameraman-expected.png",
+          "alt": "Mapa siły krawędzi Touziego 256×256 na speckled cameramanie wyrenderowana w kolorze magma: na granatowym/czarnym tle (s ≈ 0 w płaskich obszarach speckle) widać jaśniejsze pomarańczowo-białe kontury sylwetki kamerzysty, statywu i horyzontu (s w przedziale 0,3-0,9). W odróżnieniu od Canny'ego nie widać „dywanu\" rozsianych fałszywych alarmów — siła zostaje skoncentrowana na rzeczywistych granicach kontrastu. Po prawej stronie obrazu skala kolorów od 0 do 0,96 z etykietą „1 − min(μ_1, μ_2) / max(μ_1, μ_2)\".",
+          "caption": "Cel: tak ma wyglądać `touzi_edge_strength(speckled, w=3)` w wizualizacji magma. Wartości w [0, 1]; gładkie obszary blisko 0, granice blisko 1."
+        },
+        "requiresPackages": [
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "od-strength-do-cfar",
+      "title": "Od siły do binarnej decyzji — próg CFAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1080/01431169408954018",
+          "title": "Edge detection in radar images: A review",
+          "kind": "paper",
+          "author": "Roger Fjørtoft, Armand Lopes, Patrick Marthon",
+          "year": 1994
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — Chapter 7",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Mając ciągłą siłę $s(i, j) \\in [0, 1]$ musimy ostatecznie wybrać, *które* piksele są krawędziami. Są trzy podejścia:\n\n- **Stały próg geometryczny** — np. „bierz wszystko z $s > 0{,}5$\". Działa intuicyjnie i jest szybkie, ale **ignoruje $L$**: przy $L=4$ szum jest dwa razy większy niż przy $L=8$, więc ten sam próg pasuje tylko dla jednego ENL. Dla różnych kafelków / modów akwizycji trzeba ręcznie kalibrować — wracamy do problemu Canny'ego.\n- **CFAR analityczny** — ustalamy *target false-alarm rate* $P_{\\text{fa}}$ (np. $10^{-2}$ albo $10^{-3}$) i wybieramy próg $t$ tak, by pod hipotezą zerową (obszar jednorodny, $\\mathbb{E}[\\mu_1] = \\mathbb{E}[\\mu_2]$) tylko ułamek $P_{\\text{fa}}$ pikseli przekraczał $t$. Pod modelem Gamma$(L)$ rozkład $r$ daje analityczne $t = t(P_{\\text{fa}}, L, n)$ (Fjørtoft i in., 1998). Pełna konstrukcja CA-CFAR z oknem training/guard i $\\alpha = \\operatorname{gammaincinv}(L, 1 - P_{\\text{fa}})/L$ jest wyprowadzona w lekcji *4.1*; tutaj wystarczy intuicja kontraktu $P_{\\text{fa}}$.\n- **CFAR empiryczny** — kiedy nie znasz $L$ dokładnie (Sentinel-1 GRD po Multi-Looking — możesz mieć efektywne $L \\in [3, 6]$ po dodatkowej filtracji), znajdujesz najbardziej *jednorodne* fragmenty tile'a (np. okna z najmniejszym lokalnym odchyleniem standardowym), liczysz $s$ tam jako próbkę pod $H_0$ i bierzesz $(1 - P_{\\text{fa}})$ percentyl jako próg $t$. Prosty, odporny wariant — i to dokładnie ten, którego użyjesz w sandboxie poniżej.\n\n![Cztery panele 256×256 obok siebie: wejście SAR (speckled cameraman, Gamma L=4) — wyraźna ziarnistość; Canny (~17600 px krawędzi) — gęsty „dywan\" białych pikseli fałszywych alarmów rozsiany po całym obrazie, kontury sylwetki kamerzysty toną w lesie szumu; Touzi z luźnym progiem Pfa=5×10⁻² (~4000 px) — czyste, ciągłe kontury sylwetki, statywu i horyzontu, mało izolowanego szumu; Touzi z restrykcyjnym progiem Pfa=5×10⁻³ (~1500 px) — tylko najsilniejsze granice kontrastu, fragmenty słabszych konturów już znikają.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/canny-vs-touzi-vs-cfar-edges.png)\n\nZauważ trzy rzeczy na powyższym obrazku:\n\n1. **Canny w tym samym zadaniu** generuje ~17,6 tys. pikseli krawędzi — z czego większość to fałszywe alarmy na płaskim tle.\n2. **Touzi z luźnym CFAR ($P_{\\text{fa}} = 5 \\cdot 10^{-2}$)** daje ~4 tys. pikseli — głównie *prawdziwe* granice, prawie bez „dywanu\".\n3. **Touzi z restrykcyjnym CFAR ($P_{\\text{fa}} = 5 \\cdot 10^{-3}$)** daje ~1,5 tys. — tylko najsilniejsze granice, trade-off mniej recall vs mniej false-alarm.\n\nTouzi pozwala wymienić rate fałszywek za pokrycie prawdziwych krawędzi w **kontrolowany, statystycznie uzasadniony** sposób — i ten kontrakt zachodzi *po obrazie*, nie tylko punktowo. To jest dokładnie ten kontrakt, którego globalny `high_threshold` Canny'ego nie potrafi zaoferować na SAR."
+      }
+    },
+    {
+      "id": "sandbox-pfa-vs-pokrycie",
+      "title": "Spróbuj: zoptymalizuj kompromis Pfa vs pokrycie prawdziwych krawędzi",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom numpy.lib.stride_tricks import sliding_window_view\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\n\n\ndef touzi_edge_strength(img, w=3):\n    size = 2 * w + 1\n    img = img.astype(np.float32)\n    pad = np.pad(img, w, mode=\"edge\")\n    windows = sliding_window_view(pad, (size, size))\n    yy, xx = np.mgrid[0:size, 0:size]\n    pairs = [\n        (yy < w, yy > w),\n        (xx < w, xx > w),\n        (yy > xx, yy < xx),\n        ((yy + xx) < size - 1, (yy + xx) > size - 1),\n    ]\n    strength = np.zeros(img.shape, dtype=np.float32)\n    for m1, m2 in pairs:\n        mu1 = (windows * m1).sum(axis=(-2, -1)) / m1.sum()\n        mu2 = (windows * m2).sum(axis=(-2, -1)) / m2.sum()\n        lo = np.minimum(mu1, mu2)\n        hi = np.maximum(mu1, mu2)\n        strength = np.maximum(strength, (1.0 - lo / (hi + 1e-6)).astype(np.float32))\n    return strength\n\n\ndef empirical_cfar_threshold(strength, img, w=3, pfa=1e-2, flat_percentile=20):\n    \"\"\"Empiryczny prog CFAR: kalibracja z najbardziej jednorodnych obszarow.\n\n    1. Polic lokalne odchylenie standardowe (sliding window).\n    2. Wybierz okna z najnizszym std (`flat_percentile` percentyl).\n    3. Wez (1 - pfa) percentyl `strength` na tych pikselach -> prog t.\n    \"\"\"\n    size = 2 * w + 1\n    pad = np.pad(img, w, mode=\"edge\")\n    flat_std = sliding_window_view(pad, (size, size)).std(axis=(-2, -1))\n    cutoff = np.percentile(flat_std, flat_percentile)\n    flat_mask = flat_std <= cutoff\n    return float(np.percentile(strength[flat_mask], 100 * (1 - pfa)))\n\n\n# Trzy uchwyty: rozmiar okna, Pfa, percentyl ,,najbardziej plaskich'' okien\nw = 3\npfa = 0.01\nflat_percentile = 20\n\nstrength = touzi_edge_strength(speckled, w=w)\nt = empirical_cfar_threshold(\n    strength, speckled, w=w, pfa=pfa, flat_percentile=flat_percentile\n)\nedges = strength > t\nn_edges = int(edges.sum())\nprint(f\"w={w}, Pfa={pfa:.4f}, flat_percentile={flat_percentile}\")\nprint(f\"  prog CFAR  t = {t:.4f}\")\nprint(f\"  liczba pikseli krawedzi = {n_edges}\")\nprint(f\"  pokrycie =     {n_edges / speckled.size * 100:.2f}% obrazu\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11.5, 4.2), constrained_layout=True)\naxes[0].imshow(speckled, cmap=\"gray\", vmin=0, vmax=1)\naxes[0].set_title(\"SAR - wejscie\", fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(strength, cmap=\"magma\", vmin=0, vmax=strength.max())\naxes[1].set_title(f\"Touzi strength - max={strength.max():.3f}\", fontsize=10)\naxes[1].set_axis_off()\naxes[2].imshow(edges, cmap=\"gray\")\naxes[2].set_title(\n    f\"CFAR-edge (Pfa={pfa}) - {n_edges} px = {n_edges / speckled.size * 100:.1f}%\",\n    fontsize=10,\n)\naxes[2].set_axis_off()\nplt.show()\n",
+        "encouragement": "Zacznij od `pfa=0.05`, potem zejdź do `pfa=0.005`. W którym momencie zaczynasz tracić cienkie krawędzie statywu i kabla? A jak zmienia się obraz, gdy podniesiesz `w` z 3 do 7 — krawędzie się wzmacniają czy rozmywają?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/36.3036",
+      "title": "A statistical and geometrical edge detector for SAR images",
+      "kind": "paper",
+      "author": "Ridha Touzi, Armand Lopes, Pierre Bousquet",
+      "year": 1988
+    },
+    {
+      "url": "https://doi.org/10.1109/36.673674",
+      "title": "An optimal multiedge detector for SAR image segmentation",
+      "kind": "paper",
+      "author": "Roger Fjørtoft, Armand Lopes, Patrick Marthon, Eliane Cubero-Castan",
+      "year": 1998
+    },
+    {
+      "url": "https://doi.org/10.1080/01431169408954018",
+      "title": "Edge detection in radar images: A review",
+      "kind": "paper",
+      "author": "Roger Fjørtoft, Armand Lopes, Patrick Marthon",
+      "year": 1994
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 7",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    }
+  ]
+}

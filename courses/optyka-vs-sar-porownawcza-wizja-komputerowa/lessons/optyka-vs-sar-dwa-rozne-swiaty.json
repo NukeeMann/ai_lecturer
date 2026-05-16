@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "slug": "optyka-vs-sar-dwa-rozne-swiaty",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Optyka vs SAR — dwa różne światy",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Po co inżynierowi CV uczyć się SAR-u? Jeden obrazek nad Hamburgiem, cztery fundamentalne różnice i krótki kod symulujący speckle — żeby od pierwszej minuty było jasne, dlaczego klasyka nie wystarczy.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intuicja",
+      "title": "Pasywna kamera, aktywny radar",
+      "sources": [
+        {
+          "url": "https://www.earthdata.nasa.gov/learn/backgrounders/what-is-sar",
+          "title": "What is SAR? (NASA Earthdata)",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Pracowałeś z optycznymi obrazami od lat — kamera, dataset, klasyczna sztuczka z OpenCV. Każdy piksel niósł **albedo**: ile światła słonecznego się odbiło i wróciło do detektora w paśmie widzialnym albo bliskim podczerwieni. To było tak intuicyjne, że ledwie wymagało komentarza.\n\n![Side-by-side: po lewej kafelek Sentinel-2 z 2024-09-28 10:37 UTC nad Hamburgiem prawie w całości zasłonięty białymi chmurami; po prawej kafelek Sentinel-1 GRD z tej samej doby o 05:42 UTC pokazujący ten sam teren w pseudo-kolorze polarymetrycznym z czytelną linią brzegową, polami uprawnymi i jasnymi punktami zabudowy miejskiej](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/hamburg-optical-vs-sar-side-by-side.png)\n\n*(Obraz: contains modified Copernicus Sentinel-1 i Sentinel-2 data, 2024.)*\n\nTo **ten sam teren**, **ta sama doba**, **dwa różne sensory**. Optyczny zwraca kafelek niezdatny do analizy, radar SAR — czytelny obraz powierzchni. Skąd ta przepaść?\n\n**Optyka jest sensorem pasywnym.** Twoja kamera nie świeci sama z siebie; rejestruje fotony emitowane przez Słońce, odbite od sceny, w wąskim paśmie widzialnym/NIR. Kiedy między scenę i sensor wjedzie chmura, NIR rozprasza się na kropelkach wody i sygnał ginie.\n\n**SAR jest sensorem aktywnym.** Boczna antena radaru emituje impuls mikrofalowy (Sentinel-1: pasmo C, ~5,4 GHz, długość fali ~5,547 cm) i mierzy zespoloną odpowiedź echa. Chmury składają się z kropelek o średnicy 10–100 µm — fala 5,547 cm jest *tysiące razy* dłuższa, więc rozpraszanie Rayleigha jest pomijalne. Mikrofala przechodzi przez chmurę jak przez powietrze.\n\nKonsekwencje są fundamentalne i wszechobecne:\n\n- SAR widzi **w dzień i w nocy** — sensor jest własnym źródłem.\n- SAR przechodzi **przez chmury, mgłę, dym** i część opadów.\n- Jasność piksela SAR mówi o **chropowatości i geometrii** powierzchni, nie o kolorze.\n- Wymiar informacji to **polaryzacja** (HH/HV/VV/VH), nie RGB.\n\nKażda klasyka CV, która zakładała pinhole'a, RGB i addytywny szum gaussowski, w SAR-ze się potyka. Po to jest ten kurs — żebyś wiedział kiedy się potyka, dlaczego, i co podstawić."
+      }
+    },
+    {
+      "id": "check-pasywny-vs-aktywny",
+      "title": "Szybkie sprawdzenie: pasywny czy aktywny?",
+      "description": "Jedna odpowiedź wynika BEZPOŚREDNIO z fizyki sensorów; trzy pozostałe to popularne nieporozumienia.",
+      "type": "quiz",
+      "data": {
+        "question": "Z którego z poniższych faktów wynika BEZPOŚREDNIO, że SAR widzi powierzchnię przez chmury, a Sentinel-2 nie?",
+        "options": [
+          "SAR ma wyższą rozdzielczość przestrzenną niż Sentinel-2.",
+          "SAR jest sensorem aktywnym emitującym mikrofale o długości fali tysiące razy większej niż średnica kropli chmury.",
+          "Sentinel-2 lata na orbicie polarnej, a Sentinel-1 na geostacjonarnej.",
+          "SAR ma więcej kanałów spektralnych niż Sentinel-2."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Kluczowa różnica jest fizyczna: optyka (pasywna) rejestruje światło słoneczne odbite w paśmie widzialnym/NIR, a krople chmury — o średnicy 10–100 µm — bardzo skutecznie je rozpraszają. SAR (aktywny) emituje własną falę o długości ~5,547 cm (pasmo C), czyli tysiące razy większą od średnicy kropli — rozpraszanie Rayleigha jest pomijalne, fala przechodzi przez chmurę. Rozdzielczość, orbita i liczba kanałów to inne osie porównania, ale nie one decydują o przezroczystości dla chmur. Sentinel-1, podobnie jak Sentinel-2, jest na orbicie polarnej heliosynchronicznej.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "konsekwencje",
+      "title": "Cztery różnice, które łamią klasykę CV",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Cztery różnice, które obrazek Hamburga zasugerował, rozsadzają konkretne założenia klasycznej wizji komputerowej. Warto je mieć w jednym kadrze, zanim wejdziemy w szczegóły kolejnych modułów.\n\n**1. Szum jest mnożny, nie addytywny.** W optyce piksel modelujesz jako $I = R + n$, gdzie $n$ jest zwykle gaussowskim szumem niezależnym od $R$. W SAR-ze model brzmi $I = R \\cdot N$, gdzie $N$ jest losowym mnożnikiem o rozkładzie Gamma i średniej 1. To nie jest *więcej* szumu — to *inny* szum.\n\n![Wycinek 160×160 px z amplitudy Sentinel-1 nad Hamburgiem: ziarnista, losowa tekstura na pozornie jednorodnym tle pól rolniczych — to speckle, nie szum termiczny kamery](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-speckle-closeup.png)\n\nTa charakterystyczna ziarnistość — **speckle** — to nie wada sensora. To fizyka: w jednej komórce rozdzielczości mieszczą się tysiące elementarnych rozpraszaczy (źdźbła trawy, kamienie, krawędzie budynków), a ich koherentne echa interferują konstruktywnie albo destruktywnie zupełnie losowo. Filtr Gaussa 3×3 rozmyje krawędzie i zostawi resztkowy speckle proporcjonalny do sygnału — to nie jest awaria sensora, to Twój filtr nie pasuje do modelu szumu.\n\n**2. Piksel niesie liczbę zespoloną.** Produkt SLC (Single Look Complex) trzyma w każdym pikselu $z = A \\cdot e^{i\\varphi}$ — amplitudę *i* fazę. Faza pojedynczego obrazu wygląda losowo, ale różnica faz między dwoma przelotami tej samej sceny (interferogram) niesie informację o przesunięciach **milimetrowych**. Optyka takiej osi po prostu nie ma.\n\n**3. RGB zastępuje polaryzacja.** SAR wysyła i odbiera fale spolaryzowane poziomo lub pionowo — czyli w jednej z kombinacji **HH / HV / VV / VH**. Te cztery kanały są wynikiem *mechanizmu rozpraszania* (powierzchnia gładka, podwójne odbicie od narożnika, rozproszenie wolumetryczne wśród liści), a nie barwy obiektu. Wyświetlenie ich jako RGB to dekoracja; semantyka jest fizyczna.\n\n**4. Geometria jest skośna.** SAR mierzy *odległość radialną* do celu i moment Dopplera — nie projekcję pinhole'a. Stoki zwrócone do radaru są skrócone (**foreshortening**), szczyty mogą zachodzić na podstawy (**layover**), a głębokie cienie pojawiają się za przeszkodami (**shadow**). Pixel-to-metr nie jest stały, jak w optyce zenitalnej — zależy od kąta padania.\n\nKażda z tych różnic dostanie własny moduł — ale gdy następnym razem zobaczysz obraz SAR, te cztery rzeczy powinieneś już mieć z tyłu głowy."
+      }
+    },
+    {
+      "id": "exercise-symuluj-speckle",
+      "title": "Zamień optykę w coś, co wygląda jak SAR",
+      "description": "Jednolinijkowy generator mnożnego szumu Gamma — najprostszy model statystyczny amplitudy SAR.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Klasyczny optyczny obraz nigdy nie wygląda jak SAR — ale jeśli pomnożymy go pikselowo przez losowy mnożnik o rozkładzie Gamma o średniej 1, dostaniemy coś *bardzo* podobnego do amplitudy SAR z punktu widzenia statystyki piksela.\n\nNapisz `simulate_speckle(image, enl, seed)`, która:\n\n1. Tworzy generator `rng = np.random.default_rng(seed)`.\n2. Losuje `noise` o tym samym kształcie co `image` z rozkładu `Gamma(shape=enl, scale=1/enl)` przez `rng.gamma(...)`.\n3. Zwraca `image * noise`.\n\nMała sanity check:\n\n```\nimg = np.ones((4, 4)) * 100.0\nout = simulate_speckle(img, enl=10, seed=0)\n# out.shape == (4, 4), out.mean() blisko 100 (przy malym N znaczne wahanie jest OK)\n```\n\nPo przejściu testów zatrzymaj się i pomyśl: czy klasyczny **Gauss 3×3** rzeczywiście usunie ten szum?",
+        "starterCode": "import numpy as np\n\ndef simulate_speckle(image, enl=10, seed=0):\n    \"\"\"\n    Zaaplikuj mnozny szum speckle do obrazu optycznego.\n\n    image : np.ndarray  -- obraz optyczny (float, wartosci >= 0).\n    enl   : float       -- Equivalent Number of Looks (wieksze ENL = mniej szumu).\n    seed  : int         -- ziarno RNG dla reprodukowalnosci w testach.\n\n    Zwroc tablice tego samego ksztaltu co image, gdzie kazdy piksel\n    pomnozyles przez niezalezna probke z rozkladu\n    Gamma(shape=enl, scale=1/enl) -- czyli o sredniej 1 i wariancji 1/enl.\n    \"\"\"\n    rng = np.random.default_rng(seed)\n    # TODO: wylosuj noise o tym samym ksztalcie co image i zwroc image*noise\n    noise = np.ones_like(image, dtype=float)\n    return image * noise\n",
+        "tests": [
+          {
+            "name": "shape_preserved",
+            "body": "import numpy as np\nimg = np.ones((50, 50), dtype=float) * 100.0\nout = simulate_speckle(img, enl=10, seed=0)\nassert out.shape == img.shape, f\"shape mismatch: {out.shape}\"",
+            "hidden": false
+          },
+          {
+            "name": "mean_close_to_input",
+            "body": "import numpy as np\nimg = np.ones((200, 200), dtype=float) * 100.0\nout = simulate_speckle(img, enl=20, seed=42)\nassert abs(out.mean() - 100.0) < 3.0, f\"mean drifted: {out.mean():.2f}\"",
+            "hidden": true
+          },
+          {
+            "name": "multiplicative_variance_scales_with_intensity",
+            "body": "import numpy as np\nlow = np.ones((128, 128), dtype=float) * 10.0\nhigh = np.ones((128, 128), dtype=float) * 100.0\nout_low = simulate_speckle(low, enl=4, seed=0)\nout_high = simulate_speckle(high, enl=4, seed=0)\nassert out_high.std() > 5.0 * out_low.std(), (\n    f\"std_low={out_low.std():.2f}, std_high={out_high.std():.2f} \"\n    f\"-- wyglada jak szum addytywny, nie mnozny\"\n)",
+            "hidden": true
+          },
+          {
+            "name": "larger_enl_means_less_speckle",
+            "body": "import numpy as np\nimg = np.ones((100, 100), dtype=float) * 50.0\nlow_enl = simulate_speckle(img, enl=1, seed=0)\nhigh_enl = simulate_speckle(img, enl=50, seed=0)\nassert low_enl.std() > high_enl.std(), (\n    f\"ENL=1 std={low_enl.std():.2f} powinno byc wieksze niz ENL=50 std={high_enl.std():.2f}\"\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\ndef simulate_speckle(image, enl=10, seed=0):\n    rng = np.random.default_rng(seed)\n    noise = rng.gamma(shape=enl, scale=1.0 / enl, size=image.shape)\n    return image * noise\n"
+      }
+    },
+    {
+      "id": "check-kiedy-radar",
+      "title": "Kiedy radar bije optykę?",
+      "description": "Wybierz wszystkie scenariusze, w których SAR daje informację niedostępną dla Sentinel-2.",
+      "type": "quiz",
+      "data": {
+        "question": "Twój pipeline monitoringu portu morskiego musi działać 24/7. W których scenariuszach SAR daje Ci coś, czego optyka NIE da (zaznacz wszystkie pasujące)?",
+        "options": [
+          "Sztorm z gęstym zachmurzeniem nad portem o 03:00 w nocy.",
+          "Wyraźne odróżnienie ciemnoniebieskiego kontenera od jasnoniebieskiego dachu.",
+          "Pomiar milimetrowego osiadania nabrzeża między dwoma przelotami satelity.",
+          "Sklasyfikowanie barwy nadbudówki statku po jego sylwetce."
+        ],
+        "correct": [
+          0,
+          2
+        ],
+        "explanation": "SAR jest aktywny i mikrofalowy, więc widzi NOCĄ (własne źródło) i PRZEZ chmury (długa fala) — scenariusz 1 należy do niego. Faza interferometryczna mierzy submilimetrowe przesunięcia między dwoma przelotami tej samej sceny — scenariusz 3 też jest SAR-specyficzny. Scenariusze 2 i 4 wymagają KOLORU, a polaryzacja HH/HV/VV/VH koduje mechanizm rozpraszania, nie barwę powierzchni. Tam SAR Ci nie pomoże; trzeba optyki.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://www.earthdata.nasa.gov/learn/backgrounders/what-is-sar",
+      "title": "What is SAR? (NASA Earthdata)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s2-mission",
+      "title": "Sentinel-2 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    }
+  ]
+}

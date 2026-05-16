@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "slug": "dlaczego-klasyczne-filtry-padaja-na-sar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m2",
+  "title": "Dlaczego klasyczne filtry padają na SAR",
+  "eyebrow": "FILTRACJA — KLASYKA KONTRA SPECKLE",
+  "description": "Te same trzy filtry, co poprzednio na cameramanie — Gauss, median, bilateral — uruchomione na kafelku SAR-podobnym z multi-look speckle. Widzisz, że PSNR ledwo drgnęło, ENL skoczyło tylko tam, gdzie zatraciło się szczegóły, a krawędzie się rozjechały — i wiesz już, dlaczego potrzebujemy filtrów Lee/Frost.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "te-same-filtry-nowy-szum",
+      "title": "Te same filtry, inny model szumu",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital image enhancement and noise filtering by use of local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji uczciwie wykazaliśmy, że Gauss, median i bilateral robią to, co obiecano — pod warunkiem że szum jest **addytywny i gaussowski**. Teraz puszczamy te same trzy filtry na kafelek SAR. Symulujemy go tak, jak robią to wszystkie podręczniki teledetekcji: bierzemy czysty obraz optyczny (cameraman), mnożymy intensywność przez wieloprzejściowy szum Gamma o $L = 4$ spojrzeniach (typowo dla Sentinel-1 GRD) i bierzemy pierwiastek — dostając coś, co statystycznie zachowuje się jak amplituda SAR.\n\n![Dwa panele: po lewej czysty obraz cameramana 256×256 (referencja), po prawej ten sam obraz po przemnożeniu intensywności przez szum Gamma o L=4 spojrzeniach i wzięciu pierwiastka — wynik wygląda dokładnie jak amplitudowy kafelek Sentinel-1 GRD: ziarno na płaskim niebie, jasne i ciemne plamy o wielkości ~2 piksele, rozmyte kontury kamerzysty pod warstwą speckle](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sar-tile-clean-vs-speckled.png)\n\nZ lekcji *1.4* pamiętamy model multiplikatywny $I = R \\cdot N$ z $\\mathbb{E}[N] = 1$, $\\operatorname{Var}[N] = 1/L$ — tu nie wyprowadzamy go ponownie, ale wyciągamy z niego trzy konsekwencje, każda zabójcza dla klasyki:\n\n- **Wariancja rośnie z jasnością.** Jasny piksel z $R \\approx 1$ ma w speckle wariancję ~`1/L`; ciemny piksel z $R \\approx 0{,}1$ ma wariancję ~`0{,}01/L`. To znaczy, że zwykłe odchylenie standardowe nie jest „rozmiarem szumu\" — zmienia się piksel po pikselu.\n- **`E[I_obs] = R`, ale nie da się uśrednić do zera.** $N$ ma średnią 1, nie 0, więc lokalne uśrednianie zbiega do `R`, ale jego wariancja po uśrednieniu nadal jest proporcjonalna do $R^2$ — szum nie znika asymptotycznie, on się skaluje z sygnałem.\n- **Logarytm „prostuje\" to do addytywności.** Po $\\log I_{\\text{obs}} = \\log R + \\log N$ szum staje się addytywny, ale o rozkładzie *Fishera-Tippetta*, nie gaussowskim. Stąd biorą się filtry typu MAP/MMSE z lat 80-tych (Lee, Frost) — operujące na statystykach lokalnych zamiast na założeniu Gaussa.\n\nKlasyczne Gauss/median/bilateral nie wiedzą nic o tej multiplikatywności. Po prostu wykonują operację zaprojektowaną pod inną klasę szumu — i, jak za chwilę zobaczysz na wykresie i potem we własnym kodzie, robią to *gorzej, niż się wydaje na pierwszy rzut oka*."
+      }
+    },
+    {
+      "id": "edge-profile-plot",
+      "title": "Profil 1D przez krawędź: co każdy filtr „rozumie\" ze speckle",
+      "description": "Pojedynczy wiersz przechodzący przez krawędź głowy operatora kamery — pokazany dla czystego sygnału, wejścia SAR i trzech filtrów. Na jednym wykresie widać, kto wygładza, kto smaruje krawędź, a kto zostawia resztkowy speckle.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/dlaczego-klasyczne-filtry-padaja-na-sar-1.png",
+        "alt": "Wykres 1D pokazujący profil intensywności wzdłuż wiersza nr 95 obrazu 256×256. Oś X: indeks kolumny od 0 do 255 (px). Oś Y: amplituda w zakresie -0,05 do 1,1. Czarna linia przerywana to czysty sygnał referencyjny: gładko zmienia się od ~0,7 na lewej krawędzi, spada do ~0,15 w środku (głowa operatora) i wraca do ~0,7 po prawej. Szara cienka linia to wejście SAR (speckled): wykonuje gwałtowne skoki ±0,3 wokół czystej trajektorii — typowe speckle. Niebieska gruba linia (Gauss σ=1,5) wygładza speckle do gładkiej krzywej, ale wyraźnie zaokrągla krawędzie głowy — przejście rozciąga się na 6-8 próbek. Czerwona gruba linia (Median 3×3) usuwa pojedyncze najwyższe i najniższe szczyty, ale generalna ziarnistość pozostaje — krzywa nadal ma szum o amplitudzie ~0,1. Zielona gruba linia (Bilateral σ_s=2, σ_r=0,12) zachowuje się pomiędzy nimi: szum lokalnie zredukowany, ale w okolicach krawędzi wyraźnie zostawia resztkowe peaki speckle (bo waga intensywnościowa traktuje je jako „krawędzie\" i ich nie wygładza). Siatka jasnoszara, legenda w prawym górnym rogu.",
+        "caption": "Rys. 1. Profil 1D przez krawędź głowy operatora kamery. Gauss zostawia gładką krzywą, ale rozmywa krawędź. Median wycina pojedyncze szczyty, ale generalna ziarnistość pozostaje — bo speckle ma Gamma, nie impulsy. Bilateral interpretuje peaki speckle jako „krawędzie\" i zostawia je nietknięte.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage import data as sk_data\nfrom skimage.restoration import denoise_bilateral\n\nrng = np.random.default_rng(7)\nclean_u8 = sk_data.camera()\nclean = clean_u8[::2, ::2].astype(np.float32) / 255.0  # 256x256\nH, W = clean.shape\n\nL = 4\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=clean.shape).astype(np.float32)\nclean_intensity = clean ** 2 + 1e-4\nspeckled_intensity = clean_intensity * speckle\nspeckled_amp = np.sqrt(speckled_intensity).astype(np.float32)\ndisp_max = np.percentile(speckled_amp, 99.5)\nspeckled = np.clip(speckled_amp / disp_max, 0.0, 1.0).astype(np.float32)\n\ngauss_out = gaussian_filter(speckled, sigma=1.5)\nmedian_out = median_filter(speckled, size=3)\nbilateral_out = denoise_bilateral(\n    speckled, sigma_color=0.12, sigma_spatial=2.0, channel_axis=None\n).astype(np.float32)\n\nROW = 95\nxs = np.arange(W)\nfig, ax = plt.subplots(figsize=(8.8, 4.6), constrained_layout=True)\nax.plot(xs, clean[ROW, :], \"k--\", lw=1.2, alpha=0.7, label=\"czysty sygnal (ref)\")\nax.plot(xs, speckled[ROW, :], color=\"#888\", lw=0.8, alpha=0.85, label=\"speckled\")\nax.plot(xs, gauss_out[ROW, :], color=\"#1f77b4\", lw=1.7, label=\"Gauss sigma=1.5\")\nax.plot(xs, median_out[ROW, :], color=\"#d62728\", lw=1.7, label=\"Median 3x3\")\nax.plot(xs, bilateral_out[ROW, :], color=\"#2ca02c\", lw=1.7, label=\"Bilateral\")\nax.set_xlabel(\"kolumna [px]\")\nax.set_ylabel(\"amplituda [-]\")\nax.set_title(\n    \"Profil 1D wiersza nr 95 (przechodzi przez krawedz glowy operatora kamery)\"\n)\nax.set_xlim(0, W - 1)\nax.set_ylim(-0.05, 1.1)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=9)\nfig.savefig(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"dlaczego-klasyczne-filtry-padaja-na-sar-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\nplt.close(fig)\nprint(\"OK\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "co-konkretnie-sie-psuje",
+      "title": "Co konkretnie się psuje w każdym z trzech filtrów",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1080/02757259409532206",
+          "title": "Speckle Filtering of Synthetic Aperture Radar Images: A Review",
+          "kind": "paper",
+          "author": "Jong-Sen Lee, Mitchell R. Grunes, Stephen A. Mango",
+          "year": 1994
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — Chapter 5",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Spójrzmy z bliska na to samo wycinek krawędzi głowy kamerzysty przefiltrowane trzema klasycznymi narzędziami:\n\n![Pięć paneli obok siebie pokazujących ten sam wycinek 80×100 px z krawędzią głowy operatora kamery: (1) czysty referencyjny — kontur ostry, gładkie tony szarości; (2) speckled — ziarniste, kontur widoczny, ale obrzeża głowy zlewają się z szumem; (3) Gauss σ=1,5 — gładko, ale zewnętrzny kontur głowy wyraźnie rozmyty, szczegóły twarzy zatarte; (4) Median 3×3 — kontur ostrzejszy niż w Gauss, ale plamki speckle wciąż widać na płaszczyznach twarzy i tła; (5) Bilateral — szum lokalnie wytłumiony, ale wzdłuż konturu głowy widać rząd jasnych „bąbli\" — speckle interpretowane jako struktura](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sar-filter-edge-zoom.png)\n\nKażdy z trzech filtrów pada na speckle z **innego powodu** — i to jest pierwszy moment dydaktyczny tego modułu, bo każdy z tych powodów wskazuje, czego potrzebuje *poprawny* filtr SAR.\n\n- **Gauss.** Liniowa konwolucja Gaussa to MMSE estymator średniej przy szumie addytywnym o stałej wariancji. Na speckle wariancja zależy od $R^2$, więc piksele jasne i ciemne dostają tę samą wagę uśredniania — a powinny dostać różne. Efekt: jasne plamy speckle są „rozsmarowywane\" jednakowo z ciemnymi, krawędzie są zarazem rozmywane (z prawdziwego konturu) i *nie* są tłumione (bo lokalne mocne speckle przeżywa uśrednianie). Suma: **rozmyte krawędzie + niewielka realna redukcja szumu**.\n- **Median 3×3.** Mediana jest odporna na pojedyncze outliery, ale speckle Gamma to **nie** są pojedyncze outliery — to *cały* obraz ma rozkład Gamma. W oknie 3×3 mediana jest niemal nieodróżnialna od średniej dla Gamma(L) o $L \\geq 3$; mówiąc inaczej, mediana zachowuje się tu prawie jak liniowy filtr o znacznie mniejszej apodyzacji. Efekt: trochę mniej rozmycia krawędzi niż Gauss, ale **resztkowy speckle prawie identyczny**.\n- **Bilateral.** Bilateral zakłada, że duże skoki intensywności to *struktura*, którą trzeba zachować. Na speckle te skoki są szumem, a bilateral je „chroni\" — waga intensywnościowa $e^{-(I_{ij}-I_{xy})^2 / 2\\sigma_r^2}$ wyłącza wygładzanie dokładnie tam, gdzie speckle dał lokalny peak. Im bardziej obniżymy $\\sigma_r$ żeby uniknąć tego efektu, tym bardziej *cały* filtr przestaje cokolwiek robić. Efekt: **resztkowe peaki speckle wzdłuż krawędzi**, jak widać w panelu (5)."
+      }
+    },
+    {
+      "id": "quiz-co-zawodzi-pod-spodem",
+      "title": "Sprawdź: który diagnozis jest tutaj poprawny?",
+      "type": "quiz",
+      "data": {
+        "question": "Po obejrzeniu wykresu z poprzedniej sekcji i wycinka krawędzi powyżej — który z poniższych opisów najlepiej oddaje **fundamentalny** powód, dla którego żaden z trzech klasycznych filtrów (Gauss, median, bilateral) nie radzi sobie z kafelkiem SAR? Wybierz jedną odpowiedź.",
+        "options": [
+          "Bilateral był ustawiony z za dużą σ_r — wystarczy ją zmniejszyć i krawędzie głowy zostaną zachowane, a speckle wytłumione.",
+          "Wystarczy zwiększyć σ Gaussa albo rozmiar okna mediana — większe okno *zawsze* lepiej tłumi szum, kosztem rozmycia, ale dla SAR taki kompromis jest akceptowalny.",
+          "Wszystkie trzy filtry zakładają, że szum jest **addytywny** (Gauss/bilateral) lub **impulsowy** (median). Speckle ma rozkład Gamma o wariancji proporcjonalnej do sygnału — to inna klasa problemu i klasyczne filtry rozwiązują złe zadanie, niezależnie od strojenia parametrów.",
+          "Speckle byłby usunięty przez te filtry, gdyby najpierw zlogarytmować obraz — wtedy szum staje się addytywny i Gauss/median/bilateral działają w pełni."
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "Najgłębszy problem nie leży w doborze parametrów — leży w **modelu szumu zakładanym przez filtr**. Gauss/bilateral są MMSE-optymalne pod addytywnym szumem o stałej wariancji; median jest optymalny dla rozkładu z ciężkimi ogonami (sól-pieprz). Speckle ma rozkład Gamma o wariancji `R²/L` — proporcjonalnej do sygnału. Wymaga filtra, który *wie o tej zależności*: estymuje lokalne `R̂` z proporcji wariancji speckle do wariancji obserwowanej, jak np. Lee z lokalnym współczynnikiem `b = max(0, (CV² - C_N²) / CV²)`. Dystraktor (A) myli skutek z przyczyną — bilateral nie zadziała przy żadnym σ_r, bo jego założenie o tym, co jest „strukturą\", nie pasuje do speckle. (B) jest po prostu nieprawdziwy — zbyt duże okno mediana lub σ Gaussa nie tłumi speckle silniej niż liniowe uśrednianie i drastycznie niszczy informację. (D) ma w sobie ziarno prawdy (log-transformacja sprawdza się w niektórych podejściach), ale po log-transformacji szum nie staje się gaussowski — staje się Fishera-Tippetta o znanym rozkładzie, dla którego nadal trzeba estymatora dopasowanego do rozkładu (a nie zwykłego Gaussa).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "code-zmierz-i-sprawdz",
+      "title": "Zaaplikuj trzy filtry i zmierz, jak (nie) pomogły",
+      "description": "Po lewej masz zaszumiony kafelek SAR; po prawej referencyjny wynik median 3×3 (najbardziej „instynktowny\" pierwszy strzał). Twoja funkcja zwróci wszystkie trzy wyniki — testy zmierzą PSNR i ENL i pokażą czarno na białym, że ulgi nie ma.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital image enhancement and noise filtering by use of local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `apply_classical_filters(img)` przyjmującą obraz `np.ndarray` w skali szarości (`dtype=float32`, wartości w `[0, 1]`) i zwracającą **słownik** z trzema kluczami:\n\n- `'gauss'` — `scipy.ndimage.gaussian_filter(img, sigma=1.5)`,\n- `'median'` — `scipy.ndimage.median_filter(img, size=3)`,\n- `'bilateral'` — `skimage.restoration.denoise_bilateral(img, sigma_color=0.12, sigma_spatial=2.0, channel_axis=None)`.\n\nWszystkie trzy wartości muszą mieć kształt identyczny jak `img` i `dtype=float32`.\n\n```python\nimg = np.zeros((8, 8), dtype=np.float32); img[3, 3] = 1.0\nout = apply_classical_filters(img)\nout['gauss'].shape == (8, 8)  # True\n```\n\nW `starterCode` masz gotowy preview, który:\n\n1. wczyta zaszumiony kafelek `/inputs/sar-classical-cameraman-speckled.png`,\n2. wczyta czystą referencję i kafelek (`/inputs/sar-classical-cameraman-clean.npz`) — ten sam, którego użyliśmy w teorii,\n3. zaaplikuje Twoją funkcję i wypisze PSNR oraz ENL na płaskim niebie dla każdego filtra.\n\nTesty sprawdzą, że PSNR po **każdym** filtrze nie urośnie więcej niż ~2 dB (klasyka *naprawdę* nie radzi sobie ze speckle) i że Gauss jako jedyny z trójki znacząco wygładza homogeniczne regiony — bo, jak widzieliśmy, *robi to kosztem krawędzi*.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\n\ndef apply_classical_filters(img):\n    \"\"\"\n    Zwroc slownik {'gauss', 'median', 'bilateral'} z trzema klasycznymi\n    filtrami zaaplikowanymi na ten sam obraz.\n\n    Parametry sa stale (te same co w teorii), zeby porownanie mialo sens.\n    \"\"\"\n    # TODO: uzupelnij trzy wartosci. Wszystkie maja byc dtype=float32 i shape == img.shape.\n    return {\n        \"gauss\": img,\n        \"median\": img,\n        \"bilateral\": img,\n    }\n\n\n# --- Preview na realnym kafelku SAR ---\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\n\nout = apply_classical_filters(speckled)\n\n\ndef psnr(a, b, peak=1.0):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(peak * peak / mse)\n\n\ndef enl(patch):\n    m, s = float(patch.mean()), float(patch.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"PSNR(speckled vs clean)   = {psnr(speckled, clean):.2f} dB\")\nprint(f\"ENL(sky on speckled)      = {enl(speckled[SKY]):.2f}\")\nfor k in (\"gauss\", \"median\", \"bilateral\"):\n    print(\n        f\"  {k:9s}:  PSNR={psnr(out[k], clean):5.2f} dB  \"\n        f\"ENL(sky)={enl(out[k][SKY]):6.2f}\"\n    )\n\nfig, axes = plt.subplots(1, 4, figsize=(12, 3.4), constrained_layout=True)\nfor ax, (im, ttl) in zip(\n    axes,\n    [\n        (speckled, \"Wejscie SAR\"),\n        (out[\"gauss\"], \"Gauss sigma=1.5\"),\n        (out[\"median\"], \"Median 3x3\"),\n        (out[\"bilateral\"], \"Bilateral\"),\n    ],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_dict_with_three_filter_outputs_same_shape",
+            "body": "import numpy as np\nimg = np.linspace(0.05, 0.95, 32 * 32).reshape(32, 32).astype(np.float32)\nout = apply_classical_filters(img)\nassert set(out.keys()) == {'gauss', 'median', 'bilateral'}, f\"klucze: {sorted(out)}\"\nfor k, v in out.items():\n    assert hasattr(v, 'shape') and v.shape == img.shape, f\"{k}: shape={getattr(v,'shape',None)}\"",
+            "hidden": false
+          },
+          {
+            "name": "psnr_improvement_is_marginal_on_gamma_speckle",
+            "body": "import numpy as np\nfrom PIL import Image\nspeckled = np.asarray(Image.open('/inputs/sar-classical-cameraman-speckled.png').convert('L'), dtype=np.float32) / 255.0\nref = np.load('/inputs/sar-classical-cameraman-clean.npz')\nclean = ref['clean'].astype(np.float32)\ndef psnr(a, b):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\nbase = psnr(speckled, clean)\nout = apply_classical_filters(speckled)\nfor k in ('gauss', 'median', 'bilateral'):\n    delta = psnr(out[k], clean) - base\n    assert delta < 2.5, f\"PSNR poprawa dla {k} = {delta:.2f} dB > 2.5 — to powinno byc marne\"\n    assert delta > -1.0, f\"PSNR pogorszenie dla {k} = {delta:.2f} dB (nie powinno spasc o ponad 1 dB)\"",
+            "hidden": true
+          },
+          {
+            "name": "gauss_smooths_homogeneous_regions_more_than_median_and_bilateral",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nL = 4\nflat = np.full((64, 64), 0.5, dtype=np.float32)\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=flat.shape).astype(np.float32)\nimg = np.sqrt((flat ** 2) * speckle).astype(np.float32)\nout = apply_classical_filters(img)\n# Na homogenicznym regionie wariancja po Gaussie powinna byc duzo mniejsza\n# niz po medianie i bilateralu — Gauss jest najsilniejszym low-passem z trojki.\nvg, vm, vb = out['gauss'].var(), out['median'].var(), out['bilateral'].var()\nassert vg < vm, f\"var(gauss)={vg:.5f} >= var(median)={vm:.5f} — czy uzyles gaussian_filter z sigma=1.5?\"\nassert vg < vb, f\"var(gauss)={vg:.5f} >= var(bilateral)={vb:.5f}\"",
+            "hidden": true
+          },
+          {
+            "name": "bilateral_keeps_speckle_peaks_along_edges",
+            "body": "import numpy as np\nrng = np.random.default_rng(42)\nL = 4\nimg = np.zeros((48, 48), dtype=np.float32)\nimg[:, 24:] = 1.0\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=img.shape).astype(np.float32)\nspeckled = np.sqrt((img ** 2 + 1e-4) * speckle).clip(0, 1).astype(np.float32)\nout = apply_classical_filters(speckled)\n# Bilateral z sigma_r=0.12 wzdluz krawedzi zachowuje speckle peaki, wiec\n# wzdluz kolumny 23 wariancja w wynikach bilaterala bedzie wieksza\n# niz w wynikach gaussa (ktory zignoruje krawedz i wszystko rozmaze).\nstrip_b = out['bilateral'][:, 22:26]\nstrip_g = out['gauss'][:, 22:26]\nassert strip_b.var() > strip_g.var(), (\n    f\"bilateral var(strip)={strip_b.var():.4f} <= gauss var(strip)={strip_g.var():.4f}\"\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\n\ndef apply_classical_filters(img):\n    img = img.astype(np.float32)\n    return {\n        \"gauss\": gaussian_filter(img, sigma=1.5).astype(np.float32),\n        \"median\": median_filter(img, size=3).astype(np.float32),\n        \"bilateral\": denoise_bilateral(\n            img, sigma_color=0.12, sigma_spatial=2.0, channel_axis=None\n        ).astype(np.float32),\n    }\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-speckled.png",
+            "alt": "Kafelek SAR-podobny 256×256: cameraman po multi-look Gamma speckle z L=4 spojrzeniami — wyraźna ziarnistość na całym obrazie, kontury kamerzysty częściowo zatarte przez szum.",
+            "caption": "Wejście: kafelek SAR (syntetyczny, ale statystycznie wierny GRD)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": "Referencja: .npz z kluczami 'clean' i 'speckled' (oba float32, 256×256) — używany przez preview i testy do liczenia PSNR."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-expected.png",
+          "alt": "Ten sam kafelek po filtrze Median 3×3: pojedyncze najjaśniejsze szczyty speckle są zredukowane, ale generalna ziarnistość i niska kontrastowość krawędzi pozostają — wizualnie ledwo różnica.",
+          "caption": "Cel: tak ma wyglądać `out['median']` — i tak właśnie wygląda klasyka „pierwszego strzału\" na SAR. Niewiele zmienia, prawda?"
+        },
+        "requiresPackages": [
+          "scikit-image",
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-spróbuj-uratować",
+      "title": "Spróbuj „uratować\" klasykę: większe okno, mniejsza σ_r, dowolne kombinacje",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\n\n# Pokrec parametrami i obserwuj, gdzie jest pole 'kompromisu':\n#  - sigma Gaussa wieksze => mniej speckle, ale krawedzie pojda do zera\n#  - okno median wieksze => to samo, plus charakterystyczny komiksowy look\n#  - bilateral sigma_r mniejsze => mniej wygladzania => speckle zostaje\n#                  sigma_r wieksze => zaczyna sie zachowywac jak gauss\nsigma_gauss = 1.5\nk_median = 3\nsigma_s, sigma_r = 2.0, 0.12\n\nout = {\n    \"gauss\": gaussian_filter(speckled, sigma=sigma_gauss),\n    \"median\": median_filter(speckled, size=k_median),\n    \"bilateral\": denoise_bilateral(\n        speckled, sigma_color=sigma_r, sigma_spatial=sigma_s, channel_axis=None\n    ),\n}\n\n\ndef psnr(a, b):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n\n\ndef enl(patch):\n    m, s = float(patch.mean()), float(patch.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"PSNR(speckled) = {psnr(speckled, clean):.2f} dB,  ENL(sky) = {enl(speckled[SKY]):.2f}\")\nfor k, v in out.items():\n    print(f\"  {k:9s} PSNR={psnr(v, clean):5.2f} dB  ENL(sky)={enl(v[SKY]):6.2f}\")\n\nfig, axes = plt.subplots(1, 4, figsize=(12, 3.2), constrained_layout=True)\nfor ax, (im, ttl) in zip(\n    axes,\n    [\n        (speckled, \"Speckled\"),\n        (out[\"gauss\"], f\"Gauss s={sigma_gauss}\"),\n        (out[\"median\"], f\"Median k={k_median}\"),\n        (out[\"bilateral\"], f\"Bil ss={sigma_s} sr={sigma_r}\"),\n    ],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Pokręć σ Gaussa do 4-5 albo k_median do 7 — w którym momencie obraz przestaje przypominać kamerzystę, a ENL nadal nie dochodzi do wartości, którą zobaczysz po Lee w następnej lekcji?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+      "title": "Digital image enhancement and noise filtering by use of local statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1080/02757259409532206",
+      "title": "Speckle Filtering of Synthetic Aperture Radar Images: A Review",
+      "kind": "paper",
+      "author": "Jong-Sen Lee, Mitchell R. Grunes, Stephen A. Mango",
+      "year": 1994
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 5",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_bilateral",
+      "title": "skimage.restoration.denoise_bilateral — scikit-image documentation",
+      "kind": "article"
+    }
+  ]
+}

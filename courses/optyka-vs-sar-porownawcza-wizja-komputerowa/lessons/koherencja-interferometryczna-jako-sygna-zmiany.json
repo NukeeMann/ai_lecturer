@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "slug": "koherencja-interferometryczna-jako-sygna-zmiany",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Koherencja interferometryczna jako sygnał zmiany",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Para SLC tej samej sceny i mapa $|\\gamma|$ — w SAR mamy sygnał zmiany, którego optyka nie ma fizycznie: stabilność fazy między dwoma przelotami. Spadek koherencji widzi zmianę strukturalną, nawet gdy amplituda — i log-ratio — niczego nie ruszają.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "intuition",
+      "title": "Zmiana strukturalna, którą amplituda przegapia",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1088/0266-5611/14/4/001",
+          "title": "Synthetic aperture radar interferometry",
+          "kind": "paper",
+          "author": "Richard Bamler, Philipp Hartl",
+          "year": 1998
+        },
+        {
+          "url": "https://www.esa.int/esapub/tm/tm19/TM-19_ptA.pdf",
+          "title": "InSAR Principles: Guidelines for SAR Interferometry Processing and Interpretation (ESA TM-19)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji log-ratio nauczył się **prostować mnożny szum SAR** w detektor zmiany — ale działa tylko na *amplitudzie*. Wystarczy zmiana, w której nowa scena ma **tę samą jasność**, ale **inne fizyczne rozpraszacze** (zaorane pole, statek który odpłynął i wrócił inny, częściowo zburzony i odbudowany budynek), żeby log-ratio jej nie zauważył. Optyka też tego nie zauważy: dwa zdjęcia z różnych dat są jasnościowo podobne, więc difference w blachach pikseli mówi „nic się nie dzieje\". A jednak — coś się stało.\n\nSAR ma narzędzie, którego optyka **nie ma fizycznie**: porównanie *faz* dwóch SLC. Piksel SLC to liczba zespolona $z = A \\cdot e^{i\\varphi}$. Pojedyncza faza $\\varphi$ jest niemal losowa (lekcja 1.5), ale **stosunek faz** dwóch akwizycji nad **niezmienionym terenem** jest powtarzalny — bo wracają z tych samych mikro-rozpraszaczy, tak samo ułożonych. Gdy konfiguracja rozpraszaczy ulegnie zmianie (orka, fala, wyburzenie), faza między datami staje się **niezależna** od poprzedniej. Sygnałem zmiany jest właśnie **zanik tej powtarzalności** — magnitudą znormalizowanego iloczynu krzyżowego $|\\gamma|$, zwaną **koherencją interferometryczną**.\n\n![Cztery panele 192×192: (1) |z1| amplituda SLC z daty 1 — widać dwa jasne miejskie patche w górnej lewej części, jednorodne tło i dwa prostokąty oznaczone wyłącznie speckle; (2) |z2| amplituda z daty 2 — wygląda niemal identycznie do |z1|, dwa miejskie patche w tym samym miejscu, ale prawy górny prostokąt (nowa konstrukcja) jest teraz dużo jaśniejszy; (3) wygładzona mapa log(I2/I1) w skali czerwono-niebieskiej — czerwona plama pokazuje wzrost jasności w prawym górnym prostokącie (nowa konstrukcja), ale dolny prostokąt (rolnictwo) jest niewidoczny, bo zmiana strukturalna ma tę samą jasność; (4) mapa |γ| w skali viridis — żółte tło wokół 0,95, dwa wyraźne ciemne prostokąty (oba zmiany) około 0,2 — KOHERENCJA WIDZI OBIE ZMIANY](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/koherencja-preview-4panel.png)\n\nPatrząc na panel (3) vs (4): log-ratio widzi tylko jeden prostokąt (zmiana jasności), bo amplituda drugiego nie ruszyła się. Koherencja widzi oba — w tym ten, który nie zmienił jasności, ale zmienił **strukturę odbicia**. To dokładnie ten sygnał, na którym jeszcze nie ma czego konkurencyjnego oprzeć ze zdjęć optycznych: jak dwie fotografie tego samego pola z różnych dni będą wyglądały bliźniaczo, tak dwa SLC z tego samego pola wyglądają identycznie *po amplitudzie*, ale ich fazy są niezależne — i to wystarczy."
+      }
+    },
+    {
+      "id": "coherence-vs-logratio-histograms",
+      "title": "Histogramy: koherencja vs log-ratio na tej samej parze SLC",
+      "description": "Trzy populacje pikseli (tło, zmiana strukturalna o tej samej jasności, zmiana jasności+struktury) na obu detektorach. Tylko $|\\gamma|$ rozdziela wszystkie trzy.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/koherencja-interferometryczna-jako-sygna-zmiany-1.png",
+        "alt": "Dwa panele obok siebie, każdy histogram z trzema populacjami pikseli z syntetycznej pary SLC 192×192. (a) Histogram $|\\gamma|$ na [0, 1]: niebieski (bez zmiany — tło + miasto) skupiony przy 0,95 z wysokim pikiem; zielony (zmiana strukturalna, ta sama jasność) i czerwony (zmiana jasności + struktury) — oba skupione wokół 0,2 z pełnym rozdzieleniem od niebieskiego. Próg $|\\gamma| = 0{,}40$ przedzielony kropkowaną pionową linią. (b) Histogram $|\\log(I_2/I_1)|$ wygładzonego (okno 5×5) na [0; 2,5]: niebieski i zielony OBA skupione przy 0 (zmiana strukturalna wygląda jak tło dla log-ratio); czerwony przesunięty wyraźnie w prawo, środek przy 1,0. Próg $|\\log\\text{-ratio}| = 0{,}5$. Wniosek widoczny gołym okiem: koherencja rozdziela trzy populacje, log-ratio tylko jedną.",
+        "caption": "Rys. 1. Te same trzy populacje pikseli z syntetycznej pary SLC oglądane dwoma detektorami. Panel (a): koherencja $|\\gamma|$ rozdziela wszystkie trzy populacje — tło przy 0,95, zmiany przy 0,2. Panel (b): log-ratio z poprzedniej lekcji rozdziela tylko zmianę jasności (czerwony); zmiana strukturalna o tej samej jasności (zielony) zlewa się z tłem. To dlatego koherencja jest tym sygnałem zmiany, w który optyka nie ma dźwigni.",
+        "sourceCode": "import os\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\n\n\nOUT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"koherencja-interferometryczna-jako-sygna-zmiany-1.png\"\n)\n\n\ndef circular_gaussian(shape, rng):\n    re = rng.normal(scale=1.0 / np.sqrt(2.0), size=shape).astype(np.float32)\n    im = rng.normal(scale=1.0 / np.sqrt(2.0), size=shape).astype(np.float32)\n    return (re + 1j * im).astype(np.complex64)\n\n\ndef build_scene():\n    H, W = 192, 192\n    R1 = np.full((H, W), 0.30, dtype=np.float32)\n    R2 = np.full((H, W), 0.30, dtype=np.float32)\n    urban = (slice(10, 60), slice(10, 80))\n    R1[urban] = 0.80\n    R2[urban] = 0.80\n    urban2 = (slice(80, 130), slice(20, 50))\n    R1[urban2] = 0.75\n    R2[urban2] = 0.75\n    agri = (slice(110, 165), slice(95, 165))\n    R1[agri] = 0.45\n    R2[agri] = 0.45\n    construction = (slice(25, 65), slice(120, 175))\n    R1[construction] = 0.30\n    R2[construction] = 0.95\n    decorrelated = np.zeros((H, W), dtype=bool)\n    decorrelated[agri] = True\n    decorrelated[construction] = True\n    return R1, R2, decorrelated, agri, construction\n\n\ndef coherence_map(z1, z2, win=5):\n    cross = z1 * np.conj(z2)\n    num_re = uniform_filter(cross.real.astype(np.float32), size=win, mode=\"reflect\")\n    num_im = uniform_filter(cross.imag.astype(np.float32), size=win, mode=\"reflect\")\n    num = np.sqrt(num_re * num_re + num_im * num_im)\n    p1 = uniform_filter((np.abs(z1) ** 2).astype(np.float32), size=win, mode=\"reflect\")\n    p2 = uniform_filter((np.abs(z2) ** 2).astype(np.float32), size=win, mode=\"reflect\")\n    return num / np.sqrt(p1 * p2 + 1e-12)\n\n\ndef main():\n    rng = np.random.default_rng(20260516)\n    R1, R2, decorrelated, agri, construction = build_scene()\n    base = circular_gaussian(R1.shape, rng)\n    n2_indep = circular_gaussian(R1.shape, rng)\n    alpha = 0.95\n    z1 = (np.sqrt(R1) * base).astype(np.complex64)\n    base2 = np.where(\n        decorrelated,\n        circular_gaussian(R1.shape, rng),\n        alpha * base + np.sqrt(1.0 - alpha * alpha) * n2_indep,\n    )\n    z2 = (np.sqrt(R2) * base2).astype(np.complex64)\n\n    gamma = coherence_map(z1, z2, win=5)\n    I1 = np.abs(z1) ** 2\n    I2 = np.abs(z2) ** 2\n    lr = np.log((I2 + 1e-6) / (I1 + 1e-6))\n    lr_s = uniform_filter(lr.astype(np.float32), size=5, mode=\"reflect\")\n    abs_lr = np.abs(lr_s)\n\n    agri_mask = np.zeros(R1.shape, dtype=bool)\n    agri_mask[agri] = True\n    constr_mask = np.zeros(R1.shape, dtype=bool)\n    constr_mask[construction] = True\n    unchanged_mask = ~(agri_mask | constr_mask)\n\n    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2), constrained_layout=True)\n\n    ax = axes[0]\n    bins = np.linspace(0.0, 1.0, 50)\n    ax.hist(gamma[unchanged_mask].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#4a78c8\", label=\"bez zmiany (tlo + miasto)\")\n    ax.hist(gamma[agri_mask].ravel(), bins=bins, density=True, alpha=0.75,\n            color=\"#3da25b\",\n            label=\"zmiana strukturalna  (TA SAMA jasnosc)\")\n    ax.hist(gamma[constr_mask].ravel(), bins=bins, density=True, alpha=0.75,\n            color=\"#d8553a\", label=\"zmiana jasnosci + struktury\")\n    ax.axvline(0.4, color=\"black\", linewidth=0.9, linestyle=\":\",\n               label=\"prog |gamma|=0.40\")\n    ax.set_xlim(0, 1)\n    ax.set_xlabel(r\"$|\\gamma|$  [-]\")\n    ax.set_ylabel(\"Gestosc prawd.  [-]\")\n    ax.set_title(\n        \"(a) Histogram koherencji $|\\\\gamma|$\\n\"\n        \"obie zmiany leza po lewej, tlo po prawej\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(fontsize=8, loc=\"upper center\")\n\n    ax = axes[1]\n    bins2 = np.linspace(0.0, 2.5, 50)\n    ax.hist(abs_lr[unchanged_mask].ravel(), bins=bins2, density=True, alpha=0.7,\n            color=\"#4a78c8\", label=\"bez zmiany (tlo + miasto)\")\n    ax.hist(abs_lr[agri_mask].ravel(), bins=bins2, density=True, alpha=0.75,\n            color=\"#3da25b\",\n            label=\"zmiana strukturalna  (TA SAMA jasnosc)\")\n    ax.hist(abs_lr[constr_mask].ravel(), bins=bins2, density=True, alpha=0.75,\n            color=\"#d8553a\", label=\"zmiana jasnosci + struktury\")\n    ax.axvline(0.5, color=\"black\", linewidth=0.9, linestyle=\":\",\n               label=\"prog |log-ratio|=0,50\")\n    ax.set_xlim(0, 2.5)\n    ax.set_xlabel(r\"$|\\log(I_2/I_1)|$  (wygladz., nat)\")\n    ax.set_ylabel(\"Gestosc prawd.  [-]\")\n    ax.set_title(\n        \"(b) Histogram |log-ratio|\\n\"\n        \"zmiana strukturalna chowa sie w tle - log-ratio jej nie widzi\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(fontsize=8, loc=\"upper right\")\n\n    fig.suptitle(\n        \"Koherencja vs log-ratio - dwa detektory na tej samej parze SLC. \"\n        \"Koherencja rozdziela trzy populacje pikseli; log-ratio rozdziela \"\n        \"tylko jedna.\",\n        fontsize=11,\n    )\n    fig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\n    plt.close(fig)\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "formula-and-decorrelation",
+      "title": "Formuła $|\\gamma|$ i budżet dekorelacji",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.752212",
+          "title": "Coherence estimation for SAR imagery",
+          "kind": "paper",
+          "author": "Ronny Touzi, Armand Lopes, Jérôme Bruniquel, Paris W. Vachon",
+          "year": 1999
+        },
+        {
+          "url": "https://link.springer.com/book/10.1007/0-306-47633-9",
+          "title": "Radar Interferometry: Data Interpretation and Error Analysis (Chapter 3 — Coherence)",
+          "kind": "book",
+          "author": "Ramon F. Hanssen",
+          "year": 2001
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "**Formuła koherencji** definiuje stabilność fazy jako znormalizowaną korelację zespoloną w lokalnym oknie $W$ wokół piksela:\n\n$$ |\\gamma(i, j)| \\;=\\; \\frac{\\bigl|\\,\\langle z_1 \\cdot z_2^{*}\\rangle_W\\,\\bigr|}{\\sqrt{\\langle |z_1|^2\\rangle_W \\cdot \\langle |z_2|^2\\rangle_W}} \\;\\in\\; [0, 1] $$\n\nLicznik to **magnituda średniego iloczynu krzyżowego** $z_1 \\cdot \\overline{z_2}$ (faza tego iloczynu jest fazą interferometryczną $\\varphi_1 - \\varphi_2$, do której wrócimy w m5). Mianownik to średnia geometryczna mocy obu kafelków — czysta normalizacja amplitudy. Średnie $\\langle\\cdot\\rangle_W$ liczymy nad oknem $W$ rzędu $5{,}{\\times}\\,5$ do $11{,}{\\times}\\,11$ pikseli; bez tego pomiar jednego piksela jest zaszumiony i $|\\gamma|$ szacuje się skośnie do góry.\n\nTrzy reżimy widać na phasor-pairach:\n\n![Trzy panele phasor: po lewej osiem par strzałek niebieskich (z1) i czerwonych (z2) niemal pokrywających się — pełna stabilność, |γ| ≈ 1; w środku osiem par, gdzie czerwone strzałki są lekko rozrzucone wokół niebieskich — termiczny szum, |γ| ≈ 0,9; po prawej osiem par, gdzie kąty czerwonych są całkowicie niezależne od niebieskich — pełna dekorelacja, |γ| ≈ 0](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/koherencja-decorrelation-mechanisms.png)\n\nGłówne źródła spadku $|\\gamma|$ (decorrelation budget):\n\n- **Temporal decorrelation** — fizyczna zmiana rozpraszaczy: roślinność rosnąca/koszona, fala morska, śnieg, zaorane pole. To jest *sygnał*, którego szukamy.\n- **Geometric (baseline) decorrelation** — kąt patrzenia drugiego przelotu nie pokrywa się idealnie z pierwszym; im większa **baseline perpendicular**, tym bardziej fazy z różnych pod-rozpraszaczy się przesuwają. Sentinel-1 ma wąską orbitę i bardzo małe baselines (~50 m), więc ten składnik dla większości zastosowań change-detection jest pomijalny.\n- **Thermal decorrelation** — szum termiczny receptora; znaczący tylko nad bardzo ciemnymi obszarami (głębokie morze przy słabym wietrze).\n\nOptyka nie ma tej dźwigni z **fizycznej** przyczyny (lekcja 1.5): integracja fotonów niszczy fazę przy każdej akwizycji. Nie istnieje optyczny analog $|\\gamma|$ — istnieją *korelacje teksturowe* i *NCC patchy*, ale są to korelacje amplitud, nie faz."
+      }
+    },
+    {
+      "id": "implement-coherence",
+      "title": "Zaimplementuj `coherence_map`",
+      "description": "Para syntetycznych SLC z trzema reżimami koherencji. Cel — odtworzyć mapę $|\\gamma|$ pikiel-w-piksel z mapą referencyjną z `/inputs/` (okno 5×5).",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.752212",
+          "title": "Coherence estimation for SAR imagery",
+          "kind": "paper",
+          "author": "Ronny Touzi, Armand Lopes, Jérôme Bruniquel, Paris W. Vachon",
+          "year": 1999
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **mapę koherencji interferometrycznej** dla pary obrazów SLC (Single Look Complex).\n\nFunkcja `coherence_map(z1, z2, win=5)` przyjmuje dwa zespolone tablice `z1`, `z2` o tym samym kształcie (`np.complex64`) i zwraca tablicę `np.float32` tego samego kształtu, w której każdy piksel to oszacowanie\n\n$$ |\\hat\\gamma| \\;=\\; \\frac{|\\langle z_1 \\cdot z_2^{*}\\rangle_W|}{\\sqrt{\\langle |z_1|^2\\rangle_W \\cdot \\langle |z_2|^2\\rangle_W}} $$\n\npoliczone w oknie boxcar rozmiaru `win × win` (mode `'reflect'`).\n\nAlgorytm:\n\n1. Policz iloczyn krzyżowy zespolony `cross = z1 * np.conj(z2)`.\n2. **Licznik**: uśrednij `cross.real` i `cross.imag` osobno przez `uniform_filter(..., size=win, mode='reflect')`, potem weź magnitudę: $\\sqrt{\\langle \\mathrm{Re}\\rangle_W^2 + \\langle \\mathrm{Im}\\rangle_W^2}$.\n3. **Mianownik**: uśrednij `|z1|²` i `|z2|²` tym samym oknem, weź $\\sqrt{\\langle|z_1|^2\\rangle_W \\cdot \\langle|z_2|^2\\rangle_W}$ (dodaj `eps = 1e-12` żeby uniknąć dzielenia przez zero).\n4. Zwróć `licznik / mianownik` jako `float32`.\n\n```\n>>> data = np.load('/inputs/koherencja-slc-pair.npz')\n>>> gamma = coherence_map(data['z1'], data['z2'])\n>>> float(gamma[10:60, 10:80].mean())   # stabilne miasto\n0.9520...\n>>> float(gamma[110:165, 95:165].mean())  # rolnictwo (zmiana strukturalna)\n0.197...\n```\n\nWejście — para syntetycznych SLC 192×192 z trzema reżimami koherencji: tło + miasto (stabilne, $|\\gamma| \\approx 0{,}95$), rolnictwo (zmiana strukturalna, ta sama jasność, $|\\gamma| \\approx 0{,}2$), nowa konstrukcja (zmiana strukturalna + jaśniejsza, $|\\gamma| \\approx 0{,}2$).\n\nTesty weryfikują (a) shape + dtype, (b) wartości $|\\gamma|$ w przedziale $[0,\\, 1{,}001]$, (c) mean $|\\gamma|$ nad stabilnym miastem $\\geq 0{,}85$ i nad zmienionymi rejonami $\\leq 0{,}40$, (d) wynik zgadza się z mapą referencyjną z dokładnością `atol=1e-5`.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\n\n\ndef coherence_map(z1, z2, win=5):\n    \"\"\"Mapa koherencji |gamma| pary SLC w oknie boxcar `win`x`win`.\n\n    Algorytm:\n      1) cross = z1 * conj(z2)\n      2) licznik = |<cross>_W|  (filtruj real i imag osobno, potem hypot)\n      3) mianownik = sqrt(<|z1|^2>_W * <|z2|^2>_W + 1e-12)\n      4) return (licznik / mianownik).astype(np.float32)\n    \"\"\"\n    # TODO: cross = z1 * np.conj(z2)\n    # TODO: num_re = uniform_filter(cross.real.astype(np.float32), size=win, mode='reflect')\n    # TODO: num_im = uniform_filter(cross.imag.astype(np.float32), size=win, mode='reflect')\n    # TODO: num = np.sqrt(num_re * num_re + num_im * num_im)\n    # TODO: p1 = uniform_filter((np.abs(z1) ** 2).astype(np.float32), size=win, mode='reflect')\n    # TODO: p2 = uniform_filter((np.abs(z2) ** 2).astype(np.float32), size=win, mode='reflect')\n    # TODO: return (num / np.sqrt(p1 * p2 + 1e-12)).astype(np.float32)\n    return np.zeros(z1.shape, dtype=np.float32)\n\n\n# --- Preview: koherencja na parze SLC ---\nimport matplotlib.pyplot as plt\n\ndata = np.load(\"/inputs/koherencja-slc-pair.npz\")\nz1 = data[\"z1\"]\nz2 = data[\"z2\"]\ntruth = data[\"truth\"]\ngamma = coherence_map(z1, z2, win=5)\nprint(f\"z1.shape:        {z1.shape}  dtype={z1.dtype}\")\nprint(f\"gamma.shape:     {gamma.shape}  dtype={gamma.dtype}\")\nprint(f\"|gamma| range:   [{gamma.min():.3f}, {gamma.max():.3f}]\")\nprint(f\"stabilne miasto: mean |gamma| = {gamma[10:60, 10:80].mean():.3f}\")\nprint(f\"rolnictwo:       mean |gamma| = {gamma[110:165, 95:165].mean():.3f}\")\nprint(f\"konstrukcja:     mean |gamma| = {gamma[25:65, 120:175].mean():.3f}\")\n\nfig, axes = plt.subplots(1, 4, figsize=(12.0, 3.4), constrained_layout=True)\namp1 = np.sqrt(np.clip(np.abs(z1), 0, None))\namp2 = np.sqrt(np.clip(np.abs(z2), 0, None))\nvmax = float(np.quantile(amp1, 0.99))\naxes[0].imshow(amp1, cmap=\"gray\", vmin=0, vmax=vmax)\naxes[0].set_title(\"|z1|\", fontsize=9)\naxes[0].set_axis_off()\naxes[1].imshow(amp2, cmap=\"gray\", vmin=0, vmax=vmax)\naxes[1].set_title(\"|z2|\", fontsize=9)\naxes[1].set_axis_off()\naxes[2].imshow(truth, cmap=\"gray\")\naxes[2].set_title(f\"Prawda  ({int(truth.sum())} px)\", fontsize=9)\naxes[2].set_axis_off()\nim = axes[3].imshow(gamma, cmap=\"viridis\", vmin=0, vmax=1)\naxes[3].set_title(f\"Twoja |gamma|  (max={gamma.max():.2f})\", fontsize=9)\naxes[3].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_float32_array_with_same_shape",
+            "body": "import numpy as np\ndata = np.load('/inputs/koherencja-slc-pair.npz')\nz1, z2 = data['z1'], data['z2']\ngamma = coherence_map(z1, z2, win=5)\nassert hasattr(gamma, 'shape') and gamma.shape == z1.shape, f'shape={getattr(gamma, \"shape\", None)}, oczekiwano {z1.shape}'\nassert gamma.dtype == np.float32, f'dtype={gamma.dtype}, oczekiwano float32 — rzutuj wynik na .astype(np.float32) na koncu'",
+            "hidden": false
+          },
+          {
+            "name": "gamma_within_unit_interval",
+            "body": "import numpy as np\ndata = np.load('/inputs/koherencja-slc-pair.npz')\ngamma = coherence_map(data['z1'], data['z2'], win=5)\nassert float(gamma.min()) >= 0.0, f'min |gamma| = {float(gamma.min()):.3f} — koherencja jest magnituda znormalizowanego iloczynu, musi byc >= 0'\nassert float(gamma.max()) <= 1.001, f'max |gamma| = {float(gamma.max()):.3f} — przekroczyles 1.0. Najczestsza przyczyna: liczysz |<cross>| jako <|cross|> (nieprawidlowe) zamiast jako sqrt(<Re>^2 + <Im>^2).'",
+            "hidden": true
+          },
+          {
+            "name": "separates_stable_from_changed_regions",
+            "body": "import numpy as np\ndata = np.load('/inputs/koherencja-slc-pair.npz')\ngamma = coherence_map(data['z1'], data['z2'], win=5)\nstable = float(gamma[10:60, 10:80].mean())\nagri = float(gamma[110:165, 95:165].mean())\nconstr = float(gamma[25:65, 120:175].mean())\nassert stable >= 0.85, f'na stabilnym miescie mean |gamma| = {stable:.3f}, oczekiwano >= 0.85. Sprawdz: liczysz cross = z1 * conj(z2) (nie z1 * z2)?'\nassert agri <= 0.40, f'na rolnictwie (zmiana strukturalna) mean |gamma| = {agri:.3f}, oczekiwano <= 0.40. Sprawdz, czy wygladzasz osobno real i imag przed magnituda — uniform_filter na cross.real i cross.imag, NIE na |cross|.'\nassert constr <= 0.40, f'na nowej konstrukcji mean |gamma| = {constr:.3f}, oczekiwano <= 0.40 (zmiana jasnosci + struktury powinna miec niska koherencje)'",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_gamma_map",
+            "body": "import numpy as np\ndata = np.load('/inputs/koherencja-slc-pair.npz')\nref = np.load('/inputs/koherencja-expected-gamma.npz')['gamma']\ngamma = coherence_map(data['z1'], data['z2'], win=5)\nassert gamma.shape == ref.shape, f'shape={gamma.shape}, ref={ref.shape}'\ndiff = float(np.abs(gamma - ref).max())\nassert diff < 1e-5, (\n    f'max |diff| = {diff:.2e}; oczekiwano < 1e-5. '\n    f'Sprawdz kolejnosc: (1) cross = z1 * conj(z2), (2) uniform_filter(real) i (real, imag) osobno mode=\"reflect\", '\n    f'(3) magnituda licznika = hypot(Re, Im), (4) mianownik = sqrt(<|z1|^2> * <|z2|^2> + 1e-12), '\n    f'(5) wynik float32.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import uniform_filter\n\n\ndef coherence_map(z1, z2, win=5):\n    cross = z1 * np.conj(z2)\n    num_re = uniform_filter(cross.real.astype(np.float32), size=win, mode='reflect')\n    num_im = uniform_filter(cross.imag.astype(np.float32), size=win, mode='reflect')\n    num = np.sqrt(num_re * num_re + num_im * num_im)\n    p1 = uniform_filter((np.abs(z1) ** 2).astype(np.float32), size=win, mode='reflect')\n    p2 = uniform_filter((np.abs(z2) ** 2).astype(np.float32), size=win, mode='reflect')\n    return (num / np.sqrt(p1 * p2 + 1e-12)).astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/koherencja-slc-amp1.png",
+            "alt": "Podgląd |z1| (amplituda SLC daty 1, 192×192) w sqrt-jasności: ciemne jednorodne tło, dwa jasne miejskie patche w lewej-górnej części, umiarkowanie jasne pola po prawej — wszystko ze speckle.",
+            "caption": "SLC z daty 1 — amplituda |z₁| (sqrt-brightness)."
+          },
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/koherencja-slc-amp2.png",
+            "alt": "Podgląd |z2| (amplituda SLC daty 2, 192×192) w sqrt-jasności. Ten sam ogólny układ co |z1|, ale w prawym górnym prostokącie jest teraz wyraźnie jaśniejsza plama (nowa konstrukcja); dolny prostokąt (rolnictwo) jest jasnościowo nieodróżnialny od tła.",
+            "caption": "SLC z daty 2 — amplituda |z₂| (sqrt-brightness)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/koherencja-slc-pair.npz",
+            "filename": "koherencja-slc-pair.npz",
+            "caption": ".npz: `z1` (complex64 192×192), `z2` (complex64 192×192), `truth` (bool 192×192 — prawdziwe rejony zmiany strukturalnej), `win` (=5), `gamma_threshold` (=0,4)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/koherencja-expected-gamma.npz",
+            "filename": "koherencja-expected-gamma.npz",
+            "caption": ".npz: `gamma` (float32 192×192 — referencyjna mapa $|\\hat\\gamma|$ przy win=5), `detection` (bool 192×192 — `gamma < 0,4`), `truth` (bool — prawdziwe rejony zmiany), `win`, `gamma_threshold`."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/koherencja-expected-gamma.png",
+          "alt": "Mapa $|\\gamma|$ 192×192 w skali viridis z paskiem kolorów [0, 1]. Większość obrazu w żółtym (tło stabilne, $|\\gamma| \\approx 0{,}95$); dwa wyraźne ciemnoniebieskie prostokąty — jeden w prawej górnej części (nowa konstrukcja), drugi większy w środku-dole (zmiana strukturalna rolnictwa) — oba $|\\gamma| \\approx 0{,}2$. Tytuł: „Cel: mapa koherencji $|\\gamma|$ (win=5)\".",
+          "caption": "Cel: tak ma wyglądać `coherence_map(z1, z2, win=5)`. Żółte tło ≈ 0,95, oba ciemne prostokąty ≈ 0,2; różnica pikiel-w-piksel od mapy referencyjnej < 1e-5."
+        },
+        "requiresPackages": [
+          "scipy"
+        ]
+      }
+    },
+    {
+      "id": "quiz-misconceptions",
+      "title": "Sprawdź: koherencja vs amplituda, koherencja vs korelacja",
+      "type": "quiz",
+      "data": {
+        "question": "Spójrz na Rys. 1 i histogramy z lekcji. Które stwierdzenia o koherencji interferometrycznej $|\\gamma|$ są PRAWDZIWE? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Mapa $|\\gamma|$ wykrywa zmianę strukturalną nad polem zaoranym, nawet jeśli średnia jasność $\\sigma^0$ obu dat jest **identyczna** — operatorzy amplitudowe (difference, log-ratio) w tym scenariuszu pokażą „nic się nie dzieje\", a $|\\gamma|$ spada do bliskiej zeru.",
+          "Koherencja $|\\gamma|$ jest po prostu współczynnikiem Pearsona między **amplitudami** $|z_1|$ i $|z_2|$ — ten sam pomiar można dostać z obrazów GRD (intensywności), produkt SLC nie jest do tego potrzebny.",
+          "Pojedynczy piksel SLC ma fazę o rozkładzie niemal jednostajnym, więc estymata $|\\gamma|$ z jednego piksela jest bezużyteczna — uśredniamy iloczyn krzyżowy $z_1 z_2^{*}$ po lokalnym oknie (zwykle 5×5–11×11) i dopiero magnituda **tej średniej**, znormalizowana przez średnie moce, jest oszacowaniem koherencji.",
+          "Optyczny odpowiednik koherencji to po prostu **normalized cross-correlation (NCC)** dwóch zdjęć tej samej sceny — bo NCC też daje liczbę w $[0, 1]$ mierzącą podobieństwo dwóch obrazów.",
+          "Spadek $|\\gamma|$ może mieć kilka źródeł: zmianę rozpraszaczy (temporal — sygnał, którego szukamy), różnice geometrii akwizycji (baseline) i szum termiczny. W praktyce Sentinel-1, z bardzo małymi baselines, temporal decorrelation **dominuje** — dlatego $|\\gamma|$ działa jako detektor zmian terenowych."
+        ],
+        "correct": [
+          0,
+          2,
+          4
+        ],
+        "explanation": "**(A) prawda** — to dokładnie ten sygnał, na którym ufundowana jest ta lekcja. Spójrz na Rys. 1: zielona populacja (zmiana strukturalna o tej samej jasności) na panelu (a) leży po lewej stronie progu $|\\gamma| < 0{,}40$, ale na panelu (b) zlewa się z niebieską populacją bez zmiany. Log-ratio jej nie widzi; $|\\gamma|$ widzi.\n\n**(C) prawda** — to definicja estymatora $|\\hat\\gamma|$ z lokalnym uśrednianiem (Touzi 1999). Bez uśredniania po oknie mianownik i licznik byłyby równe, a $|\\hat\\gamma|$ ślepo równe 1 — to tzw. *coherence bias*; im mniejsze okno, tym większy skośny bias do góry.\n\n**(E) prawda** — to standardowa *decorrelation budget* (Hanssen 2001, rozdz. 4): $|\\gamma| = |\\gamma_{\\text{temp}}| \\cdot |\\gamma_{\\text{geom}}| \\cdot |\\gamma_{\\text{therm}}|$. Sentinel-1 (tight-tube orbit, baselines ~ 50 m) ma $|\\gamma_{\\text{geom}}| \\approx 1$ i nad sceną o normalnym $\\sigma^0$ $|\\gamma_{\\text{therm}}| \\approx 1$, więc to $|\\gamma_{\\text{temp}}|$ niesie sygnał.\n\n**(B) fałsz** — to **najczęstsza pułapka**. Koherencja jest magnitudą **zespolonej** korelacji $|\\langle z_1 z_2^{*}\\rangle|$, która wymaga fazy. Współczynnik Pearsona na $|z_1|$, $|z_2|$ to korelacja **amplitud** — zupełnie inna wielkość. Na parze zmiana strukturalna z tą samą jasnością amplitudowy Pearson da ~ 1 (kafelki wyglądają podobnie), a $|\\gamma|$ da ~ 0. GRD (intensywność, amplituda dB) nie zachowuje fazy — *fizycznie* nie da się policzyć $|\\gamma|$ z GRD. Potrzebny jest SLC.\n\n**(D) fałsz** — NCC mierzy podobieństwo **tekstury jasności** dwóch zdjęć, czyli koreluje to, co widać okiem. Dwa optyczne zdjęcia tego samego pola o tej samej jasności dostaną wysoki NCC, niezależnie czy pole jest zaorane czy nie. Koherencja działa na fazie, która koduje **geometryczne mikro-rozłożenie rozpraszaczy** w komórce rozdzielczości — to sygnał fizycznie niedostępny z optyki, niezależnie ile NCC-y się policzy. To dlatego $|\\gamma|$ jest *jedynym* detektorem o tym profilu i dlaczego rozumienie go warto wcisnąć w intuicję.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-window-threshold",
+      "title": "Spróbuj: rozmiar okna i próg koherencji",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nimport matplotlib.pyplot as plt\n\n\ndef coherence_map(z1, z2, win=5):\n    cross = z1 * np.conj(z2)\n    num_re = uniform_filter(cross.real.astype(np.float32), size=win, mode='reflect')\n    num_im = uniform_filter(cross.imag.astype(np.float32), size=win, mode='reflect')\n    num = np.sqrt(num_re * num_re + num_im * num_im)\n    p1 = uniform_filter((np.abs(z1) ** 2).astype(np.float32), size=win, mode='reflect')\n    p2 = uniform_filter((np.abs(z2) ** 2).astype(np.float32), size=win, mode='reflect')\n    return (num / np.sqrt(p1 * p2 + 1e-12)).astype(np.float32)\n\n\ndata = np.load('/inputs/koherencja-slc-pair.npz')\nz1 = data['z1']\nz2 = data['z2']\ntruth = data['truth']\n\n# Dwa pokretla: rozmiar okna (im wieksze, tym mniej bias, ale tracisz rozdzielczosc)\n# i prog koherencji ponizej ktorego oznaczasz zmiane.\nwin = 5\ntau = 0.40\n\ngamma = coherence_map(z1, z2, win=win)\ndetection = gamma < tau\ntp = int((detection & truth).sum())\nfp = int((detection & ~truth).sum())\nfn = int((~detection & truth).sum())\ntotal_change = int(truth.sum())\nbg_area = int((~truth).sum())\nrecall = tp / total_change\npfa = fp / bg_area\nprint(f'win={win}  tau={tau}')\nprint(f'  recall = {recall*100:.0f}%   ({tp}/{total_change})')\nprint(f'  false-alarms = {fp}     (Pfa = {pfa*100:.2f}%)')\nprint(f'  mean |gamma| na stabilnym miescie = {gamma[10:60, 10:80].mean():.3f}')\nprint(f'  mean |gamma| na rolnictwie         = {gamma[110:165, 95:165].mean():.3f}')\n\nfig, axes = plt.subplots(1, 3, figsize=(11.0, 3.6), constrained_layout=True)\nim = axes[0].imshow(gamma, cmap='viridis', vmin=0, vmax=1)\naxes[0].set_title(f'|gamma|  (win={win})', fontsize=10)\naxes[0].set_axis_off()\nplt.colorbar(im, ax=axes[0], fraction=0.046, pad=0.04)\naxes[1].imshow(truth, cmap='gray')\naxes[1].set_title(f'Prawda  ({total_change} px)', fontsize=10)\naxes[1].set_axis_off()\naxes[2].imshow(detection, cmap='gray')\naxes[2].set_title(\n    f'Detekcja  |gamma|<{tau}\\nrecall={recall*100:.0f}%  fp={fp}',\n    fontsize=10,\n)\naxes[2].set_axis_off()\nplt.show()\n",
+        "encouragement": "Pokombinuj z `win` (3, 5, 7, 11) i `tau` (0,3 – 0,6): większe okno obniża bias estymatora i wygładza tło, ale wymywa krawędzie zmian; niższy próg podnosi recall kosztem false-alarmów."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1088/0266-5611/14/4/001",
+      "title": "Synthetic aperture radar interferometry",
+      "kind": "paper",
+      "author": "Richard Bamler, Philipp Hartl",
+      "year": 1998
+    },
+    {
+      "url": "https://link.springer.com/book/10.1007/0-306-47633-9",
+      "title": "Radar Interferometry: Data Interpretation and Error Analysis",
+      "kind": "book",
+      "author": "Ramon F. Hanssen",
+      "year": 2001
+    },
+    {
+      "url": "https://doi.org/10.1109/36.752212",
+      "title": "Coherence estimation for SAR imagery",
+      "kind": "paper",
+      "author": "Ronny Touzi, Armand Lopes, Jérôme Bruniquel, Paris W. Vachon",
+      "year": 1999
+    },
+    {
+      "url": "https://www.esa.int/esapub/tm/tm19/TM-19_ptA.pdf",
+      "title": "InSAR Principles: Guidelines for SAR Interferometry Processing and Interpretation (ESA TM-19)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Interferometric_synthetic-aperture_radar",
+      "title": "Interferometric synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

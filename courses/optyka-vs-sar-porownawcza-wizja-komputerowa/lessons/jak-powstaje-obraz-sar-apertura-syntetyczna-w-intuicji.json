@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "slug": "jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Jak powstaje obraz SAR — apertura syntetyczna w intuicji",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Range vs azimuth, look angle, slant vs ground range — geometria akwizycji SAR pokazana side-by-side z realnym kafelkiem Sentinel-1 i schematem syntetycznej apertury. Bez ciężkiej matematyki: jedno równanie z trójkąta, jeden klasyczny wynik δ_az = D/2 i kod, który zamienia slant na ground.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "range-vs-azimuth",
+      "title": "Range, azimuth i look angle — dwie osie, które nie są wymienne",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+          "title": "Sentinel-1 User Guide (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Patrzymy na obraz Sentinel-1 nad Hamburgiem — na pierwszy rzut oka nietypowe, ziarniste, czarno-zielone zdjęcie. Ale jego dwie osie nie są takie same jak w obrazie z kamery.\n\n![Sentinel-1 GRD quicklook nad Hamburgiem w pseudo-kolorze VV/VH: ziarnista, charakterystyczna dla SAR tekstura; w prawym górnym rogu ciemne wybrzeże Morza Północnego widoczne jako prawie czarna woda, lokalne miasta i porty rozjaśnione jako jasnozielone i żółte plamy zabudowy](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-hamburg-quicklook.png)\n\nW obrazie optycznym wiersze i kolumny to dwa kierunki na płaszczyźnie czujnika — projekcja pinhole'a. W SAR-ze osie mają **różną fizykę**: jedna nie jest po prostu obróconą drugą.\n\n**Range (dalość)** — oś prostopadła do toru lotu satelity. Każdy piksel w range reprezentuje *odległość propagacji fali* od anteny do celu i z powrotem (po podzieleniu przez 2). Im bliżej, tym wcześniej echo wraca — moment przyjścia echa wyznacza pozycję w range.\n\n**Azimuth (azymut)** — oś wzdłuż toru lotu. Tu radar nie mierzy odległości; pozycja w azymucie wynika z **efektu Dopplera**: cel zbliżający się do satelity daje echo o wyższej częstotliwości niż cel oddalający się. Procesor SAR sortuje echa po tej częstotliwości i odzyskuje położenie wzdłuż toru.\n\nObie osie są więc *fizycznie nierówne*. To pierwsza intuicja, którą trzeba zaakceptować, zanim cokolwiek robimy z obrazem SAR — proste obracanie obrazu o 90° zamienia oś czasu lotu na oś dwustronnej propagacji fali, czyli zupełnie inną wielkość fizyczną.\n\n**Look angle θ** — kąt nachylenia wiązki radaru względem nadiru (czyli kierunku „w dół\"). Sentinel-1 IW pracuje w zakresie ok. 29–46°. **Incidence angle** to ten sam kąt, ale liczony względem lokalnej normalnej do powierzchni — dla płaskiej Ziemi pokrywa się z look angle.\n\n**Slant range** to fizyczna odległość skośna satelita → cel. **Ground range** to projekcja tego odcinka na płaszczyznę Ziemi. Dla wysokości $h \\approx 693$ km Sentinel-1 i $\\theta = 30°$ dostajemy slant $\\approx 800$ km, ale ground $\\approx 400$ km — *dwa razy mniej*. Produkt **GRD** (Ground Range Detected) ma tę projekcję wykonaną; produkt **SLC** (Single Look Complex) trzyma surowy slant range. Jeśli pomylisz jedno z drugim w pipeline'ie, każda dalsza analiza wielkości obiektów będzie po prostu zafałszowana."
+      }
+    },
+    {
+      "id": "slant-vs-ground-geometry",
+      "title": "Slant range vs ground range — geometria akwizycji",
+      "description": "Cztery look angles tej samej orbity Sentinel-1. Pokaż źródło, żeby zobaczyć, jak z h i θ wyliczasz oba: R_s = h/cos θ i R_g = h·tan θ.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji-1.png",
+        "alt": "Diagram boku w skali rzeczywistej: na osi pionowej (0–850 km) trójkątny marker satelity na wysokości 693 km nad nadirem; z satelity wychodzą cztery linie zakończone okrągłymi markerami na osi poziomej (ground range 0–1100 km od nadiru), kolejno dla look angle 20°, 30°, 40° i 50°; legenda podaje dla każdego kąta odpowiadające slant range i ground range — 20°→ R_s=737 km R_g=252 km, 30°→ R_s=800 km R_g=400 km, 40°→ R_s=905 km R_g=581 km, 50°→ R_s=1078 km R_g=826 km; wokół satelity zielony łuk z opisem look angle theta dla kąta 30°.",
+        "caption": "Rys. 1. Geometria akwizycji Sentinel-1 IW dla czterech look angles. Słupek nadir → ground range rośnie szybko z theta, a slant range jeszcze szybciej — ten sam piksel w slant range odpowiada coraz większemu ground range w miarę oddalania się od nadiru.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Reprezentatywna geometria akwizycji Sentinel-1 IW (Interferometric Wide).\n# Wysokosc orbity ~693 km, look angles w zakresie ~29-46 deg dla normalnego\n# swath. Diagram pokazuje, jak ten sam piksel slant range odpowiada coraz\n# wiekszemu ground range w miare oddalania sie od nadiru.\nh_km = 693.0\nlook_angles_deg = [20, 30, 40, 50]\ncolors = [\"#1f77b4\", \"#2ca02c\", \"#d62728\", \"#9467bd\"]\n\nfig, ax = plt.subplots(figsize=(9.0, 5.5))\n\n# Pozioma linia ziemi.\nax.axhline(0, color=\"#444444\", linewidth=1.0)\n\n# Satelita.\nax.plot(0, h_km, marker=\"^\", markersize=14, color=\"black\")\nax.annotate(\n    f\"Satelita (h = {h_km:.0f} km)\",\n    xy=(0, h_km),\n    xytext=(30, h_km - 35),\n    fontsize=10,\n)\n\n# Beam ku ziemi dla kazdego look angle.\nfor theta_deg, color in zip(look_angles_deg, colors):\n    theta = np.deg2rad(theta_deg)\n    ground_range = h_km * np.tan(theta)\n    slant_range = h_km / np.cos(theta)\n    ax.plot(\n        [0, ground_range],\n        [h_km, 0],\n        linestyle=\"-\",\n        color=color,\n        linewidth=2.0,\n        label=(\n            f\"theta = {theta_deg} deg  ->  \"\n            f\"R_s = {slant_range:.0f} km, R_g = {ground_range:.0f} km\"\n        ),\n    )\n    ax.plot(ground_range, 0, marker=\"o\", color=color, markersize=8)\n\n# Nadir.\nax.plot(0, 0, marker=\"x\", color=\"black\", markersize=10)\nax.annotate(\"nadir\", xy=(0, 0), xytext=(8, -50), fontsize=10)\n\n# Luk look angle dla theta = 30 deg (wokol satelity).\ntheta_arc = np.deg2rad(30)\nr_arc = 110.0\nt = np.linspace(0, theta_arc, 40)\narc_x = r_arc * np.sin(t)\narc_y = h_km - r_arc * np.cos(t)\nax.plot(arc_x, arc_y, color=\"#2ca02c\", linewidth=1.5)\nax.annotate(\"look angle theta\", xy=(55, h_km - 70), fontsize=10, color=\"#2ca02c\")\n\nax.set_xlim(-80, 1100)\nax.set_ylim(-80, 850)\nax.set_xlabel(\"Ground range od nadiru [km]\")\nax.set_ylabel(\"Wysokosc [km]\")\nax.set_title(\n    \"Geometria akwizycji SAR — slant vs ground range\\n\"\n    \"(Sentinel-1, h = 693 km, look angles 20-50 deg)\"\n)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=9)\nax.set_aspect(\"equal\", adjustable=\"box\")\n\nplt.savefig(\n    \"jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "synthetic-aperture-intuicja",
+      "title": "Apertura syntetyczna — ruch zastępuje wielką antenę",
+      "sources": [
+        {
+          "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+          "title": "Digital Processing of Synthetic Aperture Radar Data — Chapters 2–3",
+          "kind": "book",
+          "author": "Ian G. Cumming and Frank H. Wong",
+          "year": 2005
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Sentinel-1 robi piksel azymutalny o boku rzędu kilku metrów, z orbity 700 km nad ziemią. Postawmy problem klasycznie: szerokość wiązki anteny w azymucie wynosi $\\lambda / D$ (gdzie $\\lambda$ — długość fali, $D$ — długość anteny wzdłuż toru), więc plamka oświetlona na ziemi ma rozmiar $\\lambda R / D$. Dla $\\lambda = 5{,}6$ cm i $R = 850$ km — żeby dostać plamkę 5 m, trzeba by anteny o długości $D = \\lambda R / 5 \\approx 9{,}5$ km. **Na satelicie. Niemożliwe.**\n\n![Schematyczny diagram apertury syntetycznej: pięć kolejnych pozycji satelity wzdłuż toru lotu, oznaczonych t0–t4, sondujących ten sam pojedynczy cel naziemny zaznaczony zieloną gwiazdą; pomiędzy skrajnymi pozycjami zaznaczona pozioma czerwona strzałka opisana L_SA (apertura syntetyczna), a w tle szary trójkąt footprintu fizycznej anteny pokazujący obszar, w którym cel pozostaje w wiązce](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/synthetic-aperture-schematic.png)\n\nApertura syntetyczna omija ten problem **trickiem czasowym**. Fizyczna antena Sentinel-1 ma długość ok. 12 m wzdłuż toru. Jej beam w azymucie oświetla na ziemi pasek o długości ok. 3,9 km. W czasie, kiedy satelita przelatuje obok niego, **ten sam cel naziemny pozostaje w wiązce przez około pół sekundy** — a w tym czasie satelita przebiega te 3,9 km wzdłuż toru lotu.\n\nProcesor SAR łączy echa z tych wszystkich pozycji **koherentnie** (z zachowaniem fazy). Wynik jest taki, jak gdyby fizyczna antena miała długość całego tego paska — to jest właśnie **apertura syntetyczna** $L_{SA}$. Stąd nazwa Synthetic Aperture Radar.\n\nKlasyczny wynik teorii SAR — matematycznie elegancki, dla nas najważniejszy jako fakt: rozdzielczość azymutalna pojedynczego obrazu wynosi\n\n$$ \\delta_{az} = \\frac{D_{phys}}{2} $$\n\ni jest **niezależna od odległości do celu**. Dla Sentinel-1 ($D \\approx 12{,}3$ m) dostajemy $\\delta_{az} \\approx 6$ m. Bez ruchu satelity — z tą samą fizyczną anteną — mielibyśmy 3,9 km, czyli ok. **600× gorzej**.\n\nDwa wnioski, które warto zachować z tyłu głowy, bo są kontrintuicyjne:\n\n- Im **krótsza** fizyczna antena, tym **lepsza** rozdzielczość SAR w azymucie. Odwrotnie niż w optyce, gdzie większa apertura zawsze pomaga.\n- Rozdzielczość azymutalna SAR **nie zależy** od $R$; rozdzielczość w range zależy od pasma chirpu (chirp bandwidth). To dwie zupełnie różne fizyki — łatwo pomylić, kiedy patrzy się na metadane sceny."
+      }
+    },
+    {
+      "id": "real-vs-synthetic-resolution",
+      "title": "Apertura rzeczywista vs syntetyczna — rozdzielczość azymutalna",
+      "description": "Dwie krzywe, dwie różne fizyki: rozdzielczość maleje z D w aperturze syntetycznej (krótsza antena = lepiej!) i rośnie w rzeczywistej. Pionowa przerywana linia to Sentinel-1 (D ≈ 12,3 m).",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji-2.png",
+        "alt": "Wykres rozdzielczości azymutalnej delta_az [m] w skali logarytmicznej w funkcji długości fizycznej anteny D [m] na osi liniowej od 1 do 30 m. Czerwona malejąca krzywa od ~46 km do ~1900 m to apertura rzeczywista (delta_az = lambda·R/D dla lambda=5.547 cm, R=850 km); niebieska rosnąca prosta od ~0.5 m do ~15 m to apertura syntetyczna (delta_az = D/2). Pionowa przerywana szara linia przy D=12.3 m oznacza Sentinel-1; w tym punkcie czerwona krzywa wskazuje 3842 m a niebieska 6.2 m.",
+        "caption": "Rys. 2. Im krótsza fizyczna antena, tym lepsza rozdzielczość azymutalna SAR — odwrotnie niż w aperturze rzeczywistej. Dla Sentinel-1 (D ≈ 12,3 m) różnica jest około 600-krotna: 6 m vs 3,8 km.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Klasyczny wynik SAR: rozdzielczosc azymutalna na produkcie jednospojrzeniowym\n# wynosi delta_az = D/2, gdzie D to dlugosc fizycznej anteny wzdluz toru lotu.\n# Apertura rzeczywista (bez ruchu satelity) wymagalaby anteny o dlugosci\n# rzedu kilometrow, zeby uzyskac kilkumetrowa rozdzielczosc na orbicie LEO.\n# Diagram pokazuje obie zaleznosci na tej samej osi dla parametrow Sentinel-1\n# (lambda ~ 5.547 cm, R ~ 850 km, IW swath).\nlambda_m = 0.05547\nR_m = 850e3\n\nD_phys = np.linspace(1.0, 30.0, 300)\nreal_aperture = lambda_m * R_m / D_phys\nsynthetic = D_phys / 2.0\n\nfig, ax = plt.subplots(figsize=(8.5, 5.0))\n\nax.plot(\n    D_phys,\n    real_aperture,\n    color=\"#d62728\",\n    linewidth=2.2,\n    label=\"Apertura rzeczywista: delta_az = lambda * R / D\",\n)\nax.plot(\n    D_phys,\n    synthetic,\n    color=\"#1f77b4\",\n    linewidth=2.2,\n    label=\"Apertura syntetyczna: delta_az = D / 2\",\n)\n\n# Sentinel-1 baseline antenna along-track ~ 12.3 m.\nD_S1 = 12.3\nax.axvline(D_S1, color=\"#555555\", linestyle=\"--\", linewidth=1.2)\nax.annotate(\n    \"Sentinel-1\\nD ~ 12.3 m\",\n    xy=(D_S1, 1.0),\n    xytext=(D_S1 + 0.8, 2.5),\n    fontsize=10,\n    color=\"#333333\",\n)\n\n# Punkty z dokladnymi wartosciami dla S1.\nreal_at_S1 = lambda_m * R_m / D_S1\nsyn_at_S1 = D_S1 / 2.0\nax.plot(D_S1, real_at_S1, marker=\"o\", color=\"#d62728\", markersize=8)\nax.plot(D_S1, syn_at_S1, marker=\"o\", color=\"#1f77b4\", markersize=8)\nax.annotate(\n    f\"{real_at_S1:.0f} m\",\n    xy=(D_S1, real_at_S1),\n    xytext=(D_S1 + 1.2, real_at_S1 * 1.05),\n    fontsize=10,\n    color=\"#d62728\",\n)\nax.annotate(\n    f\"{syn_at_S1:.1f} m\",\n    xy=(D_S1, syn_at_S1),\n    xytext=(D_S1 + 1.2, syn_at_S1 * 1.15),\n    fontsize=10,\n    color=\"#1f77b4\",\n)\n\nax.set_yscale(\"log\")\nax.set_xlabel(\"Dlugosc fizycznej anteny D [m]\")\nax.set_ylabel(\"Rozdzielczosc azymutalna delta_az [m] (skala log)\")\nax.set_title(\n    \"Apertura rzeczywista vs syntetyczna — rozdzielczosc azymutalna\\n\"\n    \"(lambda = 5.547 cm, R = 850 km — typowe parametry Sentinel-1 IW)\"\n)\nax.grid(True, which=\"both\", alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=10)\n\nplt.savefig(\n    \"jak-powstaje-obraz-sar-apertura-syntetyczna-w-intuicji-2.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "exercise-slant-to-ground",
+      "title": "Z slant range do ground range",
+      "description": "Jedna linijka numpy, ale fundamentalna — bez tej konwersji każda dalsza analiza wielkości obiektów na SLC będzie zafałszowana.",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+          "title": "Sentinel-1 Level-1 SLC product (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Z geometrii ze schematu — satelita na wysokości $h$ nad płaską Ziemią, cel oddalony od nadiru o $R_g$, slant range $R_s$ jako odcinek satelita → cel — masz trójkąt prostokątny:\n\n$$ R_s^2 = R_g^2 + h^2 \\quad\\Longleftrightarrow\\quad R_g = \\sqrt{R_s^2 - h^2} $$\n\nNapisz `slant_to_ground(slant_range_m, sat_altitude_m)`, która:\n\n1. Akceptuje `slant_range_m` jako liczbę **lub** `numpy.ndarray`.\n2. Przyjmuje `sat_altitude_m` jako pojedynczy skalar (wysokość satelity w metrach).\n3. Zwraca ground range w metrach, zachowując kształt wejścia (skalar → skalar, array → array).\n\nZałóż, że `slant_range_m >= sat_altitude_m` — cel jest *poniżej* satelity, nie *nad* nim.\n\n```\n# Sentinel-1 IW, theta ≈ 30°, h = 693 km, slant ≈ 800 km:\nslant_to_ground(800_230.0, 693_000.0)  # ≈ 400160 m\n```",
+        "starterCode": "import numpy as np\n\ndef slant_to_ground(slant_range_m, sat_altitude_m):\n    \"\"\"\n    Konwertuj slant range na ground range zakladajac plaska Ziemie.\n\n    slant_range_m  : float lub np.ndarray, odleglosc skosna [m].\n    sat_altitude_m : float, wysokosc satelity nad powierzchnia [m].\n\n    Returns ground range [m], zachowujac ksztalt slant_range_m.\n    Z trojkata prostokatnego: R_g = sqrt(R_s^2 - h^2).\n    \"\"\"\n    R_s = np.asarray(slant_range_m, dtype=float)\n    # TODO: zwroc sqrt(R_s^2 - h^2).\n    return R_s\n",
+        "tests": [
+          {
+            "name": "nadir_returns_zero",
+            "body": "import numpy as np\n# Slant range = wysokosc => cel jest dokladnie pod satelita (nadir),\n# wiec ground range musi byc 0.\nout = slant_to_ground(693_000.0, 693_000.0)\nassert abs(float(out) - 0.0) < 1e-6, f\"nadir nie daje 0: {out}\"",
+            "hidden": false
+          },
+          {
+            "name": "sentinel1_thirty_degree_geometry",
+            "body": "import numpy as np\n# Sentinel-1, h = 693 km, theta = 30 deg => R_s = 693/cos(30) km,\n# R_g = 693 * tan(30) km ~ 400.17 km.\nh = 693_000.0\ntheta = np.deg2rad(30.0)\nR_s = h / np.cos(theta)\nexpected = h * np.tan(theta)\ngot = slant_to_ground(R_s, h)\nassert abs(float(got) - expected) < 1.0, (\n    f\"S1 theta=30: oczekiwane {expected:.1f} m, dostalismy {float(got):.1f} m\"\n)",
+            "hidden": true
+          },
+          {
+            "name": "monotonic_in_slant_range",
+            "body": "import numpy as np\n# Im wiekszy slant, tym wiekszy ground range (przy stalej wysokosci).\nh = 693_000.0\nsmall = float(slant_to_ground(750_000.0, h))\nlarge = float(slant_to_ground(1_050_000.0, h))\nassert large > small, (\n    f\"monotonicznosc: slant 1050 km dal R_g={large:.0f} m, \"\n    f\"slant 750 km dal R_g={small:.0f} m\"\n)",
+            "hidden": true
+          },
+          {
+            "name": "preserves_array_shape",
+            "body": "import numpy as np\n# Wejscie wektorowe powinno zachowac ksztalt.\nR_s = np.array([750_000.0, 850_000.0, 950_000.0])\nout = slant_to_ground(R_s, 693_000.0)\nassert isinstance(out, np.ndarray), f\"expected ndarray, got {type(out)}\"\nassert out.shape == (3,), f\"shape: {out.shape}\"\n# I monotonicznie rosnacy ground range:\nassert out[0] < out[1] < out[2], f\"niemonotoniczne: {out}\"",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\ndef slant_to_ground(slant_range_m, sat_altitude_m):\n    R_s = np.asarray(slant_range_m, dtype=float)\n    return np.sqrt(R_s ** 2 - sat_altitude_m ** 2)\n"
+      }
+    },
+    {
+      "id": "check-geometry-and-aperture",
+      "title": "Quiz: geometria i apertura syntetyczna",
+      "description": "Multi-select. Wybierz wszystkie stwierdzenia, które są prawdziwe — część to mocne intuicje SAR-u, część to popularne nieporozumienia.",
+      "type": "quiz",
+      "data": {
+        "question": "Które z poniższych stwierdzeń o geometrii SAR i aperturze syntetycznej są PRAWDZIWE? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Oś azimuth odpowiada kierunkowi lotu satelity, a pozycja celu wzdłuż tej osi jest rozróżniana przez efekt Dopplera ech od celów zbliżających i oddalających się.",
+          "Slant range to to samo co ground range — wystarczy zmienić jednostki z pikseli na metry i nie trzeba żadnej dodatkowej korekcji geometrii.",
+          "Rozdzielczość azymutalna SAR pogarsza się liniowo z odległością do celu — im dalej cel, tym gorzej, podobnie jak w optyce z teleobiektywem.",
+          "Apertura syntetyczna powstaje przez koherentne złożenie ech tego samego celu zebranych przez fizyczną antenę w wielu kolejnych pozycjach satelity wzdłuż toru lotu.",
+          "Klasyczny wynik teorii SAR mówi, że rozdzielczość azymutalna jest w przybliżeniu równa połowie fizycznej długości anteny, niezależnie od odległości do celu."
+        ],
+        "correct": [
+          0,
+          3,
+          4
+        ],
+        "explanation": "0 — PRAWDA. Azimuth jest osią wzdłuż toru lotu, a próbki w tej osi są rozdzielane przez przesunięcie Dopplera fali odbitej od celów zbliżających i oddalających się od satelity. To zupełnie inny mechanizm niż pomiar czasu propagacji w range. 1 — FAŁSZ. Slant range to skośna odległość satelita → cel; ground range to projekcja tego odcinka na płaszczyznę Ziemi. Dla Sentinel-1 przy θ=30° slant ≈ 800 km, ground ≈ 400 km. Produkty GRD są już skonwertowane, produkty SLC trzymają slant. 2 — FAŁSZ. To jest pułapka odwrotna do optycznej intuicji. W SAR rozdzielczość azymutalna NIE zależy od R — klasyczny wynik δ_az = D/2 jest niezależny od dystansu. To jeden z najbardziej kontrintuicyjnych rezultatów teorii SAR. 3 — PRAWDA. Dokładnie tak działa apertura syntetyczna: te same echa z różnych pozycji satelity są łączone z zachowaniem fazy, dając efekt znacznie dłuższej anteny (dla Sentinel-1: ~3,9 km zamiast fizycznych 12 m). 4 — PRAWDA. Klasyczny wynik δ_az ≈ D_phys/2 — dla Sentinel-1 (D ≈ 12,3 m) daje to ok. 6 m rozdzielczości azymutalnej, i nie zmienia się z odległością do celu.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+      "title": "Digital Processing of Synthetic Aperture Radar Data: Algorithms and Implementation",
+      "kind": "book",
+      "author": "Ian G. Cumming and Frank H. Wong",
+      "year": 2005
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://ocw.mit.edu/courses/res-ll-001-introduction-to-radar-systems-spring-2007/",
+      "title": "MIT OpenCourseWare — Introduction to Radar Systems, Lecture 14 (SAR)",
+      "kind": "video"
+    }
+  ]
+}

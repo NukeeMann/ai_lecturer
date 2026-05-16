@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "slug": "setup-sceny-para-sentinel-1-sentinel-2-z-sen12ms",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m6",
+  "title": "Setup sceny — para Sentinel-1 + Sentinel-2 z SEN12MS",
+  "eyebrow": "CAPSTONE",
+  "description": "Otwieramy capstone: ładujemy parę optyka+SAR tej samej sceny portowej z SEN12MS, kalibrujemy każdą modalność do jej fizycznej jednostki i robimy pierwszy side-by-side, na którym widać, kto pokazuje co.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "co-to-jest-sen12ms",
+      "title": "Czym jest SEN12MS i dlaczego para, nie pojedyncza scena",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1906.07789",
+          "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery",
+          "kind": "paper",
+          "author": "Michael Schmitt, Lloyd Haydn Hughes, Chunping Qiu, Xiao Xiang Zhu",
+          "year": 2019
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Przez pięć poprzednich modułów pracowaliśmy na osobnych obrazach — raz optyka, raz SAR. **Capstone wymaga pary**: tej samej sceny widzianej w obu modalnościach **w zbliżonym czasie** (idealnie ten sam dzień, w praktyce ±5 dni), żeby porównanie miało sens — chcemy wiedzieć, co dał radar czego nie da kamera *dla tej konkretnej sceny*, a nie dla dwóch różnych dni i dwóch różnych obszarów.\n\n**SEN12MS** *(Schmitt et al., 2019)* to publiczny zbiór 180 662 takich par. Każdy element to wycinek **256 × 256 px** zawierający trzy zsynchronizowane warstwy:\n\n- **Sentinel-1 GRD** — dwa kanały polaryzacji VV i VH (`float32`, jednostka: liniowe $\\sigma^0$, *nie* dB).\n- **Sentinel-2 L1C** — wszystkie 13 pasm spektralnych w `uint16` (skala 0–10000 DN), z czego dla wizualizacji ludzkim okiem używamy B04/B03/B02 (R/G/B).\n- **MODIS IGBP** — etykieta land-cover (17 klas, np. „water\", „urban\", „cropland\") — w naszym capstone'ie raczej referencyjna, nie obowiązkowa.\n\n![Para Sentinel-1 (po prawej, szare radarowe natężenie) i Sentinel-2 (po lewej, kolorowy obraz optyczny) tej samej sceny portu w Hamburgu — widać linię brzegową Łaby, kontury basenów portowych, kontenerowce przy nabrzeżach](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/hamburg-optical-vs-sar-side-by-side.png)\n\n*(Quicklook: Copernicus Sentinel-1 + Sentinel-2 nad Hamburgiem, contains modified Copernicus data.)*\n\nDlaczego tu trzeba pary, a nie jednej modalności:\n\n- **Optyka** widzi *kolor i strukturę* — łatwo odróżnić wodę od lądu, statek od kontenera, ale **nie widać przez chmury**.\n- **SAR** widzi *chropowatość i geometrię rozpraszania* — przebija chmury i pracuje w nocy, ale ten sam metalowy obiekt na sucho i mokro ma drastycznie inną sygnaturę.\n- **Razem** — fuzja redukuje fałszywe alarmy w detektorze statków (CFAR daje kandydatów, optyka usuwa platformy/buoy), albo na odwrót: jeśli optyka jest pod chmurami, radar staje się pierwszym źródłem.\n\nW tej lekcji nie robimy jeszcze detekcji ani fuzji — to dopiero kolejne trzy lekcje capstone'u. Tu tylko **ładujemy parę, kalibrujemy każdą modalność do jej jednostki, i robimy pierwszy uczciwy side-by-side**. Jeśli ten krok wyjdzie krzywo (np. źle stretchnięte S2 daje wrażenie „SAR widzi więcej\"), wszystkie wnioski capstone'u będą skażone."
+      }
+    },
+    {
+      "id": "harbor-preview-4panel",
+      "title": "Cztery widoki tej samej sceny portowej",
+      "description": "Ten sam kafelek 256×256 z SEN12MS w czterech ujęciach: S2 RGB, S1 VV [dB], S1 VH [dB] i pseudo-kolorowe RGB z dwóch polaryzacji.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/setup-sceny-para-sentinel-1-sentinel-2-z-sen12ms-1.png",
+        "alt": "Cztery panele 256x256 px tej samej syntetycznej sceny portowej obok siebie. Panel 1 (Sentinel-2 RGB, po stretchu percentylowym 2-98): widać ciemnoniebieskie morze po lewej, kolorowe nabrzeże po prawej, kontenerowe statki jako jasne prostokąty na wodzie, pasy zieleni na lądzie. Panel 2 (S1 VV w dB, skala -25 do +5, paleta szarości z kolorbarem): morze ciemne (~-22 dB), statki bardzo jasne (>+5 dB), zabudowa miejska jasna (~0..+2 dB), pole szare. Panel 3 (S1 VH w dB, skala -30 do 0): podobny układ co VV, ale ogólnie ciemniejszy o 6-8 dB, statki nadal wyróżniają się jako najjaśniejsze punkty. Panel 4 (false-color RGB SAR: czerwony=VV, zielony=VH, niebieski=VV-VH): statki świecą żółto-białym, woda ciemnoniebieska, zabudowa pomarańczowo-żółta, wegetacja zielonkawa.",
+        "caption": "Rys. 1. Ten sam kafelek SEN12MS — optyka (panel 1) i trzy widoki radarowe (panele 2–4). Statki na wodzie są wyraźniej widoczne w SAR (kontrast > 25 dB) niż w optyce (kontrast głównie luminancyjny), ale rodzaj statku rozpozna tylko panel 1. Tak wygląda capstone'owa scena, na której będą pracować trzy kolejne lekcje.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom pathlib import Path\n\nNPZ = Path(\"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair.npz\")\ndata = np.load(NPZ)\ns2 = data[\"s2_rgb\"]              # (3, H, W) uint16\ns1_vv = data[\"s1_vv_linear\"]     # (H, W) float32, linear sigma0\ns1_vh = data[\"s1_vh_linear\"]     # (H, W) float32, linear sigma0\nH = s2.shape[1]\nW = s2.shape[2]\n\ndef percentile_stretch(arr, lo=2, hi=98):\n    a, b = np.percentile(arr, [lo, hi])\n    return ((arr.astype(np.float32) - a) / max(b - a, 1e-9)).clip(0, 1)\n\ns2_rgb = np.zeros((H, W, 3), dtype=np.float32)\nfor c in range(3):\n    s2_rgb[..., c] = percentile_stretch(s2[c])\n\ns1_vv_db = 10.0 * np.log10(np.maximum(s1_vv, 1e-6))\ns1_vh_db = 10.0 * np.log10(np.maximum(s1_vh, 1e-6))\n\ndef db_stretch(arr_db, lo=-25, hi=5):\n    return ((arr_db - lo) / (hi - lo)).clip(0, 1)\n\ndiff_db = s1_vv_db - s1_vh_db\nfalsecolor = np.stack([\n    db_stretch(s1_vv_db, -25, 5),\n    db_stretch(s1_vh_db, -30, 0),\n    db_stretch(diff_db, 0, 18),\n], axis=-1)\n\nfig, axes = plt.subplots(1, 4, figsize=(15, 4.4))\n\naxes[0].imshow(s2_rgb, origin=\"upper\")\naxes[0].set_title(\"(1) Sentinel-2 RGB\\nB04 / B03 / B02 (po stretch'u 2-98)\", fontsize=10)\naxes[0].set_xlabel(\"kolumna [px]\")\naxes[0].set_ylabel(\"wiersz [px]\")\n\nim1 = axes[1].imshow(s1_vv_db, cmap=\"gray\", vmin=-25, vmax=5, origin=\"upper\")\naxes[1].set_title(r\"(2) Sentinel-1 VV $\\sigma^0$ [dB]\", fontsize=10)\naxes[1].set_xlabel(\"ground range [px]\")\naxes[1].set_ylabel(\"azimuth [px]\")\nfig.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04, label=\"dB\")\n\nim2 = axes[2].imshow(s1_vh_db, cmap=\"gray\", vmin=-30, vmax=0, origin=\"upper\")\naxes[2].set_title(r\"(3) Sentinel-1 VH $\\sigma^0$ [dB]\", fontsize=10)\naxes[2].set_xlabel(\"ground range [px]\")\naxes[2].set_ylabel(\"azimuth [px]\")\nfig.colorbar(im2, ax=axes[2], fraction=0.046, pad=0.04, label=\"dB\")\n\naxes[3].imshow(falsecolor, origin=\"upper\")\naxes[3].set_title(\"(4) SAR false-color RGB\\n(VV, VH, VV-VH) [dB]\", fontsize=10)\naxes[3].set_xlabel(\"ground range [px]\")\naxes[3].set_ylabel(\"azimuth [px]\")\n\nfor ax in axes:\n    ax.tick_params(labelsize=8)\n\nfig.suptitle(\n    \"Para SEN12MS portu morskiego (256x256 px): Sentinel-2 vs Sentinel-1 — ten sam kafelek, cztery widoki tej samej sceny\",\n    fontsize=11,\n)\nfig.tight_layout(rect=[0, 0, 1, 0.93])\nfig.savefig(\"setup-sceny-para-sentinel-1-sentinel-2-z-sen12ms-1.png\", dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "co-widac-na-czym",
+      "title": "Co widać na czym: szybka mapa różnic w porcie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zanim zaczniemy pisać detektory, warto raz na zawsze przyswoić, co która modalność *fizycznie* mierzy w scenie portowej. Tabela poniżej ściąga to do siatki obiekt → optyka → radar:\n\n| Obiekt w porcie | Sentinel-2 (RGB) | Sentinel-1 VV [dB] | Sentinel-1 VH [dB] |\n|---|---|---|---|\n| Spokojna woda | granat / ciemnoniebieski | bardzo ciemna, $\\sigma^0 \\approx -22$ dB | bardzo ciemna, $\\approx -28$ dB |\n| Woda z falami / wake | nieco jaśniejsza, mleczna | rośnie o 5–10 dB (chropowatość) | rośnie podobnie |\n| Stalowy statek | szaro-biały kontur, czytelny kształt | bardzo jasny, $\\sigma^0 \\approx +5\\dots+12$ dB (corner reflector) | jasny, $\\sim 0$ dB |\n| Beton nabrzeża | jasnoszary | $\\approx -7$ dB | $\\approx -13$ dB |\n| Dach miejski | warm gray / brąz | $\\approx +2$ dB (podwójne odbicie ściana-grunt) | $\\approx -5$ dB |\n| Pas zieleni | zielony (wysoki NIR) | $\\approx -10$ dB | $\\approx -14$ dB (volume scattering) |\n\nDwie pułapki interpretacyjne, które są klasykiem początkujących:\n\n![Quicklook Sentinel-1 GRD nad portem Rotterdam — szare radarowe natężenie pokazuje wyraźnie linię brzegową, jasne smugi statków na wodzie i strukturę nabrzeży, ale kolory i rodzaj statku są niewidoczne](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-rotterdam-port-quicklook.png)\n\n*(Quicklook: Copernicus Sentinel-1 GRD nad portem Rotterdam — contains modified Copernicus data.)*\n\n1. **„SAR widzi więcej, bo statki są jaśniejsze\"** — *kontrast* statek–woda jest istotnie większy w SAR (≥ 25 dB) niż w optyce (rzędu jasności), ale to nie znaczy, że SAR widzi *więcej*. SAR pokazuje, że *coś dużego i metalowego* tam jest. Czy to kontenerowiec, holownik czy boja — odpowiada wyłącznie optyka.\n2. **„Optyka jest oczywista, więc nie potrzebuję S1 jeśli nie ma chmur\"** — sygnatura SAR pomaga *również* przy bezchmurnym niebie. Mała łódź na cieniu nabrzeża jest niemal niewidoczna w S2 (cień + niski kontrast luminancyjny), ale jako punkt podwójnego odbicia świeci w VV. To dlatego dojrzałe pipeline'y morskie idą **OR**, nie **AND**: detekuj w obu, łącz kandydatów, filtruj duplikaty."
+      }
+    },
+    {
+      "id": "zaladuj-i-pokaz-pare",
+      "title": "Załaduj parę i zrób uczciwy side-by-side",
+      "description": "Pierwszy widget capstone'u: NPZ → kalibracja S1 do dB + percentile stretch S2 → wspólny rysunek z dwoma panelami.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Plik `/inputs/setup-sceny-sen12ms-pair.npz` zawiera trzy tablice (w skali sceny 256×256):\n\n- `s2_rgb` — `uint16`, kształt `(3, 256, 256)`, kanały B04/B03/B02 w jednostkach DN (0–10000).\n- `s1_vv_linear` — `float32`, kształt `(256, 256)`, $\\sigma^0$ w **liniowej** skali (nie dB).\n- `s1_vh_linear` — `float32`, kształt `(256, 256)`, $\\sigma^0$ liniowe.\n\nNapisz funkcję `prepare_pair_views(npz_path) -> dict` zwracającą słownik z trzema kluczami:\n\n- `'s2_rgb'` — `np.float32` o kształcie `(256, 256, 3)` w zakresie `[0, 1]`, każdy kanał wystretchowany per-percentile (lo=2, hi=98).\n- `'s1_vv_db'` — `np.float64` o kształcie `(256, 256)`, $\\sigma^0_{dB} = 10 \\log_{10}(\\sigma^0_{linear})$.\n- `'s1_vh_db'` — to samo dla VH.\n\nWskazówki:\n\n1. Pamiętaj, że `s2_rgb` jest *channels-first*, a matplotlib oczekuje *channels-last* — zrób `.transpose(1, 2, 0)` (albo iteruj po kanałach).\n2. W `log10` zabezpiecz się przed zerem: `np.maximum(s1_*, 1e-12)` przed logarytmem.\n3. Funkcja musi zwrócić `dict`, nie tuple — testy odwołują się do kluczy.\n\nNa końcu starter wywołuje `plt.imshow` dwa razy obok siebie — powinieneś zobaczyć obraz przypominający dwa lewe panele rysunku z poprzedniej sekcji.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nNPZ_PATH = '/inputs/setup-sceny-sen12ms-pair.npz'\n\ndef prepare_pair_views(npz_path):\n    \"\"\"Zaladuj NPZ z para SEN12MS i przygotuj trzy widoki gotowe do plt.imshow.\n\n    Zwroc dict:\n      's2_rgb'   : (256, 256, 3) float32 w [0, 1], stretch percentylowy 2-98 per kanal.\n      's1_vv_db' : (256, 256) float64, 10*log10(linear_sigma0_VV).\n      's1_vh_db' : (256, 256) float64, 10*log10(linear_sigma0_VH).\n    \"\"\"\n    data = np.load(npz_path)\n    s2 = data['s2_rgb']               # (3, H, W) uint16, DN 0..10000\n    s1_vv = data['s1_vv_linear']      # (H, W) float32, linear sigma0\n    s1_vh = data['s1_vh_linear']\n\n    # TODO 1: zbuduj s2_rgb o ksztalcie (256, 256, 3), stretch per kanal (2, 98).\n    s2_rgb = np.zeros((s2.shape[1], s2.shape[2], 3), dtype=np.float32)\n\n    # TODO 2: skonwertuj s1_vv, s1_vh do dB z zabezpieczeniem log(0).\n    s1_vv_db = np.zeros_like(s1_vv, dtype=np.float64)\n    s1_vh_db = np.zeros_like(s1_vh, dtype=np.float64)\n\n    return {'s2_rgb': s2_rgb, 's1_vv_db': s1_vv_db, 's1_vh_db': s1_vh_db}\n\nviews = prepare_pair_views(NPZ_PATH)\nprint('s2_rgb  shape/dtype/range:', views['s2_rgb'].shape,\n      views['s2_rgb'].dtype,\n      (round(float(views['s2_rgb'].min()), 3),\n       round(float(views['s2_rgb'].max()), 3)))\nprint('s1_vv_db shape/mean/std :', views['s1_vv_db'].shape,\n      round(float(views['s1_vv_db'].mean()), 2),\n      round(float(views['s1_vv_db'].std()), 2))\n\nfig, axes = plt.subplots(1, 2, figsize=(9, 4.6))\naxes[0].imshow(views['s2_rgb'], origin='upper')\naxes[0].set_title('Sentinel-2 RGB (B04/B03/B02), stretch 2-98')\naxes[0].set_xlabel('kolumna [px]')\naxes[0].set_ylabel('wiersz [px]')\n\nim = axes[1].imshow(views['s1_vv_db'], cmap='gray', vmin=-25, vmax=5, origin='upper')\naxes[1].set_title(r'Sentinel-1 VV $\\sigma^0$ [dB]')\naxes[1].set_xlabel('ground range [px]')\naxes[1].set_ylabel('azimuth [px]')\nfig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04, label='dB')\n\nfig.suptitle('Para SEN12MS portu: pierwszy uczciwy side-by-side', fontsize=11)\nfig.tight_layout(rect=[0, 0, 1, 0.95])\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_dict_with_three_views",
+            "body": "out = prepare_pair_views('/inputs/setup-sceny-sen12ms-pair.npz')\nassert isinstance(out, dict), f'expected dict, got {type(out).__name__}'\nfor k in ('s2_rgb', 's1_vv_db', 's1_vh_db'):\n    assert k in out, f'missing key {k!r}'",
+            "hidden": false
+          },
+          {
+            "name": "shapes_match_sen12ms_patch",
+            "body": "import numpy as np\nout = prepare_pair_views('/inputs/setup-sceny-sen12ms-pair.npz')\nassert out['s2_rgb'].shape == (256, 256, 3), f's2_rgb shape: {out[\"s2_rgb\"].shape}'\nassert out['s1_vv_db'].shape == (256, 256), f's1_vv_db shape: {out[\"s1_vv_db\"].shape}'\nassert out['s1_vh_db'].shape == (256, 256), f's1_vh_db shape: {out[\"s1_vh_db\"].shape}'",
+            "hidden": true
+          },
+          {
+            "name": "s2_rgb_in_unit_interval",
+            "body": "import numpy as np\nout = prepare_pair_views('/inputs/setup-sceny-sen12ms-pair.npz')\nrgb = out['s2_rgb']\nassert rgb.min() >= 0.0 - 1e-6 and rgb.max() <= 1.0 + 1e-6, (\n    f's2_rgb poza [0,1]: min={rgb.min():.3f} max={rgb.max():.3f}'\n)\nassert rgb.max() > 0.5, f's2_rgb wyglada na zero -- stretch nie zostal zrobiony? max={rgb.max():.3f}'",
+            "hidden": true
+          },
+          {
+            "name": "s1_db_within_physical_bounds",
+            "body": "import numpy as np\nout = prepare_pair_views('/inputs/setup-sceny-sen12ms-pair.npz')\nvv = out['s1_vv_db']\nvh = out['s1_vh_db']\nassert -45.0 < vv.min() and vv.max() < 20.0, f'VV dB poza granicami: [{vv.min():.1f}, {vv.max():.1f}]'\nassert -55.0 < vh.min() and vh.max() < 15.0, f'VH dB poza granicami: [{vh.min():.1f}, {vh.max():.1f}]'\nassert vv.mean() > vh.mean(), f'oczekiwalismy VV jasniejsze od VH (cross-pol nizsze), ale VV.mean={vv.mean():.2f}, VH.mean={vh.mean():.2f}'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\nNPZ_PATH = '/inputs/setup-sceny-sen12ms-pair.npz'\n\ndef prepare_pair_views(npz_path):\n    data = np.load(npz_path)\n    s2 = data['s2_rgb']\n    s1_vv = data['s1_vv_linear']\n    s1_vh = data['s1_vh_linear']\n\n    H, W = s2.shape[1], s2.shape[2]\n    s2_rgb = np.zeros((H, W, 3), dtype=np.float32)\n    for c in range(3):\n        lo, hi = np.percentile(s2[c].astype(np.float32), [2, 98])\n        s2_rgb[..., c] = np.clip((s2[c].astype(np.float32) - lo) / max(hi - lo, 1e-9), 0.0, 1.0)\n\n    s1_vv_db = 10.0 * np.log10(np.maximum(s1_vv.astype(np.float64), 1e-12))\n    s1_vh_db = 10.0 * np.log10(np.maximum(s1_vh.astype(np.float64), 1e-12))\n\n    return {'s2_rgb': s2_rgb, 's1_vv_db': s1_vv_db, 's1_vh_db': s1_vh_db}\n\nviews = prepare_pair_views(NPZ_PATH)\nprint('s2_rgb  shape/dtype/range:', views['s2_rgb'].shape,\n      views['s2_rgb'].dtype,\n      (round(float(views['s2_rgb'].min()), 3),\n       round(float(views['s2_rgb'].max()), 3)))\nprint('s1_vv_db shape/mean/std :', views['s1_vv_db'].shape,\n      round(float(views['s1_vv_db'].mean()), 2),\n      round(float(views['s1_vv_db'].std()), 2))\n\nfig, axes = plt.subplots(1, 2, figsize=(9, 4.6))\naxes[0].imshow(views['s2_rgb'], origin='upper')\naxes[0].set_title('Sentinel-2 RGB (B04/B03/B02), stretch 2-98')\naxes[0].set_xlabel('kolumna [px]')\naxes[0].set_ylabel('wiersz [px]')\n\nim = axes[1].imshow(views['s1_vv_db'], cmap='gray', vmin=-25, vmax=5, origin='upper')\naxes[1].set_title(r'Sentinel-1 VV $\\sigma^0$ [dB]')\naxes[1].set_xlabel('ground range [px]')\naxes[1].set_ylabel('azimuth [px]')\nfig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04, label='dB')\n\nfig.suptitle('Para SEN12MS portu: pierwszy uczciwy side-by-side', fontsize=11)\nfig.tight_layout(rect=[0, 0, 1, 0.95])\nplt.show()\n",
+        "inputs": [
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair.npz",
+            "filename": "setup-sceny-sen12ms-pair.npz",
+            "caption": "Para SEN12MS: NPZ z trzema tablicami (s2_rgb, s1_vv_linear, s1_vh_linear)."
+          },
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair-input.png",
+            "alt": "Dwa panele 256x256 px wejściowych danych w 'naiwnej' wizualizacji bez kalibracji: lewy to Sentinel-2 RGB podzielony przez 3000 (kolory wyblakłe, woda prawie czarna), prawy to Sentinel-1 VV podzielony przez max (statki ledwo widoczne jako jaśniejsze punkty na jednolitym tle).",
+            "caption": "Wejście: naiwna wizualizacja bez kalibracji — pokazuje, że surowe wartości potrzebują obróbki."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/setup-sceny-sen12ms-pair-expected.png",
+          "alt": "Dwa panele 256x256 px wyjścia po poprawnej kalibracji: lewy to Sentinel-2 RGB po stretchu percentylowym 2-98 (woda granat, statki kontrastowo białe, nabrzeże szare, zieleń wyraźna); prawy to Sentinel-1 VV w sigma0 [dB] od -25 do +5, z kolorbarem dB, gdzie woda jest bardzo ciemna (~-22 dB), statki bardzo jasne (>+5 dB), zabudowa miejska średnio-jasna.",
+          "caption": "Oczekiwany wynik: poprawnie wyświetlona para optyka + SAR portu.",
+          "live": true
+        },
+        "requiresPackages": []
+      }
+    },
+    {
+      "id": "kto-pokazuje-co",
+      "title": "Szybkie sprawdzenie: kto pokazuje co?",
+      "description": "Cztery scenariusze z portu — w którym Sentinel zaufasz, gdy tylko jeden jest dostępny?",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na ten sam port w Hamburgu z lotniska kosmicznego. Które stwierdzenia są poprawne? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Nad portem są gęste chmury — żeby wykryć kontenerowiec na nabrzeżu, sięgam po Sentinel-1, nie Sentinel-2.",
+          "Aby odróżnić tankowiec od kontenerowca (rodzaj statku), wystarczy mi Sentinel-1 VV w decybelach.",
+          "Bardzo spokojna woda ma na Sentinel-1 VV wartości około −22 dB; jeśli widzę tam +5 dB, to prawie na pewno nie jest „woda\".",
+          "Mała łódź na cieniu nabrzeża jest często wyraźniejsza w Sentinel-1 niż w Sentinel-2, mimo bezchmurnego nieba."
+        ],
+        "correct": [
+          0,
+          2,
+          3
+        ],
+        "explanation": "Opcja 1 jest poprawna: SAR przebija chmury, więc dla detekcji obecności statku przy zachmurzeniu Sentinel-1 jest jedynym sensownym wyborem. Opcja 3 jest poprawna z definicji: spokojne morze rozprasza mikrofalę prawie wyłącznie do przodu (specular), więc echo wraca nikłe — ~−22 dB to typowy poziom; lokalny skok do +5 dB w obszarze oznaczonym wcześniej jako woda to klasyczny kandydat detekcji statku. Opcja 4 jest poprawna: nawet bez chmur cień optyczny może ukryć małą łódź, a podwójne odbicie ściana-grunt sprawia, że ta sama łódź jest w SAR-ze jasna. Opcja 2 jest **fałszywa**: SAR mierzy chropowatość i geometrię rozpraszania, nie semantykę — w VV [dB] kontenerowiec i tankowiec wyglądają podobnie (oba są dużymi metalowymi corner reflectorami). Klasyfikację rodzaju statku robi optyka (kolor, kształt, oznakowanie) — to dokładnie ten moment, w którym potrzebujemy *pary*, nie pojedynczej modalności.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-pobaw-sie-stretchem",
+      "title": "Pobaw się z wizualizacją pary",
+      "description": "Ta sama para SEN12MS bez testów — sprawdź, jak każda decyzja o stretch'u zmienia obrazek.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/setup-sceny-sen12ms-pair.npz')\ns2 = data['s2_rgb']\ns1_vv = data['s1_vv_linear']\ns1_vh = data['s1_vh_linear']\n\n# Pobaw sie:\n#  1) Zmien stretch S2 z (2, 98) na (0, 100). Czy statki nadal sa widoczne?\n#     A na (5, 95)? Co dzieje sie z gradientem koloru wody?\n#  2) Zamiast 10*log10(linear) sprobuj wyswietlic S1 VV w skali liniowej\n#     (cmap='gray', bez log). Co znika z obrazka?\n#  3) Sproboj zbudowac false-color SAR: R=VV[dB], G=VH[dB], B=(VV-VH)[dB].\n#     Kazdy kanal przeskaluj percentylowo i ulóż w (H, W, 3).\n#  4) Jak wygląda S2 RGB jako (R, G, NIR proxy = R) tzn. pseudo-IR --\n#     wegetacja powinna stac sie bardzo jasna (nie mamy tu NIR, ale\n#     mozna eksperymentowac z permutacja kanalow).\n#\n# Kazda zmiana ucisnie inny region histogramu -- to dokladnie te decyzje,\n# ktore w realnym capstone'ie podejmujesz raz, na poczatku, zeby pozostala\n# czesc pipeline'u (detekcja statkow, fuzja, raport) byla porownywalna.\n\nprint('s2 shape:', s2.shape, 's2 dtype:', s2.dtype, 's2 min/max:', s2.min(), s2.max())\nprint('s1_vv min/max linear:', round(float(s1_vv.min()), 4), round(float(s1_vv.max()), 2))\n\ns2_naive = (s2.astype(np.float32).transpose(1, 2, 0) / 3000.0).clip(0, 1)\nfig, ax = plt.subplots(figsize=(5, 5))\nax.imshow(s2_naive, origin='upper')\nax.set_title('Sentinel-2 RGB, stretch / 3000 (naiwny)')\nax.set_xlabel('kolumna [px]')\nax.set_ylabel('wiersz [px]')\nplt.show()\n",
+        "encouragement": "Zmień (2, 98) na coś agresywniejszego i zobacz, co ginie na wodzie a co eksploduje na zabudowie — to jest dokładnie ten moment, w którym sam zaczynasz dobierać granice stretch'u zamiast łykać domyślne."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1906.07789",
+      "title": "SEN12MS — A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery",
+      "kind": "paper",
+      "author": "Michael Schmitt, Lloyd Haydn Hughes, Chunping Qiu, Xiao Xiang Zhu",
+      "year": 2019
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s2-mission",
+      "title": "Sentinel-2 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    },
+    {
+      "url": "https://documentation.dataspace.copernicus.eu/APIs/OData.html",
+      "title": "Copernicus Data Space Ecosystem — Search and Download (OData API)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2016.2561021",
+      "title": "Data fusion and remote sensing — An ever-growing relationship",
+      "kind": "paper",
+      "author": "Michael Schmitt and Xiao Xiang Zhu",
+      "year": 2016
+    }
+  ]
+}

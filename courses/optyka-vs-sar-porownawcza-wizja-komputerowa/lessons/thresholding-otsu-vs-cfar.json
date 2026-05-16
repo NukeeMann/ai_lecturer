@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "slug": "thresholding-otsu-vs-cfar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Thresholding — Otsu vs CFAR",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Otsu zakłada bimodalność i gaussowskość — założenia, których SAR nie spełnia. CFAR zamiast szukać kształtu histogramu fiksuje statystyczny kontrakt: lokalnie adaptacyjny próg z kwantyla Gamma, który trzyma zadany false-alarm rate dla każdego L i każdej średniej tła.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "otsu-przypomnienie",
+      "title": "Otsu — kanon progowania optycznego",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1979.4310076",
+          "title": "A threshold selection method from gray-level histograms",
+          "kind": "paper",
+          "author": "Nobuyuki Otsu",
+          "year": 1979
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.threshold_otsu",
+          "title": "skimage.filters.threshold_otsu — documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Metoda Otsu (1979) jest **kanonicznym globalnym thresholderem** dla obrazu optycznego: minimalizuje sumę wariancji wewnątrzklasowych dla dwóch klas pikseli (tło vs obiekt), zakładając, że histogram jest *bimodalny* i każda klasa ma rozkład w przybliżeniu gaussowski.\n\nFormalnie szukamy progu $t$ minimalizującego\n\n$$ \\sigma^2_w(t) \\;=\\; w_0(t)\\,\\sigma^2_0(t) \\,+\\, w_1(t)\\,\\sigma^2_1(t) $$\n\ngdzie $w_0(t), w_1(t)$ to udziały klas poniżej / powyżej $t$, a $\\sigma^2_i$ — ich wariancje. Równoważnie maksymalizujemy wariancję *międzyklasową*: bierzemy próg, który *najlepiej separuje* dwa rozkłady. Dla typowego obrazu jasnego obiektu na ciemnym tle (cameraman, monety, znaki drogowe) algorytm trafia idealnie w „dolinę\" między modami.\n\n![Dwa panele histogramów obok siebie. Lewy panel zatytułowany „Optyka: dwumodalny Gauss / Otsu trafia idealnie w dolinę między modami\" pokazuje gęstość prawdopodobieństwa intensywności w [0, 1,2]: dwie wyraźne kopuły gaussowskie (mody ok. 0,30 i 0,80, wysokości ok. 3,6 i 3,0) oraz pomarańczowa pionowa linia progu Otsu = 0,50 wpadająca dokładnie w dolinę między modami. Prawy panel zatytułowany „SAR: Gamma(L) z długim ogonem / Otsu nie ma »doliny« — siada gdzieś w ogonie tła\" pokazuje histogram intensywności SAR w [0, 3]: jednomodalny rozkład Gamma(L=4, R=0,25) tła (niebieska kopuła z modą ok. 0,18) z długim ogonem oraz rozproszony rozkład 2% celów Gamma(L=4, R=1,6) (czerwona krzywa rozciągająca się od 0,5 do 3,0). Próg Otsu = 1,08 (pomarańczowa kreska przerywana) wpada w ogon tła i pomija większość celów; próg CFAR Pfa=1e-3 = 0,82 (zielona kropkowana linia) leży niżej, w analitycznie wyliczonym 99,9 percentylu rozkładu tła.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/otsu-bimodal-vs-gamma-histograms.png)\n\nUrok Otsu polega na *braku parametrów* — nie kalibrujemy false-alarm rate, nie ustawiamy target reflectivity, tylko wpychamy obraz i dostajemy próg. Ale ta wygoda jest kupiona ceną dwóch ukrytych presupozycji:\n\n1. **Bimodalność.** Histogram zawiera dwa wyraźne mody.\n2. **Gaussowskość.** Rozkład każdej klasy jest (z grubsza) Gaussem.\n\nOptyka spełnia oba większość czasu. **SAR — żadnego z nich.** Pojedyncza akwizycja ma rozkład jednomodalny Gamma$(L, R/L)$ z długim ogonem po prawej. Nie ma „doliny\", w którą Otsu miałby trafić — algorytm posadzi próg gdzieś w ogonie tła, jego pozycja będzie *dryfowała z ENL* (im wyższy $L$, tym węższy rozkład i tym niższy próg), a jeden globalny próg nigdy nie zadziała dobrze na scenie z regionami o różnej średniej odbiciowości (morze, ląd, cień statku)."
+      }
+    },
+    {
+      "id": "histogramy-trzy-enl",
+      "title": "Otsu dryfuje, CFAR trzyma kontrakt — ten sam scenariusz, trzy ENL",
+      "description": "Monte Carlo: morze (R=0,18) + ląd (R=0,45) + 80 jasnych celów (R=1,6) symulowane dla $L \\in \\{1, 4, 16\\}$. Pomarańczowa kreska — globalny próg Otsu na całym histogramie; niebieska i czerwona kropka — CFAR Pfa=$10^{-3}$ liczony lokalnie z $\\mu$ każdego regionu.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/thresholding-otsu-vs-cfar-1.png",
+        "alt": "Trzy panele histogramów obok siebie, każdy dla innego ENL: L=1, L=4, L=16. Każdy panel pokazuje gęstość prawdopodobieństwa intensywności SAR w [0, 2,5] z jasnoszarą siatką w tle. Niebieski wypełniony histogram — region morza (R=0,18); czerwono-różowy wypełniony — region lądu (R=0,45). Na górnym brzegu każdego panelu czarne pionowe kreski reprezentują rozkład jasnych celów (Gamma R=1,6) — gęste w obszarze 0,5–2,5. W każdym panelu zaznaczone trzy progi: pomarańczowa kreska przerywana — globalny próg Otsu (0,57 dla L=1; 0,39 dla L=4; 0,33 dla L=16); niebieska kropkowana linia — CFAR próg w regionie morza (1,25; 0,59; 0,35); czerwona kropkowana linia — CFAR próg w regionie lądu (3,15; 1,47; 0,88). Otsu (jeden próg na cały histogram) przesuwa się w lewo wraz z rosnącym L, ale nigdy nie respektuje granicy regionów. CFAR (dwa progi, po jednym na region) trzyma się analitycznego kwantyla Gamma(L) niezależnie od L. Tytuł nadrzędny: „Histogramy intensywności SAR dla trzech ENL (ten sam scenariusz: morze + ląd + cele) / Otsu (pomarańczowa --) tnie *między* tłami — przesuwa się z ENL i zawsze omija większość celów. / CFAR (niebieska/czerwona ..) dopasowuje próg lokalnie do średniej tła — łapie cele w obu regionach.\"",
+        "caption": "Rys. 1. Ten sam scenariusz dla trzech ENL. Pomarańczowy próg Otsu (jeden na całą scenę) przesuwa się z $L$ — z $0{,}57$ przy $L=1$ do $0{,}33$ przy $L=16$. CFAR podstawia analityczny współczynnik $\\alpha(P_\\text{fa}, L)$ i mnoży go przez *lokalną* średnią tła: ten sam $P_\\text{fa}=10^{-3}$ realizuje dwa różne progi (morze vs ląd), z których każdy daje obiecane $99{,}9\\%$ pikseli tła pod progiem.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.special import gammaincinv\nfrom skimage.filters import threshold_otsu\n\nOUT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"thresholding-otsu-vs-cfar-1.png\"\n)\n\n\ndef simulate(L, n_sea=20000, n_land=10000, n_targets=80, seed=0):\n    rng = np.random.default_rng(seed)\n    sea = rng.gamma(L, 0.18 / L, size=n_sea)\n    land = rng.gamma(L, 0.45 / L, size=n_land)\n    targets = rng.gamma(L, 1.6 / L, size=n_targets)\n    return sea, land, targets\n\n\nPfa = 1e-3\nfig, axes = plt.subplots(1, 3, figsize=(13.5, 4.4), constrained_layout=True)\n\nfor ax, L in zip(axes, (1, 4, 16)):\n    sea, land, targets = simulate(L, seed=11 + L)\n    all_pixels = np.concatenate([sea, land, targets])\n    bins = np.linspace(0, 2.5, 70)\n    ax.hist(sea, bins=bins, density=True, alpha=0.55, color=\"#4a78c8\",\n            label=\"morze (R=0,18)\")\n    ax.hist(land, bins=bins, density=True, alpha=0.45, color=\"#c08070\",\n            label=\"ląd (R=0,45)\")\n    otsu_t = float(threshold_otsu(all_pixels))\n    alpha = float(gammaincinv(L, 1 - Pfa) / L)\n    t_cfar_sea = alpha * float(sea.mean())\n    t_cfar_land = alpha * float(land.mean())\n    ax.axvline(otsu_t, color=\"#e08524\", linestyle=\"--\", linewidth=2,\n               label=f\"Otsu próg = {otsu_t:.2f}\")\n    ax.axvline(t_cfar_sea, color=\"#1f4ea1\", linestyle=\":\", linewidth=2,\n               label=f\"CFAR (morze) = {t_cfar_sea:.2f}\")\n    ax.axvline(t_cfar_land, color=\"#a83a2f\", linestyle=\":\", linewidth=2,\n               label=f\"CFAR (ląd) = {t_cfar_land:.2f}\")\n    target_y = 6.2\n    for t in targets:\n        ax.plot([t, t], [target_y - 0.5, target_y + 0.5], color=\"black\",\n                linewidth=0.6, alpha=0.5)\n    ax.plot([], [], color=\"black\", linewidth=2,\n            label=\"cele (×30 dla widoczności)\")\n    ax.set_xlim(0, 2.5)\n    ax.set_ylim(0, 7.0)\n    ax.set_xlabel(r\"Intensywność $I$  [-]\")\n    ax.set_ylabel(\"Gęstość prawd.  [-]\")\n    ax.set_title(f\"ENL L = {L}\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(loc=\"upper right\", fontsize=8)\n\nfig.suptitle(\n    \"Histogramy intensywności SAR dla trzech ENL  \"\n    \"(ten sam scenariusz: morze + ląd + cele)\\n\"\n    \"Otsu (pomarańczowa --) tnie *między* tłami — przesuwa się z ENL \"\n    \"i zawsze omija większość celów.\\n\"\n    \"CFAR (niebieska/czerwona ··) dopasowuje próg lokalnie do średniej tła \"\n    \"— łapie cele w obu regionach.\",\n    fontsize=10.5,\n)\n\nfig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "cfar-kontrakt-pfa",
+      "title": "CFAR — adaptacyjny próg z kwantyla Gamma",
+      "sources": [
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+          "title": "Ship Surveillance with TerraSAR-X",
+          "kind": "paper",
+          "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+          "year": 2011
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "CFAR (Constant False Alarm Rate) podchodzi do problemu od drugiej strony. Wariant *empiryczny* (próg z $(1-P_\\text{fa})$ percentyla na próbce jednorodnego fragmentu) widziałeś już w lekcji *3.2* przy detektorze Touziego — tutaj zamykamy pętlę i wyprowadzamy *analityczny* próg z kwantyla Gamma. Zamiast szukać *kształtu* w histogramie, **fiksujemy statystyczny kontrakt**: jaki maksymalny udział fałszywych alarmów akceptujemy w obszarze jednorodnym? Niech $P_\\text{fa}$ to ta liczba (np. $10^{-3}$ — „średnio jeden fałszywy detect na tysiąc pikseli tła\"). Próg $T$ dobieramy tak, że *pod hipotezą zerową* (CUT należy do tła Gamma$(L)$) prawdopodobieństwo $I_\\text{CUT} > T$ wynosi dokładnie $P_\\text{fa}$.\n\nDla intensywności SAR pod modelem Gamma$(L, R/L)$ daje to **analityczny próg** proporcjonalny do lokalnej średniej tła $\\mu_\\text{bg}$:\n\n$$ T \\;=\\; \\alpha(P_\\text{fa}, L) \\cdot \\mu_\\text{bg}, \\qquad \\alpha \\;=\\; \\frac{\\operatorname{Gamma}^{-1}_L(1 - P_\\text{fa})}{L} $$\n\ngdzie $\\operatorname{Gamma}^{-1}_L$ to odwrotna dystrybuanta rozkładu Gamma o kształcie $L$ i skali $1$ (w `scipy.special` jest to `gammaincinv(L, 1 - Pfa)`). Dla $L = 4$, $P_\\text{fa} = 10^{-3}$ wychodzi $\\alpha \\approx 3{,}27$ — czyli wszystko, co jest cztery razy jaśniejsze od lokalnej średniej tła w tym konkretnym ENL, zostaje uznane za cel.\n\n**Kluczowa różnica od Otsu**: $\\mu_\\text{bg}$ szacujemy *lokalnie*, w oknie wokół każdego piksela. Typowe okno CFAR ma trzy strefy:\n\n- **CUT** (Cell Under Test) — pojedynczy piksel, którego decyzję podejmujemy.\n- **Guard ring** — wąski pierścień (np. $5 \\times 5$) wokół CUT, *ignorowany*. Chroni estymatę $\\mu_\\text{bg}$ przed rozlaniem energii samego celu na sąsiadów (statek > 1 piksel).\n- **Training ring** — szerszy pierścień (np. $13 \\times 13$ minus środkowe $5 \\times 5$ = $144$ piksele), z którego liczymy $\\mu_\\text{bg}$.\n\n![Wizualizacja okna CA-CFAR 13×13 z guard=2 i training ring=4. Czerwony kwadrat w centrum z białą etykietą „CUT\" reprezentuje pojedynczy piksel testowany (Cell Under Test). Wokół niego żółty pierścień guard 5×5 minus środek (24 piksele) oznaczony jako „guard ring — chroni przed rozlaniem celu\". Na zewnątrz niebieski pierścień training 13×13 minus 5×5 (144 piksele) oznaczony jako „training ring — estymuje μ_bg\". Cała siatka 13×13 z pikselami ponumerowanymi od -6 do +6 na obu osiach. Pod diagramem legenda z opisem trzech kolorów. Tytuł u góry: „Okno CA-CFAR (13×13, guard=2, training=4) / μ_bg = średnia z 144 pikseli niebieskich → T = α(Pfa, L) · μ_bg\".](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/cfar-window-layout.png)\n\nWariant z prostą średnią arytmetyczną nazywa się **CA-CFAR** (Cell Averaging). Jest najszybszy i najpopularniejszy — sliding-window mean można policzyć w czasie $O(N)$ przez `scipy.ndimage.uniform_filter`. Pozostałe warianty (OS-CFAR z medianą, two-parameter CFAR z $\\mu + \\sigma$, GO/SO-CFAR z porównaniem dwóch sąsiednich półokien) wprowadza się tam, gdzie założenie jednorodnego tła Gamma się rozsypuje — np. na obrzeżu lądu albo w klastrze statków. W tej lekcji zostajemy przy CA-CFAR; reszta to wariacje na ten sam temat.\n\n> **Uwaga implementacyjna.** $\\alpha$ jest *czysto teoretyczne* — wynika z założenia, że tło ma dokładnie rozkład Gamma$(L)$. Realny Sentinel-1 GRD po dodatkowej filtracji ma efektywne $L \\in [3, 6]$ i tła nie zawsze są idealnie jednorodne. Operacyjnie często kalibruje się $\\alpha$ empirycznie z fragmentu „czystego morza\" — patrz lekcja *6.4 CFAR — detekcja statków na morzu*."
+      }
+    },
+    {
+      "id": "quiz-otsu-vs-cfar",
+      "title": "Sprawdź: gdzie Otsu pada, gdzie CFAR trzyma",
+      "type": "quiz",
+      "data": {
+        "question": "Spójrz na trzy panele histogramów z poprzedniej sekcji (Rys. 1). Które z poniższych stwierdzeń o porównaniu Otsu i CFAR na obrazie SAR są **prawdziwe**? Wybierz wszystkie poprawne.",
+        "options": [
+          "Otsu zwraca jeden próg globalny i nie odróżnia regionów morza od lądu. Na scenie z oboma próg wpada gdzieś pomiędzy ich modami: zostawia gęsty ogon lądu nad progiem (lawina false-alarmów), a jednocześnie odcina słabsze cele leżące w ogonie morza.",
+          "Próg CA-CFAR $T = \\alpha \\cdot \\mu_\\text{bg}$ dryfuje wraz z lokalnym $\\mu_\\text{bg}$, ale ułamek pikseli tła go przekraczających pozostaje równy zadanemu $P_\\text{fa}$ — to jest *kontrakt* metody, nie skutek uboczny.",
+          "Otsu dla SAR o ENL $L = 4$ daje próg matematycznie równoważny CA-CFAR z $P_\\text{fa} = 0{,}5$ — to ta sama operacja, tylko inaczej nazwana.",
+          "Im wyższy ENL, tym węższy rozkład Gamma, więc Otsu schodzi z progiem w dół (na panelach widać $0{,}57 \\to 0{,}39 \\to 0{,}33$). CFAR też się dopasowuje, ale przez wzór $\\alpha(P_\\text{fa}, L)$, więc gwarancja $P_\\text{fa}$ trzyma się dla każdego $L$.",
+          "Skoro CFAR potrzebuje znać $L$, a Otsu nie, to dla nieznanego ENL Otsu jest *jedyną* prawidłową metodą."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Otsu i CFAR rozwiązują *różne* problemy: Otsu minimalizuje wariancję wewnątrzklasową (szuka *kształtu* w histogramie), CFAR fiksuje kontrakt $P_\\text{fa}$ (statystyka pod $H_0$).\n\n**(A) prawda** — Otsu nie ma pojęcia o regionalności sceny. Na panelu $L = 4$ próg $0{,}39$ wypada w ogonie morza ($R = 0{,}18$) i jest *poniżej* mediany lądu ($R = 0{,}45$): cała prawa połowa rozkładu lądu zostaje zaklasyfikowana jako „cel\", a słabsze cele tuż nad ogonem morza i tak zostają wycięte.\n\n**(B) prawda** — to esencja CFAR. $T = \\alpha \\cdot \\mu_\\text{bg}$ jest *kwantylem* rozkładu Gamma$(L, \\mu_\\text{bg}/L)$: pod $H_0$ ułamek pikseli tła nad $T$ jest *deterministycznie* równy $P_\\text{fa}$, niezależnie od $\\mu_\\text{bg}$. To jest cały sens nazwy „Constant False Alarm Rate\".\n\n**(D) prawda** — widać to liczbowo na panelach: Otsu $= \\{0{,}57,\\, 0{,}39,\\, 0{,}33\\}$ dla $L = \\{1, 4, 16\\}$, dryfuje monotonicznie z ENL. CFAR też dryfuje numerycznie ($\\alpha = \\{6{,}9,\\, 3{,}27,\\, 1{,}79\\}$ dla $P_\\text{fa} = 10^{-3}$), ale to dryf *projektowy*: gwarancja $P_\\text{fa}$ trzyma się dla każdego $L$, bo $\\alpha$ jest funkcją $L$.\n\n**(C) fałsz** — Otsu i CFAR mają fundamentalnie różną logikę. CFAR z $P_\\text{fa} = 0{,}5$ oznaczyłby *połowę* tła jako „cel\", więc detektor zwracałby losową szachownicę. Otsu nie jest CA-CFAR z żadnym sensownym $P_\\text{fa}$ — po prostu zwraca przypadkowy punkt w histogramie wynikający z gradientu wariancji wewnątrzklasowej.\n\n**(E) fałsz** — w praktyce $L$ estymuje się raz, z lokalnego $\\text{CV} = \\sigma/\\mu$ w wybranym jednorodnym fragmencie ($\\widehat{L} = 1/\\text{CV}^2$) i potem trzyma się stałe dla całej akwizycji. Co więcej, Otsu *też* niejawnie zależy od $L$ (skoro próg dryfuje z $L$), tylko że nie ma sposobu, by ten dryf skompensować — to brak parametru, nie zaleta.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "implementacja-ca-cfar",
+      "title": "Zaimplementuj `ca_cfar` — okno 13×13, guard 5×5, próg z kwantyla Gamma",
+      "description": "Wejście — syntetyczny kafelek SAR 192×192 (Gamma $L=4$, morze $R=0{,}20$) z 14 punktowymi celami. Cel — odtworzyć maskę CA-CFAR z domyślnymi parametrami i zgodzić się byte-for-byte z referencyjną maską z `/inputs/`.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+          "title": "Ship Surveillance with TerraSAR-X",
+          "kind": "paper",
+          "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+          "year": 2011
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **CA-CFAR** dla obrazu intensywności SAR.\n\nFunkcja `ca_cfar(img, win=6, guard=2, pfa=1e-3, L=4)` zwraca **maskę boolowską** o tym samym kształcie co `img`, gdzie `True` oznacza piksel przekraczający lokalny próg CFAR.\n\nParametry:\n\n- `win` — półbok pełnego okna; pełne okno ma bok $2w+1$ (przy `win=6` → 13×13).\n- `guard` — półbok guard boxa; guard ma bok $2g+1$ (przy `guard=2` → 5×5).\n- `pfa` — target false-alarm rate.\n- `L` — ENL (kształt rozkładu Gamma).\n\nWzór:\n\n$$ T(i, j) \\;=\\; \\alpha \\cdot \\mu_\\text{bg}(i, j), \\qquad \\alpha \\;=\\; \\frac{\\operatorname{gammaincinv}(L,\\, 1 - P_\\text{fa})}{L} $$\n\ngdzie $\\mu_\\text{bg}$ to średnia z training ringu (training = pełne okno minus guard box).\n\n**Wskazówka.** Sliding-window mean policz przez `scipy.ndimage.uniform_filter`. Mając `mu_full` (średnia z pełnego okna) i `mu_guard` (średnia z guard boxa), training ring oblicza się przez ważoną różnicę:\n\n```\nn_full  = (2*win + 1) ** 2\nn_guard = (2*guard + 1) ** 2\nn_train = n_full - n_guard\nmu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n```\n\nPadding: `mode='reflect'` (domyślny dla `uniform_filter` poza wartością zwracaną z `reflect`).\n\nKwantyl rozkładu Gamma: `scipy.special.gammaincinv(L, 1 - pfa)` — funkcja zwraca $x$ takie, że $P(X \\le x) = 1 - P_\\text{fa}$ dla $X \\sim \\operatorname{Gamma}(L, 1)$. Podziel przez $L$, żeby otrzymać $\\alpha$ dla skali $1/L$.\n\n```\n>>> img = np.load('/inputs/otsu-cfar-synthetic-sar-tile.npz')['intensity']\n>>> mask = ca_cfar(img)\n>>> int(mask.sum())\n46\n```\n\nTesty weryfikują (a) shape i dtype, (b) detekcje pokrywają co najmniej 11 z 14 prawdziwych celów, (c) na kafelku samego tła false-alarm count jest zgodny z `pfa` z tolerancją, (d) wynik na syntetycznym kafelku zgadza się *byte-for-byte* z maską referencyjną w `/inputs/otsu-cfar-expected-mask.npz`.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win=6, guard=2, pfa=1e-3, L=4):\n    \"\"\"Cell-Averaging CFAR na obrazie intensywnosci SAR (Gamma(L)).\n\n    Zwroc maske bool (shape == img.shape), True = piksel > prog lokalny.\n\n    Algorytm:\n      1) full_side = 2*win + 1, guard_side = 2*guard + 1\n      2) mu_full  = uniform_filter(img, size=full_side,  mode='reflect')\n      3) mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n      4) mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n      5) alpha    = gammaincinv(L, 1 - pfa) / L\n      6) return img > alpha * mu_train\n    \"\"\"\n    img = img.astype(np.float32)\n    # TODO: oblicz full_side, guard_side, n_full, n_guard, n_train\n    # TODO: mu_full = uniform_filter(img, size=full_side,  mode='reflect')\n    # TODO: mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    # TODO: mu_train = (n_full*mu_full - n_guard*mu_guard) / n_train\n    # TODO: alpha = gammaincinv(L, 1 - pfa) / L\n    # TODO: return img > alpha * mu_train\n    return np.zeros_like(img, dtype=bool)\n\n\n# --- Preview: CA-CFAR na syntetycznym kafelku SAR ---\nimport matplotlib.pyplot as plt\n\ndata = np.load(\"/inputs/otsu-cfar-synthetic-sar-tile.npz\")\nimg = data[\"intensity\"]\nmask = ca_cfar(img)\nprint(f\"img.shape:   {img.shape}\")\nprint(f\"mask.dtype:  {mask.dtype}\")\nprint(f\"detekcji:    {int(mask.sum())}\")\n\nfig, axes = plt.subplots(1, 2, figsize=(8.5, 4.2), constrained_layout=True)\naxes[0].imshow(np.sqrt(np.clip(img, 0, None)), cmap=\"gray\")\naxes[0].set_title(\"Wejscie: synth SAR tile (sqrt brightness)\")\naxes[0].set_axis_off()\naxes[1].imshow(mask, cmap=\"gray\")\naxes[1].set_title(f\"CA-CFAR mask  ({int(mask.sum())} det)\")\naxes[1].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_bool_mask_with_same_shape",
+            "body": "import numpy as np\nimg = np.load('/inputs/otsu-cfar-synthetic-sar-tile.npz')['intensity']\nmask = ca_cfar(img)\nassert hasattr(mask, 'shape') and mask.shape == img.shape, f'shape={getattr(mask, \"shape\", None)}, oczekiwano {img.shape}'\nassert mask.dtype == np.bool_, f'dtype={mask.dtype}, oczekiwano bool'",
+            "hidden": false
+          },
+          {
+            "name": "catches_most_real_targets",
+            "body": "import numpy as np\ndata = np.load('/inputs/otsu-cfar-synthetic-sar-tile.npz')\nimg = data['intensity']\nref = np.load('/inputs/otsu-cfar-expected-mask.npz')\ntruth = ref['truth']\nmask = ca_cfar(img)\nhits = int((mask & truth).sum())\ntotal = int(truth.sum())\nassert hits >= 11, (\n    f'wykryto {hits}/{total} prawdziwych celow; oczekiwano co najmniej 11. '\n    f'Sprawdz: alpha = gammaincinv(L, 1-pfa)/L, kierunek nierownosci img > T.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "false_alarm_rate_matches_pfa_on_clean_background",
+            "body": "import numpy as np\nrng = np.random.default_rng(99)\nL = 4\nclean = rng.gamma(L, 0.20 / L, size=(256, 256)).astype(np.float32)\nmask = ca_cfar(clean, win=6, guard=2, pfa=1e-3, L=L)\n# Ignoruj ramke 8 px (efekty brzegowe reflect)\ninner = mask[8:-8, 8:-8]\nrate = float(inner.sum()) / inner.size\nassert rate < 5e-3, (\n    f'na czystym tle false-alarm rate = {rate:.5f}; oczekiwano < 5e-3 (pfa=1e-3 z marginesem). '\n    f'Sprawdz, czy alpha nie zostalo policzone z wykladnika zamiast z kwantyla Gamma.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_mask_byte_for_byte",
+            "body": "import numpy as np\nimg = np.load('/inputs/otsu-cfar-synthetic-sar-tile.npz')['intensity']\nref = np.load('/inputs/otsu-cfar-expected-mask.npz')['detection']\nmask = ca_cfar(img)\nassert mask.shape == ref.shape, f'shape={mask.shape}, ref={ref.shape}'\ndiff = int((mask != ref).sum())\nassert diff == 0, (\n    f'maska rozni sie od referencyjnej w {diff} pikselach. '\n    f'Sprawdz: padding mode=\"reflect\", kolejnosc full_side / guard_side w uniform_filter, '\n    f'i ze gammaincinv(L, 1-pfa) jest dzielone przez L.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win=6, guard=2, pfa=1e-3, L=4):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/otsu-cfar-synthetic-sar-tile.png",
+            "alt": "Syntetyczny kafelek SAR 192×192 w skali szarości (sqrt-brightness): jednorodne speckled morze (Gamma L=4, średnia odbiciowość 0,20) z 14 jasnymi punktowymi celami rozsianymi po obrazie. Cele są jednopikselowymi rozjaśnieniami widocznymi jako białe kropki na szaroziarnistym tle.",
+            "caption": "Podgląd kafelka SAR (sqrt-brightness dla czytelności speckle)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/otsu-cfar-synthetic-sar-tile.npz",
+            "filename": "otsu-cfar-synthetic-sar-tile.npz",
+            "caption": ".npz: klucze 'intensity' (float32, 192×192), 'L' (=4), 'R_bg' (=0,20). To jest *intensywność*, nie display — użyj jej w `ca_cfar`."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/otsu-cfar-expected-mask.npz",
+            "filename": "otsu-cfar-expected-mask.npz",
+            "caption": ".npz: klucze 'detection' (bool, 192×192 — referencyjna maska CA-CFAR przy domyślnych parametrach win=6, guard=2, pfa=1e-3, L=4), 'truth' (bool, 192×192 — prawdziwe pozycje 14 celów), 'alpha' (≈3,266)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/otsu-cfar-expected-mask.png",
+          "alt": "Czarno-biała maska binarna 192×192: czarne tło z 46 białymi pikselami detekcji rozsianymi po obrazie — w tym 12 zlokalizowanych blisko prawdziwych pozycji celów oraz ok. 34 fałszywych alarmów rozłożonych w obrazie zgodnie z Pfa ≈ 9e-4.",
+          "caption": "Cel: tak ma wyglądać `ca_cfar(img)` z domyślnymi parametrami. 46 detekcji = 12 z 14 celów (recall 86 %) + ~34 fałszywych alarmów (empiryczne $P_\\text{fa} \\approx 9 \\times 10^{-4}$, blisko projektowego $10^{-3}$)."
+        }
+      }
+    },
+    {
+      "id": "sandbox-pfa-guard-train",
+      "title": "Spróbuj: handel Pfa za pokrycie",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom scipy.special import gammaincinv\nimport matplotlib.pyplot as plt\n\n\ndef ca_cfar(img, win=6, guard=2, pfa=1e-3, L=4):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndata = np.load('/inputs/otsu-cfar-synthetic-sar-tile.npz')\nimg = data['intensity']\ntruth = np.load('/inputs/otsu-cfar-expected-mask.npz')['truth']\n\n# Trzy pokretla: target Pfa, polbok guard, polbok pelnego okna.\npfa = 1e-3\nguard = 2\nwin = 6\nL = 4\n\nmask = ca_cfar(img, win=win, guard=guard, pfa=pfa, L=L)\nn_det = int(mask.sum())\nhits = int((mask & truth).sum())\nfp = n_det - hits\nbg_area = img.size - int(truth.sum())\nemp_pfa = fp / bg_area\nalpha = float(gammaincinv(L, 1 - pfa) / L)\nprint(f'win={win}  guard={guard}  pfa={pfa:.4f}  alpha={alpha:.3f}')\nprint(f'  detekcji = {n_det}')\nprint(f'  trafien  = {hits}/{int(truth.sum())}  (recall = {hits/int(truth.sum())*100:.0f}%)')\nprint(f'  false-alarms = {fp}  (empiryczne Pfa = {emp_pfa:.2e})')\n\nfig, axes = plt.subplots(1, 3, figsize=(11.5, 4.0), constrained_layout=True)\naxes[0].imshow(np.sqrt(np.clip(img, 0, None)), cmap='gray')\naxes[0].set_title('Wejscie SAR (sqrt)', fontsize=10)\naxes[0].set_axis_off()\naxes[1].imshow(truth, cmap='gray')\naxes[1].set_title(f'Prawda ({int(truth.sum())} celow)', fontsize=10)\naxes[1].set_axis_off()\naxes[2].imshow(mask, cmap='gray')\naxes[2].set_title(\n    f'CA-CFAR pfa={pfa:.0e}  win={win}  guard={guard}\\n'\n    f'recall={hits/int(truth.sum())*100:.0f}%  fp={fp}',\n    fontsize=10,\n)\naxes[2].set_axis_off()\nplt.show()\n",
+        "encouragement": "Zacznij od luźnego `pfa=5e-2`, potem zejdź do `pfa=1e-4` — w którym momencie zaczynasz tracić cele, a w którym znikają fałszywe alarmy? Spróbuj też podnieść `guard` do 4: co się stanie z detekcjami, gdy guard pochłonie cały statek?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TSMC.1979.4310076",
+      "title": "A threshold selection method from gray-level histograms",
+      "kind": "paper",
+      "author": "Nobuyuki Otsu",
+      "year": 1979
+    },
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2010.2071879",
+      "title": "Ship Surveillance with TerraSAR-X",
+      "kind": "paper",
+      "author": "Susanne Brusch, Stephan Lehner, Thomas Fritz, Matteo Soccorsi, Adrian Soloviev, Bernd van Schie",
+      "year": 2011
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html#skimage.filters.threshold_otsu",
+      "title": "skimage.filters.threshold_otsu — documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

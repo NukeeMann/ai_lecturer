@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "slug": "despeckling-z-onnx-sar-drn-w-przegladarce",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m5",
+  "title": "Despeckling z ONNX — SAR-DRN w przeglądarce",
+  "eyebrow": "INSAR, POLARYMETRIA I DEEP LEARNING",
+  "description": "W poprzedniej lekcji wytrenowałeś despeckler offline; teraz eksportujesz wagi do ONNX i puszczasz inferencję w przeglądarce przez `onnxruntime-web` — bez serwera GPU. Zobaczysz architekturę SAR-DRN (siedem warstw dilated-residual, ~1 MB wag), pipeline preprocess → session.run → postprocess w JS, i porównasz cztery metody despeckling na tym samym cameramanie (Speckled, Lee, NL-means, SAR-DRN). Sam liczysz PSNR i ENL przed/po — i wzrokowo widzisz, gdzie SAR-DRN wygrywa, a gdzie nadal tnie krawędzie.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "onnx-w-przegladarce",
+      "title": "ONNX w przeglądarce — model trenujesz tam, inferencujesz tu",
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs10020196",
+          "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+          "kind": "paper",
+          "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+          "year": 2018
+        },
+        {
+          "url": "https://onnxruntime.ai/docs/tutorials/web/",
+          "title": "ONNX Runtime Web — official documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji (5.3) zobaczyłeś, **jak** trenuje się despeckler offline w PyTorchu — augmentacje D4, mnożny Gamma speckle, $L_1$ w log-domain, ewaluacja PSNR + ENL. W tej lekcji robimy krok, który ten trening zamienia w produkt: **eksportujemy wagi do ONNX, ładujemy je w przeglądarce przez `onnxruntime-web`, i puszczamy inferencję bez serwera GPU**.\n\n![Schemat architektury SAR-DRN: siedem warstw konwolucyjnych 3×3 z dilation rosnącą od 1 do 4 i wracającą do 1, wszystkie po 64 kanały z ReLU (ostatnia warstwa ma 1 kanał i pełni rolę projekcji rezydualnej). Pomarańczowa łukowa strzałka z lewej do prawej pokazuje skip connection: input + network output = despeckled output (residual learning). Pod schematem opis: wagi modelu zajmują ~1 MB w ONNX float32.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/onnx-sardrn-architecture-sketch.png)\n\n**SAR-DRN** (Zhang et al. 2018) to lekka sieć rezydualna o rozszerzonej dilation — siedem warstw 3×3, ~70 tys. parametrów, ~1 MB w ONNX float32. Jest „lekka\" celowo: ma się ładować i działać w przeglądarce na laptopie, nie na ośmiu A100.\n\nTrzy decyzje architektoniczne, których nie zobaczysz w ResNecie do klasyfikacji kotów:\n\n- **Dilated convolutions zamiast poolingu.** Receptywne pole rośnie do ~33×33 px bez ani jednego stride'a 2 — dla SAR'u krytyczne, bo pooling rozmywałby speckle średniowy, a dilation tylko poszerza okno.\n- **Residual learning (skip connection).** Sieć uczy się *resztki* `clean − speckled`, nie samego clean'a. Trick z DnCNN'a (Zhang 2017): target jest średnio zerowy, gradient stabilniejszy, konwergencja szybsza.\n- **Bez `BatchNorm`, padding `reflect` zamiast zero.** `BatchNorm` po `log()` mieszałby statystyki między train (L=4) a test (L=8); `padding=\"same\"` zerami wprowadzałby ostry artefakt na ramce tile'a. Stąd siatka jest *fully-convolutional* z `reflect` paddingiem.\n\nFormat **ONNX (Open Neural Network Exchange)** to przenośny zapis grafu obliczeniowego — eksportujesz raz z PyTorcha (`torch.onnx.export`), uruchamiasz w dowolnym z dziesiątek runtime'ów: `onnxruntime-web` (przeglądarka, WebAssembly / WebGL), `onnxruntime` (Python / serwer), iOS Core ML, Android NNAPI. Dla naszego kursu znaczy to **jedno**: po treningu nie ma serwera GPU w pipeline produkcyjnym — wystarczy statyczny CDN serwujący `.onnx`, a przeglądarka uczestnika dokończy zadanie.\n"
+      }
+    },
+    {
+      "id": "psnr-enl-bar-chart",
+      "title": "Cztery metody na tym samym cameranie — PSNR i ENL obok siebie",
+      "description": "Słupkowy wykres dwóch metryk dla czterech metod despeckling cameramana L=4. Lewy panel: PSNR w skali liniowej (im wyżej, tym bliżej clean'a). Prawy: ENL na płaskim niebie w skali log (im wyżej, tym gładziej).",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/despeckling-z-onnx-sar-drn-w-przegladarce-1.png",
+        "alt": "Dwa panele słupkowe obok siebie dla czterech metod (Speckled L=4, Lee 7x7, NL-means log, SAR-DRN ONNX) z osią X 'Metoda despeckling [-]'. Lewy panel: PSNR [dB] na osi Y 0-28 z tickami co 5 i siatką, słupki na wysokości 15,14 (szary), 16,84 (niebieski), 16,02 (fioletowy) i 23,86 (zielony) z wartościami numerycznymi nad każdym. Prawy panel: ENL na płaskim regionie nieba [-] na osi Y w skali logarytmicznej 5-5000 z siatką, słupki na wysokości 15,77 (szary), 404,33 (niebieski), 1043,15 (fioletowy) i 1507,40 (zielony) z wartościami numerycznymi nad każdym. Tytuł u góry: 'Despeckling cameramana L=4: cztery metody na dwóch metrykach. PSNR mówi o per-piksel'owej zgodności z clean'em; ENL na płaskim niebie mówi o tym, czy szum naprawdę zniknął.'",
+        "caption": "Rys. 1. SAR-DRN wygrywa na obu metrykach — +7 dB PSNR nad Lee i ~50% wyższy ENL nad NL-means — kosztem ~1 MB wag i ~50 ms inferencji w przeglądarce. PSNR i ENL mierzą różne rzeczy: PSNR niewrażliwy na resztkowy speckle (rozmyte daje wysoki PSNR), ENL ślepy na krawędzie. Trzeba patrzeć na oba, plus wzrokowo na obraz.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nmethods = [\"Speckled\\n(L=4)\", \"Lee 7x7\", \"NL-means\\n(log)\", \"SAR-DRN\\n(ONNX)\"]\npsnr_db = [15.14, 16.84, 16.02, 23.86]\nenl_sky = [15.77, 404.33, 1043.15, 1507.40]\ncolors = [\"#888888\", \"#3498db\", \"#9b59b6\", \"#27ae60\"]\n\nfig, axes = plt.subplots(1, 2, figsize=(11.0, 4.6), constrained_layout=True)\n\nax = axes[0]\nbars = ax.bar(methods, psnr_db, color=colors, edgecolor=\"#222\", linewidth=1.0)\nfor b, v in zip(bars, psnr_db):\n    ax.text(b.get_x() + b.get_width() / 2, v + 0.25, f\"{v:.2f}\",\n            ha=\"center\", va=\"bottom\", fontsize=10)\nax.set_ylabel(\"PSNR [dB]\")\nax.set_xlabel(\"Metoda despeckling [-]\")\nax.set_title(\"PSNR wzgledem czystego cameramana\")\nax.set_ylim(0, 28)\nax.set_yticks([0, 5, 10, 15, 20, 25])\nax.grid(True, axis=\"y\", alpha=0.3)\n\nax = axes[1]\nbars = ax.bar(methods, enl_sky, color=colors, edgecolor=\"#222\", linewidth=1.0)\nfor b, v in zip(bars, enl_sky):\n    ax.text(b.get_x() + b.get_width() / 2, v * 1.10, f\"{v:.0f}\",\n            ha=\"center\", va=\"bottom\", fontsize=10)\nax.set_ylabel(\"ENL na plaskim regionie nieba [-]\")\nax.set_xlabel(\"Metoda despeckling [-]\")\nax.set_title(\"ENL na plaskim regionie (im wyzej tym gladziej)\")\nax.set_yscale(\"log\")\nax.set_ylim(5, 5000)\nax.grid(True, axis=\"y\", which=\"both\", alpha=0.3)\n\nfig.suptitle(\n    \"Despeckling cameramana L=4: cztery metody na dwoch metrykach.\\n\"\n    \"PSNR mowi o per-piksel'owej zgodnosci z clean'em; ENL na plaskim niebie mowi o tym, czy szum naprawde zniknal.\",\n    fontsize=11,\n)\nfig.savefig(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"despeckling-z-onnx-sar-drn-w-przegladarce-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nplt.close(fig)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "pipeline-onnxruntime-web",
+      "title": "Pipeline inferencji: preprocess → session.run → postprocess",
+      "sources": [
+        {
+          "url": "https://onnxruntime.ai/docs/tutorials/web/",
+          "title": "ONNX Runtime Web — official documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://github.com/qzhang95/SAR-DRN",
+          "title": "SAR-DRN reference implementation (PyTorch)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z perspektywy kodu uruchamianie SAR-DRN w przeglądarce wygląda zaskakująco normalnie — to ciąg operacji numpy-podobnych z `onnxruntime-web` w środku jako closed-box `session.run`.\n\n![Pipeline inferencji SAR-DRN w przeglądarce z pięcioma blokami od lewej do prawej połączonymi strzałkami: (1) Sentinel-1 GRD amplituda 256×256 float32 w [0,1], (2) Preprocess JS — log(amp + 1e-3), normalize, tensor (1,1,H,W), (3) onnxruntime-web — ort.InferenceSession, session.run({input: tensor}), Float32Array, (4) Postprocess JS — denormalize, exp(out_log), clip, ImageData, (5) PSNR + ENL + Canvas. Pod schematem podtytuł 'Trening offline (PyTorch) → eksport do ONNX → wagi ~1 MB w /public/models/. Wszystko poniżej działa w JS, bez serwera GPU.'](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/onnx-sardrn-pipeline-diagram.png)\n\n```javascript\n// Pipeline inferencji w `onnxruntime-web` (referencyjny snippet, NIE w Pyodide):\nimport * as ort from \"onnxruntime-web\";\n\nconst session = await ort.InferenceSession.create(\"/models/sar-drn.onnx\");\n\nasync function denoiseTile(amp /* Float32Array length H*W, in [0,1] */, H, W) {\n  // 1) Preprocess: log + min/max normalize + NCHW tensor\n  const EPS = 1e-3;\n  const logImg = new Float32Array(amp.length);\n  let sMin = Infinity, sMax = -Infinity;\n  for (let i = 0; i < amp.length; i++) {\n    const v = Math.log(Math.max(amp[i], EPS));\n    logImg[i] = v;\n    if (v < sMin) sMin = v;\n    if (v > sMax) sMax = v;\n  }\n  const scale = Math.max(sMax - sMin, 1e-6);\n  const norm = new Float32Array(amp.length);\n  for (let i = 0; i < amp.length; i++) norm[i] = (logImg[i] - sMin) / scale;\n  const tensor = new ort.Tensor(\"float32\", norm, [1, 1, H, W]);\n\n  // 2) `session.run` — jedyna linia, ktora rozni sie miedzy przegladarka a serwerem\n  const result = await session.run({ input: tensor });\n  const raw    = result.output.data;  // Float32Array, length H*W\n\n  // 3) Postprocess: denormalize + exp + clip\n  const out = new Float32Array(amp.length);\n  for (let i = 0; i < amp.length; i++) {\n    const logOut = raw[i] * scale + sMin;\n    out[i] = Math.min(Math.max(Math.exp(logOut), 0.0), 1.0);\n  }\n  return out;\n}\n```\n\nTrzy łatwe miejsca, w których ten pipeline padnie po cichu — bez `throw`, ale z bezsensownym wyjściem:\n\n- **Nieskorelowana skala wejścia.** Inny `EPS` lub inna konwencja min/max niż w treningu → wynik wygląda jak „rozjaśniony cameraman\", nie despeckled SAR.\n- **Zła kolejność osi tensora.** PyTorch eksportuje **NCHW**; pomyłka z NHWC daje pasiasty śmietnik (`onnxruntime-web` nie przerzuci osi).\n- **Bias ostatniej warstwy — nie odejmuj go ręcznie.** Bias z `Conv 1×1` na końcu SAR-DRN'a *jest* uczonym korektorem amplitudy (offset speckled → clean). Sieć ma go już w wagach — Twój postprocess ma być czystą inwersją preprocessu.\n"
+      }
+    },
+    {
+      "id": "code-evaluate-onnx-output",
+      "title": "Zaimplementuj `evaluate_despeckler` — PSNR i ENL przed/po dla wyjścia SAR-DRN",
+      "description": "Po lewej speckled wejście do sieci, po prawej wyjście SAR-DRN po preprocess + session.run + postprocess (wszystko wykonane offline). Twoja funkcja zwraca cztery liczby: PSNR(speckled→clean), PSNR(model_output→clean), ENL na płaskim niebie przed i po. Testy sprawdzają zarówno wzór PSNR/ENL, jak i sensowność wartości względem znanego ground truth z pliku NPZ.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs10020196",
+          "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+          "kind": "paper",
+          "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+          "year": 2018
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `evaluate_despeckler(speckled, model_output, clean, sky)` zwracającą **słownik** z czterema metrykami SAR-owymi:\n\n```python\n{\n  \"psnr_speckled\": float,   # PSNR(speckled, clean), peak=1.0, dB\n  \"psnr_output\":   float,   # PSNR(model_output, clean), peak=1.0, dB\n  \"enl_speckled\":  float,   # ENL = (mean/std)^2 na regionie `sky` z `speckled`\n  \"enl_output\":    float,   # ENL = (mean/std)^2 na regionie `sky` z `model_output`\n}\n```\n\nArgumenty:\n\n- `speckled`, `model_output`, `clean`: `np.ndarray (H, W)` float32, amplituda w `[0, 1]`,\n- `sky`: tuple `(slice, slice)` — np. `(slice(5, 45), slice(5, 80))` — flat sky patch, na którym mierzy się ENL.\n\nWymagane zachowania (testy je weryfikują):\n\n1. **PSNR (peak=1.0)**: $\\mathrm{PSNR} = 10 \\log_{10}\\!\\left(1 / \\mathrm{MSE}\\right)$. Gdy `MSE < 1e-12` (idealnie identyczne obrazy), zwróć `99.0` — *nie* `inf`, bo `inf` psuje serializację.\n2. **ENL**: $\\mathrm{ENL} = (\\mu / \\sigma)^2$ na `array[sky]`. Gdy `std < 1e-9`, zwróć `float('inf')` (zerowa wariancja = idealnie gładkie tło).\n3. **Nie modyfikuj** wejść (`speckled.copy()` nie jest potrzebne; tylko czytaj wartości).\n4. **Cztery klucze słownika** dokładnie jak wyżej — case-sensitive.\n\nW `starterCode` mamy preview, który załaduje bundle z onnxruntime-web pipeline'u (clean + speckled + pre-computed model output dla cameramana 256×256) i wypisze wszystkie cztery metryki obok siebie, plus narysuje wyjście modelu vs wejście.",
+        "starterCode": "import numpy as np\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\n\ndef evaluate_despeckler(speckled, model_output, clean, sky):\n    \"\"\"\n    Cztery metryki SAR-owe przed/po despeckling.\n\n    speckled, model_output, clean: np.ndarray (H, W), float32 w [0, 1]\n    sky:                          (slice, slice) — flat patch na ENL\n\n    Zwraca: dict[str, float] z kluczami\n            'psnr_speckled', 'psnr_output', 'enl_speckled', 'enl_output'.\n    \"\"\"\n    # TODO:\n    #   def _psnr(a, b):\n    #       mse = float(np.mean((a - b) ** 2))\n    #       return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n    #   def _enl(p):\n    #       m, s = float(p.mean()), float(p.std())\n    #       return float('inf') if s < 1e-9 else (m / s) ** 2\n    #   return {\n    #       'psnr_speckled': _psnr(speckled, clean),\n    #       'psnr_output':   _psnr(model_output, clean),\n    #       'enl_speckled':  _enl(speckled[sky]),\n    #       'enl_output':    _enl(model_output[sky]),\n    #   }\n    return {\n        \"psnr_speckled\": 0.0,\n        \"psnr_output\":   0.0,\n        \"enl_speckled\":  0.0,\n        \"enl_output\":    0.0,\n    }\n\n\n# --- Preview na realnym bundle z onnxruntime-web pipeline'u ---\nbundle = np.load(\"/inputs/onnx-sardrn-cameraman-bundle.npz\")\nclean = bundle[\"clean\"].astype(np.float32)\nspeckled = bundle[\"speckled\"].astype(np.float32)\nmodel_output = bundle[\"model_output\"].astype(np.float32)\nsky = (\n    slice(int(bundle[\"sky_y0\"]), int(bundle[\"sky_y1\"])),\n    slice(int(bundle[\"sky_x0\"]), int(bundle[\"sky_x1\"])),\n)\n\nmetrics = evaluate_despeckler(speckled, model_output, clean, sky)\nfor k, v in metrics.items():\n    print(f\"  {k:>14s} = {v:8.2f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11.0, 3.8), constrained_layout=True)\nfor ax, (img, ttl) in zip(\n    axes,\n    [\n        (clean,         \"Czysty (ref)\"),\n        (speckled,      f\"Speckled (L={int(bundle['L'])})\"),\n        (model_output,  \"SAR-DRN (ONNX output)\"),\n    ],\n):\n    ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_dict_with_four_float_keys",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nimg_a = rng.random((16, 16)).astype(np.float32)\nimg_b = rng.random((16, 16)).astype(np.float32)\nimg_c = rng.random((16, 16)).astype(np.float32)\nout = evaluate_despeckler(img_a, img_b, img_c, (slice(2, 10), slice(2, 10)))\nassert isinstance(out, dict), f\"oczekiwano dict, dostalem {type(out).__name__}\"\nfor key in (\"psnr_speckled\", \"psnr_output\", \"enl_speckled\", \"enl_output\"):\n    assert key in out, f\"brak klucza {key!r}\"\n    assert isinstance(out[key], float), f\"{key} nie jest float: {type(out[key]).__name__}\"\n",
+            "hidden": false
+          },
+          {
+            "name": "psnr_zero_mse_returns_finite_sentinel",
+            "body": "import numpy as np\n# Identyczne speckled = clean: MSE = 0, PSNR mialoby byc inf,\n# ale specyfikacja mowi zwracac 99.0 (skonczona wartosc, bo inf psuje serializacje).\ng = np.linspace(0.1, 0.9, 16 * 16).reshape(16, 16).astype(np.float32)\nout = evaluate_despeckler(g, g, g, (slice(2, 10), slice(2, 10)))\nassert out[\"psnr_speckled\"] == 99.0, f\"PSNR=inf -> 99.0 zlamane: {out['psnr_speckled']}\"\nassert out[\"psnr_output\"] == 99.0, f\"PSNR=inf -> 99.0 zlamane: {out['psnr_output']}\"\n",
+            "hidden": true
+          },
+          {
+            "name": "psnr_matches_reference_formula",
+            "body": "import numpy as np\n# Recznie zbudowany przyklad: jednostajne tlo 0.5 + perturbacja 0.1 -> MSE=0.01,\n# PSNR = 10 * log10(1 / 0.01) = 20 dB dokladnie.\nclean = np.full((24, 24), 0.5, dtype=np.float32)\nspeckled = (clean + 0.1).astype(np.float32)   # MSE = 0.01 -> PSNR = 20 dB\nout = evaluate_despeckler(speckled, clean, clean, (slice(2, 12), slice(2, 12)))\nassert abs(out[\"psnr_speckled\"] - 20.0) < 1e-4, f\"PSNR(speckled)={out['psnr_speckled']}\"\nassert out[\"psnr_output\"] == 99.0, f\"PSNR(model_output)={out['psnr_output']}\"\n",
+            "hidden": true
+          },
+          {
+            "name": "enl_on_known_bundle_matches_expected",
+            "body": "import numpy as np\nbundle = np.load(\"/inputs/onnx-sardrn-cameraman-bundle.npz\")\nclean = bundle[\"clean\"].astype(np.float32)\nspeckled = bundle[\"speckled\"].astype(np.float32)\nmodel_output = bundle[\"model_output\"].astype(np.float32)\nsky = (\n    slice(int(bundle[\"sky_y0\"]), int(bundle[\"sky_y1\"])),\n    slice(int(bundle[\"sky_x0\"]), int(bundle[\"sky_x1\"])),\n)\nout = evaluate_despeckler(speckled, model_output, clean, sky)\n# Wartosci policzone offline z poprawnej formuly ENL = (mean/std)^2:\nassert 14.0 < out[\"enl_speckled\"] < 18.0, (\n    f\"ENL(speckled, sky) poza oczekiwanym zakresem 14..18: {out['enl_speckled']:.2f}\"\n)\nassert out[\"enl_output\"] > 1000.0, (\n    f\"ENL(model_output, sky) zbyt niskie (SAR-DRN powinien wyciszyc tlo): {out['enl_output']:.2f}\"\n)\nassert 22.0 < out[\"psnr_output\"] < 26.0, (\n    f\"PSNR(model_output) poza zakresem 22..26 dB: {out['psnr_output']:.2f}\"\n)\nassert 14.0 < out[\"psnr_speckled\"] < 17.0, (\n    f\"PSNR(speckled) poza zakresem 14..17 dB: {out['psnr_speckled']:.2f}\"\n)\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef evaluate_despeckler(speckled, model_output, clean, sky):\n    def _psnr(a, b):\n        mse = float(np.mean((a - b) ** 2))\n        return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n\n    def _enl(p):\n        m, s = float(p.mean()), float(p.std())\n        return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n    return {\n        \"psnr_speckled\": _psnr(speckled, clean),\n        \"psnr_output\":   _psnr(model_output, clean),\n        \"enl_speckled\":  _enl(speckled[sky]),\n        \"enl_output\":    _enl(model_output[sky]),\n    }\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/onnx-sardrn-cameraman-input.png",
+            "alt": "Speckled cameraman 256×256, L=4 — wejście do SAR-DRN. Wyraźne ziarno multiplikatywnego szumu Gamma na całym obrazie, krawędzie kamerzysty i statywu nadal widoczne ale rozmyte przez speckle.",
+            "caption": "Wejście do sieci: speckled cameraman (L=4)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/onnx-sardrn-cameraman-bundle.npz",
+            "filename": "onnx-sardrn-cameraman-bundle.npz",
+            "caption": "Bundle NPZ: clean, speckled, model_output, L=4, sky_y0..sky_x1 (flat patch dla ENL)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/onnx-sardrn-cameraman-output.png",
+          "alt": "Wyjście SAR-DRN (ONNX) na cameranie 256×256: tło wyraźnie wygładzone (speckle zniknął), krawędzie kamerzysty i statywu zachowane ostre — wzrokowo prawie identyczne z clean'em, bez residualnego ziarna.",
+          "caption": "Wyjście sieci: SAR-DRN po preprocess → session.run → postprocess.",
+          "live": false
+        }
+      }
+    },
+    {
+      "id": "check-pipeline-pitfalls",
+      "title": "Quick check: gdzie pipeline ONNX pada po cichu",
+      "type": "quiz",
+      "data": {
+        "question": "Eksportujesz wytrenowany SAR-DRN do ONNX i puszczasz inferencję w przeglądarce przez `onnxruntime-web`. Sieć była trenowana na `log(amp + 1e-3)` znormalizowanym do `[0, 1]` per-tile, w tensorze NCHW float32. Które z poniższych decyzji **złamią pipeline po cichu** (zwrócą sensownie wyglądający, ale niepoprawny obraz, bez żadnego błędu)? Zaznacz wszystkie poprawne.",
+        "options": [
+          "W przeglądarce użyjesz `Math.log(amp + 1e-2)` zamiast `1e-3` (drobna kosmetyka).",
+          "Tensor wejściowy podasz w kolejności NHWC zamiast NCHW.",
+          "Tensor wejściowy zbudujesz jako `Float64Array` zamiast `Float32Array`.",
+          "Po `session.run` ręcznie odejmiesz średnią wyjścia, „bo widać że jest jasniejsze niż wejście\".",
+          "Wagi załadujesz przez `await fetch(\"/models/sar-drn.onnx\")` i przekażesz `ArrayBuffer` do `ort.InferenceSession.create()`."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Opcje 0, 1 i 3 łamią pipeline po cichu — bez błędu, z bezsensownym wyjściem. Opcja 0: zmiana `eps` z `1e-3` na `1e-2` przesuwa zakres `log_img` i, po normalizacji per-tile, wstrzykuje skalę inną niż widziała sieć w treningu — wynik wygląda jak „rozjaśniony cameraman\". Opcja 1: NHWC vs NCHW to różnica w tym, którą oś runtime'u interpretuje jako kanał — efektem jest „pasiasty śmietnik\" lub przesunięte wartości; `onnxruntime-web` *nie* przerzuci osi za Ciebie. Opcja 3: ostatnia warstwa SAR-DRN'a ma bias, który *jest* uczonym korektorem amplitudy Rayleigh → clean (sieć widziała w treningu, że speckled mean ≠ clean mean, i zapamiętała offset w wagach); ręczne odjęcie średniej kasuje tę korektę i zwraca obraz odsunięty w dół. Opcja 2 *nie* jest cichym błędem — `onnxruntime-web` rzuca błędem na nieprawidłowym dtype (`onnxruntime-node` często cicho rzutuje, stąd różnica). Opcja 4 to standardowe ładowanie modelu — `ArrayBuffer` jest jednym z trzech akceptowanych źródeł obok URL string i Uint8Array.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-explore-sky",
+      "title": "Eksperymentuj: jak wybór płaskiego regionu wpływa na ENL",
+      "description": "Bez testów, bez gradingu — przesuń `sky` w inne miejsce obrazu (twarz kamerzysty, statyw, jasna część płaszcza) i zobacz, jak dramatycznie zmienia się raportowany ENL. ENL ma sens TYLKO na flat region; na regionie z krawędziami daje wartości rzędu jedności, co zupełnie nie świadczy o jakości despeckling.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom matplotlib.patches import Rectangle\n\n\ndef evaluate_despeckler(speckled, model_output, clean, sky):\n    \"\"\"Twoja referencyjna implementacja z poprzedniego zadania.\"\"\"\n    def _psnr(a, b):\n        mse = float(np.mean((a - b) ** 2))\n        return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n    def _enl(p):\n        m, s = float(p.mean()), float(p.std())\n        return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n    return {\n        \"psnr_speckled\": _psnr(speckled, clean),\n        \"psnr_output\":   _psnr(model_output, clean),\n        \"enl_speckled\":  _enl(speckled[sky]),\n        \"enl_output\":    _enl(model_output[sky]),\n    }\n\n\nbundle = np.load(\"/inputs/onnx-sardrn-cameraman-bundle.npz\")\nclean = bundle[\"clean\"].astype(np.float32)\nspeckled = bundle[\"speckled\"].astype(np.float32)\nmodel_output = bundle[\"model_output\"].astype(np.float32)\n\n# === Eksperyment: porownaj ENL na roznych regionach ===\n# Zmien wartosci ponizej i zobacz jak ENL skacze.\n# Tip: ENL > 100 ma sens tylko na flat region.\n\ncandidates = {\n    \"sky (flat)\":     (slice(5, 45), slice(5, 80)),\n    \"twarz (edges)\":  (slice(80, 130), slice(110, 160)),\n    \"statyw (lines)\": (slice(150, 230), slice(95, 145)),\n    \"plaszcz (mix)\":  (slice(140, 200), slice(160, 220)),\n}\n\nfor name, sky in candidates.items():\n    m = evaluate_despeckler(speckled, model_output, clean, sky)\n    print(f\"  {name:>16s}  ENL_in={m['enl_speckled']:7.2f}  ENL_out={m['enl_output']:9.2f}\")\n\nfig, axes = plt.subplots(1, 2, figsize=(10.5, 5.0), constrained_layout=True)\nfor ax, (img, ttl) in zip(\n    axes, [(speckled, \"Speckled (L=4)\"), (model_output, \"SAR-DRN output\")]\n):\n    ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\n    for name, sky in candidates.items():\n        y0, y1 = sky[0].start, sky[0].stop\n        x0, x1 = sky[1].start, sky[1].stop\n        ax.add_patch(Rectangle((x0, y0), x1 - x0, y1 - y0,\n                               edgecolor=\"yellow\", facecolor=\"none\", linewidth=1.0))\n        ax.text(x0, y0 - 2, name, color=\"yellow\", fontsize=8)\nplt.show()\n",
+        "encouragement": "Spróbuj zdefiniować własne `(slice, slice)` — np. mały kafelek 8×8 w środku flat region — i zobacz, jak szybko ENL traci sens przy małej liczbie próbek."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.3390/rs10020196",
+      "title": "Learning a Dilated Residual Network for SAR Image Despeckling",
+      "kind": "paper",
+      "author": "Qiang Zhang, Qiangqiang Yuan, Jie Li, Zhen Yang, Xiaoshuang Ma",
+      "year": 2018
+    },
+    {
+      "url": "https://doi.org/10.1109/IGARSS.2017.8128234",
+      "title": "SAR image despeckling through convolutional neural networks",
+      "kind": "paper",
+      "author": "Giovanni Chierchia, Davide Cozzolino, Giovanni Poggi, Luisa Verdoliva",
+      "year": 2017
+    },
+    {
+      "url": "https://onnxruntime.ai/docs/tutorials/web/",
+      "title": "ONNX Runtime Web — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://github.com/qzhang95/SAR-DRN",
+      "title": "SAR-DRN reference implementation (PyTorch)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    }
+  ]
+}

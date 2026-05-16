@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "slug": "filtry-sar-owe-lee-frost-refined-lee",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m2",
+  "title": "Filtry SAR-owe — Lee, Frost, Refined Lee",
+  "eyebrow": "FILTRACJA — KLASYKA KONTRA SPECKLE",
+  "description": "Filtry adaptacyjne, które *wiedzą* o multiplikatywnym szumie. Lee MMSE jako jedna formuła b = max(0, (CV² − C_N²) / CV²), Frost z wagą eksponencjalną w dystansie, Refined Lee z ośmioma kierunkowymi podoknami. Mierzymy PSNR + ENL na tym samym kafelku co w lekcji 2.2 i widzimy: ENL skacze ponad 30× tam, gdzie klasyka stała w miejscu.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "lee-mmse-od-podstaw",
+      "title": "Lee MMSE: dwie statystyki, jedno równanie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital image enhancement and noise filtering by use of local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji widzieliśmy: Gauss, median i bilateral pracowały „grzecznie\" na cameramanie z addytywnym szumem gaussowskim — i poległy, gdy ten sam obraz został zaszumiony multiplikatywnie. To nie była kwestia parametrów. To była kwestia **modelu szumu, na który filtr został zaprojektowany**.\n\n![Po lewej: czysty cameraman 256x256. Po prawej: ten sam obraz po przemnożeniu intensywności przez wieloprzejściowy szum Gamma (L=4) i wzięciu pierwiastka — wynik wygląda jak amplitudowy kafelek Sentinel-1 GRD: drobne ziarno na płaskim niebie, jasne i ciemne plamy o wielkości ~2 piksele, rozmyte kontury kamerzysty pod warstwą speckle.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sar-tile-clean-vs-speckled.png)\n\nJong-Sen Lee w 1980 zaproponował coś, co dziś brzmi banalnie, a wtedy było rewolucyjne: skoro szum jest mnożny, a $\\mathbb{E}[N] = 1$, to **lokalna średnia $\\mu$ w oknie jest nieobciążonym estymatorem prawdziwej intensywności** $R$. Problem w tym, że średnia rozmywa krawędzie. Klucz jest taki, by uśredniać **tylko tam, gdzie obserwowana zmienność wygląda jak speckle**, a zostawić piksel w spokoju tam, gdzie zmienność wygląda jak struktura.\n\nOperacyjnie wystarczą **dwie statystyki lokalne**: średnia $\\mu$ i wariancja $\\sigma^2$. Z nich liczymy lokalne $\\mathrm{CV}^2 = \\sigma^2/\\mu^2$ — bezwymiarowy „pomiar zmienności\". Porównujemy go z **teoretycznym** $C_N^2$ szumu speckle (dla amplitudy wieloprzejściowej $C_N^2 \\approx (4-\\pi)/(\\pi L)$). Cała formuła Lee MMSE w jednej linii:\n\n$$\\hat R(i,j) = \\mu + b \\cdot (I(i,j) - \\mu),\\quad b = \\max\\!\\left(0,\\; \\frac{\\mathrm{CV}^2 - C_N^2}{\\mathrm{CV}^2}\\right)$$\n\nIntuicyjnie: gdy okno trafia na płaski region ($\\mathrm{CV}^2 \\approx C_N^2$), wówczas $b \\to 0$ i wynik = **średnia** — pełne wygładzenie szumu. Gdy okno trafia na krawędź lub strukturę ($\\mathrm{CV}^2 \\gg C_N^2$), wówczas $b \\to 1$ i wynik = **oryginalny piksel** — żadnego rozmycia. Pomiędzy: płynna interpolacja. To „adaptacyjność\" Lee'a — jedno równanie, dwie statystyki, zero rozmywania krawędzi pod sygnałem.\n"
+      }
+    },
+    {
+      "id": "step-edge-lee-vs-mean",
+      "title": "Krok pod multiplikatywnym szumem — Lee zachowuje krawędź, boxcar nie",
+      "description": "Profil 1-D przez krok 0,25 → 0,85 z szumem Gamma (L=4). Boxcar mean rozmywa przejście na ~7 próbek; Lee zachowuje je ostre.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/filtry-sar-owe-lee-frost-refined-lee-1.png",
+        "alt": "Wykres 1-D pokazujący 200 próbek wzdłuż osi indeksu. Czarna linia przerywana to czysty referencyjny krok: 0,25 dla próbek 0–99 i 0,85 dla próbek 100–199. Szara cienka linia to obserwacja (speckled): wykonuje szybkie skoki ±0,2 wokół czystej trajektorii, z większą amplitudą po prawej (wariancja proporcjonalna do sygnału). Niebieska gruba linia (boxcar mean 1×7) wygładza szum, ale przy próbce 100 wyraźnie rozmywa krawędź — przejście zajmuje około 7 próbek z gładkim wzrostem od 0,25 do 0,85. Czerwona gruba linia (Lee 1×7) wygładza dokładnie tak samo szum w obu płaskich regionach, ale krawędź zachowuje ostro: skok 0,25 → 0,85 mieści się w 1–2 próbkach. Oś X opisana 'indeks próbki [-]' z zakresem 0–199, oś Y 'amplituda [-]' z zakresem -0,05 do 1,4, siatka jasnoszara, legenda w lewym górnym rogu.",
+        "caption": "Rys. 1. Krok 0,25 → 0,85 pod szumem Gamma (L=4). Boxcar mean rozmywa krawędź; Lee zachowuje ją dzięki adaptacyjnemu b — na płaskim regionie b → 0 (wynik = średnia), na krawędzi b → 1 (wynik = oryginał).",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\n\nrng = np.random.default_rng(11)\nL = 4\nN = 200\nx = np.arange(N)\nclean = np.where(x < N // 2, 0.25, 0.85).astype(np.float32)\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=N).astype(np.float32)\nobs = np.sqrt(clean ** 2 * speckle).astype(np.float32)\n\n\ndef lee_1d(sig, win, c_n2):\n    mu = uniform_filter(sig, size=win, mode=\"reflect\")\n    mu2 = uniform_filter(sig * sig, size=win, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, 0.0, None)\n    cv2 = var / np.clip(mu * mu, 1e-8, None)\n    b = np.clip((cv2 - c_n2) / np.clip(cv2, 1e-8, None), 0.0, 1.0)\n    return mu + b * (sig - mu)\n\n\nc_n2 = (4.0 - np.pi) / (np.pi * L)\nmean7 = uniform_filter(obs, size=7, mode=\"reflect\")\nlee7 = lee_1d(obs, win=7, c_n2=c_n2)\n\nfig, ax = plt.subplots(figsize=(9.0, 4.6), constrained_layout=True)\nax.plot(x, clean, \"k--\", lw=1.2, alpha=0.7, label=\"czysty sygnal (ref)\")\nax.plot(x, obs, color=\"#888\", lw=0.8, alpha=0.85, label=\"obserwacja (speckled)\")\nax.plot(x, mean7, color=\"#1f77b4\", lw=1.8, label=\"boxcar mean 1x7\")\nax.plot(x, lee7, color=\"#d62728\", lw=1.8, label=\"Lee 1x7  (b = max(0, (CV^2 - C_N^2)/CV^2))\")\nax.set_xlabel(\"indeks probki [-]\")\nax.set_ylabel(\"amplituda [-]\")\nax.set_title(\n    \"Krok 0.25 -> 0.85 pod multiplikatywnym szumem Gamma (L=4): \"\n    \"boxcar mean rozmywa krawedz, Lee ja zachowuje\"\n)\nax.set_xlim(0, N - 1)\nax.set_ylim(-0.05, 1.4)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper left\", fontsize=9)\nfig.savefig(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"filtry-sar-owe-lee-frost-refined-lee-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\nplt.close(fig)\nprint(\"OK plot 1\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "code-lee-2d",
+      "title": "Zaimplementuj filtr Lee 2D na kafelku SAR",
+      "description": "Po lewej zaszumiony cameraman z poprzedniej lekcji; po prawej cel: ten sam kafelek po Lee 7×7. Twoja funkcja ma odtworzyć ten wynik — testy zmierzą PSNR i ENL.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital image enhancement and noise filtering by use of local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `lee_filter(img, win, c_n2)` przyjmującą:\n\n- `img: np.ndarray` — obraz w skali szarości, `dtype=float32`, wartości w `[0, 1]`,\n- `win: int` — rozmiar okna kwadratowego (nieparzysty, np. 7),\n- `c_n2: float` — teoretyczny $C_N^2$ szumu speckle dla danego $L$.\n\nFunkcja zwraca obraz przefiltrowany filtrem Lee MMSE według formuły z teorii:\n\n$$\\hat R = \\mu + b\\,(I - \\mu),\\quad b = \\max\\!\\left(0,\\; \\frac{\\mathrm{CV}^2 - C_N^2}{\\mathrm{CV}^2}\\right),\\quad \\mathrm{CV}^2 = \\sigma^2/\\mu^2$$\n\nWynik musi być `dtype=float32`, tej samej wielkości co `img`. Użyj `scipy.ndimage.uniform_filter` do liczenia $\\mu$ i $\\mu^2$ wektorowo — pętla po pikselach nie jest potrzebna i byłaby ~100× wolniejsza.\n\n```python\nimg = np.random.RandomState(0).rand(8, 8).astype(np.float32)\nout = lee_filter(img, win=3, c_n2=0.07)\nout.shape  # (8, 8)\n```\n\nW `starterCode` masz preview, który:\n\n1. wczyta zaszumiony kafelek `/inputs/sar-classical-cameraman-speckled.png`,\n2. wczyta czystą referencję z `/inputs/sar-classical-cameraman-clean.npz` (`L=4`),\n3. zaaplikuje Twój `lee_filter` z $C_N^2 \\approx 0{,}0683$ i wyświetli PSNR oraz ENL na płaskim niebie — powinieneś zobaczyć **ENL wzrastający ponad 100×** względem wejścia, czego klasyka z poprzedniej lekcji nigdy nie dała.\n",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\n\ndef lee_filter(img, win, c_n2):\n    \"\"\"\n    Filtr Lee MMSE dla amplitudowego SAR.\n\n    img:    np.ndarray (H, W), float32, w [0, 1] (amplituda znormalizowana)\n    win:    rozmiar okna kwadratowego, nieparzysty (np. 3, 5, 7, 9)\n    c_n2:   teoretyczny C_N^2 szumu speckle (np. (4 - pi) / (pi * L))\n\n    Zwroc: np.ndarray (H, W), float32 - obraz po Lee MMSE.\n    \"\"\"\n    # TODO:\n    #   1) policz mu = uniform_filter(img, size=win)\n    #   2) policz mu2 = uniform_filter(img**2, size=win)\n    #   3) var = clip(mu2 - mu**2, 0, inf)\n    #   4) cv2 = var / clip(mu**2, 1e-8, inf)\n    #   5) b = clip((cv2 - c_n2) / clip(cv2, 1e-8, inf), 0, 1)\n    #   6) return (mu + b * (img - mu)).astype(float32)\n    return img.astype(np.float32)\n\n\n# --- Preview na realnym kafelku SAR ---\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\nL = int(ref[\"L\"])\nc_n2 = (4.0 - np.pi) / (np.pi * L)\n\nout = lee_filter(speckled, win=7, c_n2=c_n2)\n\n\ndef psnr(a, b, peak=1.0):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(peak * peak / mse)\n\n\ndef enl(patch):\n    m, s = float(patch.mean()), float(patch.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"L = {L},  C_N^2 = {c_n2:.4f},  okno 7x7\")\nprint(f\"PSNR(speckled)  = {psnr(speckled, clean):6.2f} dB    ENL(sky) = {enl(speckled[SKY]):8.2f}\")\nprint(f\"PSNR(lee)       = {psnr(out, clean):6.2f} dB    ENL(sky) = {enl(out[SKY]):8.2f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(10.5, 3.6), constrained_layout=True)\nfor ax, (img, ttl) in zip(\n    axes,\n    [\n        (clean, \"Czysty (ref)\"),\n        (speckled, \"Speckled (L=4)\"),\n        (out, \"Po Lee 7x7\"),\n    ],\n):\n    ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_float32_same_shape",
+            "body": "import numpy as np\nimg = np.linspace(0.05, 0.95, 32 * 32).reshape(32, 32).astype(np.float32)\nout = lee_filter(img, win=5, c_n2=0.07)\nassert out.shape == img.shape, f'shape: {out.shape}'\nassert out.dtype == np.float32, f'dtype: {out.dtype}'\n",
+            "hidden": false
+          },
+          {
+            "name": "homogeneous_region_collapses_to_mean",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nL = 4\nflat = np.full((48, 48), 0.5, dtype=np.float32)\nspeckle = rng.gamma(shape=L, scale=1.0/L, size=flat.shape).astype(np.float32)\nimg = np.sqrt((flat ** 2) * speckle).astype(np.float32)\nout = lee_filter(img, win=7, c_n2=(4.0 - np.pi) / (np.pi * L))\n# Na plaskim regionie Lee zbiega do sredniej -> wariancja musi spasc.\nassert out.var() < 0.25 * img.var(), (\n    f'Lee niewystarczajaco wygladzil plaski region: '\n    f'var_in={img.var():.4f}, var_out={out.var():.4f}'\n)\n",
+            "hidden": true
+          },
+          {
+            "name": "preserves_step_edge",
+            "body": "import numpy as np\nimg = np.zeros((48, 48), dtype=np.float32)\nimg[:, 24:] = 0.9\nout = lee_filter(img, win=7, c_n2=0.07)\n# Bez szumu CV^2 na samej krawedzi musi byc duzo wieksze niz c_n2,\n# wiec b -> 1 i piksele krawedzi musza zostac (prawie) nietkniete.\nleft  = out[:, :22].mean()\nright = out[:, 26:].mean()\nassert left  < 0.05, f'lewa polowa = {left:.3f} (powinna pozostac ciemna)'\nassert right > 0.85, f'prawa polowa = {right:.3f} (powinna pozostac jasna)'\n",
+            "hidden": true
+          },
+          {
+            "name": "enl_grows_at_least_10x_on_cameraman_sky",
+            "body": "import numpy as np\nfrom PIL import Image\nspeckled = np.asarray(Image.open('/inputs/sar-classical-cameraman-speckled.png').convert('L'), dtype=np.float32) / 255.0\nref = np.load('/inputs/sar-classical-cameraman-clean.npz')\nL = int(ref['L'])\nc_n2 = (4.0 - np.pi) / (np.pi * L)\nout = lee_filter(speckled, win=7, c_n2=c_n2)\ndef enl(p):\n    m, s = float(p.mean()), float(p.std())\n    return float('inf') if s < 1e-9 else (m / s) ** 2\nSKY = (slice(5, 45), slice(5, 80))\nenl_in  = enl(speckled[SKY])\nenl_out = enl(out[SKY])\nassert enl_out > 10.0 * enl_in, (\n    f'ENL po Lee powinno wzrosnac >10x na plaskim niebie, '\n    f'a wzroslo z {enl_in:.2f} do {enl_out:.2f}'\n)\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import uniform_filter\n\n\ndef lee_filter(img, win, c_n2):\n    img = img.astype(np.float32)\n    mu = uniform_filter(img, size=win, mode=\"reflect\")\n    mu2 = uniform_filter(img * img, size=win, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, 0.0, None)\n    cv2 = var / np.clip(mu * mu, 1e-8, None)\n    b = np.clip((cv2 - c_n2) / np.clip(cv2, 1e-8, None), 0.0, 1.0)\n    return (mu + b * (img - mu)).astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-speckled.png",
+            "alt": "Kafelek SAR-podobny 256×256: cameraman po multi-look Gamma speckle z L=4 spojrzeniami — wyraźna ziarnistość na całym obrazie, kontury kamerzysty częściowo zatarte przez szum.",
+            "caption": "Wejście: kafelek SAR (ten sam co w lekcji 2.2)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": "Referencja .npz z kluczami 'clean', 'speckled', 'L' — używana do liczenia PSNR i wyboru C_N²."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-lee-cameraman-expected.png",
+          "alt": "Ten sam kafelek po filtrze Lee 7×7 z C_N²=0,068: tło nieba i mundur kamerzysty są wyraźnie wygładzone (znacznie mniej ziarna niż na wejściu), ale krawędzie sylwetki i obiektywu kamery pozostają ostre — różnica względem Gaussa/medianu z lekcji 2.2 jest natychmiast widoczna.",
+          "caption": "Cel: tak ma wyglądać `out` — krawędzie zachowane, płaskie regiony znacząco wygładzone."
+        },
+        "requiresPackages": [
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "frost-refined-lee-teoria",
+      "title": "Frost i Refined Lee — kolejne kroki na tej samej intuicji",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+          "title": "A model for radar images and its application to adaptive digital filtering of multiplicative noise",
+          "kind": "paper",
+          "author": "Victor S. Frost, Josephine Abbott Stiles, K. S. Shanmugan, Julian C. Holtzman",
+          "year": 1982
+        },
+        {
+          "url": "https://doi.org/10.1016/S0146-664X(81)80018-4",
+          "title": "Refined filtering of image noise using local statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1981
+        },
+        {
+          "url": "https://doi.org/10.1109/36.789635",
+          "title": "Polarimetric SAR speckle filtering and its implication for classification",
+          "kind": "paper",
+          "author": "Jong-Sen Lee, M. R. Grunes, G. de Grandi",
+          "year": 1999
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Lee z 1980 to fundament — ale szybko wyszły dwa jego ograniczenia. Po pierwsze, **na samej krawędzi** lokalna $\\mu$ jest źle szacowana, bo okno obejmuje oba poziomy intensywności jednocześnie; Lee w klasycznej postaci pozostawia tam piksel surowy, więc speckle wzdłuż krawędzi nie jest usunięty. Po drugie, **w obszarach jednorodnych** klasyczne okno ma jednakową wagę dla bliskich i odległych pikseli — co ignoruje fakt, że bliżsi sąsiedzi powinni dostać więcej zaufania.\n\n![Cztery panele obok siebie pokazujące ten sam kafelek SAR (cameraman, L=4) po: (1) wejściu surowym — wyraźne ziarno na całym obrazie; (2) filtrze Lee 7x7 — płaskie regiony bardzo gładkie, krawędzie zachowane; (3) filtrze Frost 7x7 z K=2 — podobnie do Lee, ale wagi dystansowe sprawiają, że tekstura jest delikatniej zachowana; (4) Refined Lee 7x7 — krawędzie najostrzejsze, bo filtr wybiera podokno biegnące wzdłuż krawędzi.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sar-lee-frost-refined-lee-quad.png)\n\n**Frost (1982)** uderza w drugi z tych problemów. Zamiast prostej średniej okno wagowane: każdy sąsiad dostaje wagę $w_s \\propto \\exp(-K \\cdot \\mathrm{CV}^2 \\cdot d_s)$, gdzie $d_s$ to dystans od piksela centralnego, a $K$ — stała tłumienia. Gdy okno trafia na płaski region, $\\mathrm{CV}^2 \\to 0$, wagi spłaszczają się i Frost robi prawie boxcar mean. Gdy okno trafia na strukturę, $\\mathrm{CV}^2$ rośnie, wagi gwałtownie opadają z dystansem i Frost lokalnie zwęża okno — chroniąc krawędź.\n\n**Refined Lee (1981 + Lee/Pottier 1999)** uderza w pierwszy problem inaczej. Wewnątrz okna 7x7 testowanych jest **osiem prostokątnych podokien**: pionowe, poziome, dwa diagonalne i cztery półokna (góra/dół/lewo/prawo). Filtr wybiera to podokno, którego **lokalna średnia jest najbliższa wartości piksela centralnego** — czyli to, które nie przekracza domyślnej krawędzi — i liczy statystyki Lee tylko w jego obrębie. Efekt: na płaskich regionach filtr działa jak zwykły Lee z dużym oknem (bardzo wysoki ENL), na krawędziach wybiera podokno *wzdłuż* krawędzi (a nie *poprzek*) i wygładza speckle nie rozmywając przejścia.\n\nSłupki PSNR/ENL na tym samym cameramanie L=4 streszczają tę różnicę numerycznie:\n\n![Dwa wykresy słupkowe obok siebie dla speckled / Lee 7x7 / Frost 7x7 / Refined Lee 7x7. Lewy panel — PSNR vs ref [dB]: speckled 15,07; Lee 16,74; Frost 16,40; Refined Lee 16,47. Prawy panel — ENL na płaskim niebie: speckled 16; Lee 470; Frost 605; Refined Lee 142. Lee i Frost dają ~30–40× wyższy ENL niż wejście; Refined Lee ma niższy ENL niż klasyczny Lee bo wzdłuż krawędzi celowo zostawia resztkowy speckle.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/filtry-sar-owe-lee-frost-refined-lee-2.png)\n\nW praktyce: Lee daje wysoki ENL i przyzwoite krawędzie. Frost zwykle daje *jeszcze* wyższy ENL na flat-fieldzie, ale subtelne tekstury są chronione delikatniej. Refined Lee jest najwolniejszy obliczeniowo (8 testów per piksel), ale produkuje najostrzejsze krawędzie. Wybór operacyjny: Lee gdy zależy nam na PSNR, Refined Lee gdy zależy nam na przedłużeniu pipeline'u detekcyjnego (krawędzie muszą przeżyć), Frost gdy ważna jest tekstura.\n"
+      }
+    },
+    {
+      "id": "explorer-lee-window",
+      "title": "Eksploruj rozmiar okna Lee na syntetycznym kafelku",
+      "description": "Przesuń suwak `win`. Po lewej zaszumione wejście, w środku boxcar mean (rozmazana krawędź), po prawej Lee (krawędź zachowana). PSNR i ENL liczone na żywo.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter\n\n# Synthetic SAR-like scene: a step edge + a small bright square embedded\n# in a darker background, hit with multi-look Gamma speckle (L=4).\nrng = np.random.default_rng(7)\nL = 4\nH, W = 96, 96\nclean = np.full((H, W), 0.25, dtype=np.float32)\nclean[:, W // 2:] = 0.75\nclean[20:32, 28:40] = 0.90  # small bright patch in the dark half\nspeckle = rng.gamma(shape=L, scale=1.0 / L, size=(H, W)).astype(np.float32)\nspeckled = np.sqrt(np.clip(clean ** 2, 1e-4, None) * speckle).astype(np.float32)\nspeckled = np.clip(speckled / np.percentile(speckled, 99.5), 0.0, 1.0).astype(np.float32)\n\nC_N2 = (4.0 - np.pi) / (np.pi * L)\nSKY = (slice(60, 95), slice(2, 35))   # flat dark region -> good ENL estimate\n\n\ndef lee(img, win):\n    mu = uniform_filter(img, size=win, mode=\"reflect\")\n    mu2 = uniform_filter(img * img, size=win, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, 0.0, None)\n    cv2 = var / np.clip(mu * mu, 1e-8, None)\n    b = np.clip((cv2 - C_N2) / np.clip(cv2, 1e-8, None), 0.0, 1.0)\n    return mu + b * (img - mu)\n\n\ndef boxcar(img, win):\n    return uniform_filter(img, size=win, mode=\"reflect\")\n\n\ndef psnr(a, b, peak=1.0):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(peak * peak / mse)\n\n\ndef enl(patch):\n    m, s = float(patch.mean()), float(patch.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n",
+        "renderCode": "w = int(win)\nlee_out = lee(speckled, w)\nmean_out = boxcar(speckled, w)\n\npsnr_in = psnr(speckled, clean)\npsnr_mean = psnr(mean_out, clean)\npsnr_lee = psnr(lee_out, clean)\nenl_in = enl(speckled[SKY])\nenl_mean = enl(mean_out[SKY])\nenl_lee = enl(lee_out[SKY])\n\nfig, axes = plt.subplots(1, 3, figsize=(10.0, 3.6), constrained_layout=True)\nfor ax, (img, ttl) in zip(\n    axes,\n    [\n        (speckled, f\"Speckled  PSNR={psnr_in:.1f}dB  ENL={enl_in:.1f}\"),\n        (mean_out, f\"Boxcar mean {w}x{w}\\nPSNR={psnr_mean:.1f}dB  ENL={enl_mean:.1f}\"),\n        (lee_out,  f\"Lee {w}x{w}\\nPSNR={psnr_lee:.1f}dB  ENL={enl_lee:.1f}\"),\n    ],\n):\n    ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nfig.suptitle(\n    f\"Lee MMSE vs prosty boxcar mean (L={L}, C_N^2={C_N2:.3f}) — przesun suwak win\",\n    fontsize=11,\n)\n",
+        "params": [
+          {
+            "name": "win",
+            "label": "rozmiar okna Lee i boxcar mean (px)",
+            "type": "slider",
+            "min": 3,
+            "max": 13,
+            "step": 2,
+            "default": 7
+          }
+        ],
+        "outputType": "plot",
+        "debounceMs": 250
+      }
+    },
+    {
+      "id": "quiz-which-filter-when",
+      "title": "Quick check: który filtr w której sytuacji?",
+      "type": "quiz",
+      "data": {
+        "question": "Na podstawie wykresów PSNR/ENL z teorii i intuicji o tym, *jak* działają trzy filtry adaptacyjne (Lee, Frost, Refined Lee) — które z poniższych stwierdzeń są **prawdziwe**? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "Jeżeli zależy nam wyłącznie na *wygładzeniu płaskich regionów* (np. po to, żeby tło nie odpalało false-alarmów w CFAR), Lee 7×7 daje ponad 30× wyższy ENL niż wejście — i sam ten zysk widać na słupku ENL z teorii, nawet jeśli PSNR rośnie tylko o ~1,7 dB.",
+          "Refined Lee jest lepszym wyborem niż klasyczny Lee, gdy następnym krokiem pipeline'u jest detektor krawędzi lub klasyfikator który wymaga ostrych konturów obiektów — kosztem nieco niższego ENL na flat-fieldzie.",
+          "Skoro klasyczny Gauss z lekcji 2.2 dał ~14,5 dB PSNR a Lee daje 16,7 dB, to różnica 2 dB jest zaniedbywalna i można równie dobrze używać Gaussa zamiast Lee.",
+          "Filtr Lee z $C_N^2 = 0$ (czyli pominięta kalibracja noise CV) degeneruje się do prostego boxcar meana — bo wtedy $b = 1$ dla każdego piksela tylko gdy $\\mathrm{CV}^2 > 0$, ale na płaskim regionie obserwowana $\\mathrm{CV}^2$ nigdy nie spadnie do zera i `b` zostanie blisko 1, więc wynik = oryginał."
+        ],
+        "correct": [
+          0,
+          1
+        ],
+        "explanation": "Słupki ENL opowiadają inną historię niż PSNR — i to jest cała soczewka SAR-owych metryk: PSNR penalizuje rozmycie krawędzi, którego Lee/Frost umyślnie nie robią, więc ledwo drga. Ale ENL — liczone na *płaskim* niebie — pokazuje 30–40× wzrost. Odpowiedź (0) to dokładnie ten morał. Odpowiedź (1) wynika z konstrukcji Refined Lee: 8 podokien ze średnimi porównywanymi do piksela centralnego wybiera podokno *wzdłuż* krawędzi, więc kontury są ostrzejsze niż w klasycznym Lee (kosztem trochę gorszego ENL na flat-fieldzie — Refined Lee ma ENL ~142 vs ~470 u zwykłego Lee). Odpowiedź (2) jest dystraktorem opartym na typowym błędzie: 2 dB PSNR w SAR-ze to *nie* to samo co 2 dB w optyce. Gauss wygładza krawędzie razem z szumem, więc te 14,5 dB to kompromis który niszczy strukturę; Lee tych 16,7 dB osiąga *bez* psucia krawędzi — i to jest cały sens używania filtra adaptacyjnego. Odpowiedź (3) jest błędnym wyprowadzeniem: gdy $C_N^2 = 0$, formuła b = $(\\mathrm{CV}^2 - 0)/\\mathrm{CV}^2 = 1$ wszędzie, więc wynik = `mu + 1 * (img - mu) = img`. Filtr degeneruje się do *identyczności* (zero filtracji), a nie do boxcar meana. Boxcar dostalibyśmy dla $C_N^2 \\to \\infty$ (b → 0 wszędzie). Warto przebiec formułę palcem zanim się ją stosuje na nieskalibrowanym kafelku.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-tweak-lee",
+      "title": "Sandbox: pokombinuj z `win` i `c_n2`",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\n\ndef lee_filter(img, win, c_n2):\n    mu = uniform_filter(img, size=win, mode=\"reflect\")\n    mu2 = uniform_filter(img * img, size=win, mode=\"reflect\")\n    var = np.clip(mu2 - mu * mu, 0.0, None)\n    cv2 = var / np.clip(mu * mu, 1e-8, None)\n    b = np.clip((cv2 - c_n2) / np.clip(cv2, 1e-8, None), 0.0, 1.0)\n    return (mu + b * (img - mu)).astype(np.float32)\n\n\nspeckled = np.asarray(\n    Image.open(\"/inputs/sar-classical-cameraman-speckled.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nref = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = ref[\"clean\"].astype(np.float32)\nL = int(ref[\"L\"])\n\n# --- pokrec tymi trzema parametrami ---\nwin = 7\n# c_n2 teoretyczne dla amplitudy wieloprzejsciowej z L spojrzeniami:\nc_n2 = (4.0 - np.pi) / (np.pi * L)\n# albo dla intensywnosci (kwadrat amplitudy): c_n2 = 1.0 / L\n# albo \"bez kalibracji\": c_n2 = 0.0  -> wtedy Lee zachowuje sie jak boxcar mean\n\nout = lee_filter(speckled, win=win, c_n2=c_n2)\n\n\ndef psnr(a, b):\n    mse = float(np.mean((a - b) ** 2))\n    return 99.0 if mse < 1e-12 else 10.0 * np.log10(1.0 / mse)\n\n\ndef enl(p):\n    m, s = float(p.mean()), float(p.std())\n    return float(\"inf\") if s < 1e-9 else (m / s) ** 2\n\n\nSKY = (slice(5, 45), slice(5, 80))\nprint(f\"L={L}, win={win}, c_n2={c_n2:.4f}\")\nprint(f\"PSNR speckled = {psnr(speckled, clean):.2f} dB    ENL(sky)={enl(speckled[SKY]):.2f}\")\nprint(f\"PSNR lee      = {psnr(out, clean):.2f} dB    ENL(sky)={enl(out[SKY]):.2f}\")\n\nfig, axes = plt.subplots(1, 3, figsize=(11, 3.6), constrained_layout=True)\nfor ax, (im, ttl) in zip(\n    axes,\n    [(clean, \"Czysty (ref)\"), (speckled, \"Speckled\"), (out, f\"Lee win={win}, c_n2={c_n2:.3f}\")],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Ustaw c_n2 na 1/L (model intensywności), potem na 0,0 (identyczność) — i zobacz na ile piksele i ENL drgają, zanim okno na czwórkę zrobi z kamerzysty plastelinę."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+      "title": "Digital image enhancement and noise filtering by use of local statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+      "title": "A model for radar images and its application to adaptive digital filtering of multiplicative noise",
+      "kind": "paper",
+      "author": "Victor S. Frost, Josephine Abbott Stiles, K. S. Shanmugan, Julian C. Holtzman",
+      "year": 1982
+    },
+    {
+      "url": "https://doi.org/10.1016/S0146-664X(81)80018-4",
+      "title": "Refined filtering of image noise using local statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1981
+    },
+    {
+      "url": "https://doi.org/10.1109/36.789635",
+      "title": "Polarimetric SAR speckle filtering and its implication for classification",
+      "kind": "paper",
+      "author": "Jong-Sen Lee, M. R. Grunes, G. de Grandi",
+      "year": 1999
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — Chapter 5",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html",
+      "title": "skimage.restoration — official documentation",
+      "kind": "article"
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "slug": "gauss-median-bilateral-na-optyce",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m2",
+  "title": "Gauss, median, bilateral na optyce",
+  "eyebrow": "FILTRACJA — KLASYKA",
+  "description": "Dwunastominutowy reset z trzech klasycznych filtrów na obrazie kamery — Gauss, median, bilateral — żeby w następnej lekcji było jasne, co dokładnie się psuje, gdy te same filtry trafią na speckle SAR.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "po-co-filtrowac",
+      "title": "Po co w ogóle filtrujemy obraz?",
+      "sources": [
+        {
+          "url": "https://szeliski.org/Book/",
+          "title": "Computer Vision: Algorithms and Applications, 2nd ed. — Chapter 3 (Image processing)",
+          "kind": "book",
+          "author": "Richard Szeliski",
+          "year": 2022
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Cały moduł 2 jest zbudowany wokół jednego ćwiczenia myślowego: weź **te same** filtry, które inżynier CV pisze odruchowo w optyce, i puść je na kafelek SAR. Zanim to zrobimy, musimy mieć **uczciwy baseline** — przypomnieć sobie, jak Gauss, median i bilateral zachowują się na obrazie kamery, gdy szum jest *gaussowski* i *addytywny*, czyli dokładnie taki, jak zakładała cała klasyczna teoria filtracji.\n\n![Lewy panel: czysty obraz cameramana ze skimage.data, klasyczny test-image o rozmiarze 512×512 px. Prawy panel: ten sam cameraman po dodaniu szumu Gaussa (σ=0,06) i 2% soli-pieprzu — widoczne losowe ziarno na całym obrazie oraz pojedyncze białe i czarne piksele rozsiane szczególnie na tle nieba](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/cameraman-clean-vs-noisy.png)\n\nFormalny model szumu na optyce w niemal każdym podręczniku to:\n\n$$I_{\\text{obs}}(x, y) = I_{\\text{clean}}(x, y) + n(x, y),\\quad n \\sim \\mathcal{N}(0, \\sigma_n^2)$$\n\nNajważniejsze słowo: **plus**. Szum jest dodawany do sygnału, nie mnożony przez niego. Konsekwencje praktyczne:\n\n- Wariancja szumu nie zależy od jasności piksela. Płaski czarny obszar ma tyle samo szumu co płaski biały.\n- Uśrednianie sąsiednich pikseli zbiega do prawdziwej wartości, bo $\\mathbb{E}[n] = 0$.\n- Filtry liniowe (Gauss, box) to **statystycznie optymalny** estymator średniej w lokalnym oknie pod tym modelem.\n\nDo tego dochodzi drugi gatunek szumu, który występuje w realnych kamerach: **sól-pieprz** — kilka procent pikseli ma wartość wysycenia (0 lub 255), reszta jest czysta. Tu liniowe uśrednianie pada, bo skrajne wartości ciągną średnią; przychodzi median, którego **mediana** ignoruje mniejszość outlierów.\n\nTrzymaj te dwa modele z tyłu głowy — Gauss-i-mediana zostały zaprojektowane *dokładnie* pod nie. Za chwilę zobaczysz, że bilateral jest sprytniejszy, a w następnej lekcji każdy z tej trójki polegnie na SAR-ze, gdzie model szumu jest zupełnie inny."
+      }
+    },
+    {
+      "id": "demo-gauss",
+      "title": "Suwak σ: zobacz, jak Gauss zaciera detale",
+      "description": "Przesuń suwak i obserwuj, ile tracisz drobnych krawędzi przy każdym kolejnym σ.",
+      "type": "demo",
+      "data": {
+        "demoType": "gauss",
+        "imageSrc": "/demo-images/cameraman.jpg",
+        "params": {
+          "sigmaMin": 0,
+          "sigmaMax": 6,
+          "sigmaDefault": 1.5
+        }
+      }
+    },
+    {
+      "id": "trzy-filtry",
+      "title": "Trzy filtry, trzy filozofie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ICCV.1998.710815",
+          "title": "Bilateral filtering for gray and color images",
+          "kind": "paper",
+          "author": "Carlo Tomasi and Roberto Manduchi",
+          "year": 1998
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html",
+          "title": "OpenCV — Image Smoothing tutorial",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy z trzech filtrów odpowiada na inne pytanie. Trzymajmy się dla porównania okna $3\\times 3$ i pojedynczego piksela $(x,y)$:\n\n| Filtr | Co liczy | Mocny w | Słaby w |\n| --- | --- | --- | --- |\n| **Gauss** | ważona średnia z wagami $w_{ij} \\propto e^{-(\\Delta x^2+\\Delta y^2)/(2\\sigma^2)}$ | szum Gaussa | krawędzie — rozmywa wszystko |\n| **Median** | mediana $k^2$ wartości w oknie (nieliniowe!) | sól-pieprz / outliery | drobne struktury < pół okna |\n| **Bilateral** | Gauss × waga *intensywności* $e^{-(I_{ij}-I_{xy})^2/(2\\sigma_r^2)}$ | szum Gaussa **bez** rozmywania krawędzi | duży koszt, dwa parametry do strojenia |\n\nDla bilaterala zapis w jednej linii:\n\n$$\\hat I(x, y) = \\frac{1}{Z}\\sum_{(i,j) \\in W} I(i,j) \\, \\underbrace{e^{-\\frac{\\Delta x^2 + \\Delta y^2}{2\\sigma_s^2}}}_{\\text{Gauss przestrzenny}} \\, \\underbrace{e^{-\\frac{(I(i,j)-I(x,y))^2}{2\\sigma_r^2}}}_{\\text{Gauss intensywnościowy}}$$\n\nNorma $Z$ jest sumą wag — bilateral nie jest splotem, bo wagi *zależą od treści* obrazu w danym miejscu (waga sąsiada spada wykładniczo, gdy jego intensywność odjeżdża od piksela centralnego). Dlatego krawędzie się utrzymują: piksel po jednej stronie schodu „nie widzi\" pikseli po drugiej stronie.\n\n![Trzy panele obok siebie pokazujące ten sam zaszumiony obraz cameramana po przefiltrowaniu trzema metodami: po lewej Gauss σ=1,5 — szum Gaussa zredukowany ale obraz wyraźnie zmiękczony, kontur kamerzysty rozmyty; w środku Median 3×3 — sól-pieprz całkowicie usunięty, kontury ostre, ale lekko \"komiksowy\" wygląd przy płaskich powierzchniach; po prawej Bilateral σ_s=2 σ_i=0,1 — szum Gaussa wytłumiony, krawędzie kamerzysty i statywu pozostają ostre](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/gauss-median-bilateral-triple.png)\n\nGauss usuwa najwięcej szumu, ale rozmywa kontur kamerzysty. Median świetnie radzi sobie z impulsami, ale „rysuje\" płaskie powierzchnie. Bilateral próbuje pogodzić oba światy — w zamian za większy koszt obliczeniowy i dwa parametry (σ przestrzenne, σ intensywnościowe), które trzeba dostroić."
+      }
+    },
+    {
+      "id": "plot-step-edge",
+      "title": "Krawędź schodowa pod każdym z trzech filtrów",
+      "description": "Klasyczny test 1D: krawędź 0 → 1 z szumem Gaussa i czterema impulsami — pokazuje na jednym wykresie, co który filtr robi z krawędzią.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/gauss-median-bilateral-na-optyce-1.png",
+        "alt": "Wykres 1D: oś X od 0 do 79 (indeks próbki w pikselach), oś Y od -0,1 do 1,15 (intensywność w zakresie 0-1). Czarna linia przerywana pokazuje czysty sygnał: stała wartość 0,2 dla x<30 i 0,85 dla x>=30 (krawędź schodowa). Szara cienka linia to sygnał zaszumiony (Gauss σ=0,05 + cztery impulsy do wartości 1,0). Niebieska gruba linia (Gauss σ=2) wygładza szum, ale wyraźnie zaokrągla krawędź — przejście rozciąga się na 8-10 próbek. Czerwona gruba linia (Median k=5) idealnie usuwa cztery impulsy i zachowuje ostrą krawędź — przejście jest 1-2 próbkowe. Zielona gruba linia (Bilateral σ_s=3, σ_r=0,1) wygładza szum w obrębie każdego płaskiego segmentu, ale praktycznie zachowuje ostrość krawędzi — przejście porównywalne z medianem. Siatka jest jasnoszara. Legenda w prawym dolnym rogu.",
+        "caption": "Rys. 1. Trzy filtry, ta sama krawędź. Gauss wygładza szum kosztem rozmycia krawędzi; median ignoruje impulsy i zachowuje krawędź ostrą; bilateral łączy oba zachowania pod cenę dwóch parametrów.",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import gaussian_filter1d, median_filter\n\nrng = np.random.default_rng(0)\nn = 80\nx = np.arange(n)\nclean = np.where(x < 30, 0.2, 0.85).astype(float)\nnoisy = clean + rng.normal(0.0, 0.05, n)\nimpulse_idx = rng.choice(n, size=4, replace=False)\nnoisy[impulse_idx] = 1.0\n\n\ndef bilateral_1d(sig, sigma_s=3.0, sigma_r=0.1):\n    out = np.empty_like(sig)\n    half = int(3 * sigma_s)\n    for i in range(len(sig)):\n        lo, hi = max(0, i - half), min(len(sig), i + half + 1)\n        ws = np.exp(-((np.arange(lo, hi) - i) ** 2) / (2 * sigma_s ** 2))\n        wr = np.exp(-((sig[lo:hi] - sig[i]) ** 2) / (2 * sigma_r ** 2))\n        w = ws * wr\n        out[i] = (w * sig[lo:hi]).sum() / w.sum()\n    return out\n\n\ngauss = gaussian_filter1d(noisy, sigma=2.0)\nmed = median_filter(noisy, size=5)\nbil = bilateral_1d(noisy, sigma_s=3.0, sigma_r=0.1)\n\nfig, ax = plt.subplots(figsize=(8.5, 4.4), constrained_layout=True)\nax.plot(x, clean, \"k--\", lw=1.0, alpha=0.6, label=\"czysty sygnal (referencja)\")\nax.plot(x, noisy, color=\"#888\", lw=0.9, alpha=0.7, label=\"zaszumiony\")\nax.plot(x, gauss, color=\"#1f77b4\", lw=1.8, label=\"Gauss (sigma=2)\")\nax.plot(x, med, color=\"#d62728\", lw=1.8, label=\"Median (k=5)\")\nax.plot(x, bil, color=\"#2ca02c\", lw=1.8, label=\"Bilateral (sigma_s=3, sigma_r=0.1)\")\nax.set_xlabel(\"indeks probki [px]\")\nax.set_ylabel(\"intensywnosc [0-1]\")\nax.set_title(\"Filtr na krawedzi schodowej: trzy odpowiedzi na te sama probke\")\nax.set_xlim(0, n - 1)\nax.set_ylim(-0.1, 1.15)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower right\", fontsize=9)\nfig.savefig(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"gauss-median-bilateral-na-optyce-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\nplt.close(fig)\nprint(\"OK\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-kiedy-ktory",
+      "title": "Quick check: kiedy median, kiedy Gauss, kiedy bilateral?",
+      "type": "quiz",
+      "data": {
+        "question": "Twój kolega z zespołu pokazuje Ci optyczny kafelek z dwoma rodzajami artefaktów: (a) drobnoziarniste szumy gaussowskie po całym kadrze, oraz (b) kilkanaście izolowanych białych pikseli (sól) na płaskim tle nieba. Chce zachować ostre krawędzie budynków na pierwszym planie. Który filtr **pojedynczy** najlepiej pogodzi te trzy wymagania?",
+        "options": [
+          "Filtr Gaussa σ = 2 — wygładzi cały kadr, łącznie z izolowanymi solami.",
+          "Filtr medianowy 3×3 — usunie sól i nie ruszy krawędzi budynków.",
+          "Filtr bilateralny z odpowiednio dobranym σ_r — wytłumi szum Gaussa, ale zostawi krawędzie ostre.",
+          "Sekwencja: najpierw median 3×3 (sól), potem bilateral (Gauss bez rozmywania krawędzi)."
+        ],
+        "correct": [
+          3
+        ],
+        "explanation": "Każdy z artefaktów chce innej terapii. Gauss sam wygładziłby wszystko — w tym krawędzie budynków, więc odpada. Median sam usunie sól, ale przy gaussowskim szumie ma ograniczony efekt (mediana N próbek z N(0, σ) wciąż ma szum ~σ/√(2/π) — to nie jest dobry estymator średniej) i nie poradzi sobie ze zwykłym szumem termicznym. Bilateral sam świetnie radzi sobie z szumem Gaussa zachowując krawędzie, ale jego model zakłada, że sąsiednie piksele różnią się od centralnego *przypadkowo* — pojedyncza sól w oknie nie ma dla niego sensu i może zostawić ją jako „krawędź\". Najlepszy pojedynczy pipeline to **kolejność**: median (usuwa wartości skrajne — sól), potem bilateral (wygładza szum Gaussa, zachowuje krawędzie). Ten dwustopniowy wzorzec — non-linear cleanup + edge-aware smoothing — pojawi się jeszcze nieraz w klasycznej wizji komputerowej.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-trzy-filtry",
+      "title": "Zaaplikuj wszystkie trzy filtry i porównaj",
+      "description": "Jedna funkcja, trzy wywołania bibliotek — masz przygotowany zaszumiony cameraman po lewej i referencyjny wynik bilaterala po prawej.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `denoise(img)` przyjmującą dwuwymiarowy obraz w skali szarości (`np.ndarray`, `dtype=float`, wartości w [0, 1]) i zwracającą **słownik** z trzema kluczami:\n\n- `'gauss'` — wynik `scipy.ndimage.gaussian_filter` z `sigma=1.5`,\n- `'median'` — wynik `scipy.ndimage.median_filter` z `size=3`,\n- `'bilateral'` — wynik `skimage.restoration.denoise_bilateral` z `sigma_color=0.1, sigma_spatial=2.0, channel_axis=None`.\n\nWszystkie trzy wartości muszą mieć kształt identyczny jak `img`.\n\n```python\nimg = np.zeros((8, 8)); img[3, 3] = 1.0\nout = denoise(img)\nout['gauss'].shape == (8, 8)  # True\n```\n\nW `starterCode` masz już gotową ścieżkę, która wczyta `/inputs/gauss-median-bilateral-cameraman-noisy.png` i pokaże wszystkie trzy wyniki obok siebie — w lewym panelu widzisz wejście, w prawym oczekiwany wynik (bilateral z identycznymi parametrami).",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\n\ndef denoise(img):\n    \"\"\"\n    Zwroc slownik {'gauss', 'median', 'bilateral'} z trzema filtracjami `img`.\n\n    Parametry filtrow sa stale (te same co w treningu lekcji), zeby testy\n    mialy ostry punkt odniesienia.\n    \"\"\"\n    # TODO: uzupelnij trzy wartosci ponizej, kazdy filtr na ten sam img.\n    return {\n        \"gauss\": img,\n        \"median\": img,\n        \"bilateral\": img,\n    }\n\n\n# --- Podglad: zaaplikuj na realnym kafelku i zobacz wyniki obok siebie ---\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nnoisy = np.asarray(\n    Image.open(\"/inputs/gauss-median-bilateral-cameraman-noisy.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\nout = denoise(noisy)\n\nfig, axes = plt.subplots(1, 4, figsize=(11, 3.2), constrained_layout=True)\nfor ax, im, ttl in zip(\n    axes,\n    [noisy, out[\"gauss\"], out[\"median\"], out[\"bilateral\"]],\n    [\"Zaszumiony\", \"Gauss sigma=1.5\", \"Median 3x3\", \"Bilateral\"],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "preserves_shape_for_each_filter",
+            "body": "import numpy as np\nimg = np.linspace(0, 1, 16 * 16).reshape(16, 16).astype(np.float32)\nout = denoise(img)\nassert set(out.keys()) == {'gauss', 'median', 'bilateral'}, f\"klucze: {sorted(out)}\"\nfor k, v in out.items():\n    assert hasattr(v, 'shape') and v.shape == img.shape, f\"{k}: {getattr(v,'shape',None)}\"",
+            "hidden": false
+          },
+          {
+            "name": "median_removes_isolated_spike",
+            "body": "import numpy as np\nimg = np.full((9, 9), 0.2, dtype=np.float32)\nimg[4, 4] = 1.0  # pojedynczy impuls (sol)\nout = denoise(img)\n# Gauss rozsmaruje impuls; median powinien go usunac.\nassert out['median'][4, 4] < 0.3, f\"median nie usunal impulsu: {out['median'][4,4]:.3f}\"\nassert out['gauss'][4, 4] > 0.21, f\"gauss zachowal cos z impulsu, ale za malo: {out['gauss'][4,4]:.3f}\"",
+            "hidden": true
+          },
+          {
+            "name": "gauss_smoother_than_median_on_gaussian_noise",
+            "body": "import numpy as np\nrng = np.random.default_rng(123)\nimg = rng.normal(0.5, 0.1, size=(64, 64)).astype(np.float32)\nout = denoise(img)\n# Gauss usrednia liniowo => mniejsza wariancja niz median na czystym szumie Gaussa.\nassert out['gauss'].var() < out['median'].var(), (\n    f\"var(gauss)={out['gauss'].var():.4f}, var(median)={out['median'].var():.4f} -- czy uzyles gaussian_filter?\"\n)",
+            "hidden": true
+          },
+          {
+            "name": "bilateral_preserves_step_edge_better_than_gauss",
+            "body": "import numpy as np\nimg = np.zeros((32, 32), dtype=np.float32)\nimg[:, 16:] = 1.0  # pionowa krawedz schodowa w polowie\nout = denoise(img)\n# Najwiekszy gradient poprzeczny w wierszu srodkowym powinien byc duzo wyzszy\n# dla bilaterala niz dla gaussa -- bilateral nie rozmywa krawedzi.\nrow = 16\nmax_grad_g = np.max(np.abs(np.diff(out['gauss'][row, :])))\nmax_grad_b = np.max(np.abs(np.diff(out['bilateral'][row, :])))\nassert max_grad_b > 1.5 * max_grad_g, (\n    f\"max_grad bilateral={max_grad_b:.3f} <= 1.5 * max_grad gauss={max_grad_g:.3f} -- czy bilateral ma dobre sigma_color/sigma_spatial?\"\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\n\ndef denoise(img):\n    return {\n        \"gauss\": gaussian_filter(img, sigma=1.5),\n        \"median\": median_filter(img, size=3),\n        \"bilateral\": denoise_bilateral(\n            img, sigma_color=0.1, sigma_spatial=2.0, channel_axis=None\n        ),\n    }\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/gauss-median-bilateral-cameraman-noisy.png",
+            "alt": "Cameraman 512×512 px po dodaniu szumu Gaussa σ=0,06 i 2% soli-pieprzu — wyraźnie widoczne ziarno na całym obrazie oraz pojedyncze białe i czarne piksele rozsiane na tle nieba.",
+            "caption": "Wejście: zaszumiony cameraman, ten sam co w teorii powyżej."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/gauss-median-bilateral-cameraman-expected.png",
+          "alt": "Ten sam cameraman po przefiltrowaniu bilateralem σ_s=2, σ_i=0,1 — szum Gaussa wytłumiony, większość soli-pieprzu zniknęła w sąsiedztwie krawędzi, kontury kamerzysty i statywu pozostają ostre.",
+          "caption": "Cel: tak ma wyglądać klucz `'bilateral'` w słowniku zwracanym przez `denoise`."
+        },
+        "requiresPackages": [
+          "scikit-image",
+          "Pillow"
+        ]
+      }
+    },
+    {
+      "id": "sandbox-pokrec-parametrami",
+      "title": "Pokręć parametrami i zobacz, gdzie każdy filtr siada",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter, median_filter\nfrom skimage.restoration import denoise_bilateral\nfrom PIL import Image\nimport matplotlib.pyplot as plt\n\nnoisy = np.asarray(\n    Image.open(\"/inputs/gauss-median-bilateral-cameraman-noisy.png\").convert(\"L\"),\n    dtype=np.float32,\n) / 255.0\n\n# Eksperymentuj: zmieniaj sigma, k, sigma_color/spatial. Co sie psuje?\nsigma_gauss = 1.5\nk_median = 3\nsigma_s, sigma_r = 2.0, 0.1\n\nout = {\n    \"gauss\": gaussian_filter(noisy, sigma=sigma_gauss),\n    \"median\": median_filter(noisy, size=k_median),\n    \"bilateral\": denoise_bilateral(\n        noisy, sigma_color=sigma_r, sigma_spatial=sigma_s, channel_axis=None\n    ),\n}\n\nfig, axes = plt.subplots(1, 4, figsize=(11, 3.2), constrained_layout=True)\nfor ax, im, ttl in zip(\n    axes,\n    [noisy, out[\"gauss\"], out[\"median\"], out[\"bilateral\"]],\n    [\"Zaszumiony\", f\"Gauss s={sigma_gauss}\", f\"Median k={k_median}\", f\"Bil ss={sigma_s} sr={sigma_r}\"],\n):\n    ax.imshow(im, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(ttl, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Spróbuj zwiększać sigma Gaussa albo k mediana — w którym momencie kamerzysta przestaje być rozpoznawalny?"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/ICCV.1998.710815",
+      "title": "Bilateral filtering for gray and color images",
+      "kind": "paper",
+      "author": "Carlo Tomasi and Roberto Manduchi",
+      "year": 1998
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.filters.html",
+      "title": "scikit-image filters — official documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — Chapter 3 (Image processing)",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html",
+      "title": "OpenCV — Image Smoothing tutorial",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Median_filter",
+      "title": "Median filter — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

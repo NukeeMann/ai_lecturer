@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "slug": "speckle-dlaczego-to-nie-jest-szum-gaussowski",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m1",
+  "title": "Speckle — dlaczego to nie jest szum gaussowski",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Ziarnista \"sól z pieprzem\" na obrazie Sentinel-1 to nie szum kamery — to multiplikatywna interferencja koherencyjna o statystyce Gamma. Pokażemy, dlaczego addytywne narzędzia CV (Gauss, PSNR, sigma stały) dają fałszywą odpowiedź, jak naprawdę wygląda PDF speckle przy 1/4/16 spojrzeniach i jak liczyć ENL, jedyną sensowną metrykę jakości obrazu SAR.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "speckle-is-not-noise",
+      "title": "Speckle to nie szum kamery — to fizyka koherencji",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1364/JOSA.66.001145",
+          "title": "Some fundamental properties of speckle",
+          "kind": "paper",
+          "author": "Joseph W. Goodman",
+          "year": 1976
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Speckle_pattern",
+          "title": "Speckle (pattern) — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Pierwsze spojrzenie na kafelek Sentinel-1 wygląda jakby na zdjęcie spadł szary, ziarnisty „szron\". Naturalny odruch inżyniera CV: *„dobra, jakiś szum sensora, odfiltruję Gaussem i jadę dalej.\"* I to jest **najkosztowniejsze założenie w pracy z SAR**, bo speckle nie jest szumem.\n\n![Wycinek 160×160 px obrazu Sentinel-1 nad okolicami Hamburga — jednorodny obszar terenu rolniczego, na którym widać charakterystyczną ziarnistą teksturę speckle: pojedyncze piksele wahają się od bardzo ciemnych do bardzo jasnych mimo że scena jest jednorodna; ogólny ton średnio-szary, brak struktury kamery typowej dla szumu addytywnego](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-speckle-closeup.png)\n\nSpeckle to **deterministyczna interferencja**. W każdej komórce rozdzielczości SAR-u (kilka–kilkanaście metrów na ziemi) siedzi tysiące drobnych rozpraszaczy — listków, kamyków, fragmentów dachu — odbijających koherentną mikrofalę z lekko różnymi fazami. Echo, które wraca do anteny, jest sumą wektorową (phasorów) tych wszystkich odbić. Małe przesunięcie satelity, mały ruch liścia, ułamek długości fali różnicy drogi — i suma wektorowa raz wzmacnia się konstruktywnie (jasny piksel), raz wygasza destruktywnie (ciemny piksel). Identyczna fizyka co plamka lasera na ścianie.\n\nFormalnie zapisujemy to jako **model multiplikatywny**:\n\n$$ I = R \\cdot N $$\n\ngdzie $I$ to obserwowana intensywność piksela, $R$ to *prawdziwa* reflektywność terenu (to, co chcemy odzyskać), a $N$ to losowy mnożnik o średniej 1, opisujący koherentną interferencję. To radykalnie inny reżim niż $I = R + N$ z kamery: rozrzut speckle **rośnie razem z jasnością obszaru**. Jednorodny jasny las ma większy *bezwzględny* rozrzut pikseli niż jednorodne ciemne morze — i to nie dlatego, że las jest mniej jednorodny, tylko dlatego, że $\\sigma_I = R \\cdot \\sigma_N$. Dlatego pierwszą pułapką, w jaką wpada każdy migrujący z optyki, jest mierzenie jakości SAR przez PSNR albo σ-stały — obie metryki zakładają addytywność, której tu nie ma."
+      }
+    },
+    {
+      "id": "additive-vs-multiplicative-figure",
+      "title": "Addytywny vs multiplikatywny — ten sam reżim, dwa różne światy",
+      "description": "Ta sama dwukolorowa scena R z obszarem ciemnym (I=40) i jasnym (I=200), zaszumiona dwoma sposobami. Patrz na szerokość rozkładu nad obszarem jasnym.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/speckle-dlaczego-to-nie-jest-szum-gaussowski-1.png",
+        "alt": "Figura 2×3. Górny rząd — trzy obrazy 180×240 px. (1) Czysta scena R: ciemny lewy obszar (I=40) i jasny prawy obszar (I=200), oba idealnie jednolite. (2) Scena R + szum addytywny N(0, σ=25): obie połowy zaszumione, ale rozrzut wizualnie identyczny po obu stronach. (3) Scena R × N (Gamma, L=1, średnia 1): obszar ciemny pulsuje subtelnie, obszar jasny pulsuje gwałtownie z pikselami od bardzo ciemnych do bardzo jasnych. Dolny rząd — trzy histogramy intensywności (oś X 0–320, oś Y liczba pikseli) liczone osobno dla ciemnej (niebieski) i jasnej (czerwony) połowy z pionowymi przerywanymi liniami na średnich 40 i 200. (1) Histogram czystej sceny: dwa wąskie impulsy. (2) Histogram po szumie addytywnym: dwa Gaussowskie wzgórza o jednakowej szerokości, wycentrowane na 40 i 200. (3) Histogram po speckle: dwa rozkłady skośne; ciemny wąski z modą bliską zera, jasny znacznie szerszy z długim ogonem aż do 320.",
+        "caption": "Rys. 1. Górny rząd: ta sama scena, dwa reżimy szumu. Dolny rząd: histogramy. Szum addytywny zachowuje stałą szerokość rozkładu; speckle ma σ rosnące z lokalną średnią — jasny obszar pulsuje wielokrotnie mocniej niż ciemny.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(20260515)\n\nH, W = 180, 240\nclean = np.full((H, W), 40.0, dtype=float)\nclean[:, W // 2:] = 200.0\n\nsigma_add = 25.0\nadditive = clean + rng.normal(0.0, sigma_add, size=clean.shape)\n\nL = 1\nN = rng.gamma(shape=L, scale=1.0 / L, size=clean.shape)\nmultiplicative = clean * N\n\nvmin, vmax = 0.0, 320.0\n\nfig, axes = plt.subplots(\n    2, 3,\n    figsize=(13.5, 7.4),\n    gridspec_kw={\"height_ratios\": [1.0, 0.85], \"hspace\": 0.42, \"wspace\": 0.28},\n)\n\nimg_panels = [\n    (clean, \"Czysta scena R (dwa plaskie obszary)\"),\n    (additive, f\"R + szum addytywny  N(0, sigma={int(sigma_add)})\"),\n    (multiplicative, \"R * N,  N ~ Gamma(L=1)  (speckle, 1 spojrzenie)\"),\n]\nfor ax, (img, title) in zip(axes[0], img_panels):\n    im = ax.imshow(img, cmap=\"gray\", vmin=vmin, vmax=vmax, aspect=\"equal\")\n    ax.set_title(title, fontsize=10.5)\n    ax.set_xlabel(\"kolumna [piksel]\")\n    ax.set_ylabel(\"wiersz [piksel]\")\n    ax.set_xticks([0, W // 2, W - 1])\n    ax.set_yticks([0, H // 2, H - 1])\n\nbins = np.linspace(0.0, 320.0, 90)\nhist_panels = [\n    (clean, \"Histogram czystej sceny\"),\n    (additive, \"Histogram po szumie addytywnym\"),\n    (multiplicative, \"Histogram po speckle (mnozny)\"),\n]\ncolors_dark = \"#1f77b4\"\ncolors_bright = \"#d62728\"\nfor ax, (img, title) in zip(axes[1], hist_panels):\n    left = img[:, : W // 2].ravel()\n    right = img[:, W // 2 :].ravel()\n    ax.hist(left, bins=bins, color=colors_dark, alpha=0.75,\n            label=\"obszar ciemny  R=40\")\n    ax.hist(right, bins=bins, color=colors_bright, alpha=0.55,\n            label=\"obszar jasny  R=200\")\n    ax.axvline(40.0, color=colors_dark, linestyle=\"--\", linewidth=0.9)\n    ax.axvline(200.0, color=colors_bright, linestyle=\"--\", linewidth=0.9)\n    ax.set_title(title, fontsize=10.5)\n    ax.set_xlabel(\"intensywnosc piksela I\")\n    ax.set_ylabel(\"liczba pikseli\")\n    ax.set_xlim(0, 320)\n    ax.grid(True, alpha=0.3)\n    ax.legend(fontsize=8.5, loc=\"upper right\")\n\nfig.suptitle(\n    \"Szum addytywny vs multiplikatywny — ta sama scena, dwa rezimy szumu\",\n    fontsize=13,\n)\nplt.tight_layout(rect=[0, 0, 1, 0.95])\nplt.savefig(\"speckle-dlaczego-to-nie-jest-szum-gaussowski-1.png\", dpi=110,\n            bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-speckle-misconceptions",
+      "title": "Sprawdź: czy potrafisz odróżnić speckle od „zwykłego szumu\"?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o speckle na obrazie Sentinel-1 są PRAWDZIWE? (zaznacz wszystkie pasujące)",
+        "options": [
+          "Speckle ma σ rosnące proporcjonalnie do lokalnej średniej — jednorodny jasny obszar lasu ma większy bezwzględny rozrzut pikseli niż jednorodne ciemne morze.",
+          "Speckle to po prostu szum impulsowy (salt-and-pepper) z pojedynczych ekstremalnych pikseli, więc `cv2.medianBlur` jest na niego optymalny.",
+          "PSNR i SSIM, klasyczne metryki jakości obrazu z optyki, są wiarygodnymi miarami jakości po despeckling'u na SAR.",
+          "Speckle istnieje nie tylko w SAR — pojawia się w każdym obrazowaniu koherencyjnym (ultrasonografia, OCT, plamka laserowa)."
+        ],
+        "correct": [
+          0,
+          3
+        ],
+        "explanation": "Opcja 1 jest prawdziwa: to literalna konsekwencja modelu I = R·N — odchylenie standardowe intensywności jest proporcjonalne do R, więc szerokość histogramu rośnie z jasnością. To podstawowa sygnatura speckle, której addytywny szum gaussowski nie ma. Opcja 4 jest prawdziwa: speckle to fizyka koherentnej interferencji — wszędzie, gdzie obrazowanie używa fali o długiej koherencji (radar, ultradźwięki, OCT, laser), pojawia się ta sama ziarnista tekstura. Opcja 2 jest fałszywa — speckle to **nie** salt-and-pepper. Salt-and-pepper ma kilka procent skrajnych pikseli na inaczej czystym tle; speckle pulsuje *każdym* pikselem proporcjonalnie do lokalnej średniej i ma rozkład Gamma, nie impulsowy. Median filter nie respektuje multiplikatywności i traci szczegóły. Opcja 3 jest fałszywa — PSNR zakłada addytywny gaussowski model błędu i odejście od średniej traktuje jednakowo niezależnie od jasności. Na SAR daje fałszywe poczucie sukcesu (np. mocne wygładzanie ciemnych obszarów pompuje PSNR, ale nie odzyskuje sygnału w jasnych obszarach). Standardową metryką jakości SAR jest ENL liczone na obszarze jednorodnym (patrz dalej w lekcji).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "pdfs-and-enl",
+      "title": "Rozkład Gamma, Rayleigh i ENL — jak naprawdę wygląda PDF speckle",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — Chapter 4",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z fizyki koherentnej interferencji wynika konkretny rozkład — i to nie Gaussa. Dla jednowzorowego (single-look) SAR'u nad obszarem jednorodnym:\n\n- **Amplituda** $A = |z|$ piksela zespolonego ma rozkład **Rayleigh** o jednym parametrze skali (wzdłuż osi obrotu phasorów).\n- **Intensywność** $I = A^2$ ma rozkład **wykładniczy** — to bezpośredni efekt kwadratu Rayleigha. Mediana intensywności jest o $\\ln 2 \\approx 0{,}69$ mniejsza od średniej. Typowe ciemne dziury w speckle to po prostu próbki z ogona rozkładu Exp.\n\nW praktyce jednak rzadko pracujemy z pojedynczym spojrzeniem. **Multi-look** to uśrednianie $L$ niezależnych obrazów intensywności tej samej sceny (z różnych podzakresów Dopplera lub okna). Suma $L$ niezależnych Exp daje rozkład **Gamma** o parametrze kształtu $L$:\n\n$$ p_I(x) = \\frac{L^L}{\\bar I^{\\,L}\\,\\Gamma(L)}\\,x^{L-1}\\,\\exp\\!\\left(-\\frac{L x}{\\bar I}\\right) $$\n\nDla $L = 1$ to Exp, dla $L = 4$ wyraźnie skośne wzgórze, dla $L \\to \\infty$ zbiega (na mocy CTG) do Gaussa wycentrowanego na $\\bar I$. **Sentinel-1 GRD-H ma efektywne $L \\approx 4$–$5$** — daleko jeszcze od Gaussa, daleko od pojedynczego spojrzenia.\n\nKluczowa konsekwencja praktyczna: dla rozkładu Gamma o parametrze kształtu $L$ współczynnik zmienności (CV) wynosi\n\n$$ C_n = \\frac{\\sigma_I}{\\bar I} = \\frac{1}{\\sqrt{L}} $$\n\nOdwracając ten związek dostajemy **ENL (Equivalent Number of Looks)** — jedyną sensowną metrykę jakości obrazu SAR (i odpowiednik PSNR w świecie multiplikatywnym):\n\n$$ \\widehat{\\mathrm{ENL}} = \\left(\\frac{\\bar I_W}{\\sigma_{I,W}}\\right)^{2} $$\n\nLiczymy go na obszarze, o którym wiemy, że jest jednorodny (kawałek otwartego morza, pole uprawne bez struktury), i to **stosunek średniej do odchylenia, podniesiony do kwadratu**, daje nam efektywną liczbę spojrzeń. ENL = 1 oznacza single-look (najgorsze), ENL = 4 typowe GRD-H, ENL > 30 ładnie wygładzony obraz po wielokrotnym despeckling'u."
+      }
+    },
+    {
+      "id": "speckle-pdf-explorer",
+      "title": "Histogram speckle przy zmianie liczby spojrzeń L",
+      "description": "Przeciągnij L w lewo do 1 (Exp), w prawo do 32 (prawie Gauss). Tę samą scenę o średniej R=1 obserwujemy z różną liczbą spojrzeń.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom math import lgamma, exp, pi\n\n# True backscatter (mean) for the synthetic homogeneous patch.\nMEAN_TRUE = 1.0\n# Sample size for the histogram — bigger == smoother histogram.\nN_SAMPLES = 40_000\n# Frozen RNG so the histogram reshapes only with L, not with redraws.\nrng = np.random.default_rng(42)\n\n\ndef gamma_pdf(x, L, mean):\n    # Multi-look intensity PDF: shape=L, scale=mean/L  (mean=mean).\n    # Use lgamma so L=32 is numerically stable.\n    x = np.maximum(x, 1e-12)\n    log = (L * np.log(L) - L * np.log(mean) - lgamma(L)\n           + (L - 1.0) * np.log(x) - L * x / mean)\n    return np.exp(log)\n\n\ndef gauss_pdf(x, mu, sigma):\n    return np.exp(-0.5 * ((x - mu) / sigma) ** 2) / (sigma * np.sqrt(2 * pi))\n",
+        "renderCode": "L_int = int(L)\n# Multi-look intensity samples: Gamma(shape=L, scale=MEAN_TRUE/L) -> mean MEAN_TRUE.\nsamples = rng.gamma(shape=L_int, scale=MEAN_TRUE / L_int, size=N_SAMPLES)\n\n# Empirical statistics matching what the next code widget computes.\nemp_mean = float(samples.mean())\nemp_std = float(samples.std())\nemp_enl = (emp_mean / emp_std) ** 2\n\n# Analytical Gamma curve.\nx = np.linspace(1e-3, 4.0, 600)\ny_gamma = gamma_pdf(x, L_int, MEAN_TRUE)\n\n# Gaussian reference with the same mean & std as the Gamma at this L:\n# var(Gamma) = mean^2 / L  =>  sigma_ref = MEAN_TRUE / sqrt(L).\nsigma_ref = MEAN_TRUE / np.sqrt(L_int)\ny_gauss = gauss_pdf(x, MEAN_TRUE, sigma_ref)\n\nfig, ax = plt.subplots(figsize=(8.0, 4.6))\nax.hist(samples, bins=80, range=(0.0, 4.0), density=True,\n        color='#6699cc', alpha=0.55, edgecolor='#3b6090', linewidth=0.4,\n        label=f'Histogram probek (N={N_SAMPLES:,})')\nax.plot(x, y_gamma, color='#d62728', linewidth=2.2,\n        label=f'PDF Gamma (L={L_int}), srednia={MEAN_TRUE:.1f}')\nif show_gauss:\n    ax.plot(x, y_gauss, color='#2ca02c', linewidth=1.6, linestyle='--',\n            label=f'PDF Gauss N({MEAN_TRUE:.1f}, sigma={sigma_ref:.2f})')\nax.axvline(MEAN_TRUE, color='#444444', linestyle=':', linewidth=1.0,\n           label=f'srednia teoretyczna = {MEAN_TRUE:.1f}')\n\nax.set_title(\n    f'Rozklad speckle dla L = {L_int} spojrzen — empiryczny ENL = '\n    f'{emp_enl:.2f}',\n    fontsize=11,\n)\nax.set_xlabel('intensywnosc I')\nax.set_ylabel('gestosc prawdopodobienstwa p(I)')\nax.set_xlim(0.0, 4.0)\nax.set_ylim(bottom=0.0)\nax.grid(True, alpha=0.3)\nax.legend(loc='upper right', fontsize=9)\nplt.tight_layout()\n",
+        "params": [
+          {
+            "name": "L",
+            "label": "L (liczba spojrzen, ENL teoretyczny)",
+            "type": "slider",
+            "min": 1,
+            "max": 32,
+            "step": 1,
+            "default": 1
+          },
+          {
+            "name": "show_gauss",
+            "label": "Pokaz porownawczy rozklad Gaussa o tej samej sredniej i wariancji",
+            "type": "toggle",
+            "default": true
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "exercise-compute-enl",
+      "title": "Zaimplementuj `compute_enl(patch)` — metryka jakości SAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `compute_enl(patch)`, która zwraca **Equivalent Number of Looks** dla zadanego obszaru intensywności SAR.\n\nWzór jest jednolinijkowy — bierze się prosto z $C_n = 1/\\sqrt{L}$ przekształconego do $L = (\\bar I / \\sigma_I)^2$:\n\n$$ \\widehat{\\mathrm{ENL}} = \\left(\\frac{\\bar I_W}{\\sigma_{I,W}}\\right)^{2} $$\n\nWymagania:\n\n1. `patch` to `numpy.ndarray` o dowolnym kształcie (1D lub 2D). Zwracasz **skalar typu float**.\n2. Używasz **wariancji populacyjnej** (`numpy.std` z domyślnym `ddof=0`) — analitycznie wynik dla rozkładu Gamma o parametrze kształtu $L$ to dokładnie $L$.\n3. Dla obszaru o zerowej średniej zwróć `0.0` zamiast dzielenia przez zero.\n4. Funkcja jest czysto deskryptywna — żadnych pętli, żadnego maskowania, jedna linia na `numpy`.\n\nUżycie w praktyce: liczysz `compute_enl(patch)` na kawałku otwartego morza (≥ 30×30 px), żeby zmierzyć efektywną liczbę spojrzeń produktu Sentinel-1; po despeckling'u liczysz na tym samym kafelku, żeby zobaczyć, ile spojrzeń „wyciągnął\" filtr.\n\n```\nrng = np.random.default_rng(0)\npatch = rng.gamma(shape=4.0, scale=1.0/4.0, size=(80, 80))\ncompute_enl(patch)  # ≈ 4.0 ± 0.2\n```",
+        "starterCode": "import numpy as np\n\ndef compute_enl(patch):\n    # patch: numpy.ndarray (1D lub 2D) intensywnosci SAR.\n    # Zwroc skalar float = (mean / std) ** 2.\n    # Pamietaj o przypadku patch.mean() == 0.0 -> zwroc 0.0.\n    arr = np.asarray(patch, dtype=float)\n    # TODO: obliczyc i zwrocic ENL.\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "stala_macierz_zwraca_nieskonczonosc_zerowy_std",
+            "body": "import numpy as np\n# Idealnie jednorodny obszar (zerowa wariancja) -> w praktyce dzielenie\n# przez 0; akceptujemy `inf` lub bardzo duza liczbe. Sprawdzamy tylko, ze\n# wynik jest nieskonczony / co najmniej 1e10 (nieosiagalne dla realnego patcha).\nout = compute_enl(np.full((50, 50), 7.5))\nassert np.isinf(out) or float(out) > 1e10, f'jednorodny obszar powinien dac bardzo duze ENL (inf), jest {out}'",
+            "hidden": false
+          },
+          {
+            "name": "single_look_intensity_daje_enl_okolo_1",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\n# Intensywnosc 1-look = Exp(mean=2.0) = Gamma(1, 2.0); ENL teoretyczne = 1.\npatch = rng.exponential(scale=2.0, size=(120, 120))\nout = float(compute_enl(patch))\nassert 0.85 < out < 1.15, f'ENL dla 1-look powinno byc okolo 1.0, jest {out:.3f}'",
+            "hidden": true
+          },
+          {
+            "name": "four_look_gamma_daje_enl_okolo_4",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\n# Intensywnosc 4-look = Gamma(4, mean/4); ENL teoretyczne = 4.\npatch = rng.gamma(shape=4.0, scale=1.0 / 4.0, size=(160, 160))\nout = float(compute_enl(patch))\nassert 3.5 < out < 4.6, f'ENL dla 4-look powinno byc okolo 4.0, jest {out:.3f}'",
+            "hidden": true
+          },
+          {
+            "name": "zerowa_srednia_zwraca_zero_zamiast_dzielenia_przez_zero",
+            "body": "import numpy as np\n# Skrajny przypadek: zerowa srednia (np. po log-skali centrowanej).\n# Funkcja musi zwrocic 0.0 (nie NaN, nie wyjatek).\nout = compute_enl(np.zeros((10, 10)))\nassert float(out) == 0.0, f'patch o zerowej sredniej powinien dac 0.0, jest {out}'",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\ndef compute_enl(patch):\n    arr = np.asarray(patch, dtype=float)\n    mean = arr.mean()\n    if mean == 0.0:\n        return 0.0\n    std = arr.std()\n    return float((mean / std) ** 2)\n"
+      }
+    },
+    {
+      "id": "sandbox-gauss-on-speckle",
+      "title": "Spróbuj sam: dlaczego Gauss „udaje\", że pomógł",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import gaussian_filter\n\n# Synteza prostej sceny SAR: dwa jednorodne pasma o sredniej R=1 i R=6,\n# zaszumione speckle 4-look (rozklad Gamma).\nrng = np.random.default_rng(0)\nH, W = 96, 192\nL = 4\nclean = np.where(np.arange(W)[None, :] < W // 2, 1.0, 6.0) * np.ones((H, 1))\nspeckled = rng.gamma(shape=L, scale=clean / L)\n\n# Ten sam wzor co w cwiczeniu powyzej:\ndef compute_enl(patch):\n    arr = np.asarray(patch, dtype=float)\n    if arr.mean() == 0.0:\n        return 0.0\n    return float((arr.mean() / arr.std()) ** 2)\n\nsigma = 1.5  # <- pokrec tym\nsmoothed = gaussian_filter(speckled, sigma=sigma)\n\n# ENL liczymy na 30x30 ciemnym pasie i 30x30 jasnym pasie *osobno* —\n# dlatego, ze speckle ma sigma proporcjonalna do lokalnej sredniej.\ndark_pre  = compute_enl(speckled[30:60, 10:40])\nbright_pre = compute_enl(speckled[30:60, W - 40:W - 10])\ndark_post  = compute_enl(smoothed[30:60, 10:40])\nbright_post = compute_enl(smoothed[30:60, W - 40:W - 10])\n\nprint(f'sigma Gauss          = {sigma}')\nprint(f'ENL przed (ciemny)   = {dark_pre:5.2f}   (oczekujemy ~{L})')\nprint(f'ENL przed (jasny)    = {bright_pre:5.2f}   (oczekujemy ~{L})')\nprint(f'ENL po   (ciemny)    = {dark_post:5.2f}')\nprint(f'ENL po   (jasny)     = {bright_post:5.2f}')\n\n# Sprobuj:\n#  - sigma = 0.5, 1.0, 2.0, 4.0, 8.0 — jak zmienia sie ENL?\n#  - czy Gauss z duzym sigma rzeczywiscie 'usuwa speckle',\n#    czy raczej rozsmarowuje krawedz miedzy obszarami?\n#  - zmien L na 1 (single-look) i zobacz, jak Gauss radzi sobie ze skrajnym\n#    przypadkiem; krawedz ciemny/jasny ginie szybciej niz speckle.\n",
+        "encouragement": "Pokrec sigma i sprawdź, czy Gauss naprawdę „odszumił\" speckle, czy tylko rozmył krawędź między dwoma reżimami średniej."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1364/JOSA.66.001145",
+      "title": "Some fundamental properties of speckle",
+      "kind": "paper",
+      "author": "Joseph W. Goodman",
+      "year": 1976
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1080/02757259409532206",
+      "title": "Speckle Filtering of Synthetic Aperture Radar Images: A Review",
+      "kind": "paper",
+      "author": "Jong-Sen Lee, Mitchell R. Grunes, Stephen A. Mango",
+      "year": 1994
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Speckle_pattern",
+      "title": "Speckle (pattern) — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 User Guide (ESA SentiWiki)",
+      "kind": "article"
+    }
+  ]
+}

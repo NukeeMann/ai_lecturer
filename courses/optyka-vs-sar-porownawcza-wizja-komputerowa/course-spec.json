@@ -1,0 +1,226 @@
+{
+  "topic": "Dane optyczne vs dane SAR: porównawcza wizja komputerowa na obrazach optycznych i SAR",
+  "description": "Komparatystyczny, praktyczny kurs prowadzący inżyniera CV\n  przez fundamentalną zmianę paradygmatu: jak różni się\n  piksel z kamery od piksela z radaru z syntetyczną aperturą\n   i co to oznacza dla KAŻDEJ techniki wizji komputerowej,\n  którą znasz z obrazów optycznych. Każda lekcja ma tę samą\n  strukturę: blok teorii z ilustracjami (formacja obrazu,\n  geometria, statystyki, intuicja matematyczna) +\n  interaktywny widget Code z input zdjeciem/danymi i output zdjeciem/danymi, w którym ta sama technika CV\n  uruchamia się najpierw na klasycznym obrazie optycznym,\n  potem na realnym kafelku SAR (Sentinel-1 GRD/SLC, MSTAR\n  chip, para SEN12MS optyka+SAR). Uczysz się przez\n  konfrontację — widzisz dokładnie gdzie i dlaczego klasyka\n  się sypie na SAR, i czego trzeba żeby ją uratować.\n\n  Pierwsze 3–4 lekcje to foundations: jak powstaje obraz SAR\n   (apertura syntetyczna, range/azimuth, look angle, slant\n  vs ground range), dlaczego speckle\n  nie jest szumem gaussowskim ale multiplikatywnym i jakimi filtrami się go pozbyć (każdy taki przykład oddziaływania na obraz powinien być zwizualizowany za pomocą code widget z input & output), czym są\n  dane zespolone SAR (amplituda + faza) których nie ma w\n  optyce, i dlaczego SAR ma 4 kanały polarymetryczne\n  (HH/HV/VV/VH) zamiast RGB. Budowa typowego obrazu SAR (w typowych obrazach optycznych masz 3 kanały RGB lub 4 kanały w RAW) Każdy z tych konceptów ma\n  towarzyszący widget — np. ParametricExplorer pokazujący\n  jak histogram zmienia się z optyki (Gauss) do SAR\n  (Rayleigh / Gamma) gdy obracasz ENL, albo Code widget\n  rekonstruujący obraz z amplitudy+fazy.\n\n  Trzon kursu to interaktywne porównania technik CV\n  side-by-side:\n  - filtry: Gauss/median/bilateral vs Lee/Frost/Refined\n  Lee/NL-means\n  - krawędzie: Canny/Sobel vs CFAR-edge/Touzi (pokaz\n  dlaczego Canny pada na speckle)\n  - tekstura: GLCM/Haralick/LBP — które deskryptory\n  przeżywają na SAR\n  - morfologia i segmentacja: thresholding (Otsu vs CFAR),\n  watershed, mean-shift, k-means po statystykach\n  - analiza spektralna: FFT obrazu optycznego vs banded\n  patterns SAR\n  - detekcja obiektów klasyczna: blob/MSER vs CFAR —\n  wykrywanie statków na morzu\n  - change detection: difference image (optyka) vs log-ratio\n   (SAR) vs koherencja interferometryczna\n  - polarymetria sygnalizacyjnie: dekompozycja Pauli RGB\n  jako pseudo-kolor SAR-u\n  - wprowadzenie do InSAR: faza interferometryczna, dlaczego\n   optyka nie potrafi tak mierzyć deformacji\n\n  Wszystkie widgety używają numpy / opencv-python /\n  scikit-image / scipy / matplotlib w Pyodide — działają\n  lokalnie w przeglądarce, na realnych kafelkach\n  satelitarnych umieszczonych jako pliki w /inputs/.\n  Sliderowe ParametricExplorery wszędzie tam, gdzie\n  pokazujemy wpływ parametru (rozmiar okna filtru, próg\n  CFAR, ENL, σ).\n\n  2–3 lekcje pod koniec wprowadzają inference w\n  onnxruntime-web w przeglądarce: lekki despeckler (np.\n  SAR-DRN / SAR-CNN) oraz klasyfikator pojazdów MSTAR — oba\n  uruchamiane jako Code widget na chipach z /inputs/. Bez\n  treningu i bez PyTorcha; fokus jest na zrozumieniu\n  wejścia/wyjścia modelu, preprocessingu specyficznego dla\n  SAR i ewaluacji (PSNR, ENL, accuracy per-class). To\n  pokazuje, że nowoczesne DL na SAR jest dostępne nawet w\n  środowisku bez GPU.\n\n  Capstone porównawczy: ta sama scena portu / wybrzeża jako\n  para Sentinel-1 GRD + Sentinel-2 optyka (z SEN12MS).\n  Wykrywasz statki dwiema niezależnymi ścieżkami — klasyczny\n   pipeline CV na optyce vs\n  CFAR+morfologia+ONNX-klasyfikator na SAR — i piszesz\n  krótki raport „co dał SAR, czego nie da optyka, gdzie się\n  uzupełniają\". Wynik: konkretna intuicja kiedy sięgnąć po\n  radar, a kiedy wystarczy kamera.\n\n  Ograniczenia środowiska, KTÓRE GENERATOR MUSI UWZGLĘDNIĆ\n  przy pisaniu kodu lekcji:\n  - widgety Code działają w PYODIDE w przeglądarce — działa:\n   numpy, scipy, opencv-python (via micropip), scikit-image,\n   matplotlib, scikit-learn, onnxruntime-web\n  - NIE DZIAŁA: PyTorch trening, TensorFlow trening,\n  snappy/SNAP, sentinelsat (sieć ograniczona), GDAL <- W przypadku chęci pokazania kodów używających tych bibliotek wstaw w bloku Theory kod referencyjny,\n  - każda lekcja MA mieć co najmniej jeden widget z\n  dynamicznym outputem (Code z inputs/outputMedia).\n  - inputy SAR/optyczne dostarczane jako PNG/NPZ/JPG lub specyficzny dla SAR typ danych do\n  katalogu /inputs/ lekcji (Sentinel-1 GRD VV/VH wycinki,\n  MSTAR chipy, pary SEN12MS, opcjonalnie ICEYE/Capella demo)\n  - żadnych pobierań po sieci w czasie wykonania widgetu, wszystko musi być pobrane w trakcie tworzeniu kursu przez agenta",
+  "level": "intermediate",
+  "durationTarget": "extensive",
+  "theoryPracticeRatio": 0.59,
+  "clarification": {
+    "q1: Jakie masz doświadczenie z klasyczną wizją komputerową na obrazach optycznych (OpenCV, filtry, detekcja krawędzi, segmentacja) — na jakim poziomie pracujesz dziś?": "Dość dobre. Pracuje jako Computer Vision Engineer z 3 letnim doświdczeniem.",
+    "q2: Czy miałeś już jakikolwiek kontakt z danymi SAR (np. Sentinel-1, SNAP, MSTAR), czy zaczynasz całkowicie od zera w tej dziedzinie?": "Nie",
+    "q3: Jaki jest Twój docelowy use-case po kursie: monitoring morski (statki), zmiany terenu/deformacje (InSAR), klasyfikacja pojazdów, rolnictwo, czy raczej ogólna fluency porównawcza?": "Pojazdy, statki, zmiana terenu, klasyfikacja, monitoring, ogólna fluency porównawcza",
+    "q4: Czy chcesz, żeby kurs dotykał InSAR/interferometrii poważnie (faza, koherencja, unwrapping), czy ma to pozostać jednorazowym sygnalizacyjnym wprowadzeniem na końcu?": "To drugie",
+    "q5: Jak komfortowo czujesz się z matematyką: liczby zespolone, statystyka (Rayleigh/Gamma/ENL), transformata Fouriera — czy wymagają osobnych przypomnień, czy traktujemy je jako znane?": "Nie lubie matematyki, a w szczególności fizyki. Wole realne przykłady, zobrazowania. Wzór może  być podany jak jest naprawde ważny, ale minimalistycznie.",
+    "q6: Czy w części DL (despeckler, MSTAR classifier w ONNX) wystarczy Ci zrozumienie inferencji i preprocessingu, czy chcesz też omówienia jak takie modele są trenowane offline?": "Trenowanie tez jak przebiega.",
+    "q7: Czy zależy Ci na polarymetrii pełnej (dekompozycje Pauli/Cloude-Pottier, macierze koherencji) czy wystarczy intuicyjne traktowanie HH/HV/VV/VH jako kanałów?": "Intuicyjne, z jasnym przekazem dla osoby z małym doświdczeniem",
+    "q8: Czy preferujesz, żeby capstone był jednym dużym projektem port/wybrzeże (statki), czy raczej 2-3 mniejszymi capstone'ami pokrywającymi różne domeny (np. statki + powódź + deformacja)?": "jeden",
+    "q9: Ile czasu realnie planujesz poświęcać na pojedynczą lekcję (15 min teorii + szybki widget vs 45-60 min głębokiej pracy z parametrami i własnymi eksperymentami)?": "15 min teorii + szybki widget/lub kilka widgetów. Ewentualnie przy szerszych tematach 2-3 bloki teorii z widgetami.",
+    "q10: Czy chcesz, żeby widgety zachęcały Cię do modyfikacji kodu (otwarte pola, eksperymenty z własnymi parametrami) czy wystarczą gotowe slidery ParametricExplorer i przyciski Run?": "Chce."
+  },
+  "draftStructure": {
+    "courseTitle": "Optyka vs SAR: Porównawcza Wizja Komputerowa",
+    "courseDescription": "Praktyczny kurs dla inżyniera CV pokazujący side-by-side, jak każda klasyczna technika wizji komputerowej zachowuje się na obrazach optycznych i SAR. Uczysz się przez konfrontację — widzisz dokładnie gdzie klasyka pada na speckle, danych zespolonych i polarymetrii, i czego trzeba żeby ją uratować. Wszystkie widgety działają lokalnie w Pyodide na realnych kafelkach Sentinel-1, MSTAR i SEN12MS.",
+    "modules": [
+      {
+        "title": "Fundamenty: skąd się bierze piksel SAR",
+        "lessons": [
+          {
+            "title": "Optyka vs SAR — dwa różne światy",
+            "summary": "Porównanie scen z kamery i radaru side-by-side; intuicja kiedy SAR daje to, czego optyka nigdy nie zobaczy.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Jak powstaje obraz SAR — apertura syntetyczna w intuicji",
+            "summary": "Range vs azimuth, look angle, slant vs ground range — wizualnie i bez ciężkiej matematyki.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Geometria SAR — foreshortening, layover, shadow",
+            "summary": "Widget pokazujący jak ten sam teren wygląda na optyce i SAR przy różnych kątach padania.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Speckle — dlaczego to nie jest szum gaussowski",
+            "summary": "Szum multiplikatywny vs addytywny; ParametricExplorer histogramu Gauss → Rayleigh → Gamma przy zmianie ENL.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "Dane SAR od środka",
+        "lessons": [
+          {
+            "title": "Amplituda i faza — dane zespolone, których nie ma w optyce",
+            "summary": "Code widget rekonstruujący obraz z magnitudy+fazy; co się dzieje gdy wyzerujesz fazę.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Polarymetria — HH/HV/VV/VH zamiast RGB",
+            "summary": "Cztery kanały polaryzacji jako pseudo-RGB; dekompozycja Pauli na realnym kafelku Sentinel-1.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Formaty danych SAR — GRD, SLC, kalibracja",
+            "summary": "Co dostajesz z Sentinel-1, czym różni się GRD od SLC i jak załadować kafelek do numpy.",
+            "estimatedMinutes": 12
+          }
+        ]
+      },
+      {
+        "title": "Filtracja — klasyka kontra speckle",
+        "lessons": [
+          {
+            "title": "Gauss, median, bilateral na optyce",
+            "summary": "Szybkie przypomnienie klasycznych filtrów liniowych i nieliniowych na obrazie kamery z ParametricExplorerem σ.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Dlaczego klasyczne filtry padają na SAR",
+            "summary": "Te same filtry uruchomione na kafelku Sentinel-1 — widzisz rozmycie krawędzi i resztkowy speckle.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Filtry SAR-owe — Lee, Frost, Refined Lee",
+            "summary": "Filtry adaptacyjne dla szumu multiplikatywnego; widget porównujący PSNR i ENL przed/po.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Non-Local Means i nowoczesne despeckling",
+            "summary": "NL-means na SAR vs klasyczny Lee; kiedy warto, kiedy nie warto płacić czasem obliczeń.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Krawędzie i tekstury",
+        "lessons": [
+          {
+            "title": "Canny i Sobel na optyce vs SAR",
+            "summary": "Widget pokazujący eksplozję fałszywych krawędzi gdy Canny trafia na speckle.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "CFAR-edge i detektor Touziego",
+            "summary": "Detektory krawędzi zaprojektowane dla statystyki multiplikatywnej; porównanie z Cannym na tym samym kafelku.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Tekstura — GLCM, Haralick, LBP",
+            "summary": "Które deskryptory tekstury przeżywają na SAR; widget liczący mapy tekstury na parze optyka+SAR.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "Segmentacja i analiza spektralna",
+        "lessons": [
+          {
+            "title": "Thresholding — Otsu vs CFAR",
+            "summary": "Dlaczego Otsu zawodzi na rozkładzie Gamma; CFAR jako adaptacyjny próg dopasowany do statystyki SAR.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Watershed, mean-shift, k-means na obu modalnościach",
+            "summary": "Segmentacja regionów na optyce i SAR; k-means po statystykach lokalnych zamiast po pikselach.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "FFT — banded patterns w widmie SAR",
+            "summary": "Spektrum obrazu optycznego vs charakterystyczne paski azimuth/range w SAR; widget FFT side-by-side.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Detekcja obiektów i zmian",
+        "lessons": [
+          {
+            "title": "Blob, MSER, klasyczna detekcja na optyce",
+            "summary": "Przypomnienie klasyki detekcji obiektów; widget z detekcją statków na obrazie Sentinel-2.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "CFAR — detekcja statków na morzu",
+            "summary": "Constant False Alarm Rate na kafelku Sentinel-1; ParametricExplorer progu Pfa i okna guard/training.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Detekcja pojazdów na lądzie",
+            "summary": "Trudniejszy przypadek niż statki na wodzie — clutter, false alarms, kiedy CFAR nie wystarczy.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Change detection — optyka vs SAR",
+            "summary": "Difference image na optyce vs log-ratio na SAR; widget porównujący dwie daty tej samej sceny.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Koherencja interferometryczna jako sygnał zmiany",
+            "summary": "Para SLC i mapa koherencji; co znaczy spadek koherencji i dlaczego optyka tak nie potrafi.",
+            "estimatedMinutes": 18
+          }
+        ]
+      },
+      {
+        "title": "InSAR i polarymetria w praktyce",
+        "lessons": [
+          {
+            "title": "Faza interferometryczna — pomiar deformacji",
+            "summary": "Intuicja interferometrii: prążki fazy jako mapa przemieszczeń milimetrowych; widget rozwijający fazę.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Dekompozycja Pauli — pseudo-RGB dla SAR",
+            "summary": "Surface/double-bounce/volume jako trzy kanały koloru; widget na pełnopolarymetrycznym kafelku.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Deep Learning na SAR w przeglądarce",
+        "lessons": [
+          {
+            "title": "Jak trenuje się modele dla SAR — pipeline od A do Z",
+            "summary": "Przegląd procesu treningu: dane, augmentacje specyficzne dla SAR, loss functions, ewaluacja — bez uruchamiania treningu.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Despeckling z ONNX — SAR-DRN w przeglądarce",
+            "summary": "Lekki model despecklera odpalany w onnxruntime-web; widget liczący PSNR i ENL przed/po.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Klasyfikacja pojazdów MSTAR — ONNX inference",
+            "summary": "Klasyfikator chipów MSTAR w przeglądarce; widget z accuracy per-class i macierzą pomyłek.",
+            "estimatedMinutes": 20
+          }
+        ]
+      },
+      {
+        "title": "Capstone — porównawcza analiza portu",
+        "lessons": [
+          {
+            "title": "Setup sceny — para Sentinel-1 + Sentinel-2 z SEN12MS",
+            "summary": "Ładowanie i kalibracja pary optyka+SAR tej samej sceny portowej; co widać na każdej modalności.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Pipeline optyczny — detekcja statków",
+            "summary": "Klasyczny pipeline CV na Sentinel-2: segmentacja wody, blob detection, filtracja po rozmiarze.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Pipeline SAR — CFAR + morfologia + klasyfikator",
+            "summary": "CFAR na VV, czyszczenie morfologiczne, klasyfikacja ONNX; porównanie wyników z pipeline'em optycznym.",
+            "estimatedMinutes": 20
+          },
+          {
+            "title": "Synteza — kiedy radar, kiedy kamera, kiedy oba",
+            "summary": "Krótki raport: co dał SAR czego nie da optyka, gdzie się uzupełniają; intuicja kiedy sięgnąć po który sensor.",
+            "estimatedMinutes": 15
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-05-15T09:17:43.885Z"
+}

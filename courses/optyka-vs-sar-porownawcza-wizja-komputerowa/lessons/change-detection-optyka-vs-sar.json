@@ -1,0 +1,214 @@
+{
+  "schemaVersion": 1,
+  "slug": "change-detection-optyka-vs-sar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Change detection — optyka vs SAR",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Difference image $I_2 - I_1$ to kanon change detection na optyce, ale na SAR eksploduje proporcjonalnie do średniej. Logarytm ilorazu $\\log(I_2 / I_1)$ zamienia szum mnożny na addytywny i prostuje rozkład tła do bliskiego Gaussa — dopiero wtedy można posadzić jednorodny próg.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "difference-optyka-vs-sar",
+      "title": "Difference działa na optyce, eksploduje na SAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1080/01431168908903939",
+          "title": "Digital change detection techniques using remotely-sensed data",
+          "kind": "paper",
+          "author": "Ashbindu Singh",
+          "year": 1989
+        },
+        {
+          "url": "https://doi.org/10.1109/36.225528",
+          "title": "Change detection techniques for ERS-1 SAR data",
+          "kind": "paper",
+          "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+          "year": 1993
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Klasyczne change detection na obrazach optycznych jest podejrzanie proste: bierzesz dwie zarejestrowane sceny $I_1$, $I_2$ (ten sam obszar, dwie daty), liczysz mapę różnicową $D = I_2 - I_1$ i progujesz $|D| > \\tau$. Działa, bo szum optyczny jest **addytywny** i w przybliżeniu Gaussowski — przy odejmowaniu *odejmuje się od siebie*, a jego rozkład to wąski Gauss wokół zera. Próg trafia w „dolinę\" między modem tła a modem zmiany.\n\nTen sam operator na SAR pada widowiskowo:\n\n![Siatka 2×4. Górny rząd, optyka: (1) zdjęcie kameramana — referencja czasu 1; (2) ten sam kadr z dwiema dodanymi zmianami — jasny prostokąt na niebie i ciemny prostokąt na korpusie; (3) mapa różnicowa $I_2 - I_1$ w skali czerwono-niebieskiej z dwiema wyraźnymi plamami, reszta neutralnie szara; (4) maska po progu $|I_2-I_1| > 0{,}2$ — dwa białe prostokąty na czarnym tle, prawie zero szumu. Dolny rząd, SAR: (1) syntetyczny kafelek SAR Gamma $L=4$ z trzema regionami odbiciowości; (2) ten sam kafelek z dwiema zmianami (jasny i ciemny prostokąt) ukrytymi w speckle; (3) mapa różnicowa $I_2 - I_1$ — dwie zmiany ledwo widoczne pod gęstą szachownicą czerwonych i niebieskich pikseli pochodzących z mnożnego szumu (eksploduje proporcjonalnie do średniej); (4) mapa $\\log(I_2/I_1)$ — symetryczny i czysty, dwie zmiany wyraźnie odbijają się od bliskiego-Gaussowskiego tła.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/change-detection-optical-vs-sar-grid.png)\n\nDlaczego $I_2 - I_1$ eksploduje na SAR? Bo speckle jest **multiplikatywny**: $I = R \\cdot N$, gdzie $N \\sim \\operatorname{Gamma}(L, 1/L)$ ma średnią 1, ale wariancję rosnącą wraz z $R^2$. Odejmowanie nie kasuje $N_1, N_2$ — wręcz *dolicza* ich rozrzut do wyniku. Co gorsza, wariancja $D$ skaluje się z lokalną odbiciowością, więc *ten sam* próg $\\tau$ jest zbyt liberalny nad jasnym lądem i zbyt konserwatywny nad ciemnym morzem. Na obrazach SAR nie chcemy operatora *addytywnego*; chcemy operatora, w którym *względna* zmiana intensywności przechodzi w *addytywną* zmianę statystyki. Tym operatorem jest logarytm ilorazu."
+      }
+    },
+    {
+      "id": "histogramy-d-r-logr",
+      "title": "Histogramy: difference, ratio i log-ratio na tym samym kafelku SAR",
+      "description": "Te same niezmienione vs zmienione piksele, trzy operatory. Tylko log-ratio daje symetryczny, bliski-Gaussa rozkład bez zmiany — a to ten kształt jest warunkiem koniecznym jednorodnego progu.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/change-detection-optyka-vs-sar-1.png",
+        "alt": "Trzy panele histogramów obok siebie dla tej samej pary syntetycznych kafelków SAR (192×192, Gamma L=4) z dwiema zmianami. Niebieski wypełniony histogram — piksele bez zmiany; czerwono-różowy — piksele zmiany. (a) Difference I2-I1 na [-2, 2]: niebieski rozkład wąski, ostry pik blisko 0 ale z ciężkimi ogonami; czerwony rozkład szeroki, asymetryczny, przelewa się na cały zakres. (b) Ratio I2/I1 na [0, 8]: niebieski rozkład w okolicy 1 z długim prawym ogonem; czerwony rozkład skoncentrowany blisko zera (zmiany ciemne) i z drugim modem powyżej 3 (zmiany jasne) — niesymetryczny i nieanalityczny. (c) log-ratio log(I2/I1) na [-3, 3]: niebieski rozkład symetryczny, bliski-Gauss wokół 0 z σ ≈ 0,75; czerwony rozkład bimodalny — jeden mod ok. -1,3 (zmiany ciemne), drugi ok. +1,1 (zmiany jasne) — *na zewnątrz* niebieskiego rozkładu, czyli rozdziela się od tła. Tytuł nadrzędny: \"Histogramy operatorów change detection na SAR (Gamma L=4) — log-ratio prostuje rozkład bez-zmiany na bliski Gaussa, co dopiero pozwala posadzić sensowny próg.\"",
+        "caption": "Rys. 1. Trzy operatory na tym samym kafelku. Panel (a): rozkład $I_2 - I_1$ dla niezmienionych pikseli ma ciężkie ogony — to skutek mnożności szumu. Panel (b): $I_2 / I_1$ jest ograniczony do $[0, \\infty)$ z asymetrycznym, długim prawym ogonem — niewygodny do progu. Panel (c): $\\log(I_2 / I_1)$ ma symetryczny, prawie-Gaussowski rozkład bez-zmiany ze stałą wariancją $\\sigma_L \\approx 0{,}75$ dla $L=4$, a zmiany rozkładają się bimodalnie po jego obu stronach. To dlatego operator log jest tym, w który można posadzić jednorodny próg.",
+        "sourceCode": "import os\nimport numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nOUT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/\"\n    \"change-detection-optyka-vs-sar-1.png\"\n)\n\n\ndef make_reflectivity_base(size=192):\n    R = np.full((size, size), 0.20, dtype=np.float32)\n    R[10:120, 70:size] = 0.45\n    R[120:170, 110:180] = 0.85\n    R[15:55, 10:60] = 0.75\n    return R\n\n\ndef speckle(R, L, rng):\n    N = rng.gamma(L, 1.0 / L, size=R.shape).astype(np.float32)\n    return (R * N).astype(np.float32)\n\n\ndef main():\n    L = 4\n    R_before = make_reflectivity_base()\n    R_after = R_before.copy()\n    R_after[30:55, 100:140] = 1.20\n    R_after[135:155, 130:160] = 0.18\n    truth = np.abs(R_after - R_before) > 0.1\n\n    I1 = speckle(R_before, L, np.random.default_rng(7))\n    I2 = speckle(R_after, L, np.random.default_rng(91))\n\n    eps = 1e-6\n    D = I2 - I1\n    R = I2 / np.maximum(I1, eps)\n    LR = np.log(np.maximum(I2, eps) / np.maximum(I1, eps))\n    unchanged = ~truth\n\n    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.6), constrained_layout=True)\n\n    ax = axes[0]\n    bins = np.linspace(-2.0, 2.0, 80)\n    ax.hist(D[unchanged].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#4a78c8\", label=\"bez zmiany\")\n    ax.hist(D[truth].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#d8553a\", label=\"zmiana\")\n    ax.axvline(0.0, color=\"black\", linewidth=0.8, linestyle=\":\")\n    ax.set_xlim(-2.0, 2.0)\n    ax.set_xlabel(r\"$I_2 - I_1$  (jednostki intensywności)\")\n    ax.set_ylabel(\"Gęstość prawd.  [-]\")\n    ax.set_title(r\"(a) Difference  $I_2 - I_1$\" \"\\nskośny, ciężko-ogonowy\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(loc=\"upper right\", fontsize=9)\n\n    ax = axes[1]\n    bins = np.linspace(0, 8.0, 80)\n    ax.hist(R[unchanged].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#4a78c8\", label=\"bez zmiany\")\n    ax.hist(R[truth].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#d8553a\", label=\"zmiana\")\n    ax.axvline(1.0, color=\"black\", linewidth=0.8, linestyle=\":\")\n    ax.set_xlim(0, 8.0)\n    ax.set_xlabel(r\"$I_2 / I_1$  (-)\")\n    ax.set_ylabel(\"Gęstość prawd.  [-]\")\n    ax.set_title(r\"(b) Ratio  $I_2 / I_1$\" \"\\nograniczony lewy / długi prawy ogon\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(loc=\"upper right\", fontsize=9)\n\n    ax = axes[2]\n    bins = np.linspace(-3.0, 3.0, 80)\n    ax.hist(LR[unchanged].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#4a78c8\", label=\"bez zmiany\")\n    ax.hist(LR[truth].ravel(), bins=bins, density=True, alpha=0.7,\n            color=\"#d8553a\", label=\"zmiana\")\n    ax.axvline(0.0, color=\"black\", linewidth=0.8, linestyle=\":\")\n    ax.set_xlim(-3.0, 3.0)\n    ax.set_xlabel(r\"$\\log(I_2 / I_1)$  (nat)\")\n    ax.set_ylabel(\"Gęstość prawd.  [-]\")\n    sd = float(LR[unchanged].std())\n    ax.set_title(\n        r\"(c) log-ratio  $\\log(I_2 / I_1)$\"\n        f\"\\nsymetryczny wokół 0, σ ≈ {sd:.2f}\"\n    )\n    ax.grid(True, alpha=0.3)\n    ax.legend(loc=\"upper right\", fontsize=9)\n\n    fig.suptitle(\n        \"Histogramy operatorów change detection na SAR (Gamma L=4)  —  \"\n        \"log-ratio prostuje rozkład bez-zmiany na bliski Gaussa, \"\n        \"co dopiero pozwala posadzić sensowny próg.\",\n        fontsize=10.5,\n    )\n\n    fig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\n    plt.close(fig)\n\n\nif __name__ == \"__main__\":\n    main()\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "pipeline-log-ratio",
+      "title": "Operacyjny pipeline log-ratio — linear, log, smooth, threshold",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2005.858458",
+          "title": "A detail-preserving scale-driven approach to change detection in multitemporal SAR images",
+          "kind": "paper",
+          "author": "Francesca Bovolo, Lorenzo Bruzzone",
+          "year": 2005
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+          "title": "Sentinel-1 User Guide (ESA)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Klucz to **logarytm**: $\\log(I_2 / I_1) = \\log I_2 - \\log I_1$. Logarytm zamienia mnożenie na dodawanie, a $\\log \\operatorname{Gamma}(L)$ ma rozkład w przybliżeniu Gaussowski ze stałą wariancją niezależną od $R$. Dla niezmienionego piksela:\n\n$$ \\Delta(i, j) \\;=\\; \\log \\frac{I_2(i, j)}{I_1(i, j)} \\;=\\; \\underbrace{\\log \\frac{R_2}{R_1}}_{=\\,0 \\text{ jeśli bez zmiany}} \\;+\\; \\underbrace{\\log \\frac{N_2}{N_1}}_{\\approx\\,\\mathcal{N}(0,\\, \\sigma^2_L)} $$\n\nCzyli mapa $\\Delta$ to **stała zmiany odbiciowości** *plus* niezależny od $R$ szum o symetrycznym, (prawie) gaussowskim rozkładzie wokół zera (patrz Rys. 1, panel c). Dopiero teraz operator różnicowy *ma sens* — bo ma rozkład, w który można posadzić jednorodny próg.\n\nOperacyjny pipeline jest krótki:\n\n1. **Linear, nie dB.** Wejście to *intensywność* (sigma-nought w skali liniowej), nie $10\\log_{10}$. Pamiętaj: $\\sigma^0_2[\\text{dB}] - \\sigma^0_1[\\text{dB}] = 10\\log_{10}(I_2 / I_1) = 4{,}34 \\cdot \\Delta$ — różnica w dB *jest* log-ratio do stałej. Pracuj w jednym świecie do końca.\n2. **Per-piksel log-ratio.** $\\Delta = \\log(I_2 / I_1)$ (epsilon w mianowniku przed dzieleniem).\n3. **Lokalne wygładzenie.** Box-mean (np. `uniform_filter` $5 \\times 5$) obniża wariancję $\\sigma^2_L / k^2$ bez zaburzenia średniej — kluczowe, bo pojedynczy piksel ma rozrzut $\\sigma_L \\approx 0{,}75$ dla $L = 4$, w którym ginie zmiana o $|\\log(R_2/R_1)| < 1$.\n4. **Próg na |Δ|.** Symetryczny, bo zmiany jasne ($R_2 > R_1$) i ciemne ($R_2 < R_1$) interesują nas tak samo. Typowo $\\tau \\in [0{,}4,\\, 0{,}9]$ na $L = 4$.\n\n![Cztery panele — kolejne etapy pipeline log-ratio na tej samej parze SAR 192×192. (1) Linear ratio $I_2/I_1$ w skali viridis: ciemne tło wokół 1 z ciężkim prawym ogonem. (2) log-ratio $\\log(I_2/I_1)$ czerwono-niebieski, symetryczny wokół 0, ale szum per-piksel maskuje zmiany. (3) Smoothed (box-mean 5×5): szum obniżony ok. 5×, dwie zmiany widoczne jako spójne czerwona (góra) i niebieska (dół) plamy. (4) Threshold $|\\Delta| > 0{,}5$: binarna maska — dwie białe plamy zmian + rzadkie false-alarmy.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/change-detection-pipeline-stages.png)\n\nNiezbędne założenia: **ten sam kąt padania** (inaczej zmienia się geometria rozpraszania), **zarejestrowane subpikselowo** sceny (przesunięcie 1 px symuluje zmianę w pasie krawędzi) i ten sam ENL (filtracja przed-log-ratio, jeśli daty różnią się multilookiem). Wielkie zaawansowane operatory (KI/KLD Bovolo & Bruzzone 2005, MAD Singh 1989) i pełne ratio-tests sprowadzają się do tych samych czterech kroków — z tym, że szukają progu adaptacyjnego i mierzą rozbieżność rozkładu, a nie pojedynczego piksela."
+      }
+    },
+    {
+      "id": "implementacja-logratio",
+      "title": "Zaimplementuj `logratio_change_detection`",
+      "description": "Para syntetycznych kafelków SAR (Gamma $L=4$) z dwiema znanymi zmianami. Cel — odtworzyć maskę log-ratio z domyślnymi parametrami i zgodzić się byte-for-byte z referencyjną maską z `/inputs/`.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2005.858458",
+          "title": "A detail-preserving scale-driven approach to change detection in multitemporal SAR images",
+          "kind": "paper",
+          "author": "Francesca Bovolo, Lorenzo Bruzzone",
+          "year": 2005
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **log-ratio change detection** dla pary obrazów intensywności SAR.\n\nFunkcja `logratio_change_detection(I1, I2, win=5, tau=0.5)` zwraca **maskę boolowską** o tym samym kształcie co wejście, gdzie `True` oznacza piksel zaklasyfikowany jako *zmiana*.\n\nAlgorytm:\n\n1. Policz $\\Delta = \\log(I_2 / I_1)$ (dodaj $\\varepsilon = 10^{-6}$ do obu w mianowniku, żeby uniknąć $\\log 0$).\n2. Wygładź $\\Delta$ box-meanem o boku $\\texttt{win}$ (`scipy.ndimage.uniform_filter`, `mode='reflect'`).\n3. Zwróć $|\\Delta_{\\text{smooth}}| > \\tau$.\n\n```\n>>> data = np.load('/inputs/change-detection-sar-pair.npz')\n>>> mask = logratio_change_detection(data['I1'], data['I2'])\n>>> int(mask.sum())\n1733\n```\n\nWejście — para syntetycznych kafelków SAR (192×192, Gamma $L = 4$) z dwiema zmianami wstawionymi po `R_before`: jasny prostokąt (nowa konstrukcja) i ciemny prostokąt (rozbiórka). Maska referencyjna `/inputs/change-detection-expected-mask.npz` została zbudowana dokładnie tym samym wzorem dla `win=5`, `tau=0.5`.\n\nTesty weryfikują: (a) shape + dtype, (b) recall na prawdziwych zmianach ≥ 90 %, (c) na parze *bez* zmiany false-alarm rate jest nikły, (d) wynik zgadza się byte-for-byte z maską referencyjną.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\n\n\ndef logratio_change_detection(I1, I2, win=5, tau=0.5):\n    \"\"\"Log-ratio change detection na parze intensywnosci SAR.\n\n    Zwroc maske bool (shape == I1.shape), True = piksel zaklasyfikowany jako zmiana.\n\n    Algorytm:\n      1) eps = 1e-6;  delta = log((I2 + eps) / (I1 + eps))\n      2) delta_smooth = uniform_filter(delta, size=win, mode='reflect')\n      3) return abs(delta_smooth) > tau\n    \"\"\"\n    I1 = I1.astype(np.float32)\n    I2 = I2.astype(np.float32)\n    # TODO: eps = 1e-6\n    # TODO: delta = np.log((I2 + eps) / (I1 + eps))\n    # TODO: delta_smooth = uniform_filter(delta, size=win, mode='reflect')\n    # TODO: return np.abs(delta_smooth) > tau\n    return np.zeros_like(I1, dtype=bool)\n\n\n# --- Preview: log-ratio change detection na parze SAR ---\nimport matplotlib.pyplot as plt\n\ndata = np.load(\"/inputs/change-detection-sar-pair.npz\")\nI1 = data[\"I1\"]\nI2 = data[\"I2\"]\ntruth = data[\"truth\"]\nmask = logratio_change_detection(I1, I2)\nprint(f\"I1.shape:   {I1.shape}\")\nprint(f\"mask.dtype: {mask.dtype}\")\nprint(f\"detekcji:   {int(mask.sum())}\")\nprint(f\"trafien:    {int((mask & truth).sum())}/{int(truth.sum())}\")\n\nfig, axes = plt.subplots(1, 4, figsize=(11.5, 3.4), constrained_layout=True)\nvmax = float(np.quantile(np.sqrt(np.clip(I1, 0, None)), 0.99))\naxes[0].imshow(np.sqrt(np.clip(I1, 0, None)), cmap=\"gray\", vmin=0, vmax=vmax)\naxes[0].set_title(\"SAR I1 (sqrt)\", fontsize=9)\naxes[0].set_axis_off()\naxes[1].imshow(np.sqrt(np.clip(I2, 0, None)), cmap=\"gray\", vmin=0, vmax=vmax)\naxes[1].set_title(\"SAR I2 (sqrt)\", fontsize=9)\naxes[1].set_axis_off()\naxes[2].imshow(truth, cmap=\"gray\")\naxes[2].set_title(f\"Prawda ({int(truth.sum())} px)\", fontsize=9)\naxes[2].set_axis_off()\naxes[3].imshow(mask, cmap=\"gray\")\naxes[3].set_title(f\"Twoja maska ({int(mask.sum())})\", fontsize=9)\naxes[3].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_bool_mask_with_same_shape",
+            "body": "import numpy as np\ndata = np.load('/inputs/change-detection-sar-pair.npz')\nI1, I2 = data['I1'], data['I2']\nmask = logratio_change_detection(I1, I2)\nassert hasattr(mask, 'shape') and mask.shape == I1.shape, f'shape={getattr(mask, \"shape\", None)}, oczekiwano {I1.shape}'\nassert mask.dtype == np.bool_, f'dtype={mask.dtype}, oczekiwano bool'",
+            "hidden": false
+          },
+          {
+            "name": "recall_at_least_90_percent",
+            "body": "import numpy as np\ndata = np.load('/inputs/change-detection-sar-pair.npz')\nI1, I2, truth = data['I1'], data['I2'], data['truth']\nmask = logratio_change_detection(I1, I2)\ntp = int((mask & truth).sum())\ntotal = int(truth.sum())\nrecall = tp / total\nassert recall >= 0.90, (\n    f'recall = {recall*100:.0f}% ({tp}/{total}); oczekiwano >= 90%. '\n    f'Sprawdz: kierunek nierownosci abs(delta) > tau, mode=\"reflect\" w uniform_filter, '\n    f'i ze logarytm jest po dzieleniu, a nie odejmowaniem.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "low_false_alarm_on_unchanged_pair",
+            "body": "import numpy as np\nrng = np.random.default_rng(123)\nL = 4\nsize = 256\nR = np.full((size, size), 0.30, dtype=np.float32)\n# Para bez zmiany — oba kafelki ten sam R, niezalezny speckle.\nN1 = rng.gamma(L, 1.0 / L, size=R.shape).astype(np.float32)\nN2 = rng.gamma(L, 1.0 / L, size=R.shape).astype(np.float32)\nI1_clean = (R * N1).astype(np.float32)\nI2_clean = (R * N2).astype(np.float32)\nmask = logratio_change_detection(I1_clean, I2_clean, win=5, tau=0.5)\n# Pomin ramke (efekty brzegowe reflect).\ninner = mask[8:-8, 8:-8]\nrate = float(inner.sum()) / inner.size\nassert rate < 0.02, (\n    f'na parze BEZ zmiany false-alarm rate = {rate*100:.2f}%; oczekiwano < 2%. '\n    f'Najczestsza przyczyna: brak wygladzania (uniform_filter pominiete) — '\n    f'lub liczenie operatora roznicowego zamiast log-ratio.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_mask_byte_for_byte",
+            "body": "import numpy as np\ndata = np.load('/inputs/change-detection-sar-pair.npz')\nref = np.load('/inputs/change-detection-expected-mask.npz')['detection']\nmask = logratio_change_detection(data['I1'], data['I2'], win=5, tau=0.5)\nassert mask.shape == ref.shape, f'shape={mask.shape}, ref={ref.shape}'\ndiff = int((mask != ref).sum())\nassert diff == 0, (\n    f'maska rozni sie od referencyjnej w {diff} pikselach. '\n    f'Sprawdz: I2/I1 (nie I1/I2), eps=1e-6 w obu, uniform_filter size=5 mode=\"reflect\", '\n    f'oraz prog abs(delta_smooth) > 0.5.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import uniform_filter\n\n\ndef logratio_change_detection(I1, I2, win=5, tau=0.5):\n    I1 = I1.astype(np.float32)\n    I2 = I2.astype(np.float32)\n    eps = 1e-6\n    delta = np.log((I2 + eps) / (I1 + eps))\n    delta_smooth = uniform_filter(delta, size=win, mode='reflect')\n    return np.abs(delta_smooth) > tau\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/change-detection-sar-before.png",
+            "alt": "Podgląd kafelka SAR I1 (192×192) w sqrt-jasności. Widoczne trzy regiony odbiciowości: ciemne morze (R=0,20) w lewej części, jaśniejsza wegetacja (R=0,45) w prawej górnej, jasne struktury miejskie (R=0,85 dół-środek i R=0,75 lewy-góra) — wszystko speckled rozkładem Gamma L=4.",
+            "caption": "SAR I1 — kafelek z daty 1 (sqrt-brightness)."
+          },
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/change-detection-sar-after.png",
+            "alt": "Podgląd kafelka SAR I2 (192×192) w sqrt-jasności — ten sam obszar, data 2. Cały kafelek wygląda podobnie jak I1 z innym wzorem speckle, ale są dwie zmiany: jasny prostokąt (R=1,20, nowa konstrukcja) w rejonie wegetacji oraz ciemny prostokąt (R=0,18, rozbiórka) w rejonie miejskim.",
+            "caption": "SAR I2 — kafelek z daty 2 (sqrt-brightness)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/change-detection-sar-pair.npz",
+            "filename": "change-detection-sar-pair.npz",
+            "caption": ".npz: klucze `I1` (float32 192×192, intensywność daty 1), `I2` (float32 192×192, intensywność daty 2), `truth` (bool 192×192, prawdziwa maska zmian), `L` (=4). Pracuj na `I1` i `I2`."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/change-detection-expected-mask.npz",
+            "filename": "change-detection-expected-mask.npz",
+            "caption": ".npz: klucze `detection` (bool 192×192 — referencyjna maska log-ratio przy domyślnych parametrach win=5, tau=0.5), `truth` (bool 192×192 — prawdziwe pozycje zmian), `win` (=5), `tau` (=0,5)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/change-detection-expected-mask.png",
+          "alt": "Czarno-biała maska binarna 192×192: czarne tło z dwiema białymi plamami odpowiadającymi dwóm zmianom — większa kleksowata plama u góry (jasna zmiana, ok. 25×40 px) i mniejsza u dołu (ciemna zmiana, ok. 20×30 px) — plus rzadko rozsiane pojedyncze białe piksele false-alarmów (~180 łącznie).",
+          "caption": "Cel: tak ma wyglądać `logratio_change_detection(I1, I2)` z domyślnymi parametrami. Recall 97 % na 1600 prawdziwych pikselach zmian + ~180 false-alarmów rozłożonych po kafelku."
+        },
+        "requiresPackages": [
+          "scipy"
+        ]
+      }
+    },
+    {
+      "id": "quiz-misconceptions",
+      "title": "Sprawdź: dlaczego log, a nie raw difference",
+      "type": "quiz",
+      "data": {
+        "question": "Spójrz na Rys. 1 (histogramy) i wybierz wszystkie **prawdziwe** stwierdzenia o porównaniu trzech operatorów change detection na SAR.",
+        "options": [
+          "Operator $I_2 - I_1$ ma na SAR rozkład bez-zmiany o wariancji rosnącej wraz z lokalną odbiciowością $R$ — *ten sam* próg $\\tau$ jest zatem zbyt liberalny nad jasnym tłem i zbyt konserwatywny nad ciemnym. To strukturalna wada, nie kwestia kalibracji.",
+          "$\\log(I_2/I_1)$ jest matematycznie równoważne $I_2 - I_1$, tylko skalowane — różnica między tymi mapami to stała mnożna.",
+          "Pod $H_0$ (brak zmiany) rozkład $\\log(I_2 / I_1)$ jest w przybliżeniu Gaussowski o średniej zero i wariancji niezależnej od lokalnej odbiciowości — *to* jest powód, dla którego symetryczny próg $|\\Delta| > \\tau$ ma jednorodny sens na całej scenie.",
+          "Iloraz $I_2 / I_1$ rozwiązuje problem mnożności szumu tak samo skutecznie jak log-ratio, bo dzielenie też kasuje czynnik multiplikatywny.",
+          "Difference $I_2 - I_1$ w skali decybeli na SAR jest dokładnie tym, co log-ratio liniowe — z dokładnością do stałej $4{,}34$. Czyli jeśli pracujesz w $\\sigma^0$ w dB, „difference\" *jest* log-ratio."
+        ],
+        "correct": [
+          0,
+          2,
+          4
+        ],
+        "explanation": "**(A) prawda** — wariancja $D = I_2 - I_1$ pod modelem multiplikatywnym to $\\operatorname{Var}(D) = R^2(\\operatorname{Var}(N_1) + \\operatorname{Var}(N_2)) = 2R^2/L$. Skaluje się *kwadratowo* z $R$, więc próg liniowy nie ma jednej dobrej wartości dla całej sceny. To samo widać na Rys. 1 panel (a): ogony rozkładu bez-zmiany (niebieski) są ciężkie i niegaussowskie.\n\n**(C) prawda** — to dokładnie idea log-ratio. $\\log(I_2/I_1) = \\log(R_2/R_1) + \\log(N_2/N_1)$, gdzie $\\log(N_2/N_1)$ ma rozkład w przybliżeniu $\\mathcal{N}(0, \\sigma_L^2)$ niezależny od $R$. Symetryczny próg $|\\Delta| > \\tau$ odpowiada więc rzucaniu tego samego kwantyla rozkładu Gaussa o stałym $\\sigma_L$ na każdym pikselu sceny.\n\n**(E) prawda** — to ważna obserwacja praktyczna: $\\sigma^0_2[\\text{dB}] - \\sigma^0_1[\\text{dB}] = 10\\log_{10}(I_2/I_1) = \\frac{10}{\\ln 10}\\ln(I_2/I_1) \\approx 4{,}34\\,\\Delta$. Operatorzy zewnętrzni nieraz „odejmują dB\" i nazywają to differencingiem — to *jest* log-ratio.\n\n**(B) fałsz** — $\\log$ to nieliniowa transformacja, *nie* skalowanie. $\\log(I_2/I_1)$ nie jest stałą wielokrotnością $I_2 - I_1$ na żadnym pikselu (poza punktem $I_1 = I_2$ gdzie oba są zero).\n\n**(D) fałsz** — $I_2/I_1$ *kasuje* $R$ ($R_2 N_2 / (R_1 N_1) = (R_2/R_1)(N_2/N_1)$), więc rzeczywiście usuwa skalowanie z odbiciowością — ale rozkład $N_2/N_1$ to $F$-Snedecor o ciężkim prawym ogonie i ograniczeniu $[0, \\infty)$. Próg symetryczny nie ma sensu (1 to środek, nie 0), a długi prawy ogon zmusza do różnych progów dla zmian jasnych i ciemnych. Logarytm tej dystrybucji prostuje rozkład do bliskiego Gaussa — *dlatego* log-ratio jest standardem, nie samo ratio.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-tau-win",
+      "title": "Spróbuj: tau i okno wygładzania",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import uniform_filter\nimport matplotlib.pyplot as plt\n\n\ndef logratio_change_detection(I1, I2, win=5, tau=0.5):\n    I1 = I1.astype(np.float32)\n    I2 = I2.astype(np.float32)\n    eps = 1e-6\n    delta = np.log((I2 + eps) / (I1 + eps))\n    delta_smooth = uniform_filter(delta, size=win, mode='reflect')\n    return np.abs(delta_smooth) > tau\n\n\ndata = np.load('/inputs/change-detection-sar-pair.npz')\nI1 = data['I1']\nI2 = data['I2']\ntruth = data['truth']\n\n# Trzy pokretla: prog tau, polowa okna wygladzania, oraz osobny prog dla diff baseline.\ntau = 0.5\nwin = 5\ntau_diff = 0.3\n\nmask_lr = logratio_change_detection(I1, I2, win=win, tau=tau)\ndelta_lr = uniform_filter(\n    np.log((I2.astype(np.float32) + 1e-6) / (I1.astype(np.float32) + 1e-6)),\n    size=win, mode='reflect',\n)\ndiff = uniform_filter((I2 - I1).astype(np.float32), size=win, mode='reflect')\nmask_diff = np.abs(diff) > tau_diff\n\nbg = ~truth\nhits_lr = int((mask_lr & truth).sum())\nfp_lr = int((mask_lr & bg).sum())\nhits_diff = int((mask_diff & truth).sum())\nfp_diff = int((mask_diff & bg).sum())\ntp = int(truth.sum())\nbg_area = int(bg.sum())\nprint(f'tau={tau}  win={win}')\nprint(f'  log-ratio: recall = {hits_lr/tp*100:.0f}%  '\n      f'false-alarms = {fp_lr}  (Pfa = {fp_lr/bg_area:.2e})')\nprint(f'  difference (tau_diff={tau_diff}): recall = {hits_diff/tp*100:.0f}%  '\n      f'false-alarms = {fp_diff}  (Pfa = {fp_diff/bg_area:.2e})')\n\nfig, axes = plt.subplots(1, 4, figsize=(12.5, 3.6), constrained_layout=True)\naxes[0].imshow(truth, cmap='gray')\naxes[0].set_title(f'Prawda ({tp} px)', fontsize=9)\naxes[0].set_axis_off()\nvlr = float(np.quantile(np.abs(delta_lr), 0.99))\naxes[1].imshow(delta_lr, cmap='RdBu_r', vmin=-vlr, vmax=vlr)\naxes[1].set_title('Mapa $\\\\log(I_2/I_1)$ (wygladzona)', fontsize=9)\naxes[1].set_axis_off()\naxes[2].imshow(mask_lr, cmap='gray')\naxes[2].set_title(f'log-ratio mask  recall={hits_lr/tp*100:.0f}%  fp={fp_lr}', fontsize=9)\naxes[2].set_axis_off()\naxes[3].imshow(mask_diff, cmap='gray')\naxes[3].set_title(f'difference mask  recall={hits_diff/tp*100:.0f}%  fp={fp_diff}', fontsize=9)\naxes[3].set_axis_off()\nplt.show()\n",
+        "encouragement": "Podnoś `tau` z 0,3 do 1,0 i obserwuj, jak najpierw znikają false-alarmy, a potem zaczynasz tracić cienkie krawędzie zmian — dla porównania tabela liczy też wariant difference na tej samej parze, byś zobaczył, ile razy więcej fałszywych alarmów daje przy podobnym recall."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1080/01431168908903939",
+      "title": "Digital change detection techniques using remotely-sensed data",
+      "kind": "paper",
+      "author": "Ashbindu Singh",
+      "year": 1989
+    },
+    {
+      "url": "https://doi.org/10.1109/36.225528",
+      "title": "Change detection techniques for ERS-1 SAR data",
+      "kind": "paper",
+      "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+      "year": 1993
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2005.858458",
+      "title": "A detail-preserving scale-driven approach to change detection in multitemporal SAR images",
+      "kind": "paper",
+      "author": "Francesca Bovolo, Lorenzo Bruzzone",
+      "year": 2005
+    },
+    {
+      "url": "https://doi.org/10.1080/01431161.2018.1538590",
+      "title": "A review of change detection in multitemporal SAR images",
+      "kind": "paper",
+      "author": "Yady Tatiana Solano-Correa, Francesca Bovolo, Lorenzo Bruzzone",
+      "year": 2019
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 User Guide (ESA)",
+      "kind": "article"
+    }
+  ]
+}

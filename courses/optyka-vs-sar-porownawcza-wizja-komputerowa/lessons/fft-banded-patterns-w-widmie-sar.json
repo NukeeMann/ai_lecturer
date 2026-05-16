@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "slug": "fft-banded-patterns-w-widmie-sar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m3",
+  "title": "FFT — banded patterns w widmie SAR",
+  "eyebrow": "KRAWĘDZIE, TEKSTURA I WIDMO",
+  "description": "2-D FFT optycznego cameramana vs ten sam cameraman ze speckle Gamma L=4 — i co się dzieje z widmem między tymi dwoma światami. Zobaczysz, dlaczego speckle „rozsmarowuje\" energię po wszystkich częstotliwościach, dlaczego klasyczny low-pass jest na SAR słabym narzędziem i jakie banded patterns dokleja w widmie procesor chirp range/azimuth na realnych produktach Sentinel-1.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "intro-fft-on-images",
+      "title": "Co liczy 2-D FFT obrazu i czego się spodziewamy na optyce",
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/reference/routines.fft.html",
+          "title": "numpy.fft documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Fast_Fourier_transform",
+          "title": "Fast Fourier transform — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zanim zobaczymy, jak SAR „rozsmarowuje\" energię w widmie, ustalmy fundament: **2-D dyskretna transformata Fouriera** zamienia obraz w dziedzinie przestrzennej ($H\\times W$ pikseli) na obraz w dziedzinie częstotliwości tego samego kształtu. Każdy piksel widma $F(f_x, f_y)$ to **zespolona** waga jednej fali sinusoidalnej o częstotliwości $(f_x, f_y)$ [cykli/px], która dodaje się do oryginału.\n\nOperacyjnie zawsze stosujemy tę samą trójcę:\n\n1. `F = np.fft.fft2(img)` — szybkie 2-D FFT obrazu rzeczywistego (wynik jest zespolony).\n2. `F = np.fft.fftshift(F)` — zero-frequency (**DC** — średnia jasność) wędruje z rogu do środka obrazu. Bez tego kroku widmo jest „rozbite\" na cztery rogi i nieczytelne.\n3. `np.log1p(np.abs(F))` — przejście na log-skalę, bo `|F|` rozpina się przez 4–5 rzędów wielkości.\n\n![Dwa panele obok siebie, dzielące wspólną kolorową paletę 'magma' na panelu prawym. Lewy panel: czysty cameraman 256×256 w skali szarości — kontrastowa sylwetka operatora przy statywie, jaśniejsze niebo, ciemniejsza ziemia, osie z kolumną/wierszem w pikselach. Prawy panel: log(1 + |F|) obrazu cameraman po fftshift — jasna 'gwiazda' w środku otoczona promieniście rozłożonymi prążkami sięgającymi do brzegów; cyjanowa pętla i strzałka wskazują punkt (0, 0) cykli/px podpisany 'DC (średnia jasność)'; osie f_x i f_y od -0.5 do 0.5 cykli/px; jasnoszara siatka.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/fft-cameraman-and-spectrum-intro.png)\n\nDla obrazu naturalnego (foto, scena Sentinel-2) widmo ma **strukturę 1/f**: większość energii siedzi blisko DC i spada wraz z $r = \\sqrt{f_x^2 + f_y^2}$ — bo świat optyczny składa się głównie z dużych, spójnych regionów. Ostre krawędzie i tekstura dorzucają wysokie częstotliwości, ale jako *odstępstwo* od dominującego trendu 1/f. To intuicja, którą obalimy w następnej sekcji — obraz SAR z tej samej sceny ma fundamentalnie inny rozkład energii."
+      }
+    },
+    {
+      "id": "plot-optyka-vs-sar-widmo",
+      "title": "Widmo amplitudy: optyka vs SAR cameraman side-by-side",
+      "description": "Po lewej obraz w dziedzinie przestrzennej, po prawej `log(1 + |F|)` po `fftshift`. Ten sam cameraman, raz czysty, raz po Gamma speckle L=4 — widać gołym okiem, że widmo SAR wypełnia ramkę aż do brzegów.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/fft-banded-patterns-w-widmie-sar-1.png",
+        "alt": "Cztery panele w siatce 2×2 z wspólnym tytułem 'Widmo amplitudy: optyka koncentruje energie wokol DC, SAR rozsmarowuje ja rownomiernie'. Górny rząd, lewo: czysty cameraman 256×256 w skali szarości — sylwetka operatora przy statywie, niebo, ziemia, osie kolumna/wiersz w pikselach. Górny rząd, prawo: log(1 + |F|) tego obrazu po fftshift, kolorystyka magma, osie f_x/f_y od -0.5 do 0.5 cykli/px, wspólna jasna 'gwiazda' wokół DC i ostry promienisty spadek 1/f w kierunku brzegów, prążki krzyżowe od krawędzi sceny, podpis 'log(1 + |F(optyka)|) — gladki spadek 1/f wokol DC', pasek koloru po prawej. Dolny rząd, lewo: ten sam cameraman po Gamma speckle L=4 — wyraźna ziarnistość pokrywająca cały obraz, sylwetka dalej widoczna ale tonująca w szumie. Dolny rząd, prawo: log(1 + |F|) speckled cameramana, ta sama paletka, ten sam zakres — środek nadal jaśniejszy, ale całe tło wokół jest wyraźnie jaśniejsze niż na optyce, ramka brzegowa wypełniona energią, podpis 'log(1 + |F(SAR)|) — energia rozlana po wszystkich czestotliwosciach'. Wszędzie jasnoszara siatka na widmach.",
+        "caption": "Rys. 1. Ten sam cameraman widziany dwoma oczami: optyka skupia energię wokół DC i ma ostry spadek 1/f; speckle podnosi cały „dywan\" wysokich częstotliwości, więc widmo wypełnia ramkę. Mediany log|F| różnią się o ~0.9 jednostki (2.46 → 3.33).",
+        "sourceCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\nROOT = (\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa\"\n)\ndata = np.load(ROOT + \"/assets/inputs/sar-classical-cameraman-clean.npz\")\nclean = data[\"clean\"].astype(np.float32)\nspeckled = data[\"speckled\"].astype(np.float32)\nL = int(data[\"L\"])\n\ndef log_spectrum(img):\n    F = np.fft.fftshift(np.fft.fft2(img))\n    return np.log1p(np.abs(F)).astype(np.float32)\n\nspec_clean = log_spectrum(clean)\nspec_sar = log_spectrum(speckled)\nvmax = float(max(spec_clean.max(), spec_sar.max()))\nvmin = 0.0\nH, W = clean.shape\n\nfig, axes = plt.subplots(2, 2, figsize=(10.4, 10.2), constrained_layout=True)\n\nax = axes[0, 0]\nax.imshow(clean, cmap=\"gray\", vmin=0, vmax=1, extent=(0, W - 1, H - 1, 0))\nax.set_title(\"Optyka — czysty cameraman (256×256)\", fontsize=11)\nax.set_xlabel(\"kolumna [px]\")\nax.set_ylabel(\"wiersz [px]\")\nax.grid(False)\n\nax = axes[0, 1]\nim0 = ax.imshow(\n    spec_clean,\n    cmap=\"magma\",\n    vmin=vmin,\n    vmax=vmax,\n    extent=(-0.5, 0.5, -0.5, 0.5),\n    origin=\"upper\",\n)\nax.set_title(\"log(1 + |F(optyka)|) — gladki spadek 1/f wokol DC\", fontsize=11)\nax.set_xlabel(\"czestotliwosc f_x [cykli/px]\")\nax.set_ylabel(\"czestotliwosc f_y [cykli/px]\")\nax.grid(True, alpha=0.25, color=\"white\", linestyle=\":\")\nfig.colorbar(im0, ax=ax, fraction=0.046, pad=0.04, label=\"log(1+|F|) [-]\")\n\nax = axes[1, 0]\nax.imshow(speckled, cmap=\"gray\", vmin=0, vmax=1, extent=(0, W - 1, H - 1, 0))\nax.set_title(f\"SAR-podobne — cameraman po Gamma speckle (L={L})\", fontsize=11)\nax.set_xlabel(\"kolumna [px]\")\nax.set_ylabel(\"wiersz [px]\")\nax.grid(False)\n\nax = axes[1, 1]\nim1 = ax.imshow(\n    spec_sar,\n    cmap=\"magma\",\n    vmin=vmin,\n    vmax=vmax,\n    extent=(-0.5, 0.5, -0.5, 0.5),\n    origin=\"upper\",\n)\nax.set_title(\"log(1 + |F(SAR)|) — energia rozlana po wszystkich czestotliwosciach\", fontsize=11)\nax.set_xlabel(\"czestotliwosc f_x [cykli/px]\")\nax.set_ylabel(\"czestotliwosc f_y [cykli/px]\")\nax.grid(True, alpha=0.25, color=\"white\", linestyle=\":\")\nfig.colorbar(im1, ax=ax, fraction=0.046, pad=0.04, label=\"log(1+|F|) [-]\")\n\nfig.suptitle(\n    \"Widmo amplitudy: optyka koncentruje energie wokol DC, SAR rozsmarowuje ja rownomiernie\",\n    fontsize=12,\n)\n\nfig.savefig(\n    ROOT + \"/assets/plots/fft-banded-patterns-w-widmie-sar-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\nplt.close(fig)\nprint(\"OK\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "speckle-flat-spectrum",
+      "title": "Dlaczego widmo SAR jest niemal białe",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A tutorial on speckle reduction in SAR images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        },
+        {
+          "url": "https://doi.org/10.1364/JOSA.66.001145",
+          "title": "Some fundamental properties of speckle",
+          "kind": "paper",
+          "author": "Joseph W. Goodman",
+          "year": 1976
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Speckle nie jest „klasycznym szumem\", ale ma jedną własność szumową, której nie sposób ominąć: jego widmo jest niemal **białe** (płaskie). Intuicja jest fizyczna — speckle to interferencja koherentna setek niezależnych rozpraszaczy w komórce rozdzielczości; sąsiednie piksele są w przybliżeniu **nieskorelowane**, więc autokorelacja jest deltą, a transformata Fouriera delty jest stała.\n\nKonsekwencje dla widma:\n\n- **1/f optyki przestaje obowiązywać.** Tam, gdzie czysty cameraman ma w wysokich częstotliwościach ledwie kilka procent energii środka, na speckled cameranie te same pierścienie świecą prawie tak samo jak DC. Wyobraź sobie pofalowaną kołdrę naciągniętą na piasek — kontur sceny dalej jest, ale podstawa widma została podniesiona na całej szerokości.\n- **Niskoczęstotliwościowe filtrowanie wycina sygnał razem z szumem.** Jeśli zerujesz wszystko poza centralnym dyskiem (gładki low-pass), na optyce wracasz do rozmytej wersji sceny — na SAR znika jednocześnie speckle *i* tekstura terenu, bo obie żyły we wspólnym ogonie widma.\n- **Mediana log-widma rośnie.** To prosta, ilościowa diagnostyka: liczysz `np.median(log_spectrum(img))` na optyce i na SAR — różnica typowo wynosi $0.5$–$1.0$ jednostki na czystym cameranie vs $L = 4$.\n\n![Wykres profilu radialnego widma: oś X promień częstotliwości r = |k| w cyklach/256 px (od 0 do 128), oś Y średnia |F| w pierścieniu w skali logarytmicznej (od ~10^-3 do ~10^4). Niebieska krzywa „optyka (czysty cameraman)\" startuje wysoko (~5000 przy r=1) i monotonicznie spada do ~10 przy r=128 — klasyczny trend 1/f. Czerwona krzywa „SAR (Gamma speckle, L=4)\" startuje na podobnym poziomie, ale od r ≈ 30 wypłaszcza się i utrzymuje na poziomie ~25–30 aż do krańca — energia szumu speckle wypełnia wysokie częstotliwości.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/fft-radial-spectrum-profile.png)\n\nTo dlatego klasyczne filtry liniowe (Gauss) tłumiące „wysokie częstotliwości\" są na SAR tak destrukcyjne — usuwasz w nich więcej tekstury terenu niż szumu."
+      }
+    },
+    {
+      "id": "quiz-czyje-widmo",
+      "title": "Sprawdź: czyje to widmo?",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na dwa log-widma 256×256 wyrenderowane po `fftshift`. Widmo A ma jasną „gwiazdę\" w środku, gładkie pierścienie spadające ku brzegom, brzeg ramki praktycznie czarny. Widmo B ma jasny środek, ale poza centrum jest jasne równomiernie aż do krawędzi — wygląda jakby ktoś nałożył gęsty piasek na całe widmo. **Które z poniższych zdań poprawnie identyfikuje i wyjaśnia tę różnicę?** Wybierz jedną odpowiedź.",
+        "options": [
+          "Widmo A jest z obrazu SAR (szum mnożny zawęża dynamikę widma), widmo B z optyki (więcej szczegółów = więcej wysokich częstotliwości).",
+          "Widmo A jest z optyki (rozkład 1/f naturalnego obrazu), widmo B z SAR (speckle ma prawie białe widmo — sąsiednie piksele są nieskorelowane, więc PSD jest płaska). Liniowy low-pass na B ucina speckle, ale razem z nim tekstura terenu, bo obie wypełniają ten sam ogon widma.",
+          "Oba widma muszą być z SAR — naturalna optyka ma równomiernie rozłożoną energię, a SAR ma zawsze ostre piki na chirp'ie range i azimuth.",
+          "To pułapka — bez `fftshift` nie da się rozróżnić tych dwóch widm; po `fftshift` wyglądają identycznie dla obu modalności."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Naturalne obrazy mają strukturę **1/f**: energia jest skumulowana przy DC i monotonicznie spada z promieniem częstotliwości — stąd „gwiazda\" w widmie A. Speckle natomiast pochodzi z interferencji setek niezależnych rozpraszaczy, której autokorelacja jest niemal deltą; transformata Fouriera delty jest stała, więc PSD speckle jest **biała** — równomierne tło widma B. Drugi człon poprawnej odpowiedzi (low-pass tnie sygnał razem z szumem) jest centralnym powodem, dla którego klasyczne filtry liniowe są na SAR słabe — to motywacja Lee/Frost/NL-means z modułu 2. Dystraktor (A) myli intuicję dynamiki widma z jego rozkładem przestrzennym. (C) myli speckle z efektem chirpu range/azimuth — pasma chirpu pojawiają się dopiero na realnych produktach SAR (Sentinel-1 GRD), nie na dydaktycznym Gamma-speckle. (D) jest fałszywe — `fftshift` zmienia tylko porządek, a nie wartości pikseli widma.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "code-log-spectrum",
+      "title": "Zaimplementuj `log_spectrum` i zmierz „spłaszczenie\" widma SAR",
+      "description": "Po lewej masz cameraman (czysty i ze speckle L=4) zapisane w jednym .npz. Po prawej — referencyjny render obu log-widm, jaki powinna wyprodukować Twoja funkcja. Klucz pedagogiczny: zwróć uwagę na medianę log|F| i wskaźnik outer/inner — to ilościowa miara „spłaszczenia\", o której mówiliśmy w teorii.",
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/reference/routines.fft.html",
+          "title": "numpy.fft documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Fast_Fourier_transform",
+          "title": "Fast Fourier transform — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `log_spectrum(img)` zwracającą **2-D mapę log(1+|F|)** widma obrazu, z DC w środku pikseli (`fftshift`):\n\n```\nF = np.fft.fft2(img.astype(np.float32))\nF_shift = np.fft.fftshift(F)\nreturn np.log1p(np.abs(F_shift)).astype(np.float32)\n```\n\nWymagania:\n\n- wynik ma ten sam kształt co `img`,\n- DC (czyli pierwotne `F[0, 0]`) ląduje **w pikselu `[H//2, W//2]`** po `fftshift`,\n- typ wyjścia: `float32` (nie complex i nie int).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\n\ndef log_spectrum(img):\n    \"\"\"Zwroc log(1 + |F|) gdzie F = fftshift(fft2(img)).\n\n    Wejscie: img -- 2D np.ndarray float lub uint8.\n    Wyjscie: float ndarray o tym samym ksztalcie co img.\n             DC (czestotliwosc 0,0) MUSI byc w pikselu [H//2, W//2].\n    \"\"\"\n    # TODO 1: rzutuj img na float32, jesli jeszcze nim nie jest.\n    # TODO 2: policz F = np.fft.fft2(...) i F_shift = np.fft.fftshift(F).\n    # TODO 3: zwroc np.log1p(np.abs(F_shift)) jako float32.\n    return np.zeros_like(img, dtype=np.float32)\n\n\n# --- Preview: porownanie widma optyki i SAR-podobnego cameramana ---\ndata = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = data[\"clean\"].astype(np.float32)\nspeckled = data[\"speckled\"].astype(np.float32)\nL = int(data[\"L\"])\n\nA_clean = log_spectrum(clean)\nA_spk = log_spectrum(speckled)\n\nprint(f\"clean    shape={A_clean.shape}, dtype={A_clean.dtype}\")\nprint(f\"speckled shape={A_spk.shape},  dtype={A_spk.dtype}\")\nprint(f\"clean    median(log|F|) = {float(np.median(A_clean)):.3f}\")\nprint(f\"speckled median(log|F|) = {float(np.median(A_spk)):.3f}  (powinno byc wyzsze - bialy szum)\")\n\n# Radial profile - srednia |F| w pierscieniach o stalym promieniu.\nH, W = A_clean.shape\nyy, xx = np.indices((H, W))\nr = np.hypot(yy - H / 2, xx - W / 2).astype(int)\nn_bins = min(H, W) // 2\nprof_c = np.array([A_clean[r == k].mean() for k in range(n_bins)])\nprof_s = np.array([A_spk[r == k].mean() for k in range(n_bins)])\n\n# Empiryczny wskaznik \"splaszczenia\": stosunek (outer / inner).\ninner = slice(H // 2 - 16, H // 2 + 16), slice(W // 2 - 16, W // 2 + 16)\nouter = slice(0, 8), slice(0, 8)\nratio_clean = float(A_clean[outer].mean() / A_clean[inner].mean())\nratio_spk = float(A_spk[outer].mean() / A_spk[inner].mean())\nprint(f\"clean    outer/inner = {ratio_clean:.3f}  (1/f spada -> niska wartosc)\")\nprint(f\"speckled outer/inner = {ratio_spk:.3f}  (speckle = plaskie widmo -> wysoka)\")\n\nfig, axes = plt.subplots(1, 2, figsize=(9.0, 4.4), constrained_layout=True)\nvmax = float(max(A_clean.max(), A_spk.max()))\nfor ax, A, label, median in zip(\n    axes, [A_clean, A_spk], [\"optyka\", f\"SAR (Gamma L={L})\"],\n    [float(np.median(A_clean)), float(np.median(A_spk))],\n):\n    im = ax.imshow(A, cmap=\"magma\", vmin=0.0, vmax=vmax,\n                    extent=(-0.5, 0.5, -0.5, 0.5), origin=\"upper\")\n    ax.set_title(f\"log_spectrum({label})\\nmediana = {median:.2f}\", fontsize=10)\n    ax.set_xlabel(\"f_x [cykli/px]\")\n    ax.set_ylabel(\"f_y [cykli/px]\")\n    ax.grid(True, alpha=0.25, color=\"white\", linestyle=\":\")\nfig.colorbar(im, ax=axes[1], fraction=0.046, pad=0.04, label=\"log(1+|F|) [-]\")\nfig.suptitle(\"Twoj wynik powinien wygladac jak referencyjne 'fft-spectrum-expected.png'\", fontsize=11)\nplt.show()\n",
+        "tests": [
+          {
+            "name": "constant_image_has_dc_peak_at_center",
+            "body": "import numpy as np\nout = log_spectrum(np.ones((8, 8)))\nassert out.shape == (8, 8), f'ksztalt {out.shape}, oczekiwano (8, 8)'\n# Dla obrazu samych jedynek |F[0,0]| = N*M = 64, reszta 0.\n# Po fftshift DC siedzi w [N//2, M//2] = [4, 4].\npeak = np.unravel_index(int(np.argmax(out)), out.shape)\nassert peak == (4, 4), f'peak {peak}, oczekiwano (4, 4) (DC po fftshift)'\nimport math\nassert abs(float(out[4, 4]) - math.log1p(64)) < 1e-3, (\n    f'log(1+64) ~ 4.174; dostalem {float(out[4, 4]):.4f}'\n)\n",
+            "hidden": false
+          },
+          {
+            "name": "preserves_shape_and_returns_float",
+            "body": "import numpy as np\nfor shp in [(16, 16), (32, 16), (8, 24)]:\n    img = np.random.default_rng(0).random(shp).astype(np.float32)\n    out = log_spectrum(img)\n    assert out.shape == shp, f'shape mismatch dla {shp}: got {out.shape}'\n    assert np.issubdtype(out.dtype, np.floating), (\n        f'dtype {out.dtype}, oczekiwano float (np.log1p(|F|))'\n    )\n    assert np.all(np.isfinite(out)), 'wynik zawiera nan/inf'\n",
+            "hidden": true
+          },
+          {
+            "name": "single_sinusoid_lands_at_known_frequency",
+            "body": "import numpy as np\n# cos(2pi * k * x / N) rozszerzony na wszystkie wiersze.\n# Po fftshift dwa symetryczne piki przy (H//2, W//2 +/- k).\nN = 16\nk = 3\nrow = np.cos(2 * np.pi * k * np.arange(N) / N)\nimg = np.tile(row, (N, 1)).astype(np.float32)\nout = log_spectrum(img)\n# Dwa najwieksze piksele powinny lezec dokladnie w (8, 5) i (8, 11).\nflat = np.argsort(out, axis=None)[::-1]\ntop2 = sorted(np.unravel_index(int(i), out.shape) for i in flat[:2])\nassert top2 == [(8, 5), (8, 11)], (\n    f'piki sinusoidalne {top2}, oczekiwano [(8, 5), (8, 11)] - upewnij sie ze fftshift jest na fft2, a nie odwrotnie'\n)\n",
+            "hidden": true
+          },
+          {
+            "name": "speckle_has_flatter_outer_inner_ratio_than_optics",
+            "body": "import numpy as np\ndata = np.load('/inputs/sar-classical-cameraman-clean.npz')\nclean = data['clean'].astype(np.float32)\nspeckled = data['speckled'].astype(np.float32)\nA_c = log_spectrum(clean)\nA_s = log_spectrum(speckled)\nH, W = A_c.shape\ninner_c = A_c[H//2-16:H//2+16, W//2-16:W//2+16].mean()\nouter_c = A_c[:8, :8].mean()\ninner_s = A_s[H//2-16:H//2+16, W//2-16:W//2+16].mean()\nouter_s = A_s[:8, :8].mean()\nratio_c = float(outer_c / inner_c)\nratio_s = float(outer_s / inner_s)\nassert ratio_c < 0.45, (\n    f'optyka outer/inner = {ratio_c:.3f}, oczekiwano < 0.45 (1/f trend)'\n)\nassert ratio_s > 0.5, (\n    f'speckled outer/inner = {ratio_s:.3f}, oczekiwano > 0.5 (plaskie widmo speckle)'\n)\nassert ratio_s > ratio_c, (\n    f'spk={ratio_s:.3f} musi byc > optyka={ratio_c:.3f}'\n)\n",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef log_spectrum(img):\n    arr = np.asarray(img, dtype=np.float32)\n    F = np.fft.fft2(arr)\n    F_shift = np.fft.fftshift(F)\n    return np.log1p(np.abs(F_shift)).astype(np.float32)\n",
+        "inputs": [
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/sar-classical-cameraman-clean.npz",
+            "filename": "sar-classical-cameraman-clean.npz",
+            "caption": ".npz z kluczami 'clean' (256×256 float32, czysty cameraman), 'speckled' (256×256 float32, ten sam cameraman po Gamma multi-look L=4) i 'L' (skalar)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/fft-spectrum-expected.png",
+          "alt": "Dwa panele log-widm 256×256 obok siebie, paletka magma, osie f_x/f_y w cyklach na piksel od -0.5 do 0.5, jasnoszara siatka, wspólny pasek koloru po prawej. Lewy panel 'log_spectrum(optyka), mediana = 2.46' — jasna gwiazda 1/f w środku, ostro spadająca ku ciemnym brzegom. Prawy panel 'log_spectrum(SAR), mediana = 3.33' — jasny środek, ale tło wokół jest wyraźnie jaśniejsze niż na optyce, wypełnia widmo aż do brzegów.",
+          "caption": "Cel: tak ma wyglądać `log_spectrum(clean)` vs `log_spectrum(speckled)`. Mediana widma SAR jest wyraźnie wyższa — to ilościowa miara „spłaszczenia\"."
+        }
+      }
+    },
+    {
+      "id": "banded-patterns",
+      "title": "Banded patterns: pasmo chirpu range i azimuth w realnym SAR",
+      "sources": [
+        {
+          "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+          "title": "Digital Processing of Synthetic Aperture Radar Data — Chapter 5",
+          "kind": "book",
+          "author": "Ian G. Cumming and Frank H. Wong",
+          "year": 2005
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira et al.",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Prawdziwy obraz SAR (np. Sentinel-1 GRD tile) ma w widmie coś więcej niż tylko biały szum: widać w nim **prostokątne, „prążkowane\" struktury** — pamiątkę po sposobie, w jaki obraz powstał. Procesor SAR przefiltrowuje surowe echo *liniowym chirpem* w kierunku **range** i drugim chirpem w kierunku **azimuth**. Każdy z tych chirpów ma skończone pasmo — i to pasmo zostawia w widmie wyraźne, prostokątne „kasety\" o nieziarnistym wnętrzu.\n\nTrzy podpisy spektralne, które warto rozpoznawać na pierwszy rzut oka:\n\n- **Pasmo chirpu range** (pozioma kaseta) — szerokość ~ $B_r / f_s$, gdzie $B_r$ to pasmo chirpu, a $f_s$ częstotliwość próbkowania. Granica jest ostra, bo poza pasmem chirp nie wnosił energii.\n- **Pasmo anteny azimuth** (pionowa kaseta) — szerokość ~ $f_d / \\text{PRF}$, ograniczone wzorcem doppler'owskim wiązki antenowej. Wnętrze tej kasety nie jest jednolite — często zawiera lekki gradient od centralnego doppler'a (zero-doppler) ku krawędziom.\n- **„Rynna\" oversamplingu** — wąski jasny pas tuż przy krawędziach kaset, jeśli SAR był nadpróbkowany względem swojego pasma (`oversampling factor > 1`). Po multi-lookingu znika.\n\n![Anatomia widma rzeczywistego SAR (synthetic illustration), wycinek log|F| w paletce magma na tle czarnego prostokąta. W widmie widać centralny jasny obszar otoczony szumem speckle. Pozioma jasna kaseta („pasmo CHIRPU\", range) i pionowa jasna kaseta („pasmo ANTENY\", azimuth) krzyżują się w centrum tworząc charakterystyczny prostokątny stempel. Wzdłuż krawędzi obu kaset widać jaśniejszą wąską „rynnę\" („gutter oversamplingu\"). Trzy podpisy żółtą czcionką wskazują strzałkami każdą z trzech struktur. Osie f_x i f_y w cyklach/px od -0.25 do 0.25.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/fft-sar-spectrum-signature-annotated.png)\n\nNa dydaktycznych przykładach z syntetycznego speckle (jak nasz cameraman Gamma L=4) **nie** zobaczysz tych pasm — bo procesowy chirp range/azimuth dokleja się dopiero na realnych produktach SAR. Na Sentinel-1 GRD pojawia się od razu i jest pierwszym sygnałem, że patrzysz na obraz radarowy. Wzrokowo: jeśli widmo wygląda jak prostokątny stempel z pierścieniem 1/f w środku — to SAR. Jeśli wygląda jak gwiazda 1/f wypełniająca całą kwadratową ramkę — to optyka."
+      }
+    },
+    {
+      "id": "sandbox-lowpass-vs-bandstop",
+      "title": "Pobaw się: low-pass na widmie optyki vs SAR",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef log_spectrum(img):\n    F = np.fft.fftshift(np.fft.fft2(img.astype(np.float32)))\n    return np.log1p(np.abs(F)).astype(np.float32)\n\n\ndef lowpass_filter(img, cutoff_frac):\n    \"\"\"Idealny low-pass: zachowaj tylko pierscien o promieniu <= cutoff.\"\"\"\n    F = np.fft.fftshift(np.fft.fft2(img.astype(np.float32)))\n    H, W = img.shape\n    yy, xx = np.indices((H, W))\n    r = np.hypot(yy - H / 2, xx - W / 2)\n    r_max = min(H, W) / 2\n    mask = (r <= cutoff_frac * r_max).astype(np.float32)\n    F_filtered = F * mask\n    return np.real(np.fft.ifft2(np.fft.ifftshift(F_filtered)))\n\n\ndata = np.load(\"/inputs/sar-classical-cameraman-clean.npz\")\nclean = data[\"clean\"].astype(np.float32)\nspeckled = data[\"speckled\"].astype(np.float32)\n\n# Sprobuj rozne wartosci cutoff_frac w [0.05, 1.0].\ncutoff_frac = 0.20\n\nclean_lp = lowpass_filter(clean, cutoff_frac)\nspk_lp = lowpass_filter(speckled, cutoff_frac)\n\n# Ile MSE zostalo po filtracji wzgledem clean?\nmse_clean = float(((clean - clean_lp) ** 2).mean())\nmse_spk = float(((clean - spk_lp) ** 2).mean())\nprint(f\"cutoff_frac = {cutoff_frac:.2f}\")\nprint(f\"  MSE(clean, lowpass(clean))    = {mse_clean:.4f}  (sygnal stracony)\")\nprint(f\"  MSE(clean, lowpass(speckled)) = {mse_spk:.4f}  (resztkowy szum + strata sygnalu)\")\n\nfig, axes = plt.subplots(2, 3, figsize=(9.6, 7.2), constrained_layout=True)\nfor ax, img, title in zip(\n    axes[0], [clean, clean_lp, log_spectrum(clean_lp)],\n    [\"optyka in\", f\"optyka lowpass r<={cutoff_frac:.2f}\", \"log|F| po filtracji\"],\n):\n    if \"log\" in title:\n        ax.imshow(img, cmap=\"magma\", origin=\"upper\")\n    else:\n        ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(title, fontsize=10)\n    ax.set_axis_off()\n\nfor ax, img, title in zip(\n    axes[1], [speckled, spk_lp, log_spectrum(spk_lp)],\n    [\"SAR in\", f\"SAR lowpass r<={cutoff_frac:.2f}\", \"log|F| po filtracji\"],\n):\n    if \"log\" in title:\n        ax.imshow(img, cmap=\"magma\", origin=\"upper\")\n    else:\n        ax.imshow(img, cmap=\"gray\", vmin=0, vmax=1)\n    ax.set_title(title, fontsize=10)\n    ax.set_axis_off()\nplt.show()\n",
+        "encouragement": "Zacznij od `cutoff_frac = 0.20` i obserwuj: na optyce nawet odcięcie 80% pierścieni wysokich częstotliwości daje rozsądnie wyglądający rozmyty obraz; na SAR ten sam filtr tnie tekstury terenu razem ze speckle. Spróbuj `0.05`, `0.50` i `0.95` — zobacz, gdzie naprawdę żyje sygnał, a gdzie szum, i przekonaj się że na SAR ta granica praktycznie nie istnieje."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://us.artechhouse.com/Digital-Processing-of-Synthetic-Aperture-Radar-Data-Algorithms-and-Implementation-P1037.aspx",
+      "title": "Digital Processing of Synthetic Aperture Radar Data — Chapter 5",
+      "kind": "book",
+      "author": "Ian G. Cumming and Frank H. Wong",
+      "year": 2005
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Fast_Fourier_transform",
+      "title": "Fast Fourier transform — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/reference/routines.fft.html",
+      "title": "numpy.fft documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira et al.",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A tutorial on speckle reduction in SAR images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    }
+  ]
+}

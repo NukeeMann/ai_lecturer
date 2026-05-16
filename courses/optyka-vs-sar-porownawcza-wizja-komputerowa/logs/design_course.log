@@ -1,0 +1,63 @@
+[system init claude-opus-4-7]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/design_course/SKILL.md)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	# Research: Optyka vs SAR — Porównawcza Wizja Komputerowa
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← 1	# Sources: Optyka vs SAR — Porównawcza Wizja Komputerowa
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/course.ts)
+← 1	import { z } from 'zod';
+I have all the context. Now let me check for any user-uploaded sources and look at the slugify rules.
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wi…)
+← Exit code 2
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/server/paths.ts)
+← 1	import path from 'node:path';
+I have all the context I need. The course is "extensive" (target 20-30 lessons, 4-5 modules). The draft has 9 modules / 31 lessons, which is too fragmented per the sizing rules. I'll consolidate to 6 modules while keeping every lesson title verbatim (so no sources.md heading renames needed).
+Let me write the course.json.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/course.json (file state is current in your context — no need to Read it back)
+Now let me validate the course.json against CourseSchema and verify slugify outputs match what I derived.
+→ Bash(command: npx tsx -e "
+import { CourseSchema } from './src/lib/schemas/course';
+import { s…)
+← Exit code 1
+JSON parse error — the m6 summary contains an unescaped ASCII `"` inside a Polish quotation. Fixing it to use the proper closing quote `”`.
+→ Edit(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← The file /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/course.json has been updated successfully. (file state is current in your context — no need to Read it…
+→ Bash(command: npx tsx -e "
+import { CourseSchema } from './src/lib/schemas/course';
+import { s…)
+← Exit code 1
+Only one slug mismatch — `ł` doesn't decompose via NFKD so it gets stripped, not mapped to "l". Fixing.
+→ Edit(file_path: /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-kom…)
+← The file /home/nukeemann/projects/ai_lecturer/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/course.json has been updated successfully. (file state is current in your context — no need to Read it…
+→ Bash(command: npx tsx -e "
+import { CourseSchema } from './src/lib/schemas/course';
+import { C…)
+← SPEC OK
+All validation passes. Let me verify every lesson title still has its matching `## ` heading in sources.md (since I kept all titles 1:1 with the draft, this should hold automatically).
+→ Bash(command: npx tsx -e "
+import fs from 'node:fs';
+const slug = 'optyka-vs-sar-porownawcza-w…)
+← All 31 lesson titles have matching ## headings in sources.md
+Confirming no writes outside the course directory.
+→ Bash(command: git status --short)
+← ?? courses/optyka-vs-sar-porownawcza-wizja-komputerowa/
+Done. Summary of the architect pass:
+**Output**: `/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/course.json` — validates clean against `CourseSchema`.
+**Shape**:
+- **6 modules / 31 lessons / ~8.6h wall-clock** (fits `extensive` 5–10h band).
+- Consolidated the draft's 9 modules into 6 to stay closer to the sizing rule (4–5 modules / 5–7 per module for `extensive`):
+  - m1 *Fundamenty SAR i anatomia piksela* merges draft Mod 1 (formacja + speckle) + Mod 2 (zespolone / polarymetria / formaty) → 7 lessons
+  - m2 *Filtracja — klasyka kontra speckle* = draft Mod 3 → 4 lessons
+  - m3 *Krawędzie, tekstura i widmo* merges draft Mod 4 + the FFT lesson from Mod 5 → 4 lessons
+  - m4 *Segmentacja, detekcja obiektów i zmian* merges remaining Mod 5 + all of Mod 6 → 7 lessons
+  - m5 *InSAR, polarymetria i deep learning w przeglądarce* merges Mod 7 + Mod 8 → 5 lessons
+  - m6 *Capstone — porównawcza analiza portu* = Mod 9 → 4 lessons
+**No lesson renames** — every lesson title is verbatim from `course-spec.draftStructure`, so all 31 `## <Lesson title>` headings in `sources.md` still resolve. `sources.md` was not touched.
+**Schema**: `schemaVersion: 1`, `accentColor: "indigo"`, `icon: "satellite"`, all 31 lesson slugs match `slugify(title)` and are unique (note: `ł` doesn't NFKD-decompose, so `sygnał` slugifies to `sygna`).
+**No files written under `scripts/ralph/`.**
+[result success (316.4s)]

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "slug": "dekompozycja-pauli-pseudo-rgb-dla-sar",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m5",
+  "title": "Dekompozycja Pauli — pseudo-RGB dla SAR",
+  "eyebrow": "INSAR I POLARIMETRIA",
+  "description": "Surowa formula Pauli (R=|HH-VV|, G=|HV+VH|, B=|HH+VV|) to dopiero polowa roboty — bez multi-look averaging, percentile clip i korekcji gamma quicklook tonie w speckle i ogonach rozkladu. W tej lekcji skladasz pelny pipeline produkcyjny i porownujesz, co tracisz, gdy z quad-pol HH/HV/VV/VH zostaje tylko dual-pol VV+VH (jak na Sentinel-1 nad ladem).",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "theory-pipeline",
+      "title": "Od formuly do quicklook'a — pelny pipeline produkcyjny",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.485127",
+          "title": "A review of target decomposition theorems in radar polarimetry",
+          "kind": "paper",
+          "author": "Shane R. Cloude and Eric Pottier",
+          "year": 1996
+        },
+        {
+          "url": "https://www.routledge.com/Polarimetric-Radar-Imaging-From-Basics-to-Applications/Lee-Pottier/p/book/9781420054972",
+          "title": "Polarimetric Radar Imaging: From Basics to Applications, Ch. 7",
+          "kind": "book",
+          "author": "Jong-Sen Lee and Eric Pottier",
+          "year": 2009
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W poprzedniej lekcji o polarymetrii zlozyles Pauli RGB na **syntetycznej** scenie z trzema czystymi pasami — to byl dydaktyczny minimum. Teraz przelaczamy sie na realny pipeline produkcyjny, ktorego uzywa PolSARpro / SNAP / kazdy operacyjny przeglad quad-pol. Surowa formula Pauliego (\n$\\alpha = (HH+VV)/\\sqrt{2}$, $\\beta = (HH-VV)/\\sqrt{2}$, $\\gamma = (HV+VH)/\\sqrt{2}$\n) **nie wystarczy**, gdy obraz ma realny speckle i dlugie ogony rozkladu.\n\nProdukcyjny pipeline ma cztery kroki, zawsze w tej kolejnosci:\n\n1. **Multi-look averaging** — blok-usrednianie kazdego kanalu **zespolonego** (przed wyciagnieciem amplitudy!) o czynnik $N$ w obu osiach. ENL rosnie z $1$ do $N^2$, CV speckle spada $N$-krotnie. Dla Sentinel-1 IW operacyjna wartosc to ~ 4-8.\n2. **Pauli channels** — magnitudy `|HH-VV|`, `|HV+VH|`, `|HH+VV|` policzone z **usrednionych** liczb zespolonych. Kolejnosc jest istotna: srednia magnitud != magnituda sredniej.\n3. **Per-channel percentile clip** — typowo 2-98%. Bez tego pojedynczy gorny outlier (np. jasna dachowa kratka czy okret pelnopolowy) gasi 95% sceny w trakcie normalizacji.\n4. **Gamma correction** $\\sim 1/2{,}2$ — dopiero teraz mapujemy na `uint8`. Bez gamma cale spektrum srednich amplitud (gleba, agro, las) zlewa sie w jeden szary mul; gamma wyciaga srodek histogramu do widzialnej jasnosci.\n\n| krok          | dzialanie                                  | po co                                          |\n|---------------|--------------------------------------------|------------------------------------------------|\n| multi-look    | `arr.reshape(...).mean(axis=(1,3))`        | redukuje speckle (CV ~ 1/N)                    |\n| pauli mag     | `np.abs(HH +/- VV) / sqrt(2)`              | wydobywa mechanizm rozpraszania                |\n| clip 2-98%    | `np.clip((x-lo)/(hi-lo), 0, 1)`            | obcina ogony, zachowuje srodek histogramu      |\n| gamma 1/2.2   | `x ** (1/2.2)`                             | wyciaga ciemne polrocze, koryguje monitor      |\n\nPorownanie dwoch wynikow na tym samym kafelku jest dramatyczne:\n\n![Dwa panele obok siebie: lewy 'Naiwnie: amplituda dzielona przez globalne maksimum bez clip i gamma' pokazuje 512x512 kafelek quad-pol z silnym ziarnistym speckle - przewazaja prawie czarne piksele z rzadkimi jasnymi punktami, regiony sa nieczytelne; prawy 'Produkcyjnie: multi-look 8x8 + clip 2-98% + gamma 1/2.2' pokazuje ten sam kafelek po pelnym pipeline - 64x64 piksele z wyraznie widocznymi zielonymi plamami lasu, rozowo-fioletowymi blokami zabudowy, ciemnogranatowym pasem wody w dolnym rogu i tloszarym agro/gleby](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pauli-naive-vs-production-pipeline.png)\n\nLewy panel to dokladnie to, co dostajesz z formuly z poprzedniej lekcji uruchomionej na **realnej** scenie. Prawy to ten sam kod plus cztery dodatkowe linijki pipeline'u. Cala roznica jest w tych czterech linijkach."
+      }
+    },
+    {
+      "id": "histograms-heavy-tails",
+      "title": "Dlaczego percentile clip jest niezbywalny",
+      "description": "Trzy kanaly Pauli policzone z naszego kafelka po multi-look 8x8 — kazdy ma dlugi prawy ogon, ktory bez clip zgasilby reszte sceny.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/dekompozycja-pauli-pseudo-rgb-dla-sar-1.png",
+        "alt": "Trzy panele histogramow obok siebie. Lewy panel czerwony: histogram kanalu R = |HH - VV| / sqrt(2) (double-bounce) - bardzo wysoki slupek przy zero, gwaltownie opadajacy, z dlugim prawym ogonem siegajacym do okolo 0.6; pionowe linie przerywana w 2 percentylu blisko zera i kropkowana w 98 percentylu okolo 0.24. Srodkowy panel zielony: histogram kanalu G = |HV + VH| / sqrt(2) (volume) - bardzo wysoki pik przy zero, ogon ciagnacy sie do 0.35; linie 2 percentyl blisko zera, 98 percentyl okolo 0.17. Prawy panel niebieski: histogram kanalu B = |HH + VV| / sqrt(2) (surface) - rozklad podobny do panelu R z pikiem przy zero i ogonem do okolo 0.6, 98 percentyl okolo 0.25. Kazdy panel ma siatke, etykiete osi x 'amplituda [a.u.]' i osi y 'liczba pikseli', a tytul cala figury brzmi 'Histogramy trzech kanalow Pauli po multi-look 8x8 - dlugie ogony i potrzeba clip'",
+        "caption": "Rys. 1. Trzy kanaly Pauli na realistycznym kafelku quad-pol po multi-look 8x8. Wysokie piki przy zero (gleba, woda, agro) i dlugie prawe ogony (miasto, las) sa typowe dla SAR. Bez clip 2-98% gorny outlier rozciagal by zakres `[0, max]` tak, ze 95% sceny lezalo by w dolnych 5% intensywnosci po uint8.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport numpy as np\n\n\ndef multilook(arr, n):\n    H, W = arr.shape\n    H2 = H - (H % n)\n    W2 = W - (W % n)\n    arr = arr[:H2, :W2]\n    return arr.reshape(H2 // n, n, W2 // n, n).mean(axis=(1, 3))\n\n\nd = np.load(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/\"\n    \"assets/inputs/pauli-realistic-quadpol.npz\"\n)\nHH, HV, VV, VH = d[\"HH\"], d[\"HV\"], d[\"VV\"], d[\"VH\"]\nN = 8\nHHm = multilook(HH, N)\nHVm = multilook(HV, N)\nVVm = multilook(VV, N)\nVHm = multilook(VH, N)\n\nr = np.abs(HHm - VVm) / np.sqrt(2.0)\ng = (np.abs(HVm) + np.abs(VHm)) / np.sqrt(2.0)\nb = np.abs(HHm + VVm) / np.sqrt(2.0)\n\nfig, axes = plt.subplots(1, 3, figsize=(13.5, 4.6))\npanels = [\n    (\"R = |HH - VV| / sqrt(2)  - double-bounce\", r, \"#c0392b\"),\n    (\"G = |HV + VH| / sqrt(2)  - volume\",         g, \"#2ca02c\"),\n    (\"B = |HH + VV| / sqrt(2)  - surface\",        b, \"#2b6cb0\"),\n]\nfor ax, (label, chan, color) in zip(axes, panels):\n    lo, hi = np.percentile(chan, [2, 98])\n    ax.hist(chan.ravel(), bins=60, color=color, alpha=0.85,\n            edgecolor=\"black\", linewidth=0.4)\n    ax.axvline(lo, color=\"black\", linestyle=\"--\", linewidth=1.2,\n               label=f\"2 percentyl = {lo:.2f}\")\n    ax.axvline(hi, color=\"black\", linestyle=\":\", linewidth=1.4,\n               label=f\"98 percentyl = {hi:.2f}\")\n    ax.set_title(label, fontsize=11)\n    ax.set_xlabel(\"amplituda [a.u.]\")\n    ax.set_ylabel(\"liczba pikseli\")\n    ax.grid(True, alpha=0.3)\n    ax.legend(fontsize=9, loc=\"upper right\")\n\nfig.suptitle(\n    \"Histogramy trzech kanalow Pauli po multi-look 8x8 - dlugie ogony i potrzeba clip\",\n    fontsize=13,\n)\nplt.tight_layout(rect=[0, 0, 1, 0.93])\nplt.savefig(\n    \"courses/optyka-vs-sar-porownawcza-wizja-komputerowa/\"\n    \"assets/plots/dekompozycja-pauli-pseudo-rgb-dla-sar-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-reading-pauli",
+      "title": "Sprawdz: czytanie sceny w Pauli RGB",
+      "type": "quiz",
+      "data": {
+        "question": "Patrzysz na quicklook Pauli RGB z realnego kafelka quad-pol C-band: konwencja R = |HH-VV|, G = |HV+VH|, B = |HH+VV|. Ktore stwierdzenia o tym, co ZOBACZYSZ w pseudo-kolorze, sa PRAWDZIWE? (zaznacz wszystkie)",
+        "options": [
+          "Plaska, gladka tafla wody pojawi sie jako bardzo CIEMNA prawie czarna plama — calkowity sygnal wstecz jest niski (powierzchnia odbija fale OD radaru), wiec wszystkie trzy kanaly Pauli sa male i piksel jest ciemny.",
+          "Las lisciasty bedzie ZIELONY: korona drzew chaotycznie depolaryzuje fale, wiec |HV+VH| jest istotne, podczas gdy |HH-VV| i |HH+VV| zostaja umiarkowane.",
+          "Geste zabudowe miejska zobaczysz jako CZYSTO CZERWONE plamy — w realnym C-band quad-pol budynki swieca tylko w kanale R i nie maja zadnego udzialu w kanalach G i B.",
+          "Sciana z mokrego stali na statku w porcie da jasny BIALAWY piksel (R + G + B wysokie jednoczesnie) — silny double-bounce stali + woda generuje wysoki R, ale przypadkowe orientacje detali daja takze G i odbicie ze stali utrzymuje pewne B."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Opcja 1 jest prawdziwa: gladka woda dziala jak lustro skierowane od radaru — niemal nic do niej nie wraca, wiec |HH|, |VV|, |HV| i |VH| sa wszystkie bliskie zera. Kanaly Pauli wlasciwie nie maja co budowac, wiec na ekranie jest niemal czarno. W realnym Sentinel-1 ta wlasnosc jest fundamentem detekcji statkow CFAR. Opcja 2 jest prawdziwa i jest sercem 'kolor = mechanizm': korona drzew zachowuje sie jak zbior losowo zorientowanych dipoli, ktore przerzucaja energie miedzy H i V, co podbija HV/VH a tym samym G. Opcja 3 jest **falszywa** — to wlasnie pulapka uproszczonej intuicji 'koloru ortogonalnego'. Realne budynki sa polnocno-rozprozystymi obiektami: scisle dihedry generuja silny |HH-VV| (R), ale dachy, anteny, klimatyzatory i orientacje wzgledem azimuth dodaja klazy cross-pol (G) i co-pol w fazie (B). W kafelku z lekcji widzialiscie wlasnie rozowo-fioletowy odcien zabudowy, nie czystu czerwon. Opcja 4 jest prawdziwa: jasne, mieszane piksele w Pauli sa rzeczywistym sygnalem, ze obiekt zawiera mieszanke wszystkich trzech mechanizmow — typowe dla statkow, dzwigow, infrastruktury portowej (i tych samych obiektow szukasz w kolejnym module CFAR + klasyfikator).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "exercise-pauli-quicklook",
+      "title": "Zaimplementuj `pauli_quicklook` z pelnym pipeline'em",
+      "description": "Wczytaj 4 zespolone kanaly z /inputs/pauli-realistic-quadpol.npz i zwroc gotowy quicklook (H/N, W/N, 3) typu uint8 po multi-look + clip + gamma.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.485127",
+          "title": "A review of target decomposition theorems in radar polarimetry",
+          "kind": "paper",
+          "author": "Shane R. Cloude and Eric Pottier",
+          "year": 1996
+        },
+        {
+          "url": "https://earth.esa.int/eogateway/tools/polsarpro",
+          "title": "PolSARpro — ESA polarimetric SAR processor (Pauli decomposition reference)",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj funkcje `pauli_quicklook(HH, HV, VV, VH, look=8, clip=(2.0, 98.0), gamma=1.0/2.2)` zwracajaca tablice `(H/look, W/look, 3)` typu **`uint8`** — produkcyjny quicklook Pauli RGB.\n\nKroki, dokladnie w tej kolejnosci:\n\n1. **Multi-look** — blok-usrednij KAZDY z czterech zespolonych kanalow czynnikiem `look` w obu osiach. Pomocnik `multilook(arr, n)` w starter'ze jest zrobiony — uzyj go.\n2. **Pauli channels** — policz `r = |HH-VV| / sqrt(2)`, `g = (|HV| + |VH|) / sqrt(2)`, `b = |HH+VV| / sqrt(2)` z **usrednionych** liczb zespolonych. (Pamietaj: srednia magnitud != magnituda sredniej; tu chcemy tej drugiej.)\n3. **Per-channel clip** — dla kazdego kanalu: wez `lo, hi = np.percentile(chan, [clip[0], clip[1]])`, potem `np.clip((chan - lo) / max(hi - lo, 1e-9), 0.0, 1.0)`.\n4. **Gamma + uint8** — podnies do potegi `gamma`, pomnoz przez 255, zrzutuj na `uint8`.\n5. **Zlozysz** trzy kanaly `np.stack([R, G, B], axis=-1)`.\n\n```\nrgb = pauli_quicklook(HH, HV, VV, VH, look=8)\nassert rgb.shape == (HH.shape[0] // 8, HH.shape[1] // 8, 3)\nassert rgb.dtype == np.uint8\n```\n\nPo poprawnym uruchomieniu kliknij ▶ Run — statyczny obraz po prawej zostanie zastapiony Twoim wynikiem. Powinienes zobaczyc te same regiony co w preview: ZIELONE plamy lasu, ROZOWO-FIOLETOWE bloki zabudowy, CIEMNOGRANATOWA tafla wody, szare tlo gleby/agro.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/pauli-realistic-quadpol.npz')\nHH = data['HH']\nHV = data['HV']\nVV = data['VV']\nVH = data['VH']\n# 'label' jest tez w pliku, ale nie korzystamy z niego w tej funkcji.\n\n\ndef multilook(arr, n):\n    \"\"\"Block-average a 2-D complex array by factor n in each axis.\"\"\"\n    H, W = arr.shape\n    H2 = H - (H % n)\n    W2 = W - (W % n)\n    arr = arr[:H2, :W2]\n    return arr.reshape(H2 // n, n, W2 // n, n).mean(axis=(1, 3))\n\n\ndef pauli_quicklook(HH, HV, VV, VH, look=8, clip=(2.0, 98.0), gamma=1.0 / 2.2):\n    \"\"\"Zwroc Pauli pseudo-RGB quicklook (H/look, W/look, 3) typu uint8.\n\n    Krok 1: multi-look kazdego z czterech kanalow zespolonych.\n    Krok 2: Pauli channels (magnitudy z usrednionych zespolonych).\n    Krok 3: per-channel percentile clip do [0, 1].\n    Krok 4: gamma correction + cast na uint8.\n    Krok 5: np.stack po osi -1.\n    \"\"\"\n    # TODO: zaimplementuj zgodnie z punktami 1-5\n    H = HH.shape[0] // look\n    W = HH.shape[1] // look\n    return np.zeros((H, W, 3), dtype=np.uint8)\n\n\nrgb = pauli_quicklook(HH, HV, VV, VH, look=8)\n\nfig, ax = plt.subplots(figsize=(7.5, 6.5))\nax.imshow(rgb, interpolation='nearest')\nax.set_title('Pauli quicklook: multi-look 8x8 -> 2-98% clip -> gamma 1/2.2')\nax.set_xlabel('kolumna [piksel po multi-look]')\nax.set_ylabel('wiersz [piksel po multi-look]')\nplt.show()\n",
+        "tests": [
+          {
+            "name": "shape_dtype_and_range",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nshape = (32, 32)\nHH = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nHV = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nVV = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nVH = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nout = pauli_quicklook(HH, HV, VV, VH, look=4)\nassert out.shape == (8, 8, 3), f'expected (8,8,3), got {out.shape}'\nassert out.dtype == np.uint8, f'expected uint8, got {out.dtype}'\nassert int(out.min()) >= 0 and int(out.max()) <= 255",
+            "hidden": false
+          },
+          {
+            "name": "pure_surface_block_yields_blue_dominant",
+            "body": "import numpy as np\n# Constant in-phase HH = VV, no cross-pol: ideal surface scatterer.\nshape = (16, 16)\nHH = np.ones(shape, dtype=np.complex64)\nVV = np.ones(shape, dtype=np.complex64)\nHV = np.zeros(shape, dtype=np.complex64)\nVH = np.zeros(shape, dtype=np.complex64)\nout = pauli_quicklook(HH, HV, VV, VH, look=4)\nassert out.shape == (4, 4, 3)\n# After clip on a constant channel: lo == hi -> denom guarded to 1e-9 -> chan = 0 -> uint8 = 0.\n# So a constant scene yields all zeros (no contrast). Verify that's the case for R and G,\n# and that the B channel is also zero (the formula chan = (x - lo) / (hi - lo) with hi == lo\n# gives 0 after clip). What we really need to check: pure surface input does NOT light up R or G.\nassert (out[..., 0] == 0).all(), 'R channel should be flat (no contrast) for HH = VV'\nassert (out[..., 1] == 0).all(), 'G channel should be flat (no contrast) for HV = VH = 0'",
+            "hidden": true
+          },
+          {
+            "name": "pure_double_bounce_yields_red_no_blue",
+            "body": "import numpy as np\n# HH = -VV across two blocks with different magnitudes so we get contrast in R.\nshape = (16, 16)\nHH = np.ones(shape, dtype=np.complex64)\nHH[:8, :] = 3.0\nVV = -HH\nHV = np.zeros(shape, dtype=np.complex64)\nVH = np.zeros(shape, dtype=np.complex64)\nout = pauli_quicklook(HH, HV, VV, VH, look=4)\nassert out.shape == (4, 4, 3)\nassert int(out[..., 0].max()) > 200, 'R channel should reach high values when HH = -VV with contrast'\nassert (out[..., 2] == 0).all(), 'B channel should be zero when HH + VV cancels everywhere'",
+            "hidden": true
+          },
+          {
+            "name": "shape_independent_of_clip_and_gamma",
+            "body": "import numpy as np\nrng = np.random.default_rng(1)\nshape = (24, 32)\nHH = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nHV = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nVV = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nVH = (rng.standard_normal(shape) + 1j * rng.standard_normal(shape)).astype(np.complex64)\nfor clip in [(0.0, 100.0), (5.0, 95.0), (1.0, 99.0)]:\n    for gamma in [0.4, 1.0, 1.0/2.2]:\n        out = pauli_quicklook(HH, HV, VV, VH, look=4, clip=clip, gamma=gamma)\n        assert out.shape == (6, 8, 3), f'shape changed: {out.shape}'\n        assert out.dtype == np.uint8",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef multilook(arr, n):\n    H, W = arr.shape\n    H2 = H - (H % n)\n    W2 = W - (W % n)\n    arr = arr[:H2, :W2]\n    return arr.reshape(H2 // n, n, W2 // n, n).mean(axis=(1, 3))\n\n\ndef pauli_quicklook(HH, HV, VV, VH, look=8, clip=(2.0, 98.0), gamma=1.0 / 2.2):\n    HHm = multilook(HH, look)\n    HVm = multilook(HV, look)\n    VVm = multilook(VV, look)\n    VHm = multilook(VH, look)\n\n    r = np.abs(HHm - VVm) / np.sqrt(2.0)\n    g = (np.abs(HVm) + np.abs(VHm)) / np.sqrt(2.0)\n    b = np.abs(HHm + VVm) / np.sqrt(2.0)\n\n    def to_uint8(chan):\n        lo, hi = np.percentile(chan, [clip[0], clip[1]])\n        scaled = np.clip((chan - lo) / max(hi - lo, 1e-9), 0.0, 1.0)\n        scaled = scaled ** gamma\n        return (scaled * 255.0).astype(np.uint8)\n\n    return np.stack([to_uint8(r), to_uint8(g), to_uint8(b)], axis=-1)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pauli-realistic-quadpol-channels.png",
+            "alt": "Cztery panele 2x2 pokazujace amplitudy |HH|, |HV|, |VH| i |VV| realistycznego kafelka quad-pol 512x512 z naszego inputu. W kazdym panelu widac kilka regionow: dwie jasne prostokatne plamy zabudowy (mocno widoczne w HH i VV co-pol, gorne prawe i srodkowe lewe), kilka jasnych okraglych plam lasu (najbardziej widoczne w HV i VH cross-pol, dolne i lewo-gorne), ciemne wijace sie pasmo i duza ciemna plama wody w dolnym prawym rogu (bardzo niski sygnal we wszystkich czterech polaryzacjach) oraz szary prostokatny pas agro/gleby w srodku. Tytul calej figury: 'Wejscie: cztery amplitudy quad-pol (512x512, single-look, speckle obecny)'",
+            "caption": "Wejscie: cztery amplitudy quad-pol naszego kafelka (single-look, speckle bardzo widoczny). Twoja funkcja ma zlozyc z nich gotowy quicklook po pelnym pipeline'ie."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pauli-realistic-quadpol.npz",
+            "filename": "pauli-realistic-quadpol.npz",
+            "caption": "pauli-realistic-quadpol.npz — cztery zespolone tablice (HH, HV, VV, VH) o ksztalcie (512, 512) i dtype complex64, plus pomocniczy 'label' (int8). Zaladuj przez np.load('/inputs/pauli-realistic-quadpol.npz')."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/pauli-realistic-quadpol-expected.png",
+          "alt": "Oczekiwany wynik dekompozycji Pauli na realistycznym kafelku quad-pol: pseudo-RGB 64x64 piksele (po multi-look 8x8). Widac zielone klastry lasu (volume scattering) w gornej-lewej i dolno-srodkowej czesci sceny, rozowo-fioletowe bloki zabudowy w gornej-prawej i srodkowo-lewej czesci, ciemnogranatowa-prawie-czarna tafle wody zajmujaca dolny prawy roj oraz wijacy sie kanal w gornej-lewej czesci, plus szare tlo gleby i agro. Pod obrazem trzy kolorowe znaczniki legendy opisujace: R = |HH-VV| - double-bounce (miasto, budynki), G = |HV+VH| - volume (las, zarosla), B = |HH+VV| - surface (woda, asfalt, gleba)",
+          "caption": "Oczekiwany wynik: po poprawnym pipeline'ie zobaczysz zielone klastry lasu, rozowo-fioletowe bloki zabudowy, prawie czarna wode i szare tlo gleby/agro.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "theory-limits-and-dualpol",
+      "title": "Czego Pauli NIE powie — i polowiczna Pauli z VV+VH",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 polarimetry — applications (ESA SentiWiki)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Pauli quicklook jest **wizualizacja**, nie segmentacja. Trzy pulapki warto miec z tylu glowy:\n\n- **Mieszane piksele.** Realny budynek to dihedry + dachy + anteny + niewlasciwie zorientowane elementy — generuje silne `|HH-VV|`, ALE rowniez niezerowy cross-pol. Stad rozowo-fioletowy odcien zabudowy w Twoim quicklook'u, nie czysta czerwon. Klasyfikator buduj na **statystyce trzech kanalow w oknie**, nie na slowniku 'czerwony=miasto'.\n- **Las lisciasty od trawiastego pola Pauli nie odzielisz** — oba sa volume-dominated, oba beda zielone. Roznice ujawnia dopiero **tekstura** lub **wieloczasowa koherencja**.\n- **Speckle nie znika.** Multi-look redukuje, nie eliminuje. Klasyfikacja per-piksel pomyli sie na granicach; dla detekcji potrzebna morfologia lub CFAR dostrojony do polarymetrii (PWF — Polarimetric Whitening Filter).\n\n**A Sentinel-1?** W trybie IW nad ladem **quad-pol nie ma** — dostajesz tylko VV+VH. Klasycznej Pauli policzyc sie nie da. Operacyjny workaround to *poor man's Pauli* na dual-pol:\n\n| kanal | dual-pol VV+VH        | quad-pol Pauli odpowiednik     |\n|-------|-----------------------|--------------------------------|\n| R     | `|VV|` (co-pol)       | `|HH-VV|` (double-bounce)      |\n| G     | `|VH|` (cross-pol)    | `|HV+VH|` (volume)             |\n| B     | `|VV|/|VH|` (ratio)   | `|HH+VV|` (surface)            |\n\nKanal R to teraz silny co-pol, nie double-bounce; surface od double-bounce nie sa rozseparowane. Ale jako **wizualizacja** dalej dziala: las zielony, woda czarna, miasto jasne.\n\n![Dwa panele obok siebie. Lewy: prawdziwa Pauli RGB z quad-pol (RADARSAT-2 / ALOS-2), R=|HH-VV|, G=|HV+VH|, B=|HH+VV| - zielone klastry lasu, rozowo-fioletowe bloki zabudowy, prawie czarna woda, szare tlo gleby. Prawy: dual-pol VV+VH 'poor mans Pauli' z Sentinel-1, R=|VV|, G=|VH|, B=|VV|/|VH| - las nadal zielony, miasto rozowo-pomaranczowe (R=|VV| zamiast |HH-VV|), woda glebokoniebieska, agro szaroniebieskie. Te same regiony, inna chemia kolorow.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/pauli-quadpol-vs-dualpol-falsecolor.png)\n\nGdy w kursie pojawiaja sie kafelki Sentinel-1 (segmentacja, detekcja statkow), zobaczysz wlasnie to: brak prawdziwej Pauli, ale **kolorowy quicklook po VV+VH wystarczy** zeby zlokalizowac strukture sceny zanim wskoczy CFAR czy CNN."
+      }
+    },
+    {
+      "id": "sandbox-tweak-pipeline",
+      "title": "Sandbox: pokrec parametry pipeline'u",
+      "description": "Bez testow — wyprobuj rozne `look`, `clip` i `gamma` i patrz, jak quicklook reaguje.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndata = np.load('/inputs/pauli-realistic-quadpol.npz')\nHH, HV, VV, VH = data['HH'], data['HV'], data['VV'], data['VH']\n\n\ndef multilook(arr, n):\n    H, W = arr.shape\n    H2 = H - (H % n); W2 = W - (W % n)\n    arr = arr[:H2, :W2]\n    return arr.reshape(H2 // n, n, W2 // n, n).mean(axis=(1, 3))\n\n\ndef pauli_quicklook(HH, HV, VV, VH, look=8, clip=(2.0, 98.0), gamma=1.0/2.2):\n    HHm = multilook(HH, look); HVm = multilook(HV, look)\n    VVm = multilook(VV, look); VHm = multilook(VH, look)\n    r = np.abs(HHm - VVm) / np.sqrt(2.0)\n    g = (np.abs(HVm) + np.abs(VHm)) / np.sqrt(2.0)\n    b = np.abs(HHm + VVm) / np.sqrt(2.0)\n    def t(c):\n        lo, hi = np.percentile(c, [clip[0], clip[1]])\n        s = np.clip((c - lo) / max(hi - lo, 1e-9), 0.0, 1.0)\n        return ((s ** gamma) * 255.0).astype(np.uint8)\n    return np.stack([t(r), t(g), t(b)], axis=-1)\n\n\n# Pomysly do eksploracji bez gradingu:\n#  1) Spadnij z look=8 do look=2 lub look=1 (no multi-look) — jak ginie scena w speckle?\n#  2) Wzmocnij clip do (5, 95) albo (10, 90) — kiedy zaczynasz tracic detale?\n#  3) Zmien gamma na 1.0 (brak gamma) i 0.3 (mocna gamma) — co dzieje sie ze srednia?\n#  4) Sproboj wlasnej kolejnosci kanalow (np. R = volume, G = surface, B = double) i\n#     zobacz, jak Twoj mozg natychmiast traci intuicje 'kolor = mechanizm'.\n\nrgb = pauli_quicklook(HH, HV, VV, VH, look=4, clip=(2.0, 98.0), gamma=1.0/2.2)\n\nfig, ax = plt.subplots(figsize=(7.5, 6.5))\nax.imshow(rgb, interpolation='nearest')\nax.set_title(f'Sandbox: look={4}, clip=(2,98), gamma=1/2.2')\nax.set_xlabel('kolumna [piksel po multi-look]')\nax.set_ylabel('wiersz [piksel po multi-look]')\nplt.show()\n",
+        "encouragement": "Zacznij od look=1 (zaden multi-look) i patrz, jak speckle pochlania zdolnosc rozpoznawania regionow — to ten sam efekt, ktory widziales w panelu 'Naiwnie' u gory lekcji."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/36.485127",
+      "title": "A review of target decomposition theorems in radar polarimetry",
+      "kind": "paper",
+      "author": "Shane R. Cloude and Eric Pottier",
+      "year": 1996
+    },
+    {
+      "url": "https://www.routledge.com/Polarimetric-Radar-Imaging-From-Basics-to-Applications/Lee-Pottier/p/book/9781420054972",
+      "title": "Polarimetric Radar Imaging: From Basics to Applications, Ch. 7",
+      "kind": "book",
+      "author": "Jong-Sen Lee and Eric Pottier",
+      "year": 2009
+    },
+    {
+      "url": "https://earth.esa.int/eogateway/tools/polsarpro",
+      "title": "PolSARpro — ESA polarimetric SAR processor",
+      "kind": "article"
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 polarimetry — applications (ESA SentiWiki)",
+      "kind": "article"
+    }
+  ]
+}

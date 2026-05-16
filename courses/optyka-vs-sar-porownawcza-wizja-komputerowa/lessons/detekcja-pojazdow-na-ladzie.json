@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-pojazdow-na-ladzie",
+  "courseSlug": "optyka-vs-sar-porownawcza-wizja-komputerowa",
+  "moduleId": "m4",
+  "title": "Detekcja pojazdów na lądzie",
+  "eyebrow": "SEGMENTACJA I DETEKCJA",
+  "description": "Przenosisz CFAR-owy pipeline z otwartego morza na ląd i widzisz, dlaczego natychmiast traci kontrolę: tło jest niejednorodne, RCS pojazdu jest tego samego rzędu co dach budynku, a corner-reflektory wyglądają jak prawdziwe cele. Lekcja składa dwustopniowy detektor (CFAR + dyskryminator po polu), kwantyfikuje co tracisz, i pokazuje dlaczego operacyjny ATR jest **trzystopniowy** — z klasyfikatorem chipów (CNN MSTAR z modułu 5) jako finałem.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "lad-to-inny-swiat-niz-morze",
+      "title": "Statki wiedzą gdzie być, pojazdy nie",
+      "sources": [
+        {
+          "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+          "title": "The state-of-the-art in ship detection in SAR imagery",
+          "kind": "article",
+          "author": "David J. Crisp",
+          "year": 2004
+        },
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+          "title": "Sentinel-1 Applications — ESA SentiWiki",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Detekcja statków na morzu (poprzednia lekcja, *4.4*) była komfortowa: tło jednorodne, cele 30-40 dB nad clutterem, jeden rozkład Gamma na 95% kafelka. Detekcja **pojazdów na lądzie** rozbija każdy z tych warunków po kolei.\n\n![Quicklook VV-polarymetrycznego kafelka Sentinel-1 nad Hamburgiem i ujściem Łaby. Lewa połowa kadru to gęsta plama bardzo jasnych pikseli — strefa miejska i portowa: ulice, magazyny, dachy, dźwigi, wszystko działa jak corner-reflector w paśmie C i daje sygnał wsteczny tego samego rzędu wielkości co metalowy pojazd. Prawa połowa to ciemniejszy, ale nadal silnie tekstowany teren rolniczy z jasnymi punktami pojedynczych zabudowań. Wzdłuż linii brzegowej ostre przejście do ciemnej wody Łaby. Nigdzie nie ma jednorodnego ciemnego tła w stylu otwartego morza.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/sentinel1-hamburg-quicklook.png)\n\nTrzy regimy clutteru, których morze nie miało:\n\n- **Tło jest niejednorodne.** Kafelek nad miastem ma trzy rzędy wielkości $\\mu_\\text{bg}$ obok siebie: pole uprawne (-15 dB) → las (-10 dB) → zabudowa (0 dB). Jedno globalne $\\mu_\\text{bg}$ to fikcja; nawet lokalna estymata $\\mu_\\text{bg}(i, j)$ z okna $21 \\times 21$ przeskakuje skokowo na granicach klas terenu. CA-CFAR z $P_\\text{fa} = 10^{-4}$ nadal dotrzymuje formalnie kontraktu false-alarm rate, ale tylko *w średniej* — lokalnie na granicy las/miasto eksploduje.\n- **Pojazd nie jest \"statek na otwartym morzu\".** RCS pojazdu (5-15 dB) jest często **tego samego rzędu** co dach budynku, narożnik nabrzeża czy izolowany corner-reflector. Stosunek $I_\\text{cel}/\\mu_\\text{bg}$ na lądzie spada z $10^3$ (morze) do $\\sim 10$ — krytycznie blisko progu detekcji.\n- **Confuser-y wyglądają jak cele.** Pojedyncze metalowe punkty (latarnie, znaki drogowe, słupy linii energetycznych, anteny) mają tę samą sygnaturę punktową i ten sam rozmiar co mały pojazd. Filtr po polu (`min_area`) ich **nie odróżni**, bo ich pole też jest 1-3 px.\n\nSkutek operacyjny: jeden CA-CFAR z domyślnymi parametrami z lekcji *4.4* daje na lądzie $5\\text{-}10\\times$ więcej false-alarmów na ten sam $P_\\text{fa}$. To nie jest błąd implementacji ani niedobór tuningu — to fundamentalne ograniczenie pre-screenera, którego rozkład Gamma nigdzie się nie zgadza i którego model \"punktowy cel + jednorodne tło\" nigdzie nie zachodzi."
+      }
+    },
+    {
+      "id": "cfar-na-ladzie-eksploduje",
+      "title": "Ten sam CFAR, dwa światy: morze vs ląd",
+      "description": "Identyczny bare CA-CFAR (win=8, guard=3, Pfa=1e-4, L=4) uruchomiony na syntetycznym kafelku morskim i syntetycznym kafelku lądowym tej samej wielkości. Bez maskowania, bez morfologii — surowy bilans pre-screenera.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots/detekcja-pojazdow-na-ladzie-1.png",
+        "alt": "Dwa panele 256x320 px obok siebie, oba pokazują wynik tego samego CA-CFAR (win=8, guard=3, Pfa=1e-4, L=4, BEZ post-processingu). Lewy panel 'Morze: CA-CFAR' — syntetyczny kafelek SAR VV nad otwartym morzem (mostly ciemne speckled tło Gamma L=4); zolte ramki obrysuwają 8 prawdziwych statkow (małe, ~2x3 px), zielone piksele — detekcje CFAR. Statki sa wszystkie trafione (recall 8/8) i poza nimi widać tylko ~10 pojedynczych zielonych speckle-spike'ów na ciemnym tle. Tytuł podaje 'recall 8/8, FP blobow = 10'. Prawy panel 'Lad: CA-CFAR' — syntetyczny kafelek nad terenem ladowym z polem uprawnym, dwoma drogami, lasem (top-right blob) i strefa miejską (bottom-left z siatką ulic i jasnymi budynkami). Te same 8 prawdziwych pojazdow trafionych (recall 8/8), ale dodatkowo cala strefa miejska, krawędzie lasu i kilka pól rozsiane sa zielonymi detekcjami. Tytuł podaje 'recall 8/8, FP blobow = 32'. Wizualnie panel ladu wyglada na 3x bardziej zaszumiony detekcjami niz panel morza.",
+        "caption": "Rys. 1. Identyczny CA-CFAR ($\\text{win}=8$, $\\text{guard}=3$, $P_\\text{fa}=10^{-4}$, $L=4$) na dwoch tilach o tym samym ksztalcie: jednorodne morze daje 10 izolowanych FP-blobow, niejednorodny lad — 32, glownie z miasta i krawedzi lasu. Pre-screener formalnie dotrzymuje kontraktu $P_\\text{fa}$ w sredniej, ale lokalnie na granicach klas terenu generuje kilkukrotnie wiecej kandydatow niz na otwartym morzu — to surowy bilans, ktory dyskryminator z nastepnej sekcji musi wyczyscic.",
+        "sourceCode": "from pathlib import Path\n\nimport numpy as np\nimport matplotlib\n\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import label, uniform_filter\nfrom scipy.special import gammaincinv\n\nINPUTS = Path(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs\"\n)\nPLOTS = Path(\n    \"/home/nukeemann/projects/ai_lecturer/courses/\"\n    \"optyka-vs-sar-porownawcza-wizja-komputerowa/assets/plots\"\n)\nPLOTS.mkdir(parents=True, exist_ok=True)\nOUT = PLOTS / \"detekcja-pojazdow-na-ladzie-1.png\"\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf = fs * fs\n    ng = gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode=\"reflect\")\n    mu_guard = uniform_filter(img, size=gs, mode=\"reflect\")\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\n# Load the LAND tile that the rest of the lesson uses.\nland = np.load(INPUTS / \"detekcja-pojazdow-land-tile.npz\")\nland_intensity = land[\"intensity\"]\nvehicle_truth = land[\"vehicle_truth\"]\nH, W = land_intensity.shape\nL = int(land[\"L\"])\n\n# Synthesize a comparable SEA tile of identical shape (256x320, Gamma L=4):\n# uniform low-reflectance sea + 8 bright \"ships\" of similar size to the\n# vehicles, no urban / forest / road clutter.\nrng = np.random.default_rng(20260516)\nR_sea = np.full((H, W), 0.18, dtype=np.float32)\nship_centers = [\n    (40, 50, 2, 3, 5.5),\n    (60, 130, 2, 3, 6.0),\n    (95, 220, 2, 3, 5.2),\n    (140, 80, 2, 3, 5.6),\n    (170, 180, 2, 3, 6.1),\n    (200, 260, 2, 3, 5.0),\n    (220, 100, 2, 3, 5.4),\n    (105, 290, 2, 3, 6.2),\n]\nship_truth = np.zeros((H, W), dtype=bool)\nfor (cy, cx, ry, rx, val) in ship_centers:\n    R_sea[cy - ry : cy + ry + 1, cx - rx : cx + rx + 1] = val\n    ship_truth[cy - ry : cy + ry + 1, cx - rx : cx + rx + 1] = True\nN_sea = rng.gamma(shape=L, scale=1.0 / L, size=(H, W)).astype(np.float32)\nsea_intensity = (R_sea * N_sea).astype(np.float32)\n\n# Run the SAME bare CA-CFAR (no land mask, no morphology, no size filter) on\n# both tiles, with identical parameters.\nPARAMS = dict(win=8, guard=3, pfa=1e-4, L=L)\nmask_sea = ca_cfar(sea_intensity, **PARAMS)\nmask_land = ca_cfar(land_intensity, **PARAMS)\n\n\ndef _stats(mask, truth):\n    lab_t, n_t = label(truth)\n    lab_d, n_d = label(mask)\n    recall = sum(\n        1 for i in range(1, n_t + 1) if (mask & (lab_t == i)).any()\n    )\n    fp = sum(\n        1 for i in range(1, n_d + 1) if not ((lab_d == i) & truth).any()\n    )\n    return recall, n_t, fp\n\n\nrecall_sea, ntruth_sea, fp_sea = _stats(mask_sea, ship_truth)\nrecall_land, ntruth_land, fp_land = _stats(mask_land, vehicle_truth)\n\n\ndef _render_panel(ax, intensity, truth, mask, title):\n    disp = np.sqrt(np.clip(intensity, 0, None))\n    vmax = float(np.percentile(disp, 99.5))\n    rgb = np.stack([disp, disp, disp], -1) / max(vmax, 1e-6)\n    rgb = np.clip(rgb, 0, 1)\n    rgb[mask] = [0.1, 1.0, 0.1]\n    # Yellow boxes around true targets so the reader can count.\n    lab_t, n_t = label(truth)\n    for i in range(1, n_t + 1):\n        ys, xs_ = np.where(lab_t == i)\n        if ys.size == 0:\n            continue\n        y0, y1 = max(0, ys.min() - 2), min(H - 1, ys.max() + 2)\n        x0, x1 = max(0, xs_.min() - 2), min(W - 1, xs_.max() + 2)\n        rgb[y0 : y0 + 1, x0 : x1 + 1] = [1.0, 0.85, 0.1]\n        rgb[y1 : y1 + 1, x0 : x1 + 1] = [1.0, 0.85, 0.1]\n        rgb[y0 : y1 + 1, x0 : x0 + 1] = [1.0, 0.85, 0.1]\n        rgb[y0 : y1 + 1, x1 : x1 + 1] = [1.0, 0.85, 0.1]\n    ax.imshow(rgb)\n    ax.set_title(title, fontsize=10.5)\n    ax.set_xlabel(\"kolumna [px]\")\n    ax.set_ylabel(\"wiersz [px]\")\n    ax.set_xticks([0, 80, 160, 240, 320])\n    ax.set_yticks([0, 64, 128, 192, 256])\n\n\nfig, axes = plt.subplots(1, 2, figsize=(12.0, 5.4), constrained_layout=True)\n\n_render_panel(\n    axes[0],\n    sea_intensity,\n    ship_truth,\n    mask_sea,\n    f\"Morze: CA-CFAR (win=8, guard=3, Pfa=1e-4)\\n\"\n    f\"recall {recall_sea}/{ntruth_sea}   FP blobow = {fp_sea}\",\n)\n_render_panel(\n    axes[1],\n    land_intensity,\n    vehicle_truth,\n    mask_land,\n    f\"Lad: CA-CFAR (win=8, guard=3, Pfa=1e-4)\\n\"\n    f\"recall {recall_land}/{ntruth_land}   FP blobow = {fp_land}\",\n)\n\nfig.suptitle(\n    \"Ten sam CA-CFAR, dwa swiaty: morze vs lad\\n\"\n    \"Zolte ramki - prawdziwe cele; zielone piksele - detekcje CFAR (bez post-processingu).\",\n    fontsize=11.5,\n)\n\nfig.savefig(OUT, dpi=110, bbox_inches=\"tight\")\nplt.close(fig)\n\nprint(f\"sea : recall {recall_sea}/{ntruth_sea}, FP blobs {fp_sea}\")\nprint(f\"land: recall {recall_land}/{ntruth_land}, FP blobs {fp_land}\")\nprint(\"Saved\", OUT)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "detect-vehicles-pipeline",
+      "title": "Zaimplementuj `detect_vehicles` — CFAR + dyskryminator po polu",
+      "description": "Wejście — syntetyczny kafelek Sentinel-1 VV 256x320 (Gamma L=4) z polem uprawnym, dwiema drogami, lasem i strefą miejską. 8 prawdziwych pojazdów na drogach + 7 corner-reflektorów (małe, vehicle-sized confuser-y w urban / forest). Cel — odtworzyć maskę byte-for-byte z referencyjną z `/inputs/`.",
+      "sources": [
+        {
+          "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+          "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+          "kind": "paper",
+          "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+          "year": 1997
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images",
+          "kind": "book",
+          "author": "Chris Oliver and Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Złóż dwustopniowy detektor pojazdów: **CFAR pre-screen → dyskryminator po polu**. Funkcja\n\n```\ndetect_vehicles(intensity, win=8, guard=3, pfa=1e-4, L=4, min_area=3, max_area=80)\n```\n\nzwraca maskę boolowską o kształcie `intensity.shape`, gdzie `True` oznacza piksel należący do **wykrytego, post-processowanego pojazdu**.\n\nKroki w tej kolejności:\n\n1. **CA-CFAR** z parametrami `win`, `guard`, `pfa`, `L` — dokładnie ta sama implementacja co w *4.1* / *4.4* (próg $T = \\alpha \\cdot \\mu_\\text{train}$ z $\\alpha = \\operatorname{gammaincinv}(L, 1 - P_\\text{fa})/L$).\n2. **Closing** $3 \\times 3$: `binary_closing(raw, structure=np.ones((3, 3), bool))` — łączy sąsiednie detekcje należące do tego samego celu.\n3. **Opening** $2 \\times 2$: `binary_opening(closed, structure=np.ones((2, 2), bool))` — usuwa pojedyncze speckle-spike'y, które przeżyły CFAR.\n4. **Dyskriminator po polu**: `scipy.ndimage.label`, potem dla każdej komponenty policz `area = comp.sum()`. Zachowaj komponenty spełniające `min_area <= area <= max_area`. **`max_area` wycina duże struktury miejskie / leśne bleed-y**, których pojazd osiągnąć nie może; `min_area` (jak w lekcji *4.4*) zjada izolowane speckle-spike'y.\n\n```\n>>> d = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\n>>> mask = detect_vehicles(d['intensity'])\n>>> int(mask.sum())\n352\n```\n\nTesty weryfikują (a) shape + dtype maski, (b) recall ≥ 7 z 8 prawdziwych pojazdów, (c) post-processing istotnie zmniejsza liczbę FP-blobów względem surowego CFAR, (d) maska zgadza się byte-for-byte z `final_mask` z `/inputs/detekcja-pojazdow-vehicles-expected.npz`.\n\n**Uwaga dydaktyczna.** Nawet gdy zaliczysz wszystkie testy, zostanie ci ~7 false-alarmów z confuserów (corner-reflectory wewnątrz miasta i lasu, `clutter_truth` w `.npz`). Tego dyskryminator po polu **nie odróżni od pojazdów**: confusery są tej samej wielkości i tej samej jasności. Trzeci stopień ATR — klasyfikator chipów (np. CNN MSTAR z modułu 5) — to dopiero rozwiąże.",
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect_vehicles(intensity, win=8, guard=3, pfa=1e-4, L=4,\n                    min_area=3, max_area=80):\n    '''Dwustopniowy detektor pojazdow: CFAR pre-screen + dyskryminator po polu.\n\n    Zwraca maske bool o tym samym ksztalcie co intensity. True = pixel\n    nalezacy do komponenty po post-processingu o polu w [min_area, max_area].\n    '''\n    # 1) CFAR\n    raw = ca_cfar(intensity, win=win, guard=guard, pfa=pfa, L=L)\n    # 2) TODO: closed = binary_closing(raw, structure=np.ones((3, 3), bool))\n    # 3) TODO: opened = binary_opening(closed, structure=np.ones((2, 2), bool))\n    # 4) TODO: lab, n = label(opened); zachowaj komponenty min_area <= area <= max_area\n    return np.zeros_like(intensity, dtype=bool)\n\n\n# --- Preview na realnym kafelku ladowym ---\nimport matplotlib.pyplot as plt\n\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nintensity = d['intensity']\nvehicle_truth = d['vehicle_truth']\nclutter_truth = d['clutter_truth']\n\nmask = detect_vehicles(intensity)\nlab_truth, n_truth = label(vehicle_truth)\nlab_det, n_det = label(mask)\nrecall_hits = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nfp_blobs = sum(1 for i in range(1, n_det + 1) if not ((lab_det == i) & vehicle_truth).any())\nprint(f'detekcje  : {int(mask.sum())} px w {n_det} blobach')\nprint(f'recall    : {recall_hits} / {n_truth} pojazdow')\nprint(f'FP blobow : {fp_blobs}')\n\ndisp = np.sqrt(np.clip(intensity, 0, None))\nvmax = float(np.percentile(disp, 99.5))\nfig, axes = plt.subplots(1, 2, figsize=(11.0, 4.6), constrained_layout=True)\naxes[0].imshow(disp, cmap='gray', vmin=0, vmax=vmax)\naxes[0].set_title('Wejscie: SAR VV (sqrt-brightness)')\naxes[0].set_axis_off()\nrgb = np.stack([disp, disp, disp], -1) / max(disp.max(), 1e-6)\nrgb = np.clip(rgb, 0, 1)\nrgb[mask] = [0.1, 1.0, 0.1]\naxes[1].imshow(rgb)\naxes[1].set_title(f'Detekcje  ({n_det} blobow, recall {recall_hits}/{n_truth}, FP={fp_blobs})')\naxes[1].set_axis_off()\nplt.show()\n",
+        "tests": [
+          {
+            "name": "returns_bool_mask_with_same_shape",
+            "body": "import numpy as np\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nmask = detect_vehicles(d['intensity'])\nassert hasattr(mask, 'shape') and mask.shape == d['intensity'].shape, f'shape={getattr(mask, \"shape\", None)}'\nassert mask.dtype == np.bool_, f'dtype={mask.dtype}, oczekiwano bool'",
+            "hidden": false
+          },
+          {
+            "name": "recalls_most_real_vehicles",
+            "body": "import numpy as np\nfrom scipy.ndimage import label\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nmask = detect_vehicles(d['intensity'])\nlab_truth, n_truth = label(d['vehicle_truth'])\nhits = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nassert hits >= 7, (\n    f'wykryto {hits}/{n_truth} pojazdow; oczekiwano co najmniej 7. '\n    f'Sprawdz, czy po CFAR rzeczywiscie wykonujesz closing -> opening i czy '\n    f'min_area=3 (nie 8) — male pojazdy znikna juz przy min_area=4.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "discriminator_reduces_fp_count",
+            "body": "import numpy as np\nfrom scipy.ndimage import label\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nintensity = d['intensity']\nvehicle_truth = d['vehicle_truth']\nmask = detect_vehicles(intensity)\nraw = ca_cfar(intensity, win=8, guard=3, pfa=1e-4, L=4)\nlab_raw, n_raw = label(raw)\nlab_det, n_det = label(mask)\nfp_raw = sum(1 for i in range(1, n_raw + 1) if not ((lab_raw == i) & vehicle_truth).any())\nfp_det = sum(1 for i in range(1, n_det + 1) if not ((lab_det == i) & vehicle_truth).any())\nassert fp_det < fp_raw, (\n    f'po dyskryminacji FP-blobow {fp_det}, raw CFAR mial {fp_raw}. '\n    f'Dyskryminator powinien zmniejszyc liczbe false-alarmow — sprawdz, czy '\n    f'naprawde stosujesz filtr po polu (min_area <= area <= max_area), a nie '\n    f'tylko zwracasz wynik CFAR-u.'\n)",
+            "hidden": true
+          },
+          {
+            "name": "matches_reference_mask_byte_for_byte",
+            "body": "import numpy as np\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nref = np.load('/inputs/detekcja-pojazdow-vehicles-expected.npz')['final_mask']\nmask = detect_vehicles(d['intensity'])\nassert mask.shape == ref.shape\ndiff = int((mask != ref).sum())\nassert diff == 0, (\n    f'maska rozni sie od referencyjnej w {diff} pikselach. Sprawdz: '\n    f'kolejnosc closing -> opening, structure 3x3 dla closing i 2x2 dla opening, '\n    f'min_area=3 i max_area=80 (a nie 4 i 100), padding mode=\\\"reflect\\\" w uniform_filter.'\n)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    full_side = 2 * win + 1\n    guard_side = 2 * guard + 1\n    n_full = full_side * full_side\n    n_guard = guard_side * guard_side\n    n_train = n_full - n_guard\n    mu_full = uniform_filter(img, size=full_side, mode='reflect')\n    mu_guard = uniform_filter(img, size=guard_side, mode='reflect')\n    mu_train = (n_full * mu_full - n_guard * mu_guard) / n_train\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect_vehicles(intensity, win=8, guard=3, pfa=1e-4, L=4,\n                    min_area=3, max_area=80):\n    raw = ca_cfar(intensity, win=win, guard=guard, pfa=pfa, L=L)\n    closed = binary_closing(raw, structure=np.ones((3, 3), dtype=bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), dtype=bool))\n    lab, n = label(opened)\n    keep = np.zeros_like(opened, dtype=bool)\n    for i in range(1, n + 1):\n        comp = lab == i\n        a = int(comp.sum())\n        if min_area <= a <= max_area:\n            keep |= comp\n    return keep\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/detekcja-pojazdow-land-tile.png",
+            "alt": "Podgląd syntetycznego kafelka Sentinel-1 VV 256x320 w skali szarości (sqrt-brightness). Górną dwie trzecie kadru zajmuje speckled pole uprawne (Gamma L=4, średnia R≈0,18) z dwoma snującymi się ciemniejszymi smugami dróg; w prawym górnym rogu jaśniejsza okrągła plama lasu; w lewym dolnym rogu prostokątna jasna strefa miejska z siatką ciemnych ulic i kilkoma bardzo jasnymi punktami (budynki). Wzdłuż dróg rozsiane są drobne jasne punkty 2x3 px — pojazdy.",
+            "caption": "Podgląd kafelka VV (sqrt-brightness)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/detekcja-pojazdow-land-tile.npz",
+            "filename": "detekcja-pojazdow-land-tile.npz",
+            "caption": ".npz: 'intensity' (float32, 256x320, intensywność liniowa), 'R' (float32, mapa odbiciowości ground-truth), 'vehicle_truth' (bool, 8 prawdziwych pojazdów), 'clutter_truth' (bool, 7 corner-reflektorów wielkości pojazdu w urban/forest), 'L' (=4)."
+          },
+          {
+            "kind": "file",
+            "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/detekcja-pojazdow-vehicles-expected.npz",
+            "filename": "detekcja-pojazdow-vehicles-expected.npz",
+            "caption": ".npz: 'raw_mask' (bool, surowy CFAR przed post-processingiem), 'final_mask' (bool, referencyjny output `detect_vehicles` z domyślnymi parametrami), 'L' (=4)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/inputs/detekcja-pojazdow-vehicles-expected.png",
+          "alt": "Dwa panele 256x320 obok siebie. Lewy: podkład SAR VV (sqrt-brightness) — pole / drogi / las / urban patch. Prawy: ten sam podkład z nałożoną zieloną maską detekcji `detect_vehicles` z domyślnymi parametrami; nad każdym z 8 prawdziwych pojazdów żółta ramka bbox z marginesem 2 px. Wszystkie 8 pojazdów trafionych pełnymi zielonymi plamami. Dodatkowo widoczne ~7 zielonych plam wewnątrz urban patch / lasu — to są confusery (corner-reflektory) tej samej wielkości co pojazdy. Pod prawym panelem podpis 'Detekcje detect_vehicles (zolte bbox = prawdziwe pojazdy) recall 8/8 pojazdow, 7 false-alarmow'.",
+          "caption": "Cel: tak ma wyglądać `detect_vehicles(intensity)` z domyślnymi parametrami. 8/8 pojazdów + 7 FP-blobów z confuserów wielkości pojazdu (`clutter_truth` w `.npz`). Dyskryminatorem po polu confuserów się nie usunie — tę role weźmie klasyfikator chipów z modułu 5.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "trzy-etapy-atr",
+      "title": "Trzy etapy ATR: prescreening → discrimination → classification",
+      "sources": [
+        {
+          "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+          "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+          "kind": "paper",
+          "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+          "year": 1997
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target classification using the deep convolutional networks for SAR images",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        },
+        {
+          "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+          "title": "MSTAR Dataset overview (SDMS AFRL)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Dwustopniowy pipeline z poprzedniej sekcji ucisnął false-alarmy w niejednorodnym tle, ale **nie odróżnił pojazdów od korner-reflektorów na lądzie**. Te dwa typy obiektów mają tę samą sygnaturę CFAR-ową: mały, jasny, zwarty blob.\n\nTo dlatego od końca lat 80. operacyjne systemy ATR (Automatic Target Recognition) na SAR są **trzystopniowe** — kanoniczny szkielet pochodzi z MIT Lincoln Lab (Novak et al., 1997):\n\n| Etap | Co robi | Co odsiewa | Czego NIE załatwi |\n|---|---|---|---|\n| **1. Pre-screening** (CFAR) | flaga *każdy* piksel istotnie jaśniejszy od lokalnego tła | jednorodne tło niskiej intensywności (pole, woda, gładki asfalt) | wszystkie obiekty punktowe — pojazdy *i* clutter razem |\n| **2. Discrimination** (klasyczne CV) | filtruje kandydatów po **rozmiarze, kształcie, lokalnym kontraście, polaryzacji** | duże struktury (budynki, linie brzegowe), pojedyncze speckle-spike'y, zbyt jasne / zbyt ciemne anomalie | pojedyncze metalowe punkty wielkości pojazdu (CR, latarnie, anteny) |\n| **3. Classification** (klasyfikator chipów: CNN, SVM-HOG, template matching) | bierze chip $64\\times 64$ wokół każdego kandydata, zwraca klasę: *vehicle / clutter* (lub konkretny typ pojazdu) | confuser-y o sygnaturze różnej od pojazdów, gdy klasyfikator widział ich wystarczająco w treningu | obiekty out-of-distribution, sceny inne niż training, niewidziane kąty obserwacji |\n\n![Ten sam fragment Hamburga zarejestrowany w odstępie kilkudziesięciu minut przez dwa siostrzane sensory: po lewej Sentinel-2 (optyczny) z przejrzystą strukturą zabudowy, ulic i nabrzeży portowych w naturalnym kolorze; po prawej Sentinel-1 (SAR, polaryzacja VV) z identyczną sceną — ale wszystko jasne na SAR (zabudowa, kontenery, dźwigi) zlewa się w jedną teksturową plamę bez sensownej semantyki obiektowej. Pojazd wielkości 4 m na ulicy nie jest *widoczny* na SAR jako odrębna struktura — jest *jednym z dziesiątków podobnych jasnych punktów*, których inżynier ATR musi rozróżnić.](/api/courses/optyka-vs-sar-porownawcza-wizja-komputerowa/assets/images/hamburg-optical-vs-sar-side-by-side.png)\n\nPełny operacyjny pipeline (np. dla MSTAR, klasyczny benchmark ATR pojazdów wojskowych) wygląda więc tak:\n\n1. **CFAR + dyskryminator** (to, co właśnie napisałeś) → ~10-50 kandydatów per kafelek $1 \\text{ km}^2$.\n2. **Wycięcie chipów** $128 \\times 128$ wokół każdego kandydata.\n3. **Klasyfikator CNN** (lekcja *5.5 — klasyfikacja pojazdów MSTAR — ONNX inference*) → przypisanie klasy lub odrzucenie jako clutter.\n\nInnymi słowy: **CFAR + size NIE jest detektorem pojazdów. Jest pre-screenerem dla detektora pojazdów.** Mylenie tych dwóch ról to typowy błąd inżyniera CV przechodzącego z optyki (\"Otsu + connected components = mam statki\") na SAR — i powód, dla którego cały moduł 5 tego kursu uczy klasyfikatora downstream."
+      }
+    },
+    {
+      "id": "quiz-kiedy-cfar-pada-na-ladzie",
+      "title": "Sprawdź: gdzie kończy się CFAR, gdzie zaczyna klasyfikator",
+      "type": "quiz",
+      "data": {
+        "question": "Twój zespół potrzebuje detektora **pojazdów na lądzie** (Sentinel-1 GRD, scena podmiejska: pole + las + obrzeża miasta). Które z poniższych stwierdzeń są zgodne z tym, co pokazała ta lekcja? Zaznacz wszystkie poprawne.",
+        "options": [
+          "Sam CA-CFAR z $P_\\text{fa} = 10^{-4}$ wystarczy: kontrakt false-alarm rate jest formalnie dotrzymany, więc detekcja będzie wystarczająco czysta jak na morzu.",
+          "Dyskryminator po polu (`min_area`, `max_area`) ucinie duże bleed-y miejskie i pojedyncze speckle-spikes, ale corner-reflektorów wielkości pojazdu nie odróżni od prawdziwych celów.",
+          "Pełny operacyjny pipeline ATR jest trzystopniowy (CFAR → dyskryminator → klasyfikator chipów); do rozróżnienia pojazd vs corner-reflektor potrzebny jest stopień 3 (np. CNN MSTAR z modułu 5).",
+          "Maska wektorowa typu OSM coastline / land-mask jest tu kluczowa — bez niej CFAR będzie generował większość false-alarmów wzdłuż linii brzegowej (jak w detekcji statków, lekcja *4.4*).",
+          "CA-CFAR daje na lądzie kilkukrotnie więcej kandydatów niż na otwartym morzu przy tym samym $P_\\text{fa}$, ponieważ niejednorodne tło (granice las/miasto/pole) lokalnie łamie założenie o jednym rozkładzie Gamma w oknie training."
+        ],
+        "correct": [
+          1,
+          2,
+          4
+        ],
+        "explanation": "**(B) prawda** — to jest dokładnie ten test, który napisałeś (`removes_some_clutter`): po dyskryminatorze pole-średniego liczba FP-blobów spada względem surowego CFAR. Ale `clutter_truth` w `.npz` opisuje confuser-y o tej samej wielkości i jasności co pojazdy — dyskryminator po polu nie ma na nich żadnego sygnału.\n\n**(C) prawda** — to centralna teza Novaka 1997 i powód, dla którego klasyfikator MSTAR z modułu 5 *istnieje* w tym kursie. Stopień 3 (klasyfikacja chipów) to jedyne miejsce, w którym pojazd różni się od corner-reflektora w sposób, który da się zoperowalizować.\n\n**(E) prawda** — to bezpośredni wniosek z Rys. 1: ten sam CA-CFAR daje 10 FP-blobów na tile morskim i 32 na ladowym. CFAR zakłada *jeden* rozkład Gamma w oknie training; w polu to założenie zachodzi, ale na granicy las/miasto się łamie — lokalna estymata $\\mu_\\text{bg}$ skacze i próg lokalnie zostaje przeskoczony przez normalny clutter.\n\n**(A) fałsz** — kontrakt $P_\\text{fa}$ jest dotrzymany *w średniej* po całym kafelku, nie *lokalnie*. Na granicy klas terenu lokalna gęstość false-alarmów jest kilkukrotnie wyższa od deklarowanej. Drugi błąd: nawet idealny pre-screener daje pojazdy + clutter razem; rozróżnienie wymaga stopni 2 i 3.\n\n**(D) fałsz** — w **maritime** detekcji statków (lekcja *4.4*) ląd to ostre źródło FPs, więc land-mask ratuje pipeline. W detekcji pojazdów **na lądzie** to dokładnie odwrotnie: cała scena jest po stronie *land*; nie ma czego maskować. Tu trzeba lepszego *modelu klasyfikacji* kandydatów, nie polygonu obszaru roboczego.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "sandbox-tune-detector",
+      "title": "Pobaw się dyskryminatorem",
+      "description": "Zmieniaj WIN / GUARD / PFA / MIN_AREA / MAX_AREA i obserwuj, co dzieje się z recall, FP-count i liczbą trafionych confuserów.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nfrom scipy.ndimage import binary_closing, binary_opening, label, uniform_filter\nfrom scipy.special import gammaincinv\nimport matplotlib.pyplot as plt\n\nd = np.load('/inputs/detekcja-pojazdow-land-tile.npz')\nintensity = d['intensity']\nvehicle_truth = d['vehicle_truth']\nclutter_truth = d['clutter_truth']\nL = int(d['L'])\nH, W = intensity.shape\n\n# Zmieniaj te 4 pokretla i obserwuj recall vs FP-blobow.\nWIN = 8           # polbok pelnego okna\nGUARD = 3         # polbok guard ringu\nPFA = 1e-4        # target false-alarm rate\nMIN_AREA = 3      # minimalny rozmiar zachowanej komponenty\nMAX_AREA = 80     # maksymalny rozmiar zachowanej komponenty\n\n\ndef ca_cfar(img, win, guard, pfa, L):\n    img = img.astype(np.float32)\n    fs = 2 * win + 1\n    gs = 2 * guard + 1\n    nf = fs * fs\n    ng = gs * gs\n    nt = nf - ng\n    mu_full = uniform_filter(img, size=fs, mode='reflect')\n    mu_guard = uniform_filter(img, size=gs, mode='reflect')\n    mu_train = (nf * mu_full - ng * mu_guard) / nt\n    alpha = float(gammaincinv(L, 1 - pfa) / L)\n    return img > alpha * mu_train\n\n\ndef detect(intensity):\n    raw = ca_cfar(intensity, WIN, GUARD, PFA, L)\n    closed = binary_closing(raw, structure=np.ones((3, 3), dtype=bool))\n    opened = binary_opening(closed, structure=np.ones((2, 2), dtype=bool))\n    lab, n = label(opened)\n    keep = np.zeros_like(opened, dtype=bool)\n    for i in range(1, n + 1):\n        comp = lab == i\n        a = int(comp.sum())\n        if MIN_AREA <= a <= MAX_AREA:\n            keep |= comp\n    return keep\n\n\nmask = detect(intensity)\nlab_truth, n_truth = label(vehicle_truth)\nlab_clut, n_clut = label(clutter_truth)\nlab_det, n_det = label(mask)\nrecall = sum(1 for i in range(1, n_truth + 1) if (mask & (lab_truth == i)).any())\nclut_hits = sum(1 for i in range(1, n_clut + 1) if (mask & (lab_clut == i)).any())\nfp = sum(1 for i in range(1, n_det + 1) if not ((lab_det == i) & vehicle_truth).any())\n\ndisp = np.sqrt(np.clip(intensity, 0, None))\nvmax = float(np.percentile(disp, 99.5))\nrgb = np.stack([disp, disp, disp], -1) / max(disp.max(), 1e-6)\nrgb = np.clip(rgb, 0, 1)\nrgb[mask] = [0.1, 1.0, 0.1]\nplt.figure(figsize=(8.0, 6.4))\nplt.imshow(rgb)\nplt.title(\n    f'WIN={WIN} GUARD={GUARD} PFA={PFA:.0e} MIN_AREA={MIN_AREA} MAX_AREA={MAX_AREA}\\n'\n    f'recall {recall}/{n_truth}   FP blobow = {fp}   trafionych confuserow = {clut_hits}/{n_clut}'\n)\nplt.axis('off')\nplt.show()\n",
+        "encouragement": "Spróbuj wycisnąć z dyskryminatora maksimum przed klasyfikatorem — i zobacz, gdzie kończą się jego możliwości."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://www.ll.mit.edu/sites/default/files/page/doc/2018-05/11_1_1Novak.pdf",
+      "title": "Performance of a high-resolution polarimetric SAR automatic target recognition system",
+      "kind": "paper",
+      "author": "Leslie M. Novak, Gregory J. Owirka, William S. Brower, Aaron L. Weaver",
+      "year": 1997
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+      "title": "Target classification using the deep convolutional networks for SAR images",
+      "kind": "paper",
+      "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+      "year": 2016
+    },
+    {
+      "url": "https://www.sdms.afrl.af.mil/index.php?collection=mstar",
+      "title": "MSTAR Dataset overview (SDMS AFRL)",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.dst.defence.gov.au/publication/state-art-ship-detection-synthetic-aperture-radar-imagery",
+      "title": "The state-of-the-art in ship detection in SAR imagery",
+      "kind": "article",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P285.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images",
+      "kind": "book",
+      "author": "Chris Oliver and Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-applications",
+      "title": "Sentinel-1 Applications — ESA SentiWiki",
+      "kind": "article"
+    }
+  ]
+}
