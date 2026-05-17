@@ -191,16 +191,6 @@ const outputPanelStyle: CSSProperties = {
   borderTop: '1px solid var(--border)',
 };
 
-const footerStyle: CSSProperties = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  alignItems: 'center',
-  gap: 'var(--space-3)',
-  padding: 'var(--space-3) var(--space-5)',
-  borderTop: '1px solid var(--border)',
-  background: 'var(--bg-elevated)',
-};
-
 export const codeRunnerButtonBase: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
@@ -807,6 +797,67 @@ export function CodeRunner({
   // custom action is running (US-039).
   const showStop = running || actionRunning;
 
+  const actionsRow = (
+    <div
+      data-coderunner-actions
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 'var(--space-3)',
+        flexShrink: 0,
+      }}
+    >
+      <button
+        type="button"
+        data-coderunner-reset
+        onClick={handleReset}
+        style={ghostButtonStyle}
+        aria-label="Reset code to starter"
+      >
+        <RotateCcw size={14} aria-hidden />
+        Reset
+      </button>
+      {showStop ? (
+        <button
+          type="button"
+          data-coderunner-stop
+          data-testid="coderunner-stop"
+          onClick={handleStop}
+          style={stopButtonStyle}
+          aria-label="Stop running code"
+        >
+          <Square size={14} aria-hidden fill="currentColor" />
+          Stop
+        </button>
+      ) : showDefaultRun ? (
+        <button
+          type="button"
+          data-coderunner-run
+          onClick={() => void handleRun()}
+          disabled={runDisabled}
+          style={secondaryButtonStyle(runDisabled)}
+          aria-label="Run code"
+        >
+          <Play size={14} aria-hidden />
+          Run
+        </button>
+      ) : customAction !== null ? (
+        <button
+          type="button"
+          data-coderunner-action
+          data-testid={customAction.testId}
+          onClick={() => void customAction.onClick()}
+          disabled={customDisabled}
+          style={actionStyleFor(customAction.variant, customDisabled)}
+          aria-label={customAction.ariaLabel ?? customAction.label}
+        >
+          {customAction.icon}
+          {customAction.label}
+        </button>
+      ) : null}
+    </div>
+  );
+
   return (
     <div data-coderunner>
       <style>{LOADING_KEYFRAMES}</style>
@@ -818,92 +869,53 @@ export function CodeRunner({
         }}
       />
       <div data-coderunner-output style={outputPanelStyle}>
-        {status === 'loading' || status === 'idle' ? (
-          <LoadingIndicator />
-        ) : status === 'error' ? (
-          <ErrorCallout />
-        ) : restartReason ? (
-          <div data-coderunner-restart data-restart-reason={restartReason}>
-            <Callout tone="warning">
-              {restartReason === 'timeout'
-                ? 'Execution timed out after 30s. Session restarted.'
-                : 'Session restarted — re-run previous cells if needed.'}
-            </Callout>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 'var(--space-3)',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {status === 'loading' || status === 'idle' ? (
+              <LoadingIndicator />
+            ) : status === 'error' ? (
+              <ErrorCallout />
+            ) : restartReason ? (
+              <div data-coderunner-restart data-restart-reason={restartReason}>
+                <Callout tone="warning">
+                  {restartReason === 'timeout'
+                    ? 'Execution timed out after 30s. Session restarted.'
+                    : 'Session restarted — re-run previous cells if needed.'}
+                </Callout>
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 'var(--space-3)',
+                }}
+              >
+                <OutputBody
+                  output={output}
+                  running={running}
+                  placeholder={outputPlaceholder}
+                  collapsed={outputCollapsed}
+                  onToggleCollapsed={() => setOutputCollapsed((v) => !v)}
+                  tracebackOpen={tracebackOpen}
+                  onToggleTraceback={() => setTracebackOpen((v) => !v)}
+                />
+                {outputMediaSlot}
+              </div>
+            )}
           </div>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 'var(--space-3)',
-            }}
-          >
-            <OutputBody
-              output={output}
-              running={running}
-              placeholder={outputPlaceholder}
-              collapsed={outputCollapsed}
-              onToggleCollapsed={() => setOutputCollapsed((v) => !v)}
-              tracebackOpen={tracebackOpen}
-              onToggleTraceback={() => setTracebackOpen((v) => !v)}
-            />
-            {outputMediaSlot}
-          </div>
-        )}
+          {actionsRow}
+        </div>
       </div>
       {extraPanel !== undefined && (
         <div data-coderunner-extra>{extraPanel}</div>
       )}
-      <div style={footerStyle}>
-        <button
-          type="button"
-          data-coderunner-reset
-          onClick={handleReset}
-          style={ghostButtonStyle}
-          aria-label="Reset code to starter"
-        >
-          <RotateCcw size={14} aria-hidden />
-          Reset
-        </button>
-        {showStop ? (
-          <button
-            type="button"
-            data-coderunner-stop
-            data-testid="coderunner-stop"
-            onClick={handleStop}
-            style={stopButtonStyle}
-            aria-label="Stop running code"
-          >
-            <Square size={14} aria-hidden fill="currentColor" />
-            Stop
-          </button>
-        ) : showDefaultRun ? (
-          <button
-            type="button"
-            data-coderunner-run
-            onClick={() => void handleRun()}
-            disabled={runDisabled}
-            style={secondaryButtonStyle(runDisabled)}
-            aria-label="Run code"
-          >
-            <Play size={14} aria-hidden />
-            Run
-          </button>
-        ) : customAction !== null ? (
-          <button
-            type="button"
-            data-coderunner-action
-            data-testid={customAction.testId}
-            onClick={() => void customAction.onClick()}
-            disabled={customDisabled}
-            style={actionStyleFor(customAction.variant, customDisabled)}
-            aria-label={customAction.ariaLabel ?? customAction.label}
-          >
-            {customAction.icon}
-            {customAction.label}
-          </button>
-        ) : null}
-      </div>
     </div>
   );
 }
