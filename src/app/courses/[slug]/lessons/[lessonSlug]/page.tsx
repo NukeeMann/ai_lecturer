@@ -25,6 +25,7 @@ import {
   HelpCircle,
   Library,
   Loader2,
+  MoreHorizontal,
   Pencil,
   Printer,
   RefreshCw,
@@ -3216,7 +3217,7 @@ function LessonStream({
       data-testid="lesson-stream"
       style={{
         width: '100%',
-        maxWidth: 760,
+        maxWidth: 1040,
         margin: '0 auto',
         paddingLeft: 'calc(var(--space-8) * 2)',
         paddingRight: 'calc(var(--space-8) * 2)',
@@ -3304,131 +3305,87 @@ function LessonHeader({
   onOpenRegenLesson: () => void;
   onExportPdf: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchorRef = useRef<HTMLDivElement | null>(null);
   return (
     <header
       data-testid="lesson-header"
       style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
     >
       <div
-        data-testid="lesson-header-eyebrow"
-        style={{
-          fontSize: 'var(--fs-xs)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          fontWeight: 600,
-          color: 'var(--text-tertiary)',
-          lineHeight: 1.2,
-        }}
-      >
-        Module {moduleN} · Lesson {lessonM}
-      </div>
-      <div
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           gap: 'var(--space-3)',
+          minHeight: 24,
         }}
       >
-        <h1
-          data-testid="lesson-header-title"
+        <div
+          data-testid="lesson-header-eyebrow"
           style={{
-            margin: 0,
-            flex: 1,
-            fontSize: 'var(--fs-3xl)',
+            fontSize: 'var(--fs-xs)',
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
             fontWeight: 600,
-            letterSpacing: '-0.02em',
-            fontFamily: 'var(--font-display)',
-            color: 'var(--text)',
-            lineHeight: 1.15,
+            color: 'var(--text-tertiary)',
+            lineHeight: 1.2,
           }}
         >
-          {title}
-        </h1>
-        <button
-          type="button"
-          data-testid="lesson-header-sources-btn"
-          onClick={onOpenLessonSources}
-          aria-label="Edit lesson sources"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 10px',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: 'var(--fs-xs)',
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
+          Module {moduleN} · Lesson {lessonM}
+        </div>
+        <div
+          ref={menuAnchorRef}
+          style={{ position: 'relative', display: 'inline-flex' }}
         >
-          <Library size={14} aria-hidden />
-          Lesson sources
-          {sourcesCount > 0 && (
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                color: 'var(--text-tertiary)',
-              }}
-            >
-              {sourcesCount}
-            </span>
+          <button
+            type="button"
+            data-testid="lesson-header-menu-btn"
+            aria-label="Lesson actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+            style={{
+              width: 28,
+              height: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid transparent',
+              background: menuOpen ? 'var(--bg-active)' : 'transparent',
+              color: menuOpen ? 'var(--text)' : 'var(--text-tertiary)',
+              cursor: 'pointer',
+            }}
+          >
+            <MoreHorizontal size={16} aria-hidden />
+          </button>
+          {menuOpen && (
+            <LessonHeaderMenu
+              anchorRef={menuAnchorRef}
+              sourcesCount={sourcesCount}
+              onClose={() => setMenuOpen(false)}
+              onOpenLessonSources={onOpenLessonSources}
+              onOpenRegenLesson={onOpenRegenLesson}
+              onExportPdf={onExportPdf}
+            />
           )}
-        </button>
-        <button
-          type="button"
-          data-testid="regen-lesson-btn"
-          onClick={onOpenRegenLesson}
-          aria-label="Regenerate lesson"
-          title="Regenerate lesson"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 10px',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: 'var(--fs-xs)',
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
-        >
-          <Sparkles size={14} aria-hidden />
-          Regenerate lesson
-        </button>
-        <button
-          type="button"
-          data-testid="export-lesson-pdf-btn"
-          onClick={onExportPdf}
-          aria-label="Print to PDF"
-          title="Print to PDF"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 10px',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            fontSize: 'var(--fs-xs)',
-            fontWeight: 500,
-            flexShrink: 0,
-          }}
-        >
-          <Printer size={14} aria-hidden />
-          Print to PDF
-        </button>
+        </div>
       </div>
+      <h1
+        data-testid="lesson-header-title"
+        style={{
+          margin: 0,
+          fontSize: 'var(--fs-3xl)',
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          fontFamily: 'var(--font-display)',
+          color: 'var(--text)',
+          lineHeight: 1.15,
+        }}
+      >
+        {title}
+      </h1>
       {description ? (
         <p
           data-testid="lesson-header-description"
@@ -3443,6 +3400,158 @@ function LessonHeader({
         </p>
       ) : null}
     </header>
+  );
+}
+
+interface LessonHeaderMenuProps {
+  anchorRef: RefObject<HTMLDivElement | null>;
+  sourcesCount: number;
+  onClose: () => void;
+  onOpenLessonSources: () => void;
+  onOpenRegenLesson: () => void;
+  onExportPdf: () => void;
+}
+
+function LessonHeaderMenu({
+  anchorRef,
+  sourcesCount,
+  onClose,
+  onOpenLessonSources,
+  onOpenRegenLesson,
+  onExportPdf,
+}: LessonHeaderMenuProps) {
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setCoords({
+        top: r.bottom + 6,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchorRef]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node;
+      if (anchorRef.current?.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onMouseDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onMouseDown);
+    };
+  }, [anchorRef, onClose]);
+
+  if (typeof document === 'undefined' || !coords) return null;
+
+  const itemStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    padding: '8px 12px',
+    background: 'transparent',
+    border: 0,
+    color: 'var(--text)',
+    cursor: 'pointer',
+    fontSize: 'var(--fs-sm)',
+    fontWeight: 500,
+    textAlign: 'left',
+  };
+
+  return createPortal(
+    <div
+      ref={popoverRef}
+      role="menu"
+      aria-label="Lesson actions"
+      data-testid="lesson-header-menu"
+      style={{
+        position: 'fixed',
+        top: coords.top,
+        right: coords.right,
+        minWidth: 200,
+        zIndex: 30,
+        background: 'var(--bg-elevated)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 'var(--radius-md)',
+        boxShadow: 'var(--shadow-md, 0 12px 32px rgba(0,0,0,0.18))',
+        padding: 4,
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="lesson-header-sources-btn"
+        onClick={() => {
+          onClose();
+          onOpenLessonSources();
+        }}
+        style={itemStyle}
+      >
+        <Library size={14} aria-hidden />
+        <span style={{ flex: 1 }}>Lesson sources</span>
+        {sourcesCount > 0 && (
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-tertiary)',
+              fontSize: 'var(--fs-xs)',
+            }}
+          >
+            {sourcesCount}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="regen-lesson-btn"
+        onClick={() => {
+          onClose();
+          onOpenRegenLesson();
+        }}
+        style={itemStyle}
+      >
+        <Sparkles size={14} aria-hidden />
+        <span>Regenerate lesson</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        data-testid="export-lesson-pdf-btn"
+        onClick={() => {
+          onClose();
+          onExportPdf();
+        }}
+        style={itemStyle}
+      >
+        <Printer size={14} aria-hidden />
+        <span>Print to PDF</span>
+      </button>
+    </div>,
+    document.body,
   );
 }
 
