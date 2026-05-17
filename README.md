@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/logo.png" alt="AI Lecturer logo" width="220" />
+</p>
+
 # AI Lecturer
 
 A single-user, locally-hosted web app for studying interactive AI-generated lessons. The course-creation wizard runs the local `claude` CLI as subprocesses to produce a per-course `course.json` and per-lesson content; the webapp renders that JSON, tracks per-lesson progress on disk, and lets you keep extending or regenerating courses after they're built.
