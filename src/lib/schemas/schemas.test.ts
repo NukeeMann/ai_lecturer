@@ -451,6 +451,26 @@ describe('Per-widget data schemas', () => {
     expect(() => SandboxDataSchema.parse({ starterCode: 'x' })).toThrow();
   });
 
+  it('SandboxData: accepts inputs[], outputMedia, requiresPackages', () => {
+    const full = {
+      starterCode: 'x',
+      encouragement: 'go',
+      requiresPackages: ['cv2', 'matplotlib'],
+      inputs: [
+        { kind: 'image', src: '/a.png', alt: 'a', caption: 'cap' },
+        { kind: 'text', content: 'hello', label: 'note' },
+      ],
+      outputMedia: {
+        kind: 'image',
+        src: '/out.png',
+        alt: 'o',
+        caption: 'out',
+        live: true,
+      },
+    };
+    expect(() => SandboxDataSchema.parse(full)).not.toThrow();
+  });
+
   it('PlotImageData: parses a minimal valid object', () => {
     const ok = { src: '/foo.png', alt: 'A plot' };
     expect(() => PlotImageDataSchema.parse(ok)).not.toThrow();

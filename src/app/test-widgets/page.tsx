@@ -6,7 +6,7 @@ import { SAMPLE_CODE_BOX_BLUR } from '@/widgets/Code/sample';
 import { SAMPLE_DEMO_GAUSS } from '@/widgets/Demo/sample';
 import { QuizWidget } from '@/widgets/Quiz/QuizWidget';
 import { SAMPLE_QUIZ_SINGLE } from '@/widgets/Quiz/sample';
-import { SAMPLE_SANDBOX_GAUSS } from '@/widgets/Sandbox/sample';
+import { SAMPLE_SANDBOX_BLUR_PLAYGROUND, SAMPLE_SANDBOX_GAUSS } from '@/widgets/Sandbox/sample';
 import { SAMPLE_THEORY_MARKDOWN } from '@/widgets/Theory/sample';
 import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
@@ -51,6 +51,12 @@ const samples: SampleSection[] = [
     title: 'Try changing the sigma — nothing breaks',
     status: 'todo',
     data: SAMPLE_SANDBOX_GAUSS,
+  },
+  {
+    type: 'sandbox',
+    title: 'Box blur playground — tweak ksize, watch the output update',
+    status: 'todo',
+    data: SAMPLE_SANDBOX_BLUR_PLAYGROUND,
   },
   { type: 'custom', title: 'Custom histogram viz', status: 'todo' },
 ];
@@ -117,7 +123,7 @@ export default function TestWidgetsPage() {
           if (sample.type === 'quiz') {
             return (
               <Widget
-                key={sample.type}
+                key={`${sample.type}-${index}`}
                 type={sample.type}
                 sectionNumber={index + 1}
                 title={sample.title}
@@ -135,7 +141,7 @@ export default function TestWidgetsPage() {
           const Body = widgetRegistry[sample.type].component;
           return (
             <Widget
-              key={sample.type}
+              key={`${sample.type}-${index}`}
               type={sample.type}
               sectionNumber={index + 1}
               title={sample.title}
