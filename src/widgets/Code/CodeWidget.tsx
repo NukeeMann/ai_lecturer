@@ -570,7 +570,8 @@ const inputsListStyle: CSSProperties = {
   gap: 'var(--space-3)',
 };
 
-const IO_MEDIA_MAX_PX = 320;
+const IO_MEDIA_MAX_PX = 220;
+const IO_OUTPUT_MAX_PX = 220;
 
 const inputMediaStyle: CSSProperties = {
   display: 'block',
@@ -797,8 +798,8 @@ const outputMediaStyle: CSSProperties = {
   display: 'block',
   width: 'auto',
   height: 'auto',
-  maxWidth: `min(100%, ${IO_MEDIA_MAX_PX}px)`,
-  maxHeight: `${IO_MEDIA_MAX_PX}px`,
+  maxWidth: `min(100%, ${IO_OUTPUT_MAX_PX}px)`,
+  maxHeight: `${IO_OUTPUT_MAX_PX}px`,
   objectFit: 'contain',
   borderRadius: 'var(--radius-md)',
   border: '1px solid var(--border)',
