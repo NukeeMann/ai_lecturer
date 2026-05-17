@@ -2163,7 +2163,6 @@ function Toolbar({
 
       <Breadcrumb
         course={course}
-        lesson={lesson}
         moduleTitle={moduleTitle}
         slug={slug}
       />
@@ -2247,21 +2246,22 @@ function TutorToolbarButton({
 
 interface BreadcrumbProps {
   course: Course | null;
-  lesson: Lesson | null;
   moduleTitle: string;
   slug: string;
 }
 
-function Breadcrumb({ course, lesson, moduleTitle, slug }: BreadcrumbProps) {
+function Breadcrumb({ course, moduleTitle, slug }: BreadcrumbProps) {
   const tertiary: CSSProperties = {
     color: 'var(--text-tertiary)',
     fontSize: 'var(--fs-sm)',
     textDecoration: 'none',
+    whiteSpace: 'nowrap',
   };
   const primary: CSSProperties = {
     color: 'var(--text)',
     fontSize: 'var(--fs-sm)',
     fontWeight: 500,
+    whiteSpace: 'nowrap',
   };
   const sep: CSSProperties = {
     color: 'var(--text-quaternary)',
@@ -2275,8 +2275,8 @@ function Breadcrumb({ course, lesson, moduleTitle, slug }: BreadcrumbProps) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        minWidth: 0,
-        overflow: 'hidden',
+        flexShrink: 0,
+        whiteSpace: 'nowrap',
       }}
     >
       <Link href="/" style={tertiary} data-testid="breadcrumb-course">
@@ -2285,15 +2285,9 @@ function Breadcrumb({ course, lesson, moduleTitle, slug }: BreadcrumbProps) {
       <span style={sep} aria-hidden>
         ›
       </span>
-      <Link href={`/courses/${slug}`} style={tertiary} data-testid="breadcrumb-module">
+      <Link href={`/courses/${slug}`} style={primary} data-testid="breadcrumb-module">
         {moduleTitle || '—'}
       </Link>
-      <span style={sep} aria-hidden>
-        ›
-      </span>
-      <span style={primary} data-testid="breadcrumb-lesson">
-        {lesson?.title ?? '—'}
-      </span>
     </nav>
   );
 }
