@@ -9,8 +9,10 @@ import {
   type ComponentType,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { use } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -1414,6 +1416,7 @@ export default function LessonShellPage({
           gridRow: '2 / 3',
           minWidth: 0,
           overflow: 'auto',
+          scrollbarGutter: 'stable',
           padding: 'var(--space-6) var(--space-6) var(--space-7)',
           background: 'var(--bg)',
         }}
@@ -2874,6 +2877,8 @@ function BottomBar({
         justifyContent: 'space-between',
         padding: '0 var(--space-5)',
         gap: 'var(--space-3)',
+        position: 'relative',
+        zIndex: 40,
       }}
     >
       <NavButton
@@ -3211,6 +3216,7 @@ function LessonStream({
       data-testid="lesson-stream"
       style={{
         width: '100%',
+        maxWidth: 760,
         margin: '0 auto',
         paddingLeft: 'calc(var(--space-8) * 2)',
         paddingRight: 'calc(var(--space-8) * 2)',
@@ -3884,6 +3890,7 @@ function SectionRegenAnchor({
           lessonSlug={lessonSlug}
           onClose={onClose}
           onAccept={onAccept}
+          anchorRef={wrapperRef}
         />
       )}
     </div>
@@ -3896,6 +3903,7 @@ interface SectionRegenPopoverProps {
   lessonSlug: string;
   onClose: () => void;
   onAccept: (newSection: Section) => Promise<void>;
+  anchorRef: RefObject<HTMLDivElement | null>;
 }
 
 const QUICK_PICKS: ReadonlyArray<string> = [
@@ -3916,6 +3924,7 @@ function SectionRegenPopover({
   lessonSlug,
   onClose,
   onAccept,
+  anchorRef,
 }: SectionRegenPopoverProps) {
   const [instruction, setInstruction] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -3923,6 +3932,31 @@ function SectionRegenPopover({
   const [proposal, setProposal] = useState<Section | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
+  // Popover lives in a portal at <body> to escape the widget's `overflow:
+  // hidden`. Coords are recomputed from the anchor on mount + on scroll/resize
+  // so it tracks the button when the lesson column scrolls.
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    const el = anchorRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setCoords({
+        top: r.bottom + 6,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    // capture=true so nested scrollers (the lesson <main>) also trigger.
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [anchorRef]);
 
   const handleSubmit = useCallback(async () => {
     const trimmed = instruction.trim();
@@ -3969,16 +4003,16 @@ function SectionRegenPopover({
     onClose();
   }, [onClose]);
 
-  return (
+  if (typeof document === 'undefined' || !coords) return null;
+  return createPortal(
     <div
       data-testid={`regen-popover-${section.id}`}
       role="dialog"
       aria-label={`Regenerate "${section.title}"`}
       style={{
-        position: 'absolute',
-        top: '100%',
-        right: 0,
-        marginTop: 6,
+        position: 'fixed',
+        top: coords.top,
+        right: coords.right,
         width: 480,
         maxHeight: '70vh',
         overflowY: 'auto',
@@ -4240,7 +4274,8 @@ function SectionRegenPopover({
           </div>
         </>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

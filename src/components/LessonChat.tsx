@@ -24,8 +24,6 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { useKeyboardShortcut } from '@/lib/hooks/useKeyboardShortcut';
-import { modLabel } from '@/lib/platform/platform';
-import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { preprocessMath } from '@/lib/client/mathPreprocess';
 import { readTtsVoice } from '@/lib/client/ttsVoice';
 import {
@@ -87,7 +85,6 @@ export function LessonChat({
   onResizeEnd,
   initialMessages,
 }: LessonChatProps) {
-  const isMac = useIsMacPlatform();
   // Ctrl+Q toggles the panel. Mounted from this component (per US-078 AC) so
   // the binding lives next to the state owner; the hook installs/removes a
   // window-level keydown listener and no-ops while the user is typing.
@@ -1202,9 +1199,6 @@ export function LessonChat({
                 aria-hidden
               />
             ) : null}
-            <span data-testid="lesson-chat-send-hint" style={hintStyle}>
-              {modLabel(isMac)}+Enter to send
-            </span>
           </div>
           <div style={btnGroupStyle}>
             <button
@@ -1615,12 +1609,6 @@ const composerControlsStyle: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   gap: 6,
-};
-
-const hintStyle: CSSProperties = {
-  fontSize: '11px',
-  color: 'var(--text-quaternary)',
-  fontFamily: 'var(--font-mono)',
 };
 
 const btnGroupStyle: CSSProperties = {

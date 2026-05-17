@@ -254,7 +254,7 @@ const codeBlockStyle: CSSProperties = {
   background: 'var(--code-bg)',
   color: 'var(--code-text)',
   fontFamily: 'var(--font-mono)',
-  fontSize: '13px',
+  fontSize: 'calc(13px * var(--text-scale, 1))',
   lineHeight: 1.55,
   padding: 'var(--space-4) var(--space-5)',
   whiteSpace: 'pre-wrap',
@@ -265,7 +265,7 @@ const codeBlockStyle: CSSProperties = {
 
 const slotInputBase: CSSProperties = {
   fontFamily: 'var(--font-mono)',
-  fontSize: '13px',
+  fontSize: 'calc(13px * var(--text-scale, 1))',
   lineHeight: 1.55,
   padding: '0 6px',
   margin: '0 1px',
@@ -365,7 +365,7 @@ const testRowStyle: CSSProperties = {
   alignItems: 'center',
   gap: 'var(--space-2)',
   fontFamily: 'var(--font-mono)',
-  fontSize: '12px',
+  fontSize: 'calc(12px * var(--text-scale, 1))',
   color: 'var(--text)',
 };
 

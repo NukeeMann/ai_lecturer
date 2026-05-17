@@ -269,7 +269,7 @@ const testRowButtonStyle: CSSProperties = {
   cursor: 'pointer',
   textAlign: 'left',
   fontFamily: 'var(--font-mono)',
-  fontSize: '12px',
+  fontSize: 'calc(12px * var(--text-scale, 1))',
   color: 'var(--text)',
   borderRadius: 'var(--radius-sm)',
 };

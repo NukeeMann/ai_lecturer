@@ -99,7 +99,7 @@ export interface CodeRunnerProps {
   runInputs?: PyodideInputFile[];
 }
 
-const FONT_SIZE = '13px';
+const FONT_SIZE = 'calc(13px * var(--text-scale, 1))';
 const LINE_HEIGHT = 1.55;
 const SAVE_DEBOUNCE_MS = 800;
 

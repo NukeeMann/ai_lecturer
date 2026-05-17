@@ -8,6 +8,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BookOpen,
   ChevronDown,
@@ -242,14 +243,20 @@ export function SectionSourcesPopover({
 }: SectionSourcesPopoverProps) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  // Popover is portaled to <body> (see below) to escape the widget's
+  // `overflow: hidden`; coords track the trigger on scroll/resize.
+  const [coords, setCoords] = useState<{ top: number; right: number } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!open) return;
     function onMouseDown(e: MouseEvent) {
-      if (!wrapperRef.current) return;
-      if (!wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (wrapperRef.current?.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') setOpen(false);
@@ -259,6 +266,26 @@ export function SectionSourcesPopover({
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setCoords({
+        top: r.bottom + 6,
+        right: Math.max(8, window.innerWidth - r.right),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
     };
   }, [open]);
 
@@ -288,49 +315,52 @@ export function SectionSourcesPopover({
       >
         <LinkIcon size={16} aria-hidden />
       </button>
-      {open && (
-        <div
-          data-testid="section-sources-popover"
-          role="dialog"
-          style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: 6,
-            width: 320,
-            maxWidth: 'calc(100vw - 24px)',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: 'var(--radius-md)',
-            boxShadow: 'var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12))',
-            padding: 'var(--space-3)',
-            zIndex: 30,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-2)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: 'var(--fs-xs)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              fontWeight: 600,
-              color: 'var(--text-tertiary)',
-              padding: '2px 4px',
-            }}
-          >
-            Sources
-          </div>
-          {sources.map((source, i) => (
-            <SourceCard
-              key={`${source.url}-${i}`}
-              source={source}
-              testId="section-source-card"
-            />
-          ))}
-        </div>
-      )}
+      {open && coords && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              data-testid="section-sources-popover"
+              role="dialog"
+              style={{
+                position: 'fixed',
+                top: coords.top,
+                right: coords.right,
+                width: 320,
+                maxWidth: 'calc(100vw - 24px)',
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-strong)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: 'var(--shadow-md, 0 8px 24px rgba(0, 0, 0, 0.12))',
+                padding: 'var(--space-3)',
+                zIndex: 30,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-2)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  fontWeight: 600,
+                  color: 'var(--text-tertiary)',
+                  padding: '2px 4px',
+                }}
+              >
+                Sources
+              </div>
+              {sources.map((source, i) => (
+                <SourceCard
+                  key={`${source.url}-${i}`}
+                  source={source}
+                  testId="section-source-card"
+                />
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
