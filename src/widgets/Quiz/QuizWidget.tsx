@@ -3,7 +3,13 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, X } from 'lucide-react';
 
+import ReactMarkdown, { type Components } from 'react-markdown';
+import rehypeKatex from 'rehype-katex';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+
 import { Confetti } from '@/components/Confetti';
+import { preprocessMath } from '@/lib/client/mathPreprocess';
 
 import type { QuizData } from './schema';
 import {
@@ -12,6 +18,30 @@ import {
   shouldShowX,
   type OptionState,
 } from './optionState';
+
+// Quiz question / options / explanation are authored with the same $…$ /
+// \(…\) math (and occasional **markdown**) as Theory, but were previously
+// rendered as raw strings — so KaTeX showed literal dollar signs. Render
+// them through the same remark-gfm + remark-math + rehype-katex pipeline as
+// Theory. The auto <p> wrapper is unwrapped so text stays inline inside the
+// flex rows / option buttons (layout unchanged, no block margins).
+const inlineMarkdownComponents: Components = {
+  p: (({ children }: { children?: React.ReactNode }) => (
+    <>{children}</>
+  )) as Components['p'],
+};
+
+function MathText({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={inlineMarkdownComponents}
+    >
+      {preprocessMath(children)}
+    </ReactMarkdown>
+  );
+}
 
 export interface QuizProgressKey {
   courseSlug: string;
@@ -246,7 +276,7 @@ export function QuizWidget({
     <div data-quiz-body style={bodyStyle} ref={confettiOriginRef}>
       <Confetti trigger={confettiTrigger} originRef={confettiOriginRef} />
       <div data-quiz-question style={questionStyle}>
-        {data.question}
+        <MathText>{data.question}</MathText>
       </div>
 
       <div
@@ -282,7 +312,9 @@ export function QuizWidget({
               style={optionStyle(state, hovered === i)}
             >
               <span style={optionLetterStyle(state)}>{LETTERS[i] ?? `${i + 1}`}</span>
-              <span style={optionTextStyle(state)}>{option}</span>
+              <span style={optionTextStyle(state)}>
+                <MathText>{option}</MathText>
+              </span>
               {showCheck && (
                 <Check
                   size={16}
@@ -328,7 +360,9 @@ export function QuizWidget({
       {everSubmitted && (
         <div data-quiz-explanation style={explanationStyle}>
           <div style={explanationTitleStyle}>Explanation</div>
-          <div style={explanationBodyStyle}>{data.explanation}</div>
+          <div style={explanationBodyStyle}>
+            <MathText>{data.explanation}</MathText>
+          </div>
         </div>
       )}
     </div>

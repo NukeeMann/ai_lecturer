@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { Check, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
@@ -612,7 +613,7 @@ export function CodeClozeWidget({
     <div data-cloze-body style={wrapStyle}>
       {data.taskMarkdown && (
         <div data-cloze-task style={taskStyle}>
-          <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
             {data.taskMarkdown}
           </ReactMarkdown>
         </div>
@@ -694,7 +695,7 @@ export function CodeClozeWidget({
               data-testid={`cloze-progressive-hint-${i}`}
               style={hintBodyStyle}
             >
-              <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+              <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[rehypeKatex]}>
                 {h.markdown}
               </ReactMarkdown>
             </div>

@@ -11,6 +11,7 @@ import { notFound } from 'next/navigation';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { remarkCallout } from '@/widgets/Theory/remarkCallout';
@@ -139,7 +140,7 @@ function PrintMarkdown({ markdown }: { markdown: string }) {
   return (
     <div className="print-markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkDirective, remarkCallout, remarkMath]}
+        remarkPlugins={[remarkDirective, remarkCallout, remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >

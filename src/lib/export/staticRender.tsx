@@ -16,6 +16,7 @@ import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { remarkCallout } from '@/widgets/Theory/remarkCallout';
@@ -154,7 +155,7 @@ function StaticTheory({ markdown }: { markdown: string }) {
   return (
     <div data-theory-body>
       <ReactMarkdown
-        remarkPlugins={[remarkDirective, remarkCallout, remarkMath]}
+        remarkPlugins={[remarkDirective, remarkCallout, remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >

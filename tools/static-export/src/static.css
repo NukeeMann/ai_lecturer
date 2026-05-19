@@ -1,0 +1,180 @@
+/* Layout shell only. Widget visuals come from the app's design tokens
+   (tokens.css) which the widget components reference via var(--…) inline. */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent-text, var(--accent)); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.sx-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+/* ---- Lesson shell: sticky TOC + content -------------------------------- */
+.sx-shell {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 28px 24px 80px;
+}
+.sx-shell--index { grid-template-columns: minmax(0, 1fr); }
+
+.sx-toc {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-elevated);
+  padding: 16px;
+  font-size: 14px;
+}
+.sx-toc-home {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 14px;
+}
+.sx-toc-module { margin-bottom: 14px; }
+.sx-toc-module-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+.sx-toc ul { list-style: none; margin: 0; padding: 0; }
+.sx-toc li { margin: 2px 0; }
+.sx-toc-link {
+  display: block;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm, 6px);
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+.sx-toc-link:hover { background: var(--bg-hover); text-decoration: none; }
+.sx-toc-link.active {
+  background: var(--accent-subtle);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.sx-main { min-width: 0; }
+.sx-lesson-head { margin-bottom: 28px; }
+.sx-lesson-head h1 {
+  font-size: 30px;
+  line-height: 1.2;
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+.sx-lesson-desc { color: var(--text-secondary); margin: 0; font-size: 17px; }
+
+.sx-sections { display: flex; flex-direction: column; gap: 24px; }
+
+.sx-sources {
+  margin-top: 36px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.sx-sources h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+.sx-sources ol { padding-left: 20px; }
+.sx-sources li { margin: 4px 0; }
+
+.sx-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.sx-pager a {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-weight: 500;
+  max-width: 45%;
+}
+.sx-pager a:hover { background: var(--bg-hover); text-decoration: none; }
+
+/* ---- Course index ------------------------------------------------------ */
+.sx-main--index { max-width: 820px; margin: 0 auto; }
+.sx-course-head { margin: 24px 0 36px; }
+.sx-course-head h1 { font-size: 36px; margin: 0 0 12px; font-weight: 800; }
+.sx-course-desc { font-size: 18px; color: var(--text-secondary); margin: 0 0 12px; }
+.sx-course-meta { font-size: 14px; color: var(--text-tertiary); }
+
+.sx-modules { list-style: none; margin: 0; padding: 0; counter-reset: mod; }
+.sx-module {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-elevated);
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+.sx-module-head h2 { font-size: 20px; margin: 4px 0 6px; }
+.sx-module-index {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
+}
+.sx-module-summary { color: var(--text-secondary); margin: 0 0 12px; font-size: 15px; }
+.sx-lessons { list-style: none; margin: 8px 0 0; padding: 0; }
+.sx-lesson-row { margin: 0; }
+.sx-lesson-row a {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md, 8px);
+  color: var(--text);
+}
+.sx-lesson-row a:hover { background: var(--bg-hover); text-decoration: none; }
+.sx-lesson-num { color: var(--text-tertiary); font-variant-numeric: tabular-nums; font-size: 14px; min-width: 34px; }
+.sx-lesson-title { font-weight: 500; }
+
+.sx-foot {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 880px) {
+  .sx-shell { grid-template-columns: minmax(0, 1fr); }
+  .sx-toc {
+    position: static;
+    max-height: none;
+    margin-bottom: 8px;
+  }
+}
