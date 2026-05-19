@@ -26,6 +26,16 @@ DEFAULT_SPEAKER="Ana Florence"
 
 log() { printf '[setup-tts] %s\n' "$*"; }
 
+# Cross-platform temp .wav. GNU coreutils supports `mktemp --suffix=.wav`,
+# but BSD mktemp (macOS) does not — create a base temp file then rename it
+# so the path ends in .wav on every platform.
+mk_tmp_wav() {
+  local base
+  base="$(mktemp -t setup-tts.XXXXXX)"
+  mv "${base}" "${base}.wav"
+  printf '%s\n' "${base}.wav"
+}
+
 # --- 1. Platform check -------------------------------------------------------
 case "$(uname -s)" in
   Linux*)
@@ -91,7 +101,7 @@ else
   # output. This forces the model download.
   # XTTS v2 has `tos_required: true`; without COQUI_TOS_AGREED=1 the CLI
   # prompts on stdin and errors out under non-interactive shells.
-  TMP_WAV="$(mktemp --suffix=.wav)"
+  TMP_WAV="$(mk_tmp_wav)"
   if COQUI_TOS_AGREED=1 "${TTS_BIN}" \
         --text "ok" \
         --model_name "${MODEL_NAME}" \
@@ -110,7 +120,7 @@ fi
 
 # --- 5. Verify with a 1-second test synthesis -------------------------------
 log "Verifying installation with a 1-second test synthesis…"
-VERIFY_WAV="$(mktemp --suffix=.wav)"
+VERIFY_WAV="$(mk_tmp_wav)"
 if COQUI_TOS_AGREED=1 "${TTS_BIN}" \
       --text "Hello." \
       --model_name "${MODEL_NAME}" \

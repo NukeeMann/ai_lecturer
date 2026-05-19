@@ -105,6 +105,44 @@ Any step that needs credentials (`gh auth login`, `claude /login`) prompts you l
 </details>
 
 <details>
+<summary><b>Quick start — macOS (clean machine)</b></summary>
+
+<br/>
+
+A one-shot Bash setup script lives at `setup.sh` in the repo root. It installs Node.js via Homebrew (if missing), runs `npm install`, installs the Claude Code CLI globally, opens an interactive `claude` REPL for first-time login, sets up TTS/STT natively (Coqui XTTS + whisper.cpp — **no WSL needed**, unlike Windows), and starts `npm run dev`.
+
+Bootstrap on a fresh macOS box (run in Terminal):
+
+```bash
+# 1. Prerequisites: Homebrew (skip if you already have it)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 2. Git + GitHub CLI (skip any you already have)
+brew install git gh
+
+# 3. Authenticate to GitHub (interactive — choose HTTPS + browser login)
+gh auth login
+
+# 4. Clone the repo and enter it
+gh repo clone NukeeMann/ai_lecturer
+cd ai_lecturer
+
+# 5. Run the setup script
+./setup.sh
+```
+
+The script is idempotent — re-run it any time. Useful flags:
+
+- `./setup.sh --skip-login` — already logged into Claude Code
+- `./setup.sh --skip-dev` — install/login only, don't start the dev server
+- `./setup.sh --skip-media` — skip TTS/STT (Coqui XTTS + whisper.cpp)
+- `./setup.sh --skip-login --skip-dev --skip-media` — silent install only
+
+Any step that needs credentials (`gh auth login`, `claude /login`) prompts you live in the same terminal — no env-vars or secrets files required. Works on both Apple Silicon and Intel Macs.
+
+</details>
+
+<details>
 <summary><b>Quick start — any platform</b></summary>
 
 <br/>

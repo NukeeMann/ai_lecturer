@@ -66,8 +66,18 @@ MAIN_BIN_CLI="${REPO_DIR}/build/bin/whisper-cli"
 if [[ -x "${MAIN_BIN_NEW}" || -x "${MAIN_BIN_OLD}" || -x "${MAIN_BIN_CLI}" ]]; then
   log "whisper.cpp binary already built — skipping make."
 else
-  log "Building whisper.cpp (this can take a few minutes)…"
-  ( cd "${REPO_DIR}" && make -j"$(nproc 2>/dev/null || echo 2)" )
+  log "Building whisper.cpp via cmake (this can take a few minutes)…"
+  # Current whisper.cpp ships cmake only (the top-level Makefile was removed
+  # upstream). cmake emits `build/bin/whisper-cli`, which is the first path
+  # src/lib/server/stt.ts probes. Fall back to `make` for older checkouts
+  # that still carry a Makefile.
+  JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)"
+  if [[ -f "${REPO_DIR}/CMakeLists.txt" ]]; then
+    cmake -S "${REPO_DIR}" -B "${REPO_DIR}/build" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "${REPO_DIR}/build" -j"${JOBS}" --config Release
+  else
+    ( cd "${REPO_DIR}" && make -j"${JOBS}" )
+  fi
 fi
 
 # --- 5. Download the base.en model (idempotent) -----------------------------
