@@ -24,6 +24,56 @@ Everything is local. Courses are plain JSON on disk, progress lives in `~/.ai-le
 
 ---
 
+<details open>
+<summary><b>Screenshots</b></summary>
+
+<br/>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/01-course-list.png"><img src="docs/screenshots/01-course-list.png" alt="Course library — landing page showing the 'Continue learning' resume card and a grid of generated course cards with progress bars" /></a>
+      <p align="center"><sub>Course library — resume card + grid of generated courses with per-course progress.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/04-create-wizard.png"><img src="docs/screenshots/04-create-wizard.png" alt="Create-course wizard step 1 — choose between 'Start from scratch' and 'I have materials' (PDF/DOCX upload)" /></a>
+      <p align="center"><sub>Create-course wizard — start from a topic, or upload your own materials.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/05-theory-widget.png"><img src="docs/screenshots/05-theory-widget.png" alt="Lesson view with a Theory widget — rendered Markdown body, inline code highlighting, and the lesson table-of-contents sidebar" /></a>
+      <p align="center"><sub>Theory widget — Markdown + KaTeX with the lesson TOC sidebar.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/06-quiz-widget.png"><img src="docs/screenshots/06-quiz-widget.png" alt="Quiz widget — multiple-choice question with four options A through D and a Submit button" /></a>
+      <p align="center"><sub>Quiz widget — multiple-choice questions with per-answer feedback.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/07-code-widget.png"><img src="docs/screenshots/07-code-widget.png" alt="Code-exercise widget — CodeMirror Python editor with syntax-highlighted starter code, hidden tests block, Reset / Submit buttons, and an inline 'Peek solution' toggle" /></a>
+      <p align="center"><sub>Code widget — Pyodide-backed Python editor with hidden tests + peek-solution.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/08-lesson-chat.png"><img src="docs/screenshots/08-lesson-chat.png" alt="Lesson view with the AI Tutor side panel open on the right, ready to answer questions in the context of the current lesson" /></a>
+      <p align="center"><sub>LessonChat — the AI tutor dock that sees the lesson + focused widget.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/02-sunset-theme.png"><img src="docs/screenshots/02-sunset-theme.png" alt="Course library rendered in the 'sunset' theme — warm cream-on-charcoal palette with amber accents" /></a>
+      <p align="center"><sub>Sunset theme — warm cream-on-charcoal palette (added in US-188).</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/03-dark-theme.png"><img src="docs/screenshots/03-dark-theme.png" alt="Course library rendered in the dark theme — neutral slate background with indigo accents" /></a>
+      <p align="center"><sub>Dark theme — neutral slate with indigo accents.</sub></p>
+    </td>
+  </tr>
+</table>
+
+</details>
+
 <details>
 <summary><b>Why this exists</b></summary>
 
