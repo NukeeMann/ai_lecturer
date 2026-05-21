@@ -71,3 +71,20 @@ Previous log archived to: archive/progress-2026-05-14-1933.txt
   - The Flashcard widget mentioned in the AC's example list doesn't exist in `src/widgets/` — the AC reads "Theory/Quiz/Code/Flashcard" as an OR list, so covering Theory + Quiz + Code is sufficient.
   - For tidy README image layouts on GitHub, an HTML `<table>` with `width="50%"` cells renders cross-platform; CSS grid does not. Wrapping each `<img>` in `<a href="...">` gives a free click-to-zoom without JS.
 ---
+
+## 2026-05-21 - US-190
+- Re-captured 8 README screenshots in the dark theme (the app's default) and replaced two of the existing slots:
+  - `02-sunset-theme.png` (light/sunset variant in pos. 7) was removed; sunset variant kept as `03-sunset-theme.png` in pos. 8.
+  - `03-dark-theme.png` (redundant dark variant) was removed.
+  - New `02-course-structure.png` captures the `/courses/.../extend` page showing the modules + lessons structure (with `Add lesson` / `Add module` controls and per-lesson duration estimates).
+  - `07-code-widget.png` re-shot on `edge-detection-basics/sobel-gradients` lesson — input photo (left) + Sobel gradient output (right) + Python `cv2` code editor below, satisfying the "Code widget with image I/O" AC.
+- Updated README alt text + `<sub>` captions for the affected slots; layout (4 rows × 2 cols) is unchanged.
+- Theme injected via `context.addInitScript(() => localStorage.setItem('aiLecturer.theme', 'dark'))` BEFORE `page.goto` — works the same way for sunset (set 'sunset' instead).
+- Files changed: `README.md`, `docs/screenshots/{01..08}*.png` (replacements + 02-course-structure.png new), `scripts/ralph/prd.json`, `scripts/ralph/progress.txt`.
+- **Learnings for future iterations:**
+  - For the "course structure" view, `/courses/<slug>/extend` renders a clean structure (modules as cards, lessons as rows with `<min` estimates) — much better visual than the lesson-page TOC sidebar. Bonus: no need to expand anything, no lesson content alongside.
+  - `/courses/<slug>` is a 307 redirect to the first lesson — there is no standalone "course detail" page; the structure UI lives in `/extend`.
+  - `pytorch-for-python-developers/extend` is a stable 2-module, 6-lesson course that fits cleanly in a 1440×900 viewport for a structure screenshot.
+  - `edge-detection-basics/sobel-gradients` is the canonical "code + paired image I/O" reference lesson — its `s2-code` section has both `inputs[{kind:'image'}]` and `outputMedia{kind:'image', live:true}`, rendering as input-photo / output-image side by side above the editor.
+  - Playwright's `addInitScript` runs BEFORE the inline `themeBootstrap` `<script>` in `<head>`, so localStorage is already populated when the bootstrap reads it — no FOUC and no need to drive the ThemeToggle button.
+---
