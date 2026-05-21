@@ -88,7 +88,7 @@ describe('Extend wizard page (US-180 direct-add)', () => {
     expect(generate.disabled).toBe(true);
   });
 
-  it('Module dialog: opens with Title + Summary fields and Module labels (US-180)', () => {
+  it('Module dialog: opens with Title + Details fields and Module labels (US-180)', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
     fireEvent.click(screen.getByTestId('extend-add-module'));
 
@@ -111,22 +111,22 @@ describe('Extend wizard page (US-180 direct-add)', () => {
     expect(summaryArea.rows).toBe(3);
     expect(summaryArea.maxLength).toBe(300);
     expect(summaryArea.placeholder).toBe(
-      'One sentence describing what this module/lesson covers.',
+      'Mention topics, examples, angles, or which widgets/structure to include…',
     );
 
-    // Module-specific labels.
+    // Module-specific labels — details field is shared label.
     expect(dialog.textContent ?? '').toContain('Module title');
-    expect(dialog.textContent ?? '').toContain('Module summary');
+    expect(dialog.textContent ?? '').toContain('Share more details:');
   });
 
-  it('Lesson dialog: shows Lesson title / Lesson summary labels and parent context line (US-180)', () => {
+  it('Lesson dialog: shows Lesson title / shared details label and parent context line (US-180)', () => {
     render(<ExtendWizardClient course={TEST_COURSE} />);
     fireEvent.click(screen.getByTestId('extend-add-lesson-m1'));
 
     const dialog = screen.getByTestId('extend-dialog');
     expect(dialog.getAttribute('data-kind')).toBe('lesson');
     expect(dialog.textContent ?? '').toContain('Lesson title');
-    expect(dialog.textContent ?? '').toContain('Lesson summary');
+    expect(dialog.textContent ?? '').toContain('Share more details:');
     expect(dialog.textContent ?? '').toContain(
       'Add a lesson under "Module One"',
     );
