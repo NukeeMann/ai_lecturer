@@ -7,6 +7,8 @@ import {
 } from 'react';
 import { ChevronDown, ChevronsUpDown, ChevronUp } from 'lucide-react';
 
+import { MarkdownInline } from '@/components/MarkdownInline';
+
 import {
   DataTableDataSchema,
   filterRows,
@@ -253,7 +255,7 @@ export function DataTableWidget({ data: rawData }: DataTableWidgetProps) {
                         data-testid={`datatable-sort-${col.key}`}
                         aria-label={`Sort by ${col.label}`}
                       >
-                        <span>{col.label}</span>
+                        <span><MarkdownInline>{col.label}</MarkdownInline></span>
                         {dir === 'asc' && (
                           <ChevronUp size={12} aria-hidden />
                         )}
@@ -269,7 +271,7 @@ export function DataTableWidget({ data: rawData }: DataTableWidgetProps) {
                         )}
                       </button>
                     ) : (
-                      <span>{col.label}</span>
+                      <span><MarkdownInline>{col.label}</MarkdownInline></span>
                     )}
                   </th>
                 );
@@ -371,7 +373,9 @@ export function DataTableWidget({ data: rawData }: DataTableWidgetProps) {
                       }}
                       data-testid={`datatable-cell-${start + i}-${col.key}`}
                     >
-                      {formatCell(row[col.key], col.type)}
+                      <MarkdownInline>
+                        {formatCell(row[col.key], col.type)}
+                      </MarkdownInline>
                     </td>
                   ))}
                 </tr>

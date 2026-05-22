@@ -120,6 +120,9 @@ export function ZoomableImage({
   }, []);
 
   const triggerStyle: CSSProperties = {
+    display: 'block',
+    width: '100%',
+    height: 'auto',
     cursor: 'zoom-in',
     ...style,
   };

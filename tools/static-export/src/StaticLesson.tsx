@@ -198,6 +198,11 @@ export function StaticLesson({ payload }: { payload: SxPayload }) {
   return (
     <div className="sx-shell">
       <aside className="sx-toc" aria-label="Course contents">
+        {payload.homeHref ? (
+          <a className="sx-toc-library" href={payload.homeHref}>
+            ← Library
+          </a>
+        ) : null}
         <a className="sx-toc-home" href={payload.indexHref}>
           ← {payload.course?.title ?? 'Course'}
         </a>

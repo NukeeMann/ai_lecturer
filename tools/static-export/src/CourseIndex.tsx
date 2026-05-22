@@ -13,6 +13,11 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
   return (
     <div className="sx-shell sx-shell--index">
       <main className="sx-main sx-main--index">
+        {payload.homeHref ? (
+          <a className="sx-back-link" href={payload.homeHref}>
+            ← Library
+          </a>
+        ) : null}
         <header className="sx-course-head">
           <div className="sx-eyebrow">AI Lecturer · Static course</div>
           <h1>{course.title ?? payload.courseSlug}</h1>
@@ -52,8 +57,15 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
         </ol>
 
         <footer className="sx-foot">
-          Exported from AI Lecturer · interactive widgets run locally in your
-          browser · code cells need an internet connection (Pyodide CDN).
+          Exported from{' '}
+          <a
+            href="https://github.com/NukeeMann/ai_lecturer"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            AI Lecturer
+          </a>{' '}
+          · interactive widgets run locally in your browser.
         </footer>
       </main>
     </div>

@@ -15,6 +15,7 @@ import './static.css';
 import { readPayload } from './payload';
 import { StaticLesson } from './StaticLesson';
 import { CourseIndex } from './CourseIndex';
+import { Home } from './Home';
 
 function applyTheme() {
   try {
@@ -30,22 +31,40 @@ function applyTheme() {
   }
 }
 
+// Rewrite every `/api/courses/<slug>/assets/X` reference inside the payload
+// to a real relative URL (`courseAssetBase + X`). The apiShim only catches
+// fetch() calls — but <img src=…>, <audio src=…>, <video src=…> are loaded
+// directly by the browser and would 404 on a static host. Doing it here, on
+// the whole payload, fixes theory markdown image links, PlotImage src, and
+// any other asset URL in one place.
+function rewriteAssetUrls(payload: ReturnType<typeof readPayload>) {
+  const oldPrefix = `/api/courses/${payload.courseSlug}/assets/`;
+  const newPrefix = payload.courseAssetBase;
+  const json = JSON.stringify(payload);
+  if (!json.includes(oldPrefix)) return payload;
+  return JSON.parse(json.split(oldPrefix).join(newPrefix));
+}
+
 function boot() {
   applyTheme();
   installApiShim();
 
-  const payload = readPayload();
+  const payload = rewriteAssetUrls(readPayload());
   document.title =
-    payload.kind === 'lesson' && payload.lesson?.title
-      ? `${payload.lesson.title} · ${payload.course?.title ?? ''}`
-      : (payload.course?.title ?? 'AI Lecturer course');
+    payload.kind === 'home'
+      ? (payload.library?.title ?? 'AI Lecturer library')
+      : payload.kind === 'lesson' && payload.lesson?.title
+        ? `${payload.lesson.title} · ${payload.course?.title ?? ''}`
+        : (payload.course?.title ?? 'AI Lecturer course');
 
   const mount = document.getElementById('root');
   if (!mount) throw new Error('[static-export] #root not found');
 
   createRoot(mount).render(
     <StrictMode>
-      {payload.kind === 'lesson' ? (
+      {payload.kind === 'home' ? (
+        <Home payload={payload} />
+      ) : payload.kind === 'lesson' ? (
         <StaticLesson payload={payload} />
       ) : (
         <CourseIndex payload={payload} />

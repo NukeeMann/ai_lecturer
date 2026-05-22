@@ -24,6 +24,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Check, X } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
+import { MarkdownInline } from '@/components/MarkdownInline';
 
 import {
   DragMatchDataSchema,
@@ -155,7 +156,7 @@ function DraggableItem({
       {...listeners}
       {...attributes}
     >
-      {item.label}
+      <MarkdownInline>{item.label}</MarkdownInline>
       {submitted && misplaced && expectedZoneLabel && (
         <span
           data-testid={`dragmatch-item-expected-${item.id}`}
@@ -467,7 +468,7 @@ export function DragMatchWidget({
             boxShadow: 'var(--shadow-md)',
           }}
         >
-          {item.label}
+          <MarkdownInline>{item.label}</MarkdownInline>
         </span>
       );
     }
@@ -486,7 +487,7 @@ export function DragMatchWidget({
   return (
     <div data-dragmatch-body style={wrapStyle}>
       <div data-dragmatch-prompt style={promptStyle}>
-        {data.prompt}
+        <MarkdownInline>{data.prompt}</MarkdownInline>
       </div>
 
       <DndContext
@@ -534,7 +535,9 @@ export function DragMatchWidget({
                   feedbackStyle={zoneFeedbackStyle(correctness)}
                   correctness={correctness}
                 >
-                  <div style={zoneLabelStyle}>{zone.label}</div>
+                  <div style={zoneLabelStyle}>
+                    <MarkdownInline>{zone.label}</MarkdownInline>
+                  </div>
                   <div style={zoneItemsStyle}>
                     {placed.length === 0 ? (
                       <span style={zoneEmptyHintStyle}>Drop here</span>

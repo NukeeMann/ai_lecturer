@@ -32,6 +32,10 @@ export function installApiShim(): void {
   const assetBase = payload.courseAssetBase; // e.g. "../assets/course/"
   const realFetch = window.fetch.bind(window);
 
+  // Library home page has no course context — none of the widget code that
+  // calls fetch() runs there, so we can skip patching entirely.
+  if (payload.kind === 'home') return;
+
   // Endpoints that genuinely need the running app (live STT/TTS, AI, server
   // transcription). In a static export they degrade to a clear "unavailable".
   const UNAVAILABLE = [

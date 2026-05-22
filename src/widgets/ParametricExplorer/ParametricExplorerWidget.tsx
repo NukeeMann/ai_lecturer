@@ -11,6 +11,7 @@ import {
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { MarkdownInline } from '@/components/MarkdownInline';
 import { usePyodide } from '@/lib/pyodide/client';
 
 import { formatValueOutput } from './formatValue';
@@ -40,7 +41,7 @@ const outputAreaStyle: CSSProperties = {
 
 const plotImgStyle: CSSProperties = {
   display: 'block',
-  maxWidth: '100%',
+  width: '100%',
   height: 'auto',
   objectFit: 'contain',
   borderRadius: 'var(--radius-sm)',
@@ -415,7 +416,9 @@ function ParamControl({ param, value, onChange }: ParamControlProps) {
       typeof value === 'number' ? value : Number(param.default ?? 0);
     return (
       <div style={paramRowStyle}>
-        <span style={paramLabelStyle}>{param.label}</span>
+        <span style={paramLabelStyle}>
+          <MarkdownInline>{param.label}</MarkdownInline>
+        </span>
         <span style={paramValueStyle} data-testid={`pexp-value-${param.name}`}>
           {formatParamValue(param, numericValue)}
         </span>
@@ -437,7 +440,9 @@ function ParamControl({ param, value, onChange }: ParamControlProps) {
     const stringValue = typeof value === 'string' ? value : String(value);
     return (
       <div style={paramRowStyle}>
-        <span style={paramLabelStyle}>{param.label}</span>
+        <span style={paramLabelStyle}>
+          <MarkdownInline>{param.label}</MarkdownInline>
+        </span>
         <select
           data-testid={`pexp-select-${param.name}`}
           value={stringValue}
@@ -467,7 +472,9 @@ function ParamControl({ param, value, onChange }: ParamControlProps) {
   const boolValue = Boolean(value);
   return (
     <div style={paramRowStyle}>
-      <span style={paramLabelStyle}>{param.label}</span>
+      <span style={paramLabelStyle}>
+        <MarkdownInline>{param.label}</MarkdownInline>
+      </span>
       <label
         style={{
           display: 'inline-flex',

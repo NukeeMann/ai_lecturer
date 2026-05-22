@@ -31,6 +31,7 @@ import {
 import { python } from '@codemirror/lang-python';
 
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { MarkdownInline } from '@/components/MarkdownInline';
 import { usePyodide } from '@/lib/pyodide/client';
 
 import {
@@ -61,7 +62,7 @@ const figureStyle: CSSProperties = {
 
 const imgStyle: CSSProperties = {
   display: 'block',
-  maxWidth: '100%',
+  width: '100%',
   height: 'auto',
   objectFit: 'contain',
   borderRadius: 'var(--radius-md)',
@@ -234,7 +235,7 @@ export function PlotImageWidget({ data }: PlotImageWidgetProps) {
         />
         {caption && (
           <figcaption data-plotimage-caption style={captionStyle}>
-            {caption}
+            <MarkdownInline>{caption}</MarkdownInline>
           </figcaption>
         )}
       </figure>

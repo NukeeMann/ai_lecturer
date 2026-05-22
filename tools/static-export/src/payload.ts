@@ -15,23 +15,55 @@ export interface SxNavModule {
   lessons: SxNavLesson[];
 }
 
+/** A single course shown as a tile inside a collection section on the
+ *  library home page. Slim — only what the tile needs to render. */
+export interface SxLibraryCourse {
+  slug: string;
+  title: string;
+  description?: string;
+  accentColor?: string;
+  icon?: string;
+  modulesCount: number;
+  lessonsCount: number;
+  /** Relative URL from the library home to the course's index.html. */
+  href: string;
+}
+
+export interface SxLibraryCollection {
+  id: string;
+  name: string;
+  courses: SxLibraryCourse[];
+}
+
 export interface SxPayload {
   /** Which page this is. */
-  kind: 'index' | 'lesson';
-  /** Course slug (used to match /api/courses/<slug>/assets/... fetches). */
+  kind: 'home' | 'index' | 'lesson';
+  /** Course slug (used to match /api/courses/<slug>/assets/... fetches).
+   *  Empty string on the library home page (no course context). */
   courseSlug: string;
-  /** Full course.json (already validated by the app when generated). */
-  course: any;
+  /** Full course.json (already validated by the app when generated).
+   *  Absent on `home` pages. */
+  course?: any;
   /** Full lesson.json — only on kind === 'lesson'. */
   lesson?: any;
-  /** Flat module/lesson nav for the sidebar + prev/next. */
+  /** Flat module/lesson nav for the sidebar + prev/next. Empty on `home`. */
   nav: SxNavModule[];
   /** Relative href prefix to reach sibling lesson pages from THIS page. */
   lessonHrefBase: string;
   /** Relative href to the course index from THIS page. */
   indexHref: string;
-  /** Relative URL prefix where copied course assets live, from THIS page. */
+  /** Relative URL prefix where copied course assets live, from THIS page.
+   *  Empty string on the library home page (no specific course context). */
   courseAssetBase: string;
+  /** Relative URL to the library home (index.html). Only set in library mode;
+   *  absent for the legacy single-course exports — that's how the UI decides
+   *  whether to render the "← Library" back-link. */
+  homeHref?: string;
+  /** Library bundle metadata (collections + courses). Only on kind === 'home'. */
+  library?: {
+    title: string;
+    collections: SxLibraryCollection[];
+  };
 }
 
 export function readPayload(): SxPayload {
