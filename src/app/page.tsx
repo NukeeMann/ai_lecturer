@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -716,6 +717,55 @@ function StatusBadge({ stats }: { stats: CourseStats }) {
   );
 }
 
+function AutoFitTitle({
+  text,
+  maxFontSize,
+  minFontSize = 11,
+  style,
+}: {
+  text: string;
+  maxFontSize: number;
+  minFontSize?: number;
+  style?: CSSProperties;
+}) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  const [fontSize, setFontSize] = useState(maxFontSize);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = maxFontSize;
+      el.style.fontSize = `${size}px`;
+      // shrink until it fits on one line (scrollWidth fits in clientWidth)
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > minFontSize) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+      setFontSize(size);
+    };
+    fit();
+    const target = el.parentElement ?? el;
+    const ro = new ResizeObserver(fit);
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [text, maxFontSize, minFontSize]);
+
+  return (
+    <h3
+      ref={ref}
+      style={{
+        ...style,
+        fontSize: `${fontSize}px`,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+      }}
+    >
+      {text}
+    </h3>
+  );
+}
+
 function cardHref(course: Course, progress: Progress | null): string {
   const cp = progress?.courses?.[course.slug];
   const firstLesson = course.modules.flatMap((m) => m.lessons)[0]?.slug;
@@ -778,20 +828,19 @@ function CourseCard({
               flexWrap: 'wrap',
             }}
           >
-            <h3
+            <AutoFitTitle
+              text={course.title}
+              maxFontSize={18}
+              minFontSize={11}
               style={{
                 margin: 0,
-                fontSize: 'var(--fs-lg)',
                 fontWeight: 600,
                 letterSpacing: '-0.01em',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                lineHeight: 1.3,
                 minWidth: 0,
+                flex: 1,
               }}
-            >
-              {course.title}
-            </h3>
+            />
           </div>
         </div>
       </div>
