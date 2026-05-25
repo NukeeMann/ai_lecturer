@@ -4182,6 +4182,67 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-191",
+      "title": "Quiz-only mode: wizard checkbox + schema fields (quizOnly flag, optional level, tags)",
+      "description": "As a learner using the create wizard, I want to flip a 'Quiz only mode' checkbox in Stage 1 so that the wizard hides knobs that don't apply (level, theory/practice ratio) and the resulting course-spec.json is tagged 'quiz' for the generation pipeline.",
+      "acceptanceCriteria": [
+        "Stage 1 in src/app/create/page.tsx (~line 1967) renders a checkbox/toggle 'Quiz only mode' immediately under the existing 'Describe (optional)' textarea. Stored in Draft as `quizOnly: boolean`, default false, persisted across stages like other Draft fields",
+        "Stage 3 (src/app/create/Stage3Cascade.tsx): when `draft.quizOnly === true`, the level selector and the theoryPracticeRatio slider are NOT rendered (omit, do not just disable). The durationTarget selector remains visible with the same four options (short/standard/extensive/comprehensive) and the same lesson-count semantics as full-course mode",
+        "Stage 2 (clarification) behaves identically regardless of `quizOnly` — same questions, same flow",
+        "src/lib/schemas/courseSpec.ts: `level` becomes `.optional()` (still uses LevelSchema enum when present); a new field `tags: z.array(z.enum(['quiz'])).optional()` is added to CourseSpecSchema",
+        "src/lib/schemas/course.ts: an analogous `tags: z.array(z.enum(['quiz'])).optional()` field is added to CourseSchema so the downstream course.json can carry the same tag",
+        "buildCourseSpec() in src/app/create/page.tsx (~line 550): when `draft.quizOnly === true`, sets `spec.tags = ['quiz']`, OMITS `level` entirely (no fallback), and OMITS `theoryPracticeRatio` entirely (no `0` fallback). When false, behavior is unchanged (level + ratio included, no `tags` key)",
+        "Vitest: new or extended test asserting (a) toggling `quizOnly` produces a spec with `tags: ['quiz']` and without `level`/`theoryPracticeRatio` keys, (b) Stage3Cascade does not render the level control nor the ratio slider when `quizOnly` prop is true, (c) CourseSpecSchema accepts both shapes (with and without `level`) and rejects unknown tag values",
+        "Verify in browser using playwright-skill: open /create, advance to Stage 1, tick the new toggle, screenshot Stage 1 showing the checkbox, advance to Stage 3 and screenshot showing level + ratio hidden but durationTarget still present. Save /tmp/quiz-only-stage1.png and /tmp/quiz-only-stage3.png",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 191,
+      "passes": false,
+      "notes": "Out of scope: pipeline branching (US-192), chip on CourseCard (US-193), regenerate/extend in quiz-only mode (deliberate follow-up). The wizard merely sets `tags: ['quiz']` and trims fields — the generation pipeline is wired in US-192.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-192",
+      "title": "Generation pipeline branch for quiz-only courses + new generate_quiz_lesson skill",
+      "description": "As the course-generation backend, I want to detect `tags: ['quiz']` in course-spec.json and route through a quiz-only path so that quiz courses skip research/coherence stages and emit lessons composed solely of quiz/dragMatch widgets via a dedicated skill file.",
+      "acceptanceCriteria": [
+        "src/lib/server/generation.ts: when the parsed course-spec.json contains `tags?.includes('quiz')`, the pipeline (a) does NOT spawn `claude -p` for the research_course stage and does NOT write research.md or sources.md, (b) spawns design_course with an additional sentence in its prompt informing it that `course-spec.tags contains 'quiz' — plan lessons as quiz-only sets, copy tags:['quiz'] into course.json, and do not reference research.md/sources.md (they do not exist)`, (c) per lesson spawns `generate_quiz_lesson` (reading scripts/ralph/skills/generate_quiz_lesson/SKILL.md) instead of `generate_lesson`, with the same `<course-slug> <lesson-slug>` argument shape, (d) does NOT spawn the coherence_pass stage",
+        "scripts/ralph/skills/design_course/SKILL.md: prepend a short section near the top stating that when `course-spec.tags` contains `quiz`, the skill (1) writes `tags: ['quiz']` into the produced course.json, (2) plans each lesson as a quiz-only set (no theory beats in lesson summaries), (3) does NOT expect research.md or sources.md to exist (do not Read them). Existing full-course behavior is preserved when no `quiz` tag is present",
+        "NEW file scripts/ralph/skills/generate_quiz_lesson/SKILL.md (~100–200 lines, much shorter than the 787-line generate_lesson). Required content: (a) reads only /courses/<slug>/course.json to recover lesson title/module/estimatedMinutes by slug — does NOT Read research.md or sources.md, (b) reads src/widgets/schemas/quiz.json and src/widgets/schemas/dragMatch.json (the only two allowed widget schemas), (c) emits a lesson with EXACTLY 10–15 widget sections, each of type `quiz` or `dragMatch`, (d) agent picks the mix freely (100% quiz is acceptable; dragMatch only when the topic naturally yields term↔definition pairs), (e) explicit ban list: NO `theory` sections, NO `code`/`demo`/`sandbox`/`image`/`video`/`plotImage`/`histogram`/`parametricExplorer`/`audioPlayer`/`dataTable`/`custom`/`codeCloze`/`transcriptCloze`/`sttDemo`/`ttsDemo`, (f) NO inline markdown images anywhere (there is no theory to host them), (g) NO Step 3a (no authoring new widget types in quiz-only), (h) NO Step 5 (no visual-illustrations pass), (i) every quiz section MUST have a 1–3 sentence `explanation`, (j) difficulty is judged from the topic alone (no `level` field is read), (k) lesson `estimatedMinutes` uses the same ~10–20 min base as theory lessons, scaled to the number/complexity of questions, (l) final JSON validates against LessonSchema in src/lib/schemas/lesson.ts",
+        "src/lib/server/generation.test.ts (or a new sibling test file): add coverage that when a course-spec.json containing `tags: ['quiz']` is fed through the pipeline (using the existing generationMockScripts harness, extended if needed): (a) no research_course spawn is recorded, (b) no coherence_pass spawn is recorded, (c) each per-lesson spawn invokes the generate_quiz_lesson skill (assert by command/prompt content), (d) the full-course pipeline still runs all four stages when the tag is absent — regression guard",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 192,
+      "passes": false,
+      "notes": "Depends on US-191 for the `tags` field on CourseSpecSchema. Out of scope: Regenerate lesson and Extend course in quiz-only mode — known limitation (regenerate on a quiz lesson will currently fall through to full generate_lesson); to be addressed in a follow-up US after this MVP lands. Mock scripts under src/lib/server/generationMockScripts/ may need a `generateQuizLesson.cjs` stub mirroring `generateLesson.cjs` so the test path exercises the new branch without spawning real claude.",
+      "tags": []
+    },
+    {
+      "id": "US-193",
+      "title": "CourseCard: render 'Quiz' badge when course.tags includes 'quiz'",
+      "description": "As a learner browsing my course library, I want to see a small 'Quiz' badge on courses that are quiz-only so that I can distinguish them from full theory+practice courses at a glance.",
+      "acceptanceCriteria": [
+        "CourseCard in src/app/page.tsx (~line 713): when `course.tags?.includes('quiz')`, render a small pill labeled 'Quiz' inside the same header flex-row as the title `<h3>{course.title}</h3>` (~line 770), positioned to the right of the title and below it on narrow widths (wrap rather than overflow)",
+        "Badge styling: small pill (~10–11px font, padding 2px 6px, border-radius var(--radius-full)), background and/or border using the existing `var(--widget-quiz)` color token from src/styles/tokens.css. Foreground text uses a contrasting color readable on the quiz accent in BOTH dark and light themes (verify against tokens; if needed use the existing `--text-on-accent` token). Do not change spacing of the existing title — the chip is additive",
+        "The resume banner in src/app/page.tsx (~line 456) renders the same chip next to `resume.course.title` when `resume.course.tags?.includes('quiz')`. Same visual styling as the CourseCard chip",
+        "No filter/segment control is added to the explorer toolbar (`Show only: Quiz / Full / All` is explicitly out of scope for this MVP)",
+        "Vitest: add a test (in src/lib/dashboard.test.ts or a sibling rendering test) asserting (a) a course with `tags: ['quiz']` causes the chip element to be rendered (find by text 'Quiz' or by data-testid='course-card-quiz-badge'), (b) a course with no `tags` field renders no chip, (c) a course with `tags: []` renders no chip",
+        "Verify in browser using playwright-skill: seed/select a course with `tags: ['quiz']` in courses/<slug>/course.json (or stub one), open the explorer, screenshot the dashboard showing the chip on at least one card, and screenshot the resume banner (if a quiz course is active). Save /tmp/quiz-chip-dashboard.png and /tmp/quiz-chip-resume.png",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 193,
+      "passes": false,
+      "notes": "Depends on US-191 for the `tags?: ['quiz'][]` field on CourseSchema. Out of scope: filter control in the explorer toolbar, rendering the chip in other views (lesson page header, extend modal, export filenames). Add a `data-testid='course-card-quiz-badge'` to the chip element so the test can target it stably.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
