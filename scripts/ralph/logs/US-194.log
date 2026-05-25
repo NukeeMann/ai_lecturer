@@ -1,0 +1,57 @@
+[2026-05-25T09:13:18+0200] [rate_limit five_hour status=allowed]
+[2026-05-25T09:15:21+0200] Now let me look at the generation tests to understand patterns:
+[2026-05-25T09:15:31+0200] Tasks are tracked. Now let me look at how Stage 6 (Generate) and pause UI behaviors fit. First, let me check the wizard structure:
+[2026-05-25T09:18:07+0200] Now I have enough context. Let me start implementing.
+[2026-05-25T09:18:22+0200] Now let me add the GenerationEvent type, pause method on GenerationRun, paused flag, finalizePaused, and pipeline checks in generation.ts:
+[2026-05-25T09:18:44+0200] Now let me add the pause logic. First add the paused class for errors:
+[2026-05-25T09:18:55+0200] Now let me add the `paused` flag and update `run.cancel` plus add `run.pause`:
+[2026-05-25T09:19:20+0200] Now let me add the finalizePaused function and pipeline checks. First find the right location:
+[2026-05-25T09:19:40+0200] Now I need to add `if (paused)` checks throughout the pipeline. Let me find and update:
+[2026-05-25T09:20:15+0200] Now let me find and update the init stage cancel checks and the lesson loop checks:
+[2026-05-25T09:20:40+0200] Now look at the after-runLesson cancel check:
+[2026-05-25T09:20:59+0200] Now update resumeGeneration to handle paused state:
+[2026-05-25T09:21:12+0200] Now add the SSE 'paused' terminal handling:
+[2026-05-25T09:21:20+0200] Now create the pause route:
+[2026-05-25T09:21:40+0200] Now wire the Pause button into the UI. Let me update Stage5Generate:
+[2026-05-25T09:21:56+0200] Now add a 'paused' event handler in the SSE wireStreamHandlers:
+[2026-05-25T09:22:07+0200] Now add the Pause handler and button. First find handleCancelClick and add handlePauseClick nearby:
+[2026-05-25T09:22:17+0200] Now update the headline and add the Pause button & paused-phase rendering:
+[2026-05-25T09:22:36+0200] Now add the Pause button to the action row, and the Resume button for paused state:
+[2026-05-25T09:22:52+0200] Now let me run the typecheck to catch any obvious issues:
+[2026-05-25T09:23:07+0200] Typecheck clean. Now let me write tests. First look at an existing pattern for a resume test:
+[2026-05-25T09:23:14+0200] Good, I have a clear pattern. Let me create a new test file for pause/resume:
+[2026-05-25T09:24:51+0200] All 4 new tests pass. Now run the full test suite to make sure I didn't break anything:
+[2026-05-25T09:25:09+0200] All 1108 unrelated tests pass; only 19 pre-existing ResizeObserver failures (US-191 baseline). My pause changes didn't break anything. Now let me run a browser test:
+[2026-05-25T09:26:33+0200] Now let me write the playwright test:
+[2026-05-25T09:27:12+0200] Browser verification passes. Let me also verify the screenshots exist:
+[2026-05-25T09:27:19+0200] [rate_limit five_hour status=allowed]
+[2026-05-25T09:28:22+0200] Let me run the existing generation tests to verify no regressions:
+[2026-05-25T09:28:36+0200] All 145 generation-related tests pass. Now let me run a final typecheck:
+[2026-05-25T09:28:50+0200] Typecheck clean. Let me kill the dev server and update progress.txt + prd.json:
+[2026-05-25T09:29:16+0200] Now let me append the progress log:
+[2026-05-25T09:30:27+0200] Now let me verify the new file structure and commit:
+[2026-05-25T09:30:59+0200] The untracked `courses/edge-detection-basics/.generation-state.json` and `canny-pipeline.json` look like leftover artifacts from before my session (the banner in screenshot 1 also references this course as "Previous generation paused"). I'll only commit my US-194 changes:
+[2026-05-25T09:31:28+0200] Commit landed in HEAD. `passes:true` is confirmed in the prd.json diff.
+
+US-194 is done:
+
+**Implementation summary:**
+- `run.pause()` on `GenerationRun` synchronously captures `pausedInflightLesson` from `currentStage`, then process-group-kills the child tree via the existing `killChildTree` (reaches ralph subagents via `detached:true`).
+- `finalizePaused()` unlinks the in-flight lesson's partial JSON, persists `.generation-state.json` with `status:'paused'` + the inflight slug, emits a terminal `paused` SSE event, drops markers, and triggers queue drain.
+- `resumeGeneration` clears the paused marker; existing lesson-reset branch restarts the in-flight lesson from attempt 0.
+- New route `POST /api/courses/[slug]/pause` (202/409/400).
+- Wizard Stage 6: Pause button visible only in `running` phase; new `paused` phase renders the Resume button.
+- 4 new tests in `generationPause.test.ts` (all pass); 145 generation-suite tests green; typecheck clean.
+- Browser-verified end-to-end via Playwright; screenshots at `/tmp/us194-1-running-with-pause.png` and `/tmp/us194-2-paused.png` show the running → paused transition.
+[2026-05-25T09:31:28+0200] [result success turns=115 cost=$12.933678000000002] Commit landed in HEAD. `passes:true` is confirmed in the prd.json diff.
+
+US-194 is done:
+
+**Implementation summary:**
+- `run.pause()` on `GenerationRun` synchronously captures `pausedInflightLesson` from `currentStage`, then process-group-kills the child tree via the existing `killChildTree` (reaches ralph subagents via `detached:true`).
+- `finalizePaused()` unlinks the in-flight lesson's partial JSON, persists `.generation-state.json` with `status:'paused'` + the inflight slug, emits a terminal `paused` SSE event, drops markers, and triggers queue drain.
+- `resumeGeneration` clears the paused marker; existing lesson-reset branch restarts the in-flight lesson from attempt 0.
+- New route `POST /api/courses/[slug]/pause` (202/409/400).
+- Wizard Stage 6: Pause button visible only in `running` phase; new `paused` phase renders the Resume button.
+- 4 new tests in `generationPause.test.ts` (all pass); 145 generation-suite tests green; typecheck clean.
+- Browser-verified end-to-end via Playwright; screenshots at `/tmp/us194-1-running-with-pause.png` and `/tmp/us194-2-paused.png` show the running → paused transition.
