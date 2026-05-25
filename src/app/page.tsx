@@ -27,6 +27,7 @@ import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
 import { CourseQuizChip } from '@/components/QuizChip';
+import { ResumeGenerationBanners } from '@/components/ResumeGenerationBanner';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import type { Collection } from '@/lib/schemas/collection';
@@ -1798,6 +1799,12 @@ export default function DashboardPage() {
 
   return (
     <div style={pageStyle}>
+      <ResumeGenerationBanners
+        sticky={false}
+        onNavigateToGeneration={(slug) =>
+          router.push(`/create?resume=${encodeURIComponent(slug)}`)
+        }
+      />
       <header data-testid="dashboard-header" style={headerStyle}>
         <div style={headerLeftStyle}>
           <AppLogoLink />
