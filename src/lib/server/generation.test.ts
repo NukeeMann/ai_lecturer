@@ -574,9 +574,11 @@ describe('startGeneration spawn wrapper', () => {
 
     await waitForFinish(run);
     expect(lessonCommand).toHaveBeenCalledTimes(2);
-    // Third arg (previousAttemptReason) is undefined on the first attempt.
-    expect(lessonCommand).toHaveBeenNthCalledWith(1, 'demo', 'alpha', undefined);
-    expect(lessonCommand).toHaveBeenNthCalledWith(2, 'demo', 'beta', undefined);
+    // Third arg (previousAttemptReason) is undefined on the first attempt;
+    // fourth arg (isQuizOnly, US-192) is false because this fixture didn't
+    // write a course-spec.json with the quiz tag.
+    expect(lessonCommand).toHaveBeenNthCalledWith(1, 'demo', 'alpha', undefined, false);
+    expect(lessonCommand).toHaveBeenNthCalledWith(2, 'demo', 'beta', undefined, false);
   });
 
   it('isolates a single lesson failure: pipeline continues, done lists failedLessons', async () => {
