@@ -1,0 +1,48 @@
+[2026-05-25T08:25:50+0200] [rate_limit five_hour status=allowed]
+[2026-05-25T08:26:20+0200] Now let me look at the Draft type and Stage3Cascade.
+[2026-05-25T08:29:57+0200] I've now examined the relevant code and understand the AC has a stage-numbering quirk: the level/ratio/durationTarget knobs actually live in **Stage 2 (Refine)** in `page.tsx`, not in `Stage3Cascade.tsx` (which renders Structure/Cascade UI). I'll hide level+ratio in Stage 2 where the controls actually exist, document the discrepancy in progress.txt, and screenshot accordingly.
+
+Let me start making changes.
+[2026-05-25T08:30:38+0200] Now update Draft type and DEFAULT_DRAFT, and Stage 1.
+[2026-05-25T08:30:48+0200] Now add the checkbox in Stage1, immediately under the description textarea (line 2063 area):
+[2026-05-25T08:31:30+0200] Now hide the theory/practice slider:
+[2026-05-25T08:31:48+0200] Now update `buildCourseSpec`:
+[2026-05-25T08:32:39+0200] Let me extract `buildCourseSpec` to a sibling file for testability:
+[2026-05-25T08:32:51+0200] Now update page.tsx to import from the new file and remove the inline copies:
+[2026-05-25T08:33:09+0200] Now let me verify nothing else uses clampRatio in page.tsx:
+[2026-05-25T08:33:24+0200] Now let me check if Level is still used in page.tsx (it's referenced in LEVEL_OPTIONS):
+[2026-05-25T08:33:28+0200] Good. Now let me look at the existing schemas.test.ts to add the new tests:
+[2026-05-25T08:33:43+0200] Now write the buildCourseSpec tests:
+[2026-05-25T08:33:56+0200] Now write the Stage3Cascade test. Let me first check whether vitest is configured with jsdom + how existing component tests are structured:
+[2026-05-25T08:34:50+0200] Let me run the tests now:
+[2026-05-25T08:35:00+0200] All new and existing related tests pass. Let me run the full test suite to make sure nothing else broke:
+[2026-05-25T08:35:53+0200] My changes are restored. The extend page tests fail on baseline too (pre-existing failures). My changes don't introduce any new failures. Let me run targeted tests that my changes touch:
+[2026-05-25T08:36:01+0200] Let me also run typecheck:
+[2026-05-25T08:36:19+0200] Typecheck passes (zero output). Let me also run lint:
+[2026-05-25T08:37:16+0200] My touched files lint cleanly. Now let me proceed with playwright browser verification.
+[2026-05-25T08:37:45+0200] Now write the Playwright test:
+[2026-05-25T08:38:54+0200] Both screenshots saved successfully and the assertions passed. Let me view them to confirm:
+[2026-05-25T08:39:00+0200] Stage 1 shows the "Quiz only mode" checkbox under the description textarea, ticked. Now Stage 3:
+[2026-05-25T08:39:06+0200] Stage 3 (Refine) shows only "How long should this take?" with the 4 durationTarget chips visible — level + ratio sliders are properly omitted in quiz-only mode.
+[2026-05-25T08:39:11+0200] Now update the prd.json and progress.txt, then commit.
+[2026-05-25T08:39:44+0200] Now append progress.txt:
+[2026-05-25T08:40:27+0200] Now let me check whether `passes: true` is set correctly and that no other story was touched:
+[2026-05-25T08:40:32+0200] Clean — only US-191's `passes` flipped to true. Let me also check the untracked `courses/edge-detection-basics/...` files (they're leftover from a prior run, not part of US-191):
+[2026-05-25T08:40:40+0200] Now let me stage only US-191 changes (skip the stray course files from a previous run):
+[2026-05-25T08:40:56+0200] Commit landed. Let me verify the commit has `passes: true` for US-191:
+[2026-05-25T08:41:07+0200] `passes: true` is committed to HEAD. The orchestrator will see the success signal.
+
+US-191 complete:
+- Stage 1 of `/create` has a new "Quiz only mode" checkbox under the description textarea (Draft.quizOnly: boolean, default false, persisted)
+- Refine stage hides the level cards + ratio slider when quizOnly, keeps the 4 duration chips
+- `CourseSpecSchema` makes `level` and `theoryPracticeRatio` optional and adds `tags: z.array(z.enum(['quiz'])).optional()`; same `tags` field added to `CourseSchema`
+- `buildCourseSpec` extracted to a sibling module; in quiz mode sets `tags:['quiz']` and omits level + ratio entirely
+- 3 new test files (all pass), typecheck clean, browser-verified at `/tmp/quiz-only-stage1.png` + `/tmp/quiz-only-stage3.png`
+[2026-05-25T08:41:08+0200] [result success turns=113 cost=$8.551681499999999] `passes: true` is committed to HEAD. The orchestrator will see the success signal.
+
+US-191 complete:
+- Stage 1 of `/create` has a new "Quiz only mode" checkbox under the description textarea (Draft.quizOnly: boolean, default false, persisted)
+- Refine stage hides the level cards + ratio slider when quizOnly, keeps the 4 duration chips
+- `CourseSpecSchema` makes `level` and `theoryPracticeRatio` optional and adds `tags: z.array(z.enum(['quiz'])).optional()`; same `tags` field added to `CourseSchema`
+- `buildCourseSpec` extracted to a sibling module; in quiz mode sets `tags:['quiz']` and omits level + ratio entirely
+- 3 new test files (all pass), typecheck clean, browser-verified at `/tmp/quiz-only-stage1.png` + `/tmp/quiz-only-stage3.png`
