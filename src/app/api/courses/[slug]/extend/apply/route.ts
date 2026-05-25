@@ -18,6 +18,10 @@ import {
   resumeGeneration,
 } from '@/lib/server/generation';
 import { writeGenerationState } from '@/lib/server/generationState';
+import {
+  generateExtensionSummaries,
+  type ExtensionAdditionSummaryRequest,
+} from '@/lib/server/extendSummaries';
 
 const ApplyRequestSchema = z.object({
   proposedSchema: CourseSchema,
@@ -120,11 +124,68 @@ export async function POST(req: Request, { params }: RouteCtx) {
   const newLessonSlugs = [...proposedLessonSlugs].filter(
     (s) => !existingLessonSlugs.has(s),
   );
+  const newModuleIds = [...proposedModuleIds].filter(
+    (id) => !existingModuleIds.has(id),
+  );
+
+  // The wizard's "Share more details:" textarea sends the user's hint
+  // through module.summary / lessonRef.summary on every NEW entry. Ask the
+  // AI to rewrite each hint into a polished one-sentence summary before
+  // anything lands on disk — the raw user text should never become the
+  // visible course-card description verbatim. Existing modules/lessons are
+  // preserved byte-for-byte (the preservation check above already enforces
+  // they're present; their summaries flow through unchanged).
+  const newModuleSet = new Set(newModuleIds);
+  const newLessonSet = new Set(newLessonSlugs);
+  const summaryRequests: ExtensionAdditionSummaryRequest[] = [];
+  for (const mod of proposedSchema.modules) {
+    if (newModuleSet.has(mod.id)) {
+      summaryRequests.push({
+        kind: 'module',
+        key: mod.id,
+        title: mod.title,
+        details: mod.summary ?? '',
+      });
+    }
+    for (const lesson of mod.lessons) {
+      if (newLessonSet.has(lesson.slug)) {
+        summaryRequests.push({
+          kind: 'lesson',
+          key: lesson.slug,
+          title: lesson.title,
+          details: lesson.summary ?? '',
+          parentModuleTitle: mod.title,
+        });
+      }
+    }
+  }
+
+  const generatedSummaries =
+    summaryRequests.length > 0
+      ? await generateExtensionSummaries({
+          course: { title: proposedSchema.title, description: proposedSchema.description },
+          additions: summaryRequests,
+        })
+      : new Map<string, string>();
+
+  const enrichedModules = proposedSchema.modules.map((mod) => {
+    const moduleSummary = newModuleSet.has(mod.id)
+      ? (generatedSummaries.get(mod.id) ?? mod.summary)
+      : mod.summary;
+    const lessons = mod.lessons.map((lesson) => {
+      if (!newLessonSet.has(lesson.slug)) return lesson;
+      const polished = generatedSummaries.get(lesson.slug);
+      if (polished === undefined) return lesson;
+      return { ...lesson, summary: polished };
+    });
+    return { ...mod, summary: moduleSummary, lessons };
+  });
 
   // Persist the schema. updatedAt is bumped to now so downstream views can
   // tell that the course was reshaped without reading the modules array.
   const persisted: Course = {
     ...proposedSchema,
+    modules: enrichedModules,
     updatedAt: new Date().toISOString(),
   };
 

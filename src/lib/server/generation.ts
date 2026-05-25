@@ -110,6 +110,15 @@ export type GenerationEvent =
       sectionId: string;
       status: 'started' | 'done' | 'failed';
       errorMessage?: string;
+    }
+  // US-194: terminal event emitted when the user clicks Pause. Closes the SSE
+  // stream just like `done` / `error`. `inflightLessonSlug` is the slug of
+  // the lesson that was mid-flight when Pause landed (null when Pause was
+  // pressed during the init stage, before any lesson started).
+  | {
+      type: 'paused';
+      slug: string;
+      inflightLessonSlug: string | null;
     };
 
 // US-138: listeners receive the per-run monotonic seq alongside the event so
@@ -157,6 +166,15 @@ export interface GenerationRun {
   eventSeqs: readonly number[];
   subscribe: (listener: GenerationListener) => () => void;
   cancel: () => Promise<void>;
+  /**
+   * US-194: stop the currently active child process tree (claude -p + ralph
+   * subagents) and persist a `paused` snapshot to `.generation-state.json`.
+   * The in-flight lesson's partial JSON is unlinked so a subsequent Resume
+   * restarts that lesson from a clean attempt 0. No-op when the run is
+   * already finished. Distinct from `cancel()`: pause does NOT set a restart
+   * cooldown — the user explicitly intends to come back.
+   */
+  pause: () => Promise<void>;
 }
 
 /**
@@ -256,11 +274,22 @@ export interface SpawnDeps {
    * artefacts plus the original spec and writes course.json validated against
    * CourseSchema.
    */
-  designCourseCommand?: (slug: string) => { command: string; args: string[] };
+  // US-192: the optional `isQuizOnly` flag tells the factory to swap in the
+  // quiz-only prompt variant (extra sentence telling design_course to plan
+  // quiz-only lessons and skip the missing research/sources files). Existing
+  // callers that don't pass it stay on the full-course brief.
+  designCourseCommand?: (
+    slug: string,
+    isQuizOnly?: boolean,
+  ) => { command: string; args: string[] };
+  // US-192: the optional `isQuizOnly` flag swaps the invoked skill from
+  // `generate_lesson` (full-course brief) to `generate_quiz_lesson` (quiz-only
+  // brief, no research.md / sources.md references).
   lessonCommand?: (
     slug: string,
     lessonSlug: string,
     previousAttemptReason?: string,
+    isQuizOnly?: boolean,
   ) => { command: string; args: string[] };
   /** US-141: factory for the final coherence-pass spawn. Same shape as the
    * other command factories — defaults to `defaultCoherencePassCommand`. */
@@ -316,6 +345,18 @@ export class GenerationStateMissingError extends Error {
   constructor() {
     super('No .generation-state.json file present for slug');
     this.name = 'GenerationStateMissingError';
+  }
+}
+
+/**
+ * US-194: thrown by `pauseGeneration` when the requested slug is not the
+ * currently active run (either no run is active, or a different slug is
+ * running). Route handler maps to 409 `{ error: 'no-active-run' }`.
+ */
+export class NoActiveRunError extends Error {
+  constructor() {
+    super('No active generation to pause for this slug');
+    this.name = 'NoActiveRunError';
   }
 }
 
@@ -1001,6 +1042,30 @@ function defaultIsExecutableInPath(cmd: string): boolean {
   }
 }
 
+/**
+ * US-192: read `tags` from a course's persisted `course-spec.json` and decide
+ * whether the generation pipeline should follow the quiz-only branch. Best
+ * effort — a missing spec, malformed JSON, or missing/empty `tags` array all
+ * resolve to `false` (full-course pipeline). The check is deliberately loose
+ * (`tags` may include other values in the future); only the presence of the
+ * literal `'quiz'` string in the array triggers the branch.
+ */
+async function readCourseSpecIsQuizOnly(slug: string): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(courseSpecFile(slug), 'utf8');
+  } catch {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { tags?: unknown };
+    if (!Array.isArray(parsed.tags)) return false;
+    return parsed.tags.some((t) => t === 'quiz');
+  } catch {
+    return false;
+  }
+}
+
 function parseNonNegativeInt(value: string | undefined, fallback: number): number {
   if (value === undefined) return fallback;
   const n = Number.parseInt(value, 10);
@@ -1130,6 +1195,7 @@ export function defaultResearchCourseCommand(
 
 export function defaultDesignCourseCommand(
   slug: string,
+  isQuizOnly = false,
 ): { command: string; args: string[] } {
   assertSafeSlug(slug);
   if (process.env.GENERATION_MOCK === '1') {
@@ -1154,14 +1220,30 @@ export function defaultDesignCourseCommand(
     slug,
     'the final course shape MUST be grounded in these files — invoke the Read tool on EACH path BEFORE deciding modules/lessons so the structure reflects the user-supplied content rather than a generic outline',
   );
+  // US-192: in quiz-only mode the research_course stage is skipped entirely,
+  // so research.md / sources.md do not exist on disk. The design agent must
+  // know to (a) not try to Read them, (b) plan lessons as pure quiz sets, and
+  // (c) copy `tags: ['quiz']` into the produced course.json so downstream
+  // consumers (CourseCard chip, generate_quiz_lesson skill picker) can detect
+  // the quiz-only branch from course.json alone.
+  const quizOnlySection = isQuizOnly
+    ? ` course-spec.tags contains 'quiz' — plan lessons as quiz-only sets, copy tags:['quiz'] into course.json, and do not reference research.md/sources.md (they do not exist).`
+    : '';
+  const inputsLine = isQuizOnly
+    ? `Input you MUST Read first: /courses/${slug}/course-spec.json. (research.md and sources.md are intentionally absent in quiz-only mode — do NOT try to Read them.) `
+    : `Inputs you MUST Read first: /courses/${slug}/course-spec.json, /courses/${slug}/research.md, /courses/${slug}/sources.md (the prior research_course agent has just written the last two). `;
+  const renameLine = isQuizOnly
+    ? ''
+    : `If you rename any lesson relative to course-spec.draftStructure, update the matching ## <Lesson title> heading in /courses/${slug}/sources.md in place so generate_lesson's per-lesson source lookup still resolves. `;
   const prompt =
     `Run the design_course skill defined in scripts/ralph/skills/design_course/SKILL.md. ` +
     `Argument: slug = "${slug}". ` +
     `Read that SKILL.md and execute its steps end-to-end. ` +
-    `Inputs you MUST Read first: /courses/${slug}/course-spec.json, /courses/${slug}/research.md, /courses/${slug}/sources.md (the prior research_course agent has just written the last two). ` +
+    inputsLine +
     `Then do the architect pass: write /courses/${slug}/course.json validated against CourseSchema in src/lib/schemas/course.ts. ` +
-    `If you rename any lesson relative to course-spec.draftStructure, update the matching ## <Lesson title> heading in /courses/${slug}/sources.md in place so generate_lesson's per-lesson source lookup still resolves. ` +
+    renameLine +
     `Do NOT re-do the research. Do NOT generate lesson content. Do NOT touch scripts/ralph/.` +
+    quizOnlySection +
     sourcesSection;
   return {
     command: 'claude',
@@ -1181,6 +1263,7 @@ export function defaultLessonCommand(
   slug: string,
   lessonSlug: string,
   previousAttemptReason?: string,
+  isQuizOnly = false,
 ): { command: string; args: string[] } {
   // Defence-in-depth: same rule as the slug — re-validate before we splice
   // either value into the prompt or a shell argv.
@@ -1221,15 +1304,27 @@ export function defaultLessonCommand(
           )
           .join('\n')}\n`
       : '';
-  const baseBrief =
-    `Run the generate_lesson skill defined in scripts/ralph/skills/generate_lesson/SKILL.md. ` +
-    `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
-    `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
-    `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
-    `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
-    `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson. ` +
-    `If this lesson needs SAR or other imagery from the Copernicus Data Space Ecosystem, the env vars $COPERNICUS_USER and $COPERNICUS_PASSWORD are already set — use them directly via curl/python (e.g. catalogue.dataspace.copernicus.eu OAuth flow). Do NOT ask the user for credentials.` +
-    sourcesSection;
+  // US-192: quiz-only courses skip the research_course stage, so research.md
+  // and sources.md do not exist on disk. The per-lesson skill is also
+  // different — generate_quiz_lesson, which composes a lesson out of quiz +
+  // dragMatch widgets only and never reads research/sources.
+  const baseBrief = isQuizOnly
+    ? `Run the generate_quiz_lesson skill defined in scripts/ralph/skills/generate_quiz_lesson/SKILL.md. ` +
+      `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
+      `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json to author exactly one quiz-only lesson at ` +
+      `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
+      `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson. ` +
+      `This is a quiz-only course — research.md and sources.md do NOT exist; do NOT try to Read them. ` +
+      `Emit ONLY quiz / dragMatch sections (no theory, no code, no demo, no sandbox, no images).` +
+      sourcesSection
+    : `Run the generate_lesson skill defined in scripts/ralph/skills/generate_lesson/SKILL.md. ` +
+      `Arguments: slug = "${slug}", lesson-slug = "${lessonSlug}". ` +
+      `Read that SKILL.md and execute its steps end-to-end against /courses/${slug}/course.json, ` +
+      `/courses/${slug}/research.md, and /courses/${slug}/sources.md to author exactly one lesson at ` +
+      `/courses/${slug}/lessons/${lessonSlug}.json. The file MUST validate against LessonSchema in src/lib/schemas/lesson.ts. ` +
+      `Do NOT touch scripts/ralph/. Do NOT modify course.json or any other lesson file. One call, one lesson. ` +
+      `If this lesson needs SAR or other imagery from the Copernicus Data Space Ecosystem, the env vars $COPERNICUS_USER and $COPERNICUS_PASSWORD are already set — use them directly via curl/python (e.g. catalogue.dataspace.copernicus.eu OAuth flow). Do NOT ask the user for credentials.` +
+      sourcesSection;
   // Mirrors the retry-context pattern from scripts/ralph/ralph.sh:992-996 —
   // when a previous attempt failed, prepend the failure reason so the agent
   // can fix the specific issue rather than repeat the same mistake.
@@ -1695,6 +1790,15 @@ export async function resumeGeneration(
     delete lesson.finishedAt;
     resetAny = true;
   }
+  // US-194: clear the paused marker so the pipeline restarts in `running`
+  // mode and the next .generation-state.json write replaces the on-disk
+  // record. The lesson-state reset above already handles "restart in-flight
+  // lesson from attempt 0".
+  if (state.status === 'paused' || state.pausedInflightLesson) {
+    delete state.status;
+    delete state.pausedInflightLesson;
+    resetAny = true;
+  }
   if (resetAny) {
     await writeGenerationState(slug, state);
   }
@@ -1724,8 +1828,15 @@ async function startGenerationInner(
   }
 
   const spawnFn = deps.spawn ?? defaultSpawn;
-  const researchSpec = (deps.researchCourseCommand ?? defaultResearchCourseCommand)(slug);
-  const designSpec = (deps.designCourseCommand ?? defaultDesignCourseCommand)(slug);
+  // US-192: each init/lesson spawn spec is computed lazily inside the pipeline
+  // so we can branch on the quiz-only flag read from course-spec.json (the
+  // file may not exist yet at this point in startGenerationInner if the
+  // caller bypassed the wizard). Capture the factories here so deps overrides
+  // still win.
+  const researchCourseFactory =
+    deps.researchCourseCommand ?? defaultResearchCourseCommand;
+  const designCourseFactory =
+    deps.designCourseCommand ?? defaultDesignCourseCommand;
   const lessonCommand = deps.lessonCommand ?? defaultLessonCommand;
   const cwd = deps.cwd ?? process.cwd();
   const sigkillGraceMs = deps.sigkillGraceMs ?? 5000;
@@ -1750,6 +1861,14 @@ async function startGenerationInner(
   await fs.mkdir(dir, { recursive: true });
   const genLogs = genLogsDir(slug);
   await fs.mkdir(genLogs, { recursive: true });
+
+  // US-192: detect quiz-only mode from the persisted course-spec.json so the
+  // pipeline can (a) skip the research_course stage entirely (no research.md /
+  // sources.md written), (b) brief design_course with the quiz-only sentence,
+  // (c) route each per-lesson spawn through the `generate_quiz_lesson` skill,
+  // and (d) skip the final coherence-pass. A missing / malformed spec is
+  // treated as a non-quiz course, preserving the existing full-course path.
+  const isQuizOnly = await readCourseSpecIsQuizOnly(slug);
   const logPath = path.join(dir, '.generation.log');
   const logStream: WriteStream = createWriteStream(logPath, { flags: 'w' });
   let logStreamClosed = false;
@@ -1797,6 +1916,14 @@ async function startGenerationInner(
   const eventSeqs: number[] = [];
   const listeners = new Set<GenerationListener>();
   let cancelled = false;
+  // US-194: separate from `cancelled` so the pipeline branches handling exit
+  // codes / retries can distinguish a user-initiated Pause (drop partial work,
+  // persist resumable state, no cooldown) from a Cancel (drop work, emit
+  // error, set cooldown). Mutually exclusive in practice — once Pause has
+  // been clicked we ignore subsequent Cancel attempts on the same run and
+  // vice-versa.
+  let paused = false;
+  let pausedInflightLesson: string | null = null;
   let currentChild: ChildProcess | null = null;
   let killTimer: NodeJS.Timeout | null = null;
 
@@ -1829,6 +1956,29 @@ async function startGenerationInner(
           killChildTree(child, 'SIGKILL');
         }, sigkillGraceMs);
         // Don't keep the event loop alive just for the kill timer.
+        if (typeof killTimer.unref === 'function') killTimer.unref();
+      }
+    },
+    async pause() {
+      if (run.finished) return;
+      if (paused) return;
+      paused = true;
+      // Capture the in-flight lesson slug at the time pause was pressed.
+      // run.currentStage encodes per-lesson stages as `lesson:<slug>`; the
+      // init-stage labels (`research_course`, `design_course`) leave the
+      // captured slug null so Resume re-runs init from the top.
+      if (run.currentStage && run.currentStage.startsWith('lesson:')) {
+        pausedInflightLesson = run.currentStage.slice('lesson:'.length);
+      } else {
+        pausedInflightLesson = null;
+      }
+      const child = currentChild;
+      if (!child || child.exitCode !== null) return;
+      killChildTree(child, 'SIGTERM');
+      if (!killTimer) {
+        killTimer = setTimeout(() => {
+          killChildTree(child, 'SIGKILL');
+        }, sigkillGraceMs);
         if (typeof killTimer.unref === 'function') killTimer.unref();
       }
     },
@@ -2124,6 +2274,85 @@ async function startGenerationInner(
     maybeStartQueueHead();
   }
 
+  /**
+   * US-194: terminal teardown for a user-initiated Pause. Mirrors the success
+   * branch of `finalize()` but writes `status: 'paused'` to the state file
+   * instead of deleting it, drops the in-flight lesson's partial JSON, and
+   * emits a `paused` SSE event so consumers can close their stream cleanly.
+   */
+  async function finalizePaused(): Promise<void> {
+    if (run.finished) return;
+    // Drop the in-flight lesson's partial JSON (and any leftover .tmp from an
+    // atomic-write crash) so Resume restarts that lesson from a clean
+    // attempt 0 with no half-written output to validate against.
+    if (pausedInflightLesson) {
+      try {
+        await fs.unlink(lessonFile(slug, pausedInflightLesson));
+      } catch {
+        /* file may not exist — ignore */
+      }
+      try {
+        await fs.unlink(
+          path.join(courseDir(slug), 'lessons', `${pausedInflightLesson}.tmp`),
+        );
+      } catch {
+        /* no stale tmp — ignore */
+      }
+    }
+    // Persist the paused snapshot. When pause lands during the init stages
+    // (no genState yet) seed a minimal record so resumeGeneration has
+    // something to read and re-run init from scratch.
+    if (genState) {
+      if (pausedInflightLesson) {
+        const ls = genState.lessons.find((l) => l.slug === pausedInflightLesson);
+        if (ls) {
+          ls.status = 'pending';
+          ls.attempts = 0;
+          delete ls.lastError;
+          delete ls.finishedAt;
+        }
+      }
+      genState.status = 'paused';
+      if (pausedInflightLesson) {
+        genState.pausedInflightLesson = pausedInflightLesson;
+      } else {
+        delete genState.pausedInflightLesson;
+      }
+      await persistGenState();
+    } else {
+      genState = {
+        schemaVersion: 1,
+        slug,
+        startedAt: new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        status: 'paused',
+        research: { status: 'pending' },
+        design: { status: 'pending' },
+        lessons: [],
+        config: { lessonMaxRetries, lessonTimeoutMs },
+      };
+      await persistGenState();
+    }
+    run.finished = true;
+    if (killTimer) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+    emit({ type: 'paused', slug, inflightLessonSlug: pausedInflightLesson });
+    logStreamClosed = true;
+    try {
+      logStream.end();
+    } catch {
+      /* ignore */
+    }
+    void removeGeneratingMarker(slug);
+    if (activeRun === run) activeRun = null;
+    // Queue drainer: if another slug is queued behind us, free the slot so
+    // the user's next generation can start. Pause is a clean stop just like
+    // done/error from the queue's perspective.
+    maybeStartQueueHead();
+  }
+
   async function writeFailedReport(entries: FailedReportEntry[]) {
     const reportPath = path.join(genLogs, 'failed_report.json');
     if (entries.length === 0) {
@@ -2354,7 +2583,7 @@ async function startGenerationInner(
     let attemptsRun = 0;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      if (cancelled) break;
+      if (cancelled || paused) break;
       attemptsRun = attempt;
 
       // Wipe any stale lesson file before each attempt so the post-spawn
@@ -2403,7 +2632,7 @@ async function startGenerationInner(
       }
 
       const previousReason = attempt > 1 ? lastError : undefined;
-      const spec = lessonCommand(slug, lessonSlug, previousReason);
+      const spec = lessonCommand(slug, lessonSlug, previousReason, isQuizOnly);
       const result = await spawnChild(spec, {
         timeoutMs: lessonTimeoutMs,
         extraLogStream: lessonLogStream,
@@ -2411,7 +2640,7 @@ async function startGenerationInner(
 
       lessonLogStream.end();
 
-      if (cancelled) break;
+      if (cancelled || paused) break;
 
       if (result.timedOut) {
         const seconds = Math.round(lessonTimeoutMs / 1000);
@@ -2505,6 +2734,13 @@ async function startGenerationInner(
     if (cancelled) {
       emit({ type: 'stage', name: stageName, status: 'error' });
       return { success: false, attempts: attemptsRun, lastError: 'Cancelled by user' };
+    }
+    // US-194: a Pause click breaks out of the attempt loop above. Skip the
+    // terminal state-write (finalizePaused() owns that) and emit a stage:error
+    // so the live log surfaces the interrupted attempt.
+    if (paused) {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return { success: false, attempts: attemptsRun, lastError: 'Paused by user' };
     }
     // US-136: persist the lesson's terminal status (done | failed) before
     // returning so the in-memory FailedReport bookkeeping and the on-disk
@@ -2648,17 +2884,34 @@ async function startGenerationInner(
     // ── Stage 1: research_course ────────────────────────────────────────────
     // Writes /courses/<slug>/research.md and /courses/<slug>/sources.md.
     // Skipped on resume when already done; runs every other time.
-    if (!(resumeFromState && resumeFromState.research.status === 'done')) {
+    //
+    // US-192: quiz-only courses skip this stage entirely — no spawn, no
+    // research.md / sources.md on disk. genState's `research` is seeded as
+    // `done` so resume bookkeeping treats the stage as already-complete and
+    // moves straight to design_course.
+    if (
+      !isQuizOnly &&
+      !(resumeFromState && resumeFromState.research.status === 'done')
+    ) {
       emit({ type: 'stage', name: 'research_course', status: 'started' });
       const researchLogPath = path.join(genLogs, 'research_course.log');
       const researchLogStream = createWriteStream(researchLogPath, { flags: 'w' });
       researchLogStream.on('error', () => {
         /* swallow late writes */
       });
+      const researchSpec = researchCourseFactory(slug);
       const researchResult = await spawnChild(researchSpec, {
         extraLogStream: researchLogStream,
       });
       researchLogStream.end();
+      // US-194: Pause during the init research stage. The state file becomes
+      // a fresh paused snapshot with research.status='pending' so Resume
+      // re-runs research_course from the top.
+      if (paused) {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         emit({ type: 'stage', name: 'research_course', status: 'error' });
         await markInitStageFailed('research', 'Cancelled by user');
@@ -2740,10 +2993,20 @@ async function startGenerationInner(
       designLogStream.on('error', () => {
         /* swallow late writes */
       });
+      const designSpec = designCourseFactory(slug, isQuizOnly);
       const designResult = await spawnChild(designSpec, {
         extraLogStream: designLogStream,
       });
       designLogStream.end();
+      // US-194: Pause during the init design stage. genState may already
+      // exist (research finished + persisted before pause); finalizePaused
+      // preserves that fact and only seeds a fresh state when genState is
+      // null.
+      if (paused) {
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         emit({ type: 'stage', name: 'design_course', status: 'error' });
         await markInitStageFailed('design', 'Cancelled by user');
@@ -2832,6 +3095,10 @@ async function startGenerationInner(
     emit({ type: 'progress', current: 0, total });
 
     for (let i = 0; i < lessons.length; i++) {
+      if (paused) {
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         await writeFailedReport(failedReport);
         finalize('error', 'Cancelled by user', failedLessons);
@@ -2916,6 +3183,13 @@ async function startGenerationInner(
         seedRetryReason: existingState?.lastError,
       });
 
+      // US-194: pause clicked while this lesson was mid-flight. Skip the
+      // failedLessons/failedReport bookkeeping (the lesson will be retried
+      // on resume from attempt 0) and hand off to the paused finalizer.
+      if (paused) {
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         failedLessons.push({ slug: lesson.slug, reason: result.lastError || 'Cancelled by user' });
         failedReport.push({
@@ -2971,9 +3245,13 @@ async function startGenerationInner(
     let coherenceReportPath: string | undefined;
     const disableCoherence =
       deps.disableCoherencePass ?? coherencePassDisabledByDefault;
+    // US-192: quiz-only courses skip the coherence-pass — every section is a
+    // standalone quiz / dragMatch and there is no cross-lesson narrative for
+    // the auditor to check.
     if (
       !cancelled &&
       !disableCoherence &&
+      !isQuizOnly &&
       failedLessons.length === 0 &&
       total > 0
     ) {

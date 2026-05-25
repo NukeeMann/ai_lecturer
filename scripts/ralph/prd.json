@@ -4141,6 +4141,152 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-189",
+      "title": "README: embed 3–10 screenshots showcasing key features (course list, generation log, lesson widgets, themes)",
+      "description": "As a visitor to the GitHub repo, I want to see screenshots of the app in action in the README so that I can quickly understand what it looks like and what it does before cloning.",
+      "acceptanceCriteria": [
+        "Between 3 and 10 screenshots are committed under `docs/screenshots/` (PNG, reasonable resolution, no PII)",
+        "Screenshots cover the most representative features: course list/landing, course generation (form or live log), at least one lesson widget (Theory/Quiz/Code/Flashcard), LessonChat, and at least one non-default theme (sunset or dark)",
+        "README embeds the screenshots with relative paths so they render on GitHub",
+        "Layout is tidy — either a screenshots section near the top of the existing landing-page layout, or distributed inside the relevant collapsible sections; not just a vertical dump",
+        "Each screenshot has alt text describing what it shows",
+        "Screenshots captured against current main (post US-188 sunset palette and recent UI work)",
+        "Typecheck passes"
+      ],
+      "priority": 189,
+      "passes": true,
+      "notes": "Use playwright-skill to capture against the running dev server. Suggested shots: (1) course list, (2) new-course form, (3) generation live-log, (4) Theory widget with KaTeX/markdown, (5) Quiz widget, (6) Code widget (with peek-toggle), (7) Flashcard widget, (8) LessonChat with markdown+code, (9) sunset theme variant. Pick the 3–10 that best tell the story.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-190",
+      "title": "README screenshots: switch to dark theme as default + add code I/O and course structure shots",
+      "description": "As a visitor to the GitHub repo, I want screenshots in the app's default (dark) theme, showing a real code widget with image input/output and a course structure view, so README accurately reflects what the app looks like and what it can do.",
+      "acceptanceCriteria": [
+        "Most screenshots in `docs/screenshots/` are captured in dark theme (the app's default); sunset/light remain only as 1–2 variant shots demonstrating the theme switcher",
+        "At least one screenshot shows the Code widget with image input/output (use `edge-detection-basics` course, e.g. a lesson rendering a detected-edges image)",
+        "At least one screenshot shows the course structure view (modules/lessons list, e.g. from the extend / course detail section)",
+        "README layout is unchanged — only files in `docs/screenshots/` are swapped, with alt text updated if the shot content changes",
+        "Every screenshot has alt text describing what it shows",
+        "Screenshots captured against current main (post US-188 and US-189)",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes"
+      ],
+      "priority": 190,
+      "passes": true,
+      "notes": "Use playwright-skill against the running dev server. Default theme is dark — do NOT toggle theme before capture except for the 1–2 variant shots that demonstrate sunset/light. Code-widget I/O shot: pick a lesson in `edge-detection-basics` that has both code editor and an output image (e.g. Canny/Sobel). Course structure shot: the screen listing modules/lessons of a single course (extend section or course detail page).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-191",
+      "title": "Quiz-only mode: wizard checkbox + schema fields (quizOnly flag, optional level, tags)",
+      "description": "As a learner using the create wizard, I want to flip a 'Quiz only mode' checkbox in Stage 1 so that the wizard hides knobs that don't apply (level, theory/practice ratio) and the resulting course-spec.json is tagged 'quiz' for the generation pipeline.",
+      "acceptanceCriteria": [
+        "Stage 1 in src/app/create/page.tsx (~line 1967) renders a checkbox/toggle 'Quiz only mode' immediately under the existing 'Describe (optional)' textarea. Stored in Draft as `quizOnly: boolean`, default false, persisted across stages like other Draft fields",
+        "Stage 3 (src/app/create/Stage3Cascade.tsx): when `draft.quizOnly === true`, the level selector and the theoryPracticeRatio slider are NOT rendered (omit, do not just disable). The durationTarget selector remains visible with the same four options (short/standard/extensive/comprehensive) and the same lesson-count semantics as full-course mode",
+        "Stage 2 (clarification) behaves identically regardless of `quizOnly` — same questions, same flow",
+        "src/lib/schemas/courseSpec.ts: `level` becomes `.optional()` (still uses LevelSchema enum when present); a new field `tags: z.array(z.enum(['quiz'])).optional()` is added to CourseSpecSchema",
+        "src/lib/schemas/course.ts: an analogous `tags: z.array(z.enum(['quiz'])).optional()` field is added to CourseSchema so the downstream course.json can carry the same tag",
+        "buildCourseSpec() in src/app/create/page.tsx (~line 550): when `draft.quizOnly === true`, sets `spec.tags = ['quiz']`, OMITS `level` entirely (no fallback), and OMITS `theoryPracticeRatio` entirely (no `0` fallback). When false, behavior is unchanged (level + ratio included, no `tags` key)",
+        "Vitest: new or extended test asserting (a) toggling `quizOnly` produces a spec with `tags: ['quiz']` and without `level`/`theoryPracticeRatio` keys, (b) Stage3Cascade does not render the level control nor the ratio slider when `quizOnly` prop is true, (c) CourseSpecSchema accepts both shapes (with and without `level`) and rejects unknown tag values",
+        "Verify in browser using playwright-skill: open /create, advance to Stage 1, tick the new toggle, screenshot Stage 1 showing the checkbox, advance to Stage 3 and screenshot showing level + ratio hidden but durationTarget still present. Save /tmp/quiz-only-stage1.png and /tmp/quiz-only-stage3.png",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 191,
+      "passes": true,
+      "notes": "Out of scope: pipeline branching (US-192), chip on CourseCard (US-193), regenerate/extend in quiz-only mode (deliberate follow-up). The wizard merely sets `tags: ['quiz']` and trims fields — the generation pipeline is wired in US-192.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-192",
+      "title": "Generation pipeline branch for quiz-only courses + new generate_quiz_lesson skill",
+      "description": "As the course-generation backend, I want to detect `tags: ['quiz']` in course-spec.json and route through a quiz-only path so that quiz courses skip research/coherence stages and emit lessons composed solely of quiz/dragMatch widgets via a dedicated skill file.",
+      "acceptanceCriteria": [
+        "src/lib/server/generation.ts: when the parsed course-spec.json contains `tags?.includes('quiz')`, the pipeline (a) does NOT spawn `claude -p` for the research_course stage and does NOT write research.md or sources.md, (b) spawns design_course with an additional sentence in its prompt informing it that `course-spec.tags contains 'quiz' — plan lessons as quiz-only sets, copy tags:['quiz'] into course.json, and do not reference research.md/sources.md (they do not exist)`, (c) per lesson spawns `generate_quiz_lesson` (reading scripts/ralph/skills/generate_quiz_lesson/SKILL.md) instead of `generate_lesson`, with the same `<course-slug> <lesson-slug>` argument shape, (d) does NOT spawn the coherence_pass stage",
+        "scripts/ralph/skills/design_course/SKILL.md: prepend a short section near the top stating that when `course-spec.tags` contains `quiz`, the skill (1) writes `tags: ['quiz']` into the produced course.json, (2) plans each lesson as a quiz-only set (no theory beats in lesson summaries), (3) does NOT expect research.md or sources.md to exist (do not Read them). Existing full-course behavior is preserved when no `quiz` tag is present",
+        "NEW file scripts/ralph/skills/generate_quiz_lesson/SKILL.md (~100–200 lines, much shorter than the 787-line generate_lesson). Required content: (a) reads only /courses/<slug>/course.json to recover lesson title/module/estimatedMinutes by slug — does NOT Read research.md or sources.md, (b) reads src/widgets/schemas/quiz.json and src/widgets/schemas/dragMatch.json (the only two allowed widget schemas), (c) emits a lesson with EXACTLY 10–15 widget sections, each of type `quiz` or `dragMatch`, (d) agent picks the mix freely (100% quiz is acceptable; dragMatch only when the topic naturally yields term↔definition pairs), (e) explicit ban list: NO `theory` sections, NO `code`/`demo`/`sandbox`/`image`/`video`/`plotImage`/`histogram`/`parametricExplorer`/`audioPlayer`/`dataTable`/`custom`/`codeCloze`/`transcriptCloze`/`sttDemo`/`ttsDemo`, (f) NO inline markdown images anywhere (there is no theory to host them), (g) NO Step 3a (no authoring new widget types in quiz-only), (h) NO Step 5 (no visual-illustrations pass), (i) every quiz section MUST have a 1–3 sentence `explanation`, (j) difficulty is judged from the topic alone (no `level` field is read), (k) lesson `estimatedMinutes` uses the same ~10–20 min base as theory lessons, scaled to the number/complexity of questions, (l) final JSON validates against LessonSchema in src/lib/schemas/lesson.ts",
+        "src/lib/server/generation.test.ts (or a new sibling test file): add coverage that when a course-spec.json containing `tags: ['quiz']` is fed through the pipeline (using the existing generationMockScripts harness, extended if needed): (a) no research_course spawn is recorded, (b) no coherence_pass spawn is recorded, (c) each per-lesson spawn invokes the generate_quiz_lesson skill (assert by command/prompt content), (d) the full-course pipeline still runs all four stages when the tag is absent — regression guard",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 192,
+      "passes": true,
+      "notes": "Depends on US-191 for the `tags` field on CourseSpecSchema. Out of scope: Regenerate lesson and Extend course in quiz-only mode — known limitation (regenerate on a quiz lesson will currently fall through to full generate_lesson); to be addressed in a follow-up US after this MVP lands. Mock scripts under src/lib/server/generationMockScripts/ may need a `generateQuizLesson.cjs` stub mirroring `generateLesson.cjs` so the test path exercises the new branch without spawning real claude.",
+      "tags": []
+    },
+    {
+      "id": "US-193",
+      "title": "CourseCard: render 'Quiz' badge when course.tags includes 'quiz'",
+      "description": "As a learner browsing my course library, I want to see a small 'Quiz' badge on courses that are quiz-only so that I can distinguish them from full theory+practice courses at a glance.",
+      "acceptanceCriteria": [
+        "CourseCard in src/app/page.tsx (~line 713): when `course.tags?.includes('quiz')`, render a small pill labeled 'Quiz' inside the same header flex-row as the title `<h3>{course.title}</h3>` (~line 770), positioned to the right of the title and below it on narrow widths (wrap rather than overflow)",
+        "Badge styling: small pill (~10–11px font, padding 2px 6px, border-radius var(--radius-full)), background and/or border using the existing `var(--widget-quiz)` color token from src/styles/tokens.css. Foreground text uses a contrasting color readable on the quiz accent in BOTH dark and light themes (verify against tokens; if needed use the existing `--text-on-accent` token). Do not change spacing of the existing title — the chip is additive",
+        "The resume banner in src/app/page.tsx (~line 456) renders the same chip next to `resume.course.title` when `resume.course.tags?.includes('quiz')`. Same visual styling as the CourseCard chip",
+        "No filter/segment control is added to the explorer toolbar (`Show only: Quiz / Full / All` is explicitly out of scope for this MVP)",
+        "Vitest: add a test (in src/lib/dashboard.test.ts or a sibling rendering test) asserting (a) a course with `tags: ['quiz']` causes the chip element to be rendered (find by text 'Quiz' or by data-testid='course-card-quiz-badge'), (b) a course with no `tags` field renders no chip, (c) a course with `tags: []` renders no chip",
+        "Verify in browser using playwright-skill: seed/select a course with `tags: ['quiz']` in courses/<slug>/course.json (or stub one), open the explorer, screenshot the dashboard showing the chip on at least one card, and screenshot the resume banner (if a quiz course is active). Save /tmp/quiz-chip-dashboard.png and /tmp/quiz-chip-resume.png",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 193,
+      "passes": true,
+      "notes": "Depends on US-191 for the `tags?: ['quiz'][]` field on CourseSchema. Out of scope: filter control in the explorer toolbar, rendering the chip in other views (lesson page header, extend modal, export filenames). Add a `data-testid='course-card-quiz-badge'` to the chip element so the test can target it stably.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-194",
+      "title": "Pause/Resume generacji kursu: ubij subdrzewo agenta + restart ostatniej lekcji od zera",
+      "description": "Jako user prowadzący długą generację kursu, chcę widoczny w panelu generacji przycisk Pause, który ubija aktualnie aktywny proces `claude -p` razem z całym poddrzewem procesów (ralph subagenty), wprowadzając run w stan `paused`. Ukończone wcześniej lekcje pozostają nietknięte; lekcja, która była w trakcie generacji w momencie Pause, jest odrzucana wraz z jej partial output. Po kliknięciu Resume generacja tej ostatniej niedokończonej lekcji startuje od zera (attempt count zresetowany do 0, partial JSON usunięty), a następnie pipeline kontynuuje pozostałe pending lekcje. Jeśli Pause został wciśnięty podczas stage init_course (przed pierwszą lekcją), Resume re-runuje init_course.",
+      "acceptanceCriteria": [
+        "Przycisk Pause widoczny w panelu generacji tylko w trakcie aktywnego runu (nie w stanach pending/done/paused)",
+        "POST /api/courses/<slug>/pause ubija child PID aktywnego GenerationRun oraz cały process tree (pokrywa ralph subagenty)",
+        ".generation-state.json przechodzi w stan `paused` z zapisem in-flight lesson slug",
+        "Partial output dla in-flight lesson (niekompletny <lessonSlug>.json) jest usuwany przy pauzie",
+        "Resume wykrywa stan `paused` i restartuje in-flight lesson z resetem attempt count do 0",
+        "Ukończone przed Pause lekcje nie są regenerowane przy Resume",
+        "Pause podczas stage init → Resume re-runuje init_course",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 194,
+      "passes": true,
+      "notes": "Builds on US-136 (.generation-state.json) i US-137 (resume route). Kluczowa różnica vs. US-137: tutaj attempt count jest resetowany, a partial output usuwany — bo Pause jest świadomą decyzją usera, nie crashem. Process-tree kill: użyć pgrep -P / process.kill na całym drzewie (Linux ma `kill -- -PGID` jeśli child był spawnowany z `detached: true`); zweryfikować w src/lib/server/generation.ts jak `claude -p` jest spawnowany.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-195",
+      "title": "Resume-generation banner widoczny też w course explorerze (home), nie tylko na /create",
+      "description": "Jako user wracający do AI Lecturer po zamknięciu karty w trakcie generacji kursu, chcę żeby baner `Resume generation` (US-106 / US-140), dziś widoczny wyłącznie na /create, pokazywał się również na stronie głównej (explorer kursów). Ten sam komponent: tytuł kursu, per-lesson dots, akcje Resume oraz Cancel-and-restart — po prostu zamontowany dodatkowo na home page, żeby user nie musiał nawigować do /create tylko po to żeby odkryć że generacja jest w toku i ją wznowić.",
+      "acceptanceCriteria": [
+        "Ten sam komponent banera (lub współdzielony data hook) zamontowany na home page gdy istnieje aktywny lub paused run",
+        "Klik Resume z home → nawiguje do /create i kontynuuje run, identycznie jak baner z /create",
+        "Cancel-and-restart z home — identyczny confirm-flow i efekt jak na /create",
+        "Brak flashu/layout-shiftu na home gdy żaden run nie jest aktywny",
+        "Gdy nic się nie generuje, home page renderuje się dokładnie jak dziś (zero extra container)",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 195,
+      "passes": true,
+      "notes": "Wyciągnąć logikę banera z /create do współdzielonego komponentu/hooka żeby uniknąć duplikacji. Pasuje też do US-194: gdy run jest `paused`, baner na home też to pokazuje.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }

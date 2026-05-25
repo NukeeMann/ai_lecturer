@@ -28,13 +28,17 @@ import {
 import { AppLogoLink } from '@/components/AppLogo';
 import { SettingsMenu } from '@/components/SettingsMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import {
+  ResumeGenerationBanners,
+  type ActiveRunResponse,
+} from '@/components/ResumeGenerationBanner';
 import Stage3Cascade, {
   type Draft,
   type Level,
   type DurationTarget,
-  type StructureDraft,
 } from './Stage3Cascade';
 import Stage3Clarify from './Stage3Clarify';
+import { buildCourseSpec } from './buildCourseSpec';
 import {
   computeStageInputHash,
   isStageStale,
@@ -54,6 +58,7 @@ const DEFAULT_DRAFT: Draft = {
   level: null,
   durationTarget: null,
   theoryPracticeRatio: 50,
+  quizOnly: false,
   clarificationQuestions: undefined,
   clarification: undefined,
   structure: null,
@@ -70,63 +75,6 @@ interface UploadedMaterial {
   sanitizedName: string;
   size: number;
   type: string;
-}
-
-// US-106 / US-107 — shape of GET /api/courses/active-run. Queue context was
-// added in US-107 so the resume banner can show "X in queue" alongside the
-// active run. US-140 adds an optional per-lesson `progress` block when
-// `.generation-state.json` (US-136) is on disk.
-interface QueueEntry {
-  slug: string;
-  name: string;
-  position: number;
-}
-
-interface ActiveRunProgressLessonResp {
-  slug: string;
-  title: string;
-  status: 'pending' | 'inflight' | 'done' | 'failed';
-}
-
-interface ActiveRunProgressResp {
-  initStatus: 'pending' | 'done' | 'failed';
-  lessonsDone: number;
-  lessonsTotal: number;
-  currentLessonSlug: string | null;
-  lessons: ActiveRunProgressLessonResp[];
-}
-
-// Mirrors `ResumableRunEntry` from generation.ts — surfaced when the server
-// finds a leftover `.generation-state.json` whose run is no longer live
-// (session-limit failure, crash, power-off). The UI offers a one-click POST
-// to /api/courses/<slug>/resume.
-interface ResumableRunResp {
-  slug: string;
-  name: string;
-  lessonsDone: number;
-  lessonsTotal: number;
-  initStatus: 'pending' | 'done' | 'failed';
-  lastUpdatedAt: string;
-}
-
-type ActiveRunResponse =
-  | { active: false; queue: QueueEntry[]; resumable?: ResumableRunResp[] }
-  | {
-      active: true;
-      slug: string;
-      name: string;
-      stage: string;
-      queue: QueueEntry[];
-      progress?: ActiveRunProgressResp;
-      resumable?: ResumableRunResp[];
-    };
-
-interface ActiveRun {
-  slug: string;
-  name: string;
-  stage: string;
-  queueLength: number;
-  progress?: ActiveRunProgressResp;
 }
 
 // Surfaced both to the route and the UI so they stay in sync.
@@ -202,15 +150,6 @@ export default function CreatePage() {
   const [entryPath, setEntryPath] = useState<EntryPath | null>(null);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [materials, setMaterials] = useState<UploadedMaterial[]>([]);
-  // US-106 — resume-banner state. Populated from GET /api/courses/active-run
-  // on mount; cleared when the user dismisses or resumes.
-  const [activeRun, setActiveRun] = useState<ActiveRun | null>(null);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
-  // Courses with a leftover `.generation-state.json` and no live run — shown
-  // as a sibling banner offering one-click POST /<slug>/resume. Dismissals
-  // are keyed by slug so resuming/discarding one entry doesn't hide the rest.
-  const [resumableRuns, setResumableRuns] = useState<ResumableRunResp[]>([]);
-  const [resumableDismissed, setResumableDismissed] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -240,44 +179,6 @@ export default function CreatePage() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStage(6);
     }
-  }, []);
-
-  // US-106 — probe the server for an in-flight run on mount. Banner shows
-  // unless the user explicitly dismissed it OR they're already inside Stage 6
-  // (resume target — banner would be redundant). Also harvests `resumable[]`
-  // so the sibling banner can offer recovery from a session-limit / crash
-  // that ended the run but left `.generation-state.json` on disk.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const res = await fetch('/api/courses/active-run', { cache: 'no-store' });
-        if (cancelled || !res.ok) return;
-        const body = (await res.json()) as ActiveRunResponse;
-        if (cancelled) return;
-        if (body && body.active === true) {
-          const ql = Array.isArray(body.queue) ? body.queue.length : 0;
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setActiveRun({
-            slug: body.slug,
-            name: body.name,
-            stage: body.stage,
-            queueLength: ql,
-            progress: body.progress,
-          });
-        } else {
-          // eslint-disable-next-line react-hooks/set-state-in-effect
-          setActiveRun(null);
-        }
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setResumableRuns(Array.isArray(body?.resumable) ? body.resumable! : []);
-      } catch {
-        /* best-effort — banner is a UX nicety */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const goToDashboard = () => {
@@ -311,7 +212,9 @@ export default function CreatePage() {
 
   const handleGenerate = async () => {
     if (submitting) return;
-    if (!draft.structure || !draft.level || !draft.durationTarget) return;
+    // US-191 — quiz-only mode legitimately leaves `level` null; mirror Stage 2's gate.
+    if (!draft.structure || !draft.durationTarget) return;
+    if (!draft.quizOnly && !draft.level) return;
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -399,52 +302,17 @@ export default function CreatePage() {
   // US-106 — banner is shown unless the user dismissed it OR they're already
   // inside Stage 6 for the same slug (where the live panel itself is the
   // resume target — a banner pointing back to itself is noise).
-  const onResumeView = stage === 6 && submittedSlug === activeRun?.slug;
-  const showResumeBanner = activeRun !== null && !bannerDismissed && !onResumeView;
-
-  // Resumable banners: one per leftover `.generation-state.json` that isn't
-  // the live run. Hidden for the slug currently open in Stage 6 (same noise
-  // argument as the live banner). Per-slug dismissal lets the user clear
-  // one without hiding the rest.
-  const visibleResumable = resumableRuns.filter((r) => {
-    if (resumableDismissed.has(r.slug)) return false;
-    if (stage === 6 && submittedSlug === r.slug) return false;
-    return true;
-  });
+  const hideForSlug = stage === 6 ? submittedSlug : null;
 
   return (
     <div style={pageStyle}>
-      {showResumeBanner && activeRun && (
-        <ResumeBanner
-          activeRun={activeRun}
-          onNavigateToGeneration={(targetSlug) => {
-            setSubmittedSlug(targetSlug);
-            setStage(6);
-          }}
-          onClearActive={() => setActiveRun(null)}
-          onDismiss={() => setBannerDismissed(true)}
-        />
-      )}
-      {visibleResumable.map((entry) => (
-        <ResumableRunBanner
-          key={entry.slug}
-          entry={entry}
-          onNavigateToGeneration={(targetSlug) => {
-            setSubmittedSlug(targetSlug);
-            setStage(6);
-          }}
-          onClear={(targetSlug) =>
-            setResumableRuns((prev) => prev.filter((r) => r.slug !== targetSlug))
-          }
-          onDismiss={(targetSlug) =>
-            setResumableDismissed((prev) => {
-              const next = new Set(prev);
-              next.add(targetSlug);
-              return next;
-            })
-          }
-        />
-      ))}
+      <ResumeGenerationBanners
+        hideForSlug={hideForSlug}
+        onNavigateToGeneration={(targetSlug) => {
+          setSubmittedSlug(targetSlug);
+          setStage(6);
+        }}
+      />
       <header style={headerStyle}>
         <div style={headerSlotStyle}>
           <AppLogoLink />
@@ -546,54 +414,11 @@ export default function CreatePage() {
   );
 }
 
-// Strip client-side ids and serialize draft into a CourseSpec payload.
-function buildCourseSpec(draft: Draft, structure: StructureDraft) {
-  const spec: Record<string, unknown> = {
-    topic: draft.topic.trim(),
-    level: draft.level,
-    durationTarget: draft.durationTarget,
-    theoryPracticeRatio: clampRatio(draft.theoryPracticeRatio / 100),
-    draftStructure: {
-      courseTitle: structure.courseTitle.trim(),
-      courseDescription: structure.courseDescription.trim(),
-      modules: structure.modules.map((m) => ({
-        title: m.title.trim(),
-        lessons: m.lessons.map((l) => ({
-          title: l.title.trim(),
-          summary: l.summary.trim(),
-          estimatedMinutes: l.estimatedMinutes,
-        })),
-      })),
-    },
-    createdAt: new Date().toISOString(),
-  };
-
-  const trimmedDescription = draft.description.trim();
-  if (trimmedDescription.length > 0) {
-    spec.description = trimmedDescription;
-  }
-
-  if (draft.clarificationQuestions && draft.clarificationQuestions.length > 0) {
-    const answers = draft.clarification ?? {};
-    const trimmed: Record<string, string> = {};
-    for (const q of draft.clarificationQuestions) {
-      const a = (answers[q.id] ?? '').trim();
-      if (a.length > 0) trimmed[`${q.id}: ${q.text}`] = a;
-    }
-    if (Object.keys(trimmed).length > 0) {
-      spec.clarification = trimmed;
-    }
-  }
-
-  return spec;
-}
-
-function clampRatio(n: number): number {
-  if (Number.isNaN(n)) return 0.5;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
-}
+// US-191 — extracted to a sibling module so it can be unit-tested without
+// pulling React into the test runner.
+//
+// (No-op re-export to keep the original `buildCourseSpec(draft, structure)`
+// call sites in this file working unchanged.)
 
 // ─── Stepper ─────────────────────────────────────────────────────────────────
 
@@ -1206,606 +1031,6 @@ function StageMaterials({
   );
 }
 
-// US-106 / US-140 — sticky top banner shown when a generation run is
-// detected on /create mount. Surfaces concrete per-lesson progress (US-140)
-// when `.generation-state.json` from US-136 is on disk; lets the user
-// resume the live run, or wipe the partial run + restart from scratch.
-function ResumeBanner({
-  activeRun,
-  onNavigateToGeneration,
-  onClearActive,
-  onDismiss,
-}: {
-  activeRun: ActiveRun;
-  onNavigateToGeneration: (slug: string) => void;
-  onClearActive: () => void;
-  onDismiss: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  // Set when /resume returns 409 `busy`: a different course is mid-flight,
-  // so the resume button is disabled with an explanatory tooltip until the
-  // page reloads / activeRun changes.
-  const [busyConflict, setBusyConflict] = useState(false);
-
-  const showToast = useCallback((message: string) => {
-    setErrorMessage(message);
-    setTimeout(() => setErrorMessage((curr) => (curr === message ? null : curr)), 4500);
-  }, []);
-
-  const postFreshGenerate = useCallback(async (): Promise<boolean> => {
-    try {
-      const res = await fetch('/api/courses/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug: activeRun.slug }),
-      });
-      if (!res.ok) {
-        let message = `Server returned ${res.status}`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body && typeof body.error === 'string') message = body.error;
-        } catch {
-          /* non-JSON body */
-        }
-        showToast(message);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err));
-      return false;
-    }
-  }, [activeRun.slug, showToast]);
-
-  const handleResume = useCallback(async () => {
-    if (busy || busyConflict) return;
-    setBusy(true);
-    setErrorMessage(null);
-    try {
-      const hasProgress = !!activeRun.progress;
-      if (hasProgress) {
-        const res = await fetch(
-          `/api/courses/${encodeURIComponent(activeRun.slug)}/resume`,
-          { method: 'POST' },
-        );
-        if (res.ok) {
-          onNavigateToGeneration(activeRun.slug);
-          return;
-        }
-        if (res.status === 409) {
-          let code: string | undefined;
-          try {
-            const body = (await res.json()) as { error?: string };
-            if (body && typeof body.error === 'string') code = body.error;
-          } catch {
-            /* non-JSON */
-          }
-          if (code === 'no-resumable-state') {
-            // Race: state file vanished between the active-run summary and
-            // this click. Brief delay so any in-flight cleanup finishes,
-            // then fall through to a fresh /generate.
-            await new Promise((r) => setTimeout(r, 250));
-            const ok = await postFreshGenerate();
-            if (ok) onNavigateToGeneration(activeRun.slug);
-            return;
-          }
-          if (code === 'busy') {
-            setBusyConflict(true);
-            showToast('Another course generation is in flight — try again once it finishes.');
-            return;
-          }
-        }
-        let message = `Server returned ${res.status}`;
-        try {
-          const body = (await res.json()) as { error?: string };
-          if (body && typeof body.error === 'string') message = body.error;
-        } catch {
-          /* non-JSON */
-        }
-        showToast(message);
-        return;
-      }
-      // No progress on disk → server has no resumable state. Just kick off
-      // a fresh /generate (idempotent for the same slug per US-105).
-      const ok = await postFreshGenerate();
-      if (ok) onNavigateToGeneration(activeRun.slug);
-    } finally {
-      setBusy(false);
-    }
-  }, [activeRun.progress, activeRun.slug, busy, busyConflict, onNavigateToGeneration, postFreshGenerate, showToast]);
-
-  const handleCancelAndRestart = useCallback(async () => {
-    if (busy) return;
-    const ok = window.confirm(
-      `This will delete the partial generation and any lessons already produced for ${activeRun.name}. Continue?`,
-    );
-    if (!ok) return;
-    setBusy(true);
-    setErrorMessage(null);
-    try {
-      const del = await fetch(
-        `/api/courses/${encodeURIComponent(activeRun.slug)}/generation-state`,
-        { method: 'DELETE' },
-      );
-      if (del.status !== 204) {
-        let message = `Server returned ${del.status}`;
-        try {
-          const body = (await del.json()) as { error?: string };
-          if (body && typeof body.error === 'string') message = body.error;
-        } catch {
-          /* non-JSON */
-        }
-        showToast(message);
-        return;
-      }
-      // Fresh run for the same slug.
-      const started = await postFreshGenerate();
-      if (started) {
-        onNavigateToGeneration(activeRun.slug);
-      } else {
-        // DELETE succeeded but POST failed — clear the local active run
-        // so the banner doesn't stick around pointing at deleted state.
-        onClearActive();
-      }
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [activeRun.name, activeRun.slug, busy, onClearActive, onNavigateToGeneration, postFreshGenerate, showToast]);
-
-  const progress = activeRun.progress;
-  const resumeTitle = busyConflict
-    ? 'Another course is currently being generated; try again once it finishes.'
-    : undefined;
-
-  return (
-    <div
-      data-testid="resume-banner"
-      data-resume-slug={activeRun.slug}
-      data-resume-stage={activeRun.stage}
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 20,
-        flexShrink: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-1)',
-        padding: '10px var(--space-6)',
-        background: 'var(--accent-subtle)',
-        color: 'var(--accent-text)',
-        borderBottom: '1px solid var(--accent)',
-        fontSize: 'var(--fs-sm)',
-      }}
-    >
-      <style>{`
-        @keyframes resumeBannerDotPulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.45; transform: scale(0.85); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .resume-banner-dot--inflight {
-            animation: none !important;
-          }
-        }
-      `}</style>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-3)',
-        }}
-      >
-        <Sparkles size={14} strokeWidth={2} />
-        <span data-testid="resume-banner-text" style={{ flex: 1 }}>
-          {strings.resumeBanner.generatingPrefix}{' '}
-          <strong data-testid="resume-banner-name">{activeRun.name}</strong>
-          {' — '}
-          <span data-testid="resume-banner-stage" style={{ fontFamily: 'var(--font-mono)' }}>
-            {activeRun.stage}
-          </span>
-          {activeRun.queueLength > 0 && (
-            <>
-              {' · '}
-              <span data-testid="resume-banner-queue">
-                {activeRun.queueLength} {strings.resumeBanner.inQueueSuffix}
-              </span>
-            </>
-          )}
-        </span>
-        <button
-          type="button"
-          data-testid="resume-banner-resume"
-          onClick={() => void handleResume()}
-          disabled={busy || busyConflict}
-          title={resumeTitle}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 14px',
-            background: 'var(--accent)',
-            color: 'var(--text-on-accent)',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 500,
-            fontFamily: 'inherit',
-            cursor: busy || busyConflict ? 'not-allowed' : 'pointer',
-            opacity: busy || busyConflict ? 0.55 : 1,
-          }}
-        >
-          {strings.resumeBanner.resumeCta}
-          <ArrowRight size={12} strokeWidth={2} />
-        </button>
-        <button
-          type="button"
-          data-testid="cancel-and-restart-btn"
-          onClick={() => void handleCancelAndRestart()}
-          disabled={busy}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            height: 30,
-            padding: '0 12px',
-            background: 'transparent',
-            color: 'var(--accent-text)',
-            border: '1px solid var(--accent)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 500,
-            fontFamily: 'inherit',
-            cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.55 : 1,
-          }}
-        >
-          Cancel and restart
-        </button>
-        <button
-          type="button"
-          data-testid="resume-banner-dismiss"
-          aria-label="Dismiss"
-          onClick={onDismiss}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--accent-text)',
-            cursor: 'pointer',
-            padding: 4,
-            borderRadius: 'var(--radius-sm)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <X size={14} strokeWidth={2} />
-        </button>
-      </div>
-      {progress && (
-        <div
-          data-testid="resume-banner-progress"
-          style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}
-        >
-          <span
-            data-testid="resume-banner-progress-text"
-            style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}
-          >
-            {progress.lessonsDone} of {progress.lessonsTotal} lessons ·{' '}
-            {progress.currentLessonSlug ?? '—'}
-          </span>
-          <div
-            data-testid="resume-banner-dots"
-            style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            {progress.lessons.map((lesson) => {
-              const color =
-                lesson.status === 'done'
-                  ? 'var(--success)'
-                  : lesson.status === 'failed'
-                    ? 'var(--danger)'
-                    : lesson.status === 'inflight'
-                      ? 'var(--accent)'
-                      : 'var(--text-tertiary)';
-              const isDone = lesson.status === 'done';
-              const inflight = lesson.status === 'inflight';
-              const dotProps: {
-                title: string;
-                'data-testid': string;
-                'data-status': string;
-                'data-lesson-slug': string;
-                style: CSSProperties;
-                className?: string;
-              } = {
-                title: lesson.title,
-                'data-testid': 'resume-banner-dot',
-                'data-status': lesson.status,
-                'data-lesson-slug': lesson.slug,
-                style: {
-                  display: 'inline-block',
-                  width: 10,
-                  height: 10,
-                  borderRadius: '50%',
-                  background: color,
-                  flexShrink: 0,
-                  ...(inflight
-                    ? {
-                        animation: 'resumeBannerDotPulse 1.4s linear infinite',
-                      }
-                    : {}),
-                },
-                ...(inflight ? { className: 'resume-banner-dot--inflight' } : {}),
-              };
-              if (isDone) {
-                return (
-                  <a
-                    key={lesson.slug}
-                    href={`/courses/${encodeURIComponent(activeRun.slug)}/lessons/${encodeURIComponent(lesson.slug)}`}
-                    target="_blank"
-                    rel="noopener"
-                    aria-label={lesson.title}
-                    {...dotProps}
-                  />
-                );
-              }
-              return <span key={lesson.slug} {...dotProps} />;
-            })}
-          </div>
-        </div>
-      )}
-      {errorMessage && (
-        <div
-          data-testid="resume-banner-toast"
-          role="status"
-          style={{
-            marginTop: 6,
-            padding: '6px 10px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--danger)',
-            color: 'var(--text-on-accent)',
-            fontSize: 'var(--fs-sm)',
-          }}
-        >
-          {errorMessage}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Sticky banner shown when the server reports a leftover `.generation-state.json`
-// for a course whose run is no longer live (Claude session limit, crash, power
-// off). Resume hits POST /api/courses/<slug>/resume; Discard wipes via DELETE
-// /api/courses/<slug>/generation-state. Rendered once per resumable entry —
-// stacked under the live ResumeBanner when both are present.
-function ResumableRunBanner({
-  entry,
-  onNavigateToGeneration,
-  onClear,
-  onDismiss,
-}: {
-  entry: ResumableRunResp;
-  onNavigateToGeneration: (slug: string) => void;
-  onClear: (slug: string) => void;
-  onDismiss: (slug: string) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const showToast = useCallback((message: string) => {
-    setErrorMessage(message);
-    setTimeout(() => setErrorMessage((curr) => (curr === message ? null : curr)), 4500);
-  }, []);
-
-  const handleResume = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
-    setErrorMessage(null);
-    try {
-      const res = await fetch(
-        `/api/courses/${encodeURIComponent(entry.slug)}/resume`,
-        { method: 'POST' },
-      );
-      if (res.ok) {
-        onNavigateToGeneration(entry.slug);
-        return;
-      }
-      let code: string | undefined;
-      let message = `Server returned ${res.status}`;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body && typeof body.error === 'string') {
-          code = body.error;
-          message = body.error;
-        }
-      } catch {
-        /* non-JSON */
-      }
-      if (res.status === 409 && code === 'busy') {
-        showToast('Another course generation is in flight — try again once it finishes.');
-        return;
-      }
-      if (res.status === 409 && code === 'no-resumable-state') {
-        // State file vanished between the active-run summary and this click
-        // (concurrent discard from another tab). Drop the entry locally.
-        onClear(entry.slug);
-        return;
-      }
-      if (res.status === 409 && code === 'recently-cancelled') {
-        showToast('This course was cancelled recently — wait a few seconds and try again.');
-        return;
-      }
-      showToast(message);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, entry.slug, onClear, onNavigateToGeneration, showToast]);
-
-  const handleDiscard = useCallback(async () => {
-    if (busy) return;
-    const ok = window.confirm(
-      `Discard the partial generation for ${entry.name}? Lessons already produced will be deleted; init artifacts (research, sources, course outline) are kept.`,
-    );
-    if (!ok) return;
-    setBusy(true);
-    setErrorMessage(null);
-    try {
-      const res = await fetch(
-        `/api/courses/${encodeURIComponent(entry.slug)}/generation-state`,
-        { method: 'DELETE' },
-      );
-      if (res.status === 204) {
-        onClear(entry.slug);
-        return;
-      }
-      let message = `Server returned ${res.status}`;
-      try {
-        const body = (await res.json()) as { error?: string };
-        if (body && typeof body.error === 'string') message = body.error;
-      } catch {
-        /* non-JSON */
-      }
-      showToast(message);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, entry.name, entry.slug, onClear, showToast]);
-
-  const summary =
-    entry.initStatus === 'failed'
-      ? 'Init stage failed — resume will retry it'
-      : entry.lessonsTotal === 0
-        ? entry.initStatus === 'done'
-          ? 'Course outline ready — resume to generate lessons'
-          : 'Course outline not yet finished'
-        : `${entry.lessonsDone} of ${entry.lessonsTotal} lessons completed`;
-
-  return (
-    <div
-      data-testid="resumable-run-banner"
-      data-resumable-slug={entry.slug}
-      style={{
-        position: 'sticky',
-        top: 0,
-        zIndex: 19,
-        flexShrink: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 'var(--space-1)',
-        padding: '10px var(--space-6)',
-        background: 'var(--warning-subtle, rgba(217, 119, 6, 0.08))',
-        color: 'var(--warning-text, var(--text))',
-        borderBottom: '1px solid var(--warning, #f59e0b)',
-        fontSize: 'var(--fs-sm)',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--space-3)',
-        }}
-      >
-        <AlertTriangle size={14} strokeWidth={2} />
-        <span data-testid="resumable-run-banner-text" style={{ flex: 1 }}>
-          Previous generation paused for{' '}
-          <strong data-testid="resumable-run-banner-name">{entry.name}</strong>
-          {' — '}
-          <span style={{ color: 'var(--text-secondary)' }}>{summary}</span>
-        </span>
-        <button
-          type="button"
-          data-testid="resumable-run-banner-resume"
-          onClick={() => void handleResume()}
-          disabled={busy}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            height: 30,
-            padding: '0 14px',
-            background: 'var(--accent)',
-            color: 'var(--text-on-accent)',
-            border: 'none',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 500,
-            fontFamily: 'inherit',
-            cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.55 : 1,
-          }}
-        >
-          Resume
-          <ArrowRight size={12} strokeWidth={2} />
-        </button>
-        <button
-          type="button"
-          data-testid="resumable-run-banner-discard"
-          onClick={() => void handleDiscard()}
-          disabled={busy}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            height: 30,
-            padding: '0 12px',
-            background: 'transparent',
-            color: 'var(--text)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-md)',
-            fontSize: 'var(--fs-sm)',
-            fontWeight: 500,
-            fontFamily: 'inherit',
-            cursor: busy ? 'not-allowed' : 'pointer',
-            opacity: busy ? 0.55 : 1,
-          }}
-        >
-          Discard
-        </button>
-        <button
-          type="button"
-          data-testid="resumable-run-banner-dismiss"
-          aria-label="Dismiss"
-          onClick={() => onDismiss(entry.slug)}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--text-secondary)',
-            cursor: 'pointer',
-            padding: 4,
-            borderRadius: 'var(--radius-sm)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <X size={14} strokeWidth={2} />
-        </button>
-      </div>
-      {errorMessage && (
-        <div
-          data-testid="resumable-run-banner-toast"
-          role="status"
-          style={{
-            marginTop: 6,
-            padding: '6px 10px',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--danger)',
-            color: 'var(--text-on-accent)',
-            fontSize: 'var(--fs-sm)',
-          }}
-        >
-          {errorMessage}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function MaterialsBanner({
   materials,
@@ -2060,6 +1285,35 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
                 boxSizing: 'border-box',
               }}
             />
+            <label
+              data-testid="stage1-quiz-only-label"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 10,
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                data-testid="stage1-quiz-only-toggle"
+                checked={draft.quizOnly}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, quizOnly: e.target.checked }))
+                }
+                style={{
+                  width: 16,
+                  height: 16,
+                  accentColor: 'var(--accent)',
+                  cursor: 'pointer',
+                }}
+              />
+              Quiz only mode
+            </label>
           </div>
           <div
             style={{
@@ -2091,7 +1345,11 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
 // ─── Stage 2 — Refinement ────────────────────────────────────────────────────
 
 function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
-  const canNext = draft.level !== null && draft.durationTarget !== null;
+  // US-191 — in quiz-only mode the level + theory/practice knobs don't apply;
+  // only durationTarget gates the Next button.
+  const canNext = draft.quizOnly
+    ? draft.durationTarget !== null
+    : draft.level !== null && draft.durationTarget !== null;
 
   return (
     <div style={stageWrapStyle}>
@@ -2113,46 +1371,48 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
           }}
         >
           {/* Level */}
-          <section>
-            <h2 style={sectionHeadingStyle}>What&apos;s your level?</h2>
-            <div
-              data-testid="stage2-level-group"
-              role="radiogroup"
-              aria-label="Your level"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 'var(--space-3)',
-              }}
-            >
-              {LEVEL_OPTIONS.map((opt) => {
-                const selected = draft.level === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    data-testid={`stage2-level-${opt.value}`}
-                    data-selected={selected}
-                    onClick={() => setDraft((d) => ({ ...d, level: opt.value }))}
-                    style={radioCardStyle(selected)}
-                  >
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{opt.label}</span>
-                    <span
-                      style={{
-                        fontSize: 'var(--fs-xs)',
-                        color: selected ? 'var(--accent-text)' : 'var(--text-tertiary)',
-                        marginTop: 4,
-                      }}
+          {!draft.quizOnly && (
+            <section>
+              <h2 style={sectionHeadingStyle}>What&apos;s your level?</h2>
+              <div
+                data-testid="stage2-level-group"
+                role="radiogroup"
+                aria-label="Your level"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 'var(--space-3)',
+                }}
+              >
+                {LEVEL_OPTIONS.map((opt) => {
+                  const selected = draft.level === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-testid={`stage2-level-${opt.value}`}
+                      data-selected={selected}
+                      onClick={() => setDraft((d) => ({ ...d, level: opt.value }))}
+                      style={radioCardStyle(selected)}
                     >
-                      {opt.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                      <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{opt.label}</span>
+                      <span
+                        style={{
+                          fontSize: 'var(--fs-xs)',
+                          color: selected ? 'var(--accent-text)' : 'var(--text-tertiary)',
+                          marginTop: 4,
+                        }}
+                      >
+                        {opt.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Duration */}
           <section>
@@ -2180,54 +1440,56 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
           </section>
 
           {/* Theory or practice slider */}
-          <section>
-            <h2 style={sectionHeadingStyle}>Theory or practice?</h2>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                padding: '8px 0',
-              }}
-            >
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={draft.theoryPracticeRatio}
-                data-testid="stage2-ratio-slider"
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    theoryPracticeRatio: Number(e.target.value),
-                  }))
-                }
-                style={{ width: '100%', accentColor: 'var(--accent)' }}
-              />
+          {!draft.quizOnly && (
+            <section>
+              <h2 style={sectionHeadingStyle}>Theory or practice?</h2>
               <div
                 style={{
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: 'var(--fs-xs)',
-                  color: 'var(--text-tertiary)',
+                  flexDirection: 'column',
+                  gap: 10,
+                  padding: '8px 0',
                 }}
               >
-                <span>Theory</span>
-                <span
-                  data-testid="stage2-ratio-label"
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={draft.theoryPracticeRatio}
+                  data-testid="stage2-ratio-slider"
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      theoryPracticeRatio: Number(e.target.value),
+                    }))
+                  }
+                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                />
+                <div
                   style={{
-                    color: 'var(--accent-text)',
-                    fontWeight: 600,
-                    fontSize: 'var(--fs-sm)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--text-tertiary)',
                   }}
                 >
-                  {ratioLabel(draft.theoryPracticeRatio)}
-                </span>
-                <span>Practice</span>
+                  <span>Theory</span>
+                  <span
+                    data-testid="stage2-ratio-label"
+                    style={{
+                      color: 'var(--accent-text)',
+                      fontWeight: 600,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
+                    {ratioLabel(draft.theoryPracticeRatio)}
+                  </span>
+                  <span>Practice</span>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
       </div>
       <Footer onBack={onBack} onNext={onNext} canNext={canNext} backLabel="Back" />
@@ -3180,8 +2442,12 @@ function StageLogSection({
 function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
   const router = useRouter();
   const [phase, setPhase] = useState<
-    'starting' | 'queued' | 'running' | 'done' | 'error'
+    'starting' | 'queued' | 'running' | 'done' | 'error' | 'paused'
   >('starting');
+  // US-194: in-flight lesson slug captured at Pause time so the paused
+  // banner can surface "Paused on <lesson>" alongside the Resume button.
+  const [pausedInflightLesson, setPausedInflightLesson] =
+    useState<string | null>(null);
   const [genId, setGenId] = useState<string | null>(null);
   const [stages, setStages] = useState<StageEntry[]>([]);
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -3206,6 +2472,8 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   const phaseRef = useRef(phase);
   const genIdRef = useRef<string | null>(null);
   const cancelInFlightRef = useRef(false);
+  // US-194: prevent re-fires of Pause while the kill round-trip is in flight.
+  const pauseInFlightRef = useRef(false);
   // Per-active-stage scroll container. We auto-scroll the active stage to
   // bottom whenever its liveLines grow.
   const activeLogElRef = useRef<HTMLPreElement | null>(null);
@@ -3582,6 +2850,22 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
           /* malformed */
         }
       });
+      // US-194: terminal Pause event from the pipeline. Capture which lesson
+      // was in flight so the paused banner can surface it; close the SSE so
+      // the wizard stops listening for further events.
+      es.addEventListener('paused', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as {
+            slug: string;
+            inflightLessonSlug: string | null;
+          };
+          setPausedInflightLesson(data.inflightLessonSlug);
+          setPhase('paused');
+          es.close();
+        } catch {
+          /* malformed */
+        }
+      });
       es.addEventListener('error', (ev: MessageEvent) => {
         // SSE built-in onerror fires with no data; only treat as fatal if
         // the payload says so (i.e. our structured `error` event).
@@ -3777,6 +3061,32 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     onCancelled();
   };
 
+  // US-194: Pause click. POSTs to /pause and lets the SSE 'paused' event
+  // transition the phase. We optimistically flip to 'paused' so the button
+  // disappears immediately even if the SSE round-trip is briefly delayed —
+  // the SSE handler will overwrite pausedInflightLesson with the
+  // authoritative value if it lands after.
+  const handlePauseClick = async () => {
+    if (pauseInFlightRef.current) return;
+    pauseInFlightRef.current = true;
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(slug)}/pause`,
+        { method: 'POST' },
+      );
+      if (res.ok) {
+        // Optimistic local update — SSE 'paused' event will refine
+        // pausedInflightLesson with the server's captured slug.
+        setPhase('paused');
+      } else {
+        // Restore the button so the user can retry on transient failure.
+        pauseInFlightRef.current = false;
+      }
+    } catch {
+      pauseInFlightRef.current = false;
+    }
+  };
+
   // Inline recovery from `phase === 'error'`. POSTs to /resume; on success
   // reloads the page so the existing kickoff useEffect re-attaches a fresh
   // SSE stream to the new run (POST /generate is idempotent for the active
@@ -3891,9 +3201,11 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Course generated'
               : phase === 'error'
                 ? 'Generation failed'
-                : phase === 'queued'
-                  ? strings.generation.queuedHeading
-                  : 'Generating your course…'}
+                : phase === 'paused'
+                  ? 'Generation paused'
+                  : phase === 'queued'
+                    ? strings.generation.queuedHeading
+                    : 'Generating your course…'}
           </h1>
           {phase === 'queued' && queueInfo && (
             <p
@@ -3922,9 +3234,13 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Redirecting to your course…'
               : phase === 'error'
                 ? 'See details below — or go back to fix the issue and try again.'
-                : phase === 'queued'
-                  ? strings.generation.queuedDescription
-                  : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
+                : phase === 'paused'
+                  ? pausedInflightLesson
+                    ? `Stopped mid-flight on "${pausedInflightLesson}". Click Resume generation to restart that lesson from scratch and continue.`
+                    : 'Stopped during the init stage. Click Resume generation to re-run init and continue.'
+                  : phase === 'queued'
+                    ? strings.generation.queuedDescription
+                    : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
           </p>
 
           {progressPercent !== null && phase !== 'error' && (
@@ -4065,13 +3381,37 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
             }}
           >
             {phase === 'running' && (
+              <>
+                {/* US-194: Pause button is only visible during an active run.
+                    Hidden in pending/queued/done/paused/error. */}
+                <button
+                  type="button"
+                  data-testid="stage5-pause"
+                  onClick={() => void handlePauseClick()}
+                  style={ghostBtnStyle}
+                >
+                  Pause
+                </button>
+                <button
+                  type="button"
+                  data-testid="stage5-cancel"
+                  onClick={handleCancelClick}
+                  style={ghostBtnStyle}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {phase === 'paused' && (
               <button
                 type="button"
-                data-testid="stage5-cancel"
-                onClick={handleCancelClick}
-                style={ghostBtnStyle}
+                data-testid="stage5-resume"
+                onClick={() => void handleResumeFromError()}
+                disabled={resuming}
+                style={primaryBtnStyle(resuming)}
               >
-                Cancel
+                {resuming ? 'Resuming…' : 'Resume generation'}
+                <ArrowRight size={14} strokeWidth={2} />
               </button>
             )}
             {phase === 'error' && (

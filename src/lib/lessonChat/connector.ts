@@ -28,6 +28,12 @@ export interface ConnectorRequest {
   /** Per-call override for the subprocess timeout (ms). Falls back to the
    *  connector's factory default when omitted. */
   timeoutMs?: number;
+  /** When true, the subprocess connector adds `--dangerously-skip-permissions`
+   *  so the agent can invoke Read/Write/Bash unattended. Wizard Clarify and
+   *  Structure routes set this to let Claude Read uploaded source files
+   *  instead of inlining their content into the prompt. SDK connector ignores
+   *  (it already allows tools by default). */
+  allowTools?: boolean;
 }
 
 export type ConnectorName = 'agent-sdk' | 'subprocess';
@@ -101,11 +107,25 @@ export function subprocessConnector(
     name: 'subprocess',
     chat(req) {
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
-      return runClaudeCli(spawnFn, command, prompt, req.timeoutMs ?? timeoutMs, killGraceMs);
+      return runClaudeCli(
+        spawnFn,
+        command,
+        prompt,
+        req.timeoutMs ?? timeoutMs,
+        killGraceMs,
+        req.allowTools === true,
+      );
     },
     chatStream(req, signal) {
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
-      return streamClaudeCli(spawnFn, command, prompt, signal, killGraceMs);
+      return streamClaudeCli(
+        spawnFn,
+        command,
+        prompt,
+        signal,
+        killGraceMs,
+        req.allowTools === true,
+      );
     },
   };
 }
@@ -116,14 +136,30 @@ function runClaudeCli(
   prompt: string,
   timeoutMs: number,
   killGraceMs: number,
+  allowTools: boolean,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {
-      child = spawnFn(command, ['-p', prompt, '--output-format', 'json']);
+      // Pipe the prompt via stdin instead of argv. Inlining large clarify
+      // prompts (uploaded source content; US-125) into the argv vector blows
+      // through Linux's per-arg ARG_MAX (~128 KB) and the spawn fails with
+      // E2BIG. `claude -p` reads stdin when no prompt arg is supplied.
+      const args = ['-p', '--output-format', 'json'];
+      if (allowTools) args.push('--dangerously-skip-permissions');
+      child = spawnFn(command, args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
     } catch (err) {
       reject(new Error(`claude spawn failed: ${(err as Error).message}`));
       return;
+    }
+    if (child.stdin) {
+      child.stdin.on('error', () => {
+        // Child may exit before we finish writing (e.g. auth error) — surfaced
+        // via the `close` handler below; swallow EPIPE here.
+      });
+      child.stdin.end(prompt);
     }
 
     let stdoutBuf = '';
@@ -235,13 +271,23 @@ async function* streamClaudeCli(
   prompt: string,
   signal: AbortSignal,
   killGraceMs: number,
+  allowTools: boolean,
 ): AsyncGenerator<ChatStreamEvent> {
   let child: ChildProcess;
   try {
-    child = spawnFn(command, ['-p', prompt]);
+    // Same E2BIG concern as runClaudeCli: feed the prompt over stdin.
+    const args = ['-p'];
+    if (allowTools) args.push('--dangerously-skip-permissions');
+    child = spawnFn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (err) {
     yield { type: 'error', message: `claude spawn failed: ${(err as Error).message}` };
     return;
+  }
+  if (child.stdin) {
+    child.stdin.on('error', () => {
+      // child exited early; reported via stderr/close.
+    });
+    child.stdin.end(prompt);
   }
 
   const queue: ChatStreamEvent[] = [];

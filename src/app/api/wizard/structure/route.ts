@@ -12,8 +12,9 @@ import {
   type CourseStructure,
 } from '@/lib/wizard/structure';
 import {
-  loadStagedSourcesForPrompt,
-  type StagedSourceForPrompt,
+  listDraftSourceFilesSync,
+  resolveSourcePathForPrompt,
+  type ResolvedSourcePath,
 } from '@/lib/server/sources';
 
 export const dynamic = 'force-dynamic';
@@ -48,12 +49,15 @@ export async function POST(req: Request) {
   }
 
   // US-125: when a draft id is supplied, ground the prompt in the staged
-  // uploads. An invalid id (path traversal etc.) is logged once and the
-  // route falls back to the source-less prompt rather than 400'ing.
-  let sources: StagedSourceForPrompt[] = [];
+  // uploads. Pass paths only — the agent Reads each file via the Read tool
+  // rather than receiving inlined extracted text (which used to blow past
+  // 150 KB on multi-PDF uploads and break spawn with E2BIG).
+  let sources: ResolvedSourcePath[] = [];
   if (typeof parsed.data.draftId === 'string' && parsed.data.draftId.length > 0) {
     try {
-      sources = loadStagedSourcesForPrompt(parsed.data.draftId);
+      sources = listDraftSourceFilesSync(parsed.data.draftId).map(
+        resolveSourcePathForPrompt,
+      );
     } catch (err) {
       console.warn(
         `[wizard/structure] ignoring draftId=${JSON.stringify(parsed.data.draftId)}: ${(err as Error).message}`,
@@ -82,6 +86,10 @@ export async function POST(req: Request) {
       const reply = await connector.chat({
         systemPrompt: STRUCTURE_SYSTEM_PROMPT,
         userMessage,
+        // When uploads are present, allow the agent to invoke Read on the
+        // listed paths so the outline is actually grounded in their
+        // content rather than the filenames alone.
+        allowTools: sources.length > 0,
         // Structure generation drafts a full course outline with Opus and
         // routinely takes >60s; the connector default is meant for
         // interactive lesson chat.

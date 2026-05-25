@@ -24,6 +24,56 @@ Everything is local. Courses are plain JSON on disk, progress lives in `~/.ai-le
 
 ---
 
+<details open>
+<summary><b>Screenshots</b></summary>
+
+<br/>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/01-course-list.png"><img src="docs/screenshots/01-course-list.png" alt="Course library in the default dark theme — landing page showing the 'Continue learning' resume card and a grid of generated course cards with progress bars" /></a>
+      <p align="center"><sub>Course library — resume card + grid of generated courses with per-course progress.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/02-course-structure.png"><img src="docs/screenshots/02-course-structure.png" alt="Course structure view in dark theme — the 'Extend course' page for the PyTorch course showing two module cards (Tensors and Autograd Foundations, A Minimal Training Loop) each listing their lessons with per-lesson duration estimates and 'Add lesson' / 'Add module' controls" /></a>
+      <p align="center"><sub>Course structure — modules and lessons with per-lesson duration estimates (from the Extend view).</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/04-create-wizard.png"><img src="docs/screenshots/04-create-wizard.png" alt="Create-course wizard step 1 in dark theme — choose between 'Start from scratch' and 'I have materials' (PDF/DOCX upload)" /></a>
+      <p align="center"><sub>Create-course wizard — start from a topic, or upload your own materials.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/05-theory-widget.png"><img src="docs/screenshots/05-theory-widget.png" alt="Lesson view with a Theory widget in dark theme — rendered Markdown body, inline code highlighting, and the lesson table-of-contents sidebar" /></a>
+      <p align="center"><sub>Theory widget — Markdown + KaTeX with the lesson TOC sidebar.</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/06-quiz-widget.png"><img src="docs/screenshots/06-quiz-widget.png" alt="Quiz widget in dark theme — multiple-choice question with four options A through D and a Submit button" /></a>
+      <p align="center"><sub>Quiz widget — multiple-choice questions with per-answer feedback.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/07-code-widget.png"><img src="docs/screenshots/07-code-widget.png" alt="Code-exercise widget in dark theme on the edge-detection course — input photo on the left, the Sobel gradient output image on the right, and a Pyodide-backed CodeMirror Python editor below running cv2 to produce the live output" /></a>
+      <p align="center"><sub>Code widget — Pyodide Python editor with paired input/output images (edge detection).</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/08-lesson-chat.png"><img src="docs/screenshots/08-lesson-chat.png" alt="Lesson view in dark theme with the AI Tutor side panel open on the right, ready to answer questions in the context of the current lesson" /></a>
+      <p align="center"><sub>LessonChat — the AI tutor dock that sees the lesson + focused widget.</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/03-sunset-theme.png"><img src="docs/screenshots/03-sunset-theme.png" alt="Course library rendered in the optional 'sunset' theme variant — warm cream-on-charcoal palette with amber accents (toggle from the header)" /></a>
+      <p align="center"><sub>Sunset theme — optional warm variant via the header theme toggle.</sub></p>
+    </td>
+  </tr>
+</table>
+
+</details>
+
 <details>
 <summary><b>Why this exists</b></summary>
 

@@ -1744,4 +1744,32 @@ describe('CourseSpecSchema', () => {
     const parsed = CourseSpecSchema.parse(minimal);
     expect(parsed.description).toBeUndefined();
   });
+
+  // US-191 — Quiz-only mode emits a spec with `tags: ['quiz']` and without
+  // `level` / `theoryPracticeRatio`.
+  describe('quiz-only mode (US-191)', () => {
+    it('accepts a spec without `level` when `tags: ["quiz"]` is set', () => {
+      const quizOnly: Partial<typeof minimal> & { tags?: unknown } = { ...minimal };
+      delete quizOnly.level;
+      delete quizOnly.theoryPracticeRatio;
+      quizOnly.tags = ['quiz'];
+      const parsed = CourseSpecSchema.parse(quizOnly);
+      expect(parsed.level).toBeUndefined();
+      expect(parsed.theoryPracticeRatio).toBeUndefined();
+      expect(parsed.tags).toEqual(['quiz']);
+    });
+
+    it('still accepts a full spec (with level + ratio, no tags) — quizOnly=false shape', () => {
+      const parsed = CourseSpecSchema.parse(minimal);
+      expect(parsed.level).toBe('beginner');
+      expect(parsed.theoryPracticeRatio).toBe(0.5);
+      expect(parsed.tags).toBeUndefined();
+    });
+
+    it('rejects unknown tag values (anything other than `quiz`)', () => {
+      expect(() =>
+        CourseSpecSchema.parse({ ...minimal, tags: ['marketing'] }),
+      ).toThrow();
+    });
+  });
 });

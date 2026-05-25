@@ -12,8 +12,9 @@ import {
   type ClarifyResponse,
 } from '@/lib/wizard/clarify';
 import {
-  loadStagedSourcesForPrompt,
-  type StagedSourceForPrompt,
+  listDraftSourceFilesSync,
+  resolveSourcePathForPrompt,
+  type ResolvedSourcePath,
 } from '@/lib/server/sources';
 
 export const dynamic = 'force-dynamic';
@@ -48,12 +49,15 @@ export async function POST(req: Request) {
   }
 
   // US-125: when a draft id is supplied, ground the prompt in the staged
-  // uploads. An invalid id (path traversal etc.) is logged once and the
-  // route falls back to the source-less prompt rather than 400'ing.
-  let sources: StagedSourceForPrompt[] = [];
+  // uploads. We hand the agent paths only — it Reads each file itself via
+  // the Read tool. Inlining the extracted text used to blow past 150 KB for
+  // multi-PDF uploads and break spawn with E2BIG.
+  let sources: ResolvedSourcePath[] = [];
   if (typeof parsed.data.draftId === 'string' && parsed.data.draftId.length > 0) {
     try {
-      sources = loadStagedSourcesForPrompt(parsed.data.draftId);
+      sources = listDraftSourceFilesSync(parsed.data.draftId).map(
+        resolveSourcePathForPrompt,
+      );
     } catch (err) {
       console.warn(
         `[wizard/clarify] ignoring draftId=${JSON.stringify(parsed.data.draftId)}: ${(err as Error).message}`,
@@ -81,6 +85,14 @@ export async function POST(req: Request) {
       const reply = await connector.chat({
         systemPrompt: CLARIFY_SYSTEM_PROMPT,
         userMessage,
+        // When uploads are present, allow the agent to invoke Read on the
+        // listed paths. With Read disabled the model would have no way to
+        // see the file content and would fall back to inventing questions.
+        allowTools: sources.length > 0,
+        // Reading several PDF extracts in series easily pushes past the
+        // 60s connector default for lesson chat. 4 min mirrors the
+        // structure route's existing bump.
+        timeoutMs: 240_000,
       });
       const result: ClarifyResponse = parseClarifyResponse(reply);
       return NextResponse.json(result);

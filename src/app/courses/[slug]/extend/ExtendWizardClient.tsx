@@ -420,7 +420,7 @@ export default function ExtendWizardClient({
 
   const dialogIsLesson = dialog?.kind === 'lesson';
   const titleLabel = dialogIsLesson ? 'Lesson title' : 'Module title';
-  const summaryLabel = dialogIsLesson ? 'Lesson summary' : 'Module summary';
+  const detailsLabel = 'Share more details:';
 
   return (
     <div style={pageStyle}>
@@ -857,7 +857,7 @@ export default function ExtendWizardClient({
                 htmlFor="extend-dialog-summary"
                 style={dialogLabelStyle}
               >
-                {summaryLabel}
+                {detailsLabel}
               </label>
               <textarea
                 id="extend-dialog-summary"
@@ -865,7 +865,7 @@ export default function ExtendWizardClient({
                 ref={summaryTextareaRef}
                 value={summaryDraft}
                 onChange={(e) => setSummaryDraft(e.target.value)}
-                placeholder="One sentence describing what this module/lesson covers."
+                placeholder="Mention topics, examples, angles, or which widgets/structure to include…"
                 rows={3}
                 maxLength={300}
                 style={dialogTextareaStyle}

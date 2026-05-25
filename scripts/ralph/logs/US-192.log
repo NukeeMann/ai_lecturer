@@ -1,0 +1,42 @@
+[2026-05-25T08:41:35+0200] [rate_limit five_hour status=allowed]
+[2026-05-25T08:46:40+0200] I have enough context. Let me start implementing.
+[2026-05-25T08:46:52+0200] Now update `defaultDesignCourseCommand` and `defaultLessonCommand` to accept `isQuizOnly` and emit the variant prompt.
+[2026-05-25T08:48:01+0200] Now wire isQuizOnly detection into the pipeline. First, refactor the spec capture at the top.
+[2026-05-25T08:48:11+0200] Now add the isQuizOnly detection and update the spawn sites:
+[2026-05-25T08:48:30+0200] Now add the helper function. Let me place it near the other small helpers.
+[2026-05-25T08:48:42+0200] Now update the research stage to skip in quiz mode and design spawn to pass isQuizOnly. Let me find the research stage block:
+[2026-05-25T08:49:08+0200] Now update the design stage spawn to pass isQuizOnly:
+[2026-05-25T08:49:27+0200] Now update runLesson to pass isQuizOnly to lessonCommand:
+[2026-05-25T08:49:39+0200] Now update the coherence-pass gate to skip in quiz mode:
+[2026-05-25T08:49:54+0200] Now update the design_course SKILL.md to prepend the quiz-only section:
+[2026-05-25T08:50:15+0200] Now create the new `generate_quiz_lesson` SKILL.md:
+[2026-05-25T08:51:55+0200] Now let me check if there's a dragMatch.json schema file referenced from the SKILL.md:
+[2026-05-25T08:52:07+0200] Now let me write the test file. First I need to look at how the test harness runs the pipeline currently to mirror the pattern:
+[2026-05-25T08:52:14+0200] Now I have enough understanding to write the test file. Let me create a sibling test file.
+[2026-05-25T08:53:35+0200] Now let me run typecheck and the new test file to verify:
+[2026-05-25T08:53:46+0200] Typecheck passes. Now run the new test file:
+[2026-05-25T08:54:15+0200] All 9 quiz-mode tests pass. Now let me run the existing generation.test.ts to ensure I haven't regressed it:
+[2026-05-25T08:55:46+0200] That's a pre-existing flaky FS-test (documented in the progress log). Let me run the broader test suite to check for regressions:
+[2026-05-25T08:56:14+0200] All 604 tests pass on rerun — confirmed pre-existing flake. Let me also run the wider test suite to verify nothing broke in unrelated places:
+[2026-05-25T08:57:01+0200] All 19 failures are the pre-existing `extend/page.test.tsx` flakes documented in the progress log. Now let me run the lint to make sure nothing's broken there:
+[2026-05-25T08:58:02+0200] Clean lint on my files. Now let me verify the build still works:
+[2026-05-25T08:59:05+0200] Now append a progress entry:
+[2026-05-25T09:00:06+0200] Now stage just the files for my commit (carefully avoid the leftover state files and unrelated schema regens):
+[2026-05-25T09:01:00+0200] US-192 is committed: `passes: true` for US-192, and orchestrator can verify. Summary:
+
+- `src/lib/server/generation.ts` — added `readCourseSpecIsQuizOnly()`, gated the research stage with `!isQuizOnly`, made `defaultDesignCourseCommand` / `defaultLessonCommand` factories accept an `isQuizOnly` flag (backward-compatible), and skipped coherence-pass in quiz mode.
+- `scripts/ralph/skills/design_course/SKILL.md` — prepended a *Quiz-only mode* section (write `tags:['quiz']` into course.json, no theory beats, don't Read research/sources).
+- `scripts/ralph/skills/generate_quiz_lesson/SKILL.md` — new ~245-line skill: 10–15 quiz/dragMatch sections, hard ban on theory and every other widget type, no Step 3a / Step 5, mandatory 1–3 sentence explanations, no `level` field.
+- `src/lib/server/generationQuizOnly.test.ts` — 9 new tests (quiz path skips research + coherence, factory args, default-prompt content, full-pipeline regression, empty-tags regression). One existing test in `generation.test.ts` updated for the new 4-arg `lessonCommand` call shape.
+- `src/widgets/schemas/course.json` regen — picks up the US-191 `tags` field that the quiz branch now writes.
+
+Typecheck clean; 122 generation tests + 9 quiz-only tests pass.
+[2026-05-25T09:01:00+0200] [result success turns=87 cost=$11.241444249999997] US-192 is committed: `passes: true` for US-192, and orchestrator can verify. Summary:
+
+- `src/lib/server/generation.ts` — added `readCourseSpecIsQuizOnly()`, gated the research stage with `!isQuizOnly`, made `defaultDesignCourseCommand` / `defaultLessonCommand` factories accept an `isQuizOnly` flag (backward-compatible), and skipped coherence-pass in quiz mode.
+- `scripts/ralph/skills/design_course/SKILL.md` — prepended a *Quiz-only mode* section (write `tags:['quiz']` into course.json, no theory beats, don't Read research/sources).
+- `scripts/ralph/skills/generate_quiz_lesson/SKILL.md` — new ~245-line skill: 10–15 quiz/dragMatch sections, hard ban on theory and every other widget type, no Step 3a / Step 5, mandatory 1–3 sentence explanations, no `level` field.
+- `src/lib/server/generationQuizOnly.test.ts` — 9 new tests (quiz path skips research + coherence, factory args, default-prompt content, full-pipeline regression, empty-tags regression). One existing test in `generation.test.ts` updated for the new 4-arg `lessonCommand` call shape.
+- `src/widgets/schemas/course.json` regen — picks up the US-191 `tags` field that the quiz branch now writes.
+
+Typecheck clean; 122 generation tests + 9 quiz-only tests pass.

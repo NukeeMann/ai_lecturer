@@ -222,6 +222,27 @@ export function listCourseSourceFilesSync(slug: string): string[] {
     .sort();
 }
 
+/** Same as `listCourseSourceFilesSync` but for a staged draft under
+ *  `<draftsRoot>/<draftId>/sources/`. Used by the wizard Clarify / Structure
+ *  routes to hand absolute paths to the LLM instead of inlining gigantic PDF
+ *  / docx extracts into the prompt — the model reads each file via the Read
+ *  tool. Returns `[]` if the draft directory is absent. */
+export function listDraftSourceFilesSync(draftId: string): string[] {
+  assertSafeDraftId(draftId);
+  const dir = draftSourcesDir(draftId);
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+  return entries
+    .filter((e) => e.isFile())
+    .map((e) => path.resolve(dir, e.name))
+    .sort();
+}
+
 /**
  * Path of the extracted-text sibling for `absPath`. For
  * `<dir>/<name>.docx` this returns `<dir>/.extracted/<name>.docx.md`. The

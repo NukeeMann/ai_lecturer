@@ -24,6 +24,14 @@ export const GenerationStateSchema = z.object({
   slug: z.string(),
   startedAt: z.string(),
   lastUpdatedAt: z.string(),
+  // US-194: optional pause marker; absent / `running` = active or resumable
+  // crash-survivor; `paused` = user-initiated Pause sitting on disk awaiting
+  // an explicit Resume. The optional `pausedInflightLesson` captures which
+  // lesson was being generated when Pause landed so the UI can surface
+  // "Paused on <lessonSlug>" and Resume restarts that lesson from attempt 0.
+  // Init-stage pause (before any lesson) leaves the field absent.
+  status: z.enum(['running', 'paused']).optional(),
+  pausedInflightLesson: z.string().optional(),
   research: InitStageStatusSchema,
   design: InitStageStatusSchema,
   lessons: z.array(

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +27,8 @@ import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
+import { CourseQuizChip } from '@/components/QuizChip';
+import { ResumeGenerationBanners } from '@/components/ResumeGenerationBanner';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import type { Collection } from '@/lib/schemas/collection';
@@ -473,15 +476,27 @@ function ContinueLearningHero({ resume }: { resume: ResumeTarget }) {
           </div>
           <div
             style={{
-              fontSize: 'var(--fs-sm)',
-              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              flexWrap: 'wrap',
               marginBottom: 4,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              minWidth: 0,
             }}
           >
-            {resume.course.title}
+            <span
+              style={{
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text-tertiary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              {resume.course.title}
+            </span>
+            <CourseQuizChip tags={resume.course.tags} />
           </div>
           <h2
             style={{
@@ -702,6 +717,55 @@ function StatusBadge({ stats }: { stats: CourseStats }) {
   );
 }
 
+function AutoFitTitle({
+  text,
+  maxFontSize,
+  minFontSize = 11,
+  style,
+}: {
+  text: string;
+  maxFontSize: number;
+  minFontSize?: number;
+  style?: CSSProperties;
+}) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  const [fontSize, setFontSize] = useState(maxFontSize);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      let size = maxFontSize;
+      el.style.fontSize = `${size}px`;
+      // shrink until it fits on one line (scrollWidth fits in clientWidth)
+      while (el.scrollWidth > el.clientWidth + 0.5 && size > minFontSize) {
+        size -= 0.5;
+        el.style.fontSize = `${size}px`;
+      }
+      setFontSize(size);
+    };
+    fit();
+    const target = el.parentElement ?? el;
+    const ro = new ResizeObserver(fit);
+    ro.observe(target);
+    return () => ro.disconnect();
+  }, [text, maxFontSize, minFontSize]);
+
+  return (
+    <h3
+      ref={ref}
+      style={{
+        ...style,
+        fontSize: `${fontSize}px`,
+        whiteSpace: 'nowrap',
+        overflow: 'hidden',
+      }}
+    >
+      {text}
+    </h3>
+  );
+}
+
 function cardHref(course: Course, progress: Progress | null): string {
   const cp = progress?.courses?.[course.slug];
   const firstLesson = course.modules.flatMap((m) => m.lessons)[0]?.slug;
@@ -726,6 +790,8 @@ function CourseCard({
   const [hover, setHover] = useState(false);
   const completion = stats.total === 0 ? 0 : Math.round((stats.finished / stats.total) * 100);
   const linkStyle: CSSProperties = {
+    position: 'relative',
+    zIndex: hover && !dimmed ? 9999 : undefined,
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-3)',
@@ -738,11 +804,11 @@ function CourseCard({
     color: 'inherit',
     cursor: dimmed ? 'wait' : 'pointer',
     transition:
-      'border-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast), opacity 200ms',
-    transform: hover && !dimmed ? 'translateY(-1px)' : 'none',
+      'border-color var(--t-fast), box-shadow var(--t-fast), opacity 200ms',
     opacity: fading ? 0 : dimmed ? 0.55 : 1,
     pointerEvents: dimmed ? 'none' : 'auto',
   };
+  const showTooltip = hover && !dimmed && Boolean(course.description);
   return (
     <Link
       data-testid="course-card"
@@ -756,19 +822,28 @@ function CourseCard({
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         <AccentIcon iconName={course.icon} accent={course.accentColor} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3
+          <div
             style={{
-              margin: 0,
-              fontSize: 'var(--fs-lg)',
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              flexWrap: 'wrap',
             }}
           >
-            {course.title}
-          </h3>
+            <AutoFitTitle
+              text={course.title}
+              maxFontSize={18}
+              minFontSize={11}
+              style={{
+                margin: 0,
+                fontWeight: 600,
+                letterSpacing: '-0.01em',
+                lineHeight: 1.3,
+                minWidth: 0,
+                flex: 1,
+              }}
+            />
+          </div>
         </div>
       </div>
       <p
@@ -784,8 +859,9 @@ function CourseCard({
       >
         {course.description}
       </p>
-      <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
         <StatusBadge stats={stats} />
+        <CourseQuizChip tags={course.tags} />
       </div>
       <div
         aria-hidden
@@ -809,6 +885,52 @@ function CourseCard({
           }}
         />
       </div>
+      {showTooltip && (
+        <div
+          role="tooltip"
+          data-testid="course-card-tooltip"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 10px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10000,
+            width: 'max-content',
+            maxWidth: 'min(360px, calc(100vw - 32px))',
+            padding: '10px 14px',
+            background: 'var(--bg-overlay, var(--bg-elevated))',
+            color: 'var(--text-tertiary)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow:
+              'var(--shadow-lg, 0 12px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.10))',
+            fontSize: 'var(--fs-sm)',
+            lineHeight: 1.5,
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            pointerEvents: 'none',
+            animation: 'tooltipFadeIn 120ms ease-out',
+          }}
+        >
+          {/* arrow — border layer */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: -7,
+              left: '50%',
+              transform: 'translateX(-50%) rotate(45deg)',
+              width: 12,
+              height: 12,
+              background: 'var(--bg-overlay, var(--bg-elevated))',
+              borderLeft: '1px solid var(--border-strong)',
+              borderTop: '1px solid var(--border-strong)',
+              borderTopLeftRadius: 3,
+            }}
+          />
+          {course.description}
+        </div>
+      )}
     </Link>
   );
 }
@@ -1774,6 +1896,12 @@ export default function DashboardPage() {
 
   return (
     <div style={pageStyle}>
+      <ResumeGenerationBanners
+        sticky={false}
+        onNavigateToGeneration={(slug) =>
+          router.push(`/create?resume=${encodeURIComponent(slug)}`)
+        }
+      />
       <header data-testid="dashboard-header" style={headerStyle}>
         <div style={headerLeftStyle}>
           <AppLogoLink />
