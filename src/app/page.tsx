@@ -994,6 +994,7 @@ function CourseCardWithMenu({
           position: 'absolute',
           top: 10,
           right: 10,
+          zIndex: 10000,
         }}
       >
         <MoreHorizontal size={16} strokeWidth={2} />
@@ -1002,7 +1003,7 @@ function CourseCardWithMenu({
         <div
           role="menu"
           data-testid={`course-menu-${course.slug}`}
-          style={{ ...popoverStyle, top: 40, right: 10 }}
+          style={{ ...popoverStyle, top: 40, right: 10, zIndex: 10000 }}
         >
           <button
             type="button"
