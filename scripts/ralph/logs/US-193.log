@@ -1,0 +1,17 @@
+[2026-05-25T09:01:28+0200] [rate_limit five_hour status=allowed]
+[2026-05-25T09:02:42+0200] Good - the `Course` schema already has `tags`. Now let me look at the existing dashboard test setup and check for any existing chip patterns.
+[2026-05-25T09:04:03+0200] Let me check how widget-quiz is currently used elsewhere for chip-like patterns.
+[2026-05-25T09:04:25+0200] Now let me create the QuizChip component.
+[2026-05-25T09:04:39+0200] Now wire it into page.tsx — both the CourseCard header and the resume banner.
+[2026-05-25T09:04:45+0200] Now update CourseCard to render the chip in the title row.
+[2026-05-25T09:04:59+0200] Now update ContinueLearningHero to render the chip next to `resume.course.title`.
+[2026-05-25T09:05:06+0200] Now write the rendering test.
+[2026-05-25T09:05:33+0200] Typecheck passed. Now run the full vitest suite to make sure nothing else regressed.
+[2026-05-25T09:05:49+0200] The failures are pre-existing (per US-191 learnings: ResizeObserver missing in jsdom and FS race conditions). My changes pass. Let me run the dashboard tests + chip test + Stage3Cascade test to confirm.
+[2026-05-25T09:05:58+0200] Now browser verification with playwright. Let me check existing courses and figure out how to seed/stub a quiz course.
+[2026-05-25T09:10:40+0200] The hero chip is visible, but the CourseCard chip is below the fold. Let me re-take with fullPage and also scroll to the quiz-test card.
+[2026-05-25T09:11:06+0200] Both screenshots show the chip rendered correctly — purple "Quiz" pill next to "Quiz Reference" in both the resume banner and the CourseCard. Time to finalize.
+[2026-05-25T09:11:33+0200] The JSON dump escaped non-ASCII chars. Let me redo this preserving the original encoding.
+[2026-05-25T09:11:38+0200] Clean — only US-193's `passes` flipped. Now append the progress log entry.
+[2026-05-25T09:12:50+0200] US-193 done. Commit `4a4937a` lands a new `src/components/QuizChip.tsx` (+ test), wires `CourseQuizChip` into the CourseCard header row and the Continue-learning hero, marks `passes:true` for US-193 in prd.json, and appends a progress log entry. Typecheck passes; 4 new chip tests + adjacent dashboard/create tests pass; browser verification captured `/tmp/quiz-chip-dashboard.png` and `/tmp/quiz-chip-resume.png` (2 badges on the dashboard, 1 inside `[data-testid="continue-hero"]`, 0 on a non-quiz card).
+[2026-05-25T09:12:50+0200] [result success turns=86 cost=$4.222041250000001] US-193 done. Commit `4a4937a` lands a new `src/components/QuizChip.tsx` (+ test), wires `CourseQuizChip` into the CourseCard header row and the Continue-learning hero, marks `passes:true` for US-193 in prd.json, and appends a progress log entry. Typecheck passes; 4 new chip tests + adjacent dashboard/create tests pass; browser verification captured `/tmp/quiz-chip-dashboard.png` and `/tmp/quiz-chip-resume.png` (2 badges on the dashboard, 1 inside `[data-testid="continue-hero"]`, 0 on a non-quiz card).
