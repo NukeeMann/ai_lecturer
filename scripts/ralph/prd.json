@@ -4243,6 +4243,50 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-194",
+      "title": "Pause/Resume generacji kursu: ubij subdrzewo agenta + restart ostatniej lekcji od zera",
+      "description": "Jako user prowadzący długą generację kursu, chcę widoczny w panelu generacji przycisk Pause, który ubija aktualnie aktywny proces `claude -p` razem z całym poddrzewem procesów (ralph subagenty), wprowadzając run w stan `paused`. Ukończone wcześniej lekcje pozostają nietknięte; lekcja, która była w trakcie generacji w momencie Pause, jest odrzucana wraz z jej partial output. Po kliknięciu Resume generacja tej ostatniej niedokończonej lekcji startuje od zera (attempt count zresetowany do 0, partial JSON usunięty), a następnie pipeline kontynuuje pozostałe pending lekcje. Jeśli Pause został wciśnięty podczas stage init_course (przed pierwszą lekcją), Resume re-runuje init_course.",
+      "acceptanceCriteria": [
+        "Przycisk Pause widoczny w panelu generacji tylko w trakcie aktywnego runu (nie w stanach pending/done/paused)",
+        "POST /api/courses/<slug>/pause ubija child PID aktywnego GenerationRun oraz cały process tree (pokrywa ralph subagenty)",
+        ".generation-state.json przechodzi w stan `paused` z zapisem in-flight lesson slug",
+        "Partial output dla in-flight lesson (niekompletny <lessonSlug>.json) jest usuwany przy pauzie",
+        "Resume wykrywa stan `paused` i restartuje in-flight lesson z resetem attempt count do 0",
+        "Ukończone przed Pause lekcje nie są regenerowane przy Resume",
+        "Pause podczas stage init → Resume re-runuje init_course",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 194,
+      "passes": false,
+      "notes": "Builds on US-136 (.generation-state.json) i US-137 (resume route). Kluczowa różnica vs. US-137: tutaj attempt count jest resetowany, a partial output usuwany — bo Pause jest świadomą decyzją usera, nie crashem. Process-tree kill: użyć pgrep -P / process.kill na całym drzewie (Linux ma `kill -- -PGID` jeśli child był spawnowany z `detached: true`); zweryfikować w src/lib/server/generation.ts jak `claude -p` jest spawnowany.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-195",
+      "title": "Resume-generation banner widoczny też w course explorerze (home), nie tylko na /create",
+      "description": "Jako user wracający do AI Lecturer po zamknięciu karty w trakcie generacji kursu, chcę żeby baner `Resume generation` (US-106 / US-140), dziś widoczny wyłącznie na /create, pokazywał się również na stronie głównej (explorer kursów). Ten sam komponent: tytuł kursu, per-lesson dots, akcje Resume oraz Cancel-and-restart — po prostu zamontowany dodatkowo na home page, żeby user nie musiał nawigować do /create tylko po to żeby odkryć że generacja jest w toku i ją wznowić.",
+      "acceptanceCriteria": [
+        "Ten sam komponent banera (lub współdzielony data hook) zamontowany na home page gdy istnieje aktywny lub paused run",
+        "Klik Resume z home → nawiguje do /create i kontynuuje run, identycznie jak baner z /create",
+        "Cancel-and-restart z home — identyczny confirm-flow i efekt jak na /create",
+        "Brak flashu/layout-shiftu na home gdy żaden run nie jest aktywny",
+        "Gdy nic się nie generuje, home page renderuje się dokładnie jak dziś (zero extra container)",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 195,
+      "passes": false,
+      "notes": "Wyciągnąć logikę banera z /create do współdzielonego komponentu/hooka żeby uniknąć duplikacji. Pasuje też do US-194: gdy run jest `paused`, baner na home też to pokazuje.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }
