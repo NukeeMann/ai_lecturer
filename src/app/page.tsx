@@ -792,7 +792,6 @@ function CourseCard({
             >
               {course.title}
             </h3>
-            <CourseQuizChip tags={course.tags} />
           </div>
         </div>
       </div>
@@ -809,8 +808,9 @@ function CourseCard({
       >
         {course.description}
       </p>
-      <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+      <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
         <StatusBadge stats={stats} />
+        <CourseQuizChip tags={course.tags} />
       </div>
       <div
         aria-hidden
