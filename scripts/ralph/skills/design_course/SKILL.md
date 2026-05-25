@@ -14,6 +14,18 @@ This is the architect pass. The research has been done; your job is to shape mod
 
 ---
 
+## Quiz-only mode (US-192)
+
+If `course-spec.json` contains `tags: ['quiz']`, this is a **quiz-only course** and the rules below override the defaults:
+
+1. **Write `tags: ['quiz']` into the produced `course.json`** (the `tags` field on `CourseSchema` accepts the same enum). Downstream consumers — the dashboard `CourseCard` chip, the generation pipeline's per-lesson skill router — read this field to detect the quiz branch from `course.json` alone.
+2. **Plan each lesson as a quiz-only set.** The downstream `generate_quiz_lesson` skill emits 10–15 quiz / dragMatch sections per lesson, no theory beats. When you write `lesson.summary` entries, frame them around the *concepts being checked* (e.g. *"Quick check: kernel sizes, separability, and boundary handling."*) rather than "*intro / definition / worked example*" narrative beats.
+3. **Do NOT expect `research.md` or `sources.md` to exist.** The research_course stage was deliberately skipped — do NOT Read those files, do NOT cite them, and do NOT update their headings (the *Step 2: Sync sources.md headings* pass is a no-op in quiz mode). Your only inputs are `course-spec.json` and any user-uploaded files under `/courses/<slug>/sources/`.
+
+In every other respect (sizing rules, slug derivation, schema validation, no-touch-`scripts/ralph/`), quiz-only courses follow the same rules as full courses. The existing full-course behaviour below is preserved exactly when no `quiz` tag is present.
+
+---
+
 ## The Job
 
 1. Receive a course **slug** as the argument (e.g. `gauss-basics`, `edge-detection-basics`).
