@@ -26,6 +26,7 @@ import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SettingsMenu, applyAccent } from '@/components/SettingsMenu';
+import { CourseQuizChip } from '@/components/QuizChip';
 import type { Course, AccentColor } from '@/lib/schemas/course';
 import type { Progress } from '@/lib/schemas/progress';
 import type { Collection } from '@/lib/schemas/collection';
@@ -473,15 +474,27 @@ function ContinueLearningHero({ resume }: { resume: ResumeTarget }) {
           </div>
           <div
             style={{
-              fontSize: 'var(--fs-sm)',
-              color: 'var(--text-tertiary)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              flexWrap: 'wrap',
               marginBottom: 4,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              minWidth: 0,
             }}
           >
-            {resume.course.title}
+            <span
+              style={{
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text-tertiary)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              {resume.course.title}
+            </span>
+            <CourseQuizChip tags={resume.course.tags} />
           </div>
           <h2
             style={{
@@ -756,19 +769,30 @@ function CourseCard({
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
         <AccentIcon iconName={course.icon} accent={course.accentColor} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h3
+          <div
             style={{
-              margin: 0,
-              fontSize: 'var(--fs-lg)',
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--space-2)',
+              flexWrap: 'wrap',
             }}
           >
-            {course.title}
-          </h3>
+            <h3
+              style={{
+                margin: 0,
+                fontSize: 'var(--fs-lg)',
+                fontWeight: 600,
+                letterSpacing: '-0.01em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              {course.title}
+            </h3>
+            <CourseQuizChip tags={course.tags} />
+          </div>
         </div>
       </div>
       <p
