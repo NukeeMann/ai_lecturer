@@ -106,7 +106,13 @@ export async function GET(
       }
 
       const closeIfTerminal = (event: GenerationEvent) => {
-        if (event.type === 'done' || event.type === 'error') {
+        if (
+          event.type === 'done' ||
+          event.type === 'error' ||
+          // US-194: a Pause is a terminal event for the SSE stream too —
+          // the UI should observe it and stop listening for further events.
+          event.type === 'paused'
+        ) {
           closed = true;
           unsubscribe?.();
           unsubscribe = null;

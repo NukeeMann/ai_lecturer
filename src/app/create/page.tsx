@@ -3175,8 +3175,12 @@ function StageLogSection({
 function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () => void }) {
   const router = useRouter();
   const [phase, setPhase] = useState<
-    'starting' | 'queued' | 'running' | 'done' | 'error'
+    'starting' | 'queued' | 'running' | 'done' | 'error' | 'paused'
   >('starting');
+  // US-194: in-flight lesson slug captured at Pause time so the paused
+  // banner can surface "Paused on <lesson>" alongside the Resume button.
+  const [pausedInflightLesson, setPausedInflightLesson] =
+    useState<string | null>(null);
   const [genId, setGenId] = useState<string | null>(null);
   const [stages, setStages] = useState<StageEntry[]>([]);
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -3201,6 +3205,8 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
   const phaseRef = useRef(phase);
   const genIdRef = useRef<string | null>(null);
   const cancelInFlightRef = useRef(false);
+  // US-194: prevent re-fires of Pause while the kill round-trip is in flight.
+  const pauseInFlightRef = useRef(false);
   // Per-active-stage scroll container. We auto-scroll the active stage to
   // bottom whenever its liveLines grow.
   const activeLogElRef = useRef<HTMLPreElement | null>(null);
@@ -3577,6 +3583,22 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
           /* malformed */
         }
       });
+      // US-194: terminal Pause event from the pipeline. Capture which lesson
+      // was in flight so the paused banner can surface it; close the SSE so
+      // the wizard stops listening for further events.
+      es.addEventListener('paused', (ev: MessageEvent) => {
+        try {
+          const data = JSON.parse(ev.data) as {
+            slug: string;
+            inflightLessonSlug: string | null;
+          };
+          setPausedInflightLesson(data.inflightLessonSlug);
+          setPhase('paused');
+          es.close();
+        } catch {
+          /* malformed */
+        }
+      });
       es.addEventListener('error', (ev: MessageEvent) => {
         // SSE built-in onerror fires with no data; only treat as fatal if
         // the payload says so (i.e. our structured `error` event).
@@ -3772,6 +3794,32 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
     onCancelled();
   };
 
+  // US-194: Pause click. POSTs to /pause and lets the SSE 'paused' event
+  // transition the phase. We optimistically flip to 'paused' so the button
+  // disappears immediately even if the SSE round-trip is briefly delayed —
+  // the SSE handler will overwrite pausedInflightLesson with the
+  // authoritative value if it lands after.
+  const handlePauseClick = async () => {
+    if (pauseInFlightRef.current) return;
+    pauseInFlightRef.current = true;
+    try {
+      const res = await fetch(
+        `/api/courses/${encodeURIComponent(slug)}/pause`,
+        { method: 'POST' },
+      );
+      if (res.ok) {
+        // Optimistic local update — SSE 'paused' event will refine
+        // pausedInflightLesson with the server's captured slug.
+        setPhase('paused');
+      } else {
+        // Restore the button so the user can retry on transient failure.
+        pauseInFlightRef.current = false;
+      }
+    } catch {
+      pauseInFlightRef.current = false;
+    }
+  };
+
   // Inline recovery from `phase === 'error'`. POSTs to /resume; on success
   // reloads the page so the existing kickoff useEffect re-attaches a fresh
   // SSE stream to the new run (POST /generate is idempotent for the active
@@ -3886,9 +3934,11 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Course generated'
               : phase === 'error'
                 ? 'Generation failed'
-                : phase === 'queued'
-                  ? strings.generation.queuedHeading
-                  : 'Generating your course…'}
+                : phase === 'paused'
+                  ? 'Generation paused'
+                  : phase === 'queued'
+                    ? strings.generation.queuedHeading
+                    : 'Generating your course…'}
           </h1>
           {phase === 'queued' && queueInfo && (
             <p
@@ -3917,9 +3967,13 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
               ? 'Redirecting to your course…'
               : phase === 'error'
                 ? 'See details below — or go back to fix the issue and try again.'
-                : phase === 'queued'
-                  ? strings.generation.queuedDescription
-                  : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
+                : phase === 'paused'
+                  ? pausedInflightLesson
+                    ? `Stopped mid-flight on "${pausedInflightLesson}". Click Resume generation to restart that lesson from scratch and continue.`
+                    : 'Stopped during the init stage. Click Resume generation to re-run init and continue.'
+                  : phase === 'queued'
+                    ? strings.generation.queuedDescription
+                    : 'Hang tight — Claude is researching the topic, then ralph will write each lesson.'}
           </p>
 
           {progressPercent !== null && phase !== 'error' && (
@@ -4060,13 +4114,37 @@ function Stage5Generate({ slug, onCancelled }: { slug: string; onCancelled: () =
             }}
           >
             {phase === 'running' && (
+              <>
+                {/* US-194: Pause button is only visible during an active run.
+                    Hidden in pending/queued/done/paused/error. */}
+                <button
+                  type="button"
+                  data-testid="stage5-pause"
+                  onClick={() => void handlePauseClick()}
+                  style={ghostBtnStyle}
+                >
+                  Pause
+                </button>
+                <button
+                  type="button"
+                  data-testid="stage5-cancel"
+                  onClick={handleCancelClick}
+                  style={ghostBtnStyle}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {phase === 'paused' && (
               <button
                 type="button"
-                data-testid="stage5-cancel"
-                onClick={handleCancelClick}
-                style={ghostBtnStyle}
+                data-testid="stage5-resume"
+                onClick={() => void handleResumeFromError()}
+                disabled={resuming}
+                style={primaryBtnStyle(resuming)}
               >
-                Cancel
+                {resuming ? 'Resuming…' : 'Resume generation'}
+                <ArrowRight size={14} strokeWidth={2} />
               </button>
             )}
             {phase === 'error' && (
