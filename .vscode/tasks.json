@@ -1,0 +1,98 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Static Export: from library.config.json",
+      "detail": "Eksportuje kolekcje z pola `collections` w tools/static-export/library.config.json → dist/library/",
+      "type": "shell",
+      "command": "npm run export -- --from-config",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      },
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Static Export: custom collections (free-text)",
+      "detail": "Wpisz kolekcje po przecinku, np. 'Matematyka,Biologia,Weterynaria'",
+      "type": "shell",
+      "command": "npm run export -- --collections \"${input:collectionsFree}\"",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Static Export: all collections",
+      "detail": "Wszystkie kolekcje z ~/.ai-lecturer/collections.json → dist/library/",
+      "type": "shell",
+      "command": "npm run export -- --all-collections",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Static Export: single course",
+      "detail": "Wyeksportuj jeden kurs do dist/<slug>/ (podajesz slug)",
+      "type": "shell",
+      "command": "npm run export -- ${input:courseSlug}",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Static Export: preview dist/library locally",
+      "detail": "Uruchamia npx serve na dist/library — otwórz http://localhost:3000",
+      "type": "shell",
+      "command": "npx serve dist/library",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": [],
+      "isBackground": true,
+      "presentation": {
+        "reveal": "always",
+        "panel": "new",
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Static Export: open dist/library in Finder",
+      "detail": "Otwiera folder dist/library w Finderze (drag-and-drop na FTP)",
+      "type": "shell",
+      "command": "open dist/library",
+      "options": { "cwd": "${workspaceFolder}/tools/static-export" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "collectionsFree",
+      "type": "promptString",
+      "description": "Kolekcje po przecinku (np. Matematyka,Biologia,Weterynaria)",
+      "default": "Matematyka,Biologia"
+    },
+    {
+      "id": "courseSlug",
+      "type": "promptString",
+      "description": "Slug kursu (nazwa folderu w courses/)",
+      "default": "geometria-analityczna-szybkie-przygotowanie-do-kartkowki"
+    }
+  ]
+}

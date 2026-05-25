@@ -390,6 +390,8 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - `question` is a single, unambiguous prompt.
 - `options` ≥ 2; aim for 3–4 with **plausible distractors** drawn from the `Common misconceptions` section of `research.md` — wrong answers a learner could *realistically* pick after rushing the theory.
 - `correct` is an array of integer indices into `options`. For single-answer quizzes use one index; for multi-select use ≥ 1 indices.
+- **Spread the correct answer across positions.** LLMs have a strong recency / first-position bias and naturally tend to put the correct option at index 0 ("A"). Resist this. Within a single lesson, the correct index should be distributed roughly uniformly across all positions — if the lesson has 8 quizzes, you should see ≈ 2 of each of A/B/C/D, not 6× A. **Never make more than 40% of a lesson's quizzes have the same correct index.** When you draft a quiz, after choosing the correct answer, ask yourself "did the last quiz also have correct=[N]?" — if yes, shuffle the options before writing JSON so the right answer lands somewhere else.
+- **Multi-select: never make ALL options correct.** A quiz where every option is in `correct[]` teaches nothing (the learner can pass by ticking everything). If the topic genuinely has 4 true statements, either (a) add 1–2 plausible-but-false distractors so the answer ratio becomes e.g. 4/6, or (b) split into two single-select quizzes. Aim for `correct.length` between 2 and `options.length - 1` for multi-select.
 - `multiSelect: false` for "exactly one right answer", `true` for "select all that apply".
 - `explanation` is non-empty and *justifies the right answer specifically* — don't just paraphrase the question. Reference the concept from the preceding theory.
 
@@ -752,6 +754,7 @@ Why this lesson works as a worked example:
 - [ ] Each `code` section has 2–4 tests, each with a descriptive `name` and a small meaningful `body`.
 - [ ] Each `code` section has a non-empty `solution` field with a runnable reference implementation (US-038).
 - [ ] Each `quiz` has ≥ 2 options, ≥ 1 correct, plausible distractors, non-empty `explanation`, and `multiSelect` set explicitly.
+- [ ] **Quiz `correct[]` indices are spread across positions in this lesson** — no more than 40% of single-select quizzes share the same correct index, and no multi-select quiz has ALL options correct (use 1–2 distractors instead).
 - [ ] Each `theory.markdown` uses KaTeX *only where math is genuinely relevant*.
 - [ ] Each `sandbox.encouragement` is one tasteful sentence.
 - [ ] No `additionalProperties` smuggled into any widget `data` object.

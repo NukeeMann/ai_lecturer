@@ -62,6 +62,12 @@ export interface SxPayload {
   /** Library bundle metadata (collections + courses). Only on kind === 'home'. */
   library?: {
     title: string;
+    /** Eyebrow above the title. Defaults to "AI Lecturer · Static library". */
+    eyebrow?: string;
+    /** Optional one-line subtitle below the count line. */
+    subtitle?: string | null;
+    /** Custom footer HTML. Defaults to the "Exported from AI Lecturer …" string. */
+    footerHtml?: string;
     collections: SxLibraryCollection[];
   };
 }

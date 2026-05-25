@@ -5,8 +5,182 @@
 //
 // Shape kept deliberately close to the app's Progress schema so the shimmed
 // GET /api/progress returns something the widgets can parse.
+//
+// Storage layers:
+//   1) localStorage (primary) — full progress doc per course, including
+//      transient `sectionState` (last quiz attempt, user code etc.).
+//   2) cookies (backup) — compact "which section ids are completed" map
+//      per course. Used only to *rehydrate* when localStorage is empty
+//      (private mode, Safari ITP cleanup, history clear, new device on the
+//      same browser-cookie scope, etc.). 1-year TTL.
+//
+// Public API (isSectionDone / setSectionAuto / setSectionManual /
+// readProgressDoc / applyProgressPatch / loadCourseProgress) is unchanged —
+// cookies are an internal implementation detail.
 
 const KEY_PREFIX = 'ai-lecturer-static:progress:';
+
+// ---- cookie backup ---------------------------------------------------------
+
+const COOKIE_PREFIX = 'aiLect_p__';
+const COOKIE_TTL_SECONDS = 365 * 24 * 60 * 60;
+/** Stay safely below the 4096-byte per-cookie hard limit. */
+const COOKIE_MAX_BYTES = 3500;
+const COOKIE_DEBOUNCE_MS = 100;
+const cookieWriteTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/** Slug → cookie name. */
+function cookieNameFor(courseSlug: string): string {
+  return COOKIE_PREFIX + courseSlug;
+}
+
+/** Read a single cookie value, URL-decoded; null when absent or no DOM. */
+function readCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const prefix = `${name}=`;
+  for (const raw of document.cookie.split(';')) {
+    const c = raw.trim();
+    if (c.startsWith(prefix)) {
+      try {
+        return decodeURIComponent(c.slice(prefix.length));
+      } catch {
+        return c.slice(prefix.length);
+      }
+    }
+  }
+  return null;
+}
+
+/** Write a cookie with our standard attributes (1y, Path=/, SameSite=Lax). */
+function writeCookie(name: string, value: string): void {
+  if (typeof document === 'undefined') return;
+  try {
+    const encoded = encodeURIComponent(value);
+    document.cookie =
+      `${name}=${encoded}` +
+      `; Max-Age=${COOKIE_TTL_SECONDS}` +
+      `; Path=/` +
+      `; SameSite=Lax`;
+  } catch {
+    /* document.cookie can throw in odd sandboxes — same policy as localStorage */
+  }
+}
+
+/** Build the compact { [lessonSlug]: completedSectionIds[] } map. */
+function buildCompletedMap(
+  course: CourseProgress,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const [lessonSlug, lesson] of Object.entries(course.lessons)) {
+    const ids = new Set<string>();
+    for (const [id, v] of Object.entries(lesson.autoCompletedSections ?? {})) {
+      if (v) ids.add(id);
+    }
+    for (const [id, v] of Object.entries(
+      lesson.manuallyCompletedSections ?? {},
+    )) {
+      if (v) ids.add(id);
+    }
+    if (ids.size > 0) out[lessonSlug] = [...ids];
+  }
+  return out;
+}
+
+/** Write the cookie, dropping oldest lessons if we hit the size cap. */
+function writeCookieWithFallback(
+  courseSlug: string,
+  map: Record<string, string[]>,
+): void {
+  const name = cookieNameFor(courseSlug);
+  // Empty payload — delete the cookie outright so we don't keep stale state.
+  if (Object.keys(map).length === 0) {
+    document.cookie =
+      `${name}=` +
+      `; Max-Age=0` +
+      `; Path=/` +
+      `; SameSite=Lax`;
+    return;
+  }
+  let payload = JSON.stringify(map);
+  // Total budget is name + "=" + encoded(value); URL-encoding can roughly
+  // double JSON length when the input is full of " and ,. Estimate worst-case.
+  const overhead = name.length + 1;
+  let entries = Object.entries(map);
+  while (
+    overhead + encodeURIComponent(payload).length > COOKIE_MAX_BYTES &&
+    entries.length > 1
+  ) {
+    // Drop the first entry (oldest insertion order in modern JS object) and
+    // try again. Last-touched lessons stay — they're the ones the user is
+    // actively working on.
+    entries = entries.slice(1);
+    payload = JSON.stringify(Object.fromEntries(entries));
+  }
+  if (overhead + encodeURIComponent(payload).length > COOKIE_MAX_BYTES) {
+    console.warn(
+      `[progressStore] cookie for "${courseSlug}" exceeds ${COOKIE_MAX_BYTES}B even after pruning — skipping cookie backup`,
+    );
+    return;
+  }
+  if (entries.length < Object.keys(map).length) {
+    console.warn(
+      `[progressStore] cookie for "${courseSlug}" was pruned to fit (${entries.length}/${Object.keys(map).length} lessons kept)`,
+    );
+  }
+  writeCookie(name, payload);
+}
+
+/** Debounced cookie write — coalesces rapid clicks into one write. */
+function scheduleCookieWrite(courseSlug: string, data: CourseProgress): void {
+  const prev = cookieWriteTimers.get(courseSlug);
+  if (prev) clearTimeout(prev);
+  const timer = setTimeout(() => {
+    cookieWriteTimers.delete(courseSlug);
+    try {
+      writeCookieWithFallback(courseSlug, buildCompletedMap(data));
+    } catch {
+      /* never throw from the persistence path */
+    }
+  }, COOKIE_DEBOUNCE_MS);
+  cookieWriteTimers.set(courseSlug, timer);
+}
+
+/** Rebuild a minimal CourseProgress from the cookie, when localStorage is empty. */
+function hydrateFromCookie(courseSlug: string): CourseProgress | null {
+  const raw = readCookie(cookieNameFor(courseSlug));
+  if (!raw) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+  const course = emptyCourse();
+  for (const [lessonSlug, ids] of Object.entries(
+    parsed as Record<string, unknown>,
+  )) {
+    if (!Array.isArray(ids)) continue;
+    const lesson: LessonProgress = {
+      status: 'started',
+      sectionState: {},
+      manuallyCompletedSections: {},
+      autoCompletedSections: {},
+    };
+    for (const id of ids) {
+      if (typeof id === 'string') {
+        // We don't know whether each section was completed via quiz or manual
+        // checkbox; treat all rehydrated entries as "auto" so the rebuilt
+        // state is functionally equivalent (isSectionDone returns true).
+        lesson.autoCompletedSections![id] = true;
+      }
+    }
+    course.lessons[lessonSlug] = lesson;
+  }
+  return Object.keys(course.lessons).length > 0 ? course : null;
+}
+
+// ---- shape -----------------------------------------------------------------
 
 interface LessonProgress {
   status: 'not_started' | 'started' | 'finished';
@@ -39,15 +213,28 @@ function emptyCourse(): CourseProgress {
 export function loadCourseProgress(courseSlug: string): CourseProgress {
   try {
     const raw = localStorage.getItem(keyFor(courseSlug));
-    if (!raw) return emptyCourse();
-    const parsed = JSON.parse(raw) as CourseProgress;
-    if (!parsed || typeof parsed !== 'object' || !parsed.lessons) {
-      return emptyCourse();
+    if (raw) {
+      const parsed = JSON.parse(raw) as CourseProgress;
+      if (parsed && typeof parsed === 'object' && parsed.lessons) {
+        return parsed;
+      }
     }
-    return parsed;
   } catch {
-    return emptyCourse();
+    /* fall through to cookie hydrate */
   }
+  // localStorage empty or unreadable — try to reconstruct from cookie backup.
+  const fromCookie = hydrateFromCookie(courseSlug);
+  if (fromCookie) {
+    // Best-effort re-seed localStorage so subsequent reads stay fast and we
+    // don't re-parse the cookie on every isSectionDone() call.
+    try {
+      localStorage.setItem(keyFor(courseSlug), JSON.stringify(fromCookie));
+    } catch {
+      /* private mode etc. — still usable in memory for this session */
+    }
+    return fromCookie;
+  }
+  return emptyCourse();
 }
 
 function saveCourseProgress(courseSlug: string, data: CourseProgress): void {
@@ -56,6 +243,9 @@ function saveCourseProgress(courseSlug: string, data: CourseProgress): void {
   } catch {
     /* quota / private mode — progress just won't persist, widgets still work */
   }
+  // Mirror to the cookie backup. Always — cookies survive some failure modes
+  // that take localStorage with them (private mode, Safari ITP cleanup).
+  scheduleCookieWrite(courseSlug, data);
 }
 
 function ensureLesson(
@@ -148,4 +338,21 @@ export function applyProgressPatch(patch: any): void {
     }
   }
   saveCourseProgress(courseSlug, c);
+}
+
+// ---- test-only helpers -----------------------------------------------------
+
+/** Test-only: flushes any pending debounced cookie writes synchronously. */
+export function __flushCookieWritesForTest(): void {
+  for (const [slug, timer] of cookieWriteTimers.entries()) {
+    clearTimeout(timer);
+    cookieWriteTimers.delete(slug);
+    try {
+      // Re-read course state so we write the most current snapshot.
+      const data = loadCourseProgress(slug);
+      writeCookieWithFallback(slug, buildCompletedMap(data));
+    } catch {
+      /* ignore */
+    }
+  }
 }

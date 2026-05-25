@@ -41,8 +41,12 @@ Usage:
   npm run export -- --collection <name> [--collection <name> ...]
   npm run export -- --collections <name1,name2,...>
   npm run export -- --all-collections
+  npm run export -- --from-config
       Export one or more collections to dist/library/ — a single home page
       with one section per collection, each holding tiles for its courses.
+      --from-config reads the "collections" array from library.config.json
+      (same folder as the exporter), so the "which collections" list lives
+      under version control instead of in shell history.
 
 Collections are read from ~/.ai-lecturer/collections.json (the same file the
 main app uses). Collection names are matched case-insensitively.
@@ -104,6 +108,7 @@ function parseArgs(argv) {
     positional: null,
     collections: [],
     allCollections: false,
+    fromConfig: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -112,6 +117,8 @@ function parseArgs(argv) {
       out.help = true;
     } else if (a === '--all-collections') {
       out.allCollections = true;
+    } else if (a === '--from-config') {
+      out.fromConfig = true;
     } else if (a === '--collection') {
       const val = argv[++i];
       if (!val) die('--collection requires a value');
@@ -490,8 +497,27 @@ async function exportLibrary({ collectionNames, allCollections }) {
       }),
   }));
 
+  // Optional user-editable config — title / eyebrow / subtitle / footerHtml.
+  // Lives at tools/static-export/library.config.json; if missing we fall back
+  // to the built-in defaults. When the user exports a SINGLE collection we
+  // still override the title with the collection's own name (more useful than
+  // a generic library label for a one-collection site).
+  const configPath = path.join(toolDir, 'library.config.json');
+  let userConfig = {};
+  if (await exists(configPath)) {
+    try {
+      userConfig = await readJson(configPath);
+    } catch (err) {
+      console.warn(
+        `[static-export] WARN: library.config.json is not valid JSON — ignoring (${err?.message ?? err})`,
+      );
+    }
+  }
+
   const libraryTitle =
-    picked.length === 1 ? picked[0].name : 'AI Lecturer library';
+    picked.length === 1
+      ? picked[0].name
+      : (userConfig.title ?? 'AI Lecturer library');
 
   await fs.writeFile(
     path.join(distDir, 'index.html'),
@@ -508,6 +534,9 @@ async function exportLibrary({ collectionNames, allCollections }) {
         courseAssetBase: '',
         library: {
           title: libraryTitle,
+          eyebrow: userConfig.eyebrow ?? undefined,
+          subtitle: userConfig.subtitle ?? undefined,
+          footerHtml: userConfig.footerHtml ?? undefined,
           collections: libraryCollections,
         },
       },
@@ -527,11 +556,43 @@ async function main() {
     return;
   }
 
+  // --from-config: read the `collections` array from library.config.json and
+  // treat it as if the user had passed --collection X --collection Y ...
+  // Lets us keep the "which collections do I usually export" decision in a
+  // file under version control instead of in shell history.
+  if (args.fromConfig) {
+    const configPath = path.join(toolDir, 'library.config.json');
+    if (!(await exists(configPath))) {
+      die(`--from-config: ${configPath} not found`);
+    }
+    let cfg;
+    try {
+      cfg = await readJson(configPath);
+    } catch (err) {
+      die(`--from-config: library.config.json is not valid JSON (${err?.message ?? err})`);
+    }
+    const list = cfg?.collections;
+    if (!Array.isArray(list) || list.length === 0) {
+      die(
+        `--from-config: "collections" in library.config.json is missing or empty.\nDopisz np.: "collections": ["Matematyka", "Biologia"]`,
+      );
+    }
+    for (const name of list) {
+      if (typeof name !== 'string' || !name.trim()) {
+        die(`--from-config: every entry in "collections" must be a non-empty string (got ${JSON.stringify(name)})`);
+      }
+      args.collections.push(name.trim());
+    }
+    console.log(
+      `[static-export] --from-config: ${list.length} collection(s) from library.config.json`,
+    );
+  }
+
   const wantsLibrary =
     args.allCollections || args.collections.length > 0;
 
   if (wantsLibrary && args.positional !== null) {
-    die('cannot mix a positional <course-slug> with --collection(s).');
+    die('cannot mix a positional <course-slug> with --collection(s) / --from-config.');
   }
 
   let distDir;
@@ -543,7 +604,7 @@ async function main() {
   } else {
     if (!args.positional) {
       usage();
-      die('missing <course-slug> or --collection(s) / --all-collections');
+      die('missing <course-slug> or --collection(s) / --all-collections / --from-config');
     }
     distDir = await exportSingleCourse(args.positional);
   }

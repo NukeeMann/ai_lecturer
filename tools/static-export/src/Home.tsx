@@ -4,6 +4,10 @@
 import type { SxPayload } from './payload';
 import { AccentIcon } from './AccentIcon';
 
+const DEFAULT_EYEBROW = 'AI Lecturer · Static library';
+const DEFAULT_FOOTER_HTML =
+  'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a> · interactive widgets run locally in your browser.';
+
 export function Home({ payload }: { payload: SxPayload }) {
   const lib = payload.library;
   if (!lib) {
@@ -26,11 +30,14 @@ export function Home({ payload }: { payload: SxPayload }) {
     0,
   );
 
+  const eyebrow = lib.eyebrow ?? DEFAULT_EYEBROW;
+  const footerHtml = lib.footerHtml ?? DEFAULT_FOOTER_HTML;
+
   return (
     <div className="sx-shell sx-shell--index">
       <main className="sx-main sx-main--index sx-main--home">
         <header className="sx-course-head">
-          <div className="sx-eyebrow">AI Lecturer · Static library</div>
+          <div className="sx-eyebrow">{eyebrow}</div>
           <h1>{lib.title}</h1>
           <div className="sx-course-meta">
             {lib.collections.length} collection
@@ -38,6 +45,9 @@ export function Home({ payload }: { payload: SxPayload }) {
             {totalCourses === 1 ? '' : 's'} · {totalLessons} lesson
             {totalLessons === 1 ? '' : 's'}
           </div>
+          {lib.subtitle ? (
+            <p className="sx-course-desc">{lib.subtitle}</p>
+          ) : null}
         </header>
 
         {lib.collections.map((coll) => (
@@ -84,17 +94,10 @@ export function Home({ payload }: { payload: SxPayload }) {
           </section>
         ))}
 
-        <footer className="sx-foot">
-          Exported from{' '}
-          <a
-            href="https://github.com/NukeeMann/ai_lecturer"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            AI Lecturer
-          </a>{' '}
-          · interactive widgets run locally in your browser.
-        </footer>
+        <footer
+          className="sx-foot"
+          dangerouslySetInnerHTML={{ __html: footerHtml }}
+        />
       </main>
     </div>
   );
