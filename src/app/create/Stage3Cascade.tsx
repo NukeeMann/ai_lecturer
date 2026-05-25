@@ -89,6 +89,12 @@ export interface Draft {
   level: Level | null;
   durationTarget: DurationTarget | null;
   theoryPracticeRatio: number;
+  /**
+   * US-191 — when true, the wizard hides the level + theory/practice knobs and
+   * tags the generated spec with `'quiz'` so the generation pipeline emits a
+   * quiz-only course.
+   */
+  quizOnly: boolean;
   /** Questions returned by /api/wizard/clarify (cached so back-nav can re-render). */
   clarificationQuestions?: ClarificationQuestion[];
   /** Free-form learner answers, keyed by question id. */

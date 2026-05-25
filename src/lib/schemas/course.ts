@@ -38,6 +38,9 @@ export const CourseSchema = z.object({
   modules: z.array(ModuleSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
+  // US-191 — downstream tag carried over from CourseSpec so the lesson UI can
+  // distinguish quiz-only courses. Only `'quiz'` is currently recognised.
+  tags: z.array(z.enum(['quiz'])).optional(),
 });
 
 export type Course = z.infer<typeof CourseSchema>;

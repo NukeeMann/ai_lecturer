@@ -63,11 +63,17 @@ export const CourseSpecSchema = z.object({
    * surface it to downstream lesson-authoring agents.
    */
   description: z.string().optional(),
-  level: LevelSchema,
+  // US-191 — `level` is omitted when the spec was authored in quiz-only mode.
+  level: LevelSchema.optional(),
   durationTarget: DurationTargetSchema,
-  theoryPracticeRatio: z.number().min(0).max(1),
+  // US-191 — `theoryPracticeRatio` is omitted in quiz-only mode (the ratio
+  // doesn't apply when every section is a quiz).
+  theoryPracticeRatio: z.number().min(0).max(1).optional(),
   clarification: ClarificationAnswersSchema.optional(),
   draftStructure: DraftStructureSchema,
+  // US-191 — tag bag for the downstream generation pipeline. Currently only
+  // `'quiz'` is recognised; the schema rejects any other tag value.
+  tags: z.array(z.enum(['quiz'])).optional(),
   createdAt: z.string(),
 });
 

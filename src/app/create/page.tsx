@@ -32,9 +32,9 @@ import Stage3Cascade, {
   type Draft,
   type Level,
   type DurationTarget,
-  type StructureDraft,
 } from './Stage3Cascade';
 import Stage3Clarify from './Stage3Clarify';
+import { buildCourseSpec } from './buildCourseSpec';
 import {
   computeStageInputHash,
   isStageStale,
@@ -54,6 +54,7 @@ const DEFAULT_DRAFT: Draft = {
   level: null,
   durationTarget: null,
   theoryPracticeRatio: 50,
+  quizOnly: false,
   clarificationQuestions: undefined,
   clarification: undefined,
   structure: null,
@@ -546,54 +547,11 @@ export default function CreatePage() {
   );
 }
 
-// Strip client-side ids and serialize draft into a CourseSpec payload.
-function buildCourseSpec(draft: Draft, structure: StructureDraft) {
-  const spec: Record<string, unknown> = {
-    topic: draft.topic.trim(),
-    level: draft.level,
-    durationTarget: draft.durationTarget,
-    theoryPracticeRatio: clampRatio(draft.theoryPracticeRatio / 100),
-    draftStructure: {
-      courseTitle: structure.courseTitle.trim(),
-      courseDescription: structure.courseDescription.trim(),
-      modules: structure.modules.map((m) => ({
-        title: m.title.trim(),
-        lessons: m.lessons.map((l) => ({
-          title: l.title.trim(),
-          summary: l.summary.trim(),
-          estimatedMinutes: l.estimatedMinutes,
-        })),
-      })),
-    },
-    createdAt: new Date().toISOString(),
-  };
-
-  const trimmedDescription = draft.description.trim();
-  if (trimmedDescription.length > 0) {
-    spec.description = trimmedDescription;
-  }
-
-  if (draft.clarificationQuestions && draft.clarificationQuestions.length > 0) {
-    const answers = draft.clarification ?? {};
-    const trimmed: Record<string, string> = {};
-    for (const q of draft.clarificationQuestions) {
-      const a = (answers[q.id] ?? '').trim();
-      if (a.length > 0) trimmed[`${q.id}: ${q.text}`] = a;
-    }
-    if (Object.keys(trimmed).length > 0) {
-      spec.clarification = trimmed;
-    }
-  }
-
-  return spec;
-}
-
-function clampRatio(n: number): number {
-  if (Number.isNaN(n)) return 0.5;
-  if (n < 0) return 0;
-  if (n > 1) return 1;
-  return n;
-}
+// US-191 — extracted to a sibling module so it can be unit-tested without
+// pulling React into the test runner.
+//
+// (No-op re-export to keep the original `buildCourseSpec(draft, structure)`
+// call sites in this file working unchanged.)
 
 // ─── Stepper ─────────────────────────────────────────────────────────────────
 
@@ -2060,6 +2018,35 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
                 boxSizing: 'border-box',
               }}
             />
+            <label
+              data-testid="stage1-quiz-only-label"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 10,
+                fontSize: 'var(--fs-sm)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
+              <input
+                type="checkbox"
+                data-testid="stage1-quiz-only-toggle"
+                checked={draft.quizOnly}
+                onChange={(e) =>
+                  setDraft((d) => ({ ...d, quizOnly: e.target.checked }))
+                }
+                style={{
+                  width: 16,
+                  height: 16,
+                  accentColor: 'var(--accent)',
+                  cursor: 'pointer',
+                }}
+              />
+              Quiz only mode
+            </label>
           </div>
           <div
             style={{
@@ -2091,7 +2078,11 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
 // ─── Stage 2 — Refinement ────────────────────────────────────────────────────
 
 function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
-  const canNext = draft.level !== null && draft.durationTarget !== null;
+  // US-191 — in quiz-only mode the level + theory/practice knobs don't apply;
+  // only durationTarget gates the Next button.
+  const canNext = draft.quizOnly
+    ? draft.durationTarget !== null
+    : draft.level !== null && draft.durationTarget !== null;
 
   return (
     <div style={stageWrapStyle}>
@@ -2113,46 +2104,48 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
           }}
         >
           {/* Level */}
-          <section>
-            <h2 style={sectionHeadingStyle}>What&apos;s your level?</h2>
-            <div
-              data-testid="stage2-level-group"
-              role="radiogroup"
-              aria-label="Your level"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 'var(--space-3)',
-              }}
-            >
-              {LEVEL_OPTIONS.map((opt) => {
-                const selected = draft.level === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    data-testid={`stage2-level-${opt.value}`}
-                    data-selected={selected}
-                    onClick={() => setDraft((d) => ({ ...d, level: opt.value }))}
-                    style={radioCardStyle(selected)}
-                  >
-                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{opt.label}</span>
-                    <span
-                      style={{
-                        fontSize: 'var(--fs-xs)',
-                        color: selected ? 'var(--accent-text)' : 'var(--text-tertiary)',
-                        marginTop: 4,
-                      }}
+          {!draft.quizOnly && (
+            <section>
+              <h2 style={sectionHeadingStyle}>What&apos;s your level?</h2>
+              <div
+                data-testid="stage2-level-group"
+                role="radiogroup"
+                aria-label="Your level"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 'var(--space-3)',
+                }}
+              >
+                {LEVEL_OPTIONS.map((opt) => {
+                  const selected = draft.level === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      data-testid={`stage2-level-${opt.value}`}
+                      data-selected={selected}
+                      onClick={() => setDraft((d) => ({ ...d, level: opt.value }))}
+                      style={radioCardStyle(selected)}
                     >
-                      {opt.description}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+                      <span style={{ fontSize: 'var(--fs-md)', fontWeight: 600 }}>{opt.label}</span>
+                      <span
+                        style={{
+                          fontSize: 'var(--fs-xs)',
+                          color: selected ? 'var(--accent-text)' : 'var(--text-tertiary)',
+                          marginTop: 4,
+                        }}
+                      >
+                        {opt.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Duration */}
           <section>
@@ -2180,54 +2173,56 @@ function Stage2({ draft, setDraft, onNext, onBack }: StageProps) {
           </section>
 
           {/* Theory or practice slider */}
-          <section>
-            <h2 style={sectionHeadingStyle}>Theory or practice?</h2>
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-                padding: '8px 0',
-              }}
-            >
-              <input
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={draft.theoryPracticeRatio}
-                data-testid="stage2-ratio-slider"
-                onChange={(e) =>
-                  setDraft((d) => ({
-                    ...d,
-                    theoryPracticeRatio: Number(e.target.value),
-                  }))
-                }
-                style={{ width: '100%', accentColor: 'var(--accent)' }}
-              />
+          {!draft.quizOnly && (
+            <section>
+              <h2 style={sectionHeadingStyle}>Theory or practice?</h2>
               <div
                 style={{
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  fontSize: 'var(--fs-xs)',
-                  color: 'var(--text-tertiary)',
+                  flexDirection: 'column',
+                  gap: 10,
+                  padding: '8px 0',
                 }}
               >
-                <span>Theory</span>
-                <span
-                  data-testid="stage2-ratio-label"
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={draft.theoryPracticeRatio}
+                  data-testid="stage2-ratio-slider"
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      theoryPracticeRatio: Number(e.target.value),
+                    }))
+                  }
+                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                />
+                <div
                   style={{
-                    color: 'var(--accent-text)',
-                    fontWeight: 600,
-                    fontSize: 'var(--fs-sm)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--text-tertiary)',
                   }}
                 >
-                  {ratioLabel(draft.theoryPracticeRatio)}
-                </span>
-                <span>Practice</span>
+                  <span>Theory</span>
+                  <span
+                    data-testid="stage2-ratio-label"
+                    style={{
+                      color: 'var(--accent-text)',
+                      fontWeight: 600,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
+                    {ratioLabel(draft.theoryPracticeRatio)}
+                  </span>
+                  <span>Practice</span>
+                </div>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
       </div>
       <Footer onBack={onBack} onNext={onNext} canNext={canNext} backLabel="Back" />
