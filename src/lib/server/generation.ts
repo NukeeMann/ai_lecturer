@@ -110,6 +110,15 @@ export type GenerationEvent =
       sectionId: string;
       status: 'started' | 'done' | 'failed';
       errorMessage?: string;
+    }
+  // US-194: terminal event emitted when the user clicks Pause. Closes the SSE
+  // stream just like `done` / `error`. `inflightLessonSlug` is the slug of
+  // the lesson that was mid-flight when Pause landed (null when Pause was
+  // pressed during the init stage, before any lesson started).
+  | {
+      type: 'paused';
+      slug: string;
+      inflightLessonSlug: string | null;
     };
 
 // US-138: listeners receive the per-run monotonic seq alongside the event so
@@ -157,6 +166,15 @@ export interface GenerationRun {
   eventSeqs: readonly number[];
   subscribe: (listener: GenerationListener) => () => void;
   cancel: () => Promise<void>;
+  /**
+   * US-194: stop the currently active child process tree (claude -p + ralph
+   * subagents) and persist a `paused` snapshot to `.generation-state.json`.
+   * The in-flight lesson's partial JSON is unlinked so a subsequent Resume
+   * restarts that lesson from a clean attempt 0. No-op when the run is
+   * already finished. Distinct from `cancel()`: pause does NOT set a restart
+   * cooldown — the user explicitly intends to come back.
+   */
+  pause: () => Promise<void>;
 }
 
 /**
@@ -327,6 +345,18 @@ export class GenerationStateMissingError extends Error {
   constructor() {
     super('No .generation-state.json file present for slug');
     this.name = 'GenerationStateMissingError';
+  }
+}
+
+/**
+ * US-194: thrown by `pauseGeneration` when the requested slug is not the
+ * currently active run (either no run is active, or a different slug is
+ * running). Route handler maps to 409 `{ error: 'no-active-run' }`.
+ */
+export class NoActiveRunError extends Error {
+  constructor() {
+    super('No active generation to pause for this slug');
+    this.name = 'NoActiveRunError';
   }
 }
 
@@ -1760,6 +1790,15 @@ export async function resumeGeneration(
     delete lesson.finishedAt;
     resetAny = true;
   }
+  // US-194: clear the paused marker so the pipeline restarts in `running`
+  // mode and the next .generation-state.json write replaces the on-disk
+  // record. The lesson-state reset above already handles "restart in-flight
+  // lesson from attempt 0".
+  if (state.status === 'paused' || state.pausedInflightLesson) {
+    delete state.status;
+    delete state.pausedInflightLesson;
+    resetAny = true;
+  }
   if (resetAny) {
     await writeGenerationState(slug, state);
   }
@@ -1877,6 +1916,14 @@ async function startGenerationInner(
   const eventSeqs: number[] = [];
   const listeners = new Set<GenerationListener>();
   let cancelled = false;
+  // US-194: separate from `cancelled` so the pipeline branches handling exit
+  // codes / retries can distinguish a user-initiated Pause (drop partial work,
+  // persist resumable state, no cooldown) from a Cancel (drop work, emit
+  // error, set cooldown). Mutually exclusive in practice — once Pause has
+  // been clicked we ignore subsequent Cancel attempts on the same run and
+  // vice-versa.
+  let paused = false;
+  let pausedInflightLesson: string | null = null;
   let currentChild: ChildProcess | null = null;
   let killTimer: NodeJS.Timeout | null = null;
 
@@ -1909,6 +1956,29 @@ async function startGenerationInner(
           killChildTree(child, 'SIGKILL');
         }, sigkillGraceMs);
         // Don't keep the event loop alive just for the kill timer.
+        if (typeof killTimer.unref === 'function') killTimer.unref();
+      }
+    },
+    async pause() {
+      if (run.finished) return;
+      if (paused) return;
+      paused = true;
+      // Capture the in-flight lesson slug at the time pause was pressed.
+      // run.currentStage encodes per-lesson stages as `lesson:<slug>`; the
+      // init-stage labels (`research_course`, `design_course`) leave the
+      // captured slug null so Resume re-runs init from the top.
+      if (run.currentStage && run.currentStage.startsWith('lesson:')) {
+        pausedInflightLesson = run.currentStage.slice('lesson:'.length);
+      } else {
+        pausedInflightLesson = null;
+      }
+      const child = currentChild;
+      if (!child || child.exitCode !== null) return;
+      killChildTree(child, 'SIGTERM');
+      if (!killTimer) {
+        killTimer = setTimeout(() => {
+          killChildTree(child, 'SIGKILL');
+        }, sigkillGraceMs);
         if (typeof killTimer.unref === 'function') killTimer.unref();
       }
     },
@@ -2204,6 +2274,85 @@ async function startGenerationInner(
     maybeStartQueueHead();
   }
 
+  /**
+   * US-194: terminal teardown for a user-initiated Pause. Mirrors the success
+   * branch of `finalize()` but writes `status: 'paused'` to the state file
+   * instead of deleting it, drops the in-flight lesson's partial JSON, and
+   * emits a `paused` SSE event so consumers can close their stream cleanly.
+   */
+  async function finalizePaused(): Promise<void> {
+    if (run.finished) return;
+    // Drop the in-flight lesson's partial JSON (and any leftover .tmp from an
+    // atomic-write crash) so Resume restarts that lesson from a clean
+    // attempt 0 with no half-written output to validate against.
+    if (pausedInflightLesson) {
+      try {
+        await fs.unlink(lessonFile(slug, pausedInflightLesson));
+      } catch {
+        /* file may not exist — ignore */
+      }
+      try {
+        await fs.unlink(
+          path.join(courseDir(slug), 'lessons', `${pausedInflightLesson}.tmp`),
+        );
+      } catch {
+        /* no stale tmp — ignore */
+      }
+    }
+    // Persist the paused snapshot. When pause lands during the init stages
+    // (no genState yet) seed a minimal record so resumeGeneration has
+    // something to read and re-run init from scratch.
+    if (genState) {
+      if (pausedInflightLesson) {
+        const ls = genState.lessons.find((l) => l.slug === pausedInflightLesson);
+        if (ls) {
+          ls.status = 'pending';
+          ls.attempts = 0;
+          delete ls.lastError;
+          delete ls.finishedAt;
+        }
+      }
+      genState.status = 'paused';
+      if (pausedInflightLesson) {
+        genState.pausedInflightLesson = pausedInflightLesson;
+      } else {
+        delete genState.pausedInflightLesson;
+      }
+      await persistGenState();
+    } else {
+      genState = {
+        schemaVersion: 1,
+        slug,
+        startedAt: new Date().toISOString(),
+        lastUpdatedAt: new Date().toISOString(),
+        status: 'paused',
+        research: { status: 'pending' },
+        design: { status: 'pending' },
+        lessons: [],
+        config: { lessonMaxRetries, lessonTimeoutMs },
+      };
+      await persistGenState();
+    }
+    run.finished = true;
+    if (killTimer) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
+    emit({ type: 'paused', slug, inflightLessonSlug: pausedInflightLesson });
+    logStreamClosed = true;
+    try {
+      logStream.end();
+    } catch {
+      /* ignore */
+    }
+    void removeGeneratingMarker(slug);
+    if (activeRun === run) activeRun = null;
+    // Queue drainer: if another slug is queued behind us, free the slot so
+    // the user's next generation can start. Pause is a clean stop just like
+    // done/error from the queue's perspective.
+    maybeStartQueueHead();
+  }
+
   async function writeFailedReport(entries: FailedReportEntry[]) {
     const reportPath = path.join(genLogs, 'failed_report.json');
     if (entries.length === 0) {
@@ -2434,7 +2583,7 @@ async function startGenerationInner(
     let attemptsRun = 0;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      if (cancelled) break;
+      if (cancelled || paused) break;
       attemptsRun = attempt;
 
       // Wipe any stale lesson file before each attempt so the post-spawn
@@ -2491,7 +2640,7 @@ async function startGenerationInner(
 
       lessonLogStream.end();
 
-      if (cancelled) break;
+      if (cancelled || paused) break;
 
       if (result.timedOut) {
         const seconds = Math.round(lessonTimeoutMs / 1000);
@@ -2585,6 +2734,13 @@ async function startGenerationInner(
     if (cancelled) {
       emit({ type: 'stage', name: stageName, status: 'error' });
       return { success: false, attempts: attemptsRun, lastError: 'Cancelled by user' };
+    }
+    // US-194: a Pause click breaks out of the attempt loop above. Skip the
+    // terminal state-write (finalizePaused() owns that) and emit a stage:error
+    // so the live log surfaces the interrupted attempt.
+    if (paused) {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return { success: false, attempts: attemptsRun, lastError: 'Paused by user' };
     }
     // US-136: persist the lesson's terminal status (done | failed) before
     // returning so the in-memory FailedReport bookkeeping and the on-disk
@@ -2748,6 +2904,14 @@ async function startGenerationInner(
         extraLogStream: researchLogStream,
       });
       researchLogStream.end();
+      // US-194: Pause during the init research stage. The state file becomes
+      // a fresh paused snapshot with research.status='pending' so Resume
+      // re-runs research_course from the top.
+      if (paused) {
+        emit({ type: 'stage', name: 'research_course', status: 'error' });
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         emit({ type: 'stage', name: 'research_course', status: 'error' });
         await markInitStageFailed('research', 'Cancelled by user');
@@ -2834,6 +2998,15 @@ async function startGenerationInner(
         extraLogStream: designLogStream,
       });
       designLogStream.end();
+      // US-194: Pause during the init design stage. genState may already
+      // exist (research finished + persisted before pause); finalizePaused
+      // preserves that fact and only seeds a fresh state when genState is
+      // null.
+      if (paused) {
+        emit({ type: 'stage', name: 'design_course', status: 'error' });
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         emit({ type: 'stage', name: 'design_course', status: 'error' });
         await markInitStageFailed('design', 'Cancelled by user');
@@ -2922,6 +3095,10 @@ async function startGenerationInner(
     emit({ type: 'progress', current: 0, total });
 
     for (let i = 0; i < lessons.length; i++) {
+      if (paused) {
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         await writeFailedReport(failedReport);
         finalize('error', 'Cancelled by user', failedLessons);
@@ -3006,6 +3183,13 @@ async function startGenerationInner(
         seedRetryReason: existingState?.lastError,
       });
 
+      // US-194: pause clicked while this lesson was mid-flight. Skip the
+      // failedLessons/failedReport bookkeeping (the lesson will be retried
+      // on resume from attempt 0) and hand off to the paused finalizer.
+      if (paused) {
+        await finalizePaused();
+        return;
+      }
       if (cancelled) {
         failedLessons.push({ slug: lesson.slug, reason: result.lastError || 'Cancelled by user' });
         failedReport.push({
