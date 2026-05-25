@@ -4,11 +4,9 @@
  * Prompt assembly + JSON-response parsing for the Claude-driven question
  * generator that runs between Refine (Stage 2) and Structure (Stage 3).
  */
-import path from 'node:path';
-
 import { z } from 'zod';
 
-import type { StagedSourceForPrompt } from '@/lib/server/sources';
+import type { ResolvedSourcePath } from '@/lib/server/sources';
 
 export const RefineDraftSchema = z.object({
   level: z.enum(['beginner', 'intermediate', 'advanced']).nullable(),
@@ -58,7 +56,7 @@ export const CLARIFY_SYSTEM_PROMPT = [
   'Respond with STRICT JSON only — no prose, no markdown fences. Schema: {"questions":[{"id":"q1","text":"…"}, ...]}.',
   'Each question id must be unique within the response (e.g. q1, q2, …). Each text must be one sentence, under 200 characters.',
   'Return at most 10 questions; fewer is fine if the topic is narrow.',
-  'If learner-uploaded source materials are provided, prioritise questions that fill gaps the materials do NOT already answer — do not ask about facts already stated in those files.',
+  'If learner-uploaded source materials are listed in the user message, use the Read tool to inspect each listed path BEFORE drafting questions. Prioritise questions that fill gaps the materials do NOT already answer — do not ask about facts already stated in those files.',
 ].join('\n');
 
 function ratioLabel(n: number): string {
@@ -84,7 +82,7 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
 
 export function buildClarifyUserMessage(
   req: ClarifyRequest,
-  sources?: readonly StagedSourceForPrompt[],
+  sources?: readonly ResolvedSourcePath[],
 ): string {
   const { topic, description, refine } = req;
   const trimmedDescription = (description ?? '').trim();
@@ -102,19 +100,21 @@ export function buildClarifyUserMessage(
   );
 
   if (sources && sources.length > 0) {
-    lines.push('', 'Learner-uploaded source materials:');
+    // Hand the model absolute paths and let it Read each file through the
+    // built-in tool. Previous versions inlined the extracted text — for a
+    // typical multi-PDF upload that pushed the prompt past 150 KB and broke
+    // generation with spawn E2BIG. The agent now decides which files to
+    // open and how much to skim.
+    lines.push(
+      '',
+      'Learner-uploaded source materials (Read each path with the Read tool BEFORE drafting questions; do not ask about facts these files already cover):',
+    );
     for (const s of sources) {
-      if (s.kind === 'binary-unsupported') {
-        lines.push(
-          `=== ${s.originalName} ===`,
-          '(binary file uploaded by learner; content extraction not yet supported — treat the filename as a hint about scope)',
-        );
-      } else {
-        const heading = s.extractedFrom
-          ? `=== ${s.originalName} (extracted from ${path.extname(s.extractedFrom).slice(1).toLowerCase() || 'binary'}) ===`
-          : `=== ${s.originalName} ===`;
-        lines.push(heading, s.content);
-      }
+      lines.push(
+        s.extractedFrom
+          ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
+          : `- ${s.readPath}`,
+      );
     }
   }
 

@@ -7,7 +7,7 @@ import * as connectorModule from '@/lib/lessonChat/connector';
 import type { ChatStreamEvent, Connector, ConnectorRequest } from '@/lib/lessonChat/connector';
 import { POST } from '@/app/api/wizard/clarify/route';
 import { draftSourcesDir, makeDraftId } from '@/lib/server/sources';
-import type { StagedSourceForPrompt } from '@/lib/server/sources';
+import type { ResolvedSourcePath } from '@/lib/server/sources';
 import {
   buildClarifyUserMessage,
   CLARIFY_SYSTEM_PROMPT,
@@ -136,16 +136,19 @@ describe('buildClarifyUserMessage', () => {
     expect(baseline).not.toContain('Learner-uploaded source materials:');
   });
 
-  it('appends a Learner-uploaded source materials block BEFORE the final Generate line (US-125)', () => {
-    const sources: StagedSourceForPrompt[] = [
-      { kind: 'text', originalName: 'a.txt', content: 'TXT-BODY-XYZ' },
+  it('appends a Learner-uploaded source materials block listing absolute paths', () => {
+    const sources: ResolvedSourcePath[] = [
+      { readPath: '/abs/a.txt', originalName: 'a.txt' },
       {
-        kind: 'text',
+        readPath: '/abs/.extracted/m.docx.md',
         originalName: 'm.docx',
         extractedFrom: 'm.docx',
-        content: 'DOCX-EXTRACTED-BODY',
       },
-      { kind: 'binary-unsupported', originalName: 'z.pdf' },
+      {
+        readPath: '/abs/.extracted/lecture.pdf.md',
+        originalName: 'lecture.pdf',
+        extractedFrom: 'lecture.pdf',
+      },
     ];
     const msg = buildClarifyUserMessage(
       {
@@ -155,46 +158,23 @@ describe('buildClarifyUserMessage', () => {
       sources,
     );
 
-    expect(msg).toContain('Learner-uploaded source materials:');
-    expect(msg).toContain('=== a.txt ===');
-    expect(msg).toContain('TXT-BODY-XYZ');
-    expect(msg).toContain('=== m.docx (extracted from docx) ===');
-    expect(msg).toContain('DOCX-EXTRACTED-BODY');
-    expect(msg).toContain('=== z.pdf ===');
-    expect(msg).toContain(
-      '(binary file uploaded by learner; content extraction not yet supported',
-    );
+    expect(msg).toContain('Learner-uploaded source materials');
+    expect(msg).toContain('Read each path with the Read tool');
+    expect(msg).toContain('- /abs/a.txt');
+    expect(msg).toContain('- /abs/.extracted/m.docx.md (extracted text from m.docx)');
+    expect(msg).toContain('- /abs/.extracted/lecture.pdf.md (extracted text from lecture.pdf)');
 
-    // Block order: header → each filename heading → final 'Generate …' instruction.
-    const headerIdx = msg.indexOf('Learner-uploaded source materials:');
-    const aIdx = msg.indexOf('=== a.txt ===');
-    const mIdx = msg.indexOf('=== m.docx (extracted from docx) ===');
-    const zIdx = msg.indexOf('=== z.pdf ===');
+    // Block order: header → each path line → final 'Generate …' instruction.
+    const headerIdx = msg.indexOf('Learner-uploaded source materials');
+    const aIdx = msg.indexOf('- /abs/a.txt');
+    const mIdx = msg.indexOf('- /abs/.extracted/m.docx.md');
+    const pdfIdx = msg.indexOf('- /abs/.extracted/lecture.pdf.md');
     const generateIdx = msg.indexOf('Generate up to 10 clarification questions');
     expect(headerIdx).toBeGreaterThan(0);
     expect(aIdx).toBeGreaterThan(headerIdx);
     expect(mIdx).toBeGreaterThan(aIdx);
-    expect(zIdx).toBeGreaterThan(mIdx);
-    expect(generateIdx).toBeGreaterThan(zIdx);
-  });
-
-  it('derives the heading format suffix from the extension of extractedFrom (US-128)', () => {
-    const sources: StagedSourceForPrompt[] = [
-      {
-        kind: 'text',
-        originalName: 'lecture.pdf',
-        extractedFrom: 'lecture.pdf',
-        content: 'PDF-EXTRACTED-BODY',
-      },
-    ];
-    const msg = buildClarifyUserMessage(
-      {
-        topic: 'X',
-        refine: { level: null, durationTarget: null, theoryPracticeRatio: 50 },
-      },
-      sources,
-    );
-    expect(msg).toContain('=== lecture.pdf (extracted from pdf) ===');
+    expect(pdfIdx).toBeGreaterThan(mIdx);
+    expect(generateIdx).toBeGreaterThan(pdfIdx);
   });
 });
 
@@ -435,7 +415,7 @@ describe('POST /api/wizard/clarify', () => {
     expect(body.error).toMatch(/Clarification generator failed/);
   });
 
-  it('forwards staged-uploads content into the user message when draftId is present (US-125)', async () => {
+  it('forwards staged-uploads paths into the user message when draftId is present', async () => {
     // Stand up an isolated coursesRoot containing one staged .txt source.
     const coursesRoot = await fs.mkdtemp(
       path.join(tmpdir(), 'ai-lecturer-clarify-route-'),
@@ -445,7 +425,8 @@ describe('POST /api/wizard/clarify', () => {
       const draftId = makeDraftId();
       const dir = draftSourcesDir(draftId);
       await fs.mkdir(dir, { recursive: true });
-      await fs.writeFile(path.join(dir, 'a.txt'), 'STAGED-TXT-CONTENT');
+      const absPath = path.join(dir, 'a.txt');
+      await fs.writeFile(absPath, 'STAGED-TXT-CONTENT');
 
       let captured: ConnectorRequest | null = null;
       vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
@@ -467,9 +448,12 @@ describe('POST /api/wizard/clarify', () => {
       expect(res.status).toBe(200);
       expect(captured).not.toBeNull();
       const captured0 = captured as unknown as ConnectorRequest;
-      expect(captured0.userMessage).toContain('Learner-uploaded source materials:');
-      expect(captured0.userMessage).toContain('=== a.txt ===');
-      expect(captured0.userMessage).toContain('STAGED-TXT-CONTENT');
+      // Path is listed for the Read tool — content is NOT inlined.
+      expect(captured0.userMessage).toContain('Learner-uploaded source materials');
+      expect(captured0.userMessage).toContain(`- ${absPath}`);
+      expect(captured0.userMessage).not.toContain('STAGED-TXT-CONTENT');
+      // Tool use is opted in so Claude can actually Read the path.
+      expect(captured0.allowTools).toBe(true);
     } finally {
       delete process.env.COURSES_ROOT_OVERRIDE;
       await fs.rm(coursesRoot, { recursive: true, force: true });
@@ -495,7 +479,8 @@ describe('POST /api/wizard/clarify', () => {
     expect(res.status).toBe(200);
     expect(captured).not.toBeNull();
     const captured0 = captured as unknown as ConnectorRequest;
-    expect(captured0.userMessage).not.toContain('Learner-uploaded source materials:');
+    expect(captured0.userMessage).not.toContain('Learner-uploaded source materials');
+    expect(captured0.allowTools).toBe(false);
   });
 
   it('caps response array at 10 even if model returns more', async () => {

@@ -6,11 +6,9 @@
  * `CourseStructure` (modules → lessons with title, description,
  * estimatedMinutes) that the user can then edit in the cascade.
  */
-import path from 'node:path';
-
 import { z } from 'zod';
 
-import type { StagedSourceForPrompt } from '@/lib/server/sources';
+import type { ResolvedSourcePath } from '@/lib/server/sources';
 
 import { extractJsonPayload } from './clarify';
 
@@ -72,7 +70,7 @@ export const STRUCTURE_SYSTEM_PROMPT = [
   'Match the learner\'s requested length: short ≈ 3–5 lessons total, standard ≈ 8–12, extensive ≈ 20–30, comprehensive ≈ 40+. Spread lessons across modules sensibly (3–8 lessons per module).',
   'Respond with STRICT JSON only — no prose, no markdown fences. Schema: {"courseTitle":"…","courseDescription":"…","modules":[{"title":"…","lessons":[{"title":"…","description":"…","estimatedMinutes":12}, ...]}, ...]}.',
   'Every field is required and must be non-empty. Do not include ids, prerequisites, or any extra fields.',
-  'If learner-uploaded source materials are provided, the outline MUST be grounded in their topics and ordering wherever they cover the requested topic; only fall back to your own knowledge for gaps the materials do not cover.',
+  'If learner-uploaded source materials are listed in the user message, use the Read tool to inspect each listed path BEFORE drafting the outline. The outline MUST be grounded in their topics and ordering wherever they cover the requested topic; only fall back to your own knowledge for gaps the materials do not cover.',
 ].join('\n');
 
 function ratioLabel(n: number): string {
@@ -98,7 +96,7 @@ function durationLabel(d: RefineDraft['durationTarget']): string {
 
 export function buildStructureUserMessage(
   req: StructureRequest,
-  sources?: readonly StagedSourceForPrompt[],
+  sources?: readonly ResolvedSourcePath[],
 ): string {
   const { topic, description, refine, clarification } = req;
   const trimmedDescription = (description ?? '').trim();
@@ -126,19 +124,20 @@ export function buildStructureUserMessage(
   }
 
   if (sources && sources.length > 0) {
-    lines.push('', 'Learner-uploaded source materials:');
+    // Hand the model absolute paths and let it Read each file through the
+    // built-in tool. Previous versions inlined extracted text; with a
+    // multi-PDF upload the prompt exceeded 150 KB and broke generation with
+    // spawn E2BIG. The agent now picks what to skim.
+    lines.push(
+      '',
+      'Learner-uploaded source materials (Read each path with the Read tool BEFORE drafting the outline; ground modules/lessons in their topics and ordering wherever they cover the requested subject):',
+    );
     for (const s of sources) {
-      if (s.kind === 'binary-unsupported') {
-        lines.push(
-          `=== ${s.originalName} ===`,
-          '(binary file uploaded by learner; content extraction not yet supported — treat the filename as a hint about scope)',
-        );
-      } else {
-        const heading = s.extractedFrom
-          ? `=== ${s.originalName} (extracted from ${path.extname(s.extractedFrom).slice(1).toLowerCase() || 'binary'}) ===`
-          : `=== ${s.originalName} ===`;
-        lines.push(heading, s.content);
-      }
+      lines.push(
+        s.extractedFrom
+          ? `- ${s.readPath} (extracted text from ${s.extractedFrom})`
+          : `- ${s.readPath}`,
+      );
     }
   }
 

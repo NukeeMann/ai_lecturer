@@ -15,9 +15,15 @@ import {
 // Fake child_process.spawn — emits stdout chunks, then a `close` event.
 // ---------------------------------------------------------------------------
 
+interface FakeStdin extends EventEmitter {
+  end: ReturnType<typeof vi.fn>;
+  written: string;
+}
+
 interface FakeProcess extends EventEmitter {
   stdout: EventEmitter;
   stderr: EventEmitter;
+  stdin: FakeStdin;
   kill: ReturnType<typeof vi.fn>;
 }
 
@@ -33,6 +39,13 @@ function makeFakeProcess(cfg: FakeProcessConfig): FakeProcess {
   const child = new EventEmitter() as FakeProcess;
   child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
+  const stdin = new EventEmitter() as FakeStdin;
+  stdin.written = '';
+  stdin.end = vi.fn((data?: string) => {
+    if (typeof data === 'string') stdin.written += data;
+    return stdin;
+  });
+  child.stdin = stdin;
   child.kill = vi.fn(() => {
     // Simulate that SIGTERM closes the process with a non-zero exit.
     if (cfg.hangs) {
@@ -117,20 +130,40 @@ describe('subprocessConnector', () => {
     expect(text).toBe('Hello from the tutor.');
   });
 
-  it('passes -p <prompt> --output-format json to the CLI', async () => {
+  it('passes -p --output-format json and feeds the prompt via stdin', async () => {
     const calls: Array<{ command: string; args: readonly string[] }> = [];
+    const children: FakeProcess[] = [];
     const fakeJson = JSON.stringify({ result: 'ok' });
     const spawnSpy = ((command: string, args: readonly string[]) => {
       calls.push({ command, args });
-      return makeFakeProcess({ stdout: fakeJson });
+      const child = makeFakeProcess({ stdout: fakeJson });
+      children.push(child);
+      return child;
     }) as unknown as SpawnFn;
     const connector = subprocessConnector({ spawnFn: spawnSpy, command: 'claude' });
     await connector.chat({ userMessage: 'why?' });
     expect(calls).toHaveLength(1);
     expect(calls[0].command).toBe('claude');
-    expect(calls[0].args[0]).toBe('-p');
-    expect(calls[0].args[1]).toContain('why?');
-    expect(calls[0].args.slice(2)).toEqual(['--output-format', 'json']);
+    expect([...calls[0].args]).toEqual(['-p', '--output-format', 'json']);
+    expect(children[0].stdin.written).toContain('why?');
+    expect(children[0].stdin.end).toHaveBeenCalled();
+  });
+
+  it('appends --dangerously-skip-permissions when allowTools is set', async () => {
+    const calls: Array<{ args: readonly string[] }> = [];
+    const fakeJson = JSON.stringify({ result: 'ok' });
+    const spawnSpy = ((_command: string, args: readonly string[]) => {
+      calls.push({ args });
+      return makeFakeProcess({ stdout: fakeJson });
+    }) as unknown as SpawnFn;
+    const connector = subprocessConnector({ spawnFn: spawnSpy, command: 'claude' });
+    await connector.chat({ userMessage: 'hi', allowTools: true });
+    expect([...calls[0].args]).toEqual([
+      '-p',
+      '--output-format',
+      'json',
+      '--dangerously-skip-permissions',
+    ]);
   });
 
   it('rejects when claude exits non-zero', async () => {
