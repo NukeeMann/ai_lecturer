@@ -212,7 +212,9 @@ export default function CreatePage() {
 
   const handleGenerate = async () => {
     if (submitting) return;
-    if (!draft.structure || !draft.level || !draft.durationTarget) return;
+    // US-191 — quiz-only mode legitimately leaves `level` null; mirror Stage 2's gate.
+    if (!draft.structure || !draft.durationTarget) return;
+    if (!draft.quizOnly && !draft.level) return;
     setSubmitError(null);
     setSubmitting(true);
     try {
