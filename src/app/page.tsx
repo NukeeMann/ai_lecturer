@@ -790,6 +790,8 @@ function CourseCard({
   const [hover, setHover] = useState(false);
   const completion = stats.total === 0 ? 0 : Math.round((stats.finished / stats.total) * 100);
   const linkStyle: CSSProperties = {
+    position: 'relative',
+    zIndex: hover && !dimmed ? 9999 : undefined,
     display: 'flex',
     flexDirection: 'column',
     gap: 'var(--space-3)',
@@ -802,11 +804,11 @@ function CourseCard({
     color: 'inherit',
     cursor: dimmed ? 'wait' : 'pointer',
     transition:
-      'border-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast), opacity 200ms',
-    transform: hover && !dimmed ? 'translateY(-1px)' : 'none',
+      'border-color var(--t-fast), box-shadow var(--t-fast), opacity 200ms',
     opacity: fading ? 0 : dimmed ? 0.55 : 1,
     pointerEvents: dimmed ? 'none' : 'auto',
   };
+  const showTooltip = hover && !dimmed && Boolean(course.description);
   return (
     <Link
       data-testid="course-card"
@@ -883,6 +885,52 @@ function CourseCard({
           }}
         />
       </div>
+      {showTooltip && (
+        <div
+          role="tooltip"
+          data-testid="course-card-tooltip"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 10px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10000,
+            width: 'max-content',
+            maxWidth: 'min(360px, calc(100vw - 32px))',
+            padding: '10px 14px',
+            background: 'var(--bg-overlay, var(--bg-elevated))',
+            color: 'var(--text-tertiary)',
+            border: '1px solid var(--border-strong)',
+            borderRadius: 14,
+            boxShadow:
+              'var(--shadow-lg, 0 12px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.10))',
+            fontSize: 'var(--fs-sm)',
+            lineHeight: 1.5,
+            whiteSpace: 'normal',
+            overflowWrap: 'anywhere',
+            pointerEvents: 'none',
+            animation: 'tooltipFadeIn 120ms ease-out',
+          }}
+        >
+          {/* arrow — border layer */}
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              top: -7,
+              left: '50%',
+              transform: 'translateX(-50%) rotate(45deg)',
+              width: 12,
+              height: 12,
+              background: 'var(--bg-overlay, var(--bg-elevated))',
+              borderLeft: '1px solid var(--border-strong)',
+              borderTop: '1px solid var(--border-strong)',
+              borderTopLeftRadius: 3,
+            }}
+          />
+          {course.description}
+        </div>
+      )}
     </Link>
   );
 }
