@@ -6,6 +6,10 @@ export interface SxNavLesson {
   slug: string;
   title: string;
   moduleId: string;
+  /** Section ids in render order — used by the sidebar to compute "X / Y
+   *  sections done" per lesson, and by the resume-on-open logic to decide
+   *  which lesson to jump to. Optional for back-compat with older payloads. */
+  sectionIds?: string[];
 }
 
 export interface SxNavModule {

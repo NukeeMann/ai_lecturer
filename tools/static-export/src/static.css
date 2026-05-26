@@ -265,12 +265,318 @@ a:hover { text-decoration: underline; }
   color: var(--text-tertiary);
 }
 
+/* ---- Theory widget body (mirrors src/app/globals.css) ------------------ */
+/* The main Next.js app loads globals.css automatically, but this static
+ * exporter ships its own minimal stylesheet — so without this block the
+ * theory markdown renders flush against the widget border, especially on
+ * mobile where there's no surrounding gutter. */
+[data-theory-body] {
+  padding: var(--space-5) var(--space-6);
+  font-family: var(--font-prose);
+  font-size: var(--fs-md);
+  line-height: var(--line-height-prose);
+  color: var(--text);
+}
+[data-theory-body] > *:first-child { margin-top: 0; }
+[data-theory-body] > *:last-child  { margin-bottom: 0; }
+[data-theory-body] p {
+  margin: var(--space-4) 0;
+  text-wrap: pretty;
+}
+[data-theory-body] h2 {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  margin-top: var(--space-5);
+  margin-bottom: var(--space-3);
+  color: var(--text);
+  line-height: 1.3;
+}
+[data-theory-body] h3 {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+  color: var(--text);
+  line-height: 1.35;
+}
+[data-theory-body] :not(pre) > code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 2px 5px;
+}
+[data-theory-body] pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  margin: var(--space-4) 0;
+  color: var(--code-text);
+}
+[data-theory-body] pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  color: inherit;
+}
+[data-theory-body] ul,
+[data-theory-body] ol {
+  margin: var(--space-4) 0;
+  padding-left: var(--space-6);
+}
+[data-theory-body] li { margin: var(--space-2) 0; }
+[data-theory-body] a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-theory-body] blockquote {
+  margin: var(--space-4) 0;
+  padding: 0 var(--space-4);
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+[data-theory-body] .katex-display {
+  display: block;
+  text-align: center;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-4) 0;
+  overflow-x: auto;
+}
+[data-theory-body] .katex { color: var(--text); }
+
+/* ---- TOC: lesson completion badges (sidebar) --------------------------- */
+.sx-toc-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sx-toc-link-title { flex: 1; min-width: 0; }
+.sx-toc-link-badge {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+.sx-toc-link.done .sx-toc-link-badge {
+  color: var(--success, #16a34a);
+  font-weight: 700;
+  font-size: 13px;
+}
+.sx-toc-link.partial .sx-toc-link-badge {
+  color: var(--accent-text, var(--accent));
+}
+.sx-toc-link.done .sx-toc-link-title {
+  color: var(--text-secondary);
+}
+
+/* ---- Continue CTA on the course-index page ----------------------------- */
+.sx-continue-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 10px 18px;
+  background: var(--accent, #2563eb);
+  color: white;
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: var(--radius-md, 8px);
+  text-decoration: none;
+}
+.sx-continue-cta:hover {
+  text-decoration: none;
+  filter: brightness(1.05);
+}
+
+/* ---- Lesson row completion (course index) ------------------------------ */
+.sx-lesson-row a {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.sx-lesson-status {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+.sx-lesson-row[data-completion="done"] .sx-lesson-status {
+  color: var(--success, #16a34a);
+  font-weight: 700;
+}
+.sx-lesson-row[data-completion="partial"] .sx-lesson-status {
+  color: var(--accent-text, var(--accent));
+}
+
+/* ---- Mobile drawer: header bar + slide-in TOC -------------------------- */
+/* Default (desktop): hide mobile header / backdrop / close — sidebar is
+ * always visible in the grid layout defined by .sx-shell. */
+.sx-mobile-header,
+.sx-toc-backdrop,
+.sx-toc-close {
+  display: none;
+}
+
 @media (max-width: 880px) {
   .sx-shell { grid-template-columns: minmax(0, 1fr); }
-  .sx-toc {
-    position: static;
-    max-height: none;
-    margin-bottom: 8px;
-  }
   .sx-card-grid { grid-template-columns: 1fr; }
+
+  /* Tighter gutter on phones so the prose has breathing room without
+   * eating half the width. Matches the visual rhythm in the main app. */
+  [data-theory-body] {
+    padding: var(--space-4) var(--space-4);
+  }
+  [data-theory-body] pre,
+  [data-theory-body] .katex-display {
+    padding: var(--space-3) var(--space-4);
+  }
+
+  /* Mobile header: sticky 2-column bar. Title flows from the left edge,
+   * burger is pinned to the right with the same 24px gutter the main
+   * content uses, so visually the burger lines up with the content's
+   * right edge — no awkward gap between them. */
+  .sx-mobile-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 102;
+    padding: 6px 10px;        /* tighter than the content gutter — header looks less bulky */
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    min-height: 48px;
+  }
+  .sx-mobile-header-title {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: flex-start;
+    gap: 6px;
+    overflow: hidden;
+  }
+  .sx-mobile-header-num {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+  }
+  .sx-mobile-header-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+
+  /* Hamburger — icon button pinned to header's right edge. */
+  .sx-toc-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    font-size: 20px;
+    line-height: 1;
+    font-family: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .sx-toc-trigger:hover { background: var(--bg-hover); }
+
+  /* Main content is no longer pushed down — the sticky header already
+   * reserves its row in the layout. */
+  .sx-main { padding-top: 0; }
+
+  /* TOC — slide-in drawer from the RIGHT (matches the burger position). */
+  .sx-toc {
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: auto;
+    width: min(86vw, 320px);
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border-radius: 0;
+    border-right: none;
+    border-left: 1px solid var(--border);
+    overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform 0.22s ease-out;
+    z-index: 110;
+    box-shadow: -6px 0 18px rgba(0, 0, 0, 0.18);
+  }
+  .sx-shell[data-toc-open="true"] .sx-toc { transform: translateX(0); }
+
+  /* Close (×) on the right edge of the drawer — mirrors the burger that
+   * opened it (also on the right of the header), so the eye doesn't have
+   * to jump sides. */
+  .sx-toc-close {
+    display: inline-flex;
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    left: auto;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    color: var(--text);
+    border: none;
+    font-size: 24px;
+    font-family: inherit;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: var(--radius-sm, 6px);
+    z-index: 1;
+  }
+  .sx-toc-close:hover { background: var(--bg-hover); }
+
+  /* Reserve room at the top of the drawer so the X doesn't collide with
+   * the first link ("← Library"). */
+  .sx-toc { padding-top: 48px; }
+
+  /* Backdrop covering page content; tap to close. */
+  .sx-toc-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.42);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease-out;
+    z-index: 105;
+  }
+  .sx-shell[data-toc-open="true"] .sx-toc-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Lock background scrolling when the drawer is open. */
+  .sx-shell[data-toc-open="true"] { overflow: hidden; }
 }

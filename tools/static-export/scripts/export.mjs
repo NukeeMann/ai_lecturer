@@ -78,11 +78,21 @@ async function exists(p) {
   }
 }
 
-function htmlPage({ title, payload, cssHrefs, jsHref }) {
+function htmlPage({ title, payload, cssHrefs, jsHref, faviconHref }) {
   const links = cssHrefs
     .map((h) => `<link rel="stylesheet" href="${h}" />`)
     .join('\n    ');
   const data = escapeForScript(JSON.stringify(payload));
+  // favicon copied verbatim into each dist root; the per-page relative path
+  // depends on directory depth, so the caller passes the right `faviconHref`.
+  // We emit both <link rel="icon"> (desktop / Android) AND
+  // <link rel="apple-touch-icon"> (iOS bookmark / home screen) so iPhone
+  // Safari — which is particularly stubborn about the regular favicon —
+  // picks up the new image when the file hash changes.
+  const favicon = faviconHref
+    ? `<link rel="icon" type="image/png" href="${faviconHref}" />\n    ` +
+      `<link rel="apple-touch-icon" href="${faviconHref}" />\n    `
+    : '';
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -90,7 +100,7 @@ function htmlPage({ title, payload, cssHrefs, jsHref }) {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
     <title>${title.replace(/</g, '&lt;')}</title>
-    ${links}
+    ${favicon}${links}
   </head>
   <body>
     <div id="root"></div>
@@ -195,10 +205,17 @@ async function loadCourseWithLessons(slug) {
       }
       const lesson = await readJson(lp);
       lessons.push(lesson);
+      // sectionIds are needed in the nav so the sidebar (TOC) and resume
+      // logic can compute "X of Y sections done" per lesson without having
+      // to load every lesson JSON into every page's payload.
+      const sectionIds = Array.isArray(lesson.sections)
+        ? lesson.sections.map((s) => s?.id).filter((id) => typeof id === 'string')
+        : [];
       navMod.lessons.push({
         slug: lesson.slug,
         title: lesson.title ?? ref.title ?? lesson.slug,
         moduleId: m.id,
+        sectionIds,
       });
     }
     if (navMod.lessons.length > 0) nav.push(navMod);
@@ -239,6 +256,39 @@ function relPrefix(depth) {
   return '../'.repeat(depth);
 }
 
+/**
+ * Copy the project-level favicon (tools/static-export/favicon.png) into the
+ * given dist root under a CONTENT-HASHED file name (e.g. `favicon-ab12cd34.png`)
+ * and return that name so the caller can build per-page relative hrefs.
+ *
+ * Why hashed *filename* rather than `favicon.png?v=hash` query string:
+ *   - Safari/iOS is documented to ignore the query string when caching
+ *     favicons — `?v=` works on Chrome but fails on iPhone, the exact
+ *     device the learners use most.
+ *   - Some shared hosts (incl. ours — `cache-control: public, max-age=604800`)
+ *     serve a 7-day cache header; without a brand-new URL the browser keeps
+ *     hitting cache regardless of what you uploaded.
+ *   - Changing the *filename* forces every cache layer to fetch fresh —
+ *     there's literally no entry under the new name. Stays stable across
+ *     rebuilds when the image is unchanged, so unchanged builds aren't
+ *     forcing re-downloads.
+ *
+ * Returns null when no favicon file is present; pages render without a
+ * <link rel="icon"> and browsers fall back to their default page icon.
+ */
+async function copyFaviconInto(distDir) {
+  const src = path.join(toolDir, 'favicon.png');
+  if (!(await exists(src))) return null;
+  // Short content hash — 8 hex chars is enough to never collide for a
+  // single project's favicon history.
+  const { createHash } = await import('node:crypto');
+  const buf = await fs.readFile(src);
+  const hash = createHash('sha1').update(buf).digest('hex').slice(0, 8);
+  const hashedName = `favicon-${hash}.png`;
+  await fs.cp(src, path.join(distDir, hashedName));
+  return hashedName;
+}
+
 // ---- MODE 1: single-course (legacy) --------------------------------------
 
 async function exportSingleCourse(slug) {
@@ -276,6 +326,8 @@ async function exportSingleCourse(slug) {
     console.log('[static-export] copied course assets');
   }
 
+  const faviconName = await copyFaviconInto(distDir);
+
   // index.html — at depth 0
   await fs.writeFile(
     path.join(distDir, 'index.html'),
@@ -283,6 +335,7 @@ async function exportSingleCourse(slug) {
       title: course.title ?? slug,
       jsHref: jsRefBase,
       cssHrefs: cssRefsBase,
+      faviconHref: faviconName ?? undefined,
       payload: {
         kind: 'index',
         courseSlug: slug,
@@ -305,6 +358,7 @@ async function exportSingleCourse(slug) {
         title: `${lesson.title ?? lesson.slug} · ${course.title ?? slug}`,
         jsHref: lessonPrefix + jsRefBase,
         cssHrefs: cssRefsBase.map((c) => lessonPrefix + c),
+        faviconHref: faviconName ? lessonPrefix + faviconName : undefined,
         payload: {
           kind: 'lesson',
           courseSlug: slug,
@@ -423,6 +477,8 @@ async function exportLibrary({ collectionNames, allCollections }) {
   }
   console.log('[static-export] copied per-course assets');
 
+  const faviconName = await copyFaviconInto(distDir);
+
   // Each course gets its own subtree: dist/library/<slug>/{index.html,lessons/}
   for (const [slug, { course, nav, lessons }] of courseData.entries()) {
     const courseRoot = path.join(distDir, slug);
@@ -436,6 +492,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
         title: course.title ?? slug,
         jsHref: coursePrefix + jsRefBase,
         cssHrefs: cssRefsBase.map((c) => coursePrefix + c),
+        faviconHref: faviconName ? coursePrefix + faviconName : undefined,
         payload: {
           kind: 'index',
           courseSlug: slug,
@@ -459,6 +516,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
           title: `${lesson.title ?? lesson.slug} · ${course.title ?? slug}`,
           jsHref: lessonPrefix + jsRefBase,
           cssHrefs: cssRefsBase.map((c) => lessonPrefix + c),
+          faviconHref: faviconName ? lessonPrefix + faviconName : undefined,
           payload: {
             kind: 'lesson',
             courseSlug: slug,
@@ -525,6 +583,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
       title: libraryTitle,
       jsHref: jsRefBase,
       cssHrefs: cssRefsBase,
+      faviconHref: faviconName ?? undefined,
       payload: {
         kind: 'home',
         courseSlug: '',

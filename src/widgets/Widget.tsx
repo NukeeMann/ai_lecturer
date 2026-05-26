@@ -253,6 +253,15 @@ export function Widget({
           </div>
           <h3 style={titleStyle}>{title}</h3>
         </div>
+        {/*
+          Order matters: status badge first, action row (which ends with the
+          completion checkbox) last. That way the "Completed" pill expands
+          to the LEFT of the checkbox when a section is marked done — the
+          checkbox stays pinned to the header's right edge, so the user can
+          click the same spot to toggle it back off without having to chase
+          the cursor across a layout shift.
+        */}
+        <StatusBadge status={status} />
         {hasHeaderActions && (
           <div
             data-widget-header-actions
@@ -262,7 +271,6 @@ export function Widget({
             {checkbox !== undefined && <CompletionCheckbox {...checkbox} />}
           </div>
         )}
-        <StatusBadge status={status} />
       </header>
       {hasDescription && (
         <p
