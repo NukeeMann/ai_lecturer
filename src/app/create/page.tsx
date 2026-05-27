@@ -109,13 +109,6 @@ const PLACEHOLDER_TOPICS = [
   'How transformers work, end to end',
 ];
 
-const SUGGESTION_TOPICS = [
-  'Backpropagation',
-  'Linear algebra for ML',
-  'How GPT works',
-  'Bayesian statistics',
-];
-
 const LEVEL_OPTIONS: { value: Level; label: string; description: string }[] = [
   { value: 'beginner', label: 'Beginner', description: 'Brand new to this topic' },
   { value: 'intermediate', label: 'Some experience', description: 'I dabbled but not deeply' },
@@ -1314,26 +1307,6 @@ function Stage1({ draft, setDraft, onNext, onBack }: StageProps) {
               />
               Quiz only mode
             </label>
-          </div>
-          <div
-            style={{
-              marginTop: 'var(--space-5)',
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 8,
-            }}
-          >
-            {SUGGESTION_TOPICS.map((s) => (
-              <button
-                key={s}
-                type="button"
-                data-testid="stage1-suggestion-chip"
-                onClick={() => setDraft((d) => ({ ...d, topic: s }))}
-                style={chipStyle(false)}
-              >
-                {s}
-              </button>
-            ))}
           </div>
         </div>
       </div>
