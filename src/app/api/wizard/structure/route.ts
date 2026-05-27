@@ -93,7 +93,7 @@ export async function POST(req: Request) {
         // Structure generation drafts a full course outline with Opus and
         // routinely takes >60s; the connector default is meant for
         // interactive lesson chat.
-        timeoutMs: 240_000,
+        timeoutMs: 600_000,
       });
       const result: CourseStructure = parseStructureResponse(reply);
       return NextResponse.json(result);
