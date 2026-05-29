@@ -94,6 +94,9 @@ export async function POST(req: Request) {
         // routinely takes >60s; the connector default is meant for
         // interactive lesson chat.
         timeoutMs: 600_000,
+        // Pin Opus: same JSON-fragility reason as wizard/clarify. The CLI
+        // default (Sonnet) was producing malformed JSON for Polish prompts.
+        model: 'opus',
       });
       const result: CourseStructure = parseStructureResponse(reply);
       return NextResponse.json(result);

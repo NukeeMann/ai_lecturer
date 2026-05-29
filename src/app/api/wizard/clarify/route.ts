@@ -93,6 +93,11 @@ export async function POST(req: Request) {
         // 60s connector default for lesson chat. 4 min mirrors the
         // structure route's existing bump.
         timeoutMs: 240_000,
+        // Pin Opus: the CLI default (Sonnet) frequently emits malformed
+        // JSON for Polish-language clarification prompts (unescaped inner
+        // quotes inside strings); Opus is much more reliable at strict
+        // JSON output. The in-prompt hint alone wasn't enough.
+        model: 'opus',
       });
       const result: ClarifyResponse = parseClarifyResponse(reply);
       return NextResponse.json(result);
