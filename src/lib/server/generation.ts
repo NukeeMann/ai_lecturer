@@ -1336,6 +1336,8 @@ export function defaultLessonCommand(
     args: [
       '-p',
       prompt,
+      '--model',
+      'sonnet',
       // See defaultResearchCourseCommand for why --output-format stream-json
       // + --verbose is set; same incremental-streaming requirement applies
       // per-lesson. US-102.
