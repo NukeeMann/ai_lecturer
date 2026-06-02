@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -34,9 +35,12 @@ import { ChevronDown, ChevronRight, Play, RotateCcw, Square } from 'lucide-react
 
 import { Callout } from '@/components/Callout';
 import {
-  PyodideStopError,
+  KernelStopError,
+  useKernel,
+  type KernelSessionKey,
+} from '@/lib/kernel/client';
+import {
   subscribePyodideRestart,
-  usePyodide,
   type PyodideInputFile,
   type PyodideStopReason,
   type RunResult,
@@ -102,6 +106,14 @@ export interface CodeRunnerProps {
 const FONT_SIZE = 'calc(13px * var(--text-scale, 1))';
 const LINE_HEIGHT = 1.55;
 const SAVE_DEBOUNCE_MS = 800;
+
+/** Session used when the runner is rendered outside a lesson (e.g. the
+ *  CodeRunner test shell) and therefore has no `progressKey`. */
+const SCRATCH_SESSION: KernelSessionKey = {
+  courseSlug: 'scratch',
+  lessonSlug: 'scratch',
+  sectionId: 'scratch',
+};
 
 export const codeRunnerEditorTheme = EditorView.theme({
   '&': {
@@ -588,10 +600,25 @@ export function CodeRunner({
   runRequiresPackages,
   runInputs,
 }: CodeRunnerProps) {
-  const { status, run, stop } = usePyodide();
+  // The inline ▶ Run / Mod-Enter path runs on the real per-lesson kernel
+  // (US-201). Session identity comes from `progressKey`; the test shell renders
+  // without one, so fall back to a scratch session.
+  const session = useMemo<KernelSessionKey>(
+    () =>
+      progressKey
+        ? {
+            courseSlug: progressKey.courseSlug,
+            lessonSlug: progressKey.lessonSlug,
+            sectionId: progressKey.sectionId,
+          }
+        : SCRATCH_SESSION,
+    [progressKey],
+  );
+  const { status, run, stop } = useKernel(session);
   const [code, setCode] = useState<string>(initialCode ?? starterCode);
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<RunResult | null>(null);
+  const [images, setImages] = useState<string[]>([]);
   const [restartReason, setRestartReason] = useState<PyodideStopReason | null>(
     null,
   );
@@ -630,9 +657,13 @@ export function CodeRunner({
   }, [runInputs]);
 
   const handleRun = useCallback(async () => {
-    if (statusRef.current !== 'ready' || running) return;
+    // The kernel is runnable from `idle` (first run boots it) or `ready`; only
+    // a mid-spawn `loading` / hard `error` blocks a fresh run.
+    if (running) return;
+    if (statusRef.current === 'loading' || statusRef.current === 'error') return;
     setRunning(true);
     setOutput(null);
+    setImages([]);
     setRestartReason(null);
     setOutputCollapsed(false);
     setTracebackOpen(false);
@@ -641,11 +672,14 @@ export function CodeRunner({
       const result = await runRef.current(
         codeRef.current,
         runRequiresPackagesRef.current,
-        inputs && inputs.length > 0 ? { inputs } : undefined,
+        {
+          onImages: setImages,
+          ...(inputs && inputs.length > 0 ? { inputs } : {}),
+        },
       );
       setOutput(result);
     } catch (err) {
-      if (err instanceof PyodideStopError) {
+      if (err instanceof KernelStopError) {
         setRestartReason(err.reason);
       } else {
         const msg = err instanceof Error ? err.message : String(err);
@@ -710,6 +744,7 @@ export function CodeRunner({
     }
     setCode(starterCode);
     setOutput(null);
+    setImages([]);
     setRestartReason(null);
     setTracebackOpen(false);
     pristineRef.current = starterCode;
@@ -786,7 +821,9 @@ export function CodeRunner({
     };
   }, [code, progressKey]);
 
-  const runDisabled = status !== 'ready' || running;
+  // Kernel is runnable from `idle` (lazy server-side spawn) as well as `ready`.
+  const runDisabled =
+    (status !== 'ready' && status !== 'idle') || running;
 
   const showDefaultRun = primaryAction === undefined;
   const customAction = primaryAction ?? null;
@@ -877,7 +914,7 @@ export function CodeRunner({
           }}
         >
           <div style={{ flex: 1, minWidth: 0 }}>
-            {status === 'loading' || status === 'idle' ? (
+            {status === 'loading' ? (
               <LoadingIndicator />
             ) : status === 'error' ? (
               <ErrorCallout />
@@ -906,6 +943,31 @@ export function CodeRunner({
                   tracebackOpen={tracebackOpen}
                   onToggleTraceback={() => setTracebackOpen((v) => !v)}
                 />
+                {!running && images.length > 0 && (
+                  <div
+                    data-coderunner-images
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 'var(--space-2)',
+                    }}
+                  >
+                    {images.map((b64, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        key={i}
+                        data-coderunner-image
+                        src={`data:image/png;base64,${b64}`}
+                        alt="Code output"
+                        style={{
+                          maxWidth: '100%',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid var(--border)',
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
                 {outputMediaSlot}
               </div>
             )}
