@@ -1,0 +1,80 @@
+[2026-06-02T11:16:00+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T11:16:02+0200] I'll start by reading the Ralph instructions, then examine the relevant files.
+[2026-06-02T11:16:08+0200] Let me read the kernel client, pyodide client, and the test file in parallel.
+[2026-06-02T11:16:14+0200] Now let me study the CodeRunner (already migrated to kernel in US-201) to understand the patterns.
+[2026-06-02T11:16:27+0200] Now let me look at the server-side code run handling and the kernel session needs.
+[2026-06-02T11:19:45+0200] I now understand the architecture. Let me check the schema and CodeRunner test to ensure I don't break them.
+[2026-06-02T11:19:52+0200] Now I have full context. Let me implement. First, add the package-check codegen to `kernelPython.ts`:
+[2026-06-02T11:20:00+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T11:20:03+0200] Now add `checkPackages` to the kernel client. First the parse helper and imports:
+[2026-06-02T11:20:14+0200] Now add the parse helper after `extractHarnessPayload`:
+[2026-06-02T11:20:21+0200] Now add the `checkPackages` method to `KernelClient` (after `runWithTests`):
+[2026-06-02T11:20:25+0200] Now wire `checkPackages` into the hook return:
+[2026-06-02T11:20:33+0200] Now add an optional `onStop` prop to `CodeRunner` so CodeWidget's Submit path can interrupt its own kernel client (kernel clients aren't singletons like the old Pyodide worker):
+[2026-06-02T11:20:56+0200] I need to verify `runningRef` ordering — it's declared after `handleStop`. Let me check:
+[2026-06-02T11:21:05+0200] To avoid any "used before declaration" concern, I'll move the `handleStop`/`onStopRef` block to after the `runningRef` declarations:
+[2026-06-02T11:21:17+0200] Now the main rewrite of `CodeWidget.tsx`. Start with imports:
+[2026-06-02T11:21:23+0200] Now the hook usage and new state:
+[2026-06-02T11:21:41+0200] Now rewrite `handleSubmit`. Let me add the `ensurePackages` helper and replace the handler:
+[2026-06-02T11:22:03+0200] Now `handleLiveRun`:
+[2026-06-02T11:22:18+0200] Now update `handleReset` to clear the new state, and the disabled logic to treat `idle` as runnable:
+[2026-06-02T11:22:37+0200] Now add the banners at the top of `extraPanel` and wire `onStop` to CodeRunner:
+[2026-06-02T11:22:51+0200] Now update the test file to mock the kernel:
+[2026-06-02T11:23:00+0200] Now add a test for the precondition check:
+[2026-06-02T11:23:15+0200] Let me run the typecheck and the relevant tests:
+[2026-06-02T11:23:25+0200] Typecheck clean. Now run the affected tests:
+[2026-06-02T11:23:31+0200] Let me run the CodeRunner test and lint:
+[2026-06-02T11:23:45+0200] Tests and lint pass. Now the required browser verification. Per US-201's notes, I need a kernel runtime shim. Let me check for a running dev server and set up:
+[2026-06-02T11:23:58+0200] CodeWidget isn't on the test page — let me find a lesson route with a Code widget. Let me check the smoke-test course and the lesson route:
+[2026-06-02T11:24:17+0200] The smoke-test lesson declares `'Pillow'` (a distribution name, import name is `PIL`). My probe uses `find_spec`, which would false-positive flag Pillow as missing. Let me make the probe robust to both import names and distribution names:
+[2026-06-02T11:24:50+0200] My dist-name handling is correct (Pillow→dist, PIL→import, both pass; torch/cv2 truly missing). Let me create a temporary harness page to exercise CodeWidget directly (including the missing-package banner), then start the dev server:
+[2026-06-02T11:25:13+0200] Server is ready. Now write the Playwright verification script:
+[2026-06-02T11:25:38+0200] The script produced no output or screenshots. Let me check the skill's expected script format:
+[2026-06-02T11:25:50+0200] The executor expects a self-contained script, not `module.exports`. Let me rewrite:
+[2026-06-02T11:26:21+0200] Excellent — core flows verified. Let me also verify the live matplotlib figure swap against the real kernel by adding a live-capture widget:
+[2026-06-02T11:26:52+0200] All three acceptance criteria verified in the browser against the real kernel:
+1. **Submit + hidden tests**: 2/2 passed, pass-state rendered, peek-solution preserved.
+2. **Precondition check**: torch → actionable "run setup" banner, no run attempted.
+3. **Live figure**: placeholder `/next.svg` → `blob:` URL (matplotlib captured via kernel).
+
+The "FAIL" is only a 404 for my fake placeholder asset (`/next.svg`), not a widget error — the live swap itself succeeded. Now let me remove the temporary harness page:
+[2026-06-02T11:27:16+0200] All green. Now append to progress.txt, flip prd.json, and commit. Let me append the progress entry:
+[2026-06-02T11:27:37+0200] Now flip `passes` to `true` for US-202 in prd.json:
+[2026-06-02T11:27:44+0200] Only the `passes` flag changed. Now stage and commit:
+[2026-06-02T11:27:55+0200] Committed with `passes: true` in HEAD. Let me verify and stop the dev server by its PID:
+[2026-06-02T11:28:08+0200] US-202 complete and committed. Summary:
+
+## What I did
+
+Migrated **CodeWidget Submit + Run** from the Pyodide worker to the real per-lesson IPython kernel (`useKernel`), matching the US-201 CodeRunner migration.
+
+**Production changes:**
+- **`CodeWidget.tsx`** — `usePyodide().runWithTests` → `useKernel(session).runWithTests`. Kernel `idle` treated as runnable. `PyodideStopError` catch → `KernelStopError` (user stop + 30s timeout), surfacing a `data-codewidget-stop` banner. Hidden-with-peek tests panel, pass/fail rendering, and live-figure swap all preserved.
+- **`requiresPackages` is now a precondition check** — a new `useKernel().checkPackages()` probes the runtime (`find_spec` OR installed distribution, so both import names like `cv2` and dist names like `Pillow` resolve) and, if anything is missing, shows an actionable *"Missing package: X — run setup…"* Callout and aborts **without running**. No pip install during a run.
+- **`kernel/client.ts`** + **`kernel/kernelPython.ts`** — added `checkPackages`/`parsePackageCheck` and a side-effect-free `buildPackageCheck` probe that cleans up after itself.
+- **`CodeRunner.tsx`** — new optional `onStop` prop so the Stop button aborts the parent's kernel Submit (kernel clients are per-hook, not a shared singleton like the old Pyodide worker).
+- **`CodeWidget.test.tsx`** — mock swapped pyodide→kernel; existing live-image assertions kept; 2 precondition tests added.
+
+**Verification:**
+- Typecheck clean, ESLint clean, tests 35/35 (Code + kernel).
+- Browser (real kernel via shim): Submit → 2/2 hidden tests pass with peek preserved; `torch` → actionable missing-package banner with no run; matplotlib → placeholder src swapped to a `blob:` URL. No widget console errors.
+
+The only browser "FAIL" line was a 404 for a fake placeholder asset I used in the throwaway harness page (since deleted) — not a widget issue.
+[2026-06-02T11:28:08+0200] [result success turns=67 cost=$5.42292025] US-202 complete and committed. Summary:
+
+## What I did
+
+Migrated **CodeWidget Submit + Run** from the Pyodide worker to the real per-lesson IPython kernel (`useKernel`), matching the US-201 CodeRunner migration.
+
+**Production changes:**
+- **`CodeWidget.tsx`** — `usePyodide().runWithTests` → `useKernel(session).runWithTests`. Kernel `idle` treated as runnable. `PyodideStopError` catch → `KernelStopError` (user stop + 30s timeout), surfacing a `data-codewidget-stop` banner. Hidden-with-peek tests panel, pass/fail rendering, and live-figure swap all preserved.
+- **`requiresPackages` is now a precondition check** — a new `useKernel().checkPackages()` probes the runtime (`find_spec` OR installed distribution, so both import names like `cv2` and dist names like `Pillow` resolve) and, if anything is missing, shows an actionable *"Missing package: X — run setup…"* Callout and aborts **without running**. No pip install during a run.
+- **`kernel/client.ts`** + **`kernel/kernelPython.ts`** — added `checkPackages`/`parsePackageCheck` and a side-effect-free `buildPackageCheck` probe that cleans up after itself.
+- **`CodeRunner.tsx`** — new optional `onStop` prop so the Stop button aborts the parent's kernel Submit (kernel clients are per-hook, not a shared singleton like the old Pyodide worker).
+- **`CodeWidget.test.tsx`** — mock swapped pyodide→kernel; existing live-image assertions kept; 2 precondition tests added.
+
+**Verification:**
+- Typecheck clean, ESLint clean, tests 35/35 (Code + kernel).
+- Browser (real kernel via shim): Submit → 2/2 hidden tests pass with peek preserved; `torch` → actionable missing-package banner with no run; matplotlib → placeholder src swapped to a `blob:` URL. No widget console errors.
+
+The only browser "FAIL" line was a 404 for a fake placeholder asset I used in the throwaway harness page (since deleted) — not a widget issue.
