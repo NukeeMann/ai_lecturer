@@ -65,9 +65,11 @@ interface RunRequest {
   code?: string;
   tests?: Array<{ name: string; body: string }>;
   lessonSlug?: string;
-  // 'run' / 'runWithTests' optional package preload (US-173). Currently the
-  // only meaningful value is 'cv2', which triggers ensureCv2Shim(py) before
-  // user code is exec'd.
+  // 'run' / 'runWithTests' optional package-precondition list. Carried for
+  // wire-compat with the client payload; the Pyodide worker no longer acts on
+  // it. Real libraries (cv2, torch, …) live in the IPython kernel runtime
+  // (US-196/201) where the Code/Sandbox widgets actually execute; US-206
+  // removed the legacy Pyodide cv2 shim, so there is nothing to preload here.
   requiresPackages?: string[];
   // Lesson-provided files mounted into Pyodide VFS at /inputs/<filename>
   // before user code runs. See WorkerInput above.
@@ -98,8 +100,6 @@ let gaussInstalled = false;
 let pillowPromise: Promise<void> | null = null;
 let pexpInstalled = false;
 let matplotlibPromise: Promise<void> | null = null;
-let cv2InstalledOnce = false;
-let cv2PackagesPromise: Promise<void> | null = null;
 // Per-lesson Python namespace. The Python dict lives in worker globals as
 // `__ai_lesson_globals`; this proxy is captured once after the runner is
 // installed and reused for every `'run'` exec so user-defined names persist
@@ -292,74 +292,6 @@ async function ensurePexp(py: PyodideAPI): Promise<void> {
   pexpInstalled = true;
 }
 
-// cv2 shim (US-173) — Pyodide has no native OpenCV, so we expose a thin
-// Python shim over scipy.ndimage + scikit-image that mimics the subset of
-// the cv2 API used by lessons. After load, `import cv2` resolves to the
-// shim module. Keep CV2_SHIM_PY in sync with scripts/pyodide/cv2_shim.py.
-const CV2_SHIM_PY = `
-"""cv2 shim for Pyodide (NOT real OpenCV). See scripts/pyodide/cv2_shim.py
-for the canonical source + caveats."""
-import sys
-
-import numpy as np
-import scipy.ndimage as _ndimage
-import skimage.color as _color
-import skimage.feature as _feature
-import skimage.io as _skio
-
-IMREAD_GRAYSCALE = 0
-IMREAD_COLOR = 1
-CV_8U = 0
-CV_64F = 6
-
-
-def imread(path, flags=IMREAD_COLOR):
-    img = _skio.imread(path)
-    if flags == IMREAD_GRAYSCALE:
-        if img.ndim == 3:
-            img = _color.rgb2gray(img)
-        img = (np.asarray(img) * 255).astype(np.uint8) if img.dtype != np.uint8 else img
-    return img
-
-
-def imwrite(path, img):
-    _skio.imsave(path, img)
-    return True
-
-
-def Sobel(src, ddepth, dx, dy, ksize=3):
-    if ksize != 3:
-        raise ValueError("cv2 shim Sobel only supports ksize=3")
-    arr = src.astype(np.float64)
-    if dx == 1 and dy == 0:
-        return _ndimage.sobel(arr, axis=1)
-    if dx == 0 and dy == 1:
-        return _ndimage.sobel(arr, axis=0)
-    raise ValueError("cv2 shim Sobel only supports (dx=1,dy=0) or (dx=0,dy=1)")
-
-
-def Canny(image, threshold1, threshold2):
-    edges = _feature.canny(
-        image.astype(np.float64) / 255.0,
-        low_threshold=threshold1 / 255.0,
-        high_threshold=threshold2 / 255.0,
-    )
-    return (edges.astype(np.uint8)) * 255
-
-
-sys.modules['cv2'] = sys.modules[__name__]
-`;
-
-async function ensureCv2Shim(py: PyodideAPI): Promise<void> {
-  if (cv2InstalledOnce) return;
-  if (!cv2PackagesPromise) {
-    cv2PackagesPromise = py.loadPackage(['scipy', 'scikit-image']);
-  }
-  await cv2PackagesPromise;
-  await py.runPythonAsync(CV2_SHIM_PY);
-  cv2InstalledOnce = true;
-}
-
 // Live matplotlib figure capture for the Code widget (US-174). Set to AGG so
 // figures render off-screen; called AFTER user code (and tests) finish.
 const LIVE_PNG_PY = `
@@ -455,9 +387,6 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
     if (type === 'run') {
       try {
         await ensureRunner(py);
-        if (data.requiresPackages?.includes('cv2')) {
-          await ensureCv2Shim(py);
-        }
         await mountInputs(py, data.inputs);
         await py.runPythonAsync(code ?? '', {
           globals: lessonGlobalsProxy ?? undefined,
@@ -546,9 +475,6 @@ ctx.addEventListener('message', async (event: MessageEvent<RunRequest>) => {
 
     // runWithTests
     await ensureRunner(py);
-    if (data.requiresPackages?.includes('cv2')) {
-      await ensureCv2Shim(py);
-    }
     if (data.captureLiveImage) {
       await ensureLivePngCapture(py);
     }
