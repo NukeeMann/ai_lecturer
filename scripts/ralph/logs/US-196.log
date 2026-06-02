@@ -1,0 +1,64 @@
+[2026-06-02T10:04:07+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T10:04:08+0200] I'll start by reading the Ralph instructions, then explore the relevant existing code patterns.
+[2026-06-02T10:04:12+0200] Now let me examine the existing setup scripts and the STT CUDA pattern, plus the PRD entry for US-196.
+[2026-06-02T10:04:19+0200] No `ui` tag — no browser testing needed. Let me look at the setup scripts structure and the existing test pattern.
+[2026-06-02T10:04:25+0200] Let me look at the root setup.sh / setup.ps1 and the existing stt test pattern, plus the paths helper.
+[2026-06-02T10:04:31+0200] Let me check the `aiLecturerHome` helper and the paths module for the home-dir override pattern.
+[2026-06-02T10:05:02+0200] I have all the patterns I need. Let me create the server-only runtime probe module.
+[2026-06-02T10:05:42+0200] Now the test file:
+[2026-06-02T10:06:15+0200] Now the setup scripts. First `scripts/setup-kernel.sh`:
+[2026-06-02T10:06:38+0200] Now the opt-in CUDA script:
+[2026-06-02T10:06:58+0200] Now wire into `setup.sh` and `setup.ps1`, and make scripts executable.
+[2026-06-02T10:07:13+0200] Now let me document env vars in the README. Let me find the relevant section.
+[2026-06-02T10:07:28+0200] I'll add a documentation section for the kernel runtime after the Quick start block (line 223).
+[2026-06-02T10:07:39+0200] Now make scripts executable and run quality checks.
+[2026-06-02T10:07:47+0200] All 18 tests pass. Now typecheck and lint:
+[2026-06-02T10:08:02+0200] Typecheck and lint are clean. Let me run the full test suite to confirm no regressions.
+[2026-06-02T10:08:17+0200] The 21 failures are in 2 pre-existing files. Let me confirm they're the known baseline failures (not related to my changes).
+[2026-06-02T10:08:30+0200] Confirmed — these are the exact 21 pre-existing failures (extend/page.test.tsx ResizeObserver + 2 TTS FS-race) noted in the US-195 baseline, none related to my changes. My 18 new tests all pass.
+
+Now update prd.json and progress.txt:
+[2026-06-02T10:09:00+0200] Now stage and commit:
+[2026-06-02T10:09:06+0200] The two untracked course state files are pre-existing leftover test artifacts (not mine) — I'll leave them unstaged. Committing:
+[2026-06-02T10:09:23+0200] US-196 is complete and committed (`1dc0b7d`) with `passes: true` for US-196 in HEAD.
+
+## Summary
+
+Provisioned the local Jupyter kernel runtime and GPU-detection probe, all 8 acceptance criteria met:
+
+**Setup scripts**
+- `scripts/setup-kernel.sh` — creates a managed venv at `~/.ai-lecturer/py-runtime`, idempotent (probes package importability before re-installing multi-GB wheels). Baseline: ipykernel, jupyter_client, numpy, opencv-python, matplotlib + CPU-wheel torch (PyTorch CPU index) and tensorflow. Registers an `ai-lecturer` kernel.
+- `scripts/setup-kernel-cuda.sh` — opt-in GPU step modelled on `setup-stt-cuda.sh`: reinstalls torch from the CUDA wheel index, verifies `torch.cuda.is_available()`, writes a `.cuda-enabled` marker. Manual, never auto-run.
+- Wired `setup-kernel.sh` into `setup.sh` (macOS) and `setup.ps1` (Windows WSL block).
+
+**Server probe** (`src/lib/server/kernelRuntime.ts`, mirrors `stt.ts`)
+- `probeKernelRuntime()` reports `{installed, device, runtimeDir, pythonPath}` without throwing; `requireKernelRuntime()` throws typed `KernelRuntimeNotInstalledError`.
+- `kernelCudaAvailable()` mirrors `whisperCudaAvailable()` — checks the `.cuda-enabled` marker then `nvidia-smi -L`, memoised, silent CPU fallback.
+- Env vars: `AI_LECTURER_PY_RUNTIME` (venv path), `AI_LECTURER_KERNEL_DEVICE` (cpu/cuda/auto), `AI_LECTURER_CUDA_INDEX_URL` — all documented in README.
+
+**Tests** — 18 new unit tests, all stub the heavy install via a deps seam (no downloads); cover device detection/selection, the CUDA probe, and the typed not-installed error.
+
+**Quality** — typecheck clean, eslint clean, 18/18 new tests pass. Full suite: 1129 passed / 21 failed, where the 21 are the exact pre-existing baseline failures (extend/page.test.tsx ResizeObserver + 2 TTS FS-race), unchanged from US-195.
+
+One design note worth flagging: unlike whisper.cpp (which distinguishes CPU/CUDA by separate build directories), the CUDA torch reinstalls into the *same* venv — so I used a `.cuda-enabled` marker file as the detection signal rather than path-sniffing.
+[2026-06-02T10:09:23+0200] [result success turns=33 cost=$2.04370775] US-196 is complete and committed (`1dc0b7d`) with `passes: true` for US-196 in HEAD.
+
+## Summary
+
+Provisioned the local Jupyter kernel runtime and GPU-detection probe, all 8 acceptance criteria met:
+
+**Setup scripts**
+- `scripts/setup-kernel.sh` — creates a managed venv at `~/.ai-lecturer/py-runtime`, idempotent (probes package importability before re-installing multi-GB wheels). Baseline: ipykernel, jupyter_client, numpy, opencv-python, matplotlib + CPU-wheel torch (PyTorch CPU index) and tensorflow. Registers an `ai-lecturer` kernel.
+- `scripts/setup-kernel-cuda.sh` — opt-in GPU step modelled on `setup-stt-cuda.sh`: reinstalls torch from the CUDA wheel index, verifies `torch.cuda.is_available()`, writes a `.cuda-enabled` marker. Manual, never auto-run.
+- Wired `setup-kernel.sh` into `setup.sh` (macOS) and `setup.ps1` (Windows WSL block).
+
+**Server probe** (`src/lib/server/kernelRuntime.ts`, mirrors `stt.ts`)
+- `probeKernelRuntime()` reports `{installed, device, runtimeDir, pythonPath}` without throwing; `requireKernelRuntime()` throws typed `KernelRuntimeNotInstalledError`.
+- `kernelCudaAvailable()` mirrors `whisperCudaAvailable()` — checks the `.cuda-enabled` marker then `nvidia-smi -L`, memoised, silent CPU fallback.
+- Env vars: `AI_LECTURER_PY_RUNTIME` (venv path), `AI_LECTURER_KERNEL_DEVICE` (cpu/cuda/auto), `AI_LECTURER_CUDA_INDEX_URL` — all documented in README.
+
+**Tests** — 18 new unit tests, all stub the heavy install via a deps seam (no downloads); cover device detection/selection, the CUDA probe, and the typed not-installed error.
+
+**Quality** — typecheck clean, eslint clean, 18/18 new tests pass. Full suite: 1129 passed / 21 failed, where the 21 are the exact pre-existing baseline failures (extend/page.test.tsx ResizeObserver + 2 TTS FS-race), unchanged from US-195.
+
+One design note worth flagging: unlike whisper.cpp (which distinguishes CPU/CUDA by separate build directories), the CUDA torch reinstalls into the *same* venv — so I used a `.cuda-enabled` marker file as the detection signal rather than path-sniffing.
