@@ -257,7 +257,10 @@ describe('US-205 E2E · control flows', () => {
     await runWithTests('marker = 7\n', [{ name: 'set', body: 'assert marker == 7' }]);
     await mgr.execute(COURSE, LESSON, RESET_NAMESPACE_CELL);
     const { payload } = await runWithTests('', [
-      { name: 'cleared', body: 'assert "marker" not in __ai_lesson_globals' },
+      // Test bodies run in an isolated `dict(__ai_lesson_globals)` copy, so
+      // `dir()` reflects the (post-reset) lesson namespace — the internal
+      // `__ai_lesson_globals` name is not in scope here.
+      { name: 'cleared', body: 'assert "marker" not in dir()' },
     ]);
     expect(payload!.testResults[0].passed).toBe(true);
   }, 120_000);
