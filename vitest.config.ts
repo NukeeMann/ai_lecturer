@@ -15,5 +15,6 @@ export default defineConfig({
     // explicitly via `npm run test:e2e` (vitest.e2e.config.ts).
     exclude: [...configDefaults.exclude, 'src/**/*.e2e.test.{ts,tsx}'],
     environment: 'node',
+    setupFiles: ['./vitest.setup.ts'],
   },
 });
