@@ -1,83 +1,62 @@
-# Pyodide worker — cv2 shim notes
+# Pyodide worker notes
 
-`cv2` in this codebase is a SHIM built on `scipy.ndimage` + `scikit-image`, NOT
-real OpenCV. Pyodide has no native OpenCV port, so when a lesson's Code widget
-declares `requiresPackages: ['cv2']`, the worker loads `scipy` + `scikit-image`
-and runs `scripts/pyodide/cv2_shim.py`. That module re-binds itself into
-`sys.modules['cv2']`, so user code can `import cv2` and call the implemented
-subset as if it were OpenCV.
+This module hosts the legacy **Pyodide** Web Worker. It still powers the three
+self-contained Pyodide widgets — **GaussDemo**, **ParametricExplorer**, and
+**PlotImage** (plus the pure-client **CodeCloze**). The Code and Sandbox
+widgets do NOT use this worker anymore: they execute on the real per-lesson
+IPython kernel runtime (US-196/US-201/US-202), which ships genuine scientific
+libraries (numpy, scipy, matplotlib, **real OpenCV (`cv2`)**, torch,
+tensorflow, …).
 
-## Currently implemented
+## No more cv2 shim (US-206)
 
-Constants: `IMREAD_GRAYSCALE`, `IMREAD_COLOR`, `CV_8U`, `CV_64F`.
+Earlier (US-173) this worker carried a hand-written `cv2` *shim* built on
+`scipy.ndimage` + `scikit-image`, because Pyodide has no native OpenCV port.
+That shim has been **removed** in US-206 — real OpenCV is now available in the
+kernel runtime, so the divergent code path is gone. The deleted pieces were:
+the standalone shim source file under `scripts/pyodide/`, its inlined copy and
+loader function in `worker.ts`, and the `'cv2'` preload hook those drove.
 
-Functions:
-- `imread(path, flags=IMREAD_COLOR)` — wraps `skimage.io.imread`; grayscale
-  flag routes through `skimage.color.rgb2gray` and returns `uint8`.
-- `imwrite(path, img)` — wraps `skimage.io.imsave`; returns `True`.
-- `Sobel(src, ddepth, dx, dy, ksize=3)` — wraps `scipy.ndimage.sobel` on
-  `axis=1` (dx=1, dy=0) or `axis=0` (dx=0, dy=1). Other dx/dy combinations
-  raise `ValueError`. `ksize` only supports `3`.
-- `Canny(image, threshold1, threshold2)` — wraps `skimage.feature.canny`;
-  returns a `uint8` mask with values in `{0, 255}`.
+If a lesson needs OpenCV it runs on the kernel via the Code/Sandbox widgets;
+`requiresPackages` (e.g. `['cv2']`) is a **precondition check** against the
+kernel runtime (US-202/US-203), not a request to install or shim anything in
+this worker. The `requiresPackages` field still rides along in the worker's
+`run` / `runWithTests` payload for wire-compat, but the worker ignores it.
 
-Anything not on the list above is NOT implemented.
+### Pixel-value divergence — re-verify lesson tests
 
-## Known divergences from real OpenCV
+The old shim produced *different pixel values* than OpenCV:
 
-These are intentional and pixel-exact comparisons will fail:
-- **Canny Gaussian sigma** — real OpenCV uses a fixed 5×5 Gaussian with
-  sigma ≈ 1.4 plus L2 gradient quantization; `skimage.feature.canny` uses
-  `sigma=1.0` by default and a different aperture.
-- **Sobel scaling** — OpenCV's 3×3 Sobel has `[1, 2, 1]` row weights;
-  `scipy.ndimage.sobel` is a different separable kernel and is NOT
-  identically scaled. Direction/sign match; absolute magnitudes don't.
-- **Sobel ksize** — only `ksize=3` is supported (scipy.ndimage.sobel is a
-  fixed 3×3 kernel; no parameter for larger apertures).
+- **Canny** — the shim used `skimage.feature.canny` (default `sigma=1.0`,
+  different aperture); real OpenCV uses a fixed 5×5 Gaussian (`sigma ≈ 1.4`)
+  with L2 gradient quantization. Edge maps land in different places at the
+  pixel level.
+- **Sobel** — the shim used `scipy.ndimage.sobel` (a different separable
+  kernel); real OpenCV's 3×3 Sobel has `[1, 2, 1]` row weights. Direction
+  matches, absolute magnitudes do not.
 
-Visual results are close enough for teaching the concept, but do not write
-lesson tests that compare pixel values against `cv2` reference output.
+So **moving to real OpenCV changes pixel values**. Any lesson test that
+asserts on `cv2` output must use *structural* checks (dtype, shape, that the
+edge map is binary, that the magnitude max is 255), NOT pixel-exact
+comparisons against the old shim output. The bundled `edge-detection-basics`
+course (`sobel-gradients`, `canny-edges`) already does exactly this — its
+tests check `dtype` / `shape` / `max`, all of which hold under real OpenCV.
 
-## Extending the shim
+## Still-live Pyodide internals
 
-To add a new cv2 function:
-1. Add the implementation to `scripts/pyodide/cv2_shim.py`.
-2. Mirror the change into the `CV2_SHIM_PY` template literal at the top of
-   `src/lib/pyodide/worker.ts` (the worker inlines the source at build time
-   so a Service Worker can run it without filesystem access — same pattern
-   as `PEXP_PY` / `GAUSS_PY`).
-3. No further plumbing needed — the shim is a Python module, so new
-   functions become available the moment they appear in the module.
+The remaining worker routines are lazy-installed on first use:
 
-If the new function pulls in a package not already loaded (`scipy`,
-`scikit-image`), extend the `py.loadPackage([...])` call inside
-`ensureCv2Shim`.
-
-## Consuming from a Code widget
-
-```jsonc
-{
-  "type": "code",
-  "data": {
-    "starterCode": "import cv2\nimg = cv2.Canny(arr, 100, 200)",
-    "requiresPackages": ["cv2"],
-    // ...
-  }
-}
-```
-
-`requiresPackages` is the only signal — when the array contains `'cv2'`, the
-worker awaits `ensureCv2Shim(py)` before exec'ing user code. The flag is
-flat string-array on purpose: a Code widget might want to opt in to other
-heavy packages in the future without growing the API surface.
+- `ensureRunner` — the per-lesson namespace runner (`RUNNER_PY`).
+- `ensureGauss` — GaussDemo's blur routine (loads Pillow).
+- `ensurePexp` — ParametricExplorer's setup/render harness (loads matplotlib).
+- `ensureLivePngCapture` — live matplotlib figure capture for legacy paths.
 
 ## Pointers
 
-- Shim source: `scripts/pyodide/cv2_shim.py`
-- Worker plumbing: `src/lib/pyodide/worker.ts` (`CV2_SHIM_PY`,
-  `ensureCv2Shim`)
-- Client API: `src/lib/pyodide/client.ts` (`run(code, requiresPackages?)`;
-  `runWithTests(code, tests, options?)` where options also carries
-  `captureLiveImage?: boolean` for the US-174 live figure-capture path)
-- Schema: `src/widgets/Code/schema.ts` (`CodeDataSchema.requiresPackages`)
-- Tests: `src/lib/pyodide/runner.test.ts` (`describe('cv2 shim')`)
+- Worker: `src/lib/pyodide/worker.ts`
+- Client API: `src/lib/pyodide/client.ts`
+- Kernel runtime (where real `cv2` lives): `src/lib/kernel/`,
+  `scripts/kernel/kernel_bridge.py`, `scripts/setup-kernel.sh`
+- Kernel end-to-end suite (real `import cv2`):
+  `src/lib/server/kernelE2E.e2e.test.ts`
+- Tests: `src/lib/pyodide/runner.test.ts`
