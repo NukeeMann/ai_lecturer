@@ -606,6 +606,17 @@ export function SandboxEditor({ initial, initialSources, onCancel, onSave }: San
 
         <label style={fieldStyle}>
           <span style={labelStyle}>Required packages (comma-separated)</span>
+          <span
+            data-testid="sandbox-edit-packages-hint"
+            style={{
+              ...subLabelStyle,
+              color: 'var(--text-tertiary)',
+              marginTop: -2,
+            }}
+          >
+            Real pip packages that must be importable in the kernel runtime
+            (e.g. cv2 = OpenCV). Checked before Run; not installed automatically.
+          </span>
           <input
             type="text"
             data-testid="sandbox-edit-packages"
