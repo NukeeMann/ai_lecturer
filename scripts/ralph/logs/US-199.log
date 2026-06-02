@@ -1,0 +1,62 @@
+[2026-06-02T10:39:42+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T10:39:43+0200] I'll start by reading the Ralph instructions and understanding the task context.
+[2026-06-02T10:39:46+0200] Now let me study the existing usePyodide hook and the US-198 routes I need to mirror.
+[2026-06-02T10:40:03+0200] US-198 is marked done but `/api/code/*` routes don't exist. Let me check what US-198 actually delivered.
+[2026-06-02T10:40:39+0200] The US-198 routes were lost in a squash "merge" — the `/api/code/*` route files never landed in `src/`, only references remain in logs/prd. Let me read the US-198 log to recover the intended contract, plus the existing pyodide client shapes.
+[2026-06-02T10:41:01+0200] The US-198 feature work was lost in a bad squash-merge, but the log documents the contract precisely. Since US-199's unit tests use a **mocked transport** and the notes say "pure client API, doesn't touch widgets," I can implement the hook against the documented US-198 contract. Let me read the exact pyodide client shapes I must mirror.
+[2026-06-02T10:41:13+0200] Now let me see how runWithTests builds the test harness and result shape, since US-198 only exposed `/api/code/run`.
+[2026-06-02T10:42:07+0200] Let me check how Code and Sandbox widgets consume the pyodide hook, so the kernel hook is a true drop-in.
+[2026-06-02T10:44:41+0200] I have a complete picture. Let me check the test conventions (vitest) and tsconfig/lint setup before writing.
+[2026-06-02T10:44:46+0200] Now I'll write the implementation. First, the Python test harness module (mirror of `runnerPython.ts`):
+[2026-06-02T10:45:10+0200] Now the main hook client:
+[2026-06-02T10:46:15+0200] Let me verify the `@/` path alias and that `import type` from a `'use client'` module is fine.
+[2026-06-02T10:46:19+0200] Now the unit tests with a mocked transport:
+[2026-06-02T10:47:06+0200] Now let me run the tests and typecheck.
+[2026-06-02T10:47:26+0200] The sentinel extraction was lossy on the trailing newline. Let me make it lossless via index slicing:
+[2026-06-02T10:47:39+0200] All 20 pass. Now typecheck and lint on my files:
+[2026-06-02T10:47:56+0200] Typecheck clean for kernel files, lint clean. Let me confirm full typecheck exit status:
+[2026-06-02T10:48:07+0200] Full typecheck passes (exit 0), tests pass, lint clean. US-199 has no `ui` tag, so no browser testing needed. Now let me update progress.txt and prd.json, then commit. Let me check the progress.txt structure first.
+[2026-06-02T10:48:09+0200] Now let me append my progress entry and a pattern note, then flip prd.json:
+[2026-06-02T10:48:33+0200] Now add a consolidated reusable-pattern bullet (matching the existing US-xxx bullet style at the file's end):
+[2026-06-02T10:48:43+0200] Now flip `passes` to true for US-199 only, then verify it's the only change:
+[2026-06-02T10:48:50+0200] Only the single line changed. Now stage and commit:
+[2026-06-02T10:49:09+0200] Committed and verified. US-199 is complete.
+
+## Summary
+
+Implemented **`useKernel`** — a client hook mirroring `usePyodide`, backed by the US-198 kernel routes, so Code/Sandbox can swap runtimes near drop-in.
+
+**Files added** (no production files modified — pure client API per story notes):
+- `src/lib/kernel/client.ts` — the hook, the framework-free `KernelClient` engine, `KernelStopError`/`KernelRequestError`, `fetchKernelTransport`, and the NDJSON event aggregator.
+- `src/lib/kernel/kernelPython.ts` — the `runWithTests` Python harness.
+- `src/lib/kernel/client.test.ts` — 20 mocked-transport tests.
+
+**How the ACs were met:**
+- **Surface parity:** `status ('idle'|'loading'|'ready'|'error')`, `run(code, requiresPackages?, options?)`, `runWithTests(code, tests, options?)`, `stop(reason?)` → mapped onto `POST /api/code/interrupt`, `reset(sessionKey?)` → `/api/code/reset`.
+- **Identical result shapes:** `client.ts` `import type`s `RunResult`/`RunWithTestsResult`/`TestResult`/`PyodideTestSpec` straight from `src/lib/pyodide/client.ts` and re-exports them, so the two runtimes can't structurally drift. PNG from `display_data` decoded to `Uint8Array` on `result.png`; `traceback`/`errorType`/`errorMessage` carried through.
+- **Streaming:** interim NDJSON `stream` events surfaced incrementally via an `onStream` option.
+- **Stop/timeout parity:** `KernelStopError` is a 1:1 clone of `PyodideStopError` (`'user'|'timeout'`); 30s timeout matches `PYODIDE_EXECUTION_TIMEOUT_MS`; both client abort and server `final.status==='timeout'` reject with `KernelStopError('timeout')`.
+- **Tests:** mocked transport verifies stdout, stderr, image (png), error, and stop/timeout shape parity — 20 passing.
+- **Typecheck:** `tsc --noEmit` exit 0; lint clean on the new files.
+
+**⚠️ Flagged for the human reviewer (also in progress.txt):** the US-198 `/api/code/*` route + mapping source were **lost in the US-198 squash-merge (71f7b36)** and are not in HEAD, even though US-198 is marked `passes:true`. US-199 was scoped as a mocked-transport client API so this doesn't block the hook, but **those routes must be re-created from `scripts/ralph/logs/US-198.log` before Code/Sandbox can actually run on `useKernel`.**
+[2026-06-02T10:49:09+0200] [result success turns=33 cost=$2.7077387500000007] Committed and verified. US-199 is complete.
+
+## Summary
+
+Implemented **`useKernel`** — a client hook mirroring `usePyodide`, backed by the US-198 kernel routes, so Code/Sandbox can swap runtimes near drop-in.
+
+**Files added** (no production files modified — pure client API per story notes):
+- `src/lib/kernel/client.ts` — the hook, the framework-free `KernelClient` engine, `KernelStopError`/`KernelRequestError`, `fetchKernelTransport`, and the NDJSON event aggregator.
+- `src/lib/kernel/kernelPython.ts` — the `runWithTests` Python harness.
+- `src/lib/kernel/client.test.ts` — 20 mocked-transport tests.
+
+**How the ACs were met:**
+- **Surface parity:** `status ('idle'|'loading'|'ready'|'error')`, `run(code, requiresPackages?, options?)`, `runWithTests(code, tests, options?)`, `stop(reason?)` → mapped onto `POST /api/code/interrupt`, `reset(sessionKey?)` → `/api/code/reset`.
+- **Identical result shapes:** `client.ts` `import type`s `RunResult`/`RunWithTestsResult`/`TestResult`/`PyodideTestSpec` straight from `src/lib/pyodide/client.ts` and re-exports them, so the two runtimes can't structurally drift. PNG from `display_data` decoded to `Uint8Array` on `result.png`; `traceback`/`errorType`/`errorMessage` carried through.
+- **Streaming:** interim NDJSON `stream` events surfaced incrementally via an `onStream` option.
+- **Stop/timeout parity:** `KernelStopError` is a 1:1 clone of `PyodideStopError` (`'user'|'timeout'`); 30s timeout matches `PYODIDE_EXECUTION_TIMEOUT_MS`; both client abort and server `final.status==='timeout'` reject with `KernelStopError('timeout')`.
+- **Tests:** mocked transport verifies stdout, stderr, image (png), error, and stop/timeout shape parity — 20 passing.
+- **Typecheck:** `tsc --noEmit` exit 0; lint clean on the new files.
+
+**⚠️ Flagged for the human reviewer (also in progress.txt):** the US-198 `/api/code/*` route + mapping source were **lost in the US-198 squash-merge (71f7b36)** and are not in HEAD, even though US-198 is marked `passes:true`. US-199 was scoped as a mocked-transport client API so this doesn't block the hook, but **those routes must be re-created from `scripts/ralph/logs/US-198.log` before Code/Sandbox can actually run on `useKernel`.**
