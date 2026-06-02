@@ -1,0 +1,58 @@
+[2026-06-02T11:28:40+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T11:28:42+0200] I'll start by reading the Ralph instructions and understanding the task context.
+[2026-06-02T11:28:46+0200] Now let me look at the US-202 CodeWidget migration as a reference pattern, plus the kernel client and CodeRunner.
+[2026-06-02T11:28:49+0200] Now let me look at the Sandbox test, the CodeRunner's onStop prop, and how CodeWidget's test mocks the kernel.
+[2026-06-02T11:28:57+0200] Let me check if there's a Sandbox test and read the relevant parts of CodeRunner.
+[2026-06-02T11:29:11+0200] Let me read CodeRunner's run handling and how it uses `runRequiresPackages`.
+[2026-06-02T11:29:42+0200] Let me check what the kernel run route does with `requiresPackages` to ensure consistency with the precondition semantics.
+[2026-06-02T11:30:19+0200] Now I have a complete picture. Let me write the migrated SandboxWidget following the US-202 pattern.
+[2026-06-02T11:30:50+0200] Now let me run typecheck and lint.
+[2026-06-02T11:31:05+0200] Typecheck and lint pass. Let me check for any existing tests touching Sandbox and run the relevant test suites.
+[2026-06-02T11:31:18+0200] All green. Let me add a focused test for the migration, mirroring the US-202 CodeWidget test approach. First, the Sandbox schema.
+[2026-06-02T11:31:44+0200] All 4 tests pass. Let me re-run typecheck/lint including the test file.
+[2026-06-02T11:31:53+0200] Now the browser verification (ui story). Let me set up the kernel shim and a throwaway Sandbox page, then start the dev server.
+[2026-06-02T11:32:18+0200] Server is ready. Let me write the playwright test.
+[2026-06-02T11:32:59+0200] The runner inlines my code into an async IIFE — it doesn't call `module.exports`. Let me rewrite in the expected raw style.
+[2026-06-02T11:34:00+0200] Strong results — but the live figure didn't swap to a blob URL. Let me check the server log for the run.
+[2026-06-02T11:34:26+0200] Let me check whether switching the backend after the figure is created loses it (the harness calls `use('AGG')` after user code).
+[2026-06-02T11:34:39+0200] The shim's anaconda matplotlib defaults to the Qt backend, which crashes headless — a local-env artifact, not a code defect. The real US-196 runtime is headless. Let me restart the dev server with `MPLBACKEND=Agg` so user-code's `import matplotlib.pyplot` uses a headless backend.
+[2026-06-02T11:35:38+0200] All acceptance criteria verified in browser: kernel free-run, Stop button mid-run, live blob figure, missing-package precondition, zero console errors. Let me confirm the screenshot visually.
+[2026-06-02T11:35:42+0200] The live sine figure rendered in the output media slot — confirming the kernel free-run with live image capture works. Now let me clean up the throwaway page, kill the dev server, then commit.
+[2026-06-02T11:35:49+0200] Now let me update prd.json and progress.txt. Let me find the US-203 entry.
+[2026-06-02T11:36:00+0200] Now append to progress.txt:
+[2026-06-02T11:36:22+0200] Let me run a final verification of typecheck + the relevant tests before committing.
+[2026-06-02T11:36:35+0200] All green (62 tests, typecheck clean). Now commit.
+[2026-06-02T11:36:48+0200] US-203 is complete and committed. `passes: true` is set for US-203 in the same commit (`cc182e9`).
+
+## Summary
+
+Migrated `src/widgets/Sandbox/SandboxWidget.tsx` from `usePyodide` to `useKernel`, satisfying every acceptance criterion:
+
+- **`useKernel` + free-run on kernel session + Stop** — derives a `KernelSessionKey` from `progressKey` (scratch fallback for previews). Free-run executes on the real per-lesson IPython kernel; `onStop={stop}` is passed to `CodeRunner` so the Stop button aborts the Sandbox's own in-flight request (each `useKernel` owns its own AbortController). `idle` is treated as runnable.
+- **Live image preserved + encouragement unchanged** — the live-capture ▶ Run still captures the matplotlib figure as a PNG and swaps the placeholder for a blob URL; encouragement markup is untouched.
+- **`requiresPackages` as precondition** — same semantics as US-202: probes via `checkPackages` before running, shows an actionable `data-sandbox-missing-packages` Callout and aborts without running if anything is missing (no pip install).
+- **`KernelStopError` replaces `PyodideStopError`** — stop/timeout now surfaces a `data-sandbox-stop` banner.
+
+**Verification:**
+- Typecheck: clean
+- Tests: 62 passed (added `SandboxWidget.test.tsx` — 4 tests: kernel free-run + blob swap, precondition abort, stop banner, encouragement)
+- Browser (playwright-skill): kernel free-run, Stop button mid-run, live sine figure as a `blob:` URL, `torch` missing-package banner, **0 console errors** (screenshot confirmed)
+
+One environment note captured in progress.txt: local browser-verify needed `MPLBACKEND=Agg` because the anaconda shim's matplotlib defaults to a Qt backend that crashes headless — a shim-only artifact, not a code defect (the real US-196 runtime is headless).
+[2026-06-02T11:36:45+0200] [result success turns=52 cost=$3.168354749999999] US-203 is complete and committed. `passes: true` is set for US-203 in the same commit (`cc182e9`).
+
+## Summary
+
+Migrated `src/widgets/Sandbox/SandboxWidget.tsx` from `usePyodide` to `useKernel`, satisfying every acceptance criterion:
+
+- **`useKernel` + free-run on kernel session + Stop** — derives a `KernelSessionKey` from `progressKey` (scratch fallback for previews). Free-run executes on the real per-lesson IPython kernel; `onStop={stop}` is passed to `CodeRunner` so the Stop button aborts the Sandbox's own in-flight request (each `useKernel` owns its own AbortController). `idle` is treated as runnable.
+- **Live image preserved + encouragement unchanged** — the live-capture ▶ Run still captures the matplotlib figure as a PNG and swaps the placeholder for a blob URL; encouragement markup is untouched.
+- **`requiresPackages` as precondition** — same semantics as US-202: probes via `checkPackages` before running, shows an actionable `data-sandbox-missing-packages` Callout and aborts without running if anything is missing (no pip install).
+- **`KernelStopError` replaces `PyodideStopError`** — stop/timeout now surfaces a `data-sandbox-stop` banner.
+
+**Verification:**
+- Typecheck: clean
+- Tests: 62 passed (added `SandboxWidget.test.tsx` — 4 tests: kernel free-run + blob swap, precondition abort, stop banner, encouragement)
+- Browser (playwright-skill): kernel free-run, Stop button mid-run, live sine figure as a `blob:` URL, `torch` missing-package banner, **0 console errors** (screenshot confirmed)
+
+One environment note captured in progress.txt: local browser-verify needed `MPLBACKEND=Agg` because the anaconda shim's matplotlib defaults to a Qt backend that crashes headless — a shim-only artifact, not a code defect (the real US-196 runtime is headless).
