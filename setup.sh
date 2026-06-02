@@ -154,6 +154,13 @@ if [[ "${SKIP_MEDIA}" -eq 0 ]]; then
   else
     warn "setup-tts.sh zakończony błędem. Sprawdź log i uruchom ponownie ręcznie."
   fi
+
+  info "Uruchamiam setup-kernel.sh (Jupyter venv + ML/CV libs ~1GB CPU — to potrwa)…"
+  if bash scripts/setup-kernel.sh; then
+    info "Kernel runtime OK. GPU opt-in: bash scripts/setup-kernel-cuda.sh"
+  else
+    warn "setup-kernel.sh zakończony błędem. Sprawdź log i uruchom ponownie ręcznie."
+  fi
 else
   printf "${GRAY}"'Pomijam TTS/STT (--skip-media).'"${NC}"'\n'
 fi

@@ -153,6 +153,12 @@ if (-not $SkipMedia) {
                 if ($ttsExit -ne 0) {
                     Write-Host "setup-tts.sh zakończony błędem ($ttsExit). Sprawdź log i uruchom ponownie." -ForegroundColor Yellow
                 }
+                Write-Host "Uruchamiam setup-kernel.sh (Jupyter venv + ML/CV libs ~1GB CPU — to potrwa)..."
+                wsl bash -lc "cd '$repoLinux' && bash scripts/setup-kernel.sh"
+                $kernelExit = $LASTEXITCODE
+                if ($kernelExit -ne 0) {
+                    Write-Host "setup-kernel.sh zakończony błędem ($kernelExit). Sprawdź log i uruchom ponownie. GPU opt-in: bash scripts/setup-kernel-cuda.sh" -ForegroundColor Yellow
+                }
             }
         }
     }
