@@ -10,7 +10,12 @@ import type {
   PyodideInputFile,
 } from '@/lib/pyodide/client';
 
-import { KERNEL_TEST_RESULT_MARKER, buildTestHarness } from './kernelPython';
+import {
+  KERNEL_PACKAGE_CHECK_MARKER,
+  KERNEL_TEST_RESULT_MARKER,
+  buildPackageCheck,
+  buildTestHarness,
+} from './kernelPython';
 
 /**
  * Client hook mirroring `usePyodide` (src/lib/pyodide/client.ts) but backed by
@@ -164,6 +169,13 @@ export interface UseKernelReturn {
     tests: PyodideTestSpec[],
     options?: KernelRunWithTestsOptions,
   ) => Promise<RunWithTestsResult>;
+  /**
+   * Precondition check: return the subset of `packages` (by import name) that
+   * are NOT importable in the kernel runtime. An empty result means all are
+   * present. Probes via `importlib.util.find_spec` — it never installs anything
+   * (US-202).
+   */
+  checkPackages: (packages: string[]) => Promise<string[]>;
   /** Interrupt the in-flight execution (mapped onto the kernel SIGINT). */
   stop: (reason?: KernelStopReason) => void;
   /** Clear the session namespace; defaults to this hook's session. */
@@ -278,6 +290,24 @@ export function extractHarnessPayload(stdout: string): {
   const after = lineEnd < stdout.length ? stdout.slice(lineEnd + 1) : '';
   const cleaned = stdout.slice(0, lineStart) + prefix + after;
   return { stdout: cleaned, payload };
+}
+
+/**
+ * Pull the package-check sentinel line out of stdout and decode the JSON list
+ * of missing import names. Returns `[]` when the marker is absent or unparsable.
+ */
+export function parsePackageCheck(stdout: string): string[] {
+  const idx = stdout.indexOf(KERNEL_PACKAGE_CHECK_MARKER);
+  if (idx < 0) return [];
+  let lineEnd = stdout.indexOf('\n', idx);
+  if (lineEnd < 0) lineEnd = stdout.length;
+  const json = stdout.slice(idx + KERNEL_PACKAGE_CHECK_MARKER.length, lineEnd).trim();
+  try {
+    const arr = JSON.parse(json) as unknown;
+    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -410,6 +440,19 @@ export class KernelClient {
     return result;
   };
 
+  /**
+   * Probe whether the named packages are importable in the runtime and return
+   * the missing ones (US-202). Runs a side-effect-free `find_spec` cell — it
+   * never installs anything. Returns `[]` for an empty package list without
+   * touching the kernel.
+   */
+  checkPackages = async (packages: string[]): Promise<string[]> => {
+    const list = (packages ?? []).filter((p) => typeof p === 'string' && p.length > 0);
+    if (list.length === 0) return [];
+    const agg = await this.execute(buildPackageCheck(list), undefined, undefined);
+    return parsePackageCheck(agg.stdout);
+  };
+
   /** Map `stop` onto the kernel interrupt and abort the in-flight request. */
   stop = (reason: KernelStopReason = 'user'): void => {
     this.abortReason = reason;
@@ -539,6 +582,10 @@ export function useKernel(
     ) => client.runWithTests(code, tests, options),
     [client],
   );
+  const checkPackages = useCallback(
+    (packages: string[]) => client.checkPackages(packages),
+    [client],
+  );
   const stop = useCallback(
     (reason?: KernelStopReason) => client.stop(reason),
     [client],
@@ -548,7 +595,7 @@ export function useKernel(
     [client],
   );
 
-  return { status, run, runWithTests, stop, reset };
+  return { status, run, runWithTests, checkPackages, stop, reset };
 }
 
 // ---------------------------------------------------------------------------

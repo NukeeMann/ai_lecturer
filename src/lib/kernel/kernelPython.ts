@@ -29,6 +29,49 @@
 /** Sentinel prefix the harness prints its base64 JSON payload behind. */
 export const KERNEL_TEST_RESULT_MARKER = '__AI_KERNEL_TEST_RESULTS__:';
 
+/** Sentinel prefix the package-precondition probe prints its JSON list behind. */
+export const KERNEL_PACKAGE_CHECK_MARKER = '__AI_KERNEL_MISSING_PACKAGES__:';
+
+/**
+ * Build a Python cell that probes whether each named package is importable in
+ * the kernel runtime WITHOUT importing it (uses `importlib.util.find_spec`, so
+ * no heavy side-effects) and prints the list of missing import names behind
+ * `KERNEL_PACKAGE_CHECK_MARKER`. Used by Code widget Submit/Run as a precondition
+ * check (US-202): `requiresPackages` is a declaration that these packages must
+ * already be installed (via the US-196 setup), NOT a request to pip-install them
+ * at run time. The probe runs in a throwaway-named scope and cleans up after
+ * itself so it never pollutes the lesson namespace.
+ */
+export function buildPackageCheck(packages: string[]): string {
+  const b64 = encodeBase64Utf8(JSON.stringify(packages ?? []));
+  // A declared name counts as present if it is importable (import name, e.g.
+  // `cv2`, `numpy`) OR an installed distribution (dist name, e.g. `Pillow`,
+  // `scikit-learn`) — lessons declare either, so accept both before flagging
+  // a package missing.
+  return `
+import importlib.util as __ai_ilu, importlib.metadata as __ai_im, json as __ai_pjson, base64 as __ai_pb64
+__ai_pkgs = __ai_pjson.loads(__ai_pb64.b64decode('${b64}').decode('utf-8'))
+__ai_missing = []
+for __ai_pkg in __ai_pkgs:
+    __ai_found = False
+    try:
+        __ai_found = __ai_ilu.find_spec(__ai_pkg) is not None
+    except Exception:
+        __ai_found = False
+    if not __ai_found:
+        try:
+            __ai_im.distribution(__ai_pkg)
+            __ai_found = True
+        except Exception:
+            __ai_found = False
+    if not __ai_found:
+        __ai_missing.append(__ai_pkg)
+print('${KERNEL_PACKAGE_CHECK_MARKER}' + __ai_pjson.dumps(__ai_missing))
+for __ai_name in ('__ai_ilu', '__ai_im', '__ai_pjson', '__ai_pb64', '__ai_pkgs', '__ai_missing', '__ai_pkg', '__ai_found', '__ai_name'):
+    globals().pop(__ai_name, None)
+`;
+}
+
 /**
  * Cell that resets the persistent per-lesson namespace in place (parity with
  * the worker's `__ai_reset_namespace`). Clearing in place — rather than

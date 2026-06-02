@@ -19,11 +19,13 @@ import { python } from '@codemirror/lang-python';
 import { Callout } from '@/components/Callout';
 import { Confetti } from '@/components/Confetti';
 import {
-  PyodideStopError,
-  usePyodide,
+  KernelStopError,
+  useKernel,
+  type KernelSessionKey,
+  type PyodideInputFile,
   type RunWithTestsResult,
   type TestResult,
-} from '@/lib/pyodide/client';
+} from '@/lib/kernel/client';
 
 import { IORow } from '../common/IOPanel';
 import {
@@ -34,7 +36,14 @@ import {
 } from './CodeRunner';
 import type { CodeData, CodeTest } from './schema';
 import { inputMountName } from './schema';
-import type { PyodideInputFile } from '@/lib/pyodide/client';
+
+/** Session used when the widget is rendered without a lesson `progressKey`
+ *  (e.g. previews / the CodeRunner test shell). Mirrors CodeRunner's fallback. */
+const SCRATCH_SESSION: KernelSessionKey = {
+  courseSlug: 'scratch',
+  lessonSlug: 'scratch',
+  sectionId: 'scratch',
+};
 
 export interface CodeWidgetProps {
   data: CodeData;
@@ -540,7 +549,21 @@ export function CodeWidget({
   onComplete,
   alreadyCompleted,
 }: CodeWidgetProps) {
-  const { status, runWithTests } = usePyodide();
+  // Submit + Run execute on the real per-lesson IPython kernel (US-202).
+  // Session identity comes from `progressKey`; previews without one fall back
+  // to a scratch session (parity with CodeRunner).
+  const session = useMemo<KernelSessionKey>(
+    () =>
+      progressKey
+        ? {
+            courseSlug: progressKey.courseSlug,
+            lessonSlug: progressKey.lessonSlug,
+            sectionId: progressKey.sectionId,
+          }
+        : SCRATCH_SESSION,
+    [progressKey],
+  );
+  const { status, runWithTests, checkPackages, stop } = useKernel(session);
 
   const [code, setCode] = useState<string>(initialCode ?? data.starterCode);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
@@ -553,6 +576,11 @@ export function CodeWidget({
   const [outputCollapsed, setOutputCollapsed] = useState(false);
   const [tracebackOpen, setTracebackOpen] = useState(false);
   const [submission, setSubmission] = useState<SubmissionState>('idle');
+  // Import names from `requiresPackages` that are NOT present in the runtime —
+  // surfaced as an actionable "run setup" message (US-202 precondition check).
+  const [missingPackages, setMissingPackages] = useState<string[]>([]);
+  // Set when a kernel run is stopped by the user or hits the 30s timeout.
+  const [stopReason, setStopReason] = useState<'user' | 'timeout' | null>(null);
   const [solutionOpen, setSolutionOpen] = useState(false);
   const [containerCollapsed, setContainerCollapsed] = useState(true);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
@@ -628,18 +656,39 @@ export function CodeWidget({
     setExpanded((prev) => ({ ...prev, [i]: !prev[i] }));
   }
 
+  // Precondition check (US-202): `requiresPackages` declares packages that must
+  // already be installed in the runtime (via the US-196 setup). We verify they
+  // are importable BEFORE running — we never pip-install during a run. Returns
+  // true when it is safe to proceed.
+  const ensurePackages = useCallback(async (): Promise<boolean> => {
+    const pkgs = data.requiresPackages;
+    if (!pkgs || pkgs.length === 0) {
+      setMissingPackages([]);
+      return true;
+    }
+    const missing = await checkPackages(pkgs);
+    setMissingPackages(missing);
+    return missing.length === 0;
+  }, [data.requiresPackages, checkPackages]);
+
   const handleSubmit = useCallback(async () => {
-    if (status !== 'ready') return;
+    if (status !== 'ready' && status !== 'idle') return;
     if (submission === 'submitting') return;
     setSubmission('submitting');
+    setStopReason(null);
     setOutputCollapsed(false);
     setTracebackOpen(false);
     try {
+      // Precondition: bail out with an actionable message if a declared
+      // package is missing — without ever installing it at run time.
+      if (!(await ensurePackages())) {
+        setSubmission('idle');
+        return;
+      }
       const result: RunWithTestsResult = await runWithTests(
         code,
         data.tests.map((t) => ({ name: t.name, body: t.body })),
         {
-          requiresPackages: data.requiresPackages,
           captureLiveImage: liveCaptureEnabled || undefined,
           inputs: workerInputs.length > 0 ? workerInputs : undefined,
         },
@@ -670,10 +719,10 @@ export function CodeWidget({
         setSubmission('submitted-fail');
       }
     } catch (err) {
-      if (err instanceof PyodideStopError) {
-        // CodeRunner output panel surfaces the restart Callout. Reset our
-        // local submission state so the user can press Submit again on the
-        // fresh worker.
+      if (err instanceof KernelStopError) {
+        // User-stop or 30s timeout: the kernel stays alive. Surface the stop
+        // banner and reset our local submission state so the user can retry.
+        setStopReason(err.reason);
         setStdout('');
         setStderr('');
         setTraceback(undefined);
@@ -702,7 +751,7 @@ export function CodeWidget({
   }, [
     code,
     data.tests,
-    data.requiresPackages,
+    ensurePackages,
     runWithTests,
     status,
     submission,
@@ -717,14 +766,18 @@ export function CodeWidget({
   // tests, just runs user code through the live-capture worker path so the
   // matplotlib figure swaps the placeholder image.
   const handleLiveRun = useCallback(async () => {
-    if (status !== 'ready') return;
+    if (status !== 'ready' && status !== 'idle') return;
     if (submission === 'submitting') return;
     setSubmission('submitting');
+    setStopReason(null);
     setOutputCollapsed(false);
     setTracebackOpen(false);
     try {
+      if (!(await ensurePackages())) {
+        setSubmission('idle');
+        return;
+      }
       const result: RunWithTestsResult = await runWithTests(code, [], {
-        requiresPackages: data.requiresPackages,
         captureLiveImage: true,
         inputs: workerInputs.length > 0 ? workerInputs : undefined,
       });
@@ -740,7 +793,8 @@ export function CodeWidget({
       setResults(null);
       setSubmission(result.traceback ? 'submitted-fail' : 'idle');
     } catch (err) {
-      if (err instanceof PyodideStopError) {
+      if (err instanceof KernelStopError) {
+        setStopReason(err.reason);
         setSubmission('idle');
         return;
       }
@@ -754,7 +808,7 @@ export function CodeWidget({
     }
   }, [
     code,
-    data.requiresPackages,
+    ensurePackages,
     runWithTests,
     status,
     submission,
@@ -772,11 +826,15 @@ export function CodeWidget({
     setExpanded({});
     setSubmission('idle');
     setTracebackOpen(false);
+    setMissingPackages([]);
+    setStopReason(null);
     setLivePng(null);
   }, [setLivePng]);
 
-  const submitDisabled =
-    status !== 'ready' || submission === 'submitting';
+  // The kernel is runnable from `idle` (first run lazily boots it) as well as
+  // `ready`; only a mid-spawn `loading` / hard `error` blocks a fresh run.
+  const runnable = status === 'ready' || status === 'idle';
+  const submitDisabled = !runnable || submission === 'submitting';
 
   const primaryAction = useMemo(
     () => ({
@@ -793,8 +851,7 @@ export function CodeWidget({
     [submission, handleSubmit, submitDisabled],
   );
 
-  const liveRunDisabled =
-    status !== 'ready' || submission === 'submitting';
+  const liveRunDisabled = !runnable || submission === 'submitting';
   const liveRunAction = useMemo(
     () => ({
       label: submission === 'submitting' ? 'Running…' : 'Run',
@@ -833,6 +890,32 @@ export function CodeWidget({
 
   const extraPanel = (
     <>
+      {missingPackages.length > 0 && (
+        <div
+          data-codewidget-missing-packages
+          data-packages={missingPackages.join(',')}
+          style={panelWrapStyle}
+        >
+          <Callout tone="warning">
+            {missingPackages.length === 1
+              ? `Missing package: ${missingPackages[0]} — run setup to install it before submitting.`
+              : `Missing packages: ${missingPackages.join(', ')} — run setup to install them before submitting.`}
+          </Callout>
+        </div>
+      )}
+      {stopReason && (
+        <div
+          data-codewidget-stop
+          data-stop-reason={stopReason}
+          style={panelWrapStyle}
+        >
+          <Callout tone="warning">
+            {stopReason === 'timeout'
+              ? 'Execution timed out after 30s. The kernel was interrupted — try again.'
+              : 'Execution stopped.'}
+          </Callout>
+        </div>
+      )}
       <div
         data-codewidget-tests
         data-container-collapsed={containerCollapsed ? 'true' : 'false'}
@@ -1035,6 +1118,7 @@ export function CodeWidget({
         actionRunning={submission === 'submitting'}
         runRequiresPackages={data.requiresPackages}
         runInputs={workerInputs.length > 0 ? workerInputs : undefined}
+        onStop={stop}
       />
     </div>
   );

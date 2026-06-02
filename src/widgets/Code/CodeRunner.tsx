@@ -101,6 +101,15 @@ export interface CodeRunnerProps {
    * plain Run sees the same files as Submit.
    */
   runInputs?: PyodideInputFile[];
+  /**
+   * Stop handler for the PARENT's in-flight action (e.g. Code widget Submit on
+   * the kernel). Unlike the old singleton Pyodide worker, each `useKernel`
+   * owns its own abort controller, so when the parent drives execution the Stop
+   * button must call the parent's `stop` — not this runner's — to actually
+   * abort that request (US-202). Ignored while this runner's own ▶ Run is
+   * executing.
+   */
+  onStop?: (reason: PyodideStopReason) => void;
 }
 
 const FONT_SIZE = 'calc(13px * var(--text-scale, 1))';
@@ -599,6 +608,7 @@ export function CodeRunner({
   outputMediaSlot,
   runRequiresPackages,
   runInputs,
+  onStop,
 }: CodeRunnerProps) {
   // The inline ▶ Run / Mod-Enter path runs on the real per-lesson kernel
   // (US-201). Session identity comes from `progressKey`; the test shell renders
@@ -696,20 +706,31 @@ export function CodeRunner({
     }
   }, [running]);
 
-  const handleStop = useCallback(() => {
-    stop('user');
-  }, [stop]);
-
   // Mirror the running flags into refs so the restart-event subscriber
   // (set up once on mount) reads the latest values.
   const runningRef = useRef(running);
   const actionRunningRef = useRef(actionRunning);
+  const onStopRef = useRef(onStop);
   useEffect(() => {
     runningRef.current = running;
   }, [running]);
   useEffect(() => {
     actionRunningRef.current = actionRunning;
   }, [actionRunning]);
+  useEffect(() => {
+    onStopRef.current = onStop;
+  }, [onStop]);
+
+  const handleStop = useCallback(() => {
+    // This runner's own ▶ Run takes priority; otherwise the in-flight work
+    // belongs to the parent's action (e.g. Code Submit), so delegate to its
+    // stop when provided. Falls back to interrupting the shared kernel.
+    if (runningRef.current || !onStopRef.current) {
+      stop('user');
+      return;
+    }
+    onStopRef.current('user');
+  }, [stop]);
 
   // Subscribe to global restart events so the Callout shows even when the
   // in-flight call belongs to the parent (e.g. Code widget Submit).
