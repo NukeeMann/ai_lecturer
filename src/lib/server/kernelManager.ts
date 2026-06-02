@@ -71,6 +71,8 @@ export interface KernelExecuteResult {
   result: string | null;
   /** Populated when `status === 'error'`. */
   error: KernelError | null;
+  /** Base64 PNG images captured from display_data / execute_result (US-201). */
+  images: string[];
 }
 
 export interface KernelManagerOptions {
@@ -120,6 +122,7 @@ interface BridgeMessage {
   stdout?: string;
   stderr?: string;
   result?: string | null;
+  images?: string[];
 }
 
 /** Sentinel thrown internally when a `sendAndWait` exceeds its deadline. */
@@ -335,6 +338,7 @@ class KernelSession {
             stderr: '',
             result: null,
             error: null,
+            images: [],
           };
         }
         throw err;
@@ -346,6 +350,7 @@ class KernelSession {
         stderr: reply.stderr ?? '',
         result: reply.result ?? null,
         error: (reply as { error?: KernelError | null }).error ?? null,
+        images: reply.images ?? [],
       };
     });
   }
@@ -364,6 +369,16 @@ class KernelSession {
       await this.ready;
       const id = ++this.cmdSeq;
       await this.sendAndWait({ type: 'restart', id }, this.opts.startupTimeoutMs);
+      this.resetIdleTimer();
+    });
+  }
+
+  /** Clear the kernel's user namespace in place (no restart). */
+  async reset(): Promise<void> {
+    return this.runExclusive(async () => {
+      await this.ready;
+      const id = ++this.cmdSeq;
+      await this.sendAndWait({ type: 'reset', id }, this.opts.executionTimeoutMs);
       this.resetIdleTimer();
     });
   }
@@ -513,6 +528,13 @@ export class KernelSessionManager {
   async restart(courseSlug: string, lessonSlug: string): Promise<void> {
     const session = await this.getOrCreate(courseSlug, lessonSlug);
     return session.restart();
+  }
+
+  /** Clear the namespace of an existing session (no-op if none is running). */
+  async reset(courseSlug: string, lessonSlug: string): Promise<void> {
+    const session = this.sessions.get(sessionKey(courseSlug, lessonSlug));
+    if (!session || !session.isAlive) return;
+    return session.reset();
   }
 
   async shutdown(courseSlug: string, lessonSlug: string): Promise<void> {

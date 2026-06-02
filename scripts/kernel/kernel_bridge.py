@@ -76,16 +76,18 @@ def make_kernel_manager():
 def drain_iopub(kc, msg_id, ready_timeout):
     """Pump the iopub channel for `msg_id` until the kernel returns to idle.
 
-    Returns (stdout, stderr, result, error). `error` is None on success or a
-    dict {ename, evalue, traceback}. We rely on the terminal `status: idle`
-    message (whose parent is our execute request) to know the cell finished —
-    this is the canonical Jupyter completion signal and works for code that
-    produces no output at all.
+    Returns (stdout, stderr, result, error, images). `error` is None on success
+    or a dict {ename, evalue, traceback}. `images` is a list of base64 PNG
+    strings captured from `display_data` / `execute_result` (US-201 inline
+    image output). We rely on the terminal `status: idle` message (whose parent
+    is our execute request) to know the cell finished — this is the canonical
+    Jupyter completion signal and works for code that produces no output at all.
     """
     stdout_parts = []
     stderr_parts = []
     result = None
     error = None
+    images = []
     while True:
         try:
             msg = kc.get_iopub_msg(timeout=ready_timeout)
@@ -104,6 +106,10 @@ def drain_iopub(kc, msg_id, ready_timeout):
                 stdout_parts.append(content.get("text", ""))
         elif mtype in ("execute_result", "display_data"):
             data = content.get("data", {})
+            # iopub already carries image/png as a base64 string.
+            png = data.get("image/png")
+            if png:
+                images.append(png)
             if "text/plain" in data:
                 result = data["text/plain"]
         elif mtype == "error":
@@ -114,13 +120,13 @@ def drain_iopub(kc, msg_id, ready_timeout):
             }
         elif mtype == "status" and content.get("execution_state") == "idle":
             break
-    return "".join(stdout_parts), "".join(stderr_parts), result, error
+    return "".join(stdout_parts), "".join(stderr_parts), result, error, images
 
 
 def run_execute(kc, cmd):
     code = cmd.get("code", "")
     msg_id = kc.execute(code, store_history=False, allow_stdin=False)
-    stdout, stderr, result, error = drain_iopub(kc, msg_id, ready_timeout=1.0)
+    stdout, stderr, result, error, images = drain_iopub(kc, msg_id, ready_timeout=1.0)
     emit(
         {
             "type": "execute_reply",
@@ -130,8 +136,18 @@ def run_execute(kc, cmd):
             "stderr": stderr,
             "result": result,
             "error": error,
+            "images": images,
         }
     )
+
+
+def run_reset(kc, cmd):
+    """Clear the kernel's user namespace in place (no restart). Mirrors the
+    Pyodide `resetNamespace` path: names defined by previous cells are gone,
+    but the kernel process (and its loaded libraries) stays warm."""
+    msg_id = kc.execute("get_ipython().reset(new_session=False)", store_history=False, allow_stdin=False)
+    drain_iopub(kc, msg_id, ready_timeout=1.0)
+    emit({"type": "reset_reply", "id": cmd.get("id")})
 
 
 def main():
@@ -174,7 +190,7 @@ def main():
                     km.interrupt_kernel()
                 except Exception:
                     pass
-            elif ctype in ("execute", "restart", "shutdown"):
+            elif ctype in ("execute", "restart", "shutdown", "reset"):
                 work.put(cmd)
         # stdin closed -> parent is gone; ask the loop to shut down.
         work.put({"type": "shutdown", "id": None, "_eof": True})
@@ -203,6 +219,9 @@ def main():
             kc2.wait_for_ready(timeout=ready_timeout)
             client_box["kc"] = kc2
             emit({"type": "restart_reply", "id": cmd.get("id")})
+            continue
+        if ctype == "reset":
+            run_reset(client_box["kc"], cmd)
             continue
         if ctype == "execute":
             run_execute(client_box["kc"], cmd)

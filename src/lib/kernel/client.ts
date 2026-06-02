@@ -139,6 +139,12 @@ export interface KernelRunOptions {
   inputs?: PyodideInputFile[];
   /** Incremental stdout/stderr as it streams, where the UI supports it. */
   onStream?: (chunk: KernelStreamChunk) => void;
+  /**
+   * Base64 PNG images from `display_data` / `execute_result`, delivered once
+   * the run completes. Used by the Code editor to render inline image output
+   * (US-201). Empty runs never invoke it.
+   */
+  onImages?: (imagesB64: string[]) => void;
 }
 
 export interface KernelRunWithTestsOptions extends KernelRunOptions {
@@ -370,6 +376,9 @@ export class KernelClient {
     options?: KernelRunOptions,
   ): Promise<RunResult> => {
     const agg = await this.execute(code, requiresPackages, options);
+    if (options?.onImages && agg.images.length > 0) {
+      options.onImages(agg.images);
+    }
     return toRunResult(agg);
   };
 
