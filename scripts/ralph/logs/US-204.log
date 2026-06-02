@@ -1,0 +1,47 @@
+[2026-06-02T11:37:16+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T11:37:21+0200] I have ~50 minutes. Let me read the files I need to change.
+[2026-06-02T11:37:39+0200] Now I understand the scope. Let me check the kernel doc reference for the right framing.
+[2026-06-02T11:37:45+0200] Now let me make the edits. Starting with the schema comments:
+[2026-06-02T11:37:58+0200] Now update the SandboxEditor help text. Let me update the label to clarify real packages:
+[2026-06-02T11:38:08+0200] Now the samples. Update the Code/sample.ts comment that references the Pyodide worker/VFS:
+[2026-06-02T11:38:20+0200] Now the Sandbox/sample.ts comment that references the worker:
+[2026-06-02T11:38:29+0200] Samples already use real-OpenCV-valid API (imread/blur/IMREAD_GRAYSCALE). Now run quality checks:
+[2026-06-02T11:38:44+0200] Typecheck passes. Now run tests for the affected widgets and schemas:
+[2026-06-02T11:38:49+0200] Tests pass. Now lint:
+[2026-06-02T11:38:59+0200] Lint clean. Now browser verification (ui tag). Let me detect dev servers and find how SandboxEditor mounts:
+[2026-06-02T11:39:09+0200] A server is already on 3000 but that's likely another worktree. I'll mount SandboxEditor on a throwaway page in my worktree and run my own dev server. Let me create the test page:
+[2026-06-02T11:39:17+0200] Now write the playwright test:
+[2026-06-02T11:39:37+0200] Verification passed: hint text updated, requiresPackages round-trips correctly, no console errors. Now clean up throwaway artifacts:
+[2026-06-02T11:39:44+0200] Now update prd.json. Let me find the US-204 entry:
+[2026-06-02T11:39:51+0200] Now append progress.txt:
+[2026-06-02T11:40:15+0200] Committed. Now stop the dev server I started by its PID:
+[2026-06-02T11:40:21+0200] US-204 complete and committed (`ccb7c68`, `passes: true` flipped for US-204 only).
+
+**What I did** — a pure authoring/schema/docs change (no runtime behavior touched; the actual cv2-shim removal is US-206):
+
+- **Schema comments** (`Code/schema.ts`, `Sandbox/schema.ts`): replaced the `'cv2' resolves to a shim` note with one describing `requiresPackages` as real pip packages importable in the kernel runtime (cv2 = real OpenCV), checked as a precondition (US-202/203), not installed at run time.
+- **`SandboxEditor.tsx`**: added a helper hint line under the "Required packages" label stating the real-package semantics. The field still round-trips (comma-split parse → `string[]`, unchanged).
+- **Samples** (`Code/sample.ts`, `Sandbox/sample.ts`): updated comments from "Pyodide's VFS / mounted by the worker" → "kernel runtime's filesystem"; clarified cv2 = real OpenCV. The sample API (`cv2.imread/blur`, matplotlib) was already valid against real OpenCV, so no code rewrites were needed.
+
+**Quality checks**
+- Typecheck: clean
+- Tests: Sandbox + Code + schemas = 172 passed
+- ESLint: clean on all 5 changed files
+- Browser verify (playwright-skill): mounted SandboxEditor on a throwaway page in this worktree, confirmed the new hint renders and `cv2, matplotlib, numpy` → `requiresPackages: ["cv2","matplotlib","numpy"]` on Save, zero console errors. Throwaway page + temp file removed before commit.
+
+Dev server (PID 29178) stopped after the commit landed.
+[2026-06-02T11:40:22+0200] [result success turns=35 cost=$1.2425542500000004] US-204 complete and committed (`ccb7c68`, `passes: true` flipped for US-204 only).
+
+**What I did** — a pure authoring/schema/docs change (no runtime behavior touched; the actual cv2-shim removal is US-206):
+
+- **Schema comments** (`Code/schema.ts`, `Sandbox/schema.ts`): replaced the `'cv2' resolves to a shim` note with one describing `requiresPackages` as real pip packages importable in the kernel runtime (cv2 = real OpenCV), checked as a precondition (US-202/203), not installed at run time.
+- **`SandboxEditor.tsx`**: added a helper hint line under the "Required packages" label stating the real-package semantics. The field still round-trips (comma-split parse → `string[]`, unchanged).
+- **Samples** (`Code/sample.ts`, `Sandbox/sample.ts`): updated comments from "Pyodide's VFS / mounted by the worker" → "kernel runtime's filesystem"; clarified cv2 = real OpenCV. The sample API (`cv2.imread/blur`, matplotlib) was already valid against real OpenCV, so no code rewrites were needed.
+
+**Quality checks**
+- Typecheck: clean
+- Tests: Sandbox + Code + schemas = 172 passed
+- ESLint: clean on all 5 changed files
+- Browser verify (playwright-skill): mounted SandboxEditor on a throwaway page in this worktree, confirmed the new hint renders and `cv2, matplotlib, numpy` → `requiresPackages: ["cv2","matplotlib","numpy"]` on Save, zero console errors. Throwaway page + temp file removed before commit.
+
+Dev server (PID 29178) stopped after the commit landed.
