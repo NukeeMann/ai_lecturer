@@ -25,11 +25,6 @@ interface PyodideAPI {
     get(key: string): unknown;
     set(key: string, value: unknown): void;
   };
-  FS: {
-    writeFile(path: string, data: Uint8Array | string): void;
-    mkdir(path: string): void;
-    analyzePath(path: string): { exists: boolean };
-  };
 }
 
 let py: PyodideAPI;
@@ -136,32 +131,7 @@ describe('Pyodide lesson namespace (RUNNER_PY)', () => {
 // runtime where the Code/Sandbox widgets execute; the kernel end-to-end suite
 // (src/lib/server/kernelE2E.e2e.test.ts) exercises real `import cv2` there.
 
-// Lesson-provided input files (US-?? — schema CodeInputSchema). The worker
-// fetches bytes over HTTP and writes them into Pyodide's VFS at
-// `/inputs/<filename>` before user code runs. Fetch is browser-only, but the
-// FS.writeFile → exec contract is what this test guards.
-describe('lesson input mounting', () => {
-  it('user code reads bytes written to /inputs/ via FS.writeFile', async () => {
-    await reset();
-    if (!py.FS.analyzePath('/inputs').exists) {
-      py.FS.mkdir('/inputs');
-    }
-    const payload = new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03]);
-    py.FS.writeFile('/inputs/blob.bin', payload);
-
-    const userCode = [
-      "with open('/inputs/blob.bin', 'rb') as f:",
-      '    data = f.read()',
-    ].join('\n');
-    await py.runPythonAsync(userCode, { globals: lessonGlobals });
-
-    const lengthResult = await py.runPythonAsync('len(data)', {
-      globals: lessonGlobals,
-    });
-    expect(lengthResult).toBe(payload.length);
-    const firstByte = await py.runPythonAsync('data[0]', {
-      globals: lessonGlobals,
-    });
-    expect(firstByte).toBe(0xde);
-  }, 30_000);
-});
+// Lesson-provided `/inputs/<filename>` mounting is no longer a Pyodide-worker
+// concern (US-207 decommissioned the worker's VFS-mount path; the IPython
+// kernel runtime now mounts lesson inputs). The kernel end-to-end suite
+// (src/lib/server/kernelE2E.e2e.test.ts) covers reading mounted input bytes.

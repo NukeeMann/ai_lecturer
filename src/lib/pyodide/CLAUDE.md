@@ -49,7 +49,26 @@ The remaining worker routines are lazy-installed on first use:
 - `ensureRunner` — the per-lesson namespace runner (`RUNNER_PY`).
 - `ensureGauss` — GaussDemo's blur routine (loads Pillow).
 - `ensurePexp` — ParametricExplorer's setup/render harness (loads matplotlib).
-- `ensureLivePngCapture` — live matplotlib figure capture for legacy paths.
+
+## Decommissioned worker paths (US-207)
+
+The live-PNG figure capture (the `__ai_capture_live_png` routine + its
+lazy-installer) and the `/inputs/<filename>` VFS-mounting path (fetch-and-write
+plus its byte/filename caches) were **removed** from the worker. They had been
+used only by the Code/Sandbox widgets, which now execute on the IPython kernel
+runtime (US-202/US-203) — the kernel owns its own live-capture and input-mount
+logic. The four remaining Pyodide widgets never used either path:
+
+- **GaussDemo** → `gaussFilter`
+- **ParametricExplorer** / **PlotImage** → `runWithPlotParam`
+- **CodeCloze** → `runWithTests` (no live capture, no inputs)
+- lesson page → `resetNamespace`
+
+The shared client surface those widgets need is preserved in `client.ts`:
+`run`, `runWithTests`, `gaussFilter`, `runWithPlotParam`, `resetNamespace`,
+`stop`, `subscribePyodideRestart`, `PyodideStopError`. The `PyodideInputFile` /
+`RunResult` / `RunWithTestsResult` (incl. `png`) shapes also stay — the kernel
+client (`@/lib/kernel/client`) re-exports them as its canonical definitions.
 
 ## Pointers
 
