@@ -1180,6 +1180,10 @@ export function defaultResearchCourseCommand(
     args: [
       '-p',
       prompt,
+      // research_course only runs in normal (non-quiz) mode, which is Opus
+      // end-to-end.
+      '--model',
+      'opus',
       // --output-format stream-json makes claude emit one JSON event per
       // stdout line as it works (assistant deltas, tool invocations) instead
       // of buffering everything until the run finishes. claude requires
@@ -1250,6 +1254,10 @@ export function defaultDesignCourseCommand(
     args: [
       '-p',
       prompt,
+      // Quiz-only design runs on Sonnet (whole quiz pipeline is Sonnet);
+      // normal-mode design runs on Opus (whole normal pipeline is Opus).
+      '--model',
+      isQuizOnly ? 'sonnet' : 'opus',
       // See defaultResearchCourseCommand for why stream-json + --verbose.
       '--output-format',
       'stream-json',
@@ -1336,8 +1344,12 @@ export function defaultLessonCommand(
     args: [
       '-p',
       prompt,
+      // Model split: quiz-only lessons (quiz + dragMatch widgets only) are
+      // simple enough for Sonnet; full lessons run on Opus for content
+      // quality. Normal-mode generation is Opus end-to-end, quiz-only is
+      // Sonnet end-to-end.
       '--model',
-      'sonnet',
+      isQuizOnly ? 'sonnet' : 'opus',
       // See defaultResearchCourseCommand for why --output-format stream-json
       // + --verbose is set; same incremental-streaming requirement applies
       // per-lesson. US-102.
@@ -1380,7 +1392,15 @@ export function defaultCoherencePassCommand(slug: string): {
     `Do NOT touch scripts/ralph/. Do NOT modify course.json or any lesson file. Read-only audit.`;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      // coherence_pass only runs in normal (non-quiz) mode, which is Opus
+      // end-to-end.
+      '--model',
+      'opus',
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 

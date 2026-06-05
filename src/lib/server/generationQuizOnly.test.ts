@@ -385,6 +385,30 @@ describe('US-192 — quiz-only pipeline branch', () => {
     expect(designInvocations).toEqual([{ slug: 'quizdemo', isQuizOnly: true }]);
   });
 
+  it('quiz-only lessons run on Sonnet, full lessons run on Opus', () => {
+    const quiz = defaultLessonCommand('quizdemo', 'intro', undefined, true);
+    const modelIdx = quiz.args.indexOf('--model');
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(quiz.args[modelIdx + 1]).toBe('sonnet');
+
+    const full = defaultLessonCommand('demo', 'intro', undefined, false);
+    const fullModelIdx = full.args.indexOf('--model');
+    expect(fullModelIdx).toBeGreaterThan(-1);
+    expect(full.args[fullModelIdx + 1]).toBe('opus');
+  });
+
+  it('quiz-only design runs on Sonnet, full design runs on Opus', () => {
+    const quiz = defaultDesignCourseCommand('quizdemo', true);
+    const quizIdx = quiz.args.indexOf('--model');
+    expect(quizIdx).toBeGreaterThan(-1);
+    expect(quiz.args[quizIdx + 1]).toBe('sonnet');
+
+    const full = defaultDesignCourseCommand('demo', false);
+    const fullIdx = full.args.indexOf('--model');
+    expect(fullIdx).toBeGreaterThan(-1);
+    expect(full.args[fullIdx + 1]).toBe('opus');
+  });
+
   it('default lesson command emits the generate_quiz_lesson skill prompt when isQuizOnly=true', () => {
     const spec = defaultLessonCommand('quizdemo', 'intro', undefined, true);
     expect(spec.command).toBe('claude');
