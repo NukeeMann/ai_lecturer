@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client';
 import '@/styles/tokens.css';
 import 'katex/dist/katex.min.css';
 import './static.css';
+import './zajawa-theme.css'; // reskin do stylu zajawa.eu (po static.css → nadpisuje)
 
 import { readPayload } from './payload';
 import { StaticLesson } from './StaticLesson';
@@ -18,17 +19,8 @@ import { CourseIndex } from './CourseIndex';
 import { Home } from './Home';
 
 function applyTheme() {
-  try {
-    const dark =
-      window.matchMedia &&
-      window.matchMedia('(prefers-color-scheme: dark)').matches;
-    document.documentElement.setAttribute(
-      'data-theme',
-      dark ? 'dark' : 'light',
-    );
-  } catch {
-    document.documentElement.setAttribute('data-theme', 'light');
-  }
+  // Reskin zajawa.eu jest light-only — wymuszamy jasny motyw niezależnie od OS.
+  document.documentElement.setAttribute('data-theme', 'light');
 }
 
 // Rewrite every `/api/courses/<slug>/assets/X` reference inside the payload

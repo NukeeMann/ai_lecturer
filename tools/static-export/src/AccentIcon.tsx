@@ -33,12 +33,14 @@ import {
   Video,
 } from 'lucide-react';
 
+// Zharmonizowana, ciepła/przygaszona paleta — spójna z reskinem zajawa.eu
+// (alabaster + petrol). Kursy nadal rozróżnialne kolorem, ale stonowane.
 const accentPalette: Record<string, { color: string; bg: string }> = {
-  default: { color: '#2563eb', bg: 'color-mix(in srgb, #2563eb 14%, var(--bg-subtle))' },
-  indigo: { color: '#5b5bd6', bg: 'color-mix(in srgb, #5b5bd6 14%, var(--bg-subtle))' },
-  emerald: { color: '#0d7a5f', bg: 'color-mix(in srgb, #0d7a5f 14%, var(--bg-subtle))' },
-  terracotta: { color: '#d97757', bg: 'color-mix(in srgb, #d97757 16%, var(--bg-subtle))' },
-  black: { color: '#18171a', bg: 'color-mix(in srgb, #18171a 10%, var(--bg-subtle))' },
+  default: { color: '#6f8a4e', bg: 'color-mix(in srgb, #6f8a4e 16%, var(--bg-subtle))' }, // matcha (akcent)
+  indigo: { color: '#5f6488', bg: 'color-mix(in srgb, #5f6488 16%, var(--bg-subtle))' }, // przygaszony granat
+  emerald: { color: '#5f7d5f', bg: 'color-mix(in srgb, #5f7d5f 16%, var(--bg-subtle))' }, // szałwia
+  terracotta: { color: '#b06b4f', bg: 'color-mix(in srgb, #b06b4f 16%, var(--bg-subtle))' }, // terakota
+  black: { color: '#4a443c', bg: 'color-mix(in srgb, #4a443c 12%, var(--bg-subtle))' }, // ciepły tusz
 };
 
 const iconMap: Record<string, LucideIcon> = {
