@@ -156,8 +156,7 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
             rel="noopener noreferrer"
           >
             AI Lecturer
-          </a>{' '}
-          · interactive widgets run locally in your browser.
+          </a>
         </footer>
       </main>
     </div>

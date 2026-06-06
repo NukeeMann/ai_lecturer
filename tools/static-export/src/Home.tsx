@@ -6,7 +6,7 @@ import { AccentIcon } from './AccentIcon';
 
 const DEFAULT_EYEBROW = 'AI Lecturer · Static library';
 const DEFAULT_FOOTER_HTML =
-  'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a> · interactive widgets run locally in your browser.';
+  'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a>';
 
 export function Home({ payload }: { payload: SxPayload }) {
   const lib = payload.library;

@@ -1,24 +1,642 @@
 [system init claude-opus-4-8[1m]]
 [rate_limit_event]
-I'll start by reading the SKILL.md to understand the steps, then read the course spec and all source materials.
-→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/research_course/SKI…)
-← 1	---
+I'll start by reading the SKILL.md to understand the steps, then read the source materials and schema.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Now let me read the rest of SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
 ← 1	{
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research/sources and find the TSC content in the syllabus. The lesson is `stwardnienie-guzowate-tsc` in module `m5`, `estimatedMinutes: 18`.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 30:- [Mechanisms of epileptogenesis and potential treatment targets](https://doi.org/10.1016/S1474-4422(11)70077-1) — kind: paper; author: Asla Pitkänen and Katarzyna Lukasiuk; year: 2011; insult → ok…
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 9:[Omitted long matching line]
+Let me read the relevant research.md context and the TSC content in the syllabus source files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+[system thinking_tokens]
+This is a medical course (`theoryPracticeRatio` = 0.12) — research notes explicitly forbid `code`/`sandbox`/`demo` widgets and recommend `theory`, `quiz`, `dragMatch`, `dataTable`. Now let me read the actual TSC content from the syllabus sources.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1-# Padaczka i inne stany napadowe u dzieci — część 2: Zespoły padaczkowe
+Let me read the rest of MODUŁ 14 and check part1/part3 for any TSC criteria details.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 940	### Lekcja 14.2 — Kryteria diagnostyczne
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now have rich source content. Let me find suitable Wikimedia Commons images for TSC (facial angiofibroma, cortical tubers MRI) to cache locally. I'll query the Commons API.
+→ Bash(command: curl -s "https://commons.wikimedia.org/w/api.php?action=query&format=json&list=s…)
+← File:Tuberous sclerosis presentation.webp
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: curl -s "https://commons.wikimedia.org/w/api.php?action=query&format=json&list=s…)
+← File:Evolution of concepts in epilepsy surgery.pdf
+[system thinking_tokens]
+→ Bash(command: titles="File:Facial angiofibromas of tuberous sclerosis.png|File:Hypopigmented m…)
+← TITLE: File:Facial angiofibromas of tuberous sclerosis.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Excellent candidates. Let me download two stable images (brain cross-section showing cortical tubers — public domain; skin-findings composite — CC BY 4.0) into the course assets.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/assets/images/tsc-cortical-tubers-brain-cross-section.jpg: JPEG image data, JFIF standard…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images cached. Now I'll author the lesson JSON. This is a theory-heavy medical lesson (`theoryPracticeRatio` 0.12) — I'll use `theory` + `quiz` + `dragMatch` + `dataTable` widgets (no code/sandbox, per research notes), grounded in MODUŁ 14 of the syllabus.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/stwardnieni…
+Now let me validate against `LessonSchema` and confirm no external image URLs survive in image positions.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+npx tsx -e "
+const fs = require('node…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/stwardnienie-guzowate-tsc.json
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← No matches found
+[system thinking_tokens]
+[system thinking_tokens]
+Validation passed (`OK`) and no external image URLs remain. Both referenced local assets exist (downloaded earlier into `assets/images/`). The lesson is complete.
+## Summary
+Authored `/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/stwardnienie-guzowate-tsc.json` — validates against `LessonSchema`.
+**Grounding:** Pulled entirely from MODUŁ 14 of `sources/syllabus-part2.txt` (genetics, criteria, marsz objawów, epilepsy, treatment, the EPISTOP/VIRAP/RAREC projects, NFZ B153) plus `research.md` misconceptions and the four TSC sources from `sources.md`. Honored the course's medical/theory-heavy profile (`theoryPracticeRatio` 0.12) — the research notes explicitly forbid `code`/`sandbox`/`demo`/`histogram` widgets, so I used only `theory`, `quiz`, `dragMatch`, and `dataTable`.
+**Structure** (3 theory beats + 4 widgets, starts on theory, ends on a widget, no back-to-back theory):
+1. `theory` — TSC1/TSC2 → hamartyna/tuberyna → odhamowany mTOR → hamartoma (inline cortical-tubers brain image)
+2. `quiz` — molecular mechanism (correct = index 2; distractors from Dravet/anti-NMDA misconceptions)
+3. `theory` — diagnostic criteria + marsz objawów, "padaczka NIE jest kryterium" (inline skin-findings composite)
+4. `dragMatch` — 8 lesions → 5 organs (`multipleItemsPerZone`)
+5. `theory` — epilepsy in TSC + treatment (wigabatryna as first-line *and* prophylactic; mTOR inhibitors; CBD B153)
+6. `quiz` — first-line drug for infantile spasms in TSC (correct = index 1)
+7. `dataTable` — treatment reference table with Polish reimbursement context
+**Images:** Two stable Wikimedia Commons figures cached locally with descriptive filenames and attribution in-prose (brain cross-section — AFIP, public domain; skin composite — Portocarrero et al., CC BY 4.0). Quiz correct indices spread (2, 1). No files touched outside the lesson and its assets folder.
+[result success (375.2s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the full procedure, then read the source materials and course files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the source materials in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
 ← <system-reminder>[Truncated: PARTIAL view — showing lines 1-752 of 956 total (26996 tokens, cap 25000). Call Read with offset=753 limit=752 for the next page, or Grep to find a specific section. Do NO…
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
 ← <system-reminder>[Truncated: PARTIAL view — showing lines 1-883 of 1146 total (27578 tokens, cap 25000). Call Read with offset=884 limit=883 for the next page, or Grep to find a specific section. Do N…
-→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
-← <system-reminder>[Truncated: PARTIAL view — showing lines 1-913 of 1335 total (31060 tokens, cap 25000). Call Read with offset=914 limit=913 for the next page, or Grep to find a specific section. Do N…
 [system thinking_tokens]
-I have the bulk of the material. Let me read the remaining truncated portions and the widgets doc.
-→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
-← 753	
+[system thinking_tokens]
+Let me read the rest of part2 (Module 15 — autoimmune epilepsies), plus course.json, research.md, and sources.md.
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
 ← 884	- "Częściej dochodzi do zaburzeń oddychania w związku z trwającym stanem padaczkowym niż w wyniku podania leków" — nie bać się sedacji.
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
-← 914	- Szybki powrót świadomości.
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me check research.md and sources.md for this lesson, and look at the existing lessons in the course to match style/conventions.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 169:## Padaczki autoimmunologiczne
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 9:[Omitted long matching line]
+→ Bash(command: ls /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1.json
+[system thinking_tokens]
+Let me read the research.md autoimmune section and an existing lesson for style reference.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 40	- **Encefalopatie padaczkowo-rozwojowe**: Dravet (SCN1A LoF; walproinian → klobazam/fenfluramina/stiripentol → CBD; skłony WYKLUCZAJĄ Dravet; blokery Na bezwzględnie przeciwwskazane), LGS (napady t…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check the dragMatch, dataTable, quiz, and image widget schemas to ensure correct field shapes.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Image/schema.ts)
+← File does not exist. Note: your current working directory is /Users/patrykbozek/Projects/ai_lecturer.
+→ Glob(pattern: src/widgets/**/schema.ts)
+← src/widgets/Demo/schema.ts
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The Image widget doesn't exist in the actual schema (only inline markdown images, as the TSC lesson uses). Now let me find a stable Wikimedia image for anti-NMDA encephalitis. Let me query the Wikipedia/Commons API.
+→ Bash(command: cd /tmp && curl -s "https://en.wikipedia.org/w/api.php?action=query&titles=Anti-…)
+← File:Extreme delta brush in anti-NMDAr encephalitis.png
+[system thinking_tokens]
+Both are ideal — an extreme delta brush EEG and the NMDA receptor subunit. Let me get their direct URLs and license info.
+→ Bash(command: cd /tmp && curl -s "https://en.wikipedia.org/w/api.php?action=query&titles=File:…)
+← TITLE: File:Extreme delta brush in anti-NMDAr encephalitis.png
+Both have suitable licenses. Let me download them into the course assets directory.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← extreme-delta-brush-anti-nmda-eeg.png: PNG image data, 810 x 527, 8-bit/color RGB, non-interlaced
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images are in place. I have everything needed. Now I'll author the lesson, following the established Polish medical course style (theory + quiz + dragMatch + dataTable, no code/sandbox per the research notes) and scoping to Module 15 lessons 15.1–15.7 (Rasmussen/FIRES/NORSE belong to the sibling lesson).
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/padaczki-au…
+Now let me validate against LessonSchema and confirm there are no external image URLs.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && npx tsx -e "
+const fs = require('n…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/padaczki-autoimmunologiczne.json
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === external http image refs (should be empty) ===
+The lesson validates and all assets are in place. Done — one lesson authored.
+## Summary
+Authored `/courses/.../lessons/padaczki-autoimmunologiczne.json` for the lesson **"Padaczki autoimmunologiczne"** (module `m5`, 16 min), grounded in the uploaded syllabus source material (Module 15, lessons 15.1–15.7). I scoped it to mechanisms → antigen classification → clinical syndromes → diagnosis → treatment, deliberately leaving Rasmussen/FIRES/NORSE to the sibling lesson `zespo-rasmussena-fires-i-norse` that `course.json` registers for them.
+**Structure** (7 sections, 3 theory + 4 widgets — matching the existing TSC lesson's pattern and honoring the course's `theoryPracticeRatio` 0.12, which the research notes flag as making `code`/`sandbox`/`demo` inappropriate for this medical domain):
+1. Theory — autoimmune mechanisms (molecular mimicry, superantigens, MHC-II, 5×/9× risk) + inline NMDA-receptor figure
+2. dragMatch — 8 antigens sorted into membrane/synaptic vs intracellular (the prognosis-defining split)
+3. Theory — anti-NMDA & anti-LGI1 portraits + inline extreme-delta-brush EEG figure
+4. Quiz (single) — clinical vignette → anti-NMDA + teratoma search
+5. Theory — diagnostic criteria + immunotherapy algorithm
+6. dataTable — immunotherapy lines (I/II/oncologic/chronic)
+7. Quiz (multi-select) — features supporting autoimmune etiology
+**Grounding & assets:** Two CC-licensed Wikimedia images downloaded locally (no external `http(s)` image URLs remain); attribution preserved in captions. Lesson-level `sources` has 4 entries (Graus 2016, Steriade 2020, Dalmau 2018, anti-NMDA Wikipedia), with section-level sources attached where theory leans on a specific reference. Quiz correct indices are spread (`[2]` and multi-select `[0,1,3]` — not all options correct).
+Validation: `LessonSchema.safeParse` → **OK**. No files under `scripts/ralph/` touched; `course.json` and other lessons untouched.
+[result success (301.5s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md file to understand the steps, then read the source materials and schema.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+Now let me read the course context. Let me find the lesson in course.json and read research/sources and the syllabus files.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 167-        },
+I need the module context for this lesson. Let me find which module contains it.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 120	    {
+[system thinking_tokens]
+Module is `m5`. Now let me read the course header, research.md and sources.md sections for this lesson, plus the syllabus sources.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 89:## EMAtS, FIRES i inne DEE
+Let me read the sources.md section and search research.md for the relevant content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 175	## Zespół Rasmussena, FIRES i NORSE
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 9:[Omitted long matching line]
+Let me read the broader research.md context (lines 40-50 area and the omitted lines 9, 11) and search the syllabus files for relevant content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 38	- **Zespoły wieku noworodkowo-niemowlęcego**: samoograniczające (SeLNE/SeLFNE—KCNQ2, SeLFNIE—SCN2A, SeLFIE—PRRT2, MEI) vs encefalopatie (EIDEE, EIMFS—KCNT1, KCNQ2-encefalopatia, drgawki pirydoksyno…
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← <persisted-output>
+Let me read the full grep output to get the syllabus details on Rasmussen/FIRES/NORSE.
+→ Read(file_path: /Users/patrykbozek/.claude/projects/-Users-patrykbozek-Projects-ai-lecturer/a53d…)
+← 1	courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/sources/syllabus-part2.txt-1-# Padaczka i inne stany napadowe u dzieci — część 2: Zespo…
+Let me read the detailed syllabus sections on Rasmussen (lines 1106-1136) and FIRES (lines 408-432), plus the autoimmune-mechanism framing.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 408	**Czynniki złej prognozy:** napady toniczne, NCSE, częste/ciągłe nieregularne uogólnione iglica-fale.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1106	### Lekcja 15.8 — Zespół Rasmussena
+[system thinking_tokens]
+I have strong source material. Let me check the "Common misconceptions" section in research.md and look at an existing sibling lesson to match conventions.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 53	## Common misconceptions
+→ Bash(command: ls /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1.json
+[system thinking_tokens]
+Let me look at the sibling autoimmune lesson to match conventions (Polish style, image widgets, plotImage).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. This is a theory-heavy Polish medical lesson; the sibling lesson uses theory + dragMatch + dataTable + quiz (no code — appropriate for a clinical topic). Let me find a stable Rasmussen MRI image on Wikimedia Commons via the API before authoring.
+→ Bash(command: cd /tmp && curl -s "https://en.wikipedia.org/w/api.php?action=query&prop=images&…)
+← {
+No images on the EN page. Let me search Wikimedia Commons directly for relevant medical images.
+→ Bash(command: cd /tmp && for q in "Rasmussen encephalitis" "hemispherectomy" "hemimegalencepha…)
+← === Rasmussen encephalitis ===
+There's `File:MRI Rasmussen's encephalitis.png`. Let me get its direct URL and license info.
+→ Bash(command: cd /tmp && curl -s "https://commons.wikimedia.org/w/api.php?action=query&titles=…)
+← TITLE: File:MRI Rasmussen's encephalitis.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both Rasmussen MRI and the CD8 brain-biopsy image are ideal. Let me check for a FIRES/NORSE image too, then download.
+→ Bash(command: cd /tmp && for q in "FIRES epilepsy syndrome" "status epilepticus MRI" "limbic e…)
+← === FIRES epilepsy syndrome ===
+There's `File:MRIinFIRES.jpg`. Let me check it and download all three images.
+→ Bash(command: cd /tmp && curl -s "https://commons.wikimedia.org/w/api.php?action=query&titles=…)
+← TITLE: File:MRIinFIRES.jpg
+[system thinking_tokens]
+[system thinking_tokens]
+Three solid images confirmed. Let me download all into the course assets directory.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← rasmussen-mri-hemispheric-atrophy.png: PNG image data, 2418 x 1381, 8-bit grayscale, interlaced
+All three downloaded. Let me view them to write accurate alt text.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← (empty)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All images verified — the Rasmussen MRI shows multi-sequence unilateral hemispheric atrophy, the FIRES MRI shows bilateral symmetric mesial-temporal T2 hyperintensity (arrows). Now let me generate the plotImage figure (the "4% per 3 months delay" urgency curve).
+→ Bash(command: mkdir -p /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-n…)
+← saved
+[system thinking_tokens]
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← (empty)
+[system thinking_tokens]
+Plot renders cleanly with full axes, labels, ticks, title, legend, grid. Now I'll write the lesson JSON.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/zespo-rasmu…
+Now let me validate against `LessonSchema` and confirm no external URLs survive in image positions.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && npx tsx -e "
+const fs = require('n…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/zespo-rasmussena-fires-i-norse.json
+Validation passes. Now let me run the asset-presence and external-URL checks.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === external image URLs (should be empty) ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All checks pass. Let me confirm I touched only the intended files (no `scripts/ralph/`, no other lessons, no `course.json`).
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && git status --porcelain | grep -E "…)
+← (Bash completed with no output)
+→ Bash(command: git status --porcelain | grep -iE "rasmus|fires|norse|assets/(images|plots)|cour…)
+← (Bash completed with no output)
+→ Bash(command: git status --short -- courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-r…)
+← (Bash completed with no output)
+[system thinking_tokens]
+→ Bash(command: git check-ignore -v courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rez…)
+← .gitignore:92:courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/	courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurol…
+[system thinking_tokens]
+[system thinking_tokens]
+The course directory is gitignored (`.gitignore:92`) — expected for a generated course; the pipeline reads the files from disk, which is what matters. The lesson is complete and verified.
+## Done — lesson authored and validated
+**File:** `courses/padaczka-i-inne-stany-napadowe-…/lessons/zespo-rasmussena-fires-i-norse.json`
+**Result:** `LessonSchema.safeParse` → **OK**; no external image URLs survive; all 4 referenced assets exist on disk.
+### Structure (3 theory beats + 4 widgets, m5, 14 min)
+1. **theory** — *Zespół Rasmussena: jedna półkula, która zanika* — definition, 3 stadia, EPC/zespół Kożewnikowa, niedowład/hemianopsja, MRI findings + inline MRI image. (src: Bien 2005, Wikipedia)
+2. **quiz** — recognise EPC/Kożewnikow + hemisferotomia as treatment of choice (correct = B)
+3. **theory** — *Histopatologia i leczenie* — CD8 T-cell histo (inline image) → why immunotherapy only slows → hemisferotomia, the 4%/3-months rule, paradoxical surgical criteria. (src: Bien 2005)
+4. **plotImage** — generated urgency curve (delay vs seizure-freedom %), full axes/labels/ticks/legend/grid; `sourceCode` matches the saved PNG
+5. **theory** — *FIRES i NORSE* — febrile trigger 24h–2wk, lekooporny → OIOM, ~10% mortality, IL-1/IL-6, bilateral T2 MRI (inline image), anakinra ≤2 weeks; FIRES = NORSE in children. (src: Hirsch 2018)
+6. **dataTable** — Rasmussen vs FIRES/NORSE differential (7 rows)
+7. **quiz** — post-infectious refractory SE → FIRES/anakinra (correct = C)
+### Grounding & assets
+- All clinical facts pulled from the syllabus (lessons 8.4, 15.8, 15.9) and `research.md`/`sources.md` — EPC=Kożewnikow, 4%/3-months heuristic, ~10% FIRES mortality, anakinra ≤2 weeks, bilateral temporal+insula+thalamus MRI, CD8/microglia/astrogliosis histology.
+- 3 images downloaded from Wikimedia Commons (Rasmussen MRI CC BY-SA 3.0, CD8 biopsy CC BY-SA 3.0, FIRES MRI CC BY 4.0), cached locally with descriptive filenames and credited inline.
+- Quiz `correct` indices spread (B, C); both single-select.
+No changes to `scripts/ralph/`, `course.json`, or any other lesson.
+[result success (449.4s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the source materials and schema.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research, sources, and syllabus materials. Let me find the relevant sections.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+←      108 research.md
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 58:- [GeneReviews (NCBI Bookshelf)](https://www.ncbi.nlm.nih.gov/books/NBK1116/) — kind: article; aktualne, recenzowane opisy genów/zespołów monogenowych (SCN1A, KCNQ2, CDKL5, PCDH19, STXBP1, TSC i in…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 160	- [Glucose transporter type 1 deficiency syndrome (GeneReviews)](https://www.ncbi.nlm.nih.gov/books/NBK1430/) — kind: article; leczenie GLUT1 (dieta ketogenna).
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me look at an existing "pytania kontrolne" lesson to match established conventions, plus the three source lessons for module 5.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+Now let me check the dragMatch schema and the available images, and grab grounded facts from the three source lessons.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← total 38880
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me verify the image path format and grab grounded facts from the three source lessons.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === TSC image refs ===
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 65-**Ryzyko nawrotu po I napadzie:**
+[system thinking_tokens]
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← <persisted-output>
+[system thinking_tokens]
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← syllabus-part1.txt:74:- 4% ludzi przynajmniej raz w życiu ma napad drgawek (≠ padaczka).
+[system thinking_tokens]
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1019	## MODUŁ 15 — Padaczki autoimmunologiczne i zespół Rasmussena
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1090	
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all grounded facts. Let me check the attribution used for the TSC image so I reuse it accurately.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← ---ATTR---
+[system thinking_tokens]
+I have everything needed. Let me write the lesson file.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kon…
+Now let me validate against the schema and confirm the referenced image exists on disk.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && npx tsx -e "
+const fs = require('n…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kontrolne-tsc-i-autoimmunologia.json
+The lesson validates and all gates pass. Done.
+**`pytania-kontrolne-tsc-i-autoimmunologia.json`** written and validated against `LessonSchema` (`OK`).
+What I authored — an exam-style recap closing Part 5 (module `m5`, 12 min), grounded in the syllabus's *Dodatek A* exam questions (#7/#20 TSC, #13 anty-NMDA, #18 anakinra/FIRES) and the Module 15 / Rasmussen notes:
+- **1 theory intro** (recapping the 4 key facts) + **5 widgets** — 4 quizzes + 1 dragMatch — matching the established pattern of the other `pytania-kontrolne` lessons in this course.
+- **Coverage** maps exactly to the lesson summary: lek I rzutu w TSC → wigabatryna; przeciwciało w limbicznym zapaleniu mózgu → anty-NMDA; anakinra → FIRES; pilność hemisferotomii w zespole Rasmussena (≈4% mniej szans / 3 mies. zwłoki).
+- **Quiz correct indices spread uniformly**: 1, 2, 0, 3 (A/B/C/D each once) — no positional bias.
+- **Inline image** reuses the already-cached `tsc-cortical-tubers-brain-cross-section.jpg` (confirmed on disk; no external `http(s)` image URLs survive — asset gate clean).
+- **7 lesson-level sources** (papers with author/year + stable articles), drawn from the matching `sources.md` block plus the three Part-5 source lessons; specific references also attached at section level where a question leans on one.
+No other files were modified; `scripts/ralph/`, `course.json`, and other lessons were left untouched.
+[result success (208.4s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the workflow, then read the source materials and schema.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me read the course context files and source materials in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+Now let me read research.md, the syllabus source files, and docs/widgets.md in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-913 of 1335 total (31060 tokens, cap 25000). Call Read with offset=914 limit=913 for the next page, or Grep to find a specific section. Do N…
 → Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
 ← 1	# Widgets reference
 [system thinking_tokens]
@@ -29,6 +647,12 @@ I have the bulk of the material. Let me read the remaining truncated portions an
 [system thinking_tokens]
 [system thinking_tokens]
 [system thinking_tokens]
+Let me check research.md for lesson-specific notes and misconceptions.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 9:[Omitted long matching line]
+Let me read the relevant sections of research.md more fully.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 53	## Common misconceptions
 [system thinking_tokens]
 [system thinking_tokens]
 [system thinking_tokens]
@@ -68,3 +692,1678 @@ I have the bulk of the material. Let me read the remaining truncated portions an
 [system thinking_tokens]
 [system thinking_tokens]
 [system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. Key constraint from `research.md`: this is an advanced medical course (`theoryPracticeRatio` 0.12) — **no** `code`/`sandbox`/`demo`/`plotImage`/`histogram` widgets (no Python/numeric data); lean on `theory` + `quiz` + `dragMatch` + `dataTable`, with corrective callouts and Polish-realities + ILAE/NICE/AAN/PTN framing. No external images to cache. Let me write the lesson.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/farmakotera…
+Now validate against `LessonSchema`:
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/padaczka-i-inn…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/farmakoterapia-zasady-wyboru-leku-i-sekwencja-rzutow.json
+The lesson validates. Done.
+## Summary
+Authored one lesson at `courses/.../lessons/farmakoterapia-zasady-wyboru-leku-i-sekwencja-rzutow.json` — validates against `LessonSchema` (`OK`).
+**Approach** — I grounded the content in the uploaded `syllabus-part3.txt` (Moduł 16) plus `research.md`/`sources.md`/`course.json`. The `research.md` "Notes for lesson generation" were decisive: this is an advanced medical course (`theoryPracticeRatio` 0.12), which explicitly bars `code`/`sandbox`/`demo`/`plotImage`/`histogram` widgets (no Python or numeric data) and recommends `theory` + `quiz` + `dragMatch` + `dataTable`. No external images were needed, so no asset caching/materialization step applied.
+**Structure** (9 sections — 4 theory beats, 5 widgets, no back-to-back theory, ends on a widget):
+1. Theory — five elements of treatment, ASM nomenclature, decision to treat (recurrence-risk table 44/32/17%, prevention syndromes incl. TSC/EPISTOP)
+2. Quiz (single) — applying recurrence risk factors
+3. Theory — 7 drug-selection criteria, generations, START LOW GO SLOW titration (NICE source)
+4. DataTable — AAN infant first-line vs drug-resistant recommendations
+5. DragMatch — slow vs fast titration drugs (multi-item zones)
+6. Theory — drugs that worsen generalized seizures + PTN 2022 sex-based JME choice, with corrective blockquotes (NICE source)
+7. Quiz (multi) — which drugs to avoid in JME
+8. Theory — ILAE drug-resistance definition + the JME→CBZ→LTG pitfall + good/bad polytherapy (Kwan 2010 source)
+9. Quiz (single) — ILAE drug-resistance definition
+Correct-answer indices are spread (`[2]`, `[0,2,3,4]`, `[1]`). Four lesson-level sources copied from the matching `sources.md` heading (NICE NG217, Kwan 2010, Glauser/ILAE 2013, Anticonvulsant–Wikipedia), with section-level sources attached where a beat leans on a specific reference. KaTeX used sparingly for doses. No other files were touched; `scripts/ralph/` left untouched.
+[result success (275.5s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the skill definition, then the course materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+Found the lesson: module `m6`, title "Działania niepożądane, monitorowanie i odstawianie ASM", 18 min. Now let me read the research, sources, syllabus materials, and widget docs.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+This is a medical course (theory-heavy, no code/demo widgets per research notes). Let me read the sources.md section for this lesson and the relevant syllabus content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+I have the lesson's 4 sources. Now let me find the relevant content in the syllabus source files. Let me search for the key terms.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/sources/syllabus-part2.txt-89-**Powikłania leczenia:**
+The core content for this lesson is in syllabus-part3.txt around lines 160–360. Let me read that section in full.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 150	- Topiramat, lamotrygina, karbamazepina.
+[system thinking_tokens]
+Let me read the titration context just above (lines 138–158).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 136	**NICE — najnowsza aktualizacja: 30.12.2025.**
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now have richly grounded content. This is a theory-heavy medical lesson (no code/demo widgets per the research notes). Let me set up assets and fetch the images I'll cache locally. First I'll verify which Wikimedia files exist.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === valproic acid ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Valproic acid and carbamazepine structures downloaded fine; the SJS clinical photo filename doesn't exist. Carbamazepine is actually the ideal illustration for beat 4 (archetypal DRESS/SJS culprit via HLA-B*1502, aromatic cross-sensitivity, and CYP450 inducer), so I'll use it. Let me save it and generate the recurrence chart.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← assets/images/karbamazepina-struktura.png:    PNG image data, 500 x 370, 8-bit gray+alpha, non-interlaced
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now generate the recurrence-statistics chart (data straight from the notes: 50% relapses in year 1, 80% within 2 years).
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← saved
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three assets are ready. Now I'll author the lesson JSON.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/dziaania-ni…
+Now validate against `LessonSchema`:
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+npx tsx -e "
+const fs = require('node…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/dziaania-niepozadane-monitorowanie-i-odstawianie-asm.json
+Validation passes. Let me confirm all referenced local assets exist and that no external image URLs leaked into image positions.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === assets on disk ===
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The lesson validates against `LessonSchema`, all three referenced images exist on disk, and no external image URLs leaked into image positions.
+## Summary
+Authored **`lessons/dziaania-niepozadane-monitorowanie-i-odstawianie-asm.json`** (module `m6`, 18 min) — grounded in the syllabus source (Moduł 16.8–16.16 in `syllabus-part3.txt`), the research notes, and the lesson's 4 pre-curated sources from `sources.md`.
+**Structure** (3 theory beats + 4 widgets, theory-heavy per the course's `theoryPracticeRatio` 0.12 — no code/sandbox/demo, which the research notes flag as inappropriate for this medical domain):
+1. **Theory** — the A–E framework, with kwas walproinowy as the villain spanning all five categories (inline cached structure image).
+2. **DataTable** — Kategoria A dose-dependent effects → culprit drugs (filterable, straight from the notes' table).
+3. **Quiz (multi-select)** — DRESS/SJS culprits; correct = aromatic-ring drugs `[0,1,2]`, with levetiracetam/vigabatrin as plausible distractors.
+4. **Theory** — idiosyncratic reactions (DRESS/SJS, HLA-B\*1502, aromatic cross-sensitivity), CYP450 interactions, monitoring/supplementation, and a teratogenicity callout (inline carbamazepine structure).
+5. **DragMatch** — six ASMs → their hallmark complications (wigabatryna→pole widzenia, fenytoina→przerost dziąseł, etc.).
+6. **Theory** — odstawianie wg AAN 2021 (≥2 lata, ≤25%/10–14 dni, za/przeciw, badania), with an inline matplotlib bar chart of recurrence timing (50% in year 1, 80% by 2 years — generated from the notes' figures).
+7. **Quiz (single-select)** — taper rate; correct at index `[2]` to spread answer positions.
+**Assets cached locally**: `kwas-walproinowy-struktura.png`, `karbamazepina-struktura.png` (Wikimedia Commons, public-domain chemical structures), and `nawroty-po-odstawieniu-asm.png` (rendered chart). Sources, course.json, other lesson files, and `scripts/ralph/` were left untouched.
+[result success (380.8s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then read the source materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+Now let me read the course context and source materials.
+→ Bash(command: wc -l courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurol…)
+←      259 courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/course.json
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the sources.md and find the relevant syllabus content for non-pharmacological treatment.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+[system thinking_tokens]
+I have the lesson sources. Now let me pull the actual syllabus content on non-pharmacological treatment.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 3:> **Część 3 z 3.** Zakres: moduły 16-20 + dodatki (farmakoterapia z działaniami niepożądanymi A-E, dieta ketogenna, VNS, kanabidiol Epidiolex, inhibitory mTOR, leczenie operacyjne z SEEG/ECoG/SISCOM…
+Let me read the full module 17 section of the syllabus (lines ~369-680).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 369	### Lekcja 17.1 — Dieta ketogenna — historia i typy
+[system thinking_tokens]
+[system thinking_tokens]
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1156	## DODATEK B — Programy lekowe NFZ w Polsce (stan 2025/2026)
+→ Bash(command: ls courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologi…)
+← choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1.json
+[system thinking_tokens]
+[system thinking_tokens]
+Let me look at a sibling lesson in the same module to match style and widget usage.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now have all the content and a clear style template. This is a medical course (theoryPracticeRatio 0.12) where the research notes explicitly forbid code/sandbox/demo widgets — so I'll use theory + dataTable + quiz + dragMatch, matching the sibling lessons. Let me resolve stable Wikimedia Commons images for the inline figures.
+→ Bash(command: cd /tmp
+for f in "Cannabidiol.svg" "Vagus_nerve.svg" "Gray793.png" "Beta-hydroxy…)
+← === Cannabidiol.svg ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /tmp
+for f in "(R)-3-Hydroxybutyric acid.svg" "3-Hydroxybutyric acid.svg" "Be…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /tmp
+for q in "hydroxybutyric acid structure" "ketone bodies" "vagus nerve st…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have CBD, vagus nerve (Gray793), and Everolimus images. Let me resolve a ketone-body structure for the keto section, adding a User-Agent.
+→ Bash(command: cd /tmp
+UA="ai-lecturer-coursegen/1.0 (educational; contact admin@example.com)"
+…)
+← === Beta-hydroxybutyric acid.png ===
+→ Bash(command: cd /tmp
+UA="ai-lecturer-coursegen/1.0 (educational; contact admin@example.com)"
+…)
+← File:3-Hydroxybutyrate-ion-2D-structure.svg | https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/3-Hydroxybutyrate-ion-2D-structure.svg/960px-3-Hydroxybutyrate-ion-2D-structure.svg.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+`File:3-Hydroxybutyrate-ion-2D-structure.svg` is exactly the ketone body monitored in keto. I now have all four images. Let me download them into the course assets.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← ---
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All four images are valid PNGs. Now I'll author the lesson. This is a theory-heavy medical lesson (ratio 0.12) — per the research notes, code/sandbox/demo widgets are inappropriate, so I'll use theory + dataTable + quiz + dragMatch, matching the sibling lessons.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/leczenie-ni…
+Now let me validate against `LessonSchema` and confirm no external image URLs survive.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+npx tsx -e "
+const fs = require('node…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/leczenie-niefarmakologiczne-dieta-keto-vns-cbd-mtor.json
+The lesson validates against `LessonSchema` and all asset/content checks pass. Done — one lesson authored.
+## Summary
+Authored `/courses/padaczka-i-inne-stany-napadowe-u-dzieci.../lessons/leczenie-niefarmakologiczne-dieta-keto-vns-cbd-mtor.json` per the `generate_lesson` skill, grounded in the uploaded syllabus (Module 17) and the course's `research.md` / `sources.md`.
+**Structure** (8 sections: `theory → dataTable → quiz → theory → quiz → theory → dragMatch → quiz`):
+- **Dieta ketogenna** — hierarchy (surgery → keto → VNS), types/mechanism, GLUT1 & PDH deficiency as treatment-of-choice, absolute contraindications, the propofol trap.
+- **DataTable** of the four diet types with macronutrient ratios (straight from the notes).
+- **VNS** — left vagus nerve, parameters, autostimulation on tachycardia, the 30‑50‑70% rule, and the whole-body-MRI prohibition.
+- **CBD + mTOR** — retrograde CB1 signalling, Epidiolex indications/dosing, hepatic monitoring, the everolimus/sirolimus interaction, OTC-oil warning, mTOR inhibitors.
+- 3 quizzes (correct indices spread across positions: 2, 1, and multi `[0,1,3]`) + a dragMatch tying therapies/NFZ programs (B153 vs B154) to their distinguishing features.
+**Widget choice**: honored the course's `theoryPracticeRatio` 0.12 and the explicit research-note directive that code/sandbox/demo/parametric widgets are inappropriate for this medical domain — using only `theory`/`dataTable`/`quiz`/`dragMatch`, matching the sibling lessons in module m6.
+**Assets**: downloaded 4 public-domain Wikimedia Commons figures (β‑hydroxybutyrate, vagus nerve anatomy, cannabidiol, everolimus) into `assets/images/`, all referenced via local `/api/...` paths — no external image URLs survive.
+**Sources**: 4 papers (Kossoff 2018, Morris/AAN 2013, Devinsky 2018, Thiele 2021), each with author + year, copied from the lesson's `sources.md` block and also attached at section level where relevant.
+Schema validation prints `OK`; every referenced asset exists on disk. No files under `scripts/ralph/` and no other lesson/course files were touched.
+[result success (385.0s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the skill definition and the source materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research, sources, and the syllabus source files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+Now let me find the relevant sections in sources.md and the syllabus files.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 208:## Leczenie operacyjne padaczki
+→ Bash(command: wc -l /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napa…)
+←      955 /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/sources/syllabus-part1.txt
+Let me read the sources.md surgical section and search the syllabus for surgical treatment content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 200	
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+I have my sources. Now let me find the surgical-treatment content in the syllabus files.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 3:> **Część 3 z 3.** Zakres: moduły 16-20 + dodatki (farmakoterapia z działaniami niepożądanymi A-E, dieta ketogenna, VNS, kanabidiol Epidiolex, inhibitory mTOR, leczenie operacyjne z SEEG/ECoG/SISCOM…
+The surgical content is in part3, lines ~676–840. Let me read that section in full.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 676	## MODUŁ 18 — Leczenie operacyjne padaczki
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check the dragMatch and dataTable widget schemas since those are the recommended widgets for this course.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me check the Theory schema and look at a sibling lesson for conventions (callout syntax, eyebrow style).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: ls /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1.json
+Let me look at the sibling non-pharmacological lesson to match conventions (eyebrow, callout syntax, structure).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all the material I need. Now let me set up the assets directory and download well-licensed anatomical images from Wikimedia Commons for the theory sections.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/assets/images/cherry-red-spot-fundus.jpg:                   JPEG image data, JFIF standar…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+My 3 new downloads returned HTML (bad URLs — 2036 bytes). Let me remove them and fetch correct URLs via the Commons API. I also note the course already has valid `platy-mozgu-lokalizacja.png` and `hippocampal-sclerosis-mri-flair.jpg` I can reuse.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← === Gray720.png ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Gray720 and Corpus_callosum URLs work. Let me download the corpus callosum image (for callosotomy) and verify the existing reusable images.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/assets/images/spoidlo-wielkie-przekroj-strzalkowy.png: PNG image data, 600 x 526, 8-bit c…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me verify the actual content — I'll use the explicitly-named Corpus_callosum.png instead of the ambiguous Gray720.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/assets/images/spoidlo-wielkie-przekroj-strzalkowy.png: PNG image data, 800 x 455, 8-bit/c…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check how the existing images are attributed in other lessons so I credit them consistently.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+grep -rl "platy-mozgu-lokalizacja.png…)
+← === courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/semiologia-napadow-padaczkowych.json ===
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+echo "=== platy-mozgu in semiologia =…)
+← === platy-mozgu in semiologia ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All images verified and attributions confirmed:
+- `platy-mozgu-lokalizacja.png` — BruceBlaus, CC BY 3.0
+- `hippocampal-sclerosis-mri-flair.jpg` — Uhomachinky, CC BY-SA 4.0
+- `spoidlo-wielkie-przekroj-strzalkowy.png` — Anatomography/LSDB, CC BY-SA 2.1 jp
+Now I'll author the lesson JSON.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/leczenie-op…
+Now let me validate against `LessonSchema` and confirm all referenced assets exist.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+npx tsx -e "
+const fs = require('node…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/leczenie-operacyjne-padaczki.json
+Validation passes. Now let me confirm every referenced image exists on disk and no external image URLs survive.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+LESSON="courses/padaczka-i-inne-stany…)
+← --- external http image refs (should be zero) ---
+All checks pass. The lesson is complete.
+## Done — `leczenie-operacyjne-padaczki.json` authored and validated
+**Validation results:**
+- ✅ `LessonSchema.safeParse` → `success: true`
+- ✅ All 3 referenced images exist on disk; 0 external `http(s)://` image URLs
+- ✅ `npm run typecheck` clean
+**Lesson shape** (module m6, 18 min, lean-theory medical course — `theoryPracticeRatio` 0.12): 3 theory beats + 5 widgets, no two theories adjacent, starts on theory, ends on a quiz.
+1. **Theory — Kwalifikacja** (~10% kwalifikuje się, 4 kryteria, bezwzględne przeciwwskazania, obalone mity, wczesna operacja) → inline MRI hippocampal-sclerosis; src: Engel 2012
+2. **Quiz** (single) — prawdziwe przeciwwskazanie vs mity; `correct=[3]`
+3. **Theory — Pięć stref Lüdersa** + modalności (ECoG/SEEG, iktalny SPECT, test Wady, MEG niedostępna w PL) → inline lobes diagram; src: Lüders 2001
+4. **DragMatch** — metoda → strefa, z dystraktorem (test Wady) zostającym w banku (`requireAll:false`)
+5. **Quiz** (single) — ECoG vs SEEG + status strefy epileptogennej; `correct=[2]`
+6. **Theory — Techniki + ocena wyniku** (resekcyjne 80–90%, kalozotomia 50–70%, hemisferotomia, MST/LITT/VNS/DBS, skale Engela/ILAE) → inline corpus-callosum render; src: Wikipedia Epilepsy surgery + SEEG
+7. **DataTable** — 8 technik (typ + skuteczność/wskazania)
+8. **Quiz** (multi) — `correct=[0,1,2]`, dwa dystraktory grounded w notatkach (VNS/DBS odwracalne; propofol zakazany na diecie ketogennej)
+Content grounded in `syllabus-part3.txt` (Moduł 18); quiz distractors drawn from the notes' "klasyczne mity". 4 lesson-level sources (2 papers + 2 articles) with section-level attribution. Three Wikimedia-licensed images cached locally (one newly downloaded: corpus callosum; two reused from the course's existing assets), with attribution credited in prose. I did not modify `course.json`, any other lesson, or `scripts/ralph/`.
+[result success (426.1s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the workflow, then read the source materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research, sources, and the syllabus source files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+[system thinking_tokens]
+The lesson is module `m6`, a "control questions" quiz lesson on treatment. Theory/practice ratio is 0.12 (heavily theory/recall). Let me read the syllabus source files focusing on the treatment content. Let me search for the relevant sections first.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+←      955 syllabus-part1.txt
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+The treatment content is most likely in part3. Let me find the line ranges for the treatment topics.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 3:> **Część 3 z 3.** Zakres: moduły 16-20 + dodatki (farmakoterapia z działaniami niepożądanymi A-E, dieta ketogenna, VNS, kanabidiol Epidiolex, inhibitory mTOR, leczenie operacyjne z SEEG/ECoG/SISCOM…
+[rate_limit_event]
+[system thinking_tokens]
+Let me read the key treatment sections of part3 in detail.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 95	### Lekcja 16.4 — Wybór pierwszego leku — kryteria
+Now the non-pharmacological and surgical sections, plus the exam-question appendix.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 440	**Suplementacja:**
+[system thinking_tokens]
+Let me read the ketogenic diet types/indications section and the exam-question appendix.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 380	|---|---|---|---|
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1108	### A.2 — Klasyczne pytania egzaminacyjne
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have rich grounding now. Let me read the `dragMatch` and `dataTable` widget schemas (the research recommends these for this medical course; code/demo/sandbox are explicitly inappropriate).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. The research notes are explicit: this is a heavily-recall medical lesson, `code`/`demo`/`sandbox`/`plotImage` are inappropriate, and the recommended widgets are `theory`, `quiz`, `dragMatch`, `dataTable`. I'll compose 1 theory beat + 5 widgets (4 quizzes spread across answer positions + 1 dragMatch on the A–E categories), all grounded in the syllabus. Writing the lesson now.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kon…
+Now let me validate against `LessonSchema`.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && npx tsx -e "
+const fs = require('n…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kontrolne-leczenie.json
+[system thinking_tokens]
+Validation passed. The lesson uses no images, plots, or local assets (grounded recall content per the course's research notes that steer away from imagery for this medical topic), so there are no asset-gate concerns to verify.
+## Done
+Authored and validated `courses/…-przygotowanie-do-pes/lessons/pytania-kontrolne-leczenie.json` — it passes `LessonSchema.safeParse`.
+**What was built** (grounded in `syllabus-part3.txt`, Moduły 16–18 + Dodatek A):
+- **1 theory beat** — "Cztery filary, które egzaminator lubi sprawdzać", framing the four PES-favourite themes with a markdown A–E side-effects comparison table, the ILAE 2010 drug-resistance definition, ketogenic-diet first-line indications/contraindications, and surgical-qualification facts.
+- **5 widget sections** (mix per research.md's recommended set for this medical course — `theory`/`quiz`/`dragMatch`; `code`/`demo`/`sandbox`/`plotImage` explicitly inappropriate here):
+  1. Quiz — DRESS/SJS → category **B** (idiosyncratic)
+  2. Quiz — JME → CBZ → LTG: the classic "not drug-resistant, just wrongly-chosen drugs" trap
+  3. **dragMatch** — assign six real side effects to categories A/C/D/E (multi-item-per-zone)
+  4. Quiz — ketogenic diet first-line in **GLUT1 deficiency**
+  5. Multi-select quiz — surgical-qualification facts vs. debunked myths (~10% qualify; early surgery prevents atrophy)
+**Compliance checks:** starts with theory, ends on a widget, no back-to-back theory; quiz correct indices spread across positions (`[0]`, `[2]`, `[3]`, multi `[1,3]` — no overuse, no all-correct multi); 6 lesson-level sources (Kwan 2010, Kossoff 2018, Engel 2012, Lüders 2001, NICE NG217, ASM Wikipedia) plus section-level sources on the theory and three relevant quizzes. Only the one lesson file was written — `course.json`, other lessons, and `scripts/ralph/` untouched.
+[result success (236.4s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then read the source materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research and sources files (targeting the relevant lesson sections) and the syllabus sources.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 9:[Omitted long matching line]
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 15:## Course-wide references
+Let me read the relevant sources.md section, the research.md context around the differential-diagnosis notes, and search the syllabus sources for relevant content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 221	## Diagnostyka różnicowa — stany imitujące napady i PNES
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 40	- **Encefalopatie padaczkowo-rozwojowe**: Dravet (SCN1A LoF; walproinian → klobazam/fenfluramina/stiripentol → CBD; skłony WYKLUCZAJĄ Dravet; blokery Na bezwzględnie przeciwwskazane), LGS (napady t…
+Now let me search the syllabus source files for the relevant differential-diagnosis content.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+←      955 syllabus-part1.txt
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1:# Padaczka i inne stany napadowe u dzieci — część 3: Leczenie + dodatki
+This is the core source material. Let me read the full Module 19 section to capture all details.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 843	## MODUŁ 19 — Diagnostyka różnicowa — stany imitujące napady padaczkowe
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 969	### Lekcja 19.5 — Algorytm różnicowania omdlenia konwulsyjnego vs napadu
+[system thinking_tokens]
+[system thinking_tokens]
+I have rich source material. Let me check an existing lesson in this course to match conventions, and the widget docs/schemas relevant for a medical (non-coding) lesson.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← total 968
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+Let me look at an existing clinical lesson to match the established widget conventions for this medical course.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now understand the course's clinical-lesson conventions (theory + quiz + dataTable + dragMatch + plotImage; no code/Pyodide). Let me set up a task list and find stable Wikimedia images to cache.
+→ Bash(command: cd /tmp && for q in "Salpetriere attitudes passionnelles" "Arc de cercle hysteri…)
+[system task_started]
+[system task_notification]
+← === Salpetriere attitudes passionnelles ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me find an opisthotonus/arc-de-cercle illustration and get full metadata (URL, author, license) for my candidate images.
+→ Bash(command: for q in "opisthotonus" "arc-de-cercle Bourneville Regnard" "Planche hystero epi…)
+← === opisthotonus ===
+[system thinking_tokens]
+→ Bash(command: titles="File:Hystero-Epilepsie. Planche XIII. Wellcome L0074934.jpg|File:Hystero…)
+← TITLE: File:EEG Recording Cap.jpg
+[system thinking_tokens]
+Let me download the candidate Planche images to preview which best shows the arc-de-cercle/opisthotonus posture.
+→ Bash(command: cd /tmp && curl -sL -o planche13.jpg "https://upload.wikimedia.org/wikipedia/com…)
+← -rw-r--r--  1 patrykbozek  wheel  5695772 May 30 03:14 planche10.jpg
+→ Read(file_path: /tmp/planche10.jpg)
+→ Read(file_path: /tmp/planche13.jpg)
+← (empty)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+These are plain portraits — not illustrative. Let me find the dramatic "attitudes passionnelles" / arc-de-cercle posture photos.
+→ Bash(command: titles="File:Attitudes Passionnelles Crucifixion, by Paul Regnard.jpg|File:Attit…)
+← === Attitudes passionnelles crucifiement ===
+→ Bash(command: titles="File:Attitudes Passionnelles Crucifiement, by Paul Regnard (Getty 108P15…)
+← TITLE: File:Attitudes Passionnelles Appel, by Paul Regnard (Getty 108P0W).jpg
+→ Read(file_path: /tmp/crucif.jpg)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The crucifiement image is a strong, CC0, pedagogically-relevant illustration of "grande hystérie" (the historical root of PNES, matching the source's opisthotonus note). Let me preview the EEG cap, then download both finals.
+→ Bash(command: cd /tmp && curl -sL -o eegcap.jpg "https://upload.wikimedia.org/wikipedia/common…)
+← eegcap.jpg: JPEG image data, Exif standard: [TIFF image data, little-endian, direntries=8, manufacturer=Canon, model=Canon EOS Kiss X4, xresolution=134, yresolution=142, resolutionunit=2, software=Ado…
+→ Read(file_path: /tmp/eegcap.jpg)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images are appropriate. Now let me create the assets directory and download both final images locally.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← total 55184
+[system thinking_tokens]
+Both downloaded. They're large originals — let me downscale them to web-appropriate sizes with macOS `sips`.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← -rw-r--r--  1 patrykbozek  staff  220273 May 30 03:16 grande-hysterie-attitudes-passionnelles-salpetriere.jpg
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images are now web-sized. Now I'll author the lesson JSON file.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/diagnostyka…
+Now let me generate the plotImage PNG by running its sourceCode from the course directory.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← saved
+Let me verify the plot renders correctly (Polish diacritics + axes).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← (empty)
+The plot renders cleanly with all Polish diacritics, axes, labels, and title. Now let me validate the lesson against `LessonSchema`.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && npx tsx -e "
+const fs = require('n…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/diagnostyka-roznicowa-stany-imitujace-napady-i-pnes.json
+Validation passes. Let me run the final asset gate checks from the skill's checklist — confirm no external image URLs survive and every referenced local asset exists on disk.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+slug="padaczka-i-inne-stany-napadowe-…)
+← --- external http(s) image refs (should be empty) ---
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All checks pass. The lesson is complete and valid.
+## Done — one lesson authored
+Wrote `/courses/padaczka-i-inne-stany-napadowe-u-dzieci-…/lessons/diagnostyka-roznicowa-stany-imitujace-napady-i-pnes.json` and it **validates against `LessonSchema`** (`safeParse` → OK).
+**Grounding.** Content is drawn from the uploaded source `syllabus-part3.txt` (MODUŁ 19, lessons 19.1–19.5: infant/child non-epileptic events, PNES features, PNES diagnostics, convulsive-syncope-vs-seizure table), cross-checked against `research.md` (the *Common misconceptions* note that benign sleep myoclonus *worsens* after ASM) and the curated `sources.md` block for this lesson.
+**Structure** (2 theory beats + 5 widgets, theory-heavy as fits a PES-prep clinical lesson — matching the course's existing lessons, which use no code/Pyodide):
+1. **theory** — why differential diagnosis cuts both ways (treating a non-epileptic child; missing arrhythmia → Holter EKG), age-based approach + inline video-EEG image
+2. **quiz** (single) — benign infantile sleep myoclonus pitfall (correct = C)
+3. **dataTable** — 11-row catalog of non-epileptic paroxysmal events by age with the key distinguishing feature each
+4. **theory** — PNES: features, frontal-lobe mimic, 30% comorbidity, video-EEG/placebo/prolactin + inline Salpêtrière "attitudes passionnelles" image
+5. **quiz** (multi) — features pointing to PNES vs seizure (correct = A/B/D, 3 of 5)
+6. **plotImage** — prolactin fold-rise by event type (rendered PNG with full axes; teaching nuance: frontal seizures also don't raise prolactin)
+7. **dragMatch** — convulsive syncope vs epileptic seizure feature sorting
+**Assets** (all cached locally, no external image URLs survive):
+- `video-eeg-recording-cap.jpg` (Wikimedia, CC BY 2.0)
+- `grande-hysterie-attitudes-passionnelles-salpetriere.jpg` (Paul Regnard, CC0)
+- `plots/diagnostyka-roznicowa-…-1.png` (generated from the byte-matching `sourceCode`)
+**Sources:** 4 lesson-level entries (Chapman 2018, LaFrance/ILAE 2013, Chen/AAN 2005 on prolactin, PNES Wikipedia), with section-level sources attached to the beats that lean on them. I did **not** touch `scripts/ralph/`, `course.json`, or any other lesson; `sources.md` already covered this lesson so no append was needed.
+[result success (487.1s)]
+[system init claude-opus-4-8[1m]]
+I'll start by reading the SKILL.md to understand the steps, then the schema and source materials.
+[rate_limit_event]
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+Lesson found: module `m7`, 16 min, "Korelacje genotyp-fenotyp — kazuistyka kliniczna". This is a Polish medical course — content must be in Polish. Now let me read the research, sources, and the syllabus source files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+Now let me read the syllabus source files, focusing on the genotype-phenotype casuistry content. Let me search for the key cases first.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+←      955 syllabus-part1.txt
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← Found 3 files
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 404:- Mutacja CDKL5.
+The genotype-phenotype content is concentrated in part3 (Module 20). Let me read that whole section.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 980	| Powrót świadomości | Szybki | Długi (dezorientacja) |
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have rich Module 20 content. Let me check the genetics module for genotype-driven therapy principles and the clinical-caution material.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← syllabus-part2.txt-796-- Bliźnięta monozygotyczne: 53%; dizygotyczne: 18%.
+Let me read the genotype-driven therapy lesson (5.7) and the variant interpretation section for the full picture.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 860	**Kanały potasowe (KCN…):**
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all the content I need. Now let me check the dragMatch and dataTable widget schemas (recommended for this domain), plus quiz/theory.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/schemas/dragMatch.json)
+← File does not exist. Note: your current working directory is /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotow…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/schemas/dataTable.json)
+← File does not exist. Note: your current working directory is /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotow…
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+Let me check the actual schema files. Let me find the dragMatch and dataTable schemas.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+Let me look at an existing lesson in this course to match the established style and conventions (callouts, dragMatch usage, sources format).
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← total 1008
+The genetics lesson is the closest analog. Let me read it to match conventions (callouts, dragMatch shape, inline images, source formatting).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+This genetics lesson is an excellent style model. My Part-7 lesson must be **case-based** (kazuistyka) and avoid duplicating the genetics lesson's gene→therapy dragMatch — I'll emphasize the clinical cases from the notes (Iwonka's 3 mutations, Zosia's "pokora kliniczna"), allelic spectrum, and gain/loss directionality. Let me find stable Commons images via the API.
+→ Bash(command: cd /tmp
+for q in "X-inactivation" "NMDA receptor" "Voltage-gated sodium channel"…)
+[system task_started]
+[system task_notification]
+← === X-inactivation ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Good candidates. Let me download three topical, stable Commons images and verify they land on disk.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← --- result ---
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Downloads returned HTML (wrong hash paths). Let me get the exact thumbnail URLs from the API and re-download.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← === sodium channel ===
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+← --- result ---
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three images are valid. Now I have everything to author the lesson. Let me write it — a case-based, theory-heavy lesson (3 theory beats + 4 widgets) grounded in the Module 20 cases.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/korelacje-g…
+Now let me validate against `LessonSchema`, confirm no external image URLs survive, and verify the cached image files exist.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+echo "=== external image URLs in less…)
+← === external image URLs in lesson (expect none) ===
+Validation passes, no external image URLs, all assets present. Let me do a final quality check on theory word counts (must be 150–400 each).
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+npx tsx -e "
+const fs=require('node:f…)
+← jeden-gen-wiele-fenotypow    theory 180 words OK
+The lesson is complete and validates. Done — one lesson authored.
+## Summary
+Authored `/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/korelacje-genotyp-fenotyp-kazuistyka-kliniczna.json` and validated it against `LessonSchema` (passes).
+**Grounding:** Read the SKILL.md end-to-end, the schema, `course.json` (lesson is module `m7`, 16 min), `research.md`, `sources.md`, and the syllabus sources — pulling the cases verbatim from **Module 20** of `syllabus-part3.txt` plus the genetics pitfalls from `syllabus-part1.txt` (lessons 5.7/5.8). The research notes mandated a theory-heavy medical lesson (`theoryPracticeRatio` 0.12) with **no** code/sandbox/demo widgets — so I used only `theory` + `dataTable` + `quiz` + `dragMatch`.
+**Shape:** 7 sections — 3 theory beats + 4 widgets, starts on theory, ends on quiz, no back-to-back theory:
+1. *Jeden gen, wiele fenotypów* — allelic spectrum + gain/loss directionality (KCNQ2, SCN1A, SCN2A, GRIN2A)
+2. `dataTable` — 13 genes → fenotyp → leczenie celowane
+3. `quiz` (single) — Na-channel blockers: contraindicated in Dravet vs indicated in SCN2A/GoF
+4. *Iwonka + paradoks PCDH19* — the 3-mutation case where targeted memantyna failed; X-inactivation mosaicism
+5. `dragMatch` — gene → hallmark clinical "perełka" (distinct from the genetics lesson's gene→therapy match)
+6. *Pokora kliniczna — Zosia* — negative WES-trio, interpretation pitfalls (polygenic harm, RAP40AL/CPVT artefacts)
+7. `quiz` (multi) — limits/pitfalls, 3 correct + 2 distractors
+**Differentiation:** kept it case-based to avoid duplicating the existing `genetyka-padaczek` lesson.
+**Assets:** downloaded 3 stable Wikimedia Commons images locally (voltage-gated sodium channel, X-chromosome inactivation, Socrates bust) into `assets/images/`; no external image URLs remain. Sources: 4 lesson-level entries from the matching `sources.md` block plus section-level attributions. I did not touch `scripts/ralph/`, `course.json`, or any other lesson.
+[result success (395.4s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the source materials.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+← 1	import { z } from 'zod';
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+Now let me read the research, sources, and source materials. Let me find the relevant lesson sections.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadow…)
+←      108 research.md
+Let me read research.md, sources.md, and search the syllabus for relevant content.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Research: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me find the appendix content (Dodatki B/C/D) in the syllabus files.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← sources/syllabus-part2.txt:38:- Dodatek A — Klasyczne mylenia i pytania egzaminacyjne
+The appendices are in syllabus-part3.txt. Let me read the relevant sections (Dodatek B, C, D).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1093	## DODATEK A — Klasyczne mylenia i pytania egzaminacyjne
+[system thinking_tokens]
+I have all the appendix material. The research notes strongly recommend `dataTable` and `dragMatch` for this appendix lesson (no code/sandbox — this is a medical course). Let me read those widget schemas.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check an existing lesson from this course to match conventions (especially dataTable/dragMatch usage).
+→ Bash(command: echo "=== widget types used across course ===" && grep -rho '"type": "[a-zA-Z]*"…)
+← === widget types used across course ===
+[system thinking_tokens]
+Let me look at the sibling lesson (korelacje-genotyp-fenotyp) to match dataTable/dragMatch conventions exactly.
+→ Bash(command: cd lessons && python3 -c "
+import json
+d=json.load(open('korelacje-genotyp-fenot…)
+← --- theory | jeden-gen-wiele-fenotypow
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images I want to reuse (`kanabidiol-struktura.png`, `video-eeg-recording-cap.jpg`) are already cached. Let me confirm the exact inline-image path convention used by existing lessons.
+→ Bash(command: cd lessons && grep -ho '/api/courses/[^)"]*kanabidiol-struktura.png\|/api/course…)
+← (eval):cd:1: no such file or directory: lessons
+→ Bash(command: grep -o '/api/courses/[^)" ]*kanabidiol-struktura.png' leczenie-niefarmakologicz…)
+← /api/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/assets/images/kanabidiol-struktura.png
+Both image paths confirmed. Now I'll author the lesson JSON.
+→ Write(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← File created successfully at: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/aneks-skrot…
+Now let me validate against `LessonSchema` and confirm the referenced cached images exist on disk.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && SLUG=padaczka-i-inne-stany-napadow…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+JSON parse error at position 2213. Let me locate the exact offending character.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && SLUG=padaczka-i-inne-stany-napadow…)
+← 'minacyjna:** „CBD bez klobazamu" → myśl **B153 (TSC)**; „CBD'
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The closing quote after `„` is an ASCII `"` (JSON's string delimiter) instead of the curly `"`. Every `„…"` pair needs the closing turned into a curly quote. Let me fix all of them.
+→ Bash(command: SLUG=padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzie…)
+← replacements changed length by 0
+The curly-quote fix landed. Now let me re-run validation.
+→ Bash(command: SLUG=padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzie…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/aneks-skroty-akronimy-programy-lekowe-nfz-i-osrodki-referencyjne.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The lesson validates against `LessonSchema`. Done — one lesson authored, one call.
+## Summary
+Authored `/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/aneks-skroty-akronimy-programy-lekowe-nfz-i-osrodki-referencyjne.json` — the Module 7 reference appendix (14 min, m7).
+**Structure** (6 sections: 2 theory beats + 4 widgets):
+1. **theory** — Programy lekowe NFZ B153 vs B154 (the klobazam pitfall), grounded in Dodatek B; inline CBD-structure image (reused cached asset)
+2. **dataTable** — sortable/filterable B153 vs B154 comparison (indication, drugs, qualification path, klobazam requirement, entry/continuation criteria)
+3. **quiz** — single-select on the TSC → B153 → no-klobazam distinction (correct at index 1, distractors from the classic B153/B154 confusion)
+4. **theory** — Polish reference centres + EEG apparatus (Dodatek C: CZD/IPiN/WUM-Płoski/Ługowska/Steinborn/Dudzińska; Elmiko/Mikromet/CompuMedics; availability gaps ACTH/ECD/MEG); inline video-EEG-cap image (reused cached asset)
+5. **dragMatch** — new ILAE acronyms → old eponyms (SeLECTS↔rolandyczna, SeLEAS↔Panayiotopoulos, EMAtS↔Doose, EEM↔Jeavons, SHE↔ADNFLE)
+6. **dataTable** — 27-row abbreviation glossary (Dodatek D) for quick lookup
+**Grounding & rules met:** all content pulled from the syllabus appendices B/C/D; no invented facts. No `code`/`demo`/`sandbox` widgets — per `research.md` these are inappropriate for this medical course, and the topic doesn't permit Python hands-on. Both ≥300-char theory beats carry meaningful-alt inline images that already exist on disk (no external image URLs); 5 lesson-level sources (3 articles + 2 papers with author/year); section-level sources attached to the programs theory (gov.pl obwieszczenie) and the eponym dragMatch (ILAE). Did not touch `course.json`, other lessons, or `scripts/ralph/`.
+A JSON quoting bug (ASCII `"` closing Polish `„…"` pairs) broke the first parse; fixed by converting the closers to curly `”`, after which `LessonSchema.safeParse` returns success.
+[result success (295.8s)]
+[system init claude-opus-4-8[1m]]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the required course inputs.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-585 of 791 total (28726 tokens, cap 25000). Call Read with offset=586 limit=585 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the rest of SKILL.md and the course context files in parallel.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKI…)
+← 586	        }
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+This is the final cross-course PES exam-review lesson (m7, 14 min). Let me read the research, sources, and the uploaded syllabus source files.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 1	# Sources: Padaczka i inne stany napadowe u dzieci — kurs dla rezydentów neurologii dziecięcej (przygotowanie do PES)
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-913 of 1335 total (31060 tokens, cap 25000). Call Read with offset=914 limit=913 for the next page, or Grep to find a specific section. Do N…
+[system thinking_tokens]
+Let me read the rest of part3 (the "classic mistakes / exam questions" appendix is exactly this lesson's material) plus the research notes for this lesson.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 914	- Szybki powrót świadomości.
+→ Grep(path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 11:[Omitted long matching line]
+[system thinking_tokens]
+Excellent — Dodatek A is exactly the source for this lesson. Let me read the research.md notes section for this lesson.
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u…)
+← 87	## Notes for lesson generation
+[system thinking_tokens]
+[system thinking_tokens]
+I have rich material. Now let me check the exact schemas for the widgets I'll use (theory, quiz, dragMatch, dataTable).
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /Users/patrykbozek/Projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. This is the final cross-cutting PES exam-review lesson (advanced, theory-heavy, quizzes are the "practice"). Per the research notes, no code/sandbox/demo — I'll use theory + quiz + dragMatch + dataTable. Let me find reliable Wikimedia Commons EEG images for the theory sections, resolving real URLs via the Commons API.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+for t in "Spike-waves.png" "Hypsarrhy…)
+← === Spike-waves.png ===
+[system thinking_tokens]
+Two solid images. Let me get their license/author info, then download both locally.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+for t in "Spike-waves.png" "Hypsarrhy…)
+← === Spike-waves.png ===
+[system thinking_tokens]
+Both are CC BY-SA. Let me download them locally into the course assets.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← total 43888
+[system thinking_tokens]
+[system thinking_tokens]
+The course already has identical copies (`iglica-fala-3hz-eeg.png`, `hipsarytmia-eeg.png`). I'll reuse those and remove my redundant downloads.
+→ Bash(command: cd "/Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napado…)
+← hipsarytmia-eeg.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both images ready. Now I'll author the lesson. Given it's the capstone PES review (advanced, theory-dominant with quizzes as the "practice", no code/sandbox per the research notes), I'll use 2 theory beats + quiz/dragMatch/dataTable. I'll build the JSON via Python to guarantee correct escaping.
+→ Write(file_path: /tmp/build_lesson.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+→ Write(file_path: /tmp/build_lesson_pes.py)
+← File created successfully at: /tmp/build_lesson_pes.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer && python3 /tmp/build_lesson_pes.py)
+← WROTE /Users/patrykbozek/Projects/ai_lecturer/courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kontrolne-egzamin-podsumowu…
+Now validate against `LessonSchema` and confirm the referenced image assets exist with no external URLs.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/padaczka-i-inn…)
+← OK: courses/padaczka-i-inne-stany-napadowe-u-dzieci-kurs-dla-rezydentow-neurologii-dzieciecej-przygotowanie-do-pes/lessons/pytania-kontrolne-egzamin-podsumowujacy-pes.json
+Schema passes. Now the asset-gate checks: confirm every referenced image exists locally and no external `http(s)` image URLs survive.
+→ Bash(command: cd /Users/patrykbozek/Projects/ai_lecturer
+DIR="courses/padaczka-i-inne-stany-na…)
+← --- external http(s) image refs (should be empty) ---
+[system thinking_tokens]
+[system thinking_tokens]
+All assets resolve, no external image URLs. Let me run the typecheck gate (JSON-only change should be clean).
+→ Bash(command: npm run typecheck 2>&1 | tail -20)
+← > ai-lecturer@0.1.0 typecheck
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The lesson validates against `LessonSchema`, typecheck is clean, all assets resolve locally, and no external image URLs survive.
+## Summary
+Authored one lesson — the course's capstone PES review — at:
+`courses/…-do-pes/lessons/pytania-kontrolne-egzamin-podsumowujacy-pes.json`
+**Grounded in the uploaded sources** (especially `syllabus-part3.txt` Dodatek A — "Klasyczne mylenia i pytania egzaminacyjne", plus the first-seizure / drug-resistance / PNES algorithms), and tuned to the `research.md` notes for this course (advanced level, theory-heavy `theoryPracticeRatio` 0.12, no `code`/`sandbox`/`demo` — inappropriate for a medical topic; quizzes are the "practice").
+**Structure** (2 theory beats + 5 widget sections, no two theories adjacent, ends on a widget):
+1. **theory** — "Trzy filary" + classic-confusion table + inline 3 Hz spike-wave EEG image
+2. **quiz** (single, correct=B) — drug contraindicated in Dravet (sodium-channel blockers)
+3. **dragMatch** — first-line drug → syndrome (incl. gender-based JME choice per PTN 2022)
+4. **quiz** (single, correct=C) — status epilepticus T1 = 5 min
+5. **theory** — first-seizure algorithm, drug-resistance pitfall, PNES vs seizure + inline hypsarrhythmia EEG image
+6. **quiz** (multi, 3/5) — features favouring PNES
+7. **dataTable** — 14 sortable "exam pearls"
+**Quality gates met:** quiz correct indices spread (B/C/multi), multi-select not all-correct, 5 lesson-level sources (4 ILAE papers with author+year + NICE NG217) with section-level attributions, both inline EEG images reuse existing local Wikimedia Commons assets (`iglica-fala-3hz-eeg.png`, `hipsarytmia-eeg.png`) with meaningful alt text and CC BY-SA credit in prose.
+I did not modify `course.json`, any other lesson, or `scripts/ralph/`; redundant image downloads were removed since identical copies already existed in the course assets.
+[result success (410.4s)]
+## Prerequisite Order
+
+- The 5-minute T1 threshold for status epilepticus is used in `drgawki-goraczkowe` before it is defined. That lesson's quiz explanation states "o stanie padaczkowym mówimy dopiero od 5 min utrzymującego się napadu," yet the operational T1/T2 definition is only introduced in the next lesson of the same module, `stan-padaczkowy`. Either move a one-line definition into `drgawki-goraczkowe` or add a forward-pointer ("zdefiniujemy w lekcji o stanie padaczkowym").
+
+- `emats-fires-i-inne-dee` relies on **niedrgawkowy stan padaczkowy (NCSE)** ("u <50% pojawia się NCSE") and on the **dieta ketogenna** as named treatments, but both are only formally introduced later — NCSE (the >2,5 Hz EEG criterion) in `stan-padaczkowy` (m4) and the ketogenic diet (mechanism, types, contraindications, propofol pitfall) in `leczenie-niefarmakologiczne-dieta-keto-vns-cbd-mtor` (m6). The same forward dependency on the ketogenic diet runs through `zespo-westa`, `choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1`, and `padaczki-uogolnione-wieku-dzieciecego`. Each early mention is locally functional ("leczenie z wyboru w GLUT1"), so this is a soft ordering issue, but a forward-pointer to the m6 lesson would help.
+
+- The formal ILAE definition of drug resistance (failure of two properly-chosen, tolerated regimens; Kwan 2010) appears only in `farmakoterapia-zasady-wyboru-leku-i-sekwencja-rzutow` (m6), while "lekooporność/lekooporna" is used as a load-bearing term from `wprowadzenie-definicje-ilae-epidemiologia-etiologia-i-patofizjologia` (m1, informal "~30%") onward through the Dravet, LGS, FIRES, and metabolic lessons. This is acceptable pedagogically (loose concept early, formalized in the treatment module) but worth a forward-pointer at first substantive use.
+
+## Redundancy
+
+- `diagnostyka-eeg-i-wideo-eeg` and `zespo-westa-i-napady-zgieciowe` both define the three-element hipsarytmia (chaotyczne tło delta + wieloogniskowe wyładowania z ≥2–3 ognisk + asynchronia międzypółkulowa) from scratch, with the same "non-REM, znika w REM, wrzeciona snu nie dyskwalifikują" qualifiers and neither acknowledging the other. Make `diagnostyka-eeg-i-wideo-eeg` the canonical definition and have `zespo-westa-i-napady-zgieciowe` recap it ("przypomnij z lekcji o EEG…").
+
+- `emats-fires-i-inne-dee` and `zespo-rasmussena-fires-i-norse` independently teach the full FIRES picture — febrile infection 24 h–2 tyg. prior, IL-1/IL-6 in PMR, bilateral temporal+insula+thalamus MRI, anakinra as first choice within ~2 weeks, ~10% mortality, and the "FIRES = NORSE u dziecka" relationship. The m5 lesson legitimately adds the Rasmussen contrast, but the clinical FIRES block is duplicated without cross-reference; the second occurrence should cite the first and keep only the comparative material.
+
+- The genotype-driven gene→therapy content is largely duplicated between `genetyka-padaczek` (section "geny-i-terapia-celowana") and `korelacje-genotyp-fenotyp-kazuistyka-kliniczna`: both teach SCN1A LoF→avoid Na-blockers vs GoF→use them, KCNQ2 frameshift-benign vs missens-encephalopathy→carbamazepine, GRIN2A LoF→memantyna / GoF→radiprodyl, and CDKL5→ganaksolon. The m7 lesson adds the case studies (Iwonka, Zosia) and more genes, but re-derives the shared table; it should reference `genetyka-padaczek` rather than restate it.
+
+- The prophylactic-vigabatrin-in-TSC story (EPISTOP/VIRAP, "jedyny w padaczce przykład", monitorowanie pola widzenia) is told in full in `zespo-westa-i-napady-zgieciowe`, again in full in `stwardnienie-guzowate-tsc`, and a third time in `farmakoterapia-zasady-wyboru-leku-i-sekwencja-rzutow`, with no cross-reference between them. One canonical treatment (the TSC lesson) and short recaps elsewhere would remove the repetition. (The parallel passages in the `pytania-kontrolne-*` lessons are explicit module recaps and are not counted here.)
+
+## Notation Consistency
+
+- Valproate is named three different ways across (and sometimes within) lessons: **kwas walproinowy**, **walproinian**, and **walproat**. `encefalopatie-padaczkowo-rozwojowe-zespo-dravet-i-lgs` alone uses all three ("kwas walproinowy (I rzut)", "redukcją/odstawieniem walproatu", "ostrożnie z walproinianem"), while other lessons settle variably on "walproinian" (`padaczki-modziencze-i-ogniskowe-rodzinne`) or "kwas walproinowy". Pick one primary term and use it consistently.
+
+- The diagnostic GLUT1 cutoff (stosunek glukozy PMR/surowica) is given with inconsistent numbers across lessons: "<0,6" in `emats-fires-i-inne-dee`, "0,41–0,51 (norma ok. 0,65)" in `choroby-metaboliczne-zwiazane-z-padaczka-i-deficyt-glut1`, "<0,5–0,6" in `pytania-kontrolne-zespoy-wieku-niemowlecego`, and "<0,5" in `pytania-kontrolne-stany-metaboliczne-i-nage` and `aneks-skroty-akronimy-programy-lekowe-nfz-i-osrodki-referencyjne`. A learner comparing lessons sees the same threshold as both "<0,6" and "<0,5"; standardize the stated cutoff.
+
+- The abbreviation for a generalized tonic-clonic seizure drifts between **GTCS** (`padaczki-modziencze-i-ogniskowe-rodzinne`) and **GTC** (`pytania-kontrolne-egzamin-podsumowujacy-pes`), separate from the syndrome abbreviation **GTCA**. Minor, but worth fixing one of the two seizure abbreviations so GTCA isn't visually confused with GTC/GTCS.
