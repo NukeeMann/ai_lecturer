@@ -340,9 +340,9 @@ function PrintSection({ section, n }: { section: Section; n: number }) {
         {n}. {section.title}
       </h2>
       {section.description ? (
-        <p style={{ color: '#555', fontStyle: 'italic', margin: '2pt 0 6pt 0' }}>
-          {section.description}
-        </p>
+        <div style={{ color: '#555', fontStyle: 'italic', margin: '2pt 0 6pt 0' }}>
+          <PrintMarkdown markdown={section.description} />
+        </div>
       ) : null}
       <div>{body}</div>
     </section>
@@ -446,7 +446,9 @@ export default async function LessonPrintPage({ params }: { params: Params }) {
           {lesson.title}
         </h1>
         {lesson.description ? (
-          <p style={{ color: '#444', margin: '6pt 0 0 0' }}>{lesson.description}</p>
+          <div style={{ color: '#444', margin: '6pt 0 0 0' }}>
+            <PrintMarkdown markdown={lesson.description} />
+          </div>
         ) : null}
       </header>
       <main>

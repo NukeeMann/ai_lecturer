@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { widgetRegistry, type WidgetType } from './registry';
+import { MarkdownInline } from '@/components/MarkdownInline';
 
 export type WidgetStatus = 'todo' | 'progress' | 'done';
 
@@ -251,7 +252,7 @@ export function Widget({
           <div style={eyebrowStyle}>
             {meta.label.toUpperCase()} · §{sectionNumber}
           </div>
-          <h3 style={titleStyle}>{title}</h3>
+          <h3 style={titleStyle}><MarkdownInline>{title}</MarkdownInline></h3>
         </div>
         {/*
           Order matters: status badge first, action row (which ends with the
@@ -285,7 +286,7 @@ export function Widget({
             lineHeight: 1.5,
           }}
         >
-          {description}
+          <MarkdownInline>{description}</MarkdownInline>
         </p>
       )}
       <div data-widget-body>{children}</div>

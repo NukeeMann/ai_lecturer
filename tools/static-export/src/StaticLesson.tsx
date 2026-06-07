@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 import { Callout } from '@/components/Callout';
+import { MarkdownInline } from '@/components/MarkdownInline';
 import type { SxPayload } from './payload';
 import {
   getLessonCompletion,
@@ -353,7 +354,9 @@ export function StaticLesson({ payload }: { payload: SxPayload }) {
           ) : null}
           <h1>{lesson.title}</h1>
           {lesson.description ? (
-            <p className="sx-lesson-desc">{lesson.description}</p>
+            <p className="sx-lesson-desc">
+              <MarkdownInline>{lesson.description}</MarkdownInline>
+            </p>
           ) : null}
         </header>
 

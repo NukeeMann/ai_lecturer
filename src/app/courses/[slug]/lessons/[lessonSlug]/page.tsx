@@ -39,6 +39,7 @@ import { Callout } from '@/components/Callout';
 import { formBodyStyle } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { LessonChat } from '@/components/LessonChat';
+import { MarkdownInline } from '@/components/MarkdownInline';
 import { keyLabel } from '@/lib/platform/platform';
 import { useIsMacPlatform } from '@/lib/platform/useIsMacPlatform';
 import { SidePanel } from '@/components/SidePanel';
@@ -3390,7 +3391,7 @@ function LessonHeader({
             lineHeight: 1.5,
           }}
         >
-          {description}
+          <MarkdownInline>{description}</MarkdownInline>
         </p>
       ) : null}
     </header>
