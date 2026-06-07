@@ -9,6 +9,8 @@ import { Widget } from '@/widgets/Widget';
 import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 import { Callout } from '@/components/Callout';
 import { MarkdownInline } from '@/components/MarkdownInline';
+import { SectionSourcesPopover } from '@/components/Sources';
+import type { Source } from '@/lib/schemas/lesson';
 import type { SxPayload } from './payload';
 import {
   getLessonCompletion,
@@ -44,7 +46,7 @@ interface SectionLike {
   title: string;
   description?: string;
   data: unknown;
-  sources?: unknown[];
+  sources?: Source[];
 }
 
 interface LessonLike {
@@ -195,6 +197,14 @@ function SectionView({
         title={section.title}
         description={section.description}
         status={done ? 'done' : 'todo'}
+        headerActions={
+          section.sources && section.sources.length > 0 ? (
+            <SectionSourcesPopover
+              sources={section.sources}
+              sectionId={section.id}
+            />
+          ) : undefined
+        }
         checkbox={{
           completed: done,
           onToggle: onToggleManual,

@@ -818,6 +818,26 @@ export function LessonChat({
     [handleSend],
   );
 
+  // Textarea-scoped: plain Enter sends, Shift+Enter inserts a newline.
+  // `isComposing` guards against committing while an IME candidate is open
+  // (CJK input), where Enter just confirms the candidate.
+  const handleTextareaKeyDown = useCallback(
+    (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        e.key === 'Enter' &&
+        !e.shiftKey &&
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        !e.nativeEvent.isComposing
+      ) {
+        e.preventDefault();
+        handleSend();
+      }
+    },
+    [handleSend],
+  );
+
   // Track the latest width inside event closures so onResizeEnd reports the
   // final value even when the React-prop chatWidth would still be stale.
   const dragWidthRef = useRef<number>(chatWidth);
@@ -1155,6 +1175,7 @@ export function LessonChat({
           placeholder="Ask about this lesson…"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={handleTextareaKeyDown}
           rows={1}
           style={composedTextareaStyle}
         />
