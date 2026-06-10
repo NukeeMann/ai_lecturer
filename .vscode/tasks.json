@@ -79,6 +79,63 @@
       "command": "open dist/library",
       "options": { "cwd": "${workspaceFolder}/tools/static-export" },
       "problemMatcher": []
+    },
+
+    {
+      "label": "Gemini Polish: 1) PRZYGOTUJ batche (export → out/<slug>/)",
+      "detail": "Jedna komenda przygotowuje out/<slug>/: NNN.prompt.md + NNN.map.json + MANIFEST.md. Podstawa pracy ręcznej (wklejanie do Gemini web) i automatycznej (task 2). Nie kasuje gotowych result.json.",
+      "type": "shell",
+      "command": "npm run export -- ${input:courseSlug}",
+      "options": { "cwd": "${workspaceFolder}/tools/gemini-polish" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Gemini Polish: 2) RUN przez API (auto-resume + limity)",
+      "detail": "Przerabia zaległe batche po kolei przez Gemini CLI i od razu aplikuje. Wznawia od ostatniego ukończonego; stop na quota/timeout/serii błędów; domyślnie tani flash-lite + twardy limit wywołań.",
+      "type": "shell",
+      "command": "npm run run -- ${input:courseSlug}",
+      "options": { "cwd": "${workspaceFolder}/tools/gemini-polish" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Gemini Polish: 3) APPLY ręcznych wyników (dry-run)",
+      "detail": "Podgląd dla pracy ręcznej: wczytuje wklejone NNN.result.json, weryfikuje tokeny + schemat, NIC nie zapisuje. Raporty w reports/<slug>/.",
+      "type": "shell",
+      "command": "npm run apply -- ${input:courseSlug} --dry",
+      "options": { "cwd": "${workspaceFolder}/tools/gemini-polish" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
+    },
+    {
+      "label": "Gemini Polish: 4) APPLY ręcznych wyników (zapis + .bak)",
+      "detail": "⚠️ ZAPISUJE: aplikuje zweryfikowane poprawki do plików kursu (każda zmieniona lekcja → .json.bak; pola zmienione ręcznie po exporcie są pomijane jako 'stale').",
+      "type": "shell",
+      "command": "npm run apply -- ${input:courseSlug}",
+      "options": { "cwd": "${workspaceFolder}/tools/gemini-polish" },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true,
+        "showReuseMessage": false
+      }
     }
   ],
   "inputs": [
@@ -91,8 +148,8 @@
     {
       "id": "courseSlug",
       "type": "promptString",
-      "description": "Slug kursu (nazwa folderu w courses/)",
-      "default": "geometria-analityczna-szybkie-przygotowanie-do-kartkowki"
+      "description": "Slug kursu (nazwa folderu w courses/ — to fragment URL-a po /courses/)",
+      "default": "faza-i-intuicja-matematyczna-w-robotyce-i-inzynierii-symulacyjnej"
     }
   ]
 }
