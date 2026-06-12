@@ -188,6 +188,10 @@ Prefer URLs that are unlikely to rot:
 
 When in doubt, prefer the *primary* source: cite the arxiv paper rather than a blog post that summarises it; cite the official docs rather than a tutorial that wraps them.
 
+### URL verification — MANDATORY before recording
+
+Every URL you put into `lesson.sources`, `section.sources`, or `sources.md` MUST be verified to resolve before you record it: fetch it (WebFetch, or `curl -sIL --max-time 10 "<url>"` via Bash) and confirm it does not 404/410. Never cite a URL you have not seen resolve in this session — and never write a DOI from memory; copy it from the paper's landing page (invented DOIs are the most common dead-link failure). The generation pipeline runs a liveness gate over every cited URL after the lesson validates: a 404/410 fails the attempt and the retry brief lists the dead URLs verbatim, forcing a redo.
+
 ### Per-source fields
 
 Every source object must conform to `SourceSchema` (`src/lib/schemas/lesson.ts`):
@@ -212,9 +216,13 @@ Every source object must conform to `SourceSchema` (`src/lib/schemas/lesson.ts`)
 - **Section-level `section.sources`** (any `section.sources`) — for **theory sections that draw on a specific reference** (e.g. a section on Canny's hysteresis that quotes Canny's 1986 paper), attach the matching source *also* to that section. Do not duplicate the entire lesson list onto every section — only attach references the section specifically leans on. Sections with no specific reference omit the field.
 - The schema permits `section.sources` on every section type (`theory`, `quiz`, `code`, `demo`, `sandbox`, `histogram`, `custom`), but in practice it is most useful on `theory` sections. Quiz/code/demo sections inherit credibility from the lesson-level list.
 
-### Recording in `sources.md` (optional but encouraged)
+### Recording in `sources.md`
 
-If you discover useful sources beyond what `research_course` recorded in `/courses/<slug>/sources.md`, append them to that file under the existing `## <Lesson title>` heading. Future lessons in the same course can re-use them. Do not delete or rewrite entries written by `research_course` or by other per-lesson agents.
+If you discover useful sources beyond what `research_course` recorded in `/courses/<slug>/sources.md`, append them to that file under the existing `## <Lesson title>` heading (optional but encouraged). Future lessons in the same course can re-use them.
+
+**If `sources.md` exists but has NO `## <lesson title>` heading for this lesson** — typical for lessons added after initial generation via the Extend flow — do your own source research per this step and APPEND a new `## <Lesson title>` block carrying the ≥ 3 entries you used. This case is required, not optional: without the block, later regenerations and sibling lessons have no bibliography to reuse.
+
+Never delete or rewrite entries written by `research_course` or by other per-lesson agents.
 
 ---
 
@@ -350,7 +358,7 @@ Only YouTube videos on `video` sections with `kind: "youtube"` are allowed to re
   - **No lesson ends on a bare `theory` block** — the last theory section must be followed by at least one widget.
 - **Always start with a `theory` section** (so the learner has context before the first interactive section).
 - **At least 1 `quiz` section where conceptual checking helps.** Skip only if the lesson is pure mechanics (e.g. a hands-on debug walkthrough where a quiz feels artificial).
-- **At least 1 `code` section OR 1 `demo` section where the topic permits hands-on.** For numeric / image / signal topics with a Pyodide-friendly task, prefer `code`. For visual intuition that benefits from a slider (currently only the `gauss` blur demo) prefer `demo`.
+- **At least 1 `code` section OR 1 `demo` section where the topic permits hands-on.** For numeric / image / signal topics with a task the local kernel can run in ≤ 30 s, prefer `code`. For visual intuition that benefits from a slider (currently only the `gauss` blur demo) prefer `demo`.
 - **At most one `demo` section per lesson** (the only registered demo is `gauss`; reusing it twice is redundant).
 - A `sandbox` section is a nice closer for hands-on lessons — encourages free exploration after the graded code exercise. Optional.
 - A `custom` section is an escape hatch for things no widget covers; use sparingly and only when the topic genuinely warrants it.
@@ -395,10 +403,11 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 
 #### Code (`type: "code"`)
 - `taskMarkdown` is a short brief: 1–3 sentences + a fenced example I/O block where useful. Tell the learner what function name to define.
-- `starterCode` is runnable Python (pyodide). Provide an empty function shell + minimal scaffolding — never the solution. Keep imports light (numpy is available; avoid unusual dependencies).
+- `starterCode` is runnable Python executed on the **local IPython kernel runtime** (US-201/US-202) — a real CPython venv at `~/.ai-lecturer/py-runtime`, NOT in-browser Pyodide. Provide an empty function shell + minimal scaffolding — never the solution. Baseline imports available out of the box: `numpy`, `cv2` (**real OpenCV**, not a shim), `matplotlib`, `torch` (CPU), `tensorflow`. `scipy`, `scikit-image`, `PIL`/Pillow, and `pandas` are NOT in the baseline venv — stick to the baseline; only reach beyond it when the exercise truly needs to, and then declare the import in `requiresPackages` (the widget will show a "missing packages" hint until the user installs the wheel).
+- **Each Run is capped at 30 s on the kernel.** Design the exercise (and its `solution`) to finish well under that — toy-scale data only. `torch` / `tensorflow` exercises must stay at tiny-tensor scale (a forward pass, a handful of gradient steps) — never a real training loop.
 - `tests`: **2–4 tests per exercise**. Each test:
   - has a **descriptive `name`** like `"returns_zero_for_empty_input"` or `"handles_negative_numbers"` — not `"t1"`/`"test_a"`.
-  - has a **meaningful but small `body`** — one or two `assert` lines at most. Tests run via the in-worker `__ai_run_tests` runner (no pytest), so plain `assert` works. Use `==`, not `np.allclose` unless floating point demands it; if it does, set `atol`/`rtol` explicitly.
+  - has a **meaningful but small `body`** — one or two `assert` lines at most. Tests run on the kernel, each in a fresh copy of the learner's namespace (no pytest), so plain `assert` works. Use `==`, not `np.allclose` unless floating point demands it; if it does, set `atol`/`rtol` explicitly. `cv2` is real OpenCV here, so asserting on its actual output is legitimate — but still prefer shape / dtype / coarse-statistics checks where library-version drift could bite.
   - omit `hidden` to default to `true` (hidden-with-peek), or set `hidden: false` to expose a sample test that the learner can read while solving. A common pattern: one visible "smoke test" + 1–3 hidden grading tests. (See memory: *Code widget tests hidden by default* — final UI is hidden-with-peek.)
 - Test bodies must reference the function/variable the learner is meant to define. Don't redefine helpers inside test bodies; the learner's namespace is in scope.
 - **Always populate `solution`** with a runnable reference implementation that would pass every test. The learner reaches it via the always-available *Peek solution* button (US-038); never leave `solution` empty for a code exercise. Keep the solution idiomatic and minimal — one clean implementation, not the full set of edge-case branches you'd put in production.
@@ -406,14 +415,14 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
   - `inputs[]` is a discriminated union by `kind`: `"image"` (`{ src, alt?, caption?, filename? }`), `"video"` (`{ src, caption?, filename? }`), `"file"` (`{ src, filename, caption? }`, downloadable), or `"text"` (`{ content, label? }`, rendered in a monospace box for raw fixtures / sample text). Use multiple entries for multi-input tasks (e.g. two frames for stereo matching).
   - `outputMedia` is a single image OR video showing the **expected** result the learner's code should reproduce — `{ kind: "image"|"video", src, alt?, caption?, live? }`.
   - Asset paths follow the same convention as `plotImage`: save under `courses/<slug>/assets/...` and reference as `/api/courses/<slug>/assets/...` (the route is content-typed correctly). External URLs work but are not cached locally for these fields.
-  - **Pyodide `/inputs/` VFS mount.** Every `image` / `video` / `file` input is automatically mounted into the Pyodide virtual filesystem at `/inputs/<filename>` before `starterCode` runs (aaf4847). The mount filename defaults to the **basename of `src`** (e.g. `/api/courses/foo/assets/in.png` → `/inputs/in.png`); set the optional `filename` field to override when `src` is opaque (signed URL, query-only path). `text` inputs are NOT mounted — they exist only for on-screen reference. Write `starterCode` that opens the mounted path directly — `cv2.imread('/inputs/scene.png')`, `Image.open('/inputs/scene.png')`, `open('/inputs/data.csv')` — not the public `/api/...` URL.
+  - **Kernel `/inputs/` mount.** Every `image` / `video` / `file` input is fetched server-side and written into `/inputs/<filename>` in the kernel session before `starterCode` runs (US-201). The mount filename defaults to the **basename of `src`** (e.g. `/api/courses/foo/assets/in.png` → `/inputs/in.png`); set the optional `filename` field to override when `src` is opaque (signed URL, query-only path). `text` inputs are NOT mounted — they exist only for on-screen reference. Write `starterCode` that opens the mounted path directly — `cv2.imread('/inputs/scene.png')`, `open('/inputs/data.csv')` — not the public `/api/...` URL.
   - **`outputMedia.live: true`** (image-only) turns the static `src` into a placeholder: it stays visible only until the learner clicks ▶ Run, then the matplotlib figure their code produces replaces it live (US-174). Use `live: true` whenever the exercise ends with `plt.imshow(...)` / `plt.plot(...)`; the static `src` is then the *reference output* the learner is trying to match. Without `live`, the image is purely informational and never changes.
   - When you ship `outputMedia`, the tests should still verify the output numerically — the image is for human reference, not the grader. Don't rely on the learner eyeballing the figure.
   - **Skip both fields** for purely numeric / algorithmic exercises (sorting, statistics, parsing) — they only add visual noise when there is no artefact to look at.
-- **`requiresPackages?: string[]`** — names of Pyodide packages to `loadPackage()` before the user code (and tests) run. Use it whenever `starterCode` / `solution` imports anything beyond the always-loaded `numpy` + `matplotlib`:
-  - `["Pillow"]` — `from PIL import Image` for PNG / JPEG decoding.
-  - `["cv2"]` — activates the in-browser cv2 shim built on `scipy` + `scikit-image` (NOT real OpenCV; see `src/lib/pyodide/CLAUDE.md`). Visually similar but pixel values may drift, so prefer assertions on shape / dtype / coarse statistics over exact-value compares.
-  - Other Pyodide-supported wheels (`scipy`, `scikit-image`, `pandas`, …) are accepted by name. Omit the field for stdlib-only / numpy-only / matplotlib-only exercises — every entry adds startup cost.
+- **`requiresPackages?: string[]`** — import names that must be importable in the kernel runtime before the exercise is runnable. This is a **precondition check** (US-202/US-203), not an install request: the widget probes the kernel venv and shows a "missing packages" banner listing anything absent — nothing is downloaded or shimmed. Declare every non-stdlib import your `starterCode` / `solution` / tests use beyond `numpy` + `matplotlib`:
+  - `["cv2"]` — real OpenCV (`opencv-python`), always present in the baseline venv.
+  - `["torch"]`, `["tensorflow"]` — CPU wheels, always present in the baseline venv.
+  - Anything outside the baseline (`scipy`, `skimage`, `PIL`, `pandas`, …) will show as missing until the user pip-installs it into `~/.ai-lecturer/py-runtime` — avoid unless the lesson genuinely needs it. Omit the field for stdlib-only / numpy-only / matplotlib-only exercises.
 
 #### Demo (`type: "demo"`)
 - Only `demoType: "gauss"` is registered (see `src/widgets/registry.ts`). Don't invent new types.
@@ -421,6 +430,7 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - `params.sigmaMin` < `params.sigmaDefault` < `params.sigmaMax`. Reasonable range: `0–6` for an introductory blur demo.
 
 #### Sandbox (`type: "sandbox"`)
+- Runs on the same per-lesson IPython kernel as the Code widget — identical runtime rules (baseline venv: `numpy`, real `cv2`, `matplotlib`, `torch`, `tensorflow`; 30 s per-run cap). The schema also accepts the Code widget's optional `inputs`, `outputMedia`, and `requiresPackages` fields with the same semantics.
 - `starterCode` seeds an open-ended exploration — typically the same skeleton as the preceding code exercise, minus the assertions, plus a comment inviting the learner to tweak parameters.
 - `encouragement` is **one tasteful sentence** — warm but brief. Examples:
   - `"Tweak the kernel size and watch the edges sharpen — no tests, no pressure."`
@@ -759,6 +769,7 @@ Why this lesson works as a worked example:
 - [ ] Every source has a non-empty `title`, a valid `url`, and a `kind` ∈ `{paper, video, article, book}`.
 - [ ] Every source with `kind: "paper"` or `kind: "book"` carries `author` + `year` (strongly preferred — only omit if you genuinely cannot recover them).
 - [ ] No source URL points at `medium.com`, `towardsdatascience.com`, `dev.to`, or other rot-prone blog hosts.
+- [ ] **Every cited URL was verified to resolve in this session** (WebFetch or `curl -sIL --max-time 10`) — no 404/410, no DOIs written from memory. The pipeline's source-URL gate fails the attempt on dead links.
 - [ ] At least one theory section that draws on a specific reference also carries a `section.sources` entry (omit on sections without a specific reference).
 - [ ] `section.sources` lives at the section root (next to `id` / `title` / `type` / `data`), **not** inside `data`.
 - [ ] **Every theory section with `markdown` ≥ 300 chars carries at least one inline `![alt](url)` image** where it pedagogically helps (US-051).

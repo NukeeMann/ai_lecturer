@@ -43,7 +43,16 @@ import {
   type Lesson,
   type LessonWithSentinel,
 } from '@/lib/schemas/lesson';
-import { runTts as defaultRunTts, type RunTtsResult } from './tts';
+import {
+  runTts as defaultRunTts,
+  TtsNotInstalledError,
+  type RunTtsResult,
+} from './tts';
+import {
+  findDeadSourceUrls,
+  formatSourceUrlIssuesError,
+  type SourceUrlCheckResult,
+} from './sourceUrlCheck';
 import { DEFAULT_TTS_VOICE, type TtsRequest } from '@/lib/schemas/tts';
 import { atomicRenameSync, atomicWriteJson } from './atomic';
 import {
@@ -319,6 +328,15 @@ export interface SpawnDeps {
    * exercised without spawning Coqui.
    */
   runTts?: (input: TtsRequest) => Promise<RunTtsResult>;
+  /** Disable the post-validation source-URL liveness gate for this run.
+   * Defaults to `false` in production; the pipeline test suites flip it
+   * globally via `__setSourceUrlCheckDisabledByDefault` (same pattern as the
+   * coherence pass) so scripted runs never touch the network. */
+  disableSourceUrlCheck?: boolean;
+  /** Injection point for the source-URL checker. Defaults to
+   * `findDeadSourceUrls` from `./sourceUrlCheck` (real HTTP probes). Tests
+   * pass a fake that classifies URLs without network access. */
+  checkSourceUrls?: (lesson: Lesson) => Promise<SourceUrlCheckResult>;
 }
 
 export class GenerationConflictError extends Error {
@@ -1430,6 +1448,16 @@ export function __setCoherencePassDisabledByDefault(disabled: boolean): void {
   coherencePassDisabledByDefault = disabled;
 }
 
+// Source-URL liveness gate default toggle — same contract as the coherence
+// flag above: production keeps it enabled, the pipeline test suites disable
+// it globally in beforeEach so scripted runs never issue real HTTP probes,
+// and the dedicated gate tests opt back in via `disableSourceUrlCheck: false`
+// plus an injected `checkSourceUrls` fake.
+let sourceUrlCheckDisabledByDefault = false;
+export function __setSourceUrlCheckDisabledByDefault(disabled: boolean): void {
+  sourceUrlCheckDisabledByDefault = disabled;
+}
+
 function makeRunId(): string {
   return `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -2460,7 +2488,11 @@ async function startGenerationInner(
     lesson: LessonWithSentinel,
   ): Promise<
     | { ok: true; lesson: Lesson }
-    | { ok: false; error: string; sectionId: string }
+    // `fatal: true` marks an infrastructure failure (TTS engine not
+    // installed) that no amount of re-prompting the lesson agent can fix —
+    // the runner aborts the remaining retry budget instead of burning full
+    // lesson generations on an identical failure.
+    | { ok: false; error: string; sectionId: string; fatal?: boolean }
   > {
     const ttsCallable = deps.runTts ?? defaultRunTts;
     const audioDir = path.join(courseDir(courseSlug), 'assets', 'audio');
@@ -2547,7 +2579,15 @@ async function startGenerationInner(
             status: 'failed',
             errorMessage: msg,
           });
-          return { ok: false, error: msg, sectionId: section.id };
+          return {
+            ok: false,
+            error: msg,
+            sectionId: section.id,
+            // A missing Coqui binary fails identically on every attempt; the
+            // retry budget would only re-run the (expensive) lesson agent to
+            // hit the same wall. Surface it as fatal so runLesson stops.
+            fatal: err instanceof TtsNotInstalledError,
+          };
         }
         try {
           await fs.mkdir(audioDir, { recursive: true });
@@ -2719,6 +2759,17 @@ async function startGenerationInner(
             /* no stale tmp — ignore */
           }
           lastError = `TTS post-processing failed: ${ttsOutcome.error}`;
+          if (ttsOutcome.fatal) {
+            // Infrastructure failure (engine not installed) — every retry
+            // would re-run the full lesson agent only to fail identically.
+            // Abort the attempt loop; the lesson surfaces as failed with
+            // this reason and the user's recourse is scripts/setup-tts.sh.
+            emit({
+              type: 'log',
+              line: `TTS engine unavailable — skipping remaining attempts for ${lessonSlug}: ${ttsOutcome.error}`,
+            });
+            break;
+          }
           continue;
         }
         // Final write — re-validate with the strict public schema so we
@@ -2743,6 +2794,34 @@ async function startGenerationInner(
         if (assetIssues.length > 0) {
           lastError = formatAssetIssuesError(assetIssues);
           continue;
+        }
+        // Source-URL liveness gate: cited references come straight out of
+        // the agent's head and are occasionally dead on arrival (404s,
+        // invented DOIs). Only permanently-dead URLs (404/410, confirmed via
+        // GET) fail the attempt — anti-bot 403s, rate limits, and network
+        // hiccups surface as log warnings so a flaky host can't burn a full
+        // lesson generation. The checker itself never throws; a crash inside
+        // it degrades to a no-op so the gate can never brick a run.
+        const disableSourceCheck =
+          deps.disableSourceUrlCheck ?? sourceUrlCheckDisabledByDefault;
+        if (!disableSourceCheck) {
+          const checkUrls = deps.checkSourceUrls ?? findDeadSourceUrls;
+          let urlResult: SourceUrlCheckResult;
+          try {
+            urlResult = await checkUrls(ttsOutcome.lesson);
+          } catch {
+            urlResult = { issues: [], warnings: [] };
+          }
+          for (const warning of urlResult.warnings) {
+            emit({
+              type: 'log',
+              line: `source-url check warning: ${warning.url} — ${warning.detail} (${warning.origins.join(', ')})`,
+            });
+          }
+          if (urlResult.issues.length > 0) {
+            lastError = formatSourceUrlIssuesError(urlResult.issues);
+            continue;
+          }
         }
         await atomicWriteJson(lessonFile(slug, lessonSlug), ttsOutcome.lesson);
         success = true;

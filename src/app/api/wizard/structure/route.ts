@@ -24,8 +24,9 @@ const UNAVAILABLE_BODY = {
     'AI Tutor unavailable: install Claude Code CLI or sign in to Claude Max.',
 };
 
-const STRUCTURE_MODEL_HINT =
-  '\n\n(Use the claude-opus-4-7 model — return JSON ONLY, no prose.)';
+// The model itself is pinned via the connector's `--model opus` flag below —
+// this trailing hint only reinforces the output contract.
+const STRUCTURE_MODEL_HINT = '\n\n(Return JSON ONLY — no prose.)';
 
 export async function POST(req: Request) {
   let body: unknown;

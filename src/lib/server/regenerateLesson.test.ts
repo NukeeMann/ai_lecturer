@@ -11,6 +11,7 @@ import { POST as postUndo } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/
 import { GET as getStatus } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/regenerate/status/route';
 import {
   __setRegenerateLessonSpawnForTesting,
+  defaultRegenerateLessonCommand,
   type RegenerateLessonSpawnDeps,
 } from '@/lib/server/regenerateLesson';
 import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
@@ -654,5 +655,34 @@ describe('GET .../lessons/[lessonSlug]/regenerate/status (US-149)', () => {
   it('returns 400 on an unsafe slug', async () => {
     const res = await getStatus(statusReq(), ctx({ slug: '../escape' }));
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Model pin + working-memory pointers (course-aware spawn spec) ────────────
+
+describe('defaultRegenerateLessonCommand (model pin + working memory)', () => {
+  it('pins --model opus and embeds research/sources pointers when the files exist', () => {
+    const { command, args } = defaultRegenerateLessonCommand({
+      courseSlug: 'image-denoising',
+      isQuizOnly: false,
+      researchExists: true,
+      sourcesExists: true,
+    });
+    expect(command).toBe('claude');
+    expect(args[args.indexOf('--model') + 1]).toBe('opus');
+    expect(args[1]).toContain('Course working memory');
+    expect(args[1]).toContain('/courses/image-denoising/research.md');
+    expect(args[1]).toContain('/courses/image-denoising/sources.md');
+  });
+
+  it('pins --model sonnet for quiz-only courses and omits absent working-memory files', () => {
+    const { args } = defaultRegenerateLessonCommand({
+      courseSlug: 'quiz-course',
+      isQuizOnly: true,
+      researchExists: false,
+      sourcesExists: false,
+    });
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
+    expect(args[1]).not.toContain('Course working memory');
   });
 });

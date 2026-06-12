@@ -28,6 +28,7 @@ import type { ChildProcess } from 'node:child_process';
 import {
   __resetForTesting,
   __setCoherencePassDisabledByDefault,
+  __setSourceUrlCheckDisabledByDefault,
   __setSpawnDepsForTesting,
   defaultLessonCommand,
   defaultDesignCourseCommand,
@@ -207,12 +208,14 @@ beforeEach(async () => {
   // unless an individual test opts back in. The "all four stages still run"
   // regression test opts back in via `disableCoherencePass: false`.
   __setCoherencePassDisabledByDefault(true);
+  __setSourceUrlCheckDisabledByDefault(true);
 });
 
 afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
   __setCoherencePassDisabledByDefault(false);
+  __setSourceUrlCheckDisabledByDefault(false);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });

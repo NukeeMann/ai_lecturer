@@ -12,6 +12,7 @@ import {
   type ExtendResponse,
 } from '@/lib/schemas/extend';
 import type { Course } from '@/lib/schemas/course';
+import { agentModel } from '@/lib/server/agentCourseContext';
 import { lessonFile } from '@/lib/server/paths';
 
 export class ExtendAgentParseError extends Error {
@@ -131,13 +132,16 @@ export function buildAgentInputCourse(
   };
 }
 
-export function defaultExtendCommand(): { command: string; args: string[] } {
+export function defaultExtendCommand(
+  ctx: { isQuizOnly: boolean } = { isQuizOnly: false },
+): { command: string; args: string[] } {
   // Mirrors the natural-language brief pattern used by research_course /
   // design_course / generate_lesson: claude's `-p` print mode treats slash commands as
   // literal prompt text, so we ask the agent to load the SKILL.md and
   // run it. The structured input arrives on stdin (via the `--` brief
   // below pointing the agent at stdin) so we never have to splice JSON
-  // into argv.
+  // into argv. The model is pinned to the one that authored the course
+  // (Opus, or Sonnet for quiz-only — US-192) instead of the CLI default.
   const prompt =
     `Run the extend_course skill defined in scripts/ralph/skills/extend_course/extend_course.md. ` +
     `Read the JSON input from stdin (it has fields currentSchema, instruction, and optional refinements). ` +
@@ -146,7 +150,13 @@ export function defaultExtendCommand(): { command: string; args: string[] } {
     `Do NOT write any files. Do NOT generate lesson content. Do NOT touch scripts/ralph/.`;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      '--model',
+      agentModel(ctx),
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 
@@ -158,7 +168,9 @@ export function defaultExtendCommand(): { command: string; args: string[] } {
  */
 export async function runExtendAgent(input: ExtendAgentInput): Promise<ExtendResponse> {
   const spawnFn = depsOverride?.spawn ?? defaultSpawn;
-  const { command, args } = defaultExtendCommand();
+  const { command, args } = defaultExtendCommand({
+    isQuizOnly: input.currentSchema.tags?.includes('quiz') ?? false,
+  });
 
   let child: ChildProcess;
   try {

@@ -16,6 +16,7 @@ import {
   __clearCancelCooldownForTesting,
   __resetForTesting,
   __setCoherencePassDisabledByDefault,
+  __setSourceUrlCheckDisabledByDefault,
   __setSpawnDepsForTesting,
   getActiveRun,
   resumeGeneration,
@@ -202,12 +203,14 @@ beforeEach(async () => {
   );
   __resetForTesting();
   __setCoherencePassDisabledByDefault(true);
+  __setSourceUrlCheckDisabledByDefault(true);
 });
 
 afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
   __setCoherencePassDisabledByDefault(false);
+  __setSourceUrlCheckDisabledByDefault(false);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });

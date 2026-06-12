@@ -145,7 +145,21 @@ afterEach(async () => {
   __resetGenerationForTesting();
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
-  await fs.rm(coursesRoot, { recursive: true, force: true });
+  // The pipeline's fire-and-forget marker writes (`void writeGeneratingMarker`
+  // / `void removeGeneratingMarker` in generation.ts) can land a tick after
+  // `finished` flips, re-creating a file inside a directory rm is mid-walk
+  // through — which surfaces as ENOTEMPTY. Retry briefly instead of flaking.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rm(coursesRoot, { recursive: true, force: true });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY' || attempt >= 4) {
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
 });
 
 function buildProposedSchema(slug: string, opts: { addModule?: boolean; addLesson?: boolean } = {}) {

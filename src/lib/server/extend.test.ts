@@ -9,6 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { POST as postExtend } from '@/app/api/courses/[slug]/extend/route';
 import {
   __setExtendSpawnForTesting,
+  defaultExtendCommand,
   type ExtendSpawnDeps,
 } from '@/lib/server/extend';
 import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
@@ -504,5 +505,19 @@ describe('readLessonDescriptions / buildAgentInputCourse (US-143)', () => {
       { params: Promise.resolve({ slug }) },
     );
     expect(res.status).toBe(200);
+  });
+});
+
+// ── Model pin (course-aware spawn spec) ──────────────────────────────────────
+
+describe('defaultExtendCommand model pin', () => {
+  it('pins --model opus for normal courses (and by default)', () => {
+    const { args } = defaultExtendCommand();
+    expect(args[args.indexOf('--model') + 1]).toBe('opus');
+  });
+
+  it('pins --model sonnet for quiz-only courses', () => {
+    const { args } = defaultExtendCommand({ isQuizOnly: true });
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
   });
 });

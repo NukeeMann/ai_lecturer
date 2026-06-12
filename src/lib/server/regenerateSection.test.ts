@@ -10,6 +10,7 @@ import { POST as postRegenerate } from '@/app/api/courses/[slug]/lessons/[lesson
 import { POST as postApply } from '@/app/api/courses/[slug]/lessons/[lessonSlug]/sections/[sectionId]/apply/route';
 import {
   __setRegenerateSectionSpawnForTesting,
+  runRegenerateSectionAgent,
   type RegenerateSectionSpawnDeps,
 } from '@/lib/server/regenerateSection';
 import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
@@ -563,5 +564,86 @@ describe('POST .../sections/[sectionId]/apply (US-146)', () => {
       regenCtx(),
     );
     expect(res.status).toBe(409);
+  });
+});
+
+// ── Course-aware spawn args: model pin + working-memory pointers ─────────────
+// The regenerate agent must run on the same model that authored the course
+// (Opus, or Sonnet for quiz-only — US-192) and be pointed at research.md /
+// sources.md when they exist so rewrites stay grounded in the course's
+// working memory.
+
+describe('regenerate_section spawn args (model pin + working memory)', () => {
+  function makeArgsCapturingSpawn() {
+    let captured: { command: string; args: string[] } | null = null;
+    const spawn = ((command: string, args: readonly string[] = []) => {
+      captured = { command, args: [...args] };
+      return new FakeChildProcess({
+        stdoutText: validAgentResponse(),
+      }) as unknown as ChildProcess;
+    }) as unknown as RegenerateSectionSpawnDeps['spawn'];
+    return { spawn, captured: () => captured };
+  }
+
+  function agentInput() {
+    return {
+      lessonContext: sampleLesson(),
+      sectionId: 'check-1',
+      instruction: 'Make it multi-select.',
+    } as unknown as Parameters<typeof runRegenerateSectionAgent>[0];
+  }
+
+  it('pins --model opus and omits working-memory pointers for a plain course', async () => {
+    await seedLesson();
+    const { spawn, captured } = makeArgsCapturingSpawn();
+    __setRegenerateSectionSpawnForTesting({ spawn });
+
+    await runRegenerateSectionAgent(agentInput());
+
+    const args = captured()!.args;
+    const modelIdx = args.indexOf('--model');
+    expect(modelIdx).toBeGreaterThan(-1);
+    expect(args[modelIdx + 1]).toBe('opus');
+    expect(args[1]).not.toContain('Course working memory');
+  });
+
+  it('pins --model sonnet when course.json carries tags: ["quiz"]', async () => {
+    await seedLesson();
+    await fs.writeFile(
+      path.join(coursesRoot, COURSE_SLUG, 'course.json'),
+      JSON.stringify({ tags: ['quiz'] }),
+      'utf8',
+    );
+    const { spawn, captured } = makeArgsCapturingSpawn();
+    __setRegenerateSectionSpawnForTesting({ spawn });
+
+    await runRegenerateSectionAgent(agentInput());
+
+    const args = captured()!.args;
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet');
+  });
+
+  it('points the agent at research.md and sources.md when they exist', async () => {
+    await seedLesson();
+    await fs.writeFile(
+      path.join(coursesRoot, COURSE_SLUG, 'research.md'),
+      '# Research: stub\n',
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(coursesRoot, COURSE_SLUG, 'sources.md'),
+      '# Sources: stub\n',
+      'utf8',
+    );
+    const { spawn, captured } = makeArgsCapturingSpawn();
+    __setRegenerateSectionSpawnForTesting({ spawn });
+
+    await runRegenerateSectionAgent(agentInput());
+
+    const prompt = captured()!.args[1];
+    expect(prompt).toContain('Course working memory');
+    expect(prompt).toContain(`/courses/${COURSE_SLUG}/research.md`);
+    expect(prompt).toContain(`/courses/${COURSE_SLUG}/sources.md`);
+    expect(prompt).toContain('do NOT modify them');
   });
 });
