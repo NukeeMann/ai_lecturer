@@ -4,6 +4,7 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
+  DELETE as deleteChat,
   GET as getChat,
   PUT as putChat,
 } from '@/app/api/chats/[courseSlug]/[moduleId]/route';
@@ -178,6 +179,35 @@ describe('PUT /api/chats/[courseSlug]/[moduleId]', () => {
       putRequest({ schemaVersion: 1, messages: [] }),
       ctx(COURSE, '../escape'),
     );
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('DELETE /api/chats/[courseSlug]/[moduleId]', () => {
+  it('clears the file so a subsequent GET returns empty history', async () => {
+    await putChat(
+      putRequest({
+        schemaVersion: 1,
+        messages: [msg('user', 'hi'), msg('assistant', 'hello')],
+      }),
+      ctx(),
+    );
+
+    const delRes = await deleteChat(new Request('http://x'), ctx());
+    expect(delRes.status).toBe(204);
+    await expect(fs.access(chatHistoryFile(COURSE, MODULE))).rejects.toThrow();
+
+    const getRes = await getChat(new Request('http://x'), ctx());
+    expect(await getRes.json()).toEqual({ schemaVersion: 1, messages: [] });
+  });
+
+  it('is a no-op (204) when no history file exists', async () => {
+    const res = await deleteChat(new Request('http://x'), ctx());
+    expect(res.status).toBe(204);
+  });
+
+  it('rejects an unsafe slug with 400', async () => {
+    const res = await deleteChat(new Request('http://x'), ctx('..', MODULE));
     expect(res.status).toBe(400);
   });
 });

@@ -72,3 +72,20 @@ Previous log archived to: archive/progress-2026-06-13-0922.txt
   - Path store mirrors progressFile() pattern: env override (CHATS_ROOT_OVERRIDE) for tests, ~/.ai-lecturer/chats/<courseSlug>/<moduleId>.json in prod. assertSafeSlug from src/lib/server/paths.ts guards both path segments (blocks .. / \).
   - Limit trim keeps the most recent 200 (slice from tail), enforced at write time only.
 ---
+
+## 2026-06-13 - US-211
+- LessonChat now hydrates the per-(course,module) tutor transcript on open, autosaves completed turns (debounced PUT), and exposes a Clear history button (inline confirm) that DELETEs the file + empties the view.
+- Files changed:
+  - src/lib/server/chatHistory.ts — added clearChatHistory(courseSlug, moduleId): unlink, ENOENT treated as success.
+  - src/app/api/chats/[courseSlug]/[moduleId]/route.ts — added DELETE handler (204 on success, 400 on unsafe slug).
+  - src/components/LessonChat.tsx — new optional `moduleId` prop; ChatMessage gained `createdAt?` + `hydrated?`; hydration effect (GET /api/chats), debounced autosave effect (PUT, gated on !sending + loaded), Clear history button + handleClearHistory; history window sent to /api/lesson-chat now excludes hydrated messages.
+  - src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx — passes moduleId={lesson?.moduleId} to LessonChat.
+  - src/lib/server/chatHistory.test.ts — DELETE route tests (clears file, no-op when missing, unsafe slug 400).
+  - src/components/LessonChat.test.tsx — US-211 block: hydration renders persisted msgs; Clear confirm→clears view+DELETE; Cancel keeps transcript.
+- Browser (playwright): 11/12 checks PASS — hydration, same-module nav shows same convo, other-module shows other convo (not M1), Clear confirm empties view + store, clear is module-scoped (M1 untouched). The 1 "fail" is a false positive: pre-existing /api/.../regenerate/status 404 console noise unrelated to this story; all /api/chats calls returned 200/204.
+- **Learnings for future iterations:**
+  - AC "Okno historii wysyłane do /api/lesson-chat pozostaje niezmienione — persystencja nie zwiększa rozmiaru promptu" was read literally/conservatively: hydrated (persisted) messages render in the transcript but are tagged `hydrated:true` and EXCLUDED from the `history` array sent to /api/lesson-chat. So a returning session sends the same (session-only) window it did before persistence — the tutor sees prior turns visually but not in its prompt. There is no server-side history cap in /api/lesson-chat (connector embeds all provided turns), so this client-side exclusion is what keeps the prompt from ballooning to 200 messages.
+  - Autosave ordering gotcha: two effects (hydrate + save) both run on mount. The save effect must wait on a SEPARATE `loadedKeyRef` that is set only AFTER the GET resolves — NOT on `hydratedKeyRef` (set synchronously at fetch start). Otherwise the save effect fires an empty-list PUT during the load round-trip and wipes the store before hydration lands. `lastSavedRef` (serialized last-persisted payload) additionally dedupes the echo-write right after hydration.
+  - Persistence is disabled entirely when the parent passes `initialMessages` (tests/storybook): `persistenceEnabled = initialMessages === undefined`. Component tests that mock only /api/tts won't get surprise /api/chats fetches.
+  - moduleId comes straight from `lesson.moduleId` (lesson.json already carries it) — no need to re-map lessonSlug→moduleId against course.json in the component. Same-module navigation keeps the same chatKey (`courseSlug::moduleId`) so the transcript is reused; cross-module nav changes the key and re-hydrates.
+  - Clear during an in-flight stream: handleClearHistory mirrors handleStop (abort + DELETE the requestId) then setMessages([]); the late finalize maps find no pending row → no duplicate/re-added message.
