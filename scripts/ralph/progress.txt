@@ -89,3 +89,21 @@ Previous log archived to: archive/progress-2026-06-13-0922.txt
   - Persistence is disabled entirely when the parent passes `initialMessages` (tests/storybook): `persistenceEnabled = initialMessages === undefined`. Component tests that mock only /api/tts won't get surprise /api/chats fetches.
   - moduleId comes straight from `lesson.moduleId` (lesson.json already carries it) — no need to re-map lessonSlug→moduleId against course.json in the component. Same-module navigation keeps the same chatKey (`courseSlug::moduleId`) so the transcript is reused; cross-module nav changes the key and re-hydrates.
   - Clear during an in-flight stream: handleClearHistory mirrors handleStop (abort + DELETE the requestId) then setMessages([]); the late finalize maps find no pending row → no duplicate/re-added message.
+
+## 2026-06-13 - US-212
+- Fixed static-HTML export emitting kernel-only Code/Sandbox widgets (cv2/torch/tensorflow) as interactive Pyodide widgets whose Run crashed on import. Now they degrade to read-only.
+- New module: src/lib/export/pyodidePackages.ts — allowlist of Pyodide-loadable packages (numpy, matplotlib, scipy, scikit-image/skimage, pandas + scikit-learn/sklearn, sympy, networkx, pillow/pil). Exports `isPyodideLoadable(pkg)`, `allPyodideLoadable(pkgs?)` (undefined/empty → true), `PYODIDE_LOADABLE_PACKAGE_LIST`. Case-insensitive, trims, matches import-name OR dist-name.
+- src/lib/export/staticRender.tsx:
+  - StaticCode: if `requiresPackages` not all-allowlisted → StaticKernelOnly (badge 'Requires local kernel runtime', server-side syntax-highlighted starter code via HighlightedPython, NO Run/textarea). Else interactive as before.
+  - StaticSandbox: previously ALWAYS read-only with no Run. Now: non-allowlisted → StaticKernelOnly badge; allowlisted/none → interactive editor reusing the Code widget's `data-static-code-*` hooks so the existing static-client.js wires Run with zero client changes.
+  - PYODIDE_LOADER_JS runPython now calls `await py.loadPackagesFromImports(code)` before runPythonAsync — runPythonAsync does NOT auto-load packages, so `import numpy` previously failed even for allowlisted pkgs. Wrapped in try/catch so a genuine import error still surfaces as a Python traceback.
+  - Added CSS for .static-kernel-badge / .static-kernel-note / .static-pyhl-* and added --code-keyword/--code-string/--code-comment/--code-number tokens to the inlined static token block (light + dark).
+- Tests: src/lib/export/pyodidePackages.test.ts (allowlist unit tests); route.test.ts gained a US-212 block (cv2 code → badge+no Run, torch sandbox → badge+no Run, numpy code → interactive). Failing-first confirmed before fix.
+- Browser (playwright, served unzipped export over http): 7/7 PASS — cv2 widget badge + no Run + no input + highlighted code; numpy widget Run loaded Pyodide+numpy from CDN and printed 2.5. Screenshots /tmp/us212-{before,after}-run.png.
+- Typecheck + eslint clean. Full suite 1290/1291 (the 1 fail is a pre-existing flaky generation.test.ts .generating.json marker race — passes in isolation, unrelated to export).
+- **Learnings for future iterations:**
+  - The static export's pyodide-loader.js MUST call `loadPackagesFromImports` — Pyodide's runPythonAsync never auto-loads packages. Any future widget importing a Pyodide-shipped package relies on this scan.
+  - SandboxWidget in static export now shares the Code widget's `data-static-code-{input,run,output,status}` DOM contract; static-client.js attaches by querying ALL `[data-static-code-run]`, so adding interactive widgets just needs those attributes (no per-type wiring).
+  - `allPyodideLoadable(undefined)` returns true (interactive). To force read-only for a kernel-only widget, the widget JSON must declare `requiresPackages` with the kernel package (cv2/torch/...). A widget that imports cv2 but forgets to declare it would still export interactive and fail at Run — declaration is the gate.
+  - Allowlist is the single source of truth (src/lib/export/pyodidePackages.ts); widen it (e.g. add a package Pyodide starts shipping) only there.
+---
