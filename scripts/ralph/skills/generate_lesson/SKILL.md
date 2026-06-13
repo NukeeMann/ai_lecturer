@@ -393,6 +393,14 @@ Every section type accepts an OPTIONAL `description: string` field on the sectio
 - Length: **150–400 words per theory section.** Use the lower half of the range when the topic splits into multiple theory beats and each one is a short focused sub-section; use the upper half when the lesson has a single theory beat that needs to carry real weight on its own.
 - Headings: don't open with `# `; the section's own title is already a heading. Use `##` / `###` for sub-structure if needed.
 - **Don't ship a wall of prose.** Apply the *Your Role* principles at the top of this skill: break the markdown with bullet lists for parallel items, short tables for X-vs-Y comparisons, blockquotes for definitions / warnings, and at least one `![alt](url)` inline image whenever the section is ≥ 300 chars and the topic is visualisable (almost always — kernels, signals, plots, architectures, before/after pairs, geometric layouts). KaTeX formulas and worked numeric examples beat hand-wavy prose every time the topic involves quantities. A theory section that is one unbroken 350-word paragraph with no formula, no list, no figure, and no code is a *failure mode*, not a default.
+- **Mermaid diagrams** render from a fenced ```` ```mermaid ```` block (`flowchart` / `sequenceDiagram` / `mindmap`). Reach for one when the *relationship between parts* is the point — a processing **pipeline**, a **data/control flow**, a **concept map**, or an **architecture / state machine**. Use KaTeX for formulas (not a diagram), `plotImage` / `histogram` for quantitative charts (Mermaid has no axes), and an inline image for photographic / pixel-accurate figures. Keep it small (**~15 nodes max**), write valid Mermaid syntax, and **never add inline `style` / `classDef` colour overrides** — the renderer maps the diagram onto the active theme (light / dark / sunset), and hard-coded colours break that. Example:
+
+  ````markdown
+  ```mermaid
+  flowchart LR
+    A[Raw frame] --> B[Grayscale] --> C[Threshold] --> D[Contours]
+  ```
+  ````
 
 #### Quiz (`type: "quiz"`)
 - `question` is a single, unambiguous prompt.
