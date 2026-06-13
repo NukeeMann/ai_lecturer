@@ -1,0 +1,61 @@
+[2026-06-13T10:56:59+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:57:01+0200] I'll start by reading the Ralph instructions, then look at the relevant files for US-217.
+[2026-06-13T10:57:07+0200] Now let me look at the skills directory and the PRD entry for US-217.
+[2026-06-13T10:57:12+0200] No `ui` tag, so no browser testing needed. Let me find which skills mention theory sections.
+[2026-06-13T10:57:22+0200] No skills mention mermaid yet. Let me examine the relevant skill files to understand how each describes theory sections.
+[2026-06-13T10:57:53+0200] I now understand the structure. Let me read the detailed Theory content sections in generate_lesson and the relevant skill files to find exact insertion points.
+[2026-06-13T10:57:59+0200] Let me read the Theory detail block in generate_lesson (around lines 385-400) to place the Mermaid guidance there.
+[2026-06-13T10:58:12+0200] I have everything I need. Let me start with the docs/widgets.md Mermaid subsection, inserting it into the Theory section.
+[2026-06-13T10:58:28+0200] Now generate_lesson/SKILL.md — add Mermaid guidance to the Theory per-widget rules.
+[2026-06-13T10:58:40+0200] Now the three editing/inserting skills. They share the same Theory rule line. Let me read the exact lines to match each.
+[2026-06-13T10:58:52+0200] All three (regenerate_section:77, insert_section:72, regenerate_lesson:115) share the identical Theory bullet. I'll append a Mermaid clause with an inline flowchart example to each.
+[2026-06-13T10:59:49+0200] Now let me verify the grep AC and run typecheck. First, the grep over the skills dir:
+[2026-06-13T11:00:00+0200] All 4 authoring skills mention mermaid with a flowchart example. Now run typecheck (AC #6).
+[2026-06-13T11:00:20+0200] Typecheck passes. Now update prd.json — append the note about generate_quiz_lesson (AC #4) and flip `passes` to true.
+[2026-06-13T11:00:40+0200] Now append to progress.txt and commit.
+[2026-06-13T11:01:10+0200] Committed. US-217 is complete.
+
+## Summary
+
+Made the content-authoring skills Mermaid-aware so newly generated courses use diagrams where they genuinely improve understanding (US-216 shipped the renderer; this story tells the generators it exists).
+
+**docs/widgets.md** — new `### Mermaid diagrams` subsection under Theory:
+- Fenced ```` ```mermaid ```` syntax + supported types (flowchart, sequenceDiagram, mindmap)
+- **When to use:** pipelines, data/control flow, concept maps, architectures/state machines
+- **When NOT to:** formulas → KaTeX, quantitative charts → `plotImage`/`histogram`, photographic figures → inline image
+- Guidelines: ~15-node limit, valid syntax, no inline `style`/`classDef` colour overrides (they fight the theme)
+
+**Skill prompts** — added a Mermaid clause + a short flowchart example to all four skills that emit/edit theory content: `generate_lesson` (fenced ```mermaid example), `regenerate_section`, `insert_section`, `regenerate_lesson` (inline `flowchart LR; …` example). Each repeats the same guideline (valid syntax, no inline-style overrides, ≤ ~15 nodes).
+
+**Acceptance criteria:**
+- ✅ docs/widgets.md Mermaid subsection with syntax/types/when-use/when-not/size limit
+- ✅ generate_lesson, regenerate_section, insert_section (+ regenerate_lesson) mention Mermaid with a flowchart example
+- ✅ Prompt guidelines: correct syntax, no inline styles, ~15 nodes max
+- ✅ generate_quiz_lesson intentionally unchanged — noted in the US-217 `notes` field (quiz-only lessons have no theory)
+- ✅ `grep -rli mermaid` over the skills dir returns exactly the four theory-authoring skills, each with a flowchart example
+- ✅ Typecheck passes (`tsc --noEmit`, clean)
+
+`passes: true` set for US-217 and committed (`6aa217c`).
+[2026-06-13T11:01:11+0200] [result success turns=30 cost=$1.9075815] Committed. US-217 is complete.
+
+## Summary
+
+Made the content-authoring skills Mermaid-aware so newly generated courses use diagrams where they genuinely improve understanding (US-216 shipped the renderer; this story tells the generators it exists).
+
+**docs/widgets.md** — new `### Mermaid diagrams` subsection under Theory:
+- Fenced ```` ```mermaid ```` syntax + supported types (flowchart, sequenceDiagram, mindmap)
+- **When to use:** pipelines, data/control flow, concept maps, architectures/state machines
+- **When NOT to:** formulas → KaTeX, quantitative charts → `plotImage`/`histogram`, photographic figures → inline image
+- Guidelines: ~15-node limit, valid syntax, no inline `style`/`classDef` colour overrides (they fight the theme)
+
+**Skill prompts** — added a Mermaid clause + a short flowchart example to all four skills that emit/edit theory content: `generate_lesson` (fenced ```mermaid example), `regenerate_section`, `insert_section`, `regenerate_lesson` (inline `flowchart LR; …` example). Each repeats the same guideline (valid syntax, no inline-style overrides, ≤ ~15 nodes).
+
+**Acceptance criteria:**
+- ✅ docs/widgets.md Mermaid subsection with syntax/types/when-use/when-not/size limit
+- ✅ generate_lesson, regenerate_section, insert_section (+ regenerate_lesson) mention Mermaid with a flowchart example
+- ✅ Prompt guidelines: correct syntax, no inline styles, ~15 nodes max
+- ✅ generate_quiz_lesson intentionally unchanged — noted in the US-217 `notes` field (quiz-only lessons have no theory)
+- ✅ `grep -rli mermaid` over the skills dir returns exactly the four theory-authoring skills, each with a flowchart example
+- ✅ Typecheck passes (`tsc --noEmit`, clean)
+
+`passes: true` set for US-217 and committed (`6aa217c`).
