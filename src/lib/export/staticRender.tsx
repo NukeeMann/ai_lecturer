@@ -12,7 +12,13 @@
 // loader at `assets/pyodide-loader.js`.
 
 import { createRequire } from 'node:module';
-import { Fragment, type CSSProperties, type ReactNode } from 'react';
+import {
+  Children,
+  Fragment,
+  isValidElement,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
@@ -26,6 +32,11 @@ type CalloutTone = 'info' | 'insight' | 'warning' | 'danger';
 
 import { PYODIDE_CDN_SCRIPT, PYODIDE_VERSION } from './constants';
 import { allPyodideLoadable } from './pyodidePackages';
+
+// US-216: pin the Mermaid CDN build that the static export loads. Kept in sync
+// with the `mermaid` devDependency used by the live app.
+const MERMAID_VERSION = '11.15.0';
+const MERMAID_CDN_SCRIPT = `https://cdn.jsdelivr.net/npm/mermaid@${MERMAID_VERSION}/dist/mermaid.esm.min.mjs`;
 
 const KERNEL_ONLY_BADGE = 'Requires local kernel runtime';
 
@@ -249,7 +260,43 @@ function normalizeTone(raw: unknown): CalloutTone {
   return 'info';
 }
 
+// Extract the raw text of a fenced code block's <code> child.
+function extractCodeText(node: ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractCodeText).join('');
+  if (isValidElement(node)) {
+    const props = node.props as { children?: ReactNode };
+    return extractCodeText(props.children);
+  }
+  return '';
+}
+
+const MERMAID_CLASS_RE = /(?:^|\s)language-mermaid(?:\s|$)/;
+
+// In the static export a ```mermaid block becomes a `<pre class="mermaid">`
+// whose text content is the diagram source. `assets/mermaid-loader.js`
+// (mermaid via CDN, ESM) renders it to SVG in the browser. Other fenced
+// blocks fall through to a plain <pre>.
+function StaticPre({ children }: { children?: ReactNode }) {
+  const childArray = Children.toArray(children);
+  const codeChild = childArray.find((c) => isValidElement(c));
+  if (isValidElement(codeChild)) {
+    const props = codeChild.props as { className?: string; children?: ReactNode };
+    if (typeof props.className === 'string' && MERMAID_CLASS_RE.test(props.className)) {
+      const code = extractCodeText(props.children).replace(/\n$/, '');
+      return (
+        <pre className="mermaid" data-mermaid>
+          {code}
+        </pre>
+      );
+    }
+  }
+  return <pre>{children}</pre>;
+}
+
 const markdownComponents: Components = {
+  pre: StaticPre as Components['pre'],
   ...({
     callout: ({
       children,
@@ -674,11 +721,27 @@ function escapeJsonForScript(json: string): string {
   return json.replace(/<\/script/gi, '<\\/script');
 }
 
+// True when any theory section in the lesson contains a ```mermaid fenced
+// block — used to load the (CDN) mermaid bundle only where it's needed.
+const MERMAID_FENCE_RE = /(^|\n)[ \t]*```[ \t]*mermaid\b/;
+
+export function lessonHasMermaid(lesson: Lesson): boolean {
+  return lesson.sections.some(
+    (s) =>
+      s.type === 'theory' &&
+      typeof s.data.markdown === 'string' &&
+      MERMAID_FENCE_RE.test(s.data.markdown),
+  );
+}
+
 export function renderLessonHtml(opts: RenderLessonOptions): string {
   const inner = renderToStaticMarkup(<StaticLessonBody {...opts} />);
+  const mermaidScript = lessonHasMermaid(opts.lesson)
+    ? '\n<script type="module" src="../assets/mermaid-loader.js"></script>'
+    : '';
   const scripts = `<script src="../assets/pyodide-loader.js" defer></script>
 <script src="./${opts.lesson.slug}.data.js" defer></script>
-<script src="../assets/static-client.js" defer></script>`;
+<script src="../assets/static-client.js" defer></script>${mermaidScript}`;
   return htmlShell({
     title: `${opts.lesson.title} — ${opts.course.title}`,
     bodyHtml: `<div class="static-shell static-lesson-shell">${inner}</div>`,
@@ -848,6 +911,11 @@ code, pre, textarea.static-code-textarea { font-family: ui-monospace, SFMono-Reg
 .static-code-output[data-state="ok"] { color: var(--text); }
 
 .static-code-block { background: var(--code-bg); color: var(--code-text); padding: 10px 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; }
+
+/* Mermaid diagrams (US-216) — centred; mermaid.run() swaps the source text
+   for an inline SVG once the CDN bundle loads. */
+pre.mermaid { background: transparent; padding: 0; border: 0; display: flex; justify-content: center; margin: 12px 0; color: var(--text-tertiary); }
+pre.mermaid svg { max-width: 100%; height: auto; }
 .static-code-solution summary { cursor: pointer; color: var(--text-tertiary); font-size: 13px; margin-top: 12px; }
 
 /* Quiz widget */
@@ -1240,4 +1308,61 @@ export const STATIC_CLIENT_JS = `// US-152: client-side wiring for Code + Quiz w
     attachQuizCheckers(lesson);
   });
 })();
+`;
+
+export const MERMAID_LOADER_JS = `// US-216: Mermaid loader for the static export — pinned to v${MERMAID_VERSION}.
+//
+// Loaded as an ES module (\`<script type="module">\`) only on lessons that
+// contain a \`\`\`mermaid block. Imports mermaid from the jsDelivr CDN (mirrors
+// the assets/pyodide-loader.js CDN pattern), binds the diagram palette to the
+// exported theme tokens, and renders every \`<pre class="mermaid">\` to SVG.
+// One bad diagram does not break the others (suppressErrors) and leaves its
+// source text visible as a fallback.
+
+import mermaid from '${MERMAID_CDN_SCRIPT}';
+
+function readThemeVariables() {
+  var cs = window.getComputedStyle(document.documentElement);
+  function v(name, fallback) {
+    var raw = cs.getPropertyValue(name).trim();
+    return raw.length > 0 ? raw : fallback;
+  }
+  var text = v('--text', '#18171a');
+  var accentSubtle = v('--accent-subtle', '#eaf0fd');
+  var accentBorder = v('--accent-border', '#c2d2f8');
+  var bgElevated = v('--bg-elevated', '#ffffff');
+  var bgSubtle = v('--bg-subtle', '#f6f4f0');
+  var line = v('--text-secondary', '#56524a');
+  return {
+    background: bgElevated,
+    primaryColor: accentSubtle,
+    primaryTextColor: text,
+    primaryBorderColor: accentBorder,
+    secondaryColor: bgSubtle,
+    secondaryTextColor: text,
+    tertiaryColor: bgSubtle,
+    tertiaryTextColor: text,
+    mainBkg: accentSubtle,
+    nodeBorder: accentBorder,
+    nodeTextColor: text,
+    lineColor: line,
+    textColor: text,
+    titleColor: text,
+    edgeLabelBackground: bgElevated,
+    clusterBkg: bgSubtle,
+    clusterBorder: accentBorder,
+    labelTextColor: text,
+  };
+}
+
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'strict',
+  theme: 'base',
+  themeVariables: readThemeVariables(),
+});
+
+mermaid.run({ querySelector: '.mermaid', suppressErrors: true }).catch(function () {
+  /* leave the source text visible as a fallback */
+});
 `;

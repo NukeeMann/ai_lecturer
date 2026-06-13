@@ -139,6 +139,24 @@ export async function GET(req: Request, { params }: RouteCtx) {
       return NextResponse.json({ error: 'Lesson not found' }, { status: 404 });
     }
 
+    // Mermaid diagrams render client-side after hydration. If the page has any,
+    // wait until none are still in the `pending` state (rendered → `done`, or
+    // failed → `error`) so they appear in the PDF. Best-effort: a timeout here
+    // is non-fatal — we still print whatever rendered.
+    try {
+      await page.waitForFunction(
+        () => {
+          const nodes = Array.from(document.querySelectorAll('[data-mermaid]'));
+          return nodes.every(
+            (n) => n.getAttribute('data-mermaid-state') !== 'pending',
+          );
+        },
+        { timeout: 15000 },
+      );
+    } catch {
+      // best-effort — proceed to print regardless.
+    }
+
     let pdfBytes: Uint8Array;
     try {
       const pdf = await page.pdf({
