@@ -51,6 +51,7 @@ import {
 } from '@/lib/lessons/lessonSlots';
 import { reverseLogLines, reverseLiveLogLines } from '@/lib/lessons/genLog';
 import { strings } from '@/lib/i18n/strings';
+import { extractYouTubeId } from '@/widgets/Video/schema';
 
 const DEFAULT_DRAFT: Draft = {
   topic: '',
@@ -806,6 +807,10 @@ function StageMaterials({
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<{ name: string; reason: string }[]>([]);
   const [generalError, setGeneralError] = useState<string | null>(null);
+  // US-215 — "Add YouTube link" field state.
+  const [ytUrl, setYtUrl] = useState('');
+  const [ytError, setYtError] = useState<string | null>(null);
+  const [ytBusy, setYtBusy] = useState(false);
 
   const handleFiles = useCallback(
     async (files: FileList | File[]) => {
@@ -887,6 +892,58 @@ function StageMaterials({
     },
     [draftId, onDraftIdAssigned, setMaterials],
   );
+
+  // US-215 — fetch a YouTube transcript and stage it as a `.md` source. Same
+  // draftId plumbing as file uploads: the first add mints a draftId server-
+  // side; we upsert by sanitizedName so re-adding the same video (deterministic
+  // `youtube-<id>.md`) replaces its row instead of duplicating.
+  const addYouTube = useCallback(async () => {
+    const raw = ytUrl.trim();
+    if (!raw) {
+      setYtError('Paste a YouTube link or video ID');
+      return;
+    }
+    if (!extractYouTubeId(raw)) {
+      setYtError('That doesn’t look like a YouTube URL or video ID');
+      return;
+    }
+    setYtBusy(true);
+    setYtError(null);
+    try {
+      const res = await fetch('/api/courses/youtube-source', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draftId ? { url: raw, draftId } : { url: raw }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        draftId?: string;
+        file?: UploadedMaterial;
+        error?: string;
+      };
+      if (!res.ok) {
+        setYtError(body.error ?? `Couldn’t add this video (${res.status})`);
+        return;
+      }
+      if (body.draftId && !draftId) onDraftIdAssigned(body.draftId);
+      if (body.file) {
+        const file = body.file;
+        setMaterials((prev) => {
+          const idx = prev.findIndex((m) => m.sanitizedName === file.sanitizedName);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = file;
+            return next;
+          }
+          return [...prev, file];
+        });
+      }
+      setYtUrl('');
+    } catch (err) {
+      setYtError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setYtBusy(false);
+    }
+  }, [ytUrl, draftId, onDraftIdAssigned, setMaterials]);
 
   const onPick = () => inputRef.current?.click();
 
@@ -991,6 +1048,96 @@ function StageMaterials({
             <div style={{ marginTop: 4, fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
               {uploading ? 'Uploading…' : `${MATERIAL_ALLOWED_EXTS.join(' · ')} · max ${formatFileSize(MATERIAL_MAX_SIZE_BYTES)}`}
             </div>
+          </div>
+
+          {/* US-215 — Add YouTube link (transcript → source material). */}
+          <div data-testid="youtube-source" style={{ marginTop: 'var(--space-4)' }}>
+            <label
+              htmlFor="youtube-url-input"
+              style={{
+                display: 'block',
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--text-tertiary)',
+                marginBottom: 6,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                fontWeight: 600,
+              }}
+            >
+              Add YouTube link
+            </label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                id="youtube-url-input"
+                type="url"
+                inputMode="url"
+                placeholder="https://www.youtube.com/watch?v=… or videoId"
+                value={ytUrl}
+                onChange={(e) => {
+                  setYtUrl(e.target.value);
+                  if (ytError) setYtError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (!ytBusy) void addYouTube();
+                  }
+                }}
+                data-testid="youtube-url-input"
+                disabled={ytBusy}
+                style={{
+                  flex: 1,
+                  padding: 'var(--space-3) var(--space-4)',
+                  borderRadius: 'var(--radius-md)',
+                  border: `1px solid ${ytError ? 'var(--danger, #fca5a5)' : 'var(--border-strong)'}`,
+                  background: 'var(--bg-elevated)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--fs-sm)',
+                }}
+              />
+              <button
+                type="button"
+                data-testid="youtube-add"
+                onClick={() => void addYouTube()}
+                disabled={ytBusy}
+                style={{
+                  flexShrink: 0,
+                  padding: 'var(--space-3) var(--space-5)',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-strong)',
+                  background: 'var(--bg)',
+                  color: 'var(--text)',
+                  fontSize: 'var(--fs-sm)',
+                  fontWeight: 500,
+                  cursor: ytBusy ? 'default' : 'pointer',
+                  opacity: ytBusy ? 0.6 : 1,
+                }}
+              >
+                {ytBusy ? 'Fetching…' : 'Add'}
+              </button>
+            </div>
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--text-tertiary)',
+              }}
+            >
+              We fetch the video’s transcript and use it as a text source.
+            </div>
+            {ytError && (
+              <div
+                role="alert"
+                data-testid="youtube-error"
+                style={{
+                  marginTop: 6,
+                  fontSize: 'var(--fs-xs)',
+                  color: 'var(--danger, #b91c1c)',
+                }}
+              >
+                {ytError}
+              </div>
+            )}
           </div>
 
           {generalError && (

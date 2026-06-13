@@ -58,6 +58,12 @@ describe('sanitizeFilename', () => {
     expect(sanitizeFilename('archive.zip')).toBeNull();
   });
 
+  it('accepts .md (US-215 YouTube transcript) as a managed source name', () => {
+    // Not uploadable (no MIME mapping), but a valid /sources/ basename so the
+    // YouTube transcript file can be deleted / promoted at finalisation.
+    expect(sanitizeFilename('youtube-abcdefghijk.md')).toBe('youtube-abcdefghijk.md');
+  });
+
   it('rejects empty / dot-only / over-long names', () => {
     expect(sanitizeFilename('')).toBeNull();
     expect(sanitizeFilename('....')).toBeNull();
