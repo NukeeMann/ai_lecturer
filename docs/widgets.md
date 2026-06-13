@@ -75,8 +75,60 @@ Minimal example:
 }
 ```
 
+### Mermaid diagrams
+
+Theory markdown also renders [Mermaid](https://mermaid.js.org/) diagrams from a
+fenced ```` ```mermaid ```` block (US-216). The diagram is drawn as an SVG in the
+lesson view, the print/PDF export, and the static HTML export — all from the same
+fenced block, no extra fields. The diagram inherits the active theme
+(light / dark / sunset) automatically.
+
+Syntax — just a fenced block whose info-string is `mermaid`:
+
+````markdown
+```mermaid
+flowchart LR
+  A[Raw frame] --> B[Grayscale] --> C[Threshold] --> D[Contours]
+```
+````
+
+**Supported diagram types:** `flowchart` (a.k.a. `graph`) and `sequenceDiagram`
+are the workhorses; `mindmap` also renders. Stick to these — exotic diagram
+types may not parse.
+
+**When to use it** — reach for a Mermaid diagram when the relationship between
+parts *is* the lesson:
+
+- **Pipelines / processing stages** — image-processing chains, ETL, a training loop.
+- **Data / control flow** — how a signal or request moves through a system.
+- **Concept maps** — how terms relate (is-a, depends-on, leads-to).
+- **Architectures / state machines** — module boxes and their connections, FSM states.
+
+**When NOT to use it:**
+
+- **Formulas / math** → use KaTeX (`$inline$` / `$$block$$`), not a diagram.
+- **Quantitative charts** (curves, distributions, error-vs-iteration) → use
+  `plotImage` (real axes, tick labels, units) or `histogram`. Mermaid has no
+  numeric axes.
+- **Photographic / pixel-accurate figures** (a kernel acting on a real image,
+  a sample output) → use an inline `![alt](url)` image or the Code widget's
+  `inputs` / `outputMedia`.
+
+**Guidelines:**
+
+- Keep diagrams **small — ~15 nodes max**. A diagram that needs more nodes is
+  usually two diagrams, or belongs in `plotImage`. Large graphs render slowly and
+  read worse than prose.
+- Write **valid Mermaid syntax** — a parse error falls back to showing the raw
+  source as a code block, not a diagram.
+- **Do NOT add inline `style` / `classDef` colour overrides.** The renderer maps
+  Mermaid's theme variables onto the lesson's CSS tokens so diagrams stay legible
+  across light / dark / sunset; hard-coded colours break that and can be invisible
+  on some themes. Use plain nodes and edges and let the theme drive the palette.
+
 Full detail: [`src/widgets/Theory/schema.ts`](../src/widgets/Theory/schema.ts)
-· [`src/widgets/Theory/sample.ts`](../src/widgets/Theory/sample.ts).
+· [`src/widgets/Theory/sample.ts`](../src/widgets/Theory/sample.ts)
+· renderer [`src/components/MermaidDiagram.tsx`](../src/components/MermaidDiagram.tsx).
 
 ---
 
