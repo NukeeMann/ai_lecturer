@@ -106,3 +106,20 @@ export async function writeChatHistory(
   await atomicWriteJson(file, normalized);
   return normalized;
 }
+
+/**
+ * Delete the module's history file (Clear history). A missing file is treated
+ * as success — the learner's intent ("no history") is already satisfied.
+ */
+export async function clearChatHistory(
+  courseSlug: string,
+  moduleId: string,
+): Promise<void> {
+  const file = chatHistoryFile(courseSlug, moduleId);
+  try {
+    await fs.unlink(file);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+}

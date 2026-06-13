@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { ChatHistoryWriteSchema } from '@/lib/schemas/chatHistory';
 import {
+  clearChatHistory,
   readChatHistory,
   writeChatHistory,
 } from '@/lib/server/chatHistory';
@@ -46,6 +47,19 @@ export async function PUT(req: Request, { params }: RouteCtx) {
   try {
     const saved = await writeChatHistory(courseSlug, moduleId, parsed.data);
     return NextResponse.json(saved);
+  } catch (err) {
+    if (err instanceof InvalidSlugError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    throw err;
+  }
+}
+
+export async function DELETE(_req: Request, { params }: RouteCtx) {
+  const { courseSlug, moduleId } = await params;
+  try {
+    await clearChatHistory(courseSlug, moduleId);
+    return new NextResponse(null, { status: 204 });
   } catch (err) {
     if (err instanceof InvalidSlugError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
