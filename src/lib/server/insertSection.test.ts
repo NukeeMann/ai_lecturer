@@ -14,7 +14,10 @@ import {
   runInsertSectionAgent,
   type InsertSectionSpawnDeps,
 } from '@/lib/server/insertSection';
-import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
+import {
+  __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
+} from '@/lib/server/generation';
 
 let coursesRoot: string;
 
@@ -401,16 +404,7 @@ describe('POST .../sections/[sectionId]/insert (US-208)', () => {
 
   it('returns 409 busy when a generation is active for this slug', async () => {
     await seedLesson();
-    await fs.writeFile(
-      path.join(coursesRoot, COURSE_SLUG, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug: COURSE_SLUG,
-        stage: 'init_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    __setActiveRunForTesting(COURSE_SLUG);
     __setInsertSectionSpawnForTesting({
       spawn: makeFixedSpawn({ stdoutText: validAgentResponse() }).spawn,
     });

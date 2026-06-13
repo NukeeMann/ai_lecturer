@@ -1869,7 +1869,13 @@ describe('getActiveRunSummary (US-106)', () => {
     });
   });
 
-  it('cold-start: returns the live-PID marker and falls back to slug for the name', async () => {
+  it('cold-start: reconciles an unsupervised live-PID marker (not active, marker dropped)', async () => {
+    // A `.generating.json` whose child is still alive but isn't the in-memory
+    // active run is an orphan from a previous server instance — the pipeline
+    // that supervised it is gone. It must NOT be reported as active. The PID
+    // here is the test runner itself (alive), whose /proc cmdline does not
+    // mention the slug, so the kill gate refuses to signal it — but the marker
+    // is still unlinked so the banner stops showing "Generating…".
     const dir = path.join(coursesRoot, 'survivor');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
@@ -1883,14 +1889,55 @@ describe('getActiveRunSummary (US-106)', () => {
       'utf8',
     );
     const summary = await getActiveRunSummary();
-    expect(summary).toEqual({
-      active: true,
-      slug: 'survivor',
-      name: 'survivor',
-      stage: 'lesson:intro',
-      queue: [],
+    expect(summary.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
     });
   });
+
+  // Kill-path: a genuine orphaned generation child (cmdline carries `claude`
+  // AND the slug) left by a previous server instance must be SIGTERM'd so it
+  // stops burning Claude quota. Linux-only — the gate reads /proc/<pid>/cmdline.
+  (process.platform === 'linux' ? it : it.skip)(
+    'cold-start: SIGTERMs an orphaned generation child whose cmdline matches the slug',
+    async () => {
+      const { spawn } = await import('node:child_process');
+      // A detached, long-lived process whose argv embeds both `claude` and the
+      // slug so pidIsGenerationChildFor() positively identifies it. Its own
+      // process group (detached) means the group SIGTERM reaches it.
+      const child = spawn(
+        process.execPath,
+        ['-e', 'setTimeout(() => {}, 60000)', 'claude', 'killable-orphan'],
+        { detached: true, stdio: 'ignore' },
+      );
+      child.unref();
+      const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+
+      const dir = path.join(coursesRoot, 'killable-orphan');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, '.generating.json'),
+        JSON.stringify({
+          childPid: child.pid,
+          slug: 'killable-orphan',
+          stage: 'lesson:intro',
+          startedAt: '2026-05-04T00:00:00.000Z',
+        }),
+        'utf8',
+      );
+
+      const summary = await getActiveRunSummary();
+      expect(summary.active).toBe(false);
+      // The reconciler SIGTERMs the orphan and drops the marker.
+      await Promise.race([
+        exited,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('orphan not killed')), 5000)),
+      ]);
+      await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    },
+  );
 
   // Resumable-scan coverage: any course dir with a `.generation-state.json`
   // and no live `.generating.json` is surfaced via `resumable[]` so the UI

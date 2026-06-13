@@ -10,6 +10,21 @@ export class InvalidSlugError extends Error {
 export function coursesRoot(): string {
   const override = process.env.COURSES_ROOT_OVERRIDE;
   if (override && override.length > 0) return override;
+  // Test-env safety net: refuse to fall back to the developer's real
+  // ./courses when running under vitest without an explicit override. The
+  // generation pipeline is async/detached, so a leaked write or spawn can
+  // resolve coursesRoot() AFTER a test's afterEach has deleted
+  // COURSES_ROOT_OVERRIDE — and several fixtures use slugs that collide with
+  // real course dirs (`edge-detection-basics`, `demo`). Without this guard
+  // such a stray op silently corrupts the real course (observed 2026-06-13:
+  // a makeWritingSpawn stub overwrote a real 14 KB lesson). Throwing here
+  // makes the isolation violation impossible to miss; the pipeline's
+  // best-effort catch blocks swallow it without touching real data.
+  if (process.env.VITEST !== undefined || process.env.NODE_ENV === 'test') {
+    throw new Error(
+      'coursesRoot() called under test without COURSES_ROOT_OVERRIDE — refusing to touch the real ./courses',
+    );
+  }
   return path.join(process.cwd(), 'courses');
 }
 

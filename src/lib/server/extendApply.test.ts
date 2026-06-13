@@ -9,6 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { POST as postApply } from '@/app/api/courses/[slug]/extend/apply/route';
 import {
   __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
   __setSpawnDepsForTesting,
   type SpawnDeps,
 } from '@/lib/server/generation';
@@ -358,16 +359,7 @@ describe('POST /api/courses/[slug]/extend/apply (US-144)', () => {
   it('returns 409 when a generation is active for this slug', async () => {
     const slug = 'edge-detection-basics';
     await seedCourse(slug);
-    await fs.writeFile(
-      path.join(coursesRoot, slug, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug,
-        stage: 'research_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    __setActiveRunForTesting(slug);
 
     const proposedSchema = buildProposedSchema(slug, { addLesson: true });
     const res = await postApply(

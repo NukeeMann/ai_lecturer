@@ -1290,14 +1290,19 @@ describe('GET /api/courses/active-run (US-106)', () => {
     });
   });
 
-  it('returns {active:true} for a live PID-tagged marker and pulls the title from course-spec.json', async () => {
+  it('reconciles an unsupervised live-PID marker: not active and unlinks the marker', async () => {
+    // A live-PID `.generating.json` with no in-memory active run is an orphan
+    // from a previous server instance — its detached child outlived the
+    // supervising pipeline and can never finalize. It must NOT be reported as
+    // active; the marker is unlinked so the banner stops showing "Generating…".
+    // process.pid is the test runner: alive, but its /proc cmdline lacks the
+    // slug, so the kill gate refuses to signal it.
     const dir = path.join(coursesRoot, 'demo-resume');
     await fs.mkdir(dir, { recursive: true });
     await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Resumed Course'));
     await fs.writeFile(
       path.join(dir, '.generating.json'),
       JSON.stringify({
-        // process.pid is always alive — guarantees the liveness probe passes.
         childPid: process.pid,
         slug: 'demo-resume',
         stage: 'lesson:intro',
@@ -1306,19 +1311,16 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false; queue: unknown[] }
-      | { active: true; slug: string; name: string; stage: string; queue: unknown[] };
-    expect(body).toEqual({
-      active: true,
-      slug: 'demo-resume',
-      name: 'Resumed Course',
-      stage: 'lesson:intro',
-      queue: [],
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
     });
   });
 
-  it('prefers course.json title over course-spec.json once init has completed', async () => {
+  it('prefers course.json title over course-spec.json for a resumable entry', async () => {
+    // Title resolution (course.json over course-spec.json) now surfaces via the
+    // resumable[] list rather than the removed "marker as active" path.
     const dir = path.join(coursesRoot, 'finished-init');
     await fs.mkdir(dir, { recursive: true });
     await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Old Title'));
@@ -1328,21 +1330,26 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     await fs.writeFile(
-      path.join(dir, '.generating.json'),
+      path.join(dir, '.generation-state.json'),
       JSON.stringify({
-        childPid: process.pid,
+        schemaVersion: 1,
         slug: 'finished-init',
-        stage: 'lesson:m1l1',
         startedAt: '2026-05-04T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-04T00:05:00.000Z',
+        research: { status: 'done' },
+        design: { status: 'done' },
+        lessons: [{ slug: 'm1l1', status: 'failed', attempts: 3, lastError: 'rate limited' }],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60000 },
       }),
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; slug: string; name: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.name).toBe('Refined Title');
+    const body = (await res.json()) as {
+      active: boolean;
+      resumable?: Array<{ slug: string; name: string }>;
+    };
+    expect(body.active).toBe(false);
+    expect(body.resumable?.find((r) => r.slug === 'finished-init')?.name).toBe('Refined Title');
   });
 
   it('skips dot-prefixed dirs like /.drafts/ during cold-start scan', async () => {
@@ -1360,31 +1367,10 @@ describe('GET /api/courses/active-run (US-106)', () => {
     expect(body.active).toBe(false);
   });
 
-  it('falls back to log-derived stage when the marker has no stage', async () => {
-    const dir = path.join(coursesRoot, 'derive-stage');
-    await fs.mkdir(path.join(dir, 'logs'), { recursive: true });
-    await fs.writeFile(path.join(dir, 'logs', 'research_course.log'), 'research line\n');
-    await new Promise((r) => setTimeout(r, 12));
-    await fs.writeFile(path.join(dir, 'logs', 'intro.log'), 'lesson line\n');
-    await fs.writeFile(
-      path.join(dir, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug: 'derive-stage',
-        stage: null,
-        startedAt: '2026-05-04T00:00:00.000Z',
-      }),
-      'utf8',
-    );
-    const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; stage: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.stage).toBe('lesson:intro');
-  });
-
-  it('falls back to slug when neither course.json nor course-spec.json exist', async () => {
+  it('reconciles a marker even when no in-memory run owns it, regardless of name resolution', async () => {
+    // No course.json / course-spec.json — the slug-name fallback used to be
+    // surfaced via the active marker. That path is gone: an unsupervised live
+    // marker is reconciled to not-active and unlinked.
     const dir = path.join(coursesRoot, 'nameless-run');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
@@ -1398,11 +1384,11 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; name: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.name).toBe('nameless-run');
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });
 

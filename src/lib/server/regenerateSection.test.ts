@@ -13,7 +13,10 @@ import {
   runRegenerateSectionAgent,
   type RegenerateSectionSpawnDeps,
 } from '@/lib/server/regenerateSection';
-import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
+import {
+  __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
+} from '@/lib/server/generation';
 
 let coursesRoot: string;
 
@@ -381,16 +384,7 @@ describe('POST .../sections/[sectionId]/regenerate (US-146)', () => {
 
   it('returns 409 busy when a generation is active for this slug', async () => {
     await seedLesson();
-    await fs.writeFile(
-      path.join(coursesRoot, COURSE_SLUG, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug: COURSE_SLUG,
-        stage: 'init_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    __setActiveRunForTesting(COURSE_SLUG);
     __setRegenerateSectionSpawnForTesting({
       spawn: makeFixedSpawn({ stdoutText: validAgentResponse() }).spawn,
     });
@@ -549,16 +543,7 @@ describe('POST .../sections/[sectionId]/apply (US-146)', () => {
 
   it('returns 409 busy when a generation is active for this slug', async () => {
     await seedLesson();
-    await fs.writeFile(
-      path.join(coursesRoot, COURSE_SLUG, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug: COURSE_SLUG,
-        stage: 'init_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    __setActiveRunForTesting(COURSE_SLUG);
     const res = await postApply(
       applyReq('check-1', { newSection: buildNewSection() }),
       regenCtx(),

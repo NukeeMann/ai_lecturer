@@ -720,6 +720,43 @@ function isPidAlive(pid: number): boolean {
 }
 
 /**
+ * Best-effort (Linux /proc) check that `pid` is the detached `claude -p`
+ * generation child spawned for `slug` — not the user's interactive Claude
+ * Code session and not an unrelated process that reused the PID. We require
+ * BOTH the `claude` binary name AND the course slug to appear in the cmdline,
+ * since every generation spawn embeds the slug in its skill prompt and file
+ * paths. Fails closed (returns false) when /proc is unreadable so we never
+ * signal a process we can't positively identify.
+ */
+async function pidIsGenerationChildFor(pid: number, slug: string): Promise<boolean> {
+  try {
+    const raw = await fs.readFile(`/proc/${pid}/cmdline`, 'utf8');
+    const cmd = raw.replace(/\0/g, ' ');
+    return cmd.includes('claude') && cmd.includes(slug);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * SIGTERM the whole process group rooted at `pid`. The generation child is
+ * spawned `detached: true` (pgid === pid), so `-pid` reaches every descendant
+ * claude spawned in that session. Falls back to a single-PID signal if the
+ * group kill races the orphan's own exit.
+ */
+function killProcessGroup(pid: number): void {
+  try {
+    process.kill(-pid, 'SIGTERM');
+  } catch {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/**
  * Resolve a human-readable course name for the active-run banner. Prefer
  * `course.json#title` (set after the init phase), fall back to the spec's
  * `draftStructure.courseTitle`, and finally to the slug itself.
@@ -743,55 +780,16 @@ async function resolveCourseName(slug: string): Promise<string> {
   return slug;
 }
 
-// Pipeline stages whose disk log basename matches the SSE event name 1:1.
-// Per-lesson stages use the form `lesson:<lessonSlug>` for SSE while the
-// disk file is just `<lessonSlug>.log` — anything not in this set is treated
-// as a lesson and re-prefixed accordingly.
-const PIPELINE_STAGE_NAMES = new Set([
-  'research_course',
-  'design_course',
-  'coherence-pass',
-]);
-
-/**
- * Walk the most-recently-modified per-stage log file for `slug` and return
- * its basename (e.g. 'research_course', 'design_course', 'intro'). Used to
- * recover the current stage of a server-restart-survivor run when the
- * in-memory run is gone.
- */
-async function deriveStageFromLogs(slug: string): Promise<string | null> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(genLogsDir(slug));
-  } catch {
-    return null;
-  }
-  const candidates: { stage: string; mtimeMs: number }[] = [];
-  for (const name of entries) {
-    if (!name.endsWith('.log')) continue;
-    try {
-      const stat = await fs.stat(path.join(genLogsDir(slug), name));
-      if (!stat.isFile()) continue;
-      candidates.push({ stage: name.slice(0, -'.log'.length), mtimeMs: stat.mtimeMs });
-    } catch {
-      /* ignore unreadable entry */
-    }
-  }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  const top = candidates[0].stage;
-  // Pipeline stages map 1:1; per-lesson stages re-attach the `lesson:` prefix
-  // so banner stage labels are consistent regardless of whether the in-memory
-  // run is alive.
-  return PIPELINE_STAGE_NAMES.has(top) ? top : `lesson:${top}`;
-}
-
 /**
  * Returns a summary of the currently-running generation for the /create
- * page's resume banner (US-106). Prefers the in-memory active run; falls
- * back to scanning per-course `.generating.json` markers so a run survives
- * a server restart if the spawned child process is still alive. Stale
- * markers (PID not alive) are unlinked on encounter.
+ * page's resume banner (US-106). Only the in-memory active run is reported as
+ * active — a `.generating.json` marker on disk is never trusted as "active"
+ * on its own, because a marker left by a previous server instance points at
+ * an orphaned, unsupervisable child (its stdout pipe died with the old
+ * server, so the pipeline can never finalize). The disk walk reconciles every
+ * non-supervised marker (killing a still-live generation child and unlinking
+ * the marker), then surfaces those courses via `resumable[]` so the user gets
+ * a one-click Resume instead of a banner stuck on "Generating…".
  */
 export async function getActiveRunSummary(): Promise<ActiveRunSummary> {
   await ensureQueueLoaded();
@@ -834,10 +832,9 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
     return { active: false, queue: queueSummary };
   }
 
-  // Single walk: collect (a) the first live-PID cold-start marker — only
-  // meaningful when activeFromMemory is null — and (b) every slug that has a
-  // `.generation-state.json` on disk so we can surface them as resumable.
-  let activeFromMarker: { slug: string; stage: string } | null = null;
+  // Single walk: reconcile every `.generating.json` marker (see below) and
+  // collect every slug that has a `.generation-state.json` on disk so we can
+  // surface them as resumable.
   const stateOwners: string[] = [];
 
   for (const entry of entries) {
@@ -859,36 +856,42 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
       try {
         marker = JSON.parse(raw) as GeneratingMarker;
       } catch {
+        marker = null;
+      }
+      // A `.generating.json` marker is only legitimately "active" while THIS
+      // server is supervising its child: the in-memory active run (or a run
+      // mid-start). Any OTHER marker is an orphan from a previous server
+      // instance — the `detached: true` child may have survived the restart,
+      // but the in-process orchestration loop that validates its output and
+      // advances the pipeline did NOT, and a detached child's stdout pipe
+      // can't be re-attached. Left alone such an orphan keeps burning Claude
+      // quota with nobody collecting its work and pins the resume banner to
+      // "Generating…" forever. So: never report a marker as active from the
+      // disk scan. If its PID is a live generation child, SIGTERM the process
+      // group (gated on a /proc cmdline match so we never signal the user's
+      // interactive Claude session or a reused PID), then drop the marker so
+      // the run falls through to resumable[] for a one-click Resume.
+      const markerSlug =
+        marker && typeof marker.slug === 'string' && marker.slug.length > 0
+          ? marker.slug
+          : entry.name;
+      const supervised =
+        (activeRun !== null && !activeRun.finished && activeRun.slug === markerSlug) ||
+        startingSlug === markerSlug;
+      if (!supervised) {
+        const childPid =
+          marker && typeof marker.childPid === 'number' && marker.childPid > 0
+            ? marker.childPid
+            : null;
+        if (childPid !== null && isPidAlive(childPid)) {
+          if (await pidIsGenerationChildFor(childPid, markerSlug)) {
+            killProcessGroup(childPid);
+          }
+        }
         try {
           await fs.unlink(markerPath);
         } catch {
-          /* ignore */
-        }
-        marker = null;
-      }
-      if (marker) {
-        const pidIsDead =
-          typeof marker.childPid === 'number' &&
-          marker.childPid > 0 &&
-          !isPidAlive(marker.childPid);
-        if (pidIsDead) {
-          try {
-            await fs.unlink(markerPath);
-          } catch {
-            /* ignore */
-          }
-        } else if (!activeFromMarker) {
-          const slug =
-            typeof marker.slug === 'string' && marker.slug.length > 0
-              ? marker.slug
-              : entry.name;
-          const stage =
-            (typeof marker.stage === 'string' && marker.stage.length > 0
-              ? marker.stage
-              : null) ??
-            (await deriveStageFromLogs(slug)) ??
-            'research_course';
-          activeFromMarker = { slug, stage };
+          /* already gone */
         }
       }
     }
@@ -901,7 +904,7 @@ async function computeActiveRunSummary(): Promise<ActiveRunSummary> {
     }
   }
 
-  const active = activeFromMemory ?? activeFromMarker;
+  const active = activeFromMemory;
   const activeSlug = active?.slug ?? null;
 
   // Build resumable[] from state-file owners that aren't the active run.
@@ -1031,6 +1034,30 @@ export function __setSpawnDepsForTesting(deps: SpawnDeps | null): void {
 /** Test-only: clear the post-cancel cooldown so a follow-up start/resume isn't blocked. */
 export function __clearCancelCooldownForTesting(): void {
   recentlyCancelledAt.clear();
+}
+
+/**
+ * Test-only: install a minimal in-memory active run for `slug`. The busy
+ * guards (export / extend / regenerate / insert) and the resume banner now
+ * treat ONLY a supervised in-memory run as "active" — a bare `.generating.json`
+ * marker with no owning run is reconciled away (see computeActiveRunSummary),
+ * so tests must seed a real run to simulate "generation is busy for this slug".
+ * Cleared by __resetForTesting().
+ */
+export function __setActiveRunForTesting(slug: string): void {
+  activeRun = {
+    id: `test-active-${slug}`,
+    slug,
+    events: [],
+    finished: false,
+    currentStage: 'research_course',
+    lastSeq: 0,
+    startSeq: 0,
+    eventSeqs: [],
+    subscribe: () => () => {},
+    cancel: async () => {},
+    pause: async () => {},
+  };
 }
 
 /** Test-only: drop all bookkeeping and force-kill any active child. */
@@ -1665,6 +1692,15 @@ function maybeStartQueueHead(): void {
   if (activeRun && !activeRun.finished) return;
   if (startingGeneration) return;
   if (queue.length === 0) return;
+  // Test-env safety net: never auto-start a queued generation with the REAL
+  // claude binary. This path is fire-and-forget from getActiveRunSummary, and
+  // after __resetForTesting() clears depsOverride a stray active-run poll would
+  // otherwise spawn a detached real `claude -p` (writing into the real
+  // courses/, leaking as an orphan that burns quota). Legit queue tests inject
+  // a scripted spawn via depsOverride and bypass this guard.
+  if ((process.env.VITEST !== undefined || process.env.NODE_ENV === 'test') && depsOverride === null) {
+    return;
+  }
   queueDrainerInFlight = true;
   void (async () => {
     try {
