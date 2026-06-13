@@ -13,6 +13,7 @@ import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
 import remarkMath from 'remark-math';
 
+import { MermaidPre } from '@/components/MermaidDiagram';
 import { remarkCallout } from '@/widgets/Theory/remarkCallout';
 import { LessonSchema, type Lesson, type Section } from '@/lib/schemas/lesson';
 import { CourseSchema, type Course } from '@/lib/schemas/course';
@@ -114,6 +115,9 @@ function PrintCallout({
 }
 
 const markdownComponents: Components = {
+  // Same TheoryWidget path: ```mermaid blocks render as SVG client-side; the
+  // puppeteer PDF route waits for them before printing.
+  pre: MermaidPre as Components['pre'],
   ...({
     callout: ({
       children,
