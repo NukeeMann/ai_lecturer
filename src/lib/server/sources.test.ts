@@ -337,6 +337,28 @@ describe('resolveSourcePathForPrompt (US-124)', () => {
     expect(r.originalName).toBe('a.pdf');
     expect(r.extractedFrom).toBe('a.pdf');
   });
+
+  // US-213: same branch shape for .pptx as .docx / .pdf.
+  it('returns the sibling .md path for .pptx when the sibling is on disk', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(path.join(dir, EXTRACTED_DIRNAME), { recursive: true });
+    const pptxPath = path.join(dir, 'a.pptx');
+    const siblingPath = path.join(dir, EXTRACTED_DIRNAME, 'a.pptx.md');
+    await fs.writeFile(pptxPath, 'fake-pptx-bytes');
+    await fs.writeFile(siblingPath, '## Slajd 1\n\nExtracted slide body.\n');
+
+    const r = resolveSourcePathForPrompt(pptxPath);
+    expect(r.readPath).toBe(siblingPath);
+    expect(r.originalName).toBe('a.pptx');
+    expect(r.extractedFrom).toBe('a.pptx');
+  });
+
+  it('returns the original .pptx path when no sibling exists yet', () => {
+    const pptxPath = path.join(coursesRoot, 'demo', 'sources', 'b.pptx');
+    const r = resolveSourcePathForPrompt(pptxPath);
+    expect(r.readPath).toBe(pptxPath);
+    expect(r.extractedFrom).toBeUndefined();
+  });
 });
 
 describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', () => {
@@ -532,16 +554,34 @@ describe('loadStagedSourcesForPrompt (US-125)', () => {
     });
   });
 
-  it('marks .pptx as binary-unsupported (no extractor yet)', async () => {
+  // US-213: a .pptx with its `.extracted/<name>.pptx.md` sibling on disk reads
+  // as text and carries `extractedFrom`; a .pptx without one stays
+  // `binary-unsupported` so the prompt still mentions the upload (extractor
+  // failure or pre-fix upload).
+  it('returns kind:text for a .pptx with sibling, binary-unsupported without', async () => {
     const id = makeDraftId();
     const src = draftSourcesDir(id);
-    await fs.mkdir(src, { recursive: true });
-    await fs.writeFile(path.join(src, 'deck.pptx'), 'binary-pptx');
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'with-sibling.pptx'), 'binary-pptx-bytes');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'with-sibling.pptx.md'),
+      '## Slajd 1\n\nExtracted slide body.',
+    );
+    await fs.writeFile(path.join(src, 'without-sibling.pptx'), 'binary-pptx-bytes');
 
     const out = loadStagedSourcesForPrompt(id);
-    expect(out).toEqual([
-      { kind: 'binary-unsupported', originalName: 'deck.pptx' },
-    ]);
+    // Lexicographic: with-sibling.pptx → without-sibling.pptx
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      kind: 'text',
+      originalName: 'with-sibling.pptx',
+      extractedFrom: 'with-sibling.pptx',
+      content: '## Slajd 1\n\nExtracted slide body.',
+    });
+    expect(out[1]).toEqual({
+      kind: 'binary-unsupported',
+      originalName: 'without-sibling.pptx',
+    });
   });
 
   it('reads .json and .md as text', async () => {

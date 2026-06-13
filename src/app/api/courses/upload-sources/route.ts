@@ -20,6 +20,7 @@ import {
 } from '@/lib/server/sources';
 import { extractDocxToMarkdown } from '@/lib/server/docx';
 import { extractPdfToMarkdown } from '@/lib/server/pdf';
+import { extractPptxToMarkdown } from '@/lib/server/pptx';
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
@@ -165,6 +166,19 @@ export async function POST(req: Request) {
         );
       }
     }
+    // US-213: same pattern for PPTX — pure-Node unzipper + slide-XML scan
+    // (no new heavy dependency). Failures never block the original upload;
+    // the .pptx is already on disk and will fall through to
+    // `binary-unsupported` in the prompt loaders.
+    if (path.extname(finalName).toLowerCase() === '.pptx') {
+      const sibling = extractedSiblingPath(destPath);
+      const result = await extractPptxToMarkdown(destPath, sibling);
+      if (!result.ok) {
+        console.warn(
+          `[upload-sources] pptx extraction failed for ${finalName}: ${result.reason}`,
+        );
+      }
+    }
   }
 
   const body: UploadResponse = {
@@ -244,12 +258,12 @@ export async function DELETE(req: Request) {
     }
     throw err;
   }
-  // US-124/US-127: a deleted .docx or .pdf leaves an orphaned
+  // US-124/US-127/US-213: a deleted .docx, .pdf or .pptx leaves an orphaned
   // .extracted/<name>.md sibling behind. Best-effort unlink — missing
   // sibling is a no-op (idempotent), not an error, since older uploads
   // predate the respective extractors.
   const ext = path.extname(filename).toLowerCase();
-  if (ext === '.docx' || ext === '.pdf') {
+  if (ext === '.docx' || ext === '.pdf' || ext === '.pptx') {
     const sibling = path.join(targetDir, EXTRACTED_DIRNAME, `${filename}.md`);
     try {
       await fs.unlink(sibling);
