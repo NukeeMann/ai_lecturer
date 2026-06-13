@@ -1,0 +1,90 @@
+[2026-06-13T10:13:48+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:13:50+0200] I'll start by reading the Ralph instructions, then explore the relevant code.
+[2026-06-13T10:13:55+0200] Now let me read the upload-sources route, the pptx module (recent pattern), and the wizard UI to understand the full picture.
+[2026-06-13T10:14:05+0200] Let me find the wizard UI components that display the source file list.
+[2026-06-13T10:15:57+0200] Now let me check the stt test mocking pattern and the GET route tests.
+[2026-06-13T10:16:51+0200] I have enough context. Let me verify the `SttResponse` shape and check there's no circular-import risk.
+[2026-06-13T10:17:00+0200] Now I have everything. Let me write the new `media.ts` module.
+[2026-06-13T10:17:37+0200] I have a bug in the null-byte strip. Let me fix it.
+[2026-06-13T10:18:03+0200] The regex contains a literal NUL byte. Let me replace it with an explicit escape using Python for safety.
+[2026-06-13T10:18:12+0200] Now let me update `sources.ts`: add media constants, extensions, MIME types, per-extension size cap in `validateUpload`, and the prompt-resolver branches.
+[2026-06-13T10:18:38+0200] Now update `validateUpload` to use the per-extension cap (reordering so the extension is known before the size check):
+[2026-06-13T10:18:49+0200] Now update the prompt-resolver branches (`resolveSourcePathForPrompt` and `EXTRACTABLE_BINARY_EXTS`) to include media extensions:
+[2026-06-13T10:19:05+0200] Now update `moveDraftSourcesToCourse` to also move the media status sidecar:
+[2026-06-13T10:19:22+0200] Now add `transcriptionStatus` to the `StoredSourceFile` interface in sources.ts:
+[2026-06-13T10:19:27+0200] Now update the upload-sources route. First the imports and POST handler:
+[2026-06-13T10:19:56+0200] Now update the DELETE handler to clean up media siblings, and GET to report status:
+[2026-06-13T10:20:16+0200] `transcriptStatusPath` is now unused in the route. Let me remove it from the import:
+[2026-06-13T10:20:26+0200] Now the UI. Update the materials constants and `UploadedMaterial` interface in page.tsx:
+[2026-06-13T10:20:38+0200] Now update the front-end size validation in `handleFiles`:
+[2026-06-13T10:21:09+0200] Now add status-polling at the page level. Let me find the insertion point after the first effect:
+[2026-06-13T10:21:44+0200] Now let me add the status badge. First, a small badge helper before the MaterialsStage component. Let me find a good spot and the list rows:
+[2026-06-13T10:22:06+0200] I'll define a `TranscriptionBadge` helper. Let me add it near the other helpers:
+[2026-06-13T10:22:24+0200] Now insert the badge into both list rows. First the main materials list:
+[2026-06-13T10:22:29+0200] Now the banner list row:
+[2026-06-13T10:22:35+0200] Now let me typecheck and lint.
+[2026-06-13T10:22:57+0200] Typecheck passes. Now lint:
+[2026-06-13T10:23:18+0200] These are all pre-existing. Let me confirm by checking eslint on the committed version:
+[2026-06-13T10:23:40+0200] Lint count is identical (9 before and after) — no new issues. Now let me write tests. First the `media.test.ts`:
+[2026-06-13T10:24:14+0200] Now add tests to `sources.test.ts` for media handling. Let me view the relevant test blocks:
+[2026-06-13T10:24:19+0200] The `ALLOWED_EXTENSIONS` exact-match test must be updated, and I'll add media tests. First update imports and that test:
+[2026-06-13T10:24:38+0200] Now add a `resolveSourcePathForPrompt` test for media siblings. Let me view that test block:
+[2026-06-13T10:24:56+0200] Now let me check the moveDraftSourcesToCourse sibling-propagation test to add a media variant:
+[2026-06-13T10:25:24+0200] Now add route-level tests in `api.test.ts`. Let me check its imports:
+[2026-06-13T10:25:34+0200] Now add the US-214 route test describe block after the existing GET upload-sources describe (line ~835):
+[2026-06-13T10:26:15+0200] Let me add a `loadStagedSourcesForPrompt` test for media to prove end-to-end prompt integration. Let me view that block:
+[2026-06-13T10:26:50+0200] All server tests green. Let me run typecheck + lint on changed files, then the full suite.
+[2026-06-13T10:27:36+0200] All 1319 pass. Now browser verification (ui story). Let me detect/start a dev server.
+[2026-06-13T10:28:00+0200] Let me check how to navigate into the materials stage (entry cards):
+[2026-06-13T10:28:32+0200] Browser verification PASSED — media accepted, badge shows, and the missing-whisper install hint surfaces in the tooltip. Now let me update progress.txt and prd.json.
+[2026-06-13T10:28:59+0200] Good, they're tracked. Let me find the US-214 entry and its `passes` field:
+[2026-06-13T10:29:08+0200] Let me verify the prd.json diff is minimal (only the passes field):
+[2026-06-13T10:29:13+0200] Only the intended change. Now append to progress.txt:
+[2026-06-13T10:29:41+0200] Let me check for a Codebase Patterns section and nearby CLAUDE.md files:
+[2026-06-13T10:29:48+0200] Let me add one reusable pattern to the Codebase Patterns section:
+[2026-06-13T10:30:23+0200] Now let me stage and commit. Final verification of git status:
+[2026-06-13T10:30:29+0200] Two stray files got created (dev-server runtime + playwright temp). Let me unstage them:
+[2026-06-13T10:30:37+0200] Staged set is correct. Let me commit:
+[2026-06-13T10:30:49+0200] The commit landed in HEAD with `passes: true` for US-214. Let me stop the dev server I started (by its PID) now that the commit is done:
+[2026-06-13T10:31:02+0200] US-214 is complete and committed. Summary of what landed:
+
+## US-214 — Audio/video sources → local whisper.cpp transcription
+
+**Acceptance criteria, all met:**
+
+1. **Upload accepts media** — `.mp3/.wav/.m4a/.mp4` added to `ALLOWED_EXTENSIONS` + MIME map in `sources.ts`, with a dedicated **250 MiB** cap (`MAX_MEDIA_FILE_SIZE_BYTES`, ≥ the 200 MB AC for `.mp4`) via `maxUploadSizeForExtension`. `validateUpload` reordered to learn the extension first, then size-check.
+
+2. **Transcription via existing infra** — new `src/lib/server/media.ts` calls `runStt` (stt.ts), whose `ffmpeg → 16 kHz mono WAV` transcode already covers `.m4a/.mp4`. Result written to the same `.extracted/<name>.md` sibling docx/pdf/pptx use.
+
+3. **Non-blocking with per-file status** — POST writes a `transcribing` marker synchronously then fires the transcription **un-awaited** (background); GET reports `transcriptionStatus`, and the wizard polls every 2s until `done`/`failed`. New `TranscriptionBadge` shows the state in both the materials list and the collapsed banner.
+
+4. **Missing whisper/ffmpeg** — `SttNotInstalledError`/`SttTranscodeError` fold into a `failed` status carrying the install hint; the upload still returns 201.
+
+5. **Transcript enters prompts** — media exts added to the `resolveSourcePathForPrompt`/`loadStagedSourcesForPrompt`/`EXTRACTABLE_BINARY_EXTS` plumbing, so a finished transcript flows in with `extractedFrom` set; `moveDraftSourcesToCourse` carries both the `.md` and `.status.json` siblings on finalisation.
+
+6. **Mocked tests** — `__setMediaTranscriberForTesting` + `awaitPendingMediaTranscriptions`; no real whisper/ffmpeg.
+
+**Verification:** typecheck clean, eslint introduced no new issues, full suite **1319/1319**, and the playwright browser test PASSED (media advertised + 250 MB, `.mp3` accepted, badge resolves to "Not transcribed" with the `Run scripts/setup-stt.sh first.` install hint in its tooltip, zero console errors).
+
+Committed as `156c5eb` with `passes: true` for US-214 in `prd.json`. Push is the orchestrator's job.
+[2026-06-13T10:31:02+0200] [result success turns=112 cost=$9.089682999999999] US-214 is complete and committed. Summary of what landed:
+
+## US-214 — Audio/video sources → local whisper.cpp transcription
+
+**Acceptance criteria, all met:**
+
+1. **Upload accepts media** — `.mp3/.wav/.m4a/.mp4` added to `ALLOWED_EXTENSIONS` + MIME map in `sources.ts`, with a dedicated **250 MiB** cap (`MAX_MEDIA_FILE_SIZE_BYTES`, ≥ the 200 MB AC for `.mp4`) via `maxUploadSizeForExtension`. `validateUpload` reordered to learn the extension first, then size-check.
+
+2. **Transcription via existing infra** — new `src/lib/server/media.ts` calls `runStt` (stt.ts), whose `ffmpeg → 16 kHz mono WAV` transcode already covers `.m4a/.mp4`. Result written to the same `.extracted/<name>.md` sibling docx/pdf/pptx use.
+
+3. **Non-blocking with per-file status** — POST writes a `transcribing` marker synchronously then fires the transcription **un-awaited** (background); GET reports `transcriptionStatus`, and the wizard polls every 2s until `done`/`failed`. New `TranscriptionBadge` shows the state in both the materials list and the collapsed banner.
+
+4. **Missing whisper/ffmpeg** — `SttNotInstalledError`/`SttTranscodeError` fold into a `failed` status carrying the install hint; the upload still returns 201.
+
+5. **Transcript enters prompts** — media exts added to the `resolveSourcePathForPrompt`/`loadStagedSourcesForPrompt`/`EXTRACTABLE_BINARY_EXTS` plumbing, so a finished transcript flows in with `extractedFrom` set; `moveDraftSourcesToCourse` carries both the `.md` and `.status.json` siblings on finalisation.
+
+6. **Mocked tests** — `__setMediaTranscriberForTesting` + `awaitPendingMediaTranscriptions`; no real whisper/ffmpeg.
+
+**Verification:** typecheck clean, eslint introduced no new issues, full suite **1319/1319**, and the playwright browser test PASSED (media advertised + 250 MB, `.mp3` accepted, badge resolves to "Not transcribed" with the `Run scripts/setup-stt.sh first.` install hint in its tooltip, zero console errors).
+
+Committed as `156c5eb` with `passes: true` for US-214 in `prd.json`. Push is the orchestrator's job.
