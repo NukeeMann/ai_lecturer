@@ -1,0 +1,69 @@
+[2026-06-13T09:51:35+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T09:51:40+0200] I have ~2993s. Let me read the codebase patterns and locate the export path.
+[2026-06-13T09:51:46+0200] Let me read the export modules to understand the current structure.
+[2026-06-13T09:51:55+0200] Now let me look at the code/sandbox schemas to understand `requiresPackages`, and the html route + its test.
+[2026-06-13T09:52:02+0200] Let me look at the schemas and the html route test, plus existing package-allowlist logic if any.
+[2026-06-13T09:53:05+0200] Let me check existing Python tokenizer and the kernelPython allowlist context.
+[2026-06-13T09:53:57+0200] Now I have everything I need. Let me create the allowlist module first.
+[2026-06-13T09:54:21+0200] Now let me add the failing route test (before the fix). Let me see the end of the test file to add a new describe block, and the exact code/sandbox lesson seeding approach.
+[2026-06-13T09:55:20+0200] Now let me run the new tests to confirm they fail (reproducing the bug).
+[2026-06-13T09:55:31+0200] Tests fail as expected (bug reproduced). Now the fix. First, update `staticRender.tsx` — imports, a highlighter, and the two widgets.
+[2026-06-13T09:55:50+0200] Now update `StaticCode` to branch on the allowlist:
+[2026-06-13T09:56:11+0200] Now update the Pyodide loader to load packages from imports (so numpy/matplotlib actually run), and add CSS + tokens.
+[2026-06-13T09:56:18+0200] Now add CSS for the badge and highlight tokens, and add the code-highlight tokens to the inlined token block.
+[2026-06-13T09:56:46+0200] Now run the export tests.
+[2026-06-13T09:56:56+0200] All pass. Now typecheck and lint, plus run the zip route test (which also uses staticRender) to check for regressions.
+[2026-06-13T09:57:31+0200] Now browser verification (ui tag). Let me check for a running dev server and the courses directory.
+[2026-06-13T09:57:45+0200] No dev server. I'll render the export directly with tsx, serve it statically, and verify in browser. Let me write a generation script.
+[2026-06-13T09:58:14+0200] The alias didn't resolve cleanly via tsx. Let me instead seed a real course and use the dev server's export endpoint. First create the fixture course on disk.
+[2026-06-13T09:58:52+0200] Export works. Now serve it statically and run a playwright check.
+[2026-06-13T09:59:02+0200] Now the playwright verification script.
+[2026-06-13T09:59:27+0200] All 7 browser checks pass. Let me remove the fixture course and check git status before committing.
+[2026-06-13T09:59:37+0200] Let me run the full test suite to confirm no regressions.
+[2026-06-13T10:00:00+0200] One unrelated failure in `generation.test.ts` (a marker-file race). Let me confirm it's pre-existing/flaky by running it isolated.
+[2026-06-13T10:00:11+0200] Confirmed flaky/unrelated (passes in isolation; my changes only touch export files). Now update prd.json and progress.txt.
+[2026-06-13T10:00:40+0200] Now commit. Let me stage the right files (excluding the playwright temp file).
+[2026-06-13T10:00:50+0200] The two `.generating.json` markers are test artifacts (untracked, unstaged — won't be committed). Committing now.
+[2026-06-13T10:00:56+0200] Commit landed. Let me verify `passes==true` is in HEAD, then stop the servers I started.
+[2026-06-13T10:01:10+0200] US-212 is complete and committed.
+
+## Summary
+
+**Bug:** Static-HTML export emitted Code/Sandbox widgets requiring kernel-only packages (cv2/torch/tensorflow) as interactive Pyodide widgets, where Run crashed on import instead of degrading gracefully.
+
+**Fix:**
+- **New allowlist module** `src/lib/export/pyodidePackages.ts` — single source of truth for Pyodide-loadable packages (numpy, matplotlib, scipy, scikit-image/skimage, pandas + a few extras). Exports `isPyodideLoadable` / `allPyodideLoadable`, case-insensitive, matches import- or dist-names.
+- **`staticRender.tsx`**:
+  - Code/Sandbox with any non-allowlisted `requiresPackages` → **read-only**: `Requires local kernel runtime` badge, server-side syntax-highlighted starter code, **no Run button / textarea**.
+  - Allowlisted (or no packages) → interactive Pyodide as before. Sandbox is now interactive when allowlisted, reusing the Code widget's `data-static-code-*` hooks so `static-client.js` needed zero changes.
+  - The Pyodide loader now calls `loadPackagesFromImports(code)` before running — `runPythonAsync` never auto-loads, so even `import numpy` previously failed.
+  - Added badge/highlight CSS + `--code-*` tokens to the inlined token block.
+
+**Verification:**
+- Failing-first tests written, then green: new allowlist unit tests + a US-212 route block (cv2 code → badge/no Run, torch sandbox → badge/no Run, numpy code → interactive).
+- Typecheck + eslint clean.
+- Full suite: 1290/1291 (the 1 failure is a pre-existing flaky `generation.test.ts` marker-file race — passes in isolation, untouched by this change).
+- **Browser (playwright on the unzipped ZIP served over http): 7/7** — cv2 widget shows badge, no Run, no input, highlighted code; numpy widget's Run loaded Pyodide+numpy from CDN and printed `2.5`.
+
+prd.json `US-212.passes == true` confirmed in HEAD (`81f3605`); dev/static servers stopped by PID.
+[2026-06-13T10:01:10+0200] [result success turns=53 cost=$3.878391500000001] US-212 is complete and committed.
+
+## Summary
+
+**Bug:** Static-HTML export emitted Code/Sandbox widgets requiring kernel-only packages (cv2/torch/tensorflow) as interactive Pyodide widgets, where Run crashed on import instead of degrading gracefully.
+
+**Fix:**
+- **New allowlist module** `src/lib/export/pyodidePackages.ts` — single source of truth for Pyodide-loadable packages (numpy, matplotlib, scipy, scikit-image/skimage, pandas + a few extras). Exports `isPyodideLoadable` / `allPyodideLoadable`, case-insensitive, matches import- or dist-names.
+- **`staticRender.tsx`**:
+  - Code/Sandbox with any non-allowlisted `requiresPackages` → **read-only**: `Requires local kernel runtime` badge, server-side syntax-highlighted starter code, **no Run button / textarea**.
+  - Allowlisted (or no packages) → interactive Pyodide as before. Sandbox is now interactive when allowlisted, reusing the Code widget's `data-static-code-*` hooks so `static-client.js` needed zero changes.
+  - The Pyodide loader now calls `loadPackagesFromImports(code)` before running — `runPythonAsync` never auto-loads, so even `import numpy` previously failed.
+  - Added badge/highlight CSS + `--code-*` tokens to the inlined token block.
+
+**Verification:**
+- Failing-first tests written, then green: new allowlist unit tests + a US-212 route block (cv2 code → badge/no Run, torch sandbox → badge/no Run, numpy code → interactive).
+- Typecheck + eslint clean.
+- Full suite: 1290/1291 (the 1 failure is a pre-existing flaky `generation.test.ts` marker-file race — passes in isolation, untouched by this change).
+- **Browser (playwright on the unzipped ZIP served over http): 7/7** — cv2 widget shows badge, no Run, no input, highlighted code; numpy widget's Run loaded Pyodide+numpy from CDN and printed `2.5`.
+
+prd.json `US-212.passes == true` confirmed in HEAD (`81f3605`); dev/static servers stopped by PID.
