@@ -70,17 +70,37 @@ type WizardStage = 'choose' | 'materials' | 1 | 2 | 3 | 4 | 5 | 6;
 
 type EntryPath = 'scratch' | 'materials';
 
+type TranscriptionStatus = 'transcribing' | 'done' | 'failed';
+
 interface UploadedMaterial {
   originalName: string;
   sanitizedName: string;
   size: number;
   type: string;
+  // US-214: audio/video sources are transcribed locally in the background;
+  // these track the per-file transcription state shown in the list and polled
+  // by the wizard. Absent for non-media files.
+  transcriptionStatus?: TranscriptionStatus;
+  transcriptionReason?: string;
 }
 
 // Surfaced both to the route and the UI so they stay in sync.
-const MATERIAL_ALLOWED_EXTS = ['.pdf', '.pptx', '.docx', '.txt', '.json'] as const;
+// US-214 adds audio/video (.mp3/.wav/.m4a/.mp4) which are transcribed locally.
+const MATERIAL_DOC_EXTS = ['.pdf', '.pptx', '.docx', '.txt', '.json'] as const;
+const MATERIAL_MEDIA_EXTS = ['.mp3', '.wav', '.m4a', '.mp4'] as const;
+const MATERIAL_ALLOWED_EXTS = [...MATERIAL_DOC_EXTS, ...MATERIAL_MEDIA_EXTS] as const;
 const MATERIAL_MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MiB. Mirrors src/lib/server/sources.ts MAX_FILE_SIZE_BYTES.
+const MATERIAL_MEDIA_MAX_SIZE_BYTES = 250 * 1024 * 1024; // 250 MiB. Mirrors MAX_MEDIA_FILE_SIZE_BYTES.
 const MATERIAL_ACCEPT_ATTR = MATERIAL_ALLOWED_EXTS.join(',');
+
+function isMediaExt(ext: string): boolean {
+  return (MATERIAL_MEDIA_EXTS as readonly string[]).includes(ext);
+}
+
+/** Per-extension client-side size cap, mirroring the server. */
+function materialMaxSizeForExt(ext: string): number {
+  return isMediaExt(ext) ? MATERIAL_MEDIA_MAX_SIZE_BYTES : MATERIAL_MAX_SIZE_BYTES;
+}
 
 function formatFileSize(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -91,6 +111,57 @@ function formatFileSize(n: number): string {
 function fileExtension(name: string): string {
   const i = name.lastIndexOf('.');
   return i >= 0 ? name.slice(i).toLowerCase() : '';
+}
+
+/** US-214 — small inline badge reflecting an audio/video source's local
+ *  transcription status. Renders nothing for non-media files (no status). */
+function TranscriptionBadge({ material }: { material: UploadedMaterial }) {
+  const status = material.transcriptionStatus;
+  if (!status) return null;
+  const config: Record<TranscriptionStatus, { label: string; color: string; bg: string }> = {
+    transcribing: {
+      label: 'Transcribing…',
+      color: 'var(--accent-text, #2563eb)',
+      bg: 'var(--accent-subtle, rgba(37, 99, 235, 0.1))',
+    },
+    done: {
+      label: 'Transcribed',
+      color: 'var(--success, #15803d)',
+      bg: 'var(--success-subtle, rgba(21, 128, 61, 0.1))',
+    },
+    failed: {
+      label: 'Not transcribed',
+      color: 'var(--warning, #b45309)',
+      bg: 'var(--warning-subtle, rgba(217, 119, 6, 0.1))',
+    },
+  };
+  const c = config[status];
+  // For a failure, the server's reason carries the install hint (missing
+  // whisper/ffmpeg) — surface it as a tooltip so the user knows how to fix it.
+  const title =
+    status === 'failed' && material.transcriptionReason
+      ? material.transcriptionReason
+      : undefined;
+  return (
+    <span
+      data-testid="transcription-status"
+      data-status={status}
+      title={title}
+      style={{
+        flexShrink: 0,
+        fontSize: 11,
+        fontWeight: 600,
+        color: c.color,
+        background: c.bg,
+        padding: '2px 7px',
+        borderRadius: 999,
+        whiteSpace: 'nowrap',
+        cursor: title ? 'help' : 'default',
+      }}
+    >
+      {c.label}
+    </span>
+  );
 }
 
 const STAGES = [
@@ -173,6 +244,65 @@ export default function CreatePage() {
       setStage(6);
     }
   }, []);
+
+  // US-214 — while any uploaded audio/video source is still transcribing,
+  // poll the upload-sources listing so the per-file status badge advances
+  // from `transcribing` to `done`/`failed`. The effect only runs while at
+  // least one file is pending and tears its interval down once everything has
+  // resolved.
+  const hasTranscribing = materials.some(
+    (m) => m.transcriptionStatus === 'transcribing',
+  );
+  useEffect(() => {
+    if (!draftId || !hasTranscribing) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}`,
+        );
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          files?: {
+            sanitizedName: string;
+            transcriptionStatus?: TranscriptionStatus;
+            transcriptionReason?: string;
+          }[];
+        };
+        if (cancelled || !body.files) return;
+        const byName = new Map(body.files.map((f) => [f.sanitizedName, f]));
+        setMaterials((prev) => {
+          let changed = false;
+          const next = prev.map((m) => {
+            const f = byName.get(m.sanitizedName);
+            if (!f || f.transcriptionStatus === undefined) return m;
+            if (
+              f.transcriptionStatus === m.transcriptionStatus &&
+              (f.transcriptionReason ?? undefined) ===
+                (m.transcriptionReason ?? undefined)
+            ) {
+              return m;
+            }
+            changed = true;
+            return {
+              ...m,
+              transcriptionStatus: f.transcriptionStatus,
+              transcriptionReason: f.transcriptionReason,
+            };
+          });
+          return changed ? next : prev;
+        });
+      } catch {
+        /* transient network error — next tick retries */
+      }
+    };
+    void poll();
+    const id = setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [draftId, hasTranscribing, setMaterials]);
 
   const goToDashboard = () => {
     if (draft.topic.trim().length > 0 || materials.length > 0) {
@@ -691,10 +821,11 @@ function StageMaterials({
           localErrors.push({ name: f.name, reason: `Unsupported extension "${ext || '(none)'}"` });
           continue;
         }
-        if (f.size > MATERIAL_MAX_SIZE_BYTES) {
+        const sizeCap = materialMaxSizeForExt(ext);
+        if (f.size > sizeCap) {
           localErrors.push({
             name: f.name,
-            reason: `File too large (${formatFileSize(f.size)} > ${formatFileSize(MATERIAL_MAX_SIZE_BYTES)})`,
+            reason: `File too large (${formatFileSize(f.size)} > ${formatFileSize(sizeCap)})`,
           });
           continue;
         }
@@ -814,8 +945,12 @@ function StageMaterials({
               lineHeight: 1.55,
             }}
           >
-            Add lecture slides, lecture notes, exam papers, or a question bank. Accepted:{' '}
-            {MATERIAL_ALLOWED_EXTS.join(' · ')}. Up to {formatFileSize(MATERIAL_MAX_SIZE_BYTES)} per file.
+            Add lecture slides, notes, exam papers, a question bank, or a lecture
+            recording. Documents ({MATERIAL_DOC_EXTS.join(' · ')}) up to{' '}
+            {formatFileSize(MATERIAL_MAX_SIZE_BYTES)}; audio/video (
+            {MATERIAL_MEDIA_EXTS.join(' · ')}) up to{' '}
+            {formatFileSize(MATERIAL_MEDIA_MAX_SIZE_BYTES)} and transcribed
+            locally.
           </p>
 
           <input
@@ -986,6 +1121,7 @@ function StageMaterials({
                     >
                       {formatFileSize(m.size)}
                     </span>
+                    <TranscriptionBadge material={m} />
                     <button
                       type="button"
                       data-testid="materials-remove"
@@ -1110,6 +1246,7 @@ function MaterialsBanner({
               >
                 {formatFileSize(m.size)}
               </span>
+              <TranscriptionBadge material={m} />
               <button
                 type="button"
                 data-testid="materials-banner-remove"

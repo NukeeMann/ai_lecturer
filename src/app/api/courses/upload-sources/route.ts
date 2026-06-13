@@ -6,6 +6,7 @@ import {
   EXTRACTED_DIRNAME,
   InvalidDraftIdError,
   MAX_FILE_SIZE_BYTES,
+  MEDIA_EXTENSIONS,
   StoredSourceFile,
   assertSafeDraftId,
   courseSourcesDir,
@@ -14,6 +15,7 @@ import {
   formatBytes,
   listSourceFilenames,
   makeDraftId,
+  maxUploadSizeForExtension,
   sanitizeFilename,
   validateUpload,
   withCollisionSuffix,
@@ -21,6 +23,10 @@ import {
 import { extractDocxToMarkdown } from '@/lib/server/docx';
 import { extractPdfToMarkdown } from '@/lib/server/pdf';
 import { extractPptxToMarkdown } from '@/lib/server/pptx';
+import {
+  readTranscriptStatus,
+  startMediaTranscription,
+} from '@/lib/server/media';
 import { InvalidSlugError, assertSafeSlug, courseDir } from '@/lib/server/paths';
 
 export const dynamic = 'force-dynamic';
@@ -119,25 +125,39 @@ export async function POST(req: Request) {
       continue;
     }
     const finalName = withCollisionSuffix(v.sanitized, existing);
+    const ext = path.extname(finalName).toLowerCase();
     const destPath = path.join(target.targetDir, finalName);
     const buf = Buffer.from(await file.arrayBuffer());
     // Defensive: re-check size after reading the buffer in case the
-    // multipart layer fed us a truncated file.length but a fuller body.
-    if (buf.byteLength > MAX_FILE_SIZE_BYTES) {
+    // multipart layer fed us a truncated file.length but a fuller body. The
+    // cap is per-extension — media files (US-214) allow a larger body.
+    const sizeCap = maxUploadSizeForExtension(ext);
+    if (buf.byteLength > sizeCap) {
       rejected.push({
         name: file.name,
-        reason: `File too large (${formatBytes(buf.byteLength)} > ${formatBytes(MAX_FILE_SIZE_BYTES)})`,
+        reason: `File too large (${formatBytes(buf.byteLength)} > ${formatBytes(sizeCap)})`,
       });
       continue;
     }
     await fs.writeFile(destPath, buf);
     existing.add(finalName);
-    stored.push({
+    const storedEntry: StoredSourceFile = {
       originalName: file.name,
       sanitizedName: finalName,
       size: buf.byteLength,
       type: file.type ?? '',
-    });
+    };
+    // US-214: kick off local whisper.cpp transcription for audio/video. The
+    // marker is written synchronously (so an immediate GET sees
+    // `transcribing`) but the transcription itself runs in the background and
+    // does NOT block this response — a long .mp4 would otherwise hang the
+    // upload. Missing whisper/ffmpeg is folded into a `failed` status, never
+    // an upload error.
+    if (MEDIA_EXTENSIONS.has(ext)) {
+      await startMediaTranscription(destPath);
+      storedEntry.transcriptionStatus = 'transcribing';
+    }
+    stored.push(storedEntry);
     // US-124: pre-extract .docx to a markdown sibling under .extracted/ so
     // the curriculum/lesson generation prompts can point Claude Code's Read
     // tool at a file format it can actually parse. Failures here NEVER
@@ -258,13 +278,20 @@ export async function DELETE(req: Request) {
     }
     throw err;
   }
-  // US-124/US-127/US-213: a deleted .docx, .pdf or .pptx leaves an orphaned
-  // .extracted/<name>.md sibling behind. Best-effort unlink — missing
-  // sibling is a no-op (idempotent), not an error, since older uploads
-  // predate the respective extractors.
+  // US-124/US-127/US-213/US-214: a deleted .docx, .pdf, .pptx or media file
+  // leaves orphaned `.extracted/<name>.md` (transcript) and — for media —
+  // `<name>.status.json` (transcription status) siblings behind. Best-effort
+  // unlink — a missing sibling is a no-op (idempotent), not an error, since
+  // older uploads predate the respective extractors.
   const ext = path.extname(filename).toLowerCase();
+  const siblingSuffixes: string[] = [];
   if (ext === '.docx' || ext === '.pdf' || ext === '.pptx') {
-    const sibling = path.join(targetDir, EXTRACTED_DIRNAME, `${filename}.md`);
+    siblingSuffixes.push('.md');
+  } else if (MEDIA_EXTENSIONS.has(ext)) {
+    siblingSuffixes.push('.md', '.status.json');
+  }
+  for (const suffix of siblingSuffixes) {
+    const sibling = path.join(targetDir, EXTRACTED_DIRNAME, `${filename}${suffix}`);
     try {
       await fs.unlink(sibling);
     } catch (err) {
@@ -308,11 +335,28 @@ export async function GET(req: Request) {
     );
   }
   const names = await listSourceFilenames(targetDir);
-  const files: { sanitizedName: string; size: number }[] = [];
+  const files: {
+    sanitizedName: string;
+    size: number;
+    transcriptionStatus?: 'transcribing' | 'done' | 'failed';
+    transcriptionReason?: string;
+  }[] = [];
   for (const name of names) {
+    const absPath = path.join(targetDir, name);
     try {
-      const stat = await fs.stat(path.join(targetDir, name));
-      if (stat.isFile()) files.push({ sanitizedName: name, size: stat.size });
+      const stat = await fs.stat(absPath);
+      if (!stat.isFile()) continue;
+      const entry: (typeof files)[number] = { sanitizedName: name, size: stat.size };
+      // US-214: surface the per-file transcription status for audio/video so
+      // the wizard can poll `transcribing → done/failed`.
+      if (MEDIA_EXTENSIONS.has(path.extname(name).toLowerCase())) {
+        const status = await readTranscriptStatus(absPath);
+        if (status) {
+          entry.transcriptionStatus = status.status;
+          if (status.reason) entry.transcriptionReason = status.reason;
+        }
+      }
+      files.push(entry);
     } catch {
       /* skip */
     }

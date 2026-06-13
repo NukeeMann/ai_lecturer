@@ -32,8 +32,13 @@ import { slugify } from '@/lib/server/paths';
 import {
   draftSourcesDir,
   courseSourcesDir,
+  extractedSiblingPath,
   makeDraftId,
 } from '@/lib/server/sources';
+import {
+  __setMediaTranscriberForTesting,
+  awaitPendingMediaTranscriptions,
+} from '@/lib/server/media';
 
 let coursesRoot: string;
 
@@ -830,6 +835,130 @@ describe('GET /api/courses/upload-sources (US-103)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { files: { sanitizedName: string; size: number }[] };
     expect(body.files).toEqual([{ sanitizedName: 'a.pdf', size: 2 }]);
+  });
+});
+
+describe('upload-sources media transcription (US-214)', () => {
+  afterEach(() => {
+    __setMediaTranscriberForTesting(null);
+  });
+
+  it('accepts a media upload, returns transcribing, and transcribes in the background', async () => {
+    __setMediaTranscriberForTesting(async () => ({
+      transcript: 'Recorded lecture words.',
+      durationMs: 5000,
+    }));
+
+    const fd = new FormData();
+    fd.append('files', fileFromString('lecture.mp4', 'video/mp4', 'fake-video-bytes'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      draftId: string;
+      files: { sanitizedName: string; transcriptionStatus?: string }[];
+    };
+    expect(body.files).toHaveLength(1);
+    // The request returns immediately with a `transcribing` marker — it must
+    // NOT block on the (potentially minutes-long) transcription.
+    expect(body.files[0].transcriptionStatus).toBe('transcribing');
+
+    // Let the background transcription resolve.
+    await awaitPendingMediaTranscriptions();
+
+    // GET now reports `done` and the transcript sibling exists.
+    const getRes = await getUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(body.draftId)}`,
+      ),
+    );
+    const getBody = (await getRes.json()) as {
+      files: { sanitizedName: string; transcriptionStatus?: string }[];
+    };
+    expect(getBody.files[0].transcriptionStatus).toBe('done');
+    const sibling = extractedSiblingPath(
+      path.join(draftSourcesDir(body.draftId), 'lecture.mp4'),
+    );
+    expect(await fs.readFile(sibling, 'utf8')).toContain('Recorded lecture words.');
+  });
+
+  it('marks the file failed (with install hint) when whisper is not installed — upload still succeeds', async () => {
+    const { SttNotInstalledError } = await import('@/lib/server/stt');
+    __setMediaTranscriberForTesting(async () => {
+      throw new SttNotInstalledError('/bin/whisper-cli', '/models/ggml.bin');
+    });
+
+    const fd = new FormData();
+    fd.append('files', fileFromString('talk.mp3', 'audio/mpeg', 'fake-audio'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    // Upload itself is NOT broken by the missing tooling.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { draftId: string };
+
+    await awaitPendingMediaTranscriptions();
+
+    const getRes = await getUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(body.draftId)}`,
+      ),
+    );
+    const getBody = (await getRes.json()) as {
+      files: { transcriptionStatus?: string; transcriptionReason?: string }[];
+    };
+    expect(getBody.files[0].transcriptionStatus).toBe('failed');
+    expect(getBody.files[0].transcriptionReason).toMatch(/setup-stt\.sh/);
+  });
+
+  it('rejects a media file above the media size cap but well above the document cap', async () => {
+    // 60 MiB > 50 MiB document cap but < 250 MiB media cap → accepted.
+    const sixtyMB = new Uint8Array(60 * 1024 * 1024);
+    __setMediaTranscriberForTesting(async () => ({ transcript: 'x', durationMs: 1 }));
+    const fd = new FormData();
+    fd.append('files', fileFromString('big.mp4', 'video/mp4', sixtyMB));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    await awaitPendingMediaTranscriptions();
+  });
+
+  it('DELETE removes the media file plus its transcript and status siblings', async () => {
+    __setMediaTranscriberForTesting(async () => ({
+      transcript: 'words',
+      durationMs: 1,
+    }));
+    const fd = new FormData();
+    fd.append('files', fileFromString('rec.m4a', 'audio/x-m4a', 'fake'));
+    const postRes = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    const { draftId } = (await postRes.json()) as { draftId: string };
+    await awaitPendingMediaTranscriptions();
+
+    const dir = draftSourcesDir(draftId);
+    // Siblings exist before delete.
+    await fs.access(path.join(dir, '.extracted', 'rec.m4a.md'));
+    await fs.access(path.join(dir, '.extracted', 'rec.m4a.status.json'));
+
+    const delRes = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=rec.m4a`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(delRes.status).toBe(200);
+    await expect(fs.access(path.join(dir, 'rec.m4a'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      fs.access(path.join(dir, '.extracted', 'rec.m4a.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      fs.access(path.join(dir, '.extracted', 'rec.m4a.status.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });
 

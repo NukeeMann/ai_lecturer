@@ -9,7 +9,10 @@ import {
   DEFAULT_TOTAL_CHAR_BUDGET,
   EXTRACTED_DIRNAME,
   MAX_FILE_SIZE_BYTES,
+  MAX_MEDIA_FILE_SIZE_BYTES,
+  MEDIA_EXTENSIONS,
   assertSafeDraftId,
+  maxUploadSizeForExtension,
   draftDir,
   draftSourcesDir,
   courseSourcesDir,
@@ -143,14 +146,57 @@ describe('validateUpload', () => {
 });
 
 describe('ALLOWED_EXTENSIONS', () => {
-  it('matches the AC list exactly', () => {
+  it('matches the AC list exactly (docs + US-214 media)', () => {
     expect([...ALLOWED_EXTENSIONS].sort()).toEqual([
       '.docx',
       '.json',
+      '.m4a',
+      '.mp3',
+      '.mp4',
       '.pdf',
       '.pptx',
       '.txt',
+      '.wav',
     ]);
+  });
+});
+
+describe('validateUpload — media (US-214)', () => {
+  it('accepts the four media extensions with their MIME types', () => {
+    expect(validateUpload('a.mp3', 'audio/mpeg', 100).ok).toBe(true);
+    expect(validateUpload('a.wav', 'audio/wav', 100).ok).toBe(true);
+    expect(validateUpload('a.m4a', 'audio/x-m4a', 100).ok).toBe(true);
+    expect(validateUpload('lecture.mp4', 'video/mp4', 100).ok).toBe(true);
+  });
+
+  it('accepts the octet-stream fallback for media', () => {
+    expect(validateUpload('a.mp4', 'application/octet-stream', 100).ok).toBe(true);
+    expect(validateUpload('a.mp3', '', 100).ok).toBe(true);
+  });
+
+  it('applies the larger media size cap', () => {
+    // 200 MB .mp4 must be accepted (AC: at least 200 MB), but a 200 MB .pdf
+    // is rejected (document cap is 50 MiB).
+    const twoHundredMB = 200 * 1024 * 1024;
+    expect(validateUpload('lecture.mp4', 'video/mp4', twoHundredMB).ok).toBe(true);
+    const docResult = validateUpload('big.pdf', 'application/pdf', twoHundredMB);
+    expect(docResult.ok).toBe(false);
+  });
+
+  it('still rejects media above the media cap', () => {
+    const r = validateUpload('huge.mp4', 'video/mp4', MAX_MEDIA_FILE_SIZE_BYTES + 1);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/too large/i);
+  });
+});
+
+describe('maxUploadSizeForExtension (US-214)', () => {
+  it('returns the media cap for media extensions, doc cap otherwise', () => {
+    expect(MEDIA_EXTENSIONS.has('.mp4')).toBe(true);
+    expect(maxUploadSizeForExtension('.mp4')).toBe(MAX_MEDIA_FILE_SIZE_BYTES);
+    expect(maxUploadSizeForExtension('.MP3')).toBe(MAX_MEDIA_FILE_SIZE_BYTES);
+    expect(maxUploadSizeForExtension('.pdf')).toBe(MAX_FILE_SIZE_BYTES);
+    expect(MAX_MEDIA_FILE_SIZE_BYTES).toBeGreaterThanOrEqual(200 * 1024 * 1024);
   });
 });
 
@@ -359,6 +405,29 @@ describe('resolveSourcePathForPrompt (US-124)', () => {
     expect(r.readPath).toBe(pptxPath);
     expect(r.extractedFrom).toBeUndefined();
   });
+
+  // US-214: media transcripts land on the same `.extracted/<name>.md` sibling,
+  // so a finished .mp4 transcript resolves like a docx/pdf/pptx extract.
+  it('returns the transcript sibling for a media file when it is on disk', async () => {
+    const dir = path.join(coursesRoot, 'demo', 'sources');
+    await fs.mkdir(path.join(dir, EXTRACTED_DIRNAME), { recursive: true });
+    const mediaPath = path.join(dir, 'lecture.mp4');
+    const siblingPath = path.join(dir, EXTRACTED_DIRNAME, 'lecture.mp4.md');
+    await fs.writeFile(mediaPath, 'fake-video-bytes');
+    await fs.writeFile(siblingPath, '# Transkrypcja\n\nSpoken content.\n');
+
+    const r = resolveSourcePathForPrompt(mediaPath);
+    expect(r.readPath).toBe(siblingPath);
+    expect(r.originalName).toBe('lecture.mp4');
+    expect(r.extractedFrom).toBe('lecture.mp4');
+  });
+
+  it('returns the original media path when transcription has not produced a sibling', () => {
+    const mediaPath = path.join(coursesRoot, 'demo', 'sources', 'pending.mp3');
+    const r = resolveSourcePathForPrompt(mediaPath);
+    expect(r.readPath).toBe(mediaPath);
+    expect(r.extractedFrom).toBeUndefined();
+  });
 });
 
 describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', () => {
@@ -437,6 +506,42 @@ describe('moveDraftSourcesToCourse — extracted-sibling propagation (US-124)', 
     await expect(
       fs.access(path.join(dst, EXTRACTED_DIRNAME, 'orphan.docx.md')),
     ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  // US-214: a media file carries BOTH a `<name>.md` transcript and a
+  // `<name>.status.json` status sidecar — both must ride along on finalise.
+  it('moves a media file with its transcript and status siblings', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'lecture.mp4'), 'fake-video');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'lecture.mp4.md'),
+      '# Transkrypcja\n\nbody\n',
+    );
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'lecture.mp4.status.json'),
+      JSON.stringify({ status: 'done', updatedAt: 'now' }),
+    );
+
+    const moved = await moveDraftSourcesToCourse(id, 'algebra');
+    expect(moved).toEqual(['lecture.mp4']);
+
+    const dst = courseSourcesDir('algebra');
+    expect(await fs.readFile(path.join(dst, 'lecture.mp4'), 'utf8')).toBe(
+      'fake-video',
+    );
+    expect(
+      await fs.readFile(path.join(dst, EXTRACTED_DIRNAME, 'lecture.mp4.md'), 'utf8'),
+    ).toContain('Transkrypcja');
+    expect(
+      JSON.parse(
+        await fs.readFile(
+          path.join(dst, EXTRACTED_DIRNAME, 'lecture.mp4.status.json'),
+          'utf8',
+        ),
+      ).status,
+    ).toBe('done');
   });
 
   // US-127: the move logic is generic over `<name>.md` siblings, so a .pdf
@@ -581,6 +686,35 @@ describe('loadStagedSourcesForPrompt (US-125)', () => {
     expect(out[1]).toEqual({
       kind: 'binary-unsupported',
       originalName: 'without-sibling.pptx',
+    });
+  });
+
+  // US-214: a media file with its `.extracted/<name>.md` transcript reads as
+  // text and carries `extractedFrom`, exactly like docx/pdf/pptx; without the
+  // transcript (still transcribing / failed) it stays `binary-unsupported`.
+  it('returns kind:text for a media file with transcript, binary-unsupported without', async () => {
+    const id = makeDraftId();
+    const src = draftSourcesDir(id);
+    await fs.mkdir(path.join(src, EXTRACTED_DIRNAME), { recursive: true });
+    await fs.writeFile(path.join(src, 'done.mp4'), 'fake-video');
+    await fs.writeFile(
+      path.join(src, EXTRACTED_DIRNAME, 'done.mp4.md'),
+      '# Transkrypcja\n\nSpoken lecture content.',
+    );
+    await fs.writeFile(path.join(src, 'pending.mp3'), 'fake-audio');
+
+    const out = loadStagedSourcesForPrompt(id);
+    // Lexicographic: done.mp4 → pending.mp3
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({
+      kind: 'text',
+      originalName: 'done.mp4',
+      extractedFrom: 'done.mp4',
+      content: '# Transkrypcja\n\nSpoken lecture content.',
+    });
+    expect(out[1]).toEqual({
+      kind: 'binary-unsupported',
+      originalName: 'pending.mp3',
     });
   });
 
