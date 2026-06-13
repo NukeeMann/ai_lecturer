@@ -1,0 +1,78 @@
+[2026-06-13T10:42:15+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:42:16+0200] I'll start by reading the Ralph instructions and understanding the codebase.
+[2026-06-13T10:42:22+0200] Let me explore the relevant code: TheoryWidget, print page, static export, and the pyodide-loader pattern.
+[2026-06-13T10:44:52+0200] Now I have the full picture. Let me install mermaid (large dep) in the background while I write code.
+[2026-06-13T10:44:57+0200] While that installs, let me examine the test setup and existing TheoryWidget test.
+[2026-06-13T10:45:06+0200] Mermaid install is running. Let me write the `MermaidDiagram` component.
+[2026-06-13T10:45:40+0200] Now wire `MermaidPre` into TheoryWidget.
+[2026-06-13T10:45:50+0200] Now the print page:
+[2026-06-13T10:46:00+0200] Now add a mermaid-wait step in the PDF route before printing:
+[2026-06-13T10:46:21+0200] Now the static export. Let me update `staticRender.tsx`:
+[2026-06-13T10:46:33+0200] Now add the mermaid detection helpers and the static `pre` component, then wire into markdownComponents:
+[2026-06-13T10:46:42+0200] Now add `lessonHasMermaid`, conditionally include the mermaid script, and add the loader constant:
+[2026-06-13T10:46:54+0200] Now add the `MERMAID_LOADER_JS` constant. Let me append it after `STATIC_CLIENT_JS`:
+[2026-06-13T10:47:12+0200] Add `.mermaid` styling to the static stylesheet:
+[2026-06-13T10:47:18+0200] Now wire the loader into the html export route:
+[2026-06-13T10:47:36+0200] Now add the fixture mermaid section. Let me read the rest of markdown-basics.json:
+[2026-06-13T10:47:52+0200] Now typecheck and run the relevant tests:
+[2026-06-13T10:48:06+0200] Typecheck passes. Now let me write tests. Let me check the staticRender test and find a good place for mermaid tests:
+[2026-06-13T10:48:19+0200] Let me write tests. First the staticRender mermaid test:
+[2026-06-13T10:48:37+0200] Now the MermaidDiagram component test:
+[2026-06-13T10:48:56+0200] Let me run the affected existing tests:
+[2026-06-13T10:49:07+0200] Now lint the changed files:
+[2026-06-13T10:49:27+0200] The TheoryWidget error is pre-existing (line 277, untouched code). Let me fix my new lint error by clearing error in the async callbacks instead:
+[2026-06-13T10:49:52+0200] Now browser verification with playwright. Let me detect the dev server:
+[2026-06-13T10:49:58+0200] No dev server. Let me start one:
+[2026-06-13T10:50:18+0200] Server ready on :3000. Let me write the playwright test:
+[2026-06-13T10:50:50+0200] PASS — diagram renders to SVG, survives theme switches. Let me check the 404 source and view the screenshot:
+[2026-06-13T10:50:55+0200] The 404 is a pre-existing unrelated `/regenerate/status` poll. Let me view the screenshot:
+[2026-06-13T10:50:58+0200] Excellent — the flowchart renders with theme tokens. Let me verify dark theme:
+[2026-06-13T10:51:08+0200] Dark theme is legible. Now verify the print page (PDF path) renders the diagram, and test the PDF endpoint:
+[2026-06-13T10:51:24+0200] Print path works. Now test the actual PDF export endpoint end-to-end:
+[2026-06-13T10:53:08+0200] The PDF route 404s in 58ms (before any puppeteer work) and returns the app not-found HTML — suggesting the route module isn't registered. Let me confirm whether my edit caused it by checking against the unmodified route:
+[2026-06-13T10:53:22+0200] Without my edit it returns 200 PDF. My edit broke compilation somehow. Let me re-test now that the edit is restored, then inspect:
+[2026-06-13T10:53:35+0200] The earlier 404 was a stale HMR state. Now it returns a 142KB PDF in 4.8s (includes the mermaid wait). Let me confirm the diagram is in the PDF:
+[2026-06-13T10:54:08+0200] The PDF uses font subsetting so labels aren't greppable. The print page is exactly what puppeteer renders to PDF — let me view the print screenshot to confirm the diagram is present:
+[2026-06-13T10:54:17+0200] The print page (exactly what puppeteer PDFs) renders the full flowchart. Let me verify the static export zip includes the mermaid loader and `<pre class="mermaid">`:
+[2026-06-13T10:54:40+0200] Static export fully wired. Let me try verifying the exported diagram renders live (needs CDN network):
+[2026-06-13T10:54:47+0200] CDN is reachable. Let me verify the exported diagram renders in-browser:
+[2026-06-13T10:55:03+0200] Exported diagram renders via CDN (the 404 is favicon). All ACs verified. Let me run the full set of affected test files once more together:
+[2026-06-13T10:55:17+0200] All tests pass. Now update prd.json, progress.txt, and commit. First the prd:
+[2026-06-13T10:55:54+0200] Now stage and commit:
+[2026-06-13T10:55:59+0200] A stray playwright temp file got staged. Let me remove it:
+[2026-06-13T10:56:20+0200] Committed — `US-216 passes = true` confirmed in HEAD (commit `b4f565e`).
+
+The dev server and static-export HTTP server were launched in detached subshells (no captured PIDs), so per the Ralph safety rules I'll leave them for the orchestrator to tear down rather than risk a broad kill — the commit is already in HEAD.
+
+## Summary
+
+**US-216 — Mermaid diagram rendering** is complete and verified across all three markdown paths.
+
+**What was built:**
+- **`src/components/MermaidDiagram.tsx`** (new) — client component that *lazily* imports `mermaid` (only when a diagram mounts), renders SVG via `mermaid.render`, binds colours to the live theme tokens (`theme:'base'` + `themeVariables` read from `--bg/--text/--accent…` off `<html>`), and re-renders on `data-theme` switches. Invalid syntax → fallback `<pre><code>` + discreet error note, never crashes. Also exports `MermaidPre`, a react-markdown `pre` override shared by the lesson + print paths.
+- **Lesson view** (`TheoryWidget.tsx`) and **print page** wired with `pre: MermaidPre`.
+- **PDF route** waits on `[data-mermaid-state]≠pending` (best-effort) before `page.pdf()`.
+- **Static export** (`staticRender.tsx`) emits `<pre class="mermaid">` + a CDN ESM `mermaid-loader.js` (jsDelivr, pinned 11.15.0, mirrors the pyodide-loader pattern), injected only on lessons that contain a diagram.
+- **Fixture**: `theory-test/markdown-basics` got a flowchart section.
+
+**Verification:**
+- ✅ Typecheck clean; 34/34 tests across the 5 affected files pass; new files lint clean.
+- ✅ Browser (playwright): SVG renders in light/dark/sunset; print page renders the same SVG; PDF endpoint returns a 4-page 142 KB PDF (mermaid-wait engaged); exported static HTML loads mermaid from the CDN and renders the diagram (lesson without a diagram correctly omits the loader).
+[2026-06-13T10:56:19+0200] [result success turns=79 cost=$6.384538999999998] Committed — `US-216 passes = true` confirmed in HEAD (commit `b4f565e`).
+
+The dev server and static-export HTTP server were launched in detached subshells (no captured PIDs), so per the Ralph safety rules I'll leave them for the orchestrator to tear down rather than risk a broad kill — the commit is already in HEAD.
+
+## Summary
+
+**US-216 — Mermaid diagram rendering** is complete and verified across all three markdown paths.
+
+**What was built:**
+- **`src/components/MermaidDiagram.tsx`** (new) — client component that *lazily* imports `mermaid` (only when a diagram mounts), renders SVG via `mermaid.render`, binds colours to the live theme tokens (`theme:'base'` + `themeVariables` read from `--bg/--text/--accent…` off `<html>`), and re-renders on `data-theme` switches. Invalid syntax → fallback `<pre><code>` + discreet error note, never crashes. Also exports `MermaidPre`, a react-markdown `pre` override shared by the lesson + print paths.
+- **Lesson view** (`TheoryWidget.tsx`) and **print page** wired with `pre: MermaidPre`.
+- **PDF route** waits on `[data-mermaid-state]≠pending` (best-effort) before `page.pdf()`.
+- **Static export** (`staticRender.tsx`) emits `<pre class="mermaid">` + a CDN ESM `mermaid-loader.js` (jsDelivr, pinned 11.15.0, mirrors the pyodide-loader pattern), injected only on lessons that contain a diagram.
+- **Fixture**: `theory-test/markdown-basics` got a flowchart section.
+
+**Verification:**
+- ✅ Typecheck clean; 34/34 tests across the 5 affected files pass; new files lint clean.
+- ✅ Browser (playwright): SVG renders in light/dark/sunset; print page renders the same SVG; PDF endpoint returns a 4-page 142 KB PDF (mermaid-wait engaged); exported static HTML loads mermaid from the CDN and renders the diagram (lesson without a diagram correctly omits the loader).
