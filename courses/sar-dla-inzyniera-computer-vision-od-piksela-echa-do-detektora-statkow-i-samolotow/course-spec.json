@@ -1,0 +1,116 @@
+{
+  "topic": "[JOB] SAR dla inżyniera Computer Vision: dane radarowe, przetwarzanie obrazów i AI do detekcji, klasyfikacji i segmentacji  obiektów — wyłożone bez ciężkiej fizyki",
+  "description": "Praktyczny kurs przeprowadzający doświadczonego inżyniera Computer Vision (biegłego w klasycznych danych RGB i RAW, w\n  Pythonie, PyTorch i OpenCV) przez całkowicie nową dziedzinę: dane SAR (radar z syntetyczną aperturą) i budowanie na\n  nich modeli AI. Cel zawodowy: przygotowanie do roli AI/Computer Vision w krakowskiej firmie SATIM, która robi\n  automatyczne rozpoznawanie celów (ATR) — detekcję i klasyfikację statków, samolotów i pojazdów na zobrazowaniach SAR\n  (Sentinel-1, ICEYE, Capella, Synspective) w trybie near-real-time. Kurs ma dać twardą, praktyczną intuicję „czym jest\n  piksel SAR, jak go przetworzyć i jak postawić na nim detektor / segmentator / klasyfikator\", a NIE wykład z fizyki\n  radaru.\n\n  Sugerowana struktura modułów (do wykorzystania w kreatorze):\n  - Fundamenty SAR po ludzku — czym radar różni się od kamery (aktywne „własne oświetlenie\" vs światło otoczenia),\n  dlaczego piksel SAR to siła echa a nie kolor, geometria sceny (range/azimuth, kąt padania, slant vs ground range,\n  layover/foreshortening/shadow) tłumaczona na obrazkach i widgetach zamiast trygonometrii.\n  - Co jest „w środku\" danych SAR — amplituda i faza (dane zespolone) wyjaśnione bez podręcznikowych liczb zespolonych;\n  speckle jako „ziarnistość\" z koherentnego nakładania się ech (dlaczego to NIE jest szum gaussowski) i filtry (Lee,\n  Frost, Refined Lee, NL-means) pokazane przed/po; polaryzacja HH/HV/VV/VH jako „cztery kanały zamiast RGB\"; kalibracja\n  radiometryczna, sigma0/gamma0 i skala dB — co to robi z wartościami pikseli i z modelem.\n  - Pipeline przygotowania danych w Pythonie — wczytywanie i organizacja scen (Sentinel-1 SLC/GRD oraz próbki\n  komercyjne), kalibracja, multilooking, geokodowanie i terrain correction; co każdy krok robi i po co, z minimum\n  matematyki.\n  - Klasyczne przetwarzanie obrazów na SAR — tekstura (GLCM/Haralick), detekcja celów CFAR (flagowa technika wykrywania\n  statków na tle morza — rdzeń produktu SATIM), morfologia, change detection (log-ratio, koherencja) — jako baseline i\n  feature engineering pod AI.\n  - AI na SAR (rdzeń pod SATIM) — detekcja obiektów (statki/samoloty/pojazdy: adaptacja YOLO/DETR do SAR, CFAR jako\n  pre-detektor + klasyfikator CNN), segmentacja semantyczna i instancyjna (woda/ląd/obiekty), klasyfikacja celów\n  (OpenSARShip, MSTAR), despeckling sieciami; dlaczego modele trenowane na RGB sypią się na SAR, transfer learning z\n  modeli optycznych i augmentacja specyficzna dla SAR.\n  - Ewaluacja i produkcja — metryki (mAP, F1 per klasa, PSNR/ENL), odporność na kąt padania, porę roku i typ satelity\n  („data-agnostic\"), oraz inferencja near-real-time (ONNX, throughput) — w języku, którym mówi SATIM.\n  - Capstone — end-to-end: surowa scena SAR → detekcje i klasyfikacje statków/pojazdów + krótki raport; mapuje się 1:1\n  na zakres roli w SATIM.\n\n  ZASADY DYDAKTYCZNE, KTÓRE GENERATOR MUSI BEZWZGLĘDNIE UWZGLĘDNIĆ W KAŻDEJ LEKCJI (mają priorytet nad domyślnym stylem\n  generatora, który zbyt chętnie wstawia wzory):\n  1. Profil ucznia: senior CV engineer (RGB/RAW), biegły w Pythonie/PyTorch/OpenCV, ale BARDZO słaby z fizyki i\n  matematyki. Wzory oraz definicje książkowe są dla niego nieprzystępne — fizyki nie da się go nauczyć w sposób\n  konwencjonalny. Pisz tak, jakbyś tłumaczył koledze-programiście, nie studentowi fizyki.\n  2. Każde pojęcie fizyczne wprowadzaj NAJPIERW po ludzku — jedno zdanie intuicji lub analogii ZANIM padnie termin\n  techniczny. Terminy takie jak faza, amplituda, koherencja, interferencja, transformata Fouriera / FFT, częstotliwość,\n  Doppler, polaryzacja zawsze dostają prostą analogię (fale na wodzie, echo w górach, latarka w ciemności, dwie\n  nakładające się piosenki). Nigdy nie zakładaj, że uczeń wie, co znaczy dany termin — za pierwszym razem zawsze go\n  rozwiń.\n  3. Domyślny tryb wykładu to: intuicja + obrazek/widget + analogia do RGB/RAW + „co to znaczy dla twoich pikseli i\n  twojego modelu\" — a NIE wyprowadzenie wzoru. Preferuj wizualizacje, widgety interaktywne i porównania before/after nad\n  matematyką.\n  4. Wzór wstawiaj TYLKO gdy jest naprawdę nośny (bez niego coś jest niezrozumiałe). Gdy już się pojawia, OBOWIĄZKOWO\n  bezpośrednio pod nim wypisz KAŻDY symbol jako listę: symbol → znaczenie zwykłym językiem → jednostka → typowa wartość\n  liczbowa. Dotyczy WSZYSTKICH symboli, łącznie ze znakiem sumy ∑, theta θ, indeksami i operatorami. Zero nieopisanych\n  symboli — zakładaj, że uczeń NIE wie z głowy, co znaczy ∑ ani θ, dopóki mu tego nie powiesz w tym konkretnym miejscu.\n  5. Zawsze „po co\" przed „jak\": najpierw praktyczna konsekwencja na danych/modelu, dopiero potem (opcjonalnie)\n  mechanika.\n  6. Dla każdego nowego konceptu SAR podaj most z optyki: „w RGB/RAW masz X; w SAR odpowiednikiem jest Y; uwaga, bo Z\n  się tu załamuje\". Zakotwiczaj nowe w tym, co uczeń już zna z klasycznej wizji komputerowej.\n  7. Fizyka jako „czarna skrzynka z intuicją\": uczeń ma rozumieć, CO dane oznaczają i JAK na nie reagować w\n  kodzie/modelu, a nie umieć wyprowadzić równanie radaru. Quizy sprawdzają intuicję i konsekwencje, nie znajomość\n  wzorów.\n\n  Ograniczenia techniczne widgetów (generator musi uwzględnić przy pisaniu kodu lekcji):\n  - Każda lekcja ma mieć co najmniej jeden interaktywny widget z realnym wejściem/wyjściem (Code z inputs/outputMedia\n  albo plotImage), oparty na PRAWDZIWYCH kafelkach SAR (wycinki Sentinel-1 VV/VH, chipy MSTAR/OpenSARShip, pary\n  optyka+SAR) pobranych do /inputs/ na etapie tworzenia kursu — żadnych pobrań po sieci w czasie działania widgetu.\n  - Kod uruchamialnych widgetów trzymaj na numpy/opencv-python/scikit-image/scipy/matplotlib. Ciężki trening\n  (PyTorch/TensorFlow), SNAP/snappy i pobieranie scen pokazuj jako kod referencyjny w blokach Theory, nie jako\n  uruchamialny widget.\n  - Wszędzie, gdzie pokazujesz wpływ parametru (rozmiar okna filtru, próg CFAR, ENL, liczba looków, sigma), używaj\n  suwaków (ParametricExplorer) — pokaż wpływ wizualnie, nie wzorem.",
+  "level": "intermediate",
+  "durationTarget": "standard",
+  "theoryPracticeRatio": 0.5,
+  "clarification": {
+    "q1: Which target class matters most for your SATIM role right now — ships on open sea, aircraft on aprons, or ground vehicles — so we weight detection examples accordingly?": "Mostly planes and ships",
+    "q2: Do you already have hands-on time with any SAR scenes (e.g. opened a Sentinel-1 product in SNAP), or are you starting from literally zero exposure to the data?": "No",
+    "q3: Should the course lean toward the CFAR-plus-classifier pipeline that mirrors SATIM's product, or give equal airtime to end-to-end deep detectors like YOLO/DETR on SAR?": "Mostly CFAR",
+    "q4: How comfortable are you running heavier reference code locally (GPU, PyTorch training), or do you want runnable widgets kept strictly to lightweight numpy/opencv so everything works on your machine?": "Comfortable but i want all of the code to be run from the browser - not copying code into seperate files and running them myself",
+    "q5: Is near-real-time inference and ONNX/throughput deployment a core skill you need demonstrated, or a nice-to-have we can keep to a single production lesson?": "nice to have",
+    "q6: Do you want despeckling and classical filters (Lee/Frost) treated as a model-input preprocessing concern, or also as a standalone deep-learning task in its own right?": "standalone",
+    "q7: For the capstone, would you prefer one polished end-to-end ship-detection pipeline, or a broader multi-class scene that also touches segmentation of water/land?": "first one",
+    "q8: Are there specific public SAR datasets you want centered (OpenSARShip, MSTAR, SSDD, FUSAR) — or should we pick whatever best teaches each concept?": "You pick",
+    "q9: How much of your interview prep is about explaining SAR concepts verbally versus writing working detection code, so we balance intuition lessons against coding labs?": "Not relevant",
+    "q10: Do you want polarimetry (HH/HV/VV/VH as channels) treated as a first-class modeling input, or kept light since much operational ship data is single-pol?": "You decide what fits better"
+  },
+  "draftStructure": {
+    "courseTitle": "SAR dla inżyniera Computer Vision: od piksela echa do detektora statków i samolotów",
+    "courseDescription": "Praktyczna ścieżka dla seniora CV (Python/PyTorch/OpenCV) wchodzącego w dane SAR: intuicja zamiast fizyki, mosty z RGB/RAW, uruchamialne widgety na prawdziwych kafelkach Sentinel-1/MSTAR i nacisk na CFAR oraz detekcję statków i samolotów pod rolę w SATIM.",
+    "modules": [
+      {
+        "title": "Fundamenty SAR po ludzku",
+        "lessons": [
+          {
+            "title": "Radar to nie kamera: własne oświetlenie zamiast światła otoczenia",
+            "summary": "Zobaczysz, dlaczego piksel SAR to siła echa, a nie kolor; porównasz kafelek SAR z parą optyczną i nazwiesz, co znika, a co się pojawia.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Geometria sceny bez trygonometrii: range, azimuth, layover i shadow",
+            "summary": "Na widżecie z suwakiem kąta padania zobaczysz, jak powstają layover, foreshortening i cień, i co to znaczy dla położenia obiektów na obrazie.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Co jest w środku danych SAR",
+        "lessons": [
+          {
+            "title": "Amplituda, faza i speckle: ziarnistość, która NIE jest szumem gaussowskim",
+            "summary": "Zrozumiesz speckle jako efekt koherentnego nakładania ech i na suwaku ENL zobaczysz, czemu uśrednianie 'sąsiadów' tu nie działa jak w RGB.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Despeckling w praktyce: Lee, Frost, Refined Lee i NL-means before/after",
+            "summary": "Uruchomisz filtry na prawdziwym kafelku VV i suwakami okna porównasz redukcję speckle vs utratę krawędzi, wybierając kompromis pod detekcję.",
+            "estimatedMinutes": 16
+          },
+          {
+            "title": "Polaryzacja i skala dB: cztery kanały zamiast RGB, kalibracja sigma0",
+            "summary": "Połączysz VV/VH jak kanały obrazu i na suwaku skali dB zobaczysz, jak kalibracja radiometryczna zmienia wartości pikseli i wejście modelu.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Pipeline przygotowania danych w Pythonie",
+        "lessons": [
+          {
+            "title": "Od sceny do kafelka: GRD, multilooking, geokodowanie i terrain correction",
+            "summary": "Przejdziesz krok po kroku przez przygotowanie sceny Sentinel-1 — każdy etap z odpowiedzią 'po co', a ciężkie kroki SNAP jako kod referencyjny.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Klasyczne przetwarzanie i CFAR jako rdzeń produktu",
+        "lessons": [
+          {
+            "title": "CFAR krok po kroku: adaptacyjny próg, który wykrywa statki na morzu",
+            "summary": "Zbudujesz detektor CFAR z oknem guard/background i na suwaku Pfa zobaczysz, jak próg balansuje trafienia statków vs fałszywe alarmy.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Tekstura, morfologia i change detection jako feature engineering pod AI",
+            "summary": "Policzysz cechy GLCM/Haralick i log-ratio między scenami, czyszcząc maski CFAR morfologią jako baseline i wejścia dla późniejszych modeli.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "AI na SAR pod ATR",
+        "lessons": [
+          {
+            "title": "Detekcja statków i samolotów: CFAR jako pre-detektor + klasyfikator CNN",
+            "summary": "Połączysz okna CFAR z lekkim klasyfikatorem chipów i zrozumiesz adaptację YOLO/DETR do SAR oraz czemu modele z RGB tu się sypią.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Transfer learning i augmentacja SAR: klasyfikacja celów na chipach",
+            "summary": "Na chipach MSTAR/OpenSARShip poznasz transfer z modeli optycznych i augmentacje specyficzne dla SAR; ciężki trening jako kod referencyjny.",
+            "estimatedMinutes": 16
+          }
+        ]
+      },
+      {
+        "title": "Ewaluacja, produkcja i capstone",
+        "lessons": [
+          {
+            "title": "Metryki i odporność: mAP, F1 per klasa oraz model 'data-agnostic'",
+            "summary": "Policzysz mAP i F1 na detekcjach i przetestujesz odporność na kąt padania i typ satelity, mówiąc językiem near-real-time i ONNX.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Capstone: surowa scena SAR → detekcje statków/samolotów + raport",
+            "summary": "Złożysz end-to-end pipeline od kafelka do wykrytych i sklasyfikowanych obiektów z krótkim raportem mapującym się 1:1 na zakres roli w SATIM.",
+            "estimatedMinutes": 20
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-06-12T13:58:05.664Z"
+}

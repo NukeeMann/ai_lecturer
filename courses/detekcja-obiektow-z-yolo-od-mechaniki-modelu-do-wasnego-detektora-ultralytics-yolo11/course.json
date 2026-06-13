@@ -1,0 +1,118 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "title": "Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)",
+  "description": "Zaawansowany, praktyczny kurs detekcji jednoetapowej oparty na Ultralytics YOLO11. Rozkładamy model na czynniki pierwsze (backbone→neck→head, input/output, straty, NMS) i trenujemy własny detektor pojazdów/statków na lokalnym GPU.",
+  "accentColor": "indigo",
+  "icon": "scan-search",
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Fundamenty detekcji i intuicja YOLO",
+      "summary": "Ramy zadania detekcji, sens hasła „look once” oraz dekompozycja nowoczesnego YOLO na backbone, neck i head.",
+      "lessons": [
+        {
+          "slug": "detekcja-vs-klasyfikacja-vs-segmentacja",
+          "title": "Detekcja vs klasyfikacja vs segmentacja",
+          "estimatedMinutes": 10,
+          "summary": "Porównasz zadania wizji komputerowej i ustalisz, co dokładnie zwraca detektor: bounding boxy, klasy i confidence — w odróżnieniu od jednej etykiety klasyfikacji i masek segmentacji."
+        },
+        {
+          "slug": "dlaczego-yolo-patrzy-tylko-raz",
+          "title": "Dlaczego YOLO „patrzy tylko raz”",
+          "estimatedMinutes": 12,
+          "summary": "Zrozumiesz intuicję single-shot detector i dlaczego one-stage jest szybsze niż detektory dwuetapowe (Faster R-CNN), z konceptualnym odniesieniem do RT-DETR."
+        },
+        {
+          "slug": "architektura-backbone-neck-head",
+          "title": "Architektura: backbone → neck → head",
+          "estimatedMinutes": 14,
+          "summary": "Prześledzisz przepływ cech przez backbone, fuzję wieloskalową FPN/PAN w necku oraz rolę głowic detekcyjnych emitujących boxy, objectness i klasy."
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "Mechanika modelu: input, output i straty",
+      "summary": "Konceptualne serce kursu: anchor-free decoupled head, preprocessing wejścia, dekodowanie surowego wyjścia z NMS oraz funkcje straty i label assignment.",
+      "lessons": [
+        {
+          "slug": "od-anchor-based-do-anchor-free-i-decoupled-head",
+          "title": "Od anchor-based do anchor-free i decoupled head",
+          "estimatedMinutes": 13,
+          "summary": "Zobaczysz ewolucję głowic YOLO i dlaczego anchor-free oraz rozdzielenie zadań (decoupled head) poprawia dokładność i prędkość względem anchorów z YOLOv3/v5."
+        },
+        {
+          "slug": "input-preprocessing-obrazu",
+          "title": "INPUT: preprocessing obrazu",
+          "estimatedMinutes": 12,
+          "summary": "Prześledzisz w kodzie resize, letterbox z zachowaniem proporcji, normalizację i batchowanie obrazu, zanim trafi on do sieci jako tensor 640×640."
+        },
+        {
+          "slug": "output-od-surowej-siatki-do-finalnych-detekcji",
+          "title": "OUTPUT: od surowej siatki do finalnych detekcji",
+          "estimatedMinutes": 15,
+          "summary": "Rozłożysz surowe wyjście modelu (boxy, objectness, klasy), zdekodujesz je i zobaczysz, jak próg confidence i NMS zamieniają gęstą siatkę w finalne wykrycia."
+        },
+        {
+          "slug": "funkcje-straty-i-label-assignment",
+          "title": "Funkcje straty i label assignment",
+          "estimatedMinutes": 15,
+          "summary": "Poznasz CIoU/DFL, classification i objectness loss oraz TaskAligned Assigner decydujący, która predykcja uczy się którego obiektu podczas treningu."
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "title": "Dane do treningu YOLO",
+      "summary": "Jak nakarmić model: format datasetu YOLO i data.yaml, adnotacja oraz konwersja z COCO/VOC, a na końcu typowe augmentacje treningowe.",
+      "lessons": [
+        {
+          "slug": "format-datasetu-yolo-i-datayaml",
+          "title": "Format datasetu YOLO i data.yaml",
+          "estimatedMinutes": 13,
+          "summary": "Zbudujesz strukturę datasetu (obrazy + .txt ze znormalizowanymi boxami cx,cy,w,h, podział train/val/test) i napiszesz poprawny data.yaml z nc i names."
+        },
+        {
+          "slug": "adnotacja-i-konwersja-z-cocopascal-voc",
+          "title": "Adnotacja i konwersja z COCO/Pascal VOC",
+          "estimatedMinutes": 14,
+          "summary": "Przygotujesz mały zbiór pojazdów/statków, zaadnotujesz przykłady i przekonwertujesz etykiety z COCO (piksele x,y,w,h) i VOC (xmin..ymax) do formatu YOLO."
+        },
+        {
+          "slug": "augmentacje-typowe-dla-yolo",
+          "title": "Augmentacje typowe dla YOLO",
+          "estimatedMinutes": 11,
+          "summary": "Zobaczysz działanie mozaiki, mixup i copy-paste, ich wpływ na odporność modelu oraz dlaczego wyłącza się je w końcowych epokach (close_mosaic)."
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "title": "Trening, ewaluacja i wdrożenie w Ultralytics",
+      "summary": "Capstone end-to-end: transfer learning na lokalnym GPU, czytanie metryk i krzywych uczenia oraz inference i eksport wytrenowanego modelu.",
+      "lessons": [
+        {
+          "slug": "trening-wasnego-detektora-na-lokalnym-gpu",
+          "title": "Trening własnego detektora na lokalnym GPU",
+          "estimatedMinutes": 18,
+          "summary": "Wytrenujesz detektor pojazdów/statków przez transfer learning z pretrenowanych wag YOLO11n/s, dobierając hiperparametry, warm-up i harmonogram uczenia."
+        },
+        {
+          "slug": "metryki-i-czytanie-krzywych-uczenia",
+          "title": "Metryki i czytanie krzywych uczenia",
+          "estimatedMinutes": 14,
+          "summary": "Zinterpretujesz precision, recall, mAP@0.5 oraz mAP@0.5:0.95 i krzywe PR, by ocenić jakość, odróżnić ją od spadku loss i diagnozować problemy treningu."
+        },
+        {
+          "slug": "inference-i-eksport-modelu",
+          "title": "Inference i eksport modelu",
+          "estimatedMinutes": 15,
+          "summary": "Uruchomisz wnioskowanie na obrazach, a następnie wyeksportujesz model do ONNX/TensorRT i poznasz podstawy szybkiego wdrożenia inferencji."
+        }
+      ]
+    }
+  ],
+  "createdAt": "2026-06-10T11:36:00.000Z",
+  "updatedAt": "2026-06-10T11:36:00.000Z"
+}

@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "slug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "title": "SAR dla inżyniera Computer Vision: od piksela echa do detektora statków i samolotów",
+  "description": "Praktyczna ścieżka dla seniora CV (Python/PyTorch/OpenCV) wchodzącego w dane SAR: intuicja zamiast fizyki, mosty z RGB/RAW, uruchamialne widgety na prawdziwych kafelkach Sentinel-1/MSTAR i nacisk na CFAR oraz detekcję statków i samolotów pod rolę w SATIM.",
+  "accentColor": "indigo",
+  "icon": "radar",
+  "modules": [
+    {
+      "id": "m1",
+      "title": "Fundamenty SAR po ludzku",
+      "summary": "Przestaw głowę z kamery na radar: piksel SAR to siła echa, a nie kolor — i zrozum geometrię sceny range/azimuth wraz z jej zniekształceniami.",
+      "lessons": [
+        {
+          "slug": "radar-to-nie-kamera-wasne-oswietlenie-zamiast-swiata-otoczenia",
+          "title": "Radar to nie kamera: własne oświetlenie zamiast światła otoczenia",
+          "estimatedMinutes": 14,
+          "summary": "Zobaczysz, dlaczego piksel SAR to siła echa, a nie kolor; porównasz kafelek SAR z parą optyczną i nazwiesz, co znika, a co się pojawia."
+        },
+        {
+          "slug": "geometria-sceny-bez-trygonometrii-range-azimuth-layover-i-shadow",
+          "title": "Geometria sceny bez trygonometrii: range, azimuth, layover i shadow",
+          "estimatedMinutes": 15,
+          "summary": "Na widżecie z suwakiem kąta padania zobaczysz, jak powstają layover, foreshortening i cień, i co to znaczy dla położenia obiektów na obrazie."
+        }
+      ]
+    },
+    {
+      "id": "m2",
+      "title": "Co jest w środku danych SAR",
+      "summary": "Otwórz piksel SAR: amplituda i faza, speckle (który NIE jest szumem gaussowskim) i despeckling, polaryzacja jako kanały oraz kalibracja i skala dB.",
+      "lessons": [
+        {
+          "slug": "amplituda-faza-i-speckle-ziarnistosc-ktora-nie-jest-szumem-gaussowskim",
+          "title": "Amplituda, faza i speckle: ziarnistość, która NIE jest szumem gaussowskim",
+          "estimatedMinutes": 15,
+          "summary": "Zrozumiesz speckle jako efekt koherentnego nakładania ech i na suwaku ENL zobaczysz, czemu uśrednianie 'sąsiadów' tu nie działa jak w RGB."
+        },
+        {
+          "slug": "despeckling-w-praktyce-lee-frost-refined-lee-i-nl-means-beforeafter",
+          "title": "Despeckling w praktyce: Lee, Frost, Refined Lee i NL-means before/after",
+          "estimatedMinutes": 16,
+          "summary": "Uruchomisz filtry na prawdziwym kafelku VV i suwakami okna porównasz redukcję speckle vs utratę krawędzi, wybierając kompromis pod detekcję."
+        },
+        {
+          "slug": "polaryzacja-i-skala-db-cztery-kanay-zamiast-rgb-kalibracja-sigma0",
+          "title": "Polaryzacja i skala dB: cztery kanały zamiast RGB, kalibracja sigma0",
+          "estimatedMinutes": 14,
+          "summary": "Połączysz VV/VH jak kanały obrazu i na suwaku skali dB zobaczysz, jak kalibracja radiometryczna zmienia wartości pikseli i wejście modelu."
+        }
+      ]
+    },
+    {
+      "id": "m3",
+      "title": "Pipeline przygotowania danych w Pythonie",
+      "summary": "Przejdź od surowej sceny Sentinel-1 do gotowego do modelu kafelka — każdy krok z odpowiedzią 'po co', a ciężkie kroki SNAP jako kod referencyjny.",
+      "lessons": [
+        {
+          "slug": "od-sceny-do-kafelka-grd-multilooking-geokodowanie-i-terrain-correction",
+          "title": "Od sceny do kafelka: GRD, multilooking, geokodowanie i terrain correction",
+          "estimatedMinutes": 15,
+          "summary": "Przejdziesz krok po kroku przez przygotowanie sceny Sentinel-1 — każdy etap z odpowiedzią 'po co', a ciężkie kroki SNAP jako kod referencyjny."
+        }
+      ]
+    },
+    {
+      "id": "m4",
+      "title": "Klasyczne przetwarzanie i CFAR jako rdzeń produktu",
+      "summary": "Zbuduj klasyczny rdzeń detekcji: adaptacyjny CFAR wykrywający statki na morzu oraz teksturę, morfologię i change detection jako cechy pod AI.",
+      "lessons": [
+        {
+          "slug": "cfar-krok-po-kroku-adaptacyjny-prog-ktory-wykrywa-statki-na-morzu",
+          "title": "CFAR krok po kroku: adaptacyjny próg, który wykrywa statki na morzu",
+          "estimatedMinutes": 18,
+          "summary": "Zbudujesz detektor CFAR z oknem guard/background i na suwaku Pfa zobaczysz, jak próg balansuje trafienia statków vs fałszywe alarmy."
+        },
+        {
+          "slug": "tekstura-morfologia-i-change-detection-jako-feature-engineering-pod-ai",
+          "title": "Tekstura, morfologia i change detection jako feature engineering pod AI",
+          "estimatedMinutes": 15,
+          "summary": "Policzysz cechy GLCM/Haralick i log-ratio między scenami, czyszcząc maski CFAR morfologią jako baseline i wejścia dla późniejszych modeli."
+        }
+      ]
+    },
+    {
+      "id": "m5",
+      "title": "AI na SAR pod ATR",
+      "summary": "Połącz CFAR z klasyfikatorem CNN i naucz się transferu z modeli optycznych oraz augmentacji specyficznej dla SAR do detekcji i klasyfikacji celów.",
+      "lessons": [
+        {
+          "slug": "detekcja-statkow-i-samolotow-cfar-jako-pre-detektor-klasyfikator-cnn",
+          "title": "Detekcja statków i samolotów: CFAR jako pre-detektor + klasyfikator CNN",
+          "estimatedMinutes": 18,
+          "summary": "Połączysz okna CFAR z lekkim klasyfikatorem chipów i zrozumiesz adaptację YOLO/DETR do SAR oraz czemu modele z RGB tu się sypią."
+        },
+        {
+          "slug": "transfer-learning-i-augmentacja-sar-klasyfikacja-celow-na-chipach",
+          "title": "Transfer learning i augmentacja SAR: klasyfikacja celów na chipach",
+          "estimatedMinutes": 16,
+          "summary": "Na chipach MSTAR/OpenSARShip poznasz transfer z modeli optycznych i augmentacje specyficzne dla SAR; ciężki trening jako kod referencyjny."
+        }
+      ]
+    },
+    {
+      "id": "m6",
+      "title": "Ewaluacja, produkcja i capstone",
+      "summary": "Zmierz jakość detektora (mAP, F1, ENL), sprawdź odporność 'data-agnostic' i złóż end-to-end pipeline statków/samolotów pod rolę w SATIM.",
+      "lessons": [
+        {
+          "slug": "metryki-i-odpornosc-map-f1-per-klasa-oraz-model-data-agnostic",
+          "title": "Metryki i odporność: mAP, F1 per klasa oraz model 'data-agnostic'",
+          "estimatedMinutes": 15,
+          "summary": "Policzysz mAP i F1 na detekcjach i przetestujesz odporność na kąt padania i typ satelity, mówiąc językiem near-real-time i ONNX."
+        },
+        {
+          "slug": "capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport",
+          "title": "Capstone: surowa scena SAR → detekcje statków/samolotów + raport",
+          "estimatedMinutes": 20,
+          "summary": "Złożysz end-to-end pipeline od kafelka do wykrytych i sklasyfikowanych obiektów z krótkim raportem mapującym się 1:1 na zakres roli w SATIM."
+        }
+      ]
+    }
+  ],
+  "createdAt": "2026-06-12T16:05:00.000Z",
+  "updatedAt": "2026-06-12T16:05:00.000Z"
+}

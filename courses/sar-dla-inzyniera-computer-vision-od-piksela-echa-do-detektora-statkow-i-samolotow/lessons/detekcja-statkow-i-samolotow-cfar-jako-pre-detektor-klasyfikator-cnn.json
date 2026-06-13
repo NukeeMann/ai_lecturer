@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-statkow-i-samolotow-cfar-jako-pre-detektor-klasyfikator-cnn",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m5",
+  "title": "Detekcja statków i samolotów: CFAR jako pre-detektor + klasyfikator CNN",
+  "eyebrow": "AI NA SAR POD ATR",
+  "description": "Połącz okna CFAR z lekkim klasyfikatorem chipów, zrozum adaptację YOLO/DETR do SAR i to, czemu backbone z RGB naiwnie przeniesiony na surowe SAR się sypie.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "dwa-etapy",
+      "title": "Dwa etapy: CFAR proponuje, CNN rozsądza",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+          "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+          "kind": "paper",
+          "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+          "year": 2016
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Masz już z poprzedniej lekcji tani, adaptacyjny detektor CFAR. Ma jedną wadę: jest **czuły, ale mało precyzyjny**. Żeby nie przeoczyć słabego statku, ustawiasz `Pfa` tak nisko, że łapiesz też mnóstwo śmieci — rozbryzgi wzburzonego morza, sidelobe jasnych celów, a nad brzegiem cały ląd. CFAR mówi *„tu coś jasnego wystaje ponad lokalne tło”*, ale nie wie, **czy to statek, samolot, czy fala**.\n\n![Podkafelek SAR Sentinel-1: ciemne morze z dziesiątkami czerwonych okręgów detekcji CFAR; część okręgów trafia w jasne echa statków, ale wiele wypada na rozbryzgach morza i na jasnym lądzie w prawym górnym rogu — to fałszywe alarmy, które musi odsiać drugi etap](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-detections-expected.png)\n\nStąd architektura, na której opiera się ATR w SATIM — **dwa etapy**:\n\n1. **Pre-detektor (CFAR)** — przejeżdża całą scenę tanio i zwraca *kandydatów*: regiony, gdzie echo przebija lokalny clutter. Nastawiony na **wysoką czułość** — lepiej zgłosić za dużo niż przeoczyć cel.\n2. **Klasyfikator (CNN)** — wokół każdego kandydata wycinasz mały **chip** (np. 32×32 lub 64×64 px) i podajesz do lekkiej sieci, która mówi *statek / samolot / fałszywy alarm*. Ten etap podnosi **precyzję**: odrzuca śmieci i nadaje klasę temu, co zostało.\n\nMost do Twojego CV: to dokładnie schemat **propozycje regionów → klasyfikator** z rodziny R-CNN. CFAR gra tu rolę „selective search”, tyle że statystyczną i napędzaną fizyką sceny, a nie podobieństwem kolorów. Zysk jest ten sam — zamiast puszczać kosztowną sieć po każdym pikselu wielkiej sceny Sentinel-1 (dziesiątki tysięcy pikseli na bok), odpalasz ją tylko na garstce wyciętych chipów. To jest też klucz do **near-real-time**: ciężka część pracuje na ułamku obrazu.\n\nDwuetapowość ma jeszcze jedną zaletę: każdy etap stroisz osobno. `Pfa` w CFAR ustawiasz na wysoką czułość (świadomie wpuszczając fałszywe alarmy), a próg decyzyjny klasyfikatora — na precyzję. To rozdzielenie ról „łap wszystko” / „odsiej i nazwij” jest sednem tej lekcji."
+      }
+    },
+    {
+      "id": "co-dodaje-klasyfikator",
+      "title": "Co dodaje drugi etap: precyzja w górę, czułość niemal bez zmian",
+      "description": "Punkty pracy ilustrujące, jak klasyfikator CNN na chipach odrzuca fałszywe alarmy CFAR i podnosi precyzję oraz F1.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.3390/rs11070765",
+          "title": "A SAR Dataset of Ship Detection for Deep Learning under Complex Backgrounds (SSDD)",
+          "kind": "paper",
+          "author": "Tianwen Zhang, Xiaoling Zhang, et al.",
+          "year": 2019
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/detekcja-statkow-i-samolotow-cfar-jako-pre-detektor-klasyfikator-cnn-1.png",
+        "alt": "Wykres słupkowy grupowany. Oś X: dwa pipeline'y — „CFAR sam” i „CFAR + CNN”. Oś Y: wartość metryki w zakresie 0–1. Dla CFAR sam: czułość 0.95, precyzja tylko 0.40, F1 0.56. Dla CFAR + CNN: czułość 0.90, precyzja 0.93, F1 0.91. Drugi etap drastycznie podnosi precyzję i F1 przy minimalnym spadku czułości.",
+        "caption": "Rys. 1. CFAR sam łapie prawie wszystkie statki (wysoka czułość), ale tonie w fałszywych alarmach (niska precyzja). Dodanie klasyfikatora CNN na chipach podnosi precyzję z 0.40 do 0.93 i F1 z 0.56 do 0.91, oddając zaledwie 0.05 czułości.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Ilustracyjne, ale realistyczne punkty pracy dwuetapowego ATR na statkach SAR:\n# CFAR sam w sobie ma wysoka czulosc (lapie prawie wszystkie statki), ale niska\n# precyzje (mnostwo falszywych alarmow: rozbryzgi morza, sidelobe, brzeg ladu).\n# Lekki klasyfikator CNN na chipach odrzuca falszywe alarmy -> precyzja skacze\n# w gore przy niewielkim koszcie czulosci, wiec F1 rosnie.\nlabels = [\"CFAR sam\", \"CFAR + CNN\"]\nrecall = [0.95, 0.90]\nprecision = [0.40, 0.93]\nf1 = [2 * p * r / (p + r) for p, r in zip(precision, recall)]\n\nx = np.arange(len(labels))\nw = 0.27\n\nfig, ax = plt.subplots(figsize=(8.2, 5.0))\nb1 = ax.bar(x - w, recall, w, label=\"Czulosc (recall)\", color=\"#1e88e5\")\nb2 = ax.bar(x, precision, w, label=\"Precyzja (precision)\", color=\"#e53935\")\nb3 = ax.bar(x + w, f1, w, label=\"F1\", color=\"#43a047\")\nfor bars in (b1, b2, b3):\n    for rect in bars:\n        h = rect.get_height()\n        ax.text(rect.get_x() + rect.get_width() / 2, h + 0.015, f\"{h:.2f}\",\n                ha=\"center\", va=\"bottom\", fontsize=9)\n\nax.set_xticks(x)\nax.set_xticklabels(labels)\nax.set_ylim(0, 1.08)\nax.set_yticks(np.arange(0, 1.01, 0.2))\nax.set_xlabel(\"Pipeline detekcji\")\nax.set_ylabel(\"Wartosc metryki [0-1]\")\nax.set_title(\"Co dodaje drugi etap: klasyfikator CNN podnosi precyzje i F1\\nprzy niewielkim koszcie czulosci\")\nax.grid(True, axis=\"y\", alpha=0.3)\nax.legend(loc=\"upper left\", fontsize=9)\nfig.tight_layout()\nout = \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/detekcja-statkow-i-samolotow-cfar-jako-pre-detektor-klasyfikator-cnn-1.png\"\nplt.savefig(out, dpi=110, bbox_inches=\"tight\")\nprint(\"saved\", out)\nprint(\"F1:\", [round(v, 3) for v in f1])\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-rgb-transfer",
+      "title": "Szybki sprawdzian: czemu YOLO z ImageNet się sypie na SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego backbone YOLO/CNN wstępnie wytrenowany na ImageNet/COCO zwykle słabo radzi sobie po naiwnym przeniesieniu na surowe obrazy SAR? Zaznacz wszystkie prawdziwe powody.",
+        "options": [
+          "Bo statystyka SAR (multiplikatywny speckle, ogromny zakres dynamiczny w dB, jasne punktowe scatterery z sidelobe) łamie założenia obrazów naturalnych, na których wytrenowano filtry pierwszych warstw.",
+          "Bo SAR ma zwykle jeden kanał (amplituda/dB), a backbone oczekuje 3 kanałów RGB o statystyce ImageNet — wejście trzeba świadomie przemyśleć (powielić/ułożyć VV/VH/ratio i znormalizować w dB), inaczej rozkład cech jest przesunięty.",
+          "Bo cele są często małe i punktowe na rozległym, jednorodnym tle morza, a domyślne kotwice i augmentacje fotometryczne (color jitter) z COCO są skrojone pod duże, teksturowane obiekty.",
+          "Bo obraz SAR jest zawsze niższej rozdzielczości niż zdjęcie RGB, więc sieć fizycznie nie ma jak nauczyć się żadnych użytecznych cech."
+        ],
+        "correct": [
+          0,
+          1,
+          2
+        ],
+        "explanation": "Naiwny transfer zawodzi, bo SAR łamie priors statystyki naturalnych obrazów. Odp. 1: filtry wczesnych warstw zakładają gładkie gradienty/krawędzie/korelacje koloru RGB, a multiplikatywny speckle, skala dB i sygnatury punktowe (scatterer + sidelobe) tego nie spełniają. Odp. 2: jednokanałowe wejście SAR trzeba dopasować i znormalizować pod statystykę SAR, nie ImageNet. Odp. 3: małe, punktowe cele na jednolitym morzu wymagają mniejszych kotwic i augmentacji świadomej SAR (speckle-aware, rotacja aspektu), a nie color jitter. Odp. 4 jest fałszywa — to nie kwestia „zawsze niższej rozdzielczości” (SAR bywa bardzo wysokorozdzielczy); problemem jest niezgodność statystyk i sygnatur, nie brak detali.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "rgb-sie-sypie",
+      "title": "Czemu modele z RGB się sypią — i jak adaptować YOLO/DETR do SAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2019.2947634",
+          "title": "What, Where, and How to Transfer in SAR Target Recognition Based on Deep CNNs",
+          "kind": "paper",
+          "author": "Zhongling Huang, Zongxu Pan, Bin Lei",
+          "year": 2020
+        },
+        {
+          "url": "https://arxiv.org/abs/2005.12872",
+          "title": "End-to-End Object Detection with Transformers (DETR)",
+          "kind": "paper",
+          "author": "Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, Sergey Zagoruyko",
+          "year": 2020
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Naiwny plan brzmi: *„wezmę YOLO albo DETR z wagami z COCO i dostroję na SAR”*. Zwykle wychodzi słabo — i warto wiedzieć **dlaczego**, zanim stracisz tydzień na trening.\n\nBackbone pretrenowany na zdjęciach naturalnych nauczył się filtrów pod **statystykę RGB**: gładkie gradienty, krawędzie, tekstury, korelacje między kanałami koloru. SAR łamie każde z tych założeń:\n\n- **Jeden kanał, nie trzy.** Amplituda (albo dB) to pojedynczy kanał; backbone oczekuje 3 wejść o statystyce ImageNet. Trzeba je świadomie przemyśleć (powielić kanał albo ułożyć VV/VH/ratio jak przy polaryzacji) i **znormalizować w dB**, inaczej rozkład aktywacji jest przesunięty.\n- **Speckle to nie szum gaussowski.** Multiplikatywne ziarno wygląda dla sieci jak wszechobecna „tekstura”, której nie było w RGB. Augmentacje fotometryczne (jitter jasności, rozmycie) są tu bez sensu — potrzebujesz **augmentacji świadomej SAR**: mnożnikowy szum speckle i obrót pod kątem aspektu celu (sygnatura statku zależy od ustawienia względem radaru).\n- **Cele są małe i punktowe.** Statek czy samolot to często kilka jasnych pikseli + charakterystyczny **sidelobe** (krzyż wokół silnego scatterera) na rozległym, jednorodnym tle morza. Domyślne kotwice i skala cech detektorów z COCO są skrojone pod duże, teksturowane obiekty.\n\n![Optyczne zdjęcie Sentinel-2 cieśniny: zielono-brązowy ląd i niebieska woda w naturalnych barwach RGB — świat, na którego statystyce trenowano backbone z ImageNet; po lewej widać czarny trójkąt braku danych](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/strait-gibraltar-sentinel2-optical.png)\n\n![To samo wybrzeże w SAR Sentinel-1: jeden kanał w skali szarości, jasny chropowaty ląd, ciemna woda i drobne punktowe echa statków — zupełnie inny rozkład wartości niż w RGB](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/strait-gibraltar-sentinel1-sar.png)\n\nCo z tym robić w praktyce — to adaptacje, które ratują transfer:\n\n- **Wejście:** kalibracja do σ⁰ + skala dB + normalizacja pod statystykę SAR (nie ImageNet mean/std).\n- **Augmentacja:** speckle-aware i rotacje aspektu zamiast color jitter.\n- **Głowa detektora:** mniejsze kotwice / wyższa rozdzielczość cech pod małe cele; w DETR — zapytania (queries) dopasowane do rzadkich, drobnych obiektów.\n- **Trening:** odmroź i **rekalibruj wczesne warstwy** (to one najmocniej zakładają statystykę RGB), zamiast je zamrażać.\n\nCiężki trening YOLO/DETR robisz offline w PyTorch — tu zostaje kodem referencyjnym. W widżecie sklejasz tani, uruchamialny rdzeń: CFAR → chipy → prosty klasyfikator."
+      }
+    },
+    {
+      "id": "sklej-pipeline",
+      "title": "Sklej drugi etap: CFAR → chipy → klasyfikator",
+      "description": "Z maski CFAR wytnij chipy wokół kandydatów i odsiej fałszywe alarmy lekkim klasyfikatorem opartym na cesze ręcznej (szczyt jasności chipa).",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Sklej **drugi etap** pipeline'u ATR: z maski CFAR (pre-detektora) wytnij chipy wokół każdego kandydata i puść je przez **lekki klasyfikator** oparty na cesze ręcznej — tu surogatem CNN jest **szczyt jasności w chipie** (jasny, zwarty cel kontra słaby rozbryzg).\n\nNapisz `detect_targets(img, mask, chip=16, min_peak=40.0)`:\n\n- znajdź **spójne komponenty** maski (`scipy.ndimage.label`),\n- dla każdego policz **centroid** `(cy, cx)`, zaokrąglony do `int`,\n- wytnij chip `chip×chip` wokół centroidu (przytnij do brzegów obrazu),\n- policz `peak = max(chip)` i ustaw `is_ship = peak >= min_peak`,\n- zwróć **listę słowników** `{'cy', 'cx', 'peak', 'is_ship'}`, po jednym na komponent.\n\n```\n# 2 komponenty -> 2 wpisy; jasny chip -> is_ship True, slaby -> is_ship False\n```\n\nW `starterCode` czeka prawdziwy podkafelek Sentinel-1 w `/inputs/` oraz gotowy `ca_cfar` z poprzedniej lekcji — po rozwiązaniu zobaczysz na żywo statki (zielone) i odrzucone fałszywe alarmy (czerwone).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\n# Prawdziwy podkafelek Sentinel-1 (Ciesnina Gibraltarska) zamontowany w /inputs/.\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\n# Pre-detektor z poprzedniej lekcji (gotowy): zwraca maske bool detekcji CFAR.\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    # 1) spojne komponenty maski:      labels, n = label(mask)\n    # 2) centroid komponentu:          ys, xs = np.where(labels == lab); cy, cx = round(srednia)\n    # 3) chip chip x chip wokol centroidu, przyciety do brzegow obrazu\n    # 4) peak = max(chip);  is_ship = peak >= min_peak\n    # Zwroc liste slownikow {'cy','cx','peak','is_ship'} - po jednym na komponent.\n    return []\n\nmask = ca_cfar(sar, guard=2, train=8, alpha=5.0)\ntargets = detect_targets(sar, mask, chip=16, min_peak=90.0)\nprint('kandydaci CFAR:', len(targets), '| uznane za statki:', sum(t['is_ship'] for t in targets))\n\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nfor t in targets:\n    if t['is_ship']:\n        plt.scatter(t['cx'], t['cy'], s=90, facecolors='none', edgecolors='#43a047', linewidths=1.6)\n    else:\n        plt.scatter(t['cx'], t['cy'], s=70, marker='x', c='#e53935', linewidths=1.4)\nplt.title('CFAR -> chipy -> klasyfikator')\n",
+        "tests": [
+          {
+            "name": "pusta_maska_zwraca_pusta_liste",
+            "body": "import numpy as np\nres = detect_targets(np.zeros((20, 20)), np.zeros((20, 20), dtype=bool))\nassert res == []",
+            "hidden": false
+          },
+          {
+            "name": "dwa_komponenty_daja_dwa_wpisy",
+            "body": "import numpy as np\nimg = np.zeros((30, 30)); mask = np.zeros((30, 30), dtype=bool)\nimg[5:8, 5:8] = 80.0; mask[5:8, 5:8] = True\nimg[20:23, 20:23] = 80.0; mask[20:23, 20:23] = True\nassert len(detect_targets(img, mask)) == 2",
+            "hidden": true
+          },
+          {
+            "name": "centroid_pojedynczego_blobu",
+            "body": "import numpy as np\nimg = np.zeros((20, 20)); mask = np.zeros((20, 20), dtype=bool)\nimg[10, 10] = 90.0; mask[9:12, 9:12] = True\nres = detect_targets(img, mask)\nassert len(res) == 1 and res[0]['cy'] == 10 and res[0]['cx'] == 10",
+            "hidden": true
+          },
+          {
+            "name": "klasyfikator_przyjmuje_jasny_odrzuca_slaby",
+            "body": "import numpy as np\nimg = np.zeros((30, 30)); mask = np.zeros((30, 30), dtype=bool)\nimg[5:8, 5:8] = 90.0; mask[5:8, 5:8] = True\nimg[20:23, 20:23] = 12.0; mask[20:23, 20:23] = True\nships = [t for t in detect_targets(img, mask, min_peak=40.0) if t['is_ship']]\nassert len(ships) == 1 and ships[0]['cy'] < 15",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\nmask = ca_cfar(sar, guard=2, train=8, alpha=5.0)\ntargets = detect_targets(sar, mask, chip=16, min_peak=90.0)\nprint('kandydaci CFAR:', len(targets), '| uznane za statki:', sum(t['is_ship'] for t in targets))\n\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nfor t in targets:\n    if t['is_ship']:\n        plt.scatter(t['cx'], t['cy'], s=90, facecolors='none', edgecolors='#43a047', linewidths=1.6)\n    else:\n        plt.scatter(t['cx'], t['cy'], s=70, marker='x', c='#e53935', linewidths=1.4)\nplt.title('CFAR -> chipy -> klasyfikator')\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszonymi jasnymi punktami (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: prawdziwy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/detekcja-statkow-chip-classifier-expected.png",
+          "alt": "Ten sam podkafelek Sentinel-1 z nałożonymi wynikami drugiego etapu: zielone okręgi na jasnych, zwartych echach uznanych za statki oraz czerwone krzyżyki na słabszych detekcjach CFAR odrzuconych jako fałszywe alarmy.",
+          "caption": "Oczekiwany wynik: chipy o wysokim szczycie jasności przechodzą jako statki (zielone), słabe kandydaci CFAR są odrzucani (czerwone).",
+          "live": true
+        },
+        "requiresPackages": [
+          "scipy"
+        ]
+      }
+    },
+    {
+      "id": "piaskownica-prog-klasyfikatora",
+      "title": "Piaskownica: przesuwaj próg klasyfikatora",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\nmask = ca_cfar(sar, guard=2, train=8, alpha=5.0)\n# Zmieniaj prog klasyfikatora min_peak i patrz, ile kandydatow zostaje uznanych za statki.\nfor min_peak in (50.0, 70.0, 90.0, 120.0):\n    t = detect_targets(sar, mask, chip=16, min_peak=min_peak)\n    print('min_peak', min_peak, '-> statki', sum(d['is_ship'] for d in t), 'z', len(t), 'kandydatow')\n",
+        "encouragement": "Podnoś min_peak i patrz, w którym momencie odsiewasz fałszywe alarmy, a w którym zaczynasz tracić słabsze statki."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+      "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+      "kind": "paper",
+      "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+      "year": 2016
+    },
+    {
+      "url": "https://doi.org/10.3390/rs11070765",
+      "title": "A SAR Dataset of Ship Detection for Deep Learning under Complex Backgrounds (SSDD)",
+      "kind": "paper",
+      "author": "Tianwen Zhang, Xiaoling Zhang, et al.",
+      "year": 2019
+    },
+    {
+      "url": "https://arxiv.org/abs/1506.02640",
+      "title": "You Only Look Once: Unified, Real-Time Object Detection (YOLO)",
+      "kind": "paper",
+      "author": "Joseph Redmon, Santosh Divvala, Ross Girshick, Ali Farhadi",
+      "year": 2016
+    },
+    {
+      "url": "https://arxiv.org/abs/2005.12872",
+      "title": "End-to-End Object Detection with Transformers (DETR)",
+      "kind": "paper",
+      "author": "Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, Sergey Zagoruyko",
+      "year": 2020
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2019.2947634",
+      "title": "What, Where, and How to Transfer in SAR Target Recognition Based on Deep CNNs",
+      "kind": "paper",
+      "author": "Zhongling Huang, Zongxu Pan, Bin Lei",
+      "year": 2020
+    }
+  ]
+}

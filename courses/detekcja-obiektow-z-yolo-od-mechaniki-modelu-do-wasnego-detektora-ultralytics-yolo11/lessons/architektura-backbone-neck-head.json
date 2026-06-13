@@ -1,0 +1,268 @@
+{
+  "schemaVersion": 1,
+  "slug": "architektura-backbone-neck-head",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m1",
+  "title": "Architektura: backbone → neck → head",
+  "eyebrow": "FUNDAMENTY DETEKCJI",
+  "description": "Prześledź przepływ cech w YOLO11: backbone ekstrahuje wieloskalowe mapy P3/P4/P5, neck (FPN+PAN) je łączy, a anchor-free decoupled head emituje boxy i klasy.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "backbone-i-przeglad",
+      "title": "Trzy bloki i rola backbone'u",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/models/yolo11/",
+          "title": "Ultralytics YOLO11 — dokumentacja modelu (architektura i warianty)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy nowoczesny detektor z rodziny YOLO (YOLOv8, **YOLO11**) rozkłada się na **trzy współpracujące bloki**, przez które przepływają cechy:\n\n- **Backbone** — ekstraktor cech (w YOLO11 oparty na blokach typu CSP). Zamienia obraz wejściowy w **hierarchię map cech** o malejącej rozdzielczości przestrzennej i rosnącej semantyce.\n- **Neck** — fuzja wieloskalowa (FPN + PAN), o której w następnej sekcji.\n- **Head** — głowice detekcyjne emitujące finalne predykcje.\n\n![Schemat przepływu cech w YOLO: obraz 640×640 wchodzi do backbone'u, który produkuje trzy mapy cech P3 (80×80, stride 8), P4 (40×40, stride 16) i P5 (20×20, stride 32); te trafiają do necku FPN+PAN łączącego skale strzałkami top-down i bottom-up, a stamtąd do trzech głowic Detect emitujących boxy i klasy](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-backbone-neck-head-pipeline.png)\n\nSercem dekompozycji jest **multi-scale**. Backbone próbkuje obraz w dół kilkukrotnie (każdy etap dzieli rozdzielczość przez 2), więc z wejścia $640\\times640$ powstają mapy o **stride** 8, 16 i 32 — czyli siatki $80\\times80$, $40\\times40$ i $20\\times20$. Konwencjonalnie nazywa się je **P3, P4, P5** (indeks = $\\log_2$ stride).\n\nKażdy poziom ma inny charakter:\n\n- **Płytkie mapy (P3)** — wysoka rozdzielczość, mały receptive field: dużo detalu lokalizacyjnego, słabsza semantyka. Dobre dla **małych** obiektów.\n- **Głębokie mapy (P5)** — niska rozdzielczość, duży receptive field: mocna semantyka, słaba precyzja położenia. Dobre dla **dużych** obiektów.\n\nWłaśnie dlatego backbone oddaje do necku **trzy** poziomy, a nie jeden: żaden pojedynczy stride nie obsłuży jednocześnie statku zajmującego pół kadru i odległej małej łodzi."
+      }
+    },
+    {
+      "id": "dopasuj-bloki",
+      "title": "Dopasuj blok architektury do jego roli",
+      "description": "Przeciągnij każdy z trzech bloków YOLO do zadania, które realizuje w potoku detekcji.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przeciągnij każdy blok architektury YOLO do jego głównej roli.",
+        "items": [
+          {
+            "id": "i-backbone",
+            "label": "Backbone"
+          },
+          {
+            "id": "i-neck",
+            "label": "Neck (FPN + PAN)"
+          },
+          {
+            "id": "i-head",
+            "label": "Head"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-backbone",
+            "label": "Ekstrakcja cech: zamienia obraz w hierarchię map P3/P4/P5 o różnej rozdzielczości i semantyce",
+            "accepts": [
+              "i-backbone"
+            ]
+          },
+          {
+            "id": "z-neck",
+            "label": "Fuzja wieloskalowa: miesza mapy różnych skal w dwóch kierunkach (top-down FPN + bottom-up PAN)",
+            "accepts": [
+              "i-neck"
+            ]
+          },
+          {
+            "id": "z-head",
+            "label": "Predykcja: per komórka siatki emituje geometrię boxa i wyniki klas",
+            "accepts": [
+              "i-head"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Backbone (np. CSP) ekstrahuje wieloskalowe mapy cech; neck łączy je ścieżką top-down (FPN) i bottom-up (PAN), by każdy poziom miał i semantykę, i lokalizację; head zamienia te mapy w predykcje boxów i klas na trzech skalach. To sekwencja: obraz → backbone → neck → head."
+      }
+    },
+    {
+      "id": "neck-fpn-pan",
+      "title": "Neck: dwukierunkowa fuzja FPN + PAN",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1612.03144",
+          "title": "Feature Pyramid Networks for Object Detection",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Piotr Dollár, Ross Girshick, Kaiming He, Bharath Hariharan, Serge Belongie",
+          "year": 2017
+        },
+        {
+          "url": "https://arxiv.org/abs/1803.01534",
+          "title": "Path Aggregation Network for Instance Segmentation (PANet)",
+          "kind": "paper",
+          "author": "Shu Liu, Lu Qi, Haifang Qin, Jianping Shi, Jiaya Jia",
+          "year": 2018
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Gdyby przewidywać obiekty wprost z map backbone'u, każdy poziom byłby **kaleki**: P3 ma rozdzielczość, ale słabą semantykę; P5 ma semantykę, ale zbyt grubą siatkę, by precyzyjnie umiejscowić obiekt. **Neck** rozwiązuje to, **mieszając informację między skalami** w dwóch kierunkach.\n\n![Dwukierunkowa fuzja w necku: trzy poziomy P5 (20×20), P4 (40×40) i P3 (80×80) ułożone pionowo. Po lewej fioletowe strzałki FPN prowadzą top-down od P5 w dół do P3 (przenoszą semantykę w dół), po prawej różowe strzałki PAN prowadzą bottom-up od P3 w górę do P5 (przenoszą precyzyjną lokalizację w górę)](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-fpn-pan-fuzja.png)\n\n**FPN — ścieżka top-down.** Feature Pyramid Network bierze mocno semantyczną, małą mapę P5, **upsampluje** ją i **dodaje** do P4, potem analogicznie do P3. W efekcie semantyka „spływa w dół” — płytkie, gęste mapy dostają kontekst „co to za obiekt”, którego same nie miały.\n\n**PAN — ścieżka bottom-up.** Path Aggregation Network dokłada **drugą** ścieżkę, w przeciwnym kierunku: precyzyjne sygnały lokalizacyjne z płytkiego P3 wędrują **w górę** do P4 i P5. Skraca to drogę informacji o położeniu do głębokich poziomów, które inaczej „widziałyby” obiekt zbyt zgrubnie.\n\n> **Sedno:** po przejściu przez neck **każdy** z trzech wyjściowych poziomów łączy mocną semantykę z głębokich map z precyzyjną lokalizacją z płytkich. Dopiero takie zbalansowane mapy trafiają do głowic — i to one, a nie surowe wyjścia backbone'u, są podstawą predykcji."
+      }
+    },
+    {
+      "id": "sprawdzian-neck",
+      "title": "Szybki sprawdzian: po co neck?",
+      "type": "quiz",
+      "data": {
+        "question": "Po co YOLO ma neck (FPN+PAN), zamiast przewidywać obiekty wyłącznie z najgłębszej mapy backbone'u (P5)?",
+        "options": [
+          "Bo P5 ma najwyższą rozdzielczość przestrzenną i najlepiej lokalizuje małe obiekty",
+          "Bo neck łączy semantykę głębokich map z rozdzielczością płytkich, by trafnie wykrywać obiekty w szerokim zakresie rozmiarów",
+          "Bo neck zastępuje backbone, dzięki czemu przy małych obrazach backbone można pominąć",
+          "Bo to neck wykonuje NMS i usuwa nakładające się boxy jeszcze przed głowicą"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "P5 to mapa o najniższej (nie najwyższej) rozdzielczości — sama lokalizuje zgrubnie i gubi małe obiekty. Neck miesza skale: FPN sprowadza semantykę z P5 w dół, a PAN podnosi precyzję lokalizacji z P3 w górę, więc każdy poziom wyjściowy radzi sobie z obiektami różnej wielkości. Neck nie zastępuje backbone'u, a NMS to deterministyczny post-processing po głowicy, nie część necku.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "head-predykcja",
+      "title": "Head: anchor-free decoupled, per skala",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/models/yolo11/",
+          "title": "Ultralytics YOLO11 — dokumentacja modelu (architektura i warianty)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Head to **trzy głowice detekcyjne**, po jednej na każdy poziom necku (N3/N4/N5). Dzięki temu małe obiekty wykrywa gęsta siatka $80\\times80$, a duże — zgrubna $20\\times20$; podział rozmiarów wynika wprost z architektury.\n\n![Decoupled head per komórka: mapa cech z necku rozgałęzia się na dwie osobne gałęzie konwolucyjne — górną gałąź regresji boxa zwracającą geometrię (cx, cy, w, h) i dolną gałąź klasyfikacji zwracającą nc wyników klas z sigmoidą; anchor-free, jedna predykcja na komórkę](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-decoupled-head.png)\n\nW YOLO11 (jak w YOLOv8) głowica jest **anchor-free** i **decoupled**:\n\n- **Anchor-free** — każda komórka siatki emituje **jedną** predykcję, regresując geometrię boxa bezpośrednio. Znika krok klastrowania kotwic (anchorów) znany z YOLOv3/v5.\n- **Decoupled head** — geometria boxa i klasyfikacja liczone są w **osobnych** ciągach konwolucji, zamiast jednej wspólnej gałęzi. Rozdzielenie zadań poprawia dokładność i zbieżność.\n\nCo z **objectness** („czy tu w ogóle jest obiekt”)? W klasycznym YOLO był to osobny kanał mnożony przez prawdopodobieństwo klasy. Nowoczesne YOLO (v8/YOLO11) **rezygnują z osobnej gałęzi objectness** — pewność detekcji to po prostu najwyższy wynik klasy (po sigmoidzie). Stąd częsty błąd: w YOLO11 nie szukaj osobnego „objectness score”, bo go nie ma jako niezależnej liczby.\n\nSurowe wyjście to wciąż **gęsty** zestaw kandydatów (jedna predykcja na komórkę, na trzech skalach). To, jak zamienić go w finalne wykrycia (próg confidence + NMS), rozłożymy w module o wyjściu modelu."
+      }
+    },
+    {
+      "id": "rozmiary-map-cech",
+      "title": "Policz rozmiary map cech backbone'u",
+      "description": "Odtwórz arytmetykę próbkowania w dół: po każdym etapie bok mapy dzieli się przez 2.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Backbone YOLO próbkuje obraz w dół etapami — **każdy etap dzieli bok mapy cech przez 2** (stride 2). Dla kwadratowego wejścia o boku `input_size` chcemy poznać rozmiary map po kolejnych etapach.\n\nNapisz `backbone_feature_sizes(input_size, num_stages)`, które zwraca **listę boków** map cech po kolejnych etapach próbkowania w dół (od etapu 1 do `num_stages`). Użyj **dzielenia całkowitego**.\n\n```\nbackbone_feature_sizes(640, 5) == [320, 160, 80, 40, 20]\n# etapy 3/4/5 to mapy P3/P4/P5 (stride 8/16/32) podawane do necku\n```",
+        "starterCode": "def backbone_feature_sizes(input_size, num_stages):\n    # input_size: int (bok kwadratowego wejscia, np. 640)\n    # num_stages: int (liczba etapow probkowania w dol)\n    # TODO: po kazdym etapie bok mapy dzieli sie przez 2 (dzielenie calkowite).\n    # Zwroc liste bokow po etapach 1..num_stages, np. 640 -> [320, 160, 80, ...].\n    return []\n",
+        "tests": [
+          {
+            "name": "yolo_640_five_stages",
+            "body": "assert backbone_feature_sizes(640, 5) == [320, 160, 80, 40, 20]",
+            "hidden": false
+          },
+          {
+            "name": "three_stages_stop_at_p3",
+            "body": "assert backbone_feature_sizes(640, 3) == [320, 160, 80]",
+            "hidden": true
+          },
+          {
+            "name": "single_stage_halves_once",
+            "body": "assert backbone_feature_sizes(640, 1) == [320]",
+            "hidden": true
+          },
+          {
+            "name": "uses_floor_division",
+            "body": "assert backbone_feature_sizes(100, 2) == [50, 25]",
+            "hidden": true
+          }
+        ],
+        "solution": "def backbone_feature_sizes(input_size, num_stages):\n    return [input_size // (2 ** i) for i in range(1, num_stages + 1)]\n"
+      }
+    },
+    {
+      "id": "warianty-yolo11",
+      "title": "Warianty YOLO11: ten sam szkielet, inna skala",
+      "description": "Warianty n/s/m/l/x dzielą architekturę backbone→neck→head; różni je głębokość i szerokość (COCO val, 640 px).",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "wariant",
+            "label": "Wariant",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "params",
+            "label": "Parametry [M]",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "map",
+            "label": "mAP 50-95",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "gflops",
+            "label": "GFLOPs",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "wariant": "YOLO11n",
+            "params": 2.6,
+            "map": 39.5,
+            "gflops": 6.5
+          },
+          {
+            "wariant": "YOLO11s",
+            "params": 9.4,
+            "map": 47,
+            "gflops": 21.5
+          },
+          {
+            "wariant": "YOLO11m",
+            "params": 20.1,
+            "map": 51.5,
+            "gflops": 68
+          },
+          {
+            "wariant": "YOLO11l",
+            "params": 25.3,
+            "map": 53.4,
+            "gflops": 86.9
+          },
+          {
+            "wariant": "YOLO11x",
+            "params": 56.9,
+            "map": 54.7,
+            "gflops": 194.9
+          }
+        ],
+        "initialSort": {
+          "key": "params",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/models/yolo11/",
+      "title": "Ultralytics YOLO11 — dokumentacja modelu (architektura i warianty)",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1612.03144",
+      "title": "Feature Pyramid Networks for Object Detection",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Piotr Dollár, Ross Girshick, Kaiming He, Bharath Hariharan, Serge Belongie",
+      "year": 2017
+    },
+    {
+      "url": "https://arxiv.org/abs/1803.01534",
+      "title": "Path Aggregation Network for Instance Segmentation (PANet)",
+      "kind": "paper",
+      "author": "Shu Liu, Lu Qi, Haifang Qin, Jianping Shi, Jiaya Jia",
+      "year": 2018
+    },
+    {
+      "url": "https://github.com/ultralytics/ultralytics/tree/main/ultralytics/cfg/models",
+      "title": "Ultralytics — definicje modeli (backbone/neck/head w YAML)",
+      "kind": "article"
+    }
+  ]
+}

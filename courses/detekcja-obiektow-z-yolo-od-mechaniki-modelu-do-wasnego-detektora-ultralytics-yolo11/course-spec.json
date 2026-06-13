@@ -1,0 +1,111 @@
+{
+  "topic": "Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)",
+  "description": "Zaawansowany, praktyczny kurs detekcji obiektów oparty na nowoczesnej rodzinie\nUltralytics YOLO (YOLOv8 i YOLO11 jako wersja wiodąca, z odniesieniami do\nRT-DETR tam, gdzie to istotne). Kurs ma odpowiedzieć dogłębnie na pytania:\nczym właściwie jest YOLO i dlaczego \"patrzy na obraz tylko raz\", jak działa\nod strony architektury, jak się go trenuje i jak wyglądają dane wejściowe\ni wyjściowe na każdym etapie.\n\nUczestnik zna już podstawy Pythona, sieci konwolucyjnych (CNN) i treningu\nmodeli w PyTorch — nie tłumaczymy więc ML od zera, tylko skupiamy się na tym,\nco specyficzne dla detekcji jednoetapowej (one-stage) i konkretnie dla YOLO.\n\nZakres merytoryczny, który kurs MA pokryć:\n\n• Czym jest detekcja obiektów vs klasyfikacja vs segmentacja; intuicja\n  \"single-shot detector\" i dlaczego YOLO jest szybkie.\n• Architektura nowoczesnego YOLO rozbita na backbone → neck → head:\n  ekstrakcja cech, FPN/PAN i fuzja wieloskalowa, głowice detekcyjne.\n• Ewolucja od anchor-based do anchor-free oraz decoupled head — co się\n  zmieniło i dlaczego ma to znaczenie dla dokładności i prędkości.\n• Format danych: jak wygląda dataset YOLO (obrazy + pliki .txt z etykietami\n  w formacie znormalizowanych bounding boxów, plik data.yaml, podział\n  train/val/test), jak adnotować dane i konwertować z COCO/Pascal VOC.\n• INPUT vs OUTPUT w szczegółach: jak obraz jest preprocesowany (resize,\n  letterbox, normalizacja, batch), co dokładnie model zwraca na wyjściu\n  (siatka predykcji, współrzędne boxów, obiektowość/confidence, klasy)\n  i jak surowe wyjście staje się finalnymi detekcjami.\n• Mechanizmy specjalne, które trzeba rozumieć: funkcje straty detekcji\n  (CIoU/DFL, classification loss, objectness), label assignment (np. TaskAligned\n  Assigner / dynamiczne dopasowanie), Non-Maximum Suppression (NMS) i jego\n  warianty, augmentacje typowe dla YOLO (mozaika, mixup, copy-paste).\n• Trening krok po kroku: transfer learning z pretrenowanych wag, dobór\n  hiperparametrów, harmonogram uczenia, warm-up, monitorowanie krzywych\n  i czytanie metryk (precision, recall, mAP@0.5, mAP@0.5:0.95, krzywe PR).\n• Praktyka w Ultralytics: trening własnego detektora na własnym zbiorze,\n  walidacja, wnioskowanie (inference) na obrazach/wideo, oraz eksport modelu\n  (ONNX/TensorRT) i podstawy wdrożenia.\n• Zadania praktyczne w Pythonie w każdej części praktycznej (uruchamiane\n  w środowisku z PyTorch i OpenCV), tak aby uczestnik realnie wytrenował,\n  ocenił i uruchomił własny model YOLO.\n\nTon: techniczny, konkretny, z naciskiem na \"dlaczego to działa\", a nie tylko\n\"jak wywołać funkcję\". Mniej więcej połowa kursu to praktyka (kod), połowa to\nteoria i mechanika modelu. Język: polski, terminy techniczne po angielsku\ntam, gdzie to standard w branży.",
+  "level": "advanced",
+  "durationTarget": "standard",
+  "theoryPracticeRatio": 0.5,
+  "clarification": {
+    "q1: Na jakim konkretnym zbiorze danych i w jakiej dziedzinie (np. przemysł, medycyna, ruch drogowy) chcesz wytrenować własny detektor podczas kursu?": "Wykrywanie pojazdow/statkow czy coś takiego.",
+    "q2: Czy masz już własne, zaadnotowane dane, czy w trakcie kursu potrzebujesz też przejść proces zbierania i etykietowania od zera?": "Nie mam danych. Chce sie doszkolic.",
+    "q3: Jakim sprzętem dysponujesz do ćwiczeń (lokalne GPU, Colab, chmura) i czy to ogranicza rozmiar modeli lub datasetów, których możemy używać?": "lokalne GPU, raczej mniejszy zbiór, takie zeby pokazac wszystko co najwazniejsze",
+    "q4: Czy interesuje Cię wyłącznie detekcja bounding-box, czy także pokrewne zadania YOLO jak segmentacja instancji, pose lub OBB?": "Pokrewne tez, ale głównie detekcja",
+    "q5: Czy finalnym celem jest wdrożenie modelu na konkretnej platformie (serwer, edge/Jetson, mobile, przeglądarka), które powinniśmy uwzględnić w części o eksporcie?": "Nie",
+    "q6: Czy zależy Ci bardziej na maksymalnej dokładności, czy na prędkości i działaniu w czasie rzeczywistym przy projektowaniu ćwiczeń?": "Predkosci i dzialaniu w czasie rzeczywistym - to ma byc tylko do nauki",
+    "q7: Jak głęboko chcesz wchodzić w wewnętrzny kod Ultralytics (czytanie i modyfikacja źródeł, własne loss/head), a nie tylko korzystanie z API?": "Użytkowo",
+    "q8: Czy chcesz pracować głównie na obrazach, czy istotny jest dla Ciebie również pipeline detekcji i trackingu na wideo?": "Obrazy",
+    "q9: Czy interesuje Cię porównanie YOLO z innymi podejściami (RT-DETR, dwuetapowe detektory) na poziomie eksperymentów, czy wystarczą odniesienia teoretyczne?": "Jeden moduł lub lekcja moze byc",
+    "q10: Ile mniej więcej czasu tygodniowo planujesz poświęcić, żebyśmy dobrali odpowiednią złożoność zadań praktycznych i rozmiar projektów?": "Raczej szybko chce przelecieć przez kurs"
+  },
+  "draftStructure": {
+    "courseTitle": "Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)",
+    "courseDescription": "Zaawansowany, praktyczny kurs detekcji jednoetapowej oparty na Ultralytics YOLO11. Rozkładamy model na czynniki pierwsze (backbone→neck→head, input/output, straty, NMS) i trenujemy własny detektor pojazdów/statków na lokalnym GPU.",
+    "modules": [
+      {
+        "title": "Fundamenty detekcji i intuicja YOLO",
+        "lessons": [
+          {
+            "title": "Detekcja vs klasyfikacja vs segmentacja",
+            "summary": "Porównasz zadania wizji komputerowej i ustalisz, co dokładnie zwraca detektor: bounding boxy, klasy i confidence.",
+            "estimatedMinutes": 10
+          },
+          {
+            "title": "Dlaczego YOLO „patrzy tylko raz”",
+            "summary": "Zrozumiesz intuicję single-shot detector i dlaczego podejście one-stage jest szybsze niż detektory dwuetapowe.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "Architektura: backbone → neck → head",
+            "summary": "Prześledzisz przepływ cech przez backbone, fuzję wieloskalową FPN/PAN w necku oraz rolę głowic detekcyjnych.",
+            "estimatedMinutes": 14
+          }
+        ]
+      },
+      {
+        "title": "Mechanika modelu: input, output i straty",
+        "lessons": [
+          {
+            "title": "Od anchor-based do anchor-free i decoupled head",
+            "summary": "Zobaczysz ewolucję głowic YOLO i dlaczego anchor-free oraz rozdzielenie zadań poprawia dokładność i prędkość.",
+            "estimatedMinutes": 13
+          },
+          {
+            "title": "INPUT: preprocessing obrazu",
+            "summary": "Prześledzisz w kodzie resize, letterbox, normalizację i batchowanie obrazu zanim trafi do sieci.",
+            "estimatedMinutes": 12
+          },
+          {
+            "title": "OUTPUT: od surowej siatki do finalnych detekcji",
+            "summary": "Rozłożysz surowe wyjście modelu (boxy, objectness, klasy) i zobaczysz, jak NMS zamienia je w finalne wykrycia.",
+            "estimatedMinutes": 15
+          },
+          {
+            "title": "Funkcje straty i label assignment",
+            "summary": "Poznasz CIoU/DFL, classification i objectness loss oraz TaskAligned Assigner decydujący, która predykcja uczy się którego obiektu.",
+            "estimatedMinutes": 15
+          }
+        ]
+      },
+      {
+        "title": "Dane do treningu YOLO",
+        "lessons": [
+          {
+            "title": "Format datasetu YOLO i data.yaml",
+            "summary": "Zbudujesz strukturę dataset (obrazy + .txt ze znormalizowanymi boxami, podział train/val/test) i napiszesz poprawny data.yaml.",
+            "estimatedMinutes": 13
+          },
+          {
+            "title": "Adnotacja i konwersja z COCO/Pascal VOC",
+            "summary": "Przygotujesz mały zbiór pojazdów/statków, adnotujesz przykłady i przekonwertujesz etykiety z COCO/VOC do formatu YOLO.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Augmentacje typowe dla YOLO",
+            "summary": "Zobaczysz działanie mozaiki, mixup i copy-paste oraz ich wpływ na uczenie i odporność modelu.",
+            "estimatedMinutes": 11
+          }
+        ]
+      },
+      {
+        "title": "Trening, ewaluacja i wdrożenie w Ultralytics",
+        "lessons": [
+          {
+            "title": "Trening własnego detektora na lokalnym GPU",
+            "summary": "Wytrenujesz detektor pojazdów/statków przez transfer learning z pretrenowanych wag, dobierając hiperparametry, warm-up i harmonogram uczenia.",
+            "estimatedMinutes": 18
+          },
+          {
+            "title": "Metryki i czytanie krzywych uczenia",
+            "summary": "Zinterpretujesz precision, recall, mAP@0.5 oraz mAP@0.5:0.95 i krzywe PR, by ocenić jakość i diagnozować problemy treningu.",
+            "estimatedMinutes": 14
+          },
+          {
+            "title": "Inference i eksport modelu",
+            "summary": "Uruchomisz wnioskowanie na obrazach, a następnie wyeksportujesz model do ONNX/TensorRT i poznasz podstawy szybkiego wdrożenia.",
+            "estimatedMinutes": 15
+          }
+        ]
+      }
+    ]
+  },
+  "createdAt": "2026-06-10T09:31:09.140Z"
+}

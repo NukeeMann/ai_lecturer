@@ -1,0 +1,198 @@
+=== Attempt 1 — 2026-06-10T11:08:43.062Z ===
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+I have the skill and schema. Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+The target lesson is `inference-i-eksport-modelu`, module `m4`, 15 minutes. Now let me read research.md and sources.md, and the widgets doc.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widgets doc and check existing lessons in this course folder for style/conventions.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+← total 220
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Note: the `SectionSchema` union in lesson.ts has **no `image` type** despite the skill mentioning it. Let me verify against existing lessons and read the key widget schemas + a sample lesson for style.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer; echo "=== types used across this course…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+← Exit code 2
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Confirmed: no `image` widget type — this course uses inline markdown images + `plotImage` for figures. Let me read a recent sibling lesson to match style precisely.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now have a clear picture of the established style. Let me verify the exact schemas for the widgets I'll use (DataTable, PlotImage, Sandbox, Quiz, Theory) to avoid `additionalProperties` errors.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All schemas confirmed. Now I'll generate the three PNG assets (two inline diagram images + one quantitative plot). Let me write and run the generators.
+→ Write(file_path: /tmp/gen_inline_diagrams.py)
+← File created successfully at: /tmp/gen_inline_diagrams.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/gen_plot.py)
+← File created successfully at: /tmp/gen_plot.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_inline_diagrams.py && python3 /tmp/gen_plot.py && ls -la course…)
+← inline diagrams written
+Let me visually verify the three generated images.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+All three images render correctly with proper Polish diacritics and full axes on the plot. Let me quickly verify the code exercise solution before embedding it.
+→ Bash(command: python3 -c "
+def unletterbox_box(box, orig_w, orig_h, size=640):
+    r = min(siz…)
+← t1 True
+All tests pass. Now I'll write the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/inference-i-eksport-modelu.json …
+[system thinking_tokens]
+[system thinking_tokens]
+Now validate against `LessonSchema`, confirm no external image URLs survive, and verify the plotImage `sourceCode` reproduces the PNG byte-for-byte.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+→ Bash(command: echo "=== external image URLs (must be empty) ==="; grep -nE '!\[[^]]*\]\(https?…)
+← Exit code 1
+← === external image URLs (must be empty) ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+No external URLs — good. The inline `tsx -e` didn't resolve the `@/` path aliases. Let me run the validator as a proper script file so tsconfig paths resolve.
+→ Bash(command: cat > /tmp/validate_lesson.ts <<'EOF'
+import { readFileSync } from 'node:fs';
+im…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/inference-i-eksport-modelu.json
+Validation passes. Now let me confirm the plotImage `sourceCode` reproduces the saved PNG byte-for-byte by extracting it from the JSON and re-running it.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+PLOT=courses/detekcja-obiektow-z-yolo-od…)
+← === diff before vs reproduced ===
+[system thinking_tokens]
+[system thinking_tokens]
+Byte-for-byte identical. Final checks: confirm every referenced asset exists on disk, and run typecheck.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+echo "=== asset paths referenced in less…)
+← === asset paths referenced in lesson ===
+→ Bash(command: npm run typecheck 2>&1 | tail -15)
+[system task_started]
+[system task_notification]
+← > ai-lecturer@0.1.0 typecheck
+All checks pass. The lesson is complete.
+## Done — `inference-i-eksport-modelu.json`
+Authored one lesson at `/courses/detekcja-obiektow-z-yolo-.../lessons/inference-i-eksport-modelu.json`, validated against `LessonSchema`.
+**Structure** (m4, 15 min, Polish prose / English technical terms, ~0.5 theory/practice):
+`theory → quiz → code → theory → dataTable → plotImage → sandbox` (2 theory beats + 5 widgets; starts on theory, no back-to-back theory, ends on a widget).
+1. **Predict mode** (theory) — running inference, the `conf` vs `iou` thresholds, the `Results` object; inline pipeline diagram.
+2. **Quiz** — diagnoses the conf-vs-iou-threshold misconception (duplicate boxes → lower NMS IoU).
+3. **Code** — `unletterbox_box(...)`: rescale detections from the 640×640 letterbox grid back to original-image pixels (pure Python, 1 visible smoke test + 3 hidden, full reference solution; all four verified passing).
+4. **Export** (theory) — `model.export()`, ONNX as a portable interchange format, TensorRT as the compiled NVIDIA engine; inline export-flow diagram.
+5. **DataTable** — six export formats (torchscript/onnx/engine/openvino/coreml/tflite) × file / runtime / when-to-use.
+6. **PlotImage** — example inference latency per format (PyTorch/ONNX/TensorRT FP16) with full axes/labels/title.
+7. **Sandbox** — convert latency → FPS and compute speedup.
+**Sources:** 4 lesson-level entries copied wholesale from `sources.md` (Ultralytics Predict/Export, ONNX, NVIDIA TensorRT), plus section-level sources on both theory beats and the two reference widgets.
+**Assets** (all generated and confirmed on disk):
+- `assets/images/inference-pipeline-predict.png` (inline)
+- `assets/images/export-pipeline-onnx-tensorrt.png` (inline)
+- `assets/plots/inference-i-eksport-modelu-1.png` (plotImage — `sourceCode` reproduces it **byte-for-byte**)
+**Verification:** `LessonSchema.safeParse` → OK · `npm run typecheck` clean · no external `http(s)://` image URLs survive · every referenced asset path resolves · nothing under `scripts/ralph/` touched · no other lesson or `course.json` modified.
+One note worth flagging: the SKILL.md repeatedly references an `image` widget (US-050), but `SectionSchema` in `src/lib/schemas/lesson.ts` has no `image` type — so, matching every existing lesson in this course, I used inline markdown images for the diagrams and `plotImage` for the quantitative figure.
+[result success (449.5s)]

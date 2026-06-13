@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "slug": "adnotacja-i-konwersja-z-cocopascal-voc",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m3",
+  "title": "Adnotacja i konwersja z COCO/Pascal VOC",
+  "eyebrow": "DANE DO TRENINGU YOLO",
+  "description": "Zaadnotuj mały zbiór pojazdów/statków i przekonwertuj etykiety z COCO (piksele x,y,w,h) oraz Pascal VOC (xmin..ymax) do znormalizowanego formatu YOLO cx,cy,w,h.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "adnotacja-i-formaty",
+      "title": "Adnotacja i trzy konwencje współrzędnych",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1007/s11263-009-0275-4",
+          "title": "The PASCAL Visual Object Classes (VOC) Challenge",
+          "kind": "paper",
+          "author": "Mark Everingham, Luc Van Gool, Christopher K. I. Williams, John Winn, Andrew Zisserman",
+          "year": 2010
+        },
+        {
+          "url": "https://arxiv.org/abs/1405.0312",
+          "title": "Microsoft COCO: Common Objects in Context",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+          "year": 2014
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "**Adnotacja** to ręczne oznaczenie *ground-truth*: wokół każdego pojazdu czy statku rysujesz **bounding box** i przypisujesz mu klasę. Narzędzia takie jak **LabelImg**, **CVAT**, **Label Studio** czy **Roboflow** zapisują te oznaczenia najczęściej w jednym z dwóch standardów — **COCO** (jeden plik JSON na cały zbiór) albo **Pascal VOC** (jeden plik XML na obraz).\n\nProblem: trening Ultralytics YOLO **nie czyta** ani COCO JSON, ani VOC XML. Oczekuje własnego formatu — jeden plik `.txt` na obraz, w którym każdy wiersz to `class cx cy w h`. Zanim więc zaczniesz trening, etykiety trzeba **przekonwertować**.\n\nTrzy formaty różnią się w **dwóch** wymiarach jednocześnie:\n\n- **Co opisują współrzędne** — lewy-górny róg + rozmiar (COCO), dwa rogi (VOC), czy środek + rozmiar (YOLO).\n- **W jakich jednostkach** — bezwzględne **piksele** (COCO, VOC) czy wartości **znormalizowane** do przedziału $[0,1]$ przez szerokość i wysokość obrazu (YOLO).\n\n![Ten sam bounding box statku w trzech panelach: COCO znakuje lewy-górny róg (240, 300) px plus szerokość 380 i wysokość 160 px; Pascal VOC znakuje dwa rogi (240, 300) i (620, 460) px; YOLO znakuje środek (0.537, 0.633) i rozmiar (0.475, 0.267) znormalizowany do obrazu 800×600](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/box-trzy-formaty.png)\n\nTen sam box — trzy różne zapisy. Pomylenie jednego z drugim (np. wstawienie pikseli VOC tam, gdzie YOLO oczekuje wartości znormalizowanych) to **najczęstszy błąd** w przygotowaniu danych do detekcji — i temat reszty tej lekcji."
+      }
+    },
+    {
+      "id": "porownanie-formatow",
+      "title": "COCO vs Pascal VOC vs YOLO — ściąga",
+      "description": "Trzy kolumny, które najczęściej się mylą: konwencja współrzędnych, jednostki i typ pliku.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "format",
+            "label": "Format",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "box",
+            "label": "Zapis boxa",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "jednostki",
+            "label": "Jednostki",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "znorm",
+            "label": "Znormalizowane?",
+            "type": "boolean",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "plik",
+            "label": "Plik",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "format": "COCO",
+            "box": "x, y, w, h (lewy-górny róg + rozmiar)",
+            "jednostki": "piksele",
+            "znorm": false,
+            "plik": "jeden .json na zbiór"
+          },
+          {
+            "format": "Pascal VOC",
+            "box": "xmin, ymin, xmax, ymax (dwa rogi)",
+            "jednostki": "piksele",
+            "znorm": false,
+            "plik": "jeden .xml na obraz"
+          },
+          {
+            "format": "YOLO",
+            "box": "cx, cy, w, h (środek + rozmiar)",
+            "jednostki": "ułamek [0,1]",
+            "znorm": true,
+            "plik": "jeden .txt na obraz"
+          }
+        ],
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "check-normalizacja",
+      "title": "Szybki sprawdzian: co jest w pliku YOLO?",
+      "type": "quiz",
+      "data": {
+        "question": "W pliku etykiety YOLO `.txt` współrzędne bounding boxa są zapisane jako:",
+        "options": [
+          "Piksele w kolejności xmin, ymin, xmax, ymax (dwa rogi)",
+          "Piksele w kolejności x, y, w, h (lewy-górny róg + rozmiar)",
+          "Wartości znormalizowane do [0,1] w kolejności cx, cy, w, h (środek + rozmiar)",
+          "Wartości znormalizowane do [0,1], ale w kolejności xmin, ymin, xmax, ymax"
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "YOLO zapisuje box jako środek i rozmiar (`cx, cy, w, h`) podzielone przez szerokość/wysokość obrazu, więc wszystkie cztery liczby leżą w przedziale [0,1]. Odpowiedź pierwsza to konwencja Pascal VOC, druga to konwencja COCO — obie w pikselach, nie znormalizowane. Czwarta miesza normalizację z konwencją rogów, której YOLO nie używa. Wstawienie pikseli zamiast wartości znormalizowanych to najczęstszy błąd datasetu.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "matematyka-konwersji",
+      "title": "Matematyka konwersji do YOLO",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/datasets/detect/coco/",
+          "title": "Ultralytics — Converting COCO annotations to YOLO format",
+          "kind": "article"
+        },
+        {
+          "url": "https://github.com/ultralytics/JSON2YOLO",
+          "title": "ultralytics/JSON2YOLO — COCO/VOC to YOLO conversion tools",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Konwersja sprowadza się do dwóch kroków: **wyznaczenia środka** boxa i **podzielenia wszystkiego przez wymiary obrazu**. Niech obraz ma szerokość $W$ i wysokość $H$ (w pikselach).\n\n**Pascal VOC** daje od razu dwa rogi $(x_{min}, y_{min}, x_{max}, y_{max})$, więc:\n\n$$c_x = \\frac{x_{min}+x_{max}}{2\\,W}, \\qquad c_y = \\frac{y_{min}+y_{max}}{2\\,H}$$\n\n$$w = \\frac{x_{max}-x_{min}}{W}, \\qquad h = \\frac{y_{max}-y_{min}}{H}$$\n\n**COCO** podaje lewy-górny róg i rozmiar w pikselach $(x, y, w_{px}, h_{px})$. Najpierw zamień to na rogi, a potem zastosuj te same wzory:\n\n$$x_{max} = x + w_{px}, \\qquad y_{max} = y + h_{px}$$\n\n![Przykład liczbowy: box VOC (160, 120, 480, 360) na obrazie 640×480 px. Środek wypada w (320, 240) px; po podzieleniu przez wymiary obrazu wszystkie cztery wartości YOLO wynoszą 0.5, a wiersz etykiety dla klasy car=2 to „2 0.5 0.5 0.5 0.5”](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/voc-do-yolo-przyklad.png)\n\nDwie pułapki, które psują najwięcej datasetów:\n\n- **Dziel przez wymiary *tego* obrazu**, a nie przez 640 (rozdzielczość wejścia sieci). Każdy obraz może mieć inne $W, H$ — letterbox robi YOLO sam w czasie treningu.\n- **Przytnij wynik do $[0,1]$** — adnotacje wystające poza kadr potrafią dać wartości ujemne lub większe od 1, których YOLO nie zaakceptuje.\n\nKolejność w wierszu to zawsze `class cx cy w h`, liczby oddzielone spacjami, bez nagłówka i bez przecinków."
+      }
+    },
+    {
+      "id": "voc-do-yolo",
+      "title": "Zaimplementuj konwersję VOC → YOLO",
+      "description": "Napisz czystą funkcję liczbową — bez NumPy, bez plików. Zwróć krotkę czterech wartości znormalizowanych.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz funkcję `voc_to_yolo(box, img_w, img_h)`, która przyjmuje box w konwencji Pascal VOC `(xmin, ymin, xmax, ymax)` w **pikselach** oraz wymiary obrazu `img_w`, `img_h`, a zwraca krotkę `(cx, cy, w, h)` **znormalizowaną** do przedziału `[0, 1]` (format YOLO).\n\n```\nvoc_to_yolo((160, 120, 480, 360), 640, 480) == (0.5, 0.5, 0.5, 0.5)\n```",
+        "starterCode": "def voc_to_yolo(box, img_w, img_h):\n    # box: (xmin, ymin, xmax, ymax) w pikselach (Pascal VOC)\n    # img_w, img_h: szerokosc i wysokosc obrazu w pikselach\n    # zwroc (cx, cy, w, h) znormalizowane do [0, 1] (YOLO)\n    xmin, ymin, xmax, ymax = box\n    # TODO: wyznacz srodek i rozmiar, a nastepnie podziel przez wymiary obrazu\n    return (0.0, 0.0, 0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "centered_box_maps_to_all_half",
+            "body": "assert voc_to_yolo((160, 120, 480, 360), 640, 480) == (0.5, 0.5, 0.5, 0.5)",
+            "hidden": false
+          },
+          {
+            "name": "full_image_box_is_center_half_size_one",
+            "body": "assert voc_to_yolo((0, 0, 640, 480), 640, 480) == (0.5, 0.5, 1.0, 1.0)",
+            "hidden": true
+          },
+          {
+            "name": "asymmetric_box_normalizes_correctly",
+            "body": "r = voc_to_yolo((20, 30, 60, 110), 200, 200)\nassert all(abs(a - b) < 1e-9 for a, b in zip(r, (0.2, 0.35, 0.2, 0.4)))",
+            "hidden": true
+          },
+          {
+            "name": "values_stay_within_unit_range",
+            "body": "r = voc_to_yolo((100, 50, 300, 250), 400, 400)\nassert all(0.0 <= v <= 1.0 for v in r)",
+            "hidden": true
+          }
+        ],
+        "solution": "def voc_to_yolo(box, img_w, img_h):\n    xmin, ymin, xmax, ymax = box\n    cx = (xmin + xmax) / 2 / img_w\n    cy = (ymin + ymax) / 2 / img_h\n    w = (xmax - xmin) / img_w\n    h = (ymax - ymin) / img_h\n    return (cx, cy, w, h)\n"
+      }
+    },
+    {
+      "id": "dopasuj-konwencje",
+      "title": "Dopasuj format do jego konwencji boxa",
+      "description": "Przeciągnij każdy format na opis tego, jak zapisuje bounding box.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Połącz każdy format adnotacji z konwencją, w jakiej trzyma współrzędne boxa.",
+        "items": [
+          {
+            "id": "coco",
+            "label": "COCO"
+          },
+          {
+            "id": "voc",
+            "label": "Pascal VOC"
+          },
+          {
+            "id": "yolo",
+            "label": "YOLO"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-coco",
+            "label": "Piksele: x, y (lewy-górny róg) + w, h (rozmiar)",
+            "accepts": [
+              "coco"
+            ]
+          },
+          {
+            "id": "z-voc",
+            "label": "Piksele: xmin, ymin, xmax, ymax (dwa przeciwległe rogi)",
+            "accepts": [
+              "voc"
+            ]
+          },
+          {
+            "id": "z-yolo",
+            "label": "Znormalizowane [0,1]: cx, cy (środek) + w, h (rozmiar)",
+            "accepts": [
+              "yolo"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "COCO i Pascal VOC trzymają piksele, ale różnią się zapisem: COCO to róg plus rozmiar, VOC to dwa rogi. Tylko YOLO normalizuje współrzędne do [0,1] i opisuje box przez jego środek. To właśnie ta normalizacja jest sednem konwersji do formatu YOLO."
+      }
+    },
+    {
+      "id": "piaskownica-konwersji",
+      "title": "Przekonwertuj mały zbiór etykiet",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Mini-zbiór: adnotacje Pascal VOC (piksele) dla obrazow pojazdow/statkow.\n# Kazdy wpis: (nazwa_obrazu, (W, H), klasa, (xmin, ymin, xmax, ymax))\nNAMES = {0: \"car\", 1: \"truck\", 2: \"ship\"}\nvoc = [\n    (\"img001.jpg\", (640, 480), 0, (160, 120, 480, 360)),\n    (\"img002.jpg\", (800, 600), 2, (40,  300, 620, 460)),\n    (\"img003.jpg\", (1280, 720), 1, (900, 100, 1180, 520)),\n]\n\ndef voc_to_yolo(box, img_w, img_h):\n    xmin, ymin, xmax, ymax = box\n    cx = (xmin + xmax) / 2 / img_w\n    cy = (ymin + ymax) / 2 / img_h\n    w = (xmax - xmin) / img_w\n    h = (ymax - ymin) / img_h\n    return (cx, cy, w, h)\n\n# Wypisz wiersze .txt w formacie YOLO: class cx cy w h\nfor name, (W, H), cls, box in voc:\n    cx, cy, w, h = voc_to_yolo(box, W, H)\n    print(name, \"->\", f\"{cls} {cx:.6f} {cy:.6f} {w:.6f} {h:.6f}\")\n\n# Sprobuj: dorzuc box wystajacy poza kadr (np. xmax > W) i dodaj przyciecie do [0,1].\n",
+        "encouragement": "Dorzuć box wystający poza kadr i zobacz, jak przycięcie do przedziału [0,1] ratuje etykietę."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/datasets/detect/coco/",
+      "title": "Ultralytics — Converting COCO annotations to YOLO format",
+      "kind": "article"
+    },
+    {
+      "url": "https://github.com/ultralytics/JSON2YOLO",
+      "title": "ultralytics/JSON2YOLO — COCO/VOC to YOLO conversion tools",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/datasets/detect/",
+      "title": "Ultralytics — Detection datasets format (YOLO .txt + data.yaml)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1007/s11263-009-0275-4",
+      "title": "The PASCAL Visual Object Classes (VOC) Challenge",
+      "kind": "paper",
+      "author": "Mark Everingham, Luc Van Gool, Christopher K. I. Williams, John Winn, Andrew Zisserman",
+      "year": 2010
+    },
+    {
+      "url": "https://arxiv.org/abs/1405.0312",
+      "title": "Microsoft COCO: Common Objects in Context",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+      "year": 2014
+    }
+  ]
+}

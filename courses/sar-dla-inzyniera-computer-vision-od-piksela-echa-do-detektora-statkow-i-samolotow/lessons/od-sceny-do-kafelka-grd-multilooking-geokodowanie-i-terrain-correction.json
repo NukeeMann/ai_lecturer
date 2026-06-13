@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "slug": "od-sceny-do-kafelka-grd-multilooking-geokodowanie-i-terrain-correction",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m3",
+  "title": "Od sceny do kafelka: GRD, multilooking, geokodowanie i terrain correction",
+  "eyebrow": "PIPELINE DANYCH SAR",
+  "description": "Krok po kroku od surowej sceny Sentinel-1 do kafelka gotowego do modelu — każdy etap z odpowiedzią 'po co', a ciężkie kroki SNAP jako kod referencyjny.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "po-co-pipeline",
+      "title": "Surowa scena to jeszcze nie kafelek",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+          "title": "Sentinel-1 Level-1 GRD product specification — ESA documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.25966/nr2c-s697",
+          "title": "The SAR Handbook (Ch. 3 — SAR data processing)",
+          "kind": "book",
+          "author": "NASA SERVIR (Flores-Anderson et al., eds.)",
+          "year": 2019
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z optycznej wizji znasz nawyk: aparat zapisuje **RAW**, a zanim model go zobaczy, przechodzi przez demozaikowanie, balans bieli, gamma i krop. Surowy SAR jest dokładnie tym samym etapem — produktem, który *trzeba dopracować*, zanim trafi do detektora. Ta lekcja to ten właśnie łańcuch.\n\n![Diagram poziomego łańcucha przetwarzania: kolejne prostokąty połączone strzałkami — Scena SLC (zespolona, pełna rozdzielczość), Kalibracja radiometryczna do sigma0, Multilooking, Despeckle, Terrain correction + geokodowanie z DEM, na końcu Kafelek gotowy do modelu. Pod pierwszymi czterema krokami podpis: ciężkie kroki SNAP jako kod referencyjny](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/pipeline-scene-to-tile-chain.png)\n\nDwa produkty Sentinel-1 wyznaczają start i metę:\n\n| | **SLC** (Single Look Complex) | **GRD** (Ground Range Detected) |\n|---|---|---|\n| Piksel | liczba zespolona (amplituda **i** faza) | sama amplituda (faza odrzucona) |\n| Geometria | slant range (geometria wiązki) | ground range (rzut na grunt) |\n| Speckle | pełny, 1 look | zredukowany (multilooking) |\n| Po co | interferometria, koherencja, faza | **detekcja** — to z nim pracujesz |\n\nDla detekcji statków i samolotów chcesz **GRD**: amplituda wystarcza, a faza tylko by przeszkadzała. Łańcuch, który zamienia SLC → GRD → kafelek, to cztery decyzje, każda z osobnym \"po co\":\n\n- **Kalibracja** — surowe liczby (DN) zamień na fizyczny współczynnik $\\sigma^0$, żeby piksele były porównywalne między scenami (to z poprzedniego modułu).\n- **Multilooking** — uśrednij kilka \"spojrzeń\" na ten sam teren, by ściąć speckle (kosztem rozdzielczości).\n- **Despeckle** — dofiltruj resztę speckle adaptacyjnie (Lee/Refined Lee), nie rozmywając krawędzi.\n- **Geokodowanie + terrain correction** — zegnij obraz z geometrii radaru na siatkę mapy, używając modelu terenu (DEM), żeby każdy piksel miał realną współrzędną.\n\nCiężkie kroki robi ESA **SNAP** (poza przeglądarką) — w tej lekcji widzisz je jako kod referencyjny, a sam policzysz multilooking, który jest sednem przejścia SLC → GRD."
+      }
+    },
+    {
+      "id": "slant-vs-ground",
+      "title": "Slant range nie jest ground range",
+      "description": "Radar mierzy odległość wzdłuż wiązki (slant); near range jest ściśnięty, więc GRD musi przepróbkować scenę na równą siatkę gruntu.",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+          "title": "Sentinel-1 Level-1 GRD product specification — ESA documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/od-sceny-do-kafelka-slant-vs-ground-1.png",
+        "alt": "Dwa wykresy obok siebie dla geometrii Sentinel-1 (orbita 693 km). Lewy: ground range (oś Y, 250–820 km) w funkcji slant range (oś X, ~730–1080 km) — krzywa rosnąca i wyginająca się, pokazująca że równe przyrosty slant range odpowiadają nierównym przyrostom na gruncie. Prawy: rozmiar piksela na gruncie dGr (oś Y, metry) w funkcji kąta padania theta (oś X, 20–50 stopni) — czerwona krzywa spada z ~6.7 m przy 20 stopniach do ~3 m przy 50 stopniach, a niebieska przerywana linia pokazuje stały piksel slant range dR = 2.3 m.",
+        "caption": "Rys. 1. Radar próbkuje świat w slant range (wzdłuż wiązki). Bliżej toru lotu (mały kąt padania) ten sam krok slant pokrywa większy kawałek gruntu — near range jest ściśnięty. GRD prostuje to do równej siatki ground range, dlatego krok 'slant → ground' jest przepróbkowaniem, nie zwykłą zmianą jednostek.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Geometria boczna Sentinel-1 (orbita ~693 km). Kat padania theta liczony od pionu.\n# Slant range R = H / cos(theta); ground range Gr = H * tan(theta).\nH = 693e3                                  # wysokosc orbity [m]\ntheta_deg = np.linspace(20.0, 50.0, 200)   # kat padania [stopnie]\ntheta = np.deg2rad(theta_deg)\nR = H / np.cos(theta)                       # slant range [m]\nGr = H * np.tan(theta)                      # ground range [m]\n\ndR = 2.3                                    # staly piksel slant range Sentinel-1 IW [m]\ndGr = dR / np.sin(theta)                    # odpowiadajacy piksel ground range [m]\n\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.0, 4.4))\n\nax1.plot(R / 1000.0, Gr / 1000.0, color=\"#3949ab\", lw=2.2)\nax1.set_title(\"Slant range nie jest ground range\")\nax1.set_xlabel(\"Slant range R (mierzony przez radar) [km]\")\nax1.set_ylabel(\"Ground range Gr (odleglosc na mapie) [km]\")\nax1.grid(True, alpha=0.3)\n\nax2.plot(theta_deg, dGr, color=\"#e53935\", lw=2.2, label=\"piksel ground range dGr\")\nax2.axhline(dR, color=\"#3949ab\", ls=\"--\", lw=1.5, label=f\"piksel slant range dR = {dR} m (staly)\")\nax2.set_title(\"Near range jest scisniety: ten sam slant -> wiekszy ground\")\nax2.set_xlabel(\"Kat padania theta [stopnie]\")\nax2.set_ylabel(\"Rozmiar piksela na gruncie dGr [m]\")\nax2.grid(True, alpha=0.3)\nax2.legend(fontsize=8.5)\n\nfig.suptitle(\"Konwersja slant -> ground range: dlaczego GRD przeprobkowuje scene\", fontsize=12, fontweight=\"bold\")\nfig.tight_layout(rect=[0, 0, 1, 0.95])\nplt.savefig(\"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/od-sceny-do-kafelka-slant-vs-ground-1.png\", dpi=110, bbox_inches=\"tight\")\nprint(\"saved slant-vs-ground plot\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "suwak-multilooking",
+      "title": "Suwak: ile looków uśrednić",
+      "description": "Przesuwaj liczbę looków i patrz, jak morze gładnieje (rośnie ENL), ale obraz robi się mniejszy i mniej ostry — to jest cały kompromis multilookingu.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Uczciwa symulacja sceny 1-look, by mechanizm multilookingu byl widoczny:\n# plaskie morze (R=1) | jasny lad (R=6), z punktowym celem (statek) na morzu.\n_rng = np.random.default_rng(0)\nH, W = 192, 192\nR = np.full((H, W), 1.0)\nR[:, 96:] = 6.0\nR[40:44, 40:44] = 40.0\nI_obs = R * _rng.gamma(1.0, 1.0, (H, W))   # speckle 1-look, CoV = 1\nSEA = (slice(100, 175), slice(10, 85))      # plaski plat morza BEZ celu do odczytu ENL\n\ndef _enl(p):\n    return float(p.mean() ** 2 / p.var())\n\ndef _multilook(img, looks):\n    looks = int(looks)\n    if looks <= 1:\n        return img.astype(float)\n    h = (img.shape[0] // looks) * looks\n    w = (img.shape[1] // looks) * looks\n    c = img[:h, :w].astype(float)\n    return c.reshape(h // looks, looks, w // looks, looks).mean(axis=(1, 3))\n",
+        "renderCode": "looki = int(looki)\nout = _multilook(I_obs, looki)\nenl_in = _enl(I_obs[SEA])\nenl_out = _enl(_multilook(I_obs[100:175, 10:85], looki))\ndraw_in = np.sqrt(I_obs)\ndraw_out = np.sqrt(np.clip(out, 0, None))\nvmax = float(np.percentile(draw_in, 99))\nfig, (axA, axB) = plt.subplots(1, 2, figsize=(9.2, 4.8))\naxA.imshow(draw_in, cmap='gray', vmax=vmax)\naxA.set_title('Wejscie: 1 look  ' + str(I_obs.shape[0]) + 'x' + str(I_obs.shape[1]) + '  ENL=' + format(enl_in, '.0f'))\naxA.set_xlabel('azimuth [piksel]'); axA.set_ylabel('range [piksel]')\naxB.imshow(draw_out, cmap='gray', vmax=vmax)\naxB.set_title(str(looki) + 'x' + str(looki) + ' looki  ' + str(out.shape[0]) + 'x' + str(out.shape[1]) + '  ENL=' + format(enl_out, '.0f'))\naxB.set_xlabel('azimuth [piksel]'); axB.set_ylabel('range [piksel]')\nfig.suptitle('Multilooking: wiecej lookow -> gladsze morze (rosnacy ENL), ale mniejszy i mniej ostry obraz')\nfig.tight_layout()\nresult = str(looki) + 'x' + str(looki) + ' looki: ENL morza ' + format(enl_in, '.0f') + ' -> ' + format(enl_out, '.0f') + ', rozmiar ' + str(I_obs.shape[0]) + 'px -> ' + str(out.shape[0]) + 'px'\n",
+        "params": [
+          {
+            "name": "looki",
+            "label": "Liczba looków (okno uśredniania)",
+            "type": "slider",
+            "min": 1,
+            "max": 8,
+            "step": 1,
+            "default": 3
+          }
+        ],
+        "outputType": "both"
+      }
+    },
+    {
+      "id": "quiz-pipeline",
+      "title": "Szybki sprawdzian: kroki pipeline'u",
+      "description": "Po suwaku multilookingu — które zdania o przygotowaniu sceny są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o przejściu od surowej sceny Sentinel-1 do kafelka gotowego do modelu są prawdziwe? Zaznacz wszystkie pasujące.",
+        "options": [
+          "Do detekcji statków zwykle bierzesz produkt GRD, bo amplituda wystarcza, a fazy (z SLC) i tak nie używasz.",
+          "Multilooking redukuje speckle przez uśrednianie looków, ale płaci za to niższą rozdzielczością przestrzenną.",
+          "Konwersja slant range → ground range to tylko zmiana jednostek odległości, więc nie zmienia próbkowania pikseli.",
+          "Geokodowanie z terrain correction (DEM) jest potrzebne, by wykryty statek dało się umieścić w realnych współrzędnych na mapie."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "GRD to produkt 'do detekcji': już zdetekowany (amplituda), multilookowany i rzutowany na grunt — fazy z SLC nie używasz w jednoobrazowej detekcji, więc odp. 1 jest prawdziwa. Multilooking uśrednia niezależne looki: ENL rośnie (gładsze morze), ale obraz robi się mniejszy i mniej ostry — to widziałeś na suwaku, więc odp. 2 prawdziwa. Odp. 3 jest fałszywa: bo ten sam krok slant pokrywa różny kawałek gruntu zależnie od kąta padania (near range ściśnięty), przejście slant → ground to **przepróbkowanie** sceny, nie zwykła zmiana jednostek. Odp. 4 prawdziwa: bez terrain correction piksel siedzi w geometrii radaru (przesunięty przez layover), więc współrzędna wykrycia byłaby błędna — a dla SATIM lokalizacja statku to produkt końcowy.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "geokodowanie-terrain",
+      "title": "Geokodowanie i terrain correction: ustaw piksele na mapie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+          "title": "Flattening Gamma: Radiometric Terrain Correction for SAR Imagery",
+          "kind": "paper",
+          "author": "David Small",
+          "year": 2011
+        },
+        {
+          "url": "https://step.esa.int/main/toolboxes/snap/",
+          "title": "SNAP — Sentinel Application Platform (ESA STEP)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Po multilookingu i despecklingu masz ładny obraz — ale wciąż w **geometrii radaru**: osie to range/azimuth, a nie długość/szerokość. Z modułu o geometrii pamiętasz, że teren oszukuje radar: szczyt góry mierzony jest jako \"bliżej\" niż jej podstawa (**layover**), stoki ku radarowi są ściśnięte (**foreshortening**), a za grzbietem leży **cień**. Dopóki tego nie wyprostujesz, wykryty statek wyląduje pod złą współrzędną.\n\n![Dwa panele. Po lewej: geometria radaru — skośna, ścięta siatka z linią brzegową, czerwony punkt podpisany 'szczyt przesunięty (layover)' przesunięty względem właściwego miejsca. Po prawej: po terrain correction — prostokątna siatka mapy z tą samą linią brzegową i zielonym punktem w prawidłowym położeniu. Między panelami strzałka z podpisem DEM](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/terrain-correction-radar-vs-map-grid.png)\n\nLekarstwem jest **Range-Doppler Terrain Correction**: dla każdego punktu siatki mapy algorytm liczy — używając modelu terenu (**DEM**) i dokładnej orbity — gdzie ten punkt wylądował w obrazie radarowym, i przenosi tam wartość piksela. Efekt: obraz \"rozwinięty\" z geometrii wiązki na siatkę geograficzną.\n\n- **Geokodowanie** = nadanie pikselom współrzędnych (lat/lon albo UTM).\n- **Terrain correction** = uwzględnienie *wysokości* terenu z DEM, więc layover/foreshortening są poprawione, a nie tylko obraz rozciągnięty po płaskiej Ziemi.\n\nMost do Twojego CV: to **warp obrazu sterowany mapą głębi** — jak prostowanie perspektywy homografią, tylko że \"głębią\" jest DEM, a model rzutowania to geometria radaru.\n\nTen krok robi ESA **SNAP** poza przeglądarką. Tak wygląda referencyjny graf w `snappy` (Python API SNAP) — *kod referencyjny, nie uruchamiamy go w widżecie*:\n\n```python\nfrom snappy import ProductIO, GPF, HashMap\n\nscena = ProductIO.readProduct('S1A_IW_GRDH.zip')\n\n# 1) Kalibracja radiometryczna -> sigma0\np = HashMap(); p.put('outputSigmaBand', True)\nkalib = GPF.createProduct('Calibration', p, scena)\n\n# 2) Multilooking (np. 2 looki w range, 2 w azimuth)\np = HashMap(); p.put('nRgLooks', 2); p.put('nAzLooks', 2)\nlook = GPF.createProduct('Multilook', p, kalib)\n\n# 3) Range-Doppler Terrain Correction z DEM\np = HashMap(); p.put('demName', 'SRTM 1Sec HGT'); p.put('mapProjection', 'WGS84(DD)')\ngeo = GPF.createProduct('Terrain-Correction', p, look)\n\nProductIO.writeProduct(geo, 'kafelek_gotowy', 'GeoTIFF')\n```\n\nTrzy linijki konfiguracji — ale każda to ten sam \"po co\", który właśnie przeszedłeś."
+      }
+    },
+    {
+      "id": "kod-multilooking",
+      "title": "Zaimplementuj multilooking i zmierz ENL",
+      "description": "Uśrednij nieprzykrywające się bloki looki×looki na prawdziwym kafelku i sprawdź, jak rośnie ENL kosztem rozmiaru obrazu.",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-processing",
+          "title": "Equivalent Number of Looks / multilooking — Sentinel-1 ESA docs",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **multilooking** jako uśrednianie nieprzykrywających się bloków `looks`×`looks` (radarowy odpowiednik downsamplingu przez średnią).\n\nNapisz `multilook(img, looks)` zwracające obraz `float` o kształcie `(H // looks, W // looks)`:\n\n- dla `looks == 1` zwróć obraz bez zmian,\n- inaczej przytnij `img` do wielokrotności `looks` w obu osiach i uśrednij każdy blok `looks`×`looks`.\n\nWskazówka: `img[:h, :w].reshape(h//looks, looks, w//looks, looks).mean(axis=(1, 3))`.\n\n```\nmultilook(np.arange(36).reshape(6, 6), 3)[0, 0] == 7.0   # srednia bloku 3x3 z lewego gornego rogu\n```\n\nW `starterCode` czeka prawdziwy kafelek Sentinel-1 zamontowany w `/inputs/` oraz funkcja `enl()` (na intensywności) do pomiaru gładkości.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Prawdziwy kafelek Sentinel-1 (Ciesnina Gibraltarska), zamontowany w /inputs/.\n# Jasnosc piksela = amplituda (sila echa) w skali 0-255.\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]      # plaski plat wody\nwoda_I = woda ** 2            # intensywnosc = amplituda^2 (na niej liczymy ENL)\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float)\n    return float(I.mean() ** 2 / I.var())\n\ndef multilook(img, looks):\n    # TODO:\n    #   if looks <= 1: return img.astype(float)\n    #   h = (img.shape[0] // looks) * looks\n    #   w = (img.shape[1] // looks) * looks\n    #   bloki = img[:h, :w].reshape(h // looks, looks, w // looks, looks)\n    #   return bloki.mean(axis=(1, 3))\n    return img.astype(float)\n\nout = multilook(woda_I, 3)\nprint('ENL wody przed:', round(enl(woda_I), 1), ' po 3x3:', round(enl(out), 1),\n      '| ksztalt', woda_I.shape, '->', out.shape)\n",
+        "tests": [
+          {
+            "name": "looks_1_to_identycznosc",
+            "body": "assert np.allclose(multilook(woda, 1), woda.astype(float))",
+            "hidden": false
+          },
+          {
+            "name": "zmniejsza_rozdzielczosc",
+            "body": "out = multilook(woda, 3)\nassert out.shape == (woda.shape[0] // 3, woda.shape[1] // 3)",
+            "hidden": true
+          },
+          {
+            "name": "usrednia_blok",
+            "body": "field = np.arange(36, dtype=float).reshape(6, 6)\nassert abs(multilook(field, 3)[0, 0] - field[:3, :3].mean()) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "podnosi_enl_na_morzu",
+            "body": "assert enl(multilook(woda_I, 3)) > enl(woda_I)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]\nwoda_I = woda ** 2\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float)\n    return float(I.mean() ** 2 / I.var())\n\ndef multilook(img, looks):\n    img = np.asarray(img, dtype=np.float64)\n    if looks <= 1:\n        return img.copy()\n    h = (img.shape[0] // looks) * looks\n    w = (img.shape[1] // looks) * looks\n    bloki = img[:h, :w].reshape(h // looks, looks, w // looks, looks)\n    return bloki.mean(axis=(1, 3))\n\nout = multilook(woda_I, 3)\nprint('ENL wody przed:', round(enl(woda_I), 1), ' po 3x3:', round(enl(out), 1),\n      '| ksztalt', woda_I.shape, '->', out.shape)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 w skali szarości: ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255), 256×256",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/od-sceny-do-kafelka-multilook-output.png",
+          "alt": "Ten sam kafelek Sentinel-1 po multilookingu 3×3: obraz jest mniejszy (ok. 85×85) i wyraźnie gładszy — speckle na wodzie i lądzie zredukowane, kosztem ostrości drobnych szczegółów",
+          "caption": "Oczekiwany wynik: multilooking 3×3 — gładsza scena, mniejszy obraz (256→85 px)."
+        }
+      }
+    },
+    {
+      "id": "piaskownica-multilooking",
+      "title": "Piaskownica: pobaw się liczbą looków",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda_I = sar[20:80, 10:70] ** 2\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float)\n    return float(I.mean() ** 2 / I.var())\n\ndef multilook(img, looks):\n    img = np.asarray(img, dtype=np.float64)\n    if looks <= 1:\n        return img.copy()\n    h = (img.shape[0] // looks) * looks\n    w = (img.shape[1] // looks) * looks\n    return img[:h, :w].reshape(h // looks, looks, w // looks, looks).mean(axis=(1, 3))\n\n# Zmieniaj liczbe lookow i obserwuj, jak ENL rosnie, a obraz sie kurczy.\nfor looks in (1, 2, 3, 5, 8):\n    out = multilook(woda_I, looks)\n    print('looki', looks, '| ENL', round(enl(out), 1), '| ksztalt', out.shape)\n",
+        "encouragement": "Zwiększaj liczbę looków i zobacz, w którym momencie kafelek robi się za mały albo za gładki, by CFAR miał jeszcze na czym wykryć statek."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-products",
+      "title": "Sentinel-1 Level-1 GRD product specification — ESA documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://step.esa.int/main/toolboxes/snap/",
+      "title": "SNAP — Sentinel Application Platform (ESA STEP)",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.25966/nr2c-s697",
+      "title": "The SAR Handbook (Ch. 3 — SAR data processing)",
+      "kind": "book",
+      "author": "NASA SERVIR (Flores-Anderson et al., eds.)",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2011.2120616",
+      "title": "Flattening Gamma: Radiometric Terrain Correction for SAR Imagery",
+      "kind": "paper",
+      "author": "David Small",
+      "year": 2011
+    }
+  ]
+}

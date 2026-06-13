@@ -1,0 +1,255 @@
+{
+  "schemaVersion": 1,
+  "slug": "funkcje-straty-i-label-assignment",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m2",
+  "title": "Funkcje straty i label assignment",
+  "eyebrow": "MECHANIKA MODELU",
+  "description": "Jak YOLO11 uczy się geometrii i klasy: CIoU + DFL na box, BCE na klasę i TaskAligned Assigner decydujący, która predykcja uczy się którego obiektu.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "co-uczy-siec",
+      "title": "Z czego składa się strata YOLO",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/models/yolo11/",
+          "title": "Ultralytics YOLO11 model documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Trening detektora sprowadza się do minimalizacji jednej liczby — **funkcji straty** — która jednocześnie karze za złe ramki i za złe klasy. W YOLO11 strata całkowita to ważona suma składników:\n\n$$ \\mathcal{L} = \\lambda_{box}\\,\\mathcal{L}_{box} + \\lambda_{cls}\\,\\mathcal{L}_{cls} $$\n\nCzęść **box** odpowiada za geometrię ramki, część **cls** — za rozpoznanie klasy. To rozdzielenie odpowiada wprost decoupled head z poprzedniej lekcji: osobna gałąź regresji i osobna gałąź klasyfikacji mają własne cele.\n\nCzłon box w nowoczesnym YOLO to nie jeden, lecz **dwa** składniki: **CIoU** (jakość pokrycia ramek) oraz **DFL** (Distribution Focal Loss — rozkład położenia krawędzi). Człon cls to **BCE** (binary cross-entropy) liczone per klasa.\n\n![Dwie nakładające się ramki — zielona ground truth i czerwona przerywana predykcja — z zaznaczonym na niebiesko obszarem przecięcia; podpis IoU = pole przecięcia / pole sumy](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/iou-overlap.png)\n\nA gdzie objectness? W YOLOv3/v5 istniała osobna gałąź „czy tu jest obiekt\", uczona własną stratą. W anchor-free YOLOv8/YOLO11 **dedykowanej straty objectness już nie ma** — confidence to po prostu wynik klasyfikacji, a o tym, które komórki są „pozytywne\", decyduje label assignment (dalej w lekcji). Cytowanie objectness jako osobnego członu straty współczesnego YOLO to częsty błąd.\n\nDlaczego strata box opiera się na **IoU**, a nie na surowej różnicy współrzędnych? Bo dwie ramki o identycznym błędzie L1 na rogach mogą mieć zupełnie różne pokrycie. Strata oparta na IoU mierzy to, na czym naprawdę nam zależy, i jest niezmiennicza względem skali. Następna sekcja pokazuje, dlaczego samo IoU to wciąż za mało."
+      }
+    },
+    {
+      "id": "iou-gradient-plot",
+      "title": "Dlaczego samo IoU nie wystarcza",
+      "description": "Porównaj, jak rosną straty IoU, GIoU, DIoU i CIoU, gdy predykcja oddala się od ground truth.",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1911.08287",
+          "title": "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression",
+          "kind": "paper",
+          "author": "Zhaohui Zheng, Ping Wang, Wei Liu, Jinze Li, Rongguang Ye, Dongwei Ren",
+          "year": 2020
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/funkcje-straty-i-label-assignment-1.png",
+        "alt": "Wykres liniowy: na osi X przesunięcie predykcji od ground truth w pikselach (0–7), na osi Y wartość straty. Strata IoU rośnie, ale powyżej przesunięcia 4 px (brak nakładania) wypłaszcza się na poziomie 1.0 — zerowy gradient. Krzywe GIoU, DIoU i CIoU rosną dalej także po utracie nakładania; CIoU leży nieco powyżej DIoU.",
+        "caption": "Rys. 1. Po utracie nakładania (linia przerywana, IoU = 0) strata IoU jest płaska i nie daje gradientu, podczas gdy GIoU/DIoU/CIoU nadal prowadzą predykcję w stronę celu.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n\ndef box_iou_terms(a, b):\n    ax1, ay1, ax2, ay2 = a\n    bx1, by1, bx2, by2 = b\n    inter_w = max(0.0, min(ax2, bx2) - max(ax1, bx1))\n    inter_h = max(0.0, min(ay2, by2) - max(ay1, by1))\n    inter = inter_w * inter_h\n    area_a = (ax2 - ax1) * (ay2 - ay1)\n    area_b = (bx2 - bx1) * (by2 - by1)\n    union = area_a + area_b - inter\n    iou = inter / union if union > 0 else 0.0\n    # smallest enclosing box C\n    cx1, cy1 = min(ax1, bx1), min(ay1, by1)\n    cx2, cy2 = max(ax2, bx2), max(ay2, by2)\n    c_area = (cx2 - cx1) * (cy2 - cy1)\n    c_diag = (cx2 - cx1) ** 2 + (cy2 - cy1) ** 2\n    # center distance\n    acx, acy = (ax1 + ax2) / 2, (ay1 + ay2) / 2\n    bcx, bcy = (bx1 + bx2) / 2, (by1 + by2) / 2\n    rho2 = (acx - bcx) ** 2 + (acy - bcy) ** 2\n    giou = iou - (c_area - union) / c_area\n    diou = iou - rho2 / c_diag\n    wa, ha = ax2 - ax1, ay2 - ay1\n    wb, hb = bx2 - bx1, by2 - by1\n    v = (4 / np.pi ** 2) * (np.arctan(wa / ha) - np.arctan(wb / hb)) ** 2\n    alpha = v / ((1 - iou) + v) if (1 - iou) + v > 0 else 0.0\n    ciou = diou - alpha * v\n    return iou, giou, diou, ciou\n\n\ngt = (-2.0, -1.0, 2.0, 1.0)  # ground truth: 4 wide, 2 tall\noffsets = np.linspace(0.0, 7.0, 141)\niou_l, giou_l, diou_l, ciou_l = [], [], [], []\nfor d in offsets:\n    h = max(0.4, 2.0 * (1 - 0.07 * d))  # prediction slowly narrows -> aspect ratio drifts\n    pred = (d - 2.0, -h / 2, d + 2.0, h / 2)\n    iou, giou, diou, ciou = box_iou_terms(gt, pred)\n    iou_l.append(1 - iou)\n    giou_l.append(1 - giou)\n    diou_l.append(1 - diou)\n    ciou_l.append(1 - ciou)\n\nplt.figure(figsize=(7.2, 4.4))\nplt.plot(offsets, iou_l, label=\"IoU loss = 1 - IoU\", linewidth=2)\nplt.plot(offsets, giou_l, label=\"GIoU loss\", linewidth=2)\nplt.plot(offsets, diou_l, label=\"DIoU loss\", linewidth=2.4, linestyle=\"--\")\nplt.plot(offsets, ciou_l, label=\"CIoU loss\", linewidth=2)\nplt.axvline(4.0, color=\"grey\", linestyle=\"--\", alpha=0.7)\nplt.text(4.05, 0.15, \"brak nakładania\\n(IoU = 0)\", fontsize=9, color=\"grey\")\nplt.xlabel(\"Przesunięcie predykcji od ground truth [px]\")\nplt.ylabel(\"Wartość straty [0–1+]\")\nplt.title(\"Straty box regression vs przesunięcie predykcji\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/funkcje-straty-i-label-assignment-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "ciou-i-dfl",
+      "title": "CIoU i DFL: jak liczymy stratę boxa",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1911.08287",
+          "title": "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression",
+          "kind": "paper",
+          "author": "Zhaohui Zheng, Ping Wang, Wei Liu, Jinze Li, Rongguang Ye, Dongwei Ren",
+          "year": 2020
+        },
+        {
+          "url": "https://arxiv.org/abs/2006.04388",
+          "title": "Generalized Focal Loss: Learning Qualified and Distributed Bounding Boxes",
+          "kind": "paper",
+          "author": "Xiang Li, Wenhai Wang, Lijun Wu, Shuo Chen, Xiaolin Hu, Jun Li, Jinhui Tang, Jian Yang",
+          "year": 2020
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zwykłe IoU ma wadę widoczną na wykresie powyżej: gdy ramki się nie nakładają, $IoU = 0$ niezależnie od tego, jak bardzo są od siebie oddalone — **gradient znika** i sieć nie wie, w którą stronę przesunąć predykcję. Kolejne warianty łatają ten problem.\n\n- **GIoU** dodaje karę za pustą przestrzeń w najmniejszej otoczce $C$ obejmującej obie ramki.\n- **DIoU** zastępuje ją bezpośrednio **odległością środków** znormalizowaną przekątną otoczki.\n- **CIoU** (Complete IoU), używane w YOLO11, dokłada jeszcze człon **proporcji boków**.\n\n$$ \\mathcal{L}_{CIoU} = 1 - IoU + \\frac{\\rho^2(b, b^{gt})}{c^2} + \\alpha v $$\n\ngdzie $\\rho$ to odległość środków predykcji i ground truth, $c$ — przekątna otoczki $C$, a $v$ mierzy rozbieżność proporcji $w/h$:\n\n$$ v = \\frac{4}{\\pi^2}\\left(\\arctan\\frac{w^{gt}}{h^{gt}} - \\arctan\\frac{w}{h}\\right)^2, \\qquad \\alpha = \\frac{v}{(1-IoU)+v} $$\n\n![Diagram CIoU: zielona ramka GT i czerwona przerywana predykcja, szara kropkowana otoczka C obejmująca obie, fioletowy odcinek rho łączący środki ramek oraz przekątna c otoczki](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/ciou-terms.png)\n\nDzięki trzem członom — pokrycie, środek, proporcje — CIoU daje sensowny gradient nawet przy zerowym nakładaniu i zbiega szybciej niż samo IoU.\n\nDrugi człon straty box to **DFL (Distribution Focal Loss)**. Zamiast regresować jedną liczbę na krawędź, YOLO przewiduje **rozkład dyskretny** po możliwych odległościach krawędzi od punktu siatki; ostateczna współrzędna to wartość oczekiwana tego rozkładu:\n\n$$ \\hat{e} = \\sum_{i=0}^{n} i \\cdot P(i) $$\n\nDFL „dociska\" masę prawdopodobieństwa do dwóch wartości całkowitych otaczających prawdziwą krawędź. Efekt: model wyraża **niepewność** położenia (rozmyty rozkład dla niejasnych granic, ostry dla wyraźnych) i lokalizuje precyzyjniej niż pojedyncza regresja."
+      }
+    },
+    {
+      "id": "exercise-ciou",
+      "title": "Zaimplementuj CIoU",
+      "description": "Policz Complete IoU między dwiema ramkami — ten sam człon, którym YOLO11 reguluje geometrię.",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1911.08287",
+          "title": "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression",
+          "kind": "paper",
+          "author": "Zhaohui Zheng, Ping Wang, Wei Liu, Jinze Li, Rongguang Ye, Dongwei Ren",
+          "year": 2020
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj `ciou(a, b)` zwracające **Complete IoU** między dwiema ramkami w formacie `(x1, y1, x2, y2)` (lewy-górny i prawy-dolny róg w pikselach). To dokładnie ten człon straty box, którego YOLO11 używa do regresji geometrii.\n\nWzór:\n\n$$ CIoU = IoU - \\frac{\\rho^2}{c^2} - \\alpha v $$\n\ngdzie $\\rho$ to odległość środków, $c$ — przekątna najmniejszej otoczki obejmującej obie ramki, a $v,\\alpha$ — człon proporcji (jak w sekcji teoretycznej). Strata to $1 - CIoU$.\n\n```\nciou((0,0,10,10), (0,0,10,10)) == 1.0          # idealne pokrycie\nciou((0,0,10,10), (20,20,30,30)) < 0           # brak nakladania -> ujemne\n```",
+        "starterCode": "import math\n\ndef ciou(a, b):\n    \"\"\"Complete IoU dla ramek (x1, y1, x2, y2). Zwraca wartosc w (-inf, 1].\"\"\"\n    ax1, ay1, ax2, ay2 = a\n    bx1, by1, bx2, by2 = b\n    # TODO 1: policz IoU (przeciecie / suma).\n    # TODO 2: policz rho^2 (kwadrat odleglosci srodkow) i c^2 (kwadrat\n    #         przekatnej najmniejszej otoczki obejmujacej obie ramki).\n    # TODO 3: policz czlon proporcji v oraz wage alpha, zwroc IoU - rho2/c2 - alpha*v.\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "identyczne_ramki_daja_1",
+            "body": "assert abs(ciou((0,0,10,10), (0,0,10,10)) - 1.0) < 1e-9",
+            "hidden": false
+          },
+          {
+            "name": "brak_nakladania_jest_ujemny",
+            "body": "assert ciou((0,0,10,10), (20,20,30,30)) < 0",
+            "hidden": true
+          },
+          {
+            "name": "przesuniecie_w_poziomie",
+            "body": "assert abs(ciou((0,0,10,10), (2,0,12,10)) - 0.650273) < 1e-4",
+            "hidden": true
+          },
+          {
+            "name": "rozne_proporcje",
+            "body": "assert abs(ciou((0,0,10,10), (0,0,10,20)) - 0.446752) < 1e-4",
+            "hidden": true
+          }
+        ],
+        "solution": "import math\n\ndef ciou(a, b):\n    ax1, ay1, ax2, ay2 = a\n    bx1, by1, bx2, by2 = b\n    iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))\n    ih = max(0.0, min(ay2, by2) - max(ay1, by1))\n    inter = iw * ih\n    area_a = (ax2 - ax1) * (ay2 - ay1)\n    area_b = (bx2 - bx1) * (by2 - by1)\n    union = area_a + area_b - inter\n    iou = inter / union\n    cx1, cy1 = min(ax1, bx1), min(ay1, by1)\n    cx2, cy2 = max(ax2, bx2), max(ay2, by2)\n    c2 = (cx2 - cx1) ** 2 + (cy2 - cy1) ** 2\n    acx, acy = (ax1 + ax2) / 2, (ay1 + ay2) / 2\n    bcx, bcy = (bx1 + bx2) / 2, (by1 + by2) / 2\n    rho2 = (acx - bcx) ** 2 + (acy - bcy) ** 2\n    wa, ha = ax2 - ax1, ay2 - ay1\n    wb, hb = bx2 - bx1, by2 - by1\n    v = (4 / math.pi ** 2) * (math.atan(wa / ha) - math.atan(wb / hb)) ** 2\n    alpha = v / ((1 - iou) + v) if ((1 - iou) + v) > 0 else 0.0\n    return iou - rho2 / c2 - alpha * v\n"
+      }
+    },
+    {
+      "id": "check-loss",
+      "title": "Szybki sprawdzian: składniki straty",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenie o stratach w YOLO11 jest prawdziwe?",
+        "options": [
+          "Objectness ma osobną gałąź i własną stratę, dokładnie tak jak w YOLOv5.",
+          "Strata box łączy CIoU (pokrycie + środek + proporcje) z DFL (rozkład krawędzi), a klasę uczy BCE.",
+          "Zwykła strata IoU daje użyteczny gradient nawet wtedy, gdy ramki się nie nakładają.",
+          "NMS jest częścią funkcji straty i jest uczone razem z resztą sieci."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "W anchor-free YOLOv8/YOLO11 nie ma osobnej straty objectness — confidence to wynik klasyfikacji (BCE), a geometrię regulują CIoU + DFL. Zwykłe IoU ma zerowy gradient bez nakładania (stąd CIoU), a NMS to deterministyczny krok post-processingu bez parametrów uczonych.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "label-assignment",
+      "title": "Label assignment: TaskAligned Assigner",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/2108.07755",
+          "title": "TOOD: Task-aligned One-stage Object Detection",
+          "kind": "paper",
+          "author": "Chengjian Feng, Yujie Zhong, Yu Gao, Matthew R. Scott, Weilin Huang",
+          "year": 2021
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Sieć generuje tysiące predykcji na gęstej siatce, ale obiektów na obrazie jest garstka. **Label assignment** to reguła decydująca, **która predykcja uczy się którego obiektu** — które komórki są „pozytywne\" (dostają cel box + klasa), a które „negatywne\" (uczą się tylko tła).\n\nStare detektory przypisywały **statycznie**: predykcja była pozytywna, jeśli jej anchor miał IoU z ground truth powyżej progu. Wada — predykcja może dobrze trafiać w box, ale źle klasyfikować (lub odwrotnie), a statyczny próg tego nie widzi.\n\nYOLO11 używa **TaskAligned Assigner (TAL)**. Dla każdej pary (predykcja, ground truth) liczy **metrykę dopasowania** łączącą jakość klasyfikacji i lokalizacji:\n\n$$ t = s^{\\alpha} \\cdot u^{\\beta} $$\n\ngdzie $s$ to wynik klasyfikacji dla właściwej klasy, $u$ to IoU predykowanego boxa z ground truth, a $\\alpha, \\beta$ ważą oba zadania. Predykcja jest dobra tylko wtedy, gdy jest **jednocześnie** pewna co do klasy i celna geometrycznie — stąd „task-aligned\".\n\n![Siatka punktów-kandydatów nad zieloną ramką obiektu: kilka punktów wewnątrz, blisko środka, oznaczono jako pozytywne kandydaty (niebieskie), najlepiej dopasowany jako gwiazdkę, pozostałe punkty tła jako szare](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/tal-assignment.png)\n\nDla każdego obiektu TAL wybiera **top-k** predykcji o najwyższym $t$ jako pozytywne; reszta to negatywy. Przydział jest **dynamiczny** — zmienia się w trakcie treningu, w miarę jak predykcje się poprawiają — i nie wymaga ręcznie strojonych anchorów ani progów IoU.\n\nTo domyka pętlę: TAL wskazuje pozytywy, CIoU + DFL uczą ich geometrii, a BCE — klasy. Wartość $t$ służy też jako **miękki cel** dla BCE (zamiast twardego 0/1), więc lepiej dopasowane predykcje dostają wyższy cel klasyfikacji."
+      }
+    },
+    {
+      "id": "match-loss-role",
+      "title": "Dopasuj element treningu do jego roli",
+      "description": "Przeciągnij każdy mechanizm YOLO11 do tego, co kontroluje podczas treningu.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Dopasuj każdy element treningu YOLO11 do tego, czym steruje.",
+        "items": [
+          {
+            "id": "ciou",
+            "label": "CIoU"
+          },
+          {
+            "id": "dfl",
+            "label": "DFL"
+          },
+          {
+            "id": "bce",
+            "label": "BCE"
+          },
+          {
+            "id": "tal",
+            "label": "TaskAligned Assigner"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-box",
+            "label": "Pokrycie, odległość środków i proporcje ramki",
+            "accepts": [
+              "ciou"
+            ]
+          },
+          {
+            "id": "z-edge",
+            "label": "Rozkład prawdopodobieństwa położenia krawędzi boxa",
+            "accepts": [
+              "dfl"
+            ]
+          },
+          {
+            "id": "z-class",
+            "label": "Wynik klasy (pełni też rolę confidence)",
+            "accepts": [
+              "bce"
+            ]
+          },
+          {
+            "id": "z-assign",
+            "label": "Wybór pozytywnych predykcji dla danego obiektu",
+            "accepts": [
+              "tal"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "CIoU i DFL tworzą stratę box (geometria + rozkład krawędzi), BCE uczy klasy i pełni rolę confidence, a TaskAligned Assigner to nie strata, lecz reguła wyboru, które predykcje są pozytywne dla danego obiektu."
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Pobaw się CIoU",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import math\n\ndef ciou(a, b):\n    ax1, ay1, ax2, ay2 = a\n    bx1, by1, bx2, by2 = b\n    iw = max(0.0, min(ax2, bx2) - max(ax1, bx1))\n    ih = max(0.0, min(ay2, by2) - max(ay1, by1))\n    inter = iw * ih\n    union = (ax2-ax1)*(ay2-ay1) + (bx2-bx1)*(by2-by1) - inter\n    iou = inter / union\n    cx1, cy1, cx2, cy2 = min(ax1,bx1), min(ay1,by1), max(ax2,bx2), max(ay2,by2)\n    c2 = (cx2-cx1)**2 + (cy2-cy1)**2\n    rho2 = ((ax1+ax2)/2-(bx1+bx2)/2)**2 + ((ay1+ay2)/2-(by1+by2)/2)**2\n    v = (4/math.pi**2)*(math.atan((ax2-ax1)/(ay2-ay1)) - math.atan((bx2-bx1)/(by2-by1)))**2\n    alpha = v / ((1-iou)+v) if ((1-iou)+v) > 0 else 0.0\n    return iou - rho2/c2 - alpha*v\n\ngt = (0, 0, 10, 10)\n# Przesuwaj predykcje, zmieniaj jej ksztalt i obserwuj, ktory czlon dominuje.\nfor pred in [(0,0,10,10), (2,0,12,10), (0,0,10,20), (15,15,25,25)]:\n    print(pred, \"->\", round(ciou(gt, pred), 4))\n",
+        "encouragement": "Przesuwaj i zniekształcaj predykcję, by zobaczyć, kiedy dominuje człon środka, a kiedy proporcji."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1911.08287",
+      "title": "Distance-IoU Loss: Faster and Better Learning for Bounding Box Regression",
+      "kind": "paper",
+      "author": "Zhaohui Zheng, Ping Wang, Wei Liu, Jinze Li, Rongguang Ye, Dongwei Ren",
+      "year": 2020
+    },
+    {
+      "url": "https://arxiv.org/abs/2006.04388",
+      "title": "Generalized Focal Loss: Learning Qualified and Distributed Bounding Boxes",
+      "kind": "paper",
+      "author": "Xiang Li, Wenhai Wang, Lijun Wu, Shuo Chen, Xiaolin Hu, Jun Li, Jinhui Tang, Jian Yang",
+      "year": 2020
+    },
+    {
+      "url": "https://arxiv.org/abs/2108.07755",
+      "title": "TOOD: Task-aligned One-stage Object Detection",
+      "kind": "paper",
+      "author": "Chengjian Feng, Yujie Zhong, Yu Gao, Matthew R. Scott, Weilin Huang",
+      "year": 2021
+    },
+    {
+      "url": "https://arxiv.org/abs/1708.02002",
+      "title": "Focal Loss for Dense Object Detection",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Priya Goyal, Ross Girshick, Kaiming He, Piotr Dollar",
+      "year": 2017
+    },
+    {
+      "url": "https://docs.ultralytics.com/models/yolo11/",
+      "title": "Ultralytics YOLO11 model documentation",
+      "kind": "article"
+    }
+  ]
+}

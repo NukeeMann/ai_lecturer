@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "slug": "metryki-i-odpornosc-map-f1-per-klasa-oraz-model-data-agnostic",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m6",
+  "title": "Metryki i odporność: mAP, F1 per klasa oraz model 'data-agnostic'",
+  "eyebrow": "EWALUACJA I PRODUKCJA",
+  "description": "Policz mAP i F1 per klasa na detekcjach statków i samolotów, a potem przetestuj odporność modelu na zmianę kąta padania i typu satelity — językiem near-real-time i ONNX.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "co-mierzymy",
+      "title": "Czym mierzymy detektor: IoU, precyzja, recall, F1",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1405.0312",
+          "title": "Microsoft COCO: Common Objects in Context",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+          "year": 2014
+        },
+        {
+          "url": "https://doi.org/10.1109/IWSSIP48289.2020.9145130",
+          "title": "A Survey on Performance Metrics for Object-Detection Algorithms",
+          "kind": "paper",
+          "author": "Rafael Padilla, Sergio L. Netto, Eduardo A. B. da Silva",
+          "year": 2020
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zanim ogłosisz, że detektor *„działa”*, musisz go **zmierzyć**. W detekcji obiektów pomiar zaczyna się od jednego pytania: czy ramka, którą model narysował wokół statku, **trafia** w prawdziwy statek? Odpowiada na to **IoU** (Intersection over Union) — *jak bardzo dwie ramki się pokrywają*.\n\n![Diagram IoU: niebieski prostokąt ground truth i czerwony prostokąt predykcji częściowo na siebie nachodzą; ich część wspólna jest zacieniona na zielono. Podpis: IoU = pole części wspólnej podzielone przez pole sumy obu ramek](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/iou-bounding-boxes-diagram.png)\n\n$$ \\text{IoU} = \\frac{\\text{pole}(A \\cap B)}{\\text{pole}(A \\cup B)} $$\n\nGloss symboli: $A$ — ramka prawdy (*ground truth*, prawdziwy statek z etykiety); $B$ — ramka predykcji modelu; $\\cap$ (przecięcie) — wspólny prostokąt obu ramek; $\\cup$ (suma) — łączny obszar pokryty przez obie. IoU = 1.0 to idealne pokrycie, 0.0 to ramki rozłączne. Detekcję uznajemy za **trafioną** (True Positive), gdy IoU przekroczy próg — w protokole COCO zwykle 0.5.\n\nGdy masz już podział na trafienia i pudła, liczysz trzy operacyjne liczby (TP — trafiona detekcja, FP — fałszywy alarm, FN — przegapiony cel):\n\n- **Precyzja** $= \\frac{TP}{TP + FP}$ — z detekcji, które *zgłosiłem*, jaki ułamek był prawdziwy. Niska precyzja = zalewam operatora fałszywymi alarmami.\n- **Recall** (czułość) $= \\frac{TP}{TP + FN}$ — z prawdziwych celów, jaki ułamek *wykryłem*. Niski recall = przegapiam statki.\n- **F1** $= \\frac{2 \\cdot P \\cdot R}{P + R}$ — średnia harmoniczna precyzji i recallu; jedna liczba, którą zaniża *każda* słaba składowa.\n\nW ATR liczymy F1 **per klasa** (osobno statki, osobno samoloty), bo klasy są niezbalansowane — dużo łatwych statków potrafi zamaskować słabe wykrywanie rzadkich samolotów. A **mAP** to po prostu pole pod krzywą precyzja–recall, uśrednione po klasach — następna sekcja pokazuje tę krzywą wprost."
+      }
+    },
+    {
+      "id": "krzywa-pr",
+      "title": "Krzywa precyzja–recall i AP jako pole pod nią",
+      "description": "Przesuwając próg ufności detektora wędrujesz po krzywej P–R; AP to pole pod nią, a mAP to średnia AP po klasach.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/IWSSIP48289.2020.9145130",
+          "title": "A Survey on Performance Metrics for Object-Detection Algorithms",
+          "kind": "paper",
+          "author": "Rafael Padilla, Sergio L. Netto, Eduardo A. B. da Silva",
+          "year": 2020
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/metryki-i-odpornosc-map-f1-per-klasa-oraz-model-data-agnostic-1.png",
+        "alt": "Krzywa precyzja-recall dla klasy 'statek'. Oś X: recall 0-1, oś Y: precyzja 0-1. Krzywa zaczyna w lewym górnym rogu z precyzją bliską 1.0 przy niskim recall i opada do około 0.4 przy recall 1.0. Pole pod krzywą (AP) jest zacieniowane na niebiesko i wynosi 0.80. Dwie adnotacje: punkt przy wysokim progu ufności (mało detekcji, wysoka precyzja) i przy niskim progu (duży recall, precyzja spada).",
+        "caption": "Rys. 1. Każdy punkt krzywy P–R to inny próg ufności: wysoki próg → lewy górny róg (mało, ale pewnych detekcji), niski próg → prawy dolny (dużo detekcji, ale precyzja spada). AP = pole pod krzywą ≈ 0.80; mAP to średnia AP po wszystkich klasach.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Ilustracyjna, ale realistyczna krzywa precyzja-recall dla detektora statkow\n# na SAR. Punkty powstaja przez przesuwanie progu ufnosci: wysoki prog -> malo\n# detekcji, wysoka precyzja, niski recall (lewa strona); niski prog -> duzy\n# recall, ale precyzja spada (prawa strona). AP = pole pod ta krzywa.\nrecall = np.linspace(0.0, 1.0, 21)\nprecision = np.clip(1.0 - 0.55 * recall ** 2.2 - 0.05 * recall, 0.0, 1.0)\nprecision[0] = 1.0\n\nap = np.trapz(precision, recall)\n\nfig, ax = plt.subplots(figsize=(8.0, 5.4))\nax.fill_between(recall, precision, 0, color=\"#1e88e5\", alpha=0.18, label=f\"Pole = AP = {ap:.2f}\")\nax.plot(recall, precision, \"-o\", color=\"#1e88e5\", lw=2.2, ms=5, label=\"Krzywa P-R (klasa: statek)\")\n\nax.annotate(\"wysoki prog ufnosci\\n(malo detekcji, precyzja wysoka)\",\n            xy=(recall[3], precision[3]), xytext=(0.05, 0.45),\n            fontsize=9, color=\"#37474f\",\n            arrowprops=dict(arrowstyle=\"->\", color=\"#37474f\", lw=1.2))\nax.annotate(\"niski prog ufnosci\\n(duzy recall, precyzja spada)\",\n            xy=(recall[17], precision[17]), xytext=(0.5, 0.78),\n            fontsize=9, color=\"#37474f\",\n            arrowprops=dict(arrowstyle=\"->\", color=\"#37474f\", lw=1.2))\n\nax.set_xlim(0.0, 1.02)\nax.set_ylim(0.0, 1.05)\nax.set_xticks(np.arange(0, 1.01, 0.1))\nax.set_yticks(np.arange(0, 1.01, 0.1))\nax.set_xlabel(\"Recall (czulosc) [udzial wykrytych statkow, 0-1]\")\nax.set_ylabel(\"Precision (precyzja) [udzial trafnych detekcji, 0-1]\")\nax.set_title(\"Krzywa precyzja-recall i AP (pole pod krzywa)\\nmAP = srednia AP po wszystkich klasach\")\nax.grid(True, alpha=0.3)\nax.legend(loc=\"lower left\", fontsize=10)\nfig.tight_layout()\nout = \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/metryki-i-odpornosc-map-f1-per-klasa-oraz-model-data-agnostic-1.png\"\nplt.savefig(out, dpi=110, bbox_inches=\"tight\")\nprint(\"saved\", out)\nprint(\"AP =\", round(float(ap), 3))\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "policz-iou-f1",
+      "title": "Policz IoU oraz precyzję, recall i F1",
+      "description": "Zaimplementuj IoU dwóch ramek i dopasowanie detekcji do prawdy, a z niego precyzję, recall i F1 — rdzeń każdej ewaluacji detektora.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zbuduj **rdzeń ewaluacji detektora**. Ramki podajemy jako krotki `(x0, y0, x1, y1)` (lewy-górny i prawy-dolny róg).\n\nNapisz **dwie** funkcje:\n\n1. `iou(a, b)` — zwraca IoU dwóch ramek (pole przecięcia / pole sumy); `0.0`, gdy się nie pokrywają.\n2. `precision_recall_f1(preds, gts, iou_thr=0.5)` — dopasuj każdą predykcję do **co najwyżej jednej** ramki prawdy o IoU ≥ `iou_thr` (zachłannie), policz `tp`, `fp`, `fn`, a z nich `precision`, `recall`, `f1`. Zwróć **słownik** `{'tp','fp','fn','precision','recall','f1'}`. Gdy mianownik to zero, ustaw daną metrykę na `0.0`.\n\n```\niou((0,0,2,2), (1,0,3,2)) == 1/3        # przeciecie 2, unia 6\nprecision_recall_f1([(0,0,2,2)], [(0,0,2,2)])['f1'] == 1.0\n```",
+        "starterCode": "def iou(a, b):\n    # a, b: (x0, y0, x1, y1)\n    # TODO: pole przeciecia / pole sumy; 0.0 gdy ramki sie nie pokrywaja\n    return 0.0\n\n\ndef precision_recall_f1(preds, gts, iou_thr=0.5):\n    # preds, gts: listy ramek (x0, y0, x1, y1)\n    # 1) zachlannie dopasuj kazda predykcje do <=1 nieuzytej prawdy o IoU >= iou_thr\n    # 2) tp = liczba dopasowan; fp = len(preds) - tp; fn = len(gts) - tp\n    # 3) precision = tp/(tp+fp); recall = tp/(tp+fn); f1 = 2PR/(P+R)\n    #    (gdy mianownik = 0 -> 0.0)\n    # Zwroc slownik {'tp','fp','fn','precision','recall','f1'}.\n    return {'tp': 0, 'fp': 0, 'fn': 0, 'precision': 0.0, 'recall': 0.0, 'f1': 0.0}\n",
+        "tests": [
+          {
+            "name": "iou_identyczne_ramki_to_jeden",
+            "body": "assert abs(iou((0, 0, 2, 2), (0, 0, 2, 2)) - 1.0) < 1e-9",
+            "hidden": false
+          },
+          {
+            "name": "iou_czesciowe_pokrycie_jedna_trzecia",
+            "body": "assert abs(iou((0, 0, 2, 2), (1, 0, 3, 2)) - 1.0 / 3.0) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "falszywy_alarm_obniza_precyzje",
+            "body": "r = precision_recall_f1([(0, 0, 2, 2), (10, 10, 12, 12)], [(0, 0, 2, 2)])\nassert r['tp'] == 1 and r['fp'] == 1 and r['fn'] == 0\nassert abs(r['precision'] - 0.5) < 1e-9 and abs(r['recall'] - 1.0) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "przegapiony_cel_obniza_recall",
+            "body": "r = precision_recall_f1([(0, 0, 2, 2)], [(0, 0, 2, 2), (10, 10, 12, 12)])\nassert r['tp'] == 1 and r['fp'] == 0 and r['fn'] == 1\nassert abs(r['recall'] - 0.5) < 1e-9 and abs(r['precision'] - 1.0) < 1e-9",
+            "hidden": true
+          }
+        ],
+        "solution": "def iou(a, b):\n    ax0, ay0, ax1, ay1 = a\n    bx0, by0, bx1, by1 = b\n    ix0, iy0 = max(ax0, bx0), max(ay0, by0)\n    ix1, iy1 = min(ax1, bx1), min(ay1, by1)\n    iw, ih = max(0.0, ix1 - ix0), max(0.0, iy1 - iy0)\n    inter = iw * ih\n    area_a = max(0.0, ax1 - ax0) * max(0.0, ay1 - ay0)\n    area_b = max(0.0, bx1 - bx0) * max(0.0, by1 - by0)\n    union = area_a + area_b - inter\n    return inter / union if union > 0 else 0.0\n\n\ndef precision_recall_f1(preds, gts, iou_thr=0.5):\n    matched = set()\n    tp = 0\n    for p in preds:\n        best_j, best_iou = -1, iou_thr\n        for j, g in enumerate(gts):\n            if j in matched:\n                continue\n            v = iou(p, g)\n            if v >= best_iou:\n                best_iou, best_j = v, j\n        if best_j >= 0:\n            matched.add(best_j)\n            tp += 1\n    fp = len(preds) - tp\n    fn = len(gts) - tp\n    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0\n    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0\n    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0\n    return {'tp': tp, 'fp': fp, 'fn': fn, 'precision': precision, 'recall': recall, 'f1': f1}\n"
+      }
+    },
+    {
+      "id": "quiz-per-klasa",
+      "title": "Szybki sprawdzian: próg ufności i F1 per klasa",
+      "type": "quiz",
+      "data": {
+        "question": "Zespół chwali się, że detektor ma globalne F1 = 0.90. Czemu w ATR (statki + samoloty) i tak raportujesz F1 osobno dla każdej klasy?",
+        "options": [
+          "Bo klasy są niezbalansowane: dużo łatwych statków potrafi zamaskować słaby recall rzadkich samolotów, a globalne F1 to ukrywa.",
+          "Bo F1 per klasa jest z definicji zawsze wyższe niż globalne F1.",
+          "Bo mAP i F1 nie działają, gdy klas jest więcej niż jedna.",
+          "Bo F1 per klasa nie wymaga ustalania progu IoU, a globalne wymaga."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Globalna metryka uśrednia wszystko razem, więc liczna, łatwa klasa (statki na otwartym morzu) potrafi „wyciągnąć” wynik nawet wtedy, gdy rzadka i trudna klasa (samoloty) jest wykrywana słabo. Rozbicie F1 na klasy obnaża ten słaby recall — dlatego SATIM patrzy na per-klasa, nie na jedną liczbę. Odp. 2 jest fałszywa (per-klasa bywa niższe), odp. 3 jest fałszywa (mAP wprost uśrednia AP po wielu klasach), a odp. 4 jest fałszywa — próg IoU dotyczy tak samo metryk globalnych, jak i per klasa.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "odpornosc-data-agnostic",
+      "title": "Odporność 'data-agnostic' i near-real-time / ONNX",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+          "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+          "kind": "paper",
+          "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+          "year": 2016
+        },
+        {
+          "url": "https://onnxruntime.ai/docs/",
+          "title": "ONNX Runtime documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Wysokie mAP na zbiorze testowym **z tego samego rozkładu** co trening to dopiero połowa prawdy. Operacyjnie liczy się pytanie: czy model trzyma jakość, gdy zmienia się **warunek akwizycji**? To właśnie kryje się pod hasłem **data-agnostic** — odporność na przesunięcie domeny (to Twój znajomy *domain shift* / OOD z optycznego CV, tylko z radarowymi osiami zmienności).\n\nCo realnie się zmienia w SAR i psuje naiwny model:\n\n- **Kąt padania** — inny kąt to inny kontrast, inny layover i inny sidelobe celu; sygnatura statku wygląda inaczej przy 25° niż przy 45°.\n- **Satelita / sensor** — Sentinel-1 (C-band), ICEYE i Capella (X-band) mają inną rozdzielczość, pasmo i geometrię; model wytrenowany na jednym sypie się na drugim.\n- **Sezon i stan morza** — wzburzone morze podnosi clutter, więc rośnie odsetek fałszywych alarmów.\n\n![Wykres odporności: F1 per klasa w funkcji kąta padania. Niebieska linia (statki) i czerwona (samoloty) mają szczyt w żółtym pasie treningowym 30-40 stopni i wyraźnie opadają poza nim; samoloty spadają mocniej — z 0.83 do 0.52 przy 50 stopniach](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/f1-vs-incidence-angle-robustness.png)\n\nWidać tu sedno: F1 jest wysokie w **paśmie treningowym** (~30–40°) i opada poza nim — a słabsze echo samolotów spada mocniej niż statków. Dlatego odporność mierzysz **stratyfikując** ewaluację: liczysz mAP/F1 w koszykach po kącie padania, po sensorze, po stanie morza — *nie* tylko jedną liczbą na held-oucie z tego samego rozkładu.\n\nNa końcu produkcja. SATIM działa **near-real-time**: scena ma spłynąć w detekcje w minuty, nie godziny. Wytrenowany w PyTorch model eksportujesz do **ONNX** i uruchamiasz przez ONNX Runtime — to daje przenośność (CPU/GPU/edge) i niższą latencję bez przepisywania pipeline'u. Twoje metryki nie kończą się więc na mAP: dochodzą **latencja** (ms na kafelek) i **throughput** (kafelków/s), bo detektor, który jest dokładny, ale za wolny, nie spełnia wymagań operacyjnych."
+      }
+    },
+    {
+      "id": "quiz-data-agnostic",
+      "title": "Szybki sprawdzian: co znaczy 'data-agnostic'",
+      "type": "quiz",
+      "data": {
+        "question": "Co oznacza, że detektor jest 'data-agnostic' / odporny w sensie oceny pod rolę w SATIM? Zaznacz wszystkie prawdziwe stwierdzenia.",
+        "options": [
+          "Trzyma podobne mAP/F1, gdy kąt padania odbiega od pasma treningowego.",
+          "Trzyma jakość przy zmianie satelity/sensora (np. Sentinel-1 vs ICEYE/Capella) i sezonu.",
+          "Mierzysz to, ewaluując na danych spoza rozkładu treningowego (inny kąt, sensor, stan morza), a nie tylko na held-oucie z tego samego rozkładu.",
+          "Wystarczy wysokie mAP na zbiorze testowym z tego samego rozkładu co trening — to już dowód odporności."
+        ],
+        "correct": [
+          0,
+          1,
+          2
+        ],
+        "explanation": "Odporność (data-agnostic) to utrzymanie jakości przy przesunięciu domeny: innym kącie padania (odp. 1), innym sensorze/sezonie (odp. 2) — i właśnie dlatego mierzy się ją na danych spoza rozkładu treningowego, stratyfikując ewaluację po warunku akwizycji (odp. 3). Odp. 4 jest fałszywa: wysokie mAP na held-oucie z *tego samego* rozkładu to wynik in-distribution — nie mówi nic o tym, jak model zachowa się przy innym kącie czy satelicie.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1405.0312",
+      "title": "Microsoft COCO: Common Objects in Context",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+      "year": 2014
+    },
+    {
+      "url": "https://doi.org/10.1109/IWSSIP48289.2020.9145130",
+      "title": "A Survey on Performance Metrics for Object-Detection Algorithms",
+      "kind": "paper",
+      "author": "Rafael Padilla, Sergio L. Netto, Eduardo A. B. da Silva",
+      "year": 2020
+    },
+    {
+      "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+      "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+      "kind": "paper",
+      "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+      "year": 2016
+    },
+    {
+      "url": "https://onnxruntime.ai/docs/",
+      "title": "ONNX Runtime documentation",
+      "kind": "article"
+    }
+  ]
+}

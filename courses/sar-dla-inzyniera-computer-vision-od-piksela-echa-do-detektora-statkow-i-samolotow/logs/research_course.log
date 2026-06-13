@@ -1,0 +1,74 @@
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the research process, then look at the course spec.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/research_course/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	{
+I've read the skill. Now let me read the widgets doc (required by the skill) and check the course directory contents and schemas.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-v…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/courseSpec.ts)
+← 1	import { z } from 'zod';
+← Exit code 2
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The spec validates cleanly against `CourseSpecSchema` (topic, description, level=`intermediate`, durationTarget=`standard`, theoryPracticeRatio=0.5, clarification, draftStructure, createdAt all present and well-typed). The `sources/` and `inputs/` dirs are empty and the prompt injected no uploaded source paths, so there are no user materials to Read. Planned structure = 12 lessons across 6 modules, which fits `standard` (8–12).
+For the research pass I don't need to pull imagery (that's a later-stage `/inputs/` concern); research.md/sources.md are working memory. Let me write both artefacts now.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/research.md (file state is current in your…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now the bibliography — ≥3 stable sources per lesson, using the exact planned lesson titles as anchors.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/sources.md (file state is current in your …
+[system thinking_tokens]
+[system thinking_tokens]
+Both artefacts are written. Let me confirm the git footprint matches the skill's smoke-test invariant (changes only under the course dir, nothing under `scripts/ralph/`, no `course.json`).
+→ Bash(command: git status --porcelain scripts/ralph/ && echo "ralph-clean" && ls courses/sar-dl…)
+← ralph-clean
+Done. Research pass complete for `sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow`.
+## What I did
+1. **Read `SKILL.md` and `docs/widgets.md`** (required by the skill before recommending widgets), then validated `course-spec.json` against `CourseSpecSchema` — it parses cleanly: topic, description, `level: intermediate`, `durationTarget: standard`, `theoryPracticeRatio: 0.5`, clarification, draftStructure, createdAt. Slug is safe (`[a-z0-9-]`).
+2. **Checked for uploaded materials** — `sources/` and `inputs/` are empty and the prompt injected no file paths, so there were no user materials to ground against. Did **not** download imagery: that's a later-stage `/inputs/` concern, not part of the research artefacts.
+3. **Wrote `research.md`** with all six template sections, tailored to the binding audience override from the spec (senior CV engineer, weak at physics → intuition-first, RGB→SAR bridges, formulas only when load-bearing with full per-symbol glosses incl. ∑/θ). The "Notes for lesson generation" section maps each of the 12 lessons to concrete widget choices, leaning heavily on `ParametricExplorer` sliders (CFAR Pfa being the centrepiece), keeping all runnable code on numpy/opencv/skimage/scipy and pushing PyTorch/SNAP to reference-only Theory blocks (per clarifications q3–q7).
+4. **Wrote `sources.md`** — 5 course-wide references + **4 stable sources per lesson** (12 lessons), all DOI / arxiv / Wikipedia / official ESA-Copernicus-NASA docs / scikit-image / ONNX docs. Every entry has `kind`; every `paper`/`book` has `author` + `year`. No medium/towardsdatascience/blogs.
+## Invariants honored
+- ❌ No `course.json` written (that's `design_course`'s job).
+- ❌ Zero changes under `scripts/ralph/` (`git status` confirms clean).
+- ✅ Only the two new untracked files: `research.md` and `sources.md`.
+The handoff to `design_course` is ready.
+[result success (306.6s)]

@@ -1,0 +1,241 @@
+{
+  "schemaVersion": 1,
+  "slug": "cfar-krok-po-kroku-adaptacyjny-prog-ktory-wykrywa-statki-na-morzu",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m4",
+  "title": "CFAR krok po kroku: adaptacyjny próg, który wykrywa statki na morzu",
+  "eyebrow": "KLASYKA I CFAR",
+  "description": "Zbuduj detektor CA-CFAR z oknem guard/background; na suwaku Pfa zobacz, jak adaptacyjny próg balansuje trafienia statków przeciw fałszywym alarmom.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "po-co-adaptacyjny-prog",
+      "title": "Jeden próg nie wystarczy",
+      "sources": [
+        {
+          "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+          "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery",
+          "kind": "paper",
+          "author": "David J. Crisp",
+          "year": 2004
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Statek to kawał metalu na gładkiej wodzie — w SAR świeci jak żarówka, bo jego narożniki odbijają puls radaru wprost do anteny, a spokojne morze odbija go w bok i wraca ciemne. Kusi więc proste rozwiązanie: ustaw jeden **globalny próg** jasności i wszystko powyżej uznaj za statek.\n\nTo nie działa. Morze nie jest jednolicie ciemne: pod wiatr fala robi się szorstka i **rozjaśnia clutter** (echo tła) o rzędy wielkości. Próg dobrany pod spokojną zatokę utonie w fałszywych alarmach na otwartym, wzburzonym akwenie; próg dobrany pod sztorm przeoczy słabe statki w osłoniętej wodzie.\n\n![Podkafelek Sentinel-1 ze Cieśniny Gibraltarskiej: ciemne, dość gładkie morze z rozproszoną grupką jasnych punktów — to echa statków; przy górnej krawędzi widać jaśniejszy fragment lądu](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png)\n\nMost do Twojego CV: globalny próg to `img > T`; to, czego potrzebujesz, jest bliższe `cv2.adaptiveThreshold` — **próg liczony lokalnie**, piksel po pikselu, z otoczenia. Różnica jest taka, że CFAR (*Constant False Alarm Rate*) nie dobiera progu pod „ładny obraz”, lecz tak, by utrzymać **stały, zadany odsetek fałszywych alarmów** — `Pfa` — niezależnie od tego, czy patrzy na gładką zatokę, czy na sztorm.\n\nTo jest dokładnie technika, na której SATIM opiera wykrywanie statków: tani, adaptacyjny pre-detektor, który proponuje kandydatów, zanim wejdzie cięższy klasyfikator CNN."
+      }
+    },
+    {
+      "id": "globalny-vs-cfar",
+      "title": "Globalny próg tonie tam, gdzie CFAR płynie",
+      "description": "Profil echa wzdłuż range: stały próg gubi się na granicy spokojne/wzburzone morze, próg CFAR podąża za lokalnym clutterem.",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/cfar-krok-po-kroku-1.png",
+        "alt": "Wykres liniowy: oś X to pozycja wzdłuż kierunku range (0–320 pikseli), oś Y to intensywność echa (0–155 j.u.). Lewa połowa to spokojne morze (niskie echo), prawa to wzburzone (wysokie, poszarpane echo). Niebieska pozioma linia przerywana to stały próg globalny = 36; zielone trójkąty oznaczają dwa prawdziwe statki; niebieskie okręgi to liczne fałszywe alarmy progu globalnego rozsiane po wzburzonym morzu; czerwona linia CFAR płynie nisko nad spokojnym morzem i wysoko nad wzburzonym, przechodząc pod oboma statkami i nad clutterem.",
+        "caption": "Rys. 1. Stały próg globalny (niebieski) ustawiony tak, by złapać słaby statek na spokojnej wodzie, tonie w fałszywych alarmach na wzburzonym morzu. Próg CFAR (czerwony) płynie z lokalnym clutterem i wyłapuje oba statki bez fałszywych alarmów.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter1d\n\n# Syntetyczny profil wzdluz kierunku range: spokojne morze -> wzburzone morze,\n# z dwoma statkami (jeden na spokojnej wodzie, jeden na wzburzonej).\nrng = np.random.default_rng(7)\nN = 320\nmean_level = np.where(np.arange(N) < N // 2, 8.0, 26.0)        # clutter: spokojne | wzburzone\nsignal = mean_level * rng.gamma(2.0, 0.5, N)                   # speckle multiplikatywny\nsignal[70] = 60.0                                              # statek na spokojnym morzu\nsignal[71] = 52.0\nsignal[235] = 140.0                                          # statek na wzburzonym morzu (jasniejszy, by przebic wyzszy prog)\nsignal[236] = 120.0\n\n# Prog globalny: dobrany tak, by zlapac slaby statek na spokojnej wodzie...\nglobal_thr = 36.0\n\n# Prog CFAR: srednia + alpha * odchylenie liczone z PIERSCIENIA TLA,\n# z pominieciem komorki testowej i pierscienia strazniczego (guard) wokol niej.\nguard_half, train_half, alpha = 3, 20, 5.0\nkt, kg = 2 * train_half + 1, 2 * guard_half + 1\ns1 = uniform_filter1d(signal, kt, mode=\"reflect\") * kt\ns2 = uniform_filter1d(signal * signal, kt, mode=\"reflect\") * kt\ng1 = uniform_filter1d(signal, kg, mode=\"reflect\") * kg\ng2 = uniform_filter1d(signal * signal, kg, mode=\"reflect\") * kg\nn = kt - kg\nbg_mean = (s1 - g1) / n\nbg_std = np.sqrt(np.maximum((s2 - g2) / n - bg_mean ** 2, 0.0))\ncfar_thr = bg_mean + alpha * bg_std\n\nx = np.arange(N)\nfalse_global = (signal > global_thr) & (mean_level > 20)       # falszywe alarmy globalnego progu na wzburzonym morzu\n\nfig, ax = plt.subplots(figsize=(10.5, 4.6))\nax.plot(x, signal, color=\"#90a4ae\", lw=1.0, label=\"Echo SAR (intensywnosc)\")\nax.axhline(global_thr, color=\"#3949ab\", ls=\"--\", lw=1.8, label=f\"Prog globalny = {global_thr:.0f} (staly)\")\nax.plot(x, cfar_thr, color=\"#e53935\", lw=2.0, label=\"Prog CFAR (adaptacyjny, lokalny)\")\nax.scatter([70, 235], [60.0, 140.0], color=\"#2e7d32\", s=70, zorder=5, marker=\"v\", label=\"Prawdziwe statki\")\nax.scatter(x[false_global], signal[false_global], facecolors=\"none\", edgecolors=\"#3949ab\",\n           s=55, zorder=4, label=\"Falszywe alarmy progu globalnego\")\nax.axvline(N // 2, color=\"#bdbdbd\", ls=\":\", lw=1.2)\nax.text(N // 4, ax.get_ylim()[1] * 0.93, \"spokojne morze\", ha=\"center\", fontsize=9, color=\"#546e7a\")\nax.text(3 * N // 4, ax.get_ylim()[1] * 0.93, \"wzburzone morze\", ha=\"center\", fontsize=9, color=\"#546e7a\")\nax.set_title(\"Staly prog globalny tonie w falszywych alarmach na wzburzonym morzu; prog CFAR plynie z lokalnym clutterem\")\nax.set_xlabel(\"Pozycja wzdluz kierunku range [piksel]\")\nax.set_ylabel(\"Intensywnosc echa [j.u.]\")\nax.set_ylim(0, 155)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper left\", fontsize=8, ncol=2)\nfig.tight_layout()\nplt.savefig(\"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/cfar-krok-po-kroku-1.png\", dpi=110, bbox_inches=\"tight\")\nprint(\"global false alarms:\", int(false_global.sum()))\nprint(\"ship A above cfar:\", bool(signal[70] > cfar_thr[70]), \"ship B above cfar:\", bool(signal[235] > cfar_thr[235]))\nprint(\"rough clutter above cfar (should be ~0):\", int(((signal > cfar_thr) & (mean_level > 20) & (x != 235) & (x != 236)).sum()))\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "okno-cfar-i-formula",
+      "title": "Okno CFAR i próg T = μ + ασ",
+      "sources": [
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P1448.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — rozdz. o detekcji/CFAR",
+          "kind": "book",
+          "author": "Chris Oliver, Shaun Quegan",
+          "year": 2004
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+          "title": "Constant false alarm rate — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "CFAR liczy próg osobno dla każdego piksela, z **trzech koncentrycznych stref** wokół niego:\n\n![Schemat okna CFAR: kwadratowa siatka 11x11; czerwona komórka w środku to komórka testowa, otacza ją żółty pierścień strażniczy (guard) o grubości jednego piksela, a całą resztę zajmuje niebieski pierścień tła (background), z którego liczona jest statystyka clutteru](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-window-layout.png)\n\n- **Komórka testowa** (czerwona, środek) — piksel, który właśnie oceniamy.\n- **Pierścień strażniczy** (*guard*, żółty) — wąski bufor wokół komórki testowej, **wykluczony** ze statystyki. Po co? Jeśli to faktycznie statek, jego jasne echo „rozlewa się” na sąsiednie piksele; bez guardu sam statek zawyżyłby próg i przeoczyłby siebie.\n- **Pierścień tła** (*background / training*, niebieski) — z niego i **tylko** z niego szacujemy, jak jasny jest lokalny clutter morski.\n\nZ pierścienia tła liczymy dwie liczby i składamy z nich próg:\n\n$$ T = \\mu + \\alpha\\,\\sigma $$\n\nGloss każdego symbolu — to *jest* cały algorytm:\n\n- $T$ — **próg** dla tej komórki [j.u., ta sama skala co amplituda piksela]. Piksel jest detekcją, gdy $I > T$.\n- $\\mu$ — **średnia** clutteru w pierścieniu tła [j.u.]: „jak jasne jest tu morze”. Na spokojnej wodzie np. $\\mu \\approx 8$, na wzburzonej $\\mu \\approx 30$.\n- $\\sigma$ — **odchylenie standardowe** clutteru w pierścieniu [j.u.]: „jak bardzo morze tu faluje”. Rośnie na wzburzonym akwenie.\n- $\\alpha$ — **mnożnik bez jednostki**, który ustawiasz Ty. To on koduje `Pfa`: dla modelu gaussowskiego $\\alpha = \\Phi^{-1}(1 - P_{fa})$ (kwantyl rozkładu normalnego), czyli np. $P_{fa} = 10^{-4} \\Rightarrow \\alpha \\approx 3{,}7$. Większe $\\alpha$ → wyższy próg → mniej fałszywych alarmów, ale i więcej przeoczonych słabych statków.\n\nSedno: ponieważ $\\mu$ i $\\sigma$ są **lokalne**, próg $T$ sam „płynie” w górę nad wzburzonym morzem i opada nad gładkim. Dlatego odsetek fałszywych alarmów zostaje stały tam, gdzie pojedyncza globalna liczba odcięcia by go nie utrzymała."
+      }
+    },
+    {
+      "id": "suwak-pfa",
+      "title": "Suwak Pfa: trafienia kontra fałszywe alarmy na żywo",
+      "description": "Przesuwaj Pfa oraz rozmiary pierścieni guard i tła; patrz, jak detektor traci fałszywe alarmy, a przy bardzo niskim Pfa zaczyna gubić słabe statki.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport math\nimport matplotlib.pyplot as plt\n\ndef _boxsum(a, half):\n    k = 2 * half + 1\n    ap = np.pad(a.astype(float), half, mode='reflect')\n    cs = np.cumsum(np.cumsum(ap, axis=0), axis=1)\n    cs = np.pad(cs, ((1, 0), (1, 0)))\n    H, W = a.shape\n    return cs[k:k+H, k:k+W] - cs[0:H, k:k+W] - cs[k:k+H, 0:W] + cs[0:H, 0:W]\n\ndef _ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    s1 = _boxsum(img, train); s2 = _boxsum(img * img, train)\n    g1 = _boxsum(img, guard); g2 = _boxsum(img * img, guard)\n    n = kt * kt - kg * kg\n    mean = (s1 - g1) / n\n    var = np.maximum((s2 - g2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef _alpha_from_pfa(pfa):\n    # alpha = -PhiInv(pfa); pfa jest male, wiec dolny ogon Acklama jest dokladny\n    c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00, -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00]\n    d = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00]\n    q = math.sqrt(-2.0 * math.log(pfa))\n    return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1.0)\n\n# Syntetyczna scena: lewa polowa = spokojne morze, prawa = wzburzone; 6 statkow ze znana pozycja.\n_rng = np.random.default_rng(3)\n_H = _W = 120\n_level = np.where(np.arange(_W)[None, :] < 60, 1.0, 2.6) * np.ones((_H, 1))\nSCENE = _level * _rng.gamma(2.0, 0.5, (_H, _W))\nSHIPS = [(25, 30, 16), (70, 40, 16), (45, 85, 22), (90, 72, 22), (30, 100, 11), (80, 104, 11)]\nSHIP_MASK = np.zeros((_H, _W), bool)\nfor _r, _c, _a in SHIPS:\n    SCENE[_r:_r+3, _c:_c+3] = _a\n    SHIP_MASK[_r:_r+3, _c:_c+3] = True\nSHIP_NEIGH = _boxsum(SHIP_MASK.astype(float), 2) > 0\n",
+        "renderCode": "guard = int(guard)\ntrain = int(tlo)\npfa = 10.0 ** log10pfa\nalpha = _alpha_from_pfa(pfa)\ndet = _ca_cfar(SCENE, guard, train, alpha)\nhit = det & SHIP_NEIGH\nfa = det & ~SHIP_NEIGH\nships_found = sum(1 for r, c, a in SHIPS if det[r:r+3, c:c+3].any())\nfig, ax = plt.subplots(figsize=(6.4, 6.2))\nax.imshow(np.sqrt(SCENE), cmap='gray', vmax=float(np.percentile(np.sqrt(SCENE), 99)))\nax.axvline(60, color='#80cbc4', ls=':', lw=1.2)\n_ys, _xs = np.where(fa)\nax.scatter(_xs, _ys, s=10, c='#e53935', marker='s', linewidths=0, label='falszywe alarmy')\n_ys, _xs = np.where(hit)\nax.scatter(_xs, _ys, s=12, c='#43a047', marker='s', linewidths=0, label='trafienia (statki)')\nax.set_title('Pfa=10^' + format(log10pfa, '.1f') + '  ->  alpha=' + format(alpha, '.2f') + '   (guard=' + str(guard) + ', tlo=' + str(train) + ')')\nax.set_xlabel('azimuth [piksel]   (lewo: spokojne morze | prawo: wzburzone)')\nax.set_ylabel('range [piksel]')\nax.legend(loc='upper right', fontsize=8, framealpha=0.9)\nfig.tight_layout()\nresult = 'Wykryte statki: ' + str(ships_found) + '/6   |   falszywe alarmy: ' + str(int(fa.sum())) + ' pikseli   (Pfa=' + format(pfa, '.1e') + ', alpha=' + format(alpha, '.2f') + ')'\n",
+        "params": [
+          {
+            "name": "log10pfa",
+            "label": "Pfa = 10^x  (niżej = mniej fałszywych alarmów)",
+            "type": "slider",
+            "min": -6,
+            "max": -1,
+            "step": 0.5,
+            "default": -3
+          },
+          {
+            "name": "guard",
+            "label": "Pierścień strażniczy (guard) [piksel]",
+            "type": "slider",
+            "min": 1,
+            "max": 5,
+            "step": 1,
+            "default": 2
+          },
+          {
+            "name": "tlo",
+            "label": "Pierścień tła (background) [piksel]",
+            "type": "slider",
+            "min": 6,
+            "max": 16,
+            "step": 2,
+            "default": 10
+          }
+        ],
+        "outputType": "both"
+      }
+    },
+    {
+      "id": "quiz-pfa",
+      "title": "Szybki sprawdzian: w którą stronę działa Pfa",
+      "type": "quiz",
+      "data": {
+        "question": "Operator obniża Pfa detektora CFAR z 10⁻³ na 10⁻⁶, nie zmieniając nic innego. Co się dzieje?",
+        "options": [
+          "Próg rośnie: spada liczba fałszywych alarmów, ale rośnie liczba przeoczonych słabych statków.",
+          "Próg maleje: rośnie ogólna liczba wykryć, w tym fałszywych alarmów.",
+          "Nic się nie zmienia — Pfa to tylko etykieta, próg liczony jest wyłącznie z μ i σ tła.",
+          "Próg przestaje być lokalny i staje się jednym globalnym odcięciem dla całej sceny."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Pfa wchodzi do progu przez mnożnik α: niższe Pfa to większe α, a skoro T = μ + α·σ, to próg ROŚNIE (odp. 2 odwraca kierunek). Wyższy próg odcina słaby clutter, więc fałszywych alarmów ubywa — ale te same słabe statki, których echo ledwo wystawało ponad poprzedni próg, teraz wpadają pod niego i są gubione (to dokładnie zachowanie z suwaka: przy Pfa=10⁻⁶ znikają słabe statki na wzburzonym morzu). α nie jest kosmetyczną etykietą (odp. 3 fałsz), a próg pozostaje lokalny i adaptacyjny — Pfa nie zmienia go w globalne odcięcie (odp. 4 fałsz).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "zaimplementuj-ca-cfar",
+      "title": "Zaimplementuj CA-CFAR na prawdziwym kafelku",
+      "description": "Policz statystykę tła z pierścienia (okno train minus okno guard) i zwróć maskę detekcji img > μ + α·σ.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj **CA-CFAR** (*cell-averaging*). Dla każdego piksela próg liczysz z pierścienia tła:\n\n$$ T = \\mu + \\alpha\\,\\sigma, \\qquad \\text{detekcja} \\iff I > T $$\n\ngdzie $\\mu$ i $\\sigma$ to średnia i odchylenie clutteru w **pierścieniu tła** = pełne okno o połowie boku `train` **minus** wewnętrzne okno guard o połowie boku `guard`.\n\nNapisz `ca_cfar(img, guard, train, alpha)` zwracające maskę `bool` tego samego kształtu. Sumy oknem policz przez `cv2.blur` (zwraca średnią — pomnóż przez liczbę pikseli okna, by dostać sumę), a statystykę pierścienia jako różnicę okna `train` i okna `guard`.\n\n```\nn    = (2*train+1)**2 - (2*guard+1)**2   # liczba pikseli pierscienia tla\nmean = (suma_train - suma_guard) / n\nvar  = (suma_kw_train - suma_kw_guard) / n - mean**2\n```\n\nW `starterCode` czeka prawdziwy podkafelek Sentinel-1 zamontowany w `/inputs/` — po rozwiązaniu zobaczysz wykryte cele na żywo.",
+        "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\n# Prawdziwy podkafelek Sentinel-1 (Ciesnina Gibraltarska) zamontowany w /inputs/.\n# Jasnosc piksela = amplituda echa w skali 0-255: ciemne morze, jasne statki.\nsar = plt.imread('/inputs/cfar-sea-tile.png') * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    # img: 2D float; guard/train: polowa boku okna [piksel]; alpha: mnoznik progu.\n    # Zwroc maske bool (True = detekcja) tam, gdzie  img > srednia_tla + alpha * odchylenie_tla.\n    # Statystyke tla licz z PIERSCIENIA: pelne okno (train) MINUS srodek (guard).\n    # Wskazowka (cv2.blur zwraca srednia oknem; *k*k daje sume):\n    #   kt, kg = 2*train + 1, 2*guard + 1\n    #   st  = cv2.blur(img, (kt, kt)) * kt * kt      # suma w oknie train\n    #   sg  = cv2.blur(img, (kg, kg)) * kg * kg      # suma w oknie guard (do wyciecia)\n    #   ... to samo dla img*img, potem n = kt*kt - kg*kg\n    #   mean = (st - sg) / n;  var = (st2 - sg2)/n - mean**2  (przytnij do >= 0)\n    return np.zeros(img.shape, dtype=bool)\n\nmask = ca_cfar(sar, guard=2, train=8, alpha=5.0)\nprint('detekcje:', int(mask.sum()))\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nys, xs = np.where(mask)\nplt.scatter(xs, ys, s=10, facecolors='none', edgecolors='red', linewidths=0.7)\nplt.title('CA-CFAR: wykryte cele')\n",
+        "tests": [
+          {
+            "name": "zwraca_maske_bool_tego_samego_ksztaltu",
+            "body": "import numpy as np\nm = ca_cfar(np.ones((40, 40), dtype=float), 2, 8, 5.0)\nassert m.shape == (40, 40) and m.dtype == bool",
+            "hidden": false
+          },
+          {
+            "name": "wykrywa_jasny_cel_na_plaskim_tle",
+            "body": "import numpy as np\nfield = np.ones((31, 31), dtype=float)\nfield[13:18, 13:18] = 50.0\nm = ca_cfar(field, 2, 8, 5.0)\nassert bool(m[15, 15])",
+            "hidden": true
+          },
+          {
+            "name": "brak_detekcji_na_idealnie_plaskim_morzu",
+            "body": "import numpy as np\nm = ca_cfar(np.full((40, 40), 7.0, dtype=float), 2, 8, 5.0)\nassert int(m.sum()) == 0",
+            "hidden": true
+          },
+          {
+            "name": "wyzsze_alpha_daje_nie_wiecej_detekcji",
+            "body": "import numpy as np\nrng = np.random.default_rng(0)\nfield = rng.gamma(2.0, 1.0, (60, 60))\nfield[28:31, 28:31] = 30.0\nlo = int(ca_cfar(field, 2, 8, 2.0).sum())\nhi = int(ca_cfar(field, 2, 8, 5.0).sum())\nassert hi <= lo",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = plt.imread('/inputs/cfar-sea-tile.png') * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(np.float64)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = cv2.blur(img, (kt, kt)) * kt * kt\n    st2 = cv2.blur(img * img, (kt, kt)) * kt * kt\n    sg  = cv2.blur(img, (kg, kg)) * kg * kg\n    sg2 = cv2.blur(img * img, (kg, kg)) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\nmask = ca_cfar(sar, guard=2, train=8, alpha=5.0)\nprint('detekcje:', int(mask.sum()))\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nys, xs = np.where(mask)\nplt.scatter(xs, ys, s=10, facecolors='none', edgecolors='red', linewidths=0.7)\nplt.title('CA-CFAR: wykryte cele')\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszoną grupką jasnych punktów (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: prawdziwy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-detections-expected.png",
+          "alt": "Ten sam podkafelek Sentinel-1 z nałożonymi czerwonymi okręgami CA-CFAR (guard=2, train=8, alpha=5) na jasnych echach statków rozsianych po ciemnym morzu.",
+          "caption": "Oczekiwany wynik: CA-CFAR (guard=2, train=8, α=5) zapala się na statkach na morzu.",
+          "live": true
+        },
+        "requiresPackages": [
+          "cv2"
+        ]
+      }
+    },
+    {
+      "id": "pulapki-cfar",
+      "title": "Dwie pułapki: maskowanie celu i brzeg lądu",
+      "sources": [
+        {
+          "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+          "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery",
+          "kind": "paper",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "CFAR działa, ale ma dwie pułapki, które warto znać, zanim podłączysz go pod produkcję.\n\n**Maskowanie celu przez cel.** Jeśli w pierścieniu tła wyląduje *drugi* statek (albo boja, albo platforma), zawyży $\\mu$ i $\\sigma$ — próg podskoczy i prawdziwy cel w środku zostanie przeoczony. To klasyczny problem **CA-CFAR** (*cell-averaging* — wariant, który właśnie składasz) w portach i konwojach, gdzie celów jest gęsto. Lekarstwo to warianty odporne na wartości odstające w tle: **OS-CFAR** (*ordered statistics* — zamiast średniej bierze np. medianę pierścienia) albo two-parameter CFAR.\n\n![Detekcje CA-CFAR (czerwone okręgi) na prawdziwym podkafelku Sentinel-1: trafienia skupiają się na jasnych echach statków rozsianych po ciemnym morzu, ale detektor zapala się też na jaśniejszym fragmencie lądu w prawym górnym rogu](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-detections-expected.png)\n\n**Brzeg lądu to nie morze.** CFAR zakłada, że pierścień tła to clutter morski. Nad linią brzegową albo nad jasnym lądem to założenie pęka i detektor zapala się na całym wybrzeżu (widać to w prawym górnym rogu kafelka powyżej). W praktyce **najpierw maskuje się ląd** (z mapy/DEM albo prostym progiem na wygładzonym obrazie), a CFAR puszcza się tylko po wodzie.\n\nI jedno przypomnienie, bo to najczęstsze nieporozumienie: **CFAR to nie globalne progowanie.** Próg jest tu lokalny i adaptacyjny — dlatego utrzymuje stały `Pfa` tam, gdzie pojedyncza liczba odcięcia by zawiodła."
+      }
+    },
+    {
+      "id": "piaskownica-cfar",
+      "title": "Piaskownica: pożongluj progiem i oknem",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = plt.imread('/inputs/cfar-sea-tile.png') * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(np.float64)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = cv2.blur(img, (kt, kt)) * kt * kt\n    st2 = cv2.blur(img * img, (kt, kt)) * kt * kt\n    sg  = cv2.blur(img, (kg, kg)) * kg * kg\n    sg2 = cv2.blur(img * img, (kg, kg)) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\n# Zmieniaj alpha, guard i train; patrz, jak liczba detekcji rosnie i maleje.\nfor alpha in (3.0, 4.0, 5.0, 6.0):\n    print('alpha', alpha, '-> detekcje', int(ca_cfar(sar, 2, 8, alpha).sum()))\n",
+        "encouragement": "Podnoś alpha i powiększaj guard, aż zobaczysz, w którym momencie detektor przestaje gubić fałszywe alarmy, a zaczyna gubić same statki."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Constant_false_alarm_rate",
+      "title": "Constant false alarm rate — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+      "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery",
+      "kind": "paper",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P1448.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — rozdz. o detekcji/CFAR",
+      "kind": "book",
+      "author": "Chris Oliver, Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar (§ zastosowania morskie / detekcja statkow)",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+      "year": 2013
+    }
+  ]
+}

@@ -1,0 +1,259 @@
+{
+  "schemaVersion": 1,
+  "slug": "trening-wasnego-detektora-na-lokalnym-gpu",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m4",
+  "title": "Trening własnego detektora na lokalnym GPU",
+  "eyebrow": "TRENING I WDROŻENIE",
+  "description": "Wytrenuj detektor pojazdów/statków przez transfer learning z wag YOLO11n/s — dobierając wariant modelu, hiperparametry, warm-up i cosinusowy harmonogram learning rate.",
+  "estimatedMinutes": 18,
+  "sections": [
+    {
+      "id": "transfer-learning",
+      "title": "Transfer learning: nie zaczynaj od zera",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/guides/model-training-tips/",
+          "title": "Ultralytics — Transfer learning & training tips",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.ultralytics.com/modes/train/",
+          "title": "Ultralytics — Train mode",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Masz kilkaset zdjęć pojazdów i statków oraz jeden lokalny GPU — i chcesz **działający detektor**, nie wielogodzinny eksperyment. Odpowiedzią jest **transfer learning**: zamiast uczyć sieć od zera, startujesz z wag **pretrenowanych na COCO** (80 klas, setki tysięcy obrazów) i jedynie **dostrajasz** je do swoich klas.\n\n![Schemat transfer learningu: blok „wagi pretrenowane na COCO (YOLO11n, 80 klas)” łączy się strzałką model.train() z blokiem „fine-tuning na małym zbiorze pojazdów/statków”, a ten strzałką best.pt z blokiem „własny detektor (car, truck, ship)”](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/transfer-learning-pipeline.png)\n\nDlaczego to działa? Backbone nauczył się już **uniwersalnych cech** — krawędzi, tekstur, kształtów — wspólnych dla *każdej* detekcji. Twój mały zbiór musi tylko nauczyć głowicę nowych etykiet (`car`, `truck`, `ship`) i lekko podstroić wyższe warstwy. Dlatego kilkaset dobrze zaadnotowanych obrazów wystarcza, by uzyskać sensowny model w kilkanaście minut — zamiast tysięcy obrazów i wielu godzin treningu od podstaw.\n\nW Ultralytics cały trening to dwie linijki:\n\n```python\nfrom ultralytics import YOLO\n\nmodel = YOLO(\"yolo11n.pt\")              # wagi pretrenowane na COCO (wariant nano)\nmodel.train(data=\"vehicles.yaml\", epochs=100, imgsz=640, batch=16, device=0)\n```\n\n`YOLO(\"yolo11n.pt\")` pobiera pretrenowany wariant **nano**, `data=\"vehicles.yaml\"` wskazuje twój dataset (ścieżki + `nc` + `names`), a `device=0` kieruje trening na **pierwszy lokalny GPU**. To wszystko — reszta lekcji to świadomy dobór tego, co kryje się pod `epochs`, `batch` i hiperparametrami learning rate."
+      }
+    },
+    {
+      "id": "wybor-wariantu",
+      "title": "Który wariant YOLO11 wybrać?",
+      "description": "Im większy model, tym wyższe mAP, ale wolniejszy trening i inferencja oraz większe zużycie VRAM. Na lokalnym GPU i przy nacisku na szybkość wybierz n lub s.",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/models/yolo11/",
+          "title": "Ultralytics YOLO11 model documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "wariant",
+            "label": "Wariant",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "params",
+            "label": "Parametry [M]",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "map",
+            "label": "mAP@0.5:0.95 (COCO)",
+            "type": "number",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "uwaga",
+            "label": "Kiedy wybrać",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "wariant": "YOLO11n",
+            "params": 2.6,
+            "map": 39.5,
+            "uwaga": "Najszybszy — domyślny wybór do nauki i real-time na słabszym GPU"
+          },
+          {
+            "wariant": "YOLO11s",
+            "params": 9.4,
+            "map": 47,
+            "uwaga": "Dobry kompromis prędkość/jakość na lokalnym GPU"
+          },
+          {
+            "wariant": "YOLO11m",
+            "params": 20.1,
+            "map": 51.5,
+            "uwaga": "Gdy zależy bardziej na dokładności niż na FPS"
+          },
+          {
+            "wariant": "YOLO11l",
+            "params": 25.3,
+            "map": 53.4,
+            "uwaga": "Mocniejsze GPU, większy dataset"
+          },
+          {
+            "wariant": "YOLO11x",
+            "params": 56.9,
+            "map": 54.7,
+            "uwaga": "Maksymalna jakość, najwolniejszy — rzadko do nauki"
+          }
+        ],
+        "initialSort": {
+          "key": "params",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "hiperparametry-i-harmonogram",
+      "title": "Hiperparametry i harmonogram learning rate",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/usage/cfg/",
+          "title": "Ultralytics — Configuration / training settings",
+          "kind": "article"
+        },
+        {
+          "url": "https://arxiv.org/abs/1608.03983",
+          "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+          "kind": "paper",
+          "author": "Ilya Loshchilov, Frank Hutter",
+          "year": 2017
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Domyślne ustawienia Ultralytics dowiozą przyzwoity model, ale na lokalnym GPU warto rozumieć kilka pokręteł:\n\n- **`batch`** — ile obrazów przetwarzanych naraz. Ogranicza go **VRAM** karty; gdy zabraknie pamięci, zmniejsz `batch` (np. 16 → 8) lub `imgsz`. `batch=-1` w Ultralytics dobiera rozmiar automatycznie pod dostępną pamięć.\n- **`imgsz`** — rozmiar wejścia (domyślnie 640). Mniejszy = szybciej i mniej VRAM, kosztem drobnych obiektów.\n- **`epochs`** — liczba pełnych przejść po zbiorze; dla małego zbioru ~100 to rozsądny start.\n- **`lr0`, `momentum`, `weight_decay`** — bazowy learning rate (0.01 dla SGD), pęd i regularyzacja L2.\n\n![Anatomia komendy treningu: wywołanie model.train(data, epochs, imgsz, batch, device, lr0, warmup_epochs) z objaśnieniem każdego argumentu — data.yaml ze ścieżkami i klasami, epochs jako liczba przejść, imgsz 640 letterbox, batch jako limit VRAM, device 0 jako lokalny GPU, lr0 i warmup_epochs jako learning rate i rozgrzewka](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/anatomia-komendy-treningu.png)\n\nNajważniejsze: **learning rate nie jest stały**. Trening ma dwie fazy:\n\n1. **Warm-up** (pierwsze `warmup_epochs`, domyślnie 3): LR rośnie liniowo od ~0 do `lr0`. Świeżo doczepiona głowica generuje na starcie ogromne gradienty — uderzenie pełnym LR od pierwszej epoki mogłoby „rozsadzić” trening. Ostrożny rozbieg stabilizuje pierwsze kroki.\n2. **Zjazd** (pozostałe epoki): LR maleje od `lr0` do `lr0 · lrf`, domyślnie po krzywej **cosinusowej** (`cos_lr=True`). Duży LR na początku szybko zbliża model do minimum, a coraz mniejszy pod koniec pozwala precyzyjnie dostroić wagi.\n\nCosinusowy zjazd opisuje wzór:\n\n$$\\text{lr}(t) = \\text{lr}_0 \\cdot \\text{lrf} + (\\text{lr}_0 - \\text{lr}_0 \\cdot \\text{lrf}) \\cdot \\tfrac{1}{2}\\left(1 + \\cos\\frac{\\pi\\, t}{T}\\right)$$\n\ngdzie $t$ to numer epoki po warm-upie, a $T$ — liczba epok zjazdu. Dodatkowo `close_mosaic=10` wyłącza mozaikę w ostatnich epokach, by model „schłodził się” na czystych obrazach."
+      }
+    },
+    {
+      "id": "harmonogram-lr",
+      "title": "Harmonogram LR: warm-up + cosinusowy zjazd",
+      "description": "Krzywa learning rate dla lr0=0.01, lrf=0.01, warmup_epochs=3, 100 epok — to ją zaimplementujesz w następnym ćwiczeniu.",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1608.03983",
+          "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+          "kind": "paper",
+          "author": "Ilya Loshchilov, Frank Hutter",
+          "year": 2017
+        },
+        {
+          "url": "https://docs.ultralytics.com/usage/cfg/",
+          "title": "Ultralytics — Configuration / training settings",
+          "kind": "article"
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/trening-wasnego-detektora-na-lokalnym-gpu-1.png",
+        "alt": "Wykres learning rate w funkcji epoki. Przez pierwsze 3 epoki (zaznaczony pomarańczowy pas warm-up) LR rośnie liniowo od ~0.0033 do 0.01, następnie po krzywej cosinusowej maleje do ~0.0001 na epoce 99. Linie odniesienia oznaczają lr0=0.01 oraz lr0·lrf=0.0001.",
+        "caption": "Rys. 1. Dwufazowy harmonogram learning rate: liniowy warm-up przez pierwsze epoki, potem cosinusowy zjazd od lr0 do lr0·lrf.",
+        "sourceCode": "import math\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nlr0 = 0.01          # bazowy learning rate (lr0)\nlrf = 0.01          # ulamek koncowy: lr na koncu = lr0 * lrf\nwarmup_epochs = 3   # liczba epok rozgrzewki (warmup)\ntotal_epochs = 100  # calkowita liczba epok\n\n\ndef lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_epochs):\n    if epoch < warmup_epochs:\n        # liniowa rozgrzewka: od ~0 do lr0 w ciagu warmup_epochs epok\n        return lr0 * (epoch + 1) / warmup_epochs\n    # cosinusowy zjazd: od lr0 do lr0*lrf na pozostalych epokach\n    progress = (epoch - warmup_epochs) / (total_epochs - 1 - warmup_epochs)\n    cosine = 0.5 * (1.0 + math.cos(math.pi * progress))\n    return lrf * lr0 + (lr0 - lrf * lr0) * cosine\n\n\nepochs = list(range(total_epochs))\nlrs = [lr_at_epoch(e, lr0, lrf, warmup_epochs, total_epochs) for e in epochs]\n\nplt.figure(figsize=(7.2, 4.4))\nplt.plot(epochs, lrs, color=\"#3F51B5\", linewidth=2.2, label=\"learning rate\")\nplt.axvspan(0, warmup_epochs - 1, color=\"orange\", alpha=0.18, label=\"warm-up (3 epoki)\")\nplt.axhline(lr0, color=\"grey\", linestyle=\"--\", alpha=0.6)\nplt.text(35, lr0 + 0.0003, \"lr0 = 0.01\", fontsize=9, color=\"grey\")\nplt.axhline(lr0 * lrf, color=\"grey\", linestyle=\":\", alpha=0.6)\nplt.text(60, lr0 * lrf + 0.0003, \"lr0 · lrf = 0.0001\", fontsize=9, color=\"grey\")\nplt.xlabel(\"Epoka\")\nplt.ylabel(\"Learning rate\")\nplt.title(\"Harmonogram learning rate: liniowy warm-up + cosinusowy zjazd\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/trening-wasnego-detektora-na-lokalnym-gpu-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-warmup",
+      "title": "Szybki sprawdzian: po co warm-up?",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego Ultralytics stosuje warm-up (liniowy wzrost LR w pierwszych epokach) zamiast od razu trenować z pełnym lr0?",
+        "options": [
+          "Bo GPU potrzebuje kilku epok na rozgrzanie pamięci, zanim przyjmie pełne obciążenie",
+          "Bo świeżo doczepiona głowica generuje na starcie duże gradienty; pełny LR od pierwszej epoki mógłby zdestabilizować trening, więc LR rośnie stopniowo",
+          "Bo warm-up zastępuje transfer learning — po rozgrzewce wagi pretrenowane nie są już potrzebne",
+          "Bo warm-up trwale zwiększa końcowe mAP niezależnie od reszty harmonogramu learning rate"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Na początku fine-tuningu nowa głowica jest losowa i produkuje duże, „chaotyczne” gradienty. Pełny lr0 od razu mógłby wypchnąć wagi z dobrego obszaru wystartowanego transfer learningiem. Liniowy warm-up przez kilka epok pozwala gradientom się ustabilizować, zanim wejdzie pełny LR. To nie kwestia „rozgrzewania pamięci GPU” (odp. 1), warm-up nie zastępuje wag pretrenowanych (odp. 3) ani nie jest magicznym, niezależnym dopalaczem mAP (odp. 4).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-lr-schedule",
+      "title": "Zaimplementuj harmonogram LR (warm-up + cosinus)",
+      "description": "Czysta funkcja liczbowa (tylko moduł math) — żadnego GPU ani treningu. Odtwórz krzywą z wykresu powyżej.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_epochs)` zwracającą learning rate dla danej epoki.\n\n- **Warm-up** (`epoch < warmup_epochs`): liniowy wzrost od `lr0/warmup_epochs` do `lr0`, tak by na ostatniej epoce warm-upu (`epoch == warmup_epochs - 1`) zwrócić dokładnie `lr0`.\n- **Zjazd**: cosinusowy spadek od `lr0` (zaraz po warm-upie) do `lr0 * lrf` na ostatniej epoce (`epoch == total_epochs - 1`).\n\n```\nlr_at_epoch(0,  0.01, 0.01, 3, 100) == 0.01/3   # start warm-upu\nlr_at_epoch(2,  0.01, 0.01, 3, 100) == 0.01      # szczyt (koniec warm-upu)\nlr_at_epoch(99, 0.01, 0.01, 3, 100) == 0.0001    # lr0 * lrf\n```",
+        "starterCode": "import math\n\n\ndef lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_epochs):\n    # epoch: numer epoki, liczony od 0\n    # lr0: bazowy learning rate (szczyt po warm-upie)\n    # lrf: ulamek koncowy -> lr na ostatniej epoce = lr0 * lrf\n    # warmup_epochs: liczba epok liniowej rozgrzewki\n    # total_epochs: calkowita liczba epok\n    # TODO 1: w fazie warm-up (epoch < warmup_epochs) zwroc liniowy wzrost\n    #         od ~0 do lr0, tak by na ostatniej epoce warm-upu osiagnac lr0.\n    # TODO 2: po warm-upie zwroc cosinusowy zjazd od lr0 do lr0 * lrf.\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "warmup_ramps_linearly_to_lr0",
+            "body": "assert abs(lr_at_epoch(0, 0.01, 0.01, 3, 100) - 0.01 / 3) < 1e-9\nassert abs(lr_at_epoch(2, 0.01, 0.01, 3, 100) - 0.01) < 1e-9",
+            "hidden": false
+          },
+          {
+            "name": "peak_lr0_at_end_of_warmup",
+            "body": "assert abs(lr_at_epoch(3, 0.01, 0.01, 3, 100) - 0.01) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "final_epoch_reaches_floor_lr0_times_lrf",
+            "body": "assert abs(lr_at_epoch(99, 0.01, 0.01, 3, 100) - 0.0001) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "decays_monotonically_after_warmup",
+            "body": "vals = [lr_at_epoch(e, 0.01, 0.01, 3, 100) for e in range(3, 100)]\nassert all(a >= b for a, b in zip(vals, vals[1:]))\nassert abs(lr_at_epoch(51, 0.01, 0.01, 3, 100) - 0.00505) < 1e-9",
+            "hidden": true
+          }
+        ],
+        "solution": "import math\n\n\ndef lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_epochs):\n    if epoch < warmup_epochs:\n        # liniowa rozgrzewka: od lr0/warmup_epochs do lr0\n        return lr0 * (epoch + 1) / warmup_epochs\n    # cosinusowy zjazd od lr0 (na koncu warm-upu) do lr0 * lrf (na ostatniej epoce)\n    progress = (epoch - warmup_epochs) / (total_epochs - 1 - warmup_epochs)\n    cosine = 0.5 * (1.0 + math.cos(math.pi * progress))\n    return lrf * lr0 + (lr0 - lrf * lr0) * cosine\n"
+      }
+    },
+    {
+      "id": "sandbox-harmonogram",
+      "title": "Pobaw się harmonogramem",
+      "description": "Zmień długość warm-upu, lrf albo liczbę epok i zobacz, jak zmienia się kształt krzywej learning rate.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import math\n\n\ndef lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_epochs):\n    if epoch < warmup_epochs:\n        return lr0 * (epoch + 1) / warmup_epochs\n    progress = (epoch - warmup_epochs) / (total_epochs - 1 - warmup_epochs)\n    cosine = 0.5 * (1.0 + math.cos(math.pi * progress))\n    return lrf * lr0 + (lr0 - lrf * lr0) * cosine\n\n\nlr0, lrf = 0.01, 0.01\nwarmup_epochs, total_epochs = 3, 100\n\n# Wypisz harmonogram co 10 epok i zobacz ksztalt krzywej w liczbach.\nfor e in range(0, total_epochs, 10):\n    bar = \"#\" * int(lr_at_epoch(e, lr0, lrf, warmup_epochs, total_epochs) / lr0 * 40)\n    print(f\"epoka {e:3d}: lr={lr_at_epoch(e, lr0, lrf, warmup_epochs, total_epochs):.5f} {bar}\")\n\n# Sprobuj: wydluz warmup_epochs do 10, zmniejsz lrf do 0.001 albo skroc total_epochs do 30.\n",
+        "encouragement": "Wydłuż warm-up albo skróć trening i zobacz, jak gwałtownie zmienia się tempo zjazdu learning rate."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/modes/train/",
+      "title": "Ultralytics — Train mode",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/usage/cfg/",
+      "title": "Ultralytics — Configuration / training settings",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/guides/hyperparameter-tuning/",
+      "title": "Ultralytics — Hyperparameter tuning guide",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/guides/model-training-tips/",
+      "title": "Ultralytics — Transfer learning & training tips",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1608.03983",
+      "title": "SGDR: Stochastic Gradient Descent with Warm Restarts",
+      "kind": "paper",
+      "author": "Ilya Loshchilov, Frank Hutter",
+      "year": 2017
+    },
+    {
+      "url": "https://docs.ultralytics.com/models/yolo11/",
+      "title": "Ultralytics YOLO11 model documentation",
+      "kind": "article"
+    }
+  ]
+}
