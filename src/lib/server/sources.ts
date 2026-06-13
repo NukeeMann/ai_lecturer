@@ -288,10 +288,11 @@ export interface ResolvedSourcePath {
 export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath {
   const ext = path.extname(absPath).toLowerCase();
   const originalName = path.basename(absPath);
-  // .docx (US-124) and .pdf (US-127) both pre-extract to a markdown sibling
-  // at upload time — when present, the sibling is what we hand to the Read
-  // tool / inline-load into wizard prompts. Same branch shape for both.
-  if (ext === '.docx' || ext === '.pdf') {
+  // .docx (US-124), .pdf (US-127) and .pptx (US-213) all pre-extract to a
+  // markdown sibling at upload time — when present, the sibling is what we
+  // hand to the Read tool / inline-load into wizard prompts. Same branch
+  // shape for all three.
+  if (ext === '.docx' || ext === '.pdf' || ext === '.pptx') {
     const sibling = extractedSiblingPath(absPath);
     if (existsSync(sibling)) {
       return { readPath: sibling, originalName, extractedFrom: originalName };
@@ -332,15 +333,16 @@ const TEXT_SOURCE_EXTS: ReadonlySet<string> = new Set([
 ]);
 
 // Extensions that have a server-side text extractor (US-124 docx, US-127
-// pdf). For these we still need to verify a sibling exists on disk before
-// treating them as text — the upload route logs a warning and leaves no
-// sibling when the extractor failed at upload time, and pre-fix uploads
-// from before the story landed never had one written. Either case must
-// fall through to `binary-unsupported` so the prompt still reflects that
+// pdf, US-213 pptx). For these we still need to verify a sibling exists on
+// disk before treating them as text — the upload route logs a warning and
+// leaves no sibling when the extractor failed at upload time, and pre-fix
+// uploads from before the story landed never had one written. Either case
+// must fall through to `binary-unsupported` so the prompt still reflects that
 // the file is on disk but unreadable.
 const EXTRACTABLE_BINARY_EXTS: ReadonlySet<string> = new Set([
   '.docx',
   '.pdf',
+  '.pptx',
 ]);
 
 const BUDGET_EXHAUSTED_PLACEHOLDER =
@@ -361,7 +363,9 @@ function truncationMarker(remaining: number): string {
  * - For `.docx` the `.extracted/<name>.docx.md` sibling (US-124) is read
  *   instead of the binary; `extractedFrom` is set on the result.
  * - For `.txt`, `.md`, `.json` the file itself is read.
- * - For `.pdf` and `.pptx` (no extractor yet) the entry is returned with
+ * - For `.pdf` (US-127) and `.pptx` (US-213) the `.extracted/<name>.md`
+ *   sibling is read when present, exactly like `.docx`; an extractor failure
+ *   or a pre-fix upload with no sibling falls through to
  *   `kind: 'binary-unsupported'` — content omitted, originalName preserved.
  *   Keeping them in the array means the prompt can mention "user uploaded
  *   this but we can't read it" instead of silently dropping the upload.
@@ -422,8 +426,8 @@ export function loadStagedSourcesForPrompt(
     }
 
     if (!TEXT_SOURCE_EXTS.has(ext) && !resolved.extractedFrom) {
-      // .pptx and any other extension without an extractor — preserve the
-      // filename in the array so the model knows the file exists.
+      // Any other extension without an extractor — preserve the filename in
+      // the array so the model knows the file exists.
       result.push({ kind: 'binary-unsupported', originalName });
       continue;
     }
