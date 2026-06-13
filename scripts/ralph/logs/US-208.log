@@ -1,0 +1,72 @@
+[2026-06-13T09:15:47+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T09:15:59+0200] Let me read the key reference files: `regenerateSection.ts`, `regenerateLesson.ts`, the skill, and the existing routes.
+[2026-06-13T09:16:02+0200] Now let me look at the route handlers (regenerate/apply), the lesson regenerate route (for snapshot/undo pattern), the schemas, and the skill.
+[2026-06-13T09:16:19+0200] Now the lesson regenerate route (snapshot/undo pattern) and the undo route:
+[2026-06-13T09:16:26+0200] Now the skill, atomic.ts, and existing tests:
+[2026-06-13T09:16:31+0200] Now let me look at the existing tests to mirror patterns:
+[2026-06-13T09:17:19+0200] I have a complete picture. Let me create the files. First the schema:
+[2026-06-13T09:17:53+0200] Now the insert route:
+[2026-06-13T09:18:16+0200] Now the undo route:
+[2026-06-13T09:18:27+0200] Now the skill file:
+[2026-06-13T09:19:15+0200] Now the test file:
+[2026-06-13T09:20:21+0200] Now let me run typecheck and the new tests:
+[2026-06-13T09:20:34+0200] Typecheck passes. Now the tests:
+[2026-06-13T09:20:39+0200] All 22 tests pass. Let me run lint on the new files and a broader test sweep to ensure nothing broke:
+[2026-06-13T09:20:49+0200] Just a warning matching the existing `regenerateSection.test.ts` pattern (same `_args`). Let me run a broader sweep to confirm no regressions:
+[2026-06-13T09:21:32+0200] That's a timing-based test in `generation.test.ts` — a file I didn't touch. Let me confirm it's flaky/pre-existing by running it in isolation:
+[2026-06-13T09:21:38+0200] Confirmed flaky/timing-dependent — passes in isolation, unrelated to my change (a `.generating.json` marker race in `generation.test.ts`). My work is solid: typecheck clean, 22 new tests pass.
+
+Now let me update progress.txt, flip the PRD flag, and commit. Let me check the elapsed time and verify the PRD entry:
+[2026-06-13T09:21:43+0200] No `ui` tag, so no browser testing needed. Let me flip the PRD flag:
+[2026-06-13T09:21:51+0200] Clean one-line diff. Now append to progress.txt:
+[2026-06-13T09:22:15+0200] Now stage and commit:
+[2026-06-13T09:22:23+0200] Those `courses/edge-detection-basics/` files are stray test artifacts, not part of US-208. Let me unstage them and commit only my work:
+[2026-06-13T09:22:27+0200] Good — staged set is exactly my US-208 work. The stray `courses/` files remain untracked and excluded. Committing:
+[2026-06-13T09:22:42+0200] US-208 is complete and committed.
+
+## Summary
+
+Implemented **US-208 — inserting a new section in the middle of a lesson** following the existing US-146 regenerate_section pattern, but with the route owning persistence (no separate Apply step).
+
+**Files added:**
+- `scripts/ralph/skills/insert_section/insert_section.md` — new generation skill (sibling of `regenerate_section`). Reads `{ lessonContext, anchorSectionId, instruction }` from stdin, emits exactly one `{ newSection }` (default `theory`).
+- `src/lib/schemas/insertSection.ts` — `InsertSectionRequestSchema` + `InsertSectionResponseSchema` (validates against `SectionSchema`).
+- `src/lib/server/insertSection.ts` — spawn helper mirroring `regenerateSection.ts` (model pin, working-memory pointers, test-injectable spawn) + pure `makeUniqueSectionId`.
+- `.../sections/[sectionId]/insert/route.ts` — POST: validate → busy gate → read lesson → find anchor → run agent → assign collision-free id → splice **directly after** the anchor → re-validate `LessonSchema` → snapshot `.lesson-prev.json` → `atomicWriteJson`.
+- `.../sections/[sectionId]/insert/undo/route.ts` — restores the snapshot byte-for-byte.
+- `src/lib/server/insertSection.test.ts` — 22 tests.
+
+**Acceptance criteria coverage:**
+- ✅ New skill generates exactly one section, Zod-validated
+- ✅ Route spawns `claude -p` (regenerateSection pattern), inserts after `[sectionId]`, atomic write
+- ✅ Snapshot + working undo path
+- ✅ Unique id, existing sections untouched in content + order
+- ✅ Timeout/invalid output → structured HTTP error with **zero** file modification (write happens only after agent success + schema validation)
+- ✅ Tests: middle/last insertion, id uniqueness, invalid-output rejection, undo
+- ✅ Typecheck clean; 22/22 new tests pass
+
+The one failing test in the broader sweep (`generation.test.ts > writes a .generating.json marker…`) is a pre-existing flaky timing test — it passes in isolation and I never touched `generation.ts`. `prd.json` `US-208.passes` is confirmed `true` in HEAD (commit `825ba42`).
+[2026-06-13T09:22:42+0200] [result success turns=36 cost=$2.8125020000000007] US-208 is complete and committed.
+
+## Summary
+
+Implemented **US-208 — inserting a new section in the middle of a lesson** following the existing US-146 regenerate_section pattern, but with the route owning persistence (no separate Apply step).
+
+**Files added:**
+- `scripts/ralph/skills/insert_section/insert_section.md` — new generation skill (sibling of `regenerate_section`). Reads `{ lessonContext, anchorSectionId, instruction }` from stdin, emits exactly one `{ newSection }` (default `theory`).
+- `src/lib/schemas/insertSection.ts` — `InsertSectionRequestSchema` + `InsertSectionResponseSchema` (validates against `SectionSchema`).
+- `src/lib/server/insertSection.ts` — spawn helper mirroring `regenerateSection.ts` (model pin, working-memory pointers, test-injectable spawn) + pure `makeUniqueSectionId`.
+- `.../sections/[sectionId]/insert/route.ts` — POST: validate → busy gate → read lesson → find anchor → run agent → assign collision-free id → splice **directly after** the anchor → re-validate `LessonSchema` → snapshot `.lesson-prev.json` → `atomicWriteJson`.
+- `.../sections/[sectionId]/insert/undo/route.ts` — restores the snapshot byte-for-byte.
+- `src/lib/server/insertSection.test.ts` — 22 tests.
+
+**Acceptance criteria coverage:**
+- ✅ New skill generates exactly one section, Zod-validated
+- ✅ Route spawns `claude -p` (regenerateSection pattern), inserts after `[sectionId]`, atomic write
+- ✅ Snapshot + working undo path
+- ✅ Unique id, existing sections untouched in content + order
+- ✅ Timeout/invalid output → structured HTTP error with **zero** file modification (write happens only after agent success + schema validation)
+- ✅ Tests: middle/last insertion, id uniqueness, invalid-output rejection, undo
+- ✅ Typecheck clean; 22/22 new tests pass
+
+The one failing test in the broader sweep (`generation.test.ts > writes a .generating.json marker…`) is a pre-existing flaky timing test — it passes in isolation and I never touched `generation.ts`. `prd.json` `US-208.passes` is confirmed `true` in HEAD (commit `825ba42`).
