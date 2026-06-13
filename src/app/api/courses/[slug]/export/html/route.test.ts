@@ -408,3 +408,140 @@ describe('GET /api/courses/[slug]/export/html (US-152)', () => {
     expect(body.error).toBe('invalid-lesson');
   });
 });
+
+// US-212: widgets whose `requiresPackages` are NOT loadable in Pyodide
+// (cv2/torch/tensorflow) must degrade to a read-only export instead of an
+// interactive Pyodide widget whose Run would crash on import. Widgets whose
+// packages ARE Pyodide-loadable (numpy/matplotlib/…) keep running interactively.
+const PKG_SLUG = 'us-212-package-fixture';
+
+async function seedPackageCourse() {
+  const dir = path.join(coursesRoot, PKG_SLUG);
+  await fs.mkdir(path.join(dir, 'lessons'), { recursive: true });
+
+  const course = {
+    schemaVersion: 1,
+    slug: PKG_SLUG,
+    title: 'US-212 Package Export',
+    description: 'Kernel-only vs Pyodide-loadable widgets.',
+    accentColor: 'default',
+    icon: 'file-text',
+    modules: [
+      {
+        id: 'm1',
+        title: 'Module 1',
+        summary: 'Package gating module.',
+        lessons: [{ slug: 'pkg-lesson', title: 'Package lesson', estimatedMinutes: 5 }],
+      },
+    ],
+    createdAt: '2026-06-13T00:00:00Z',
+    updatedAt: '2026-06-13T00:00:00Z',
+  };
+  await fs.writeFile(path.join(dir, 'course.json'), JSON.stringify(course), 'utf8');
+
+  const lesson = {
+    schemaVersion: 1,
+    slug: 'pkg-lesson',
+    courseSlug: PKG_SLUG,
+    moduleId: 'm1',
+    title: 'Package lesson',
+    eyebrow: 'Module 1',
+    description: 'Mixed runtime requirements.',
+    estimatedMinutes: 5,
+    sections: [
+      {
+        id: 's-kernel-code',
+        title: 'OpenCV edges',
+        type: 'code',
+        data: {
+          taskMarkdown: 'Detect edges with OpenCV.',
+          starterCode: 'import cv2\nprint(cv2.__version__)',
+          tests: [],
+          requiresPackages: ['cv2'],
+        },
+      },
+      {
+        id: 's-kernel-sandbox',
+        title: 'Torch playground',
+        type: 'sandbox',
+        data: {
+          starterCode: 'import torch\nprint(torch.tensor([1, 2, 3]))',
+          encouragement: 'Experiment freely.',
+          requiresPackages: ['torch'],
+        },
+      },
+      {
+        id: 's-numpy-code',
+        title: 'NumPy mean',
+        type: 'code',
+        data: {
+          taskMarkdown: 'Compute a mean with NumPy.',
+          starterCode: 'import numpy as np\nprint(np.mean([1, 2, 3]))',
+          tests: [],
+          requiresPackages: ['numpy'],
+        },
+      },
+    ],
+  };
+  await fs.writeFile(
+    path.join(dir, 'lessons', 'pkg-lesson.json'),
+    JSON.stringify(lesson),
+    'utf8',
+  );
+}
+
+async function pkgLessonHtml(): Promise<string> {
+  const res = await getExport(exportReq(PKG_SLUG), exportCtx(PKG_SLUG));
+  expect(res.status).toBe(200);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const entries = readZipEntries(buf);
+  return entries
+    .find((e) => e.name === `${PKG_SLUG}/lessons/pkg-lesson.html`)!
+    .data.toString('utf8');
+}
+
+// Helper: extract the markup of one section starting at its `data-section-id`
+// up to the next static-section, so per-section assertions don't accidentally
+// see another widget's Run button.
+function sectionMarkup(html: string, sectionId: string): string {
+  const idx = html.indexOf(`data-section-id="${sectionId}"`);
+  expect(idx).toBeGreaterThanOrEqual(0);
+  const start = html.lastIndexOf('<', idx);
+  const nextSection = html.indexOf('class="static-section"', idx + 1);
+  const end = nextSection >= 0 ? nextSection : html.length;
+  return html.slice(start, end);
+}
+
+describe('GET /api/courses/[slug]/export/html — kernel-package gating (US-212)', () => {
+  it('degrades a cv2 (kernel-only) code widget to read-only with a badge and no Run button', async () => {
+    await seedPackageCourse();
+    const html = await pkgLessonHtml();
+    const markup = sectionMarkup(html, 's-kernel-code');
+
+    expect(markup).toContain('Requires local kernel runtime');
+    expect(markup).not.toContain('data-static-code-run');
+    expect(markup).not.toContain('data-static-code-input');
+    // Starter code is still shown (read-only, highlighted).
+    expect(markup).toContain('cv2');
+  });
+
+  it('degrades a torch (kernel-only) sandbox widget to read-only with a badge and no Run button', async () => {
+    await seedPackageCourse();
+    const html = await pkgLessonHtml();
+    const markup = sectionMarkup(html, 's-kernel-sandbox');
+
+    expect(markup).toContain('Requires local kernel runtime');
+    expect(markup).not.toContain('data-static-code-run');
+    expect(markup).toContain('torch');
+  });
+
+  it('keeps a numpy (Pyodide-loadable) code widget interactive with a Run button', async () => {
+    await seedPackageCourse();
+    const html = await pkgLessonHtml();
+    const markup = sectionMarkup(html, 's-numpy-code');
+
+    expect(markup).toContain('data-static-code-run');
+    expect(markup).toContain('data-static-code-input');
+    expect(markup).not.toContain('Requires local kernel runtime');
+  });
+});
