@@ -12,7 +12,10 @@ import {
   defaultExtendCommand,
   type ExtendSpawnDeps,
 } from '@/lib/server/extend';
-import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
+import {
+  __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
+} from '@/lib/server/generation';
 
 let coursesRoot: string;
 
@@ -407,20 +410,10 @@ describe('POST /api/courses/[slug]/extend (US-143)', () => {
   it('returns 409 busy when a generation is active for this slug', async () => {
     const slug = 'edge-detection-basics';
     await seedCourse(slug);
-    // Seed a `.generating.json` marker pointing at this very process so the
-    // cold-start active-run scan inside getActiveRunSummary surfaces an
-    // active run for the slug. (The scan checks process.kill(pid, 0) — our
-    // own pid is alive by definition.)
-    await fs.writeFile(
-      path.join(coursesRoot, slug, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug,
-        stage: 'init_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    // Simulate a genuinely-supervised, in-memory generation run for the slug.
+    // A bare `.generating.json` marker no longer counts as active — it's
+    // reconciled away as an orphan (see computeActiveRunSummary).
+    __setActiveRunForTesting(slug);
     __setExtendSpawnForTesting({
       spawn: makeFixedSpawn({ stdoutText: validAgentResponse(slug) }).spawn,
     });

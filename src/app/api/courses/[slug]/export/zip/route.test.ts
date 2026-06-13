@@ -4,7 +4,10 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { GET as getExport, isExcluded } from './route';
-import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
+import {
+  __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
+} from '@/lib/server/generation';
 
 let coursesRoot: string;
 
@@ -186,14 +189,9 @@ describe('GET /api/courses/[slug]/export/zip (US-150)', () => {
 
   it('returns 409 when a generation marker (.generating.json) is present for the slug', async () => {
     await seedCourse();
-    // Simulate an active run by writing the generating marker. This is the
-    // exact trigger getActiveRunSummary scans for during cold-start
-    // reconciliation.
-    await fs.writeFile(
-      path.join(coursesRoot, SLUG, '.generating.json'),
-      JSON.stringify({ slug: SLUG, stage: 'init_course' }),
-      'utf8',
-    );
+    // Simulate a genuinely-supervised in-memory run. A bare `.generating.json`
+    // marker is no longer treated as active (it's reconciled as an orphan).
+    __setActiveRunForTesting(SLUG);
     const res = await getExport(exportReq(SLUG), exportCtx(SLUG));
     expect(res.status).toBe(409);
     const body = await res.json();

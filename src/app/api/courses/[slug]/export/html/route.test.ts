@@ -4,7 +4,10 @@ import path from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { GET as getExport } from './route';
-import { __resetForTesting as __resetGenerationForTesting } from '@/lib/server/generation';
+import {
+  __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
+} from '@/lib/server/generation';
 import { PYODIDE_VERSION } from '@/lib/export/constants';
 
 let coursesRoot: string;
@@ -364,11 +367,7 @@ describe('GET /api/courses/[slug]/export/html (US-152)', () => {
 
   it('returns 409 when generation is active for the slug', async () => {
     await seedCourse();
-    await fs.writeFile(
-      path.join(coursesRoot, SLUG, '.generating.json'),
-      JSON.stringify({ slug: SLUG, stage: 'init_course' }),
-      'utf8',
-    );
+    __setActiveRunForTesting(SLUG);
     const res = await getExport(exportReq(SLUG), exportCtx(SLUG));
     expect(res.status).toBe(409);
     const body = await res.json();
