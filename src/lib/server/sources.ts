@@ -88,6 +88,19 @@ export function maxUploadSizeForExtension(ext: string): number {
 
 const FALLBACK_MIME_TYPES: ReadonlySet<string> = new Set(['', 'application/octet-stream']);
 
+/** Extensions that may legitimately live in a /sources/ dir, used by
+ *  `sanitizeFilename` to gate DELETE / move-on-finalisation. Beyond the
+ *  user-uploadable `ALLOWED_EXTENSIONS` this adds `.md` — NOT uploadable (it
+ *  has no `MIME_TYPES_BY_EXTENSION` entry, so `validateUpload` still rejects a
+ *  `.md` upload) but written directly by the US-215 YouTube-transcript source
+ *  as `youtube-<videoId>.md`. Allowing it here lets those generated files be
+ *  deleted and promoted to the course like any other source, without widening
+ *  the upload allow-list. */
+const SOURCE_FILENAME_EXTENSIONS: ReadonlySet<string> = new Set([
+  ...ALLOWED_EXTENSIONS,
+  '.md',
+]);
+
 /** Subdirectory under coursesRoot where staged-but-not-yet-bound uploads
  *  live. The leading dot keeps it out of GET /api/courses (which iterates
  *  course.json under each entry — drafts have none and are silently
@@ -169,9 +182,12 @@ export function sanitizeFilename(input: string): string | null {
   // Strip leading dots so we don't accidentally create a hidden file.
   name = name.replace(/^\.+/, '');
   if (name.length === 0) return null;
-  // Validate extension.
+  // Validate extension. Uses the broader `SOURCE_FILENAME_EXTENSIONS` (uploads
+  // + `.md`) so a US-215 YouTube transcript file is treated as a safe
+  // basename for DELETE / move; `validateUpload` still gates actual uploads
+  // through `MIME_TYPES_BY_EXTENSION`, which has no `.md` entry.
   const ext = path.extname(name).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.has(ext)) return null;
+  if (!SOURCE_FILENAME_EXTENSIONS.has(ext)) return null;
   return name;
 }
 

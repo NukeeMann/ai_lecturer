@@ -39,6 +39,8 @@ import {
   __setMediaTranscriberForTesting,
   awaitPendingMediaTranscriptions,
 } from '@/lib/server/media';
+import { POST as postYouTubeSource } from '@/app/api/courses/youtube-source/route';
+import { __setYouTubeTranscriptFetcherForTesting } from '@/lib/server/youtubeSource';
 
 let coursesRoot: string;
 
@@ -99,6 +101,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   __resetGenerationForTesting();
+  __setYouTubeTranscriptFetcherForTesting(null);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
@@ -835,6 +838,132 @@ describe('GET /api/courses/upload-sources (US-103)', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { files: { sanitizedName: string; size: number }[] };
     expect(body.files).toEqual([{ sanitizedName: 'a.pdf', size: 2 }]);
+  });
+});
+
+describe('POST /api/courses/youtube-source (US-215)', () => {
+  function ytReq(body: unknown): Request {
+    return new Request('http://x/api/courses/youtube-source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('fetches a transcript and stages it as a provenance .md under a new draftId', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [
+        { tStart: 0, text: 'Intro to synthetic aperture radar.' },
+        { tStart: 4, text: 'How ATR works.' },
+      ],
+    }));
+    const res = await postYouTubeSource(
+      ytReq({ url: 'https://www.youtube.com/watch?v=abcdefghijk' }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      draftId: string;
+      file: { sanitizedName: string; size: number; type: string };
+    };
+    expect(typeof body.draftId).toBe('string');
+    expect(body.file.sanitizedName).toBe('youtube-abcdefghijk.md');
+    expect(body.file.type).toBe('text/markdown');
+
+    const onDisk = path.join(draftSourcesDir(body.draftId), 'youtube-abcdefghijk.md');
+    const written = await fs.readFile(onDisk, 'utf8');
+    expect(written).toContain('url: https://www.youtube.com/watch?v=abcdefghijk');
+    expect(written).toContain('transcriptSource: captions');
+    expect(written).toContain('Intro to synthetic aperture radar.');
+  });
+
+  it('returns 422 with a clear error and writes NO file when source is "none"', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'none',
+      segments: [],
+    }));
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    const res = await postYouTubeSource(
+      ytReq({ url: 'https://youtu.be/abcdefghijk', draftId }),
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/no captions or description/i);
+    expect(await fs.readdir(draftSourcesDir(draftId))).toEqual([]);
+  });
+
+  it('rejects an invalid URL with 422 and no file', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => {
+      throw new Error('should not fetch');
+    });
+    const res = await postYouTubeSource(ytReq({ url: 'definitely not a link' }));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/valid youtube/i);
+  });
+
+  it('returns 400 when the url field is missing', async () => {
+    const res = await postYouTubeSource(ytReq({}));
+    expect(res.status).toBe(400);
+  });
+
+  it('overwrites the same video on re-add (deterministic filename)', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'First.' }],
+    }));
+    const r1 = await postYouTubeSource(ytReq({ url: 'abcdefghijk' }));
+    const b1 = (await r1.json()) as { draftId: string };
+
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'Second.' }],
+    }));
+    const r2 = await postYouTubeSource(
+      ytReq({ url: 'https://youtu.be/abcdefghijk', draftId: b1.draftId }),
+    );
+    expect(r2.status).toBe(201);
+
+    const dir = draftSourcesDir(b1.draftId);
+    expect(await fs.readdir(dir)).toEqual(['youtube-abcdefghijk.md']);
+    const written = await fs.readFile(path.join(dir, 'youtube-abcdefghijk.md'), 'utf8');
+    expect(written).toContain('Second.');
+    expect(written).not.toContain('First.');
+  });
+
+  it('stages under <slug>/sources when a finalized slug is given, and the file is then listable + readable as text', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'description',
+      segments: [{ tStart: 0, text: 'Lecture description body.' }],
+    }));
+    const res = await postYouTubeSource(
+      ytReq({ url: 'abcdefghijk', slug: 'algebra' }),
+    );
+    expect(res.status).toBe(201);
+    // Appears in the GET listing like any other source file.
+    const getRes = await getUploadSources(
+      new Request('http://x/api/courses/upload-sources?slug=algebra'),
+    );
+    const getBody = (await getRes.json()) as { files: { sanitizedName: string }[] };
+    expect(getBody.files.map((f) => f.sanitizedName)).toContain('youtube-abcdefghijk.md');
+  });
+
+  it('the staged transcript is deletable via DELETE upload-sources', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'Body.' }],
+    }));
+    const r1 = await postYouTubeSource(ytReq({ url: 'abcdefghijk' }));
+    const b1 = (await r1.json()) as { draftId: string };
+    const del = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(b1.draftId)}&filename=youtube-abcdefghijk.md`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(del.status).toBe(200);
+    expect(await fs.readdir(draftSourcesDir(b1.draftId))).toEqual([]);
   });
 });
 
