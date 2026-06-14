@@ -265,6 +265,36 @@ describe('US-205 E2E · Sandbox free-run flow', () => {
     expect(r.images.length).toBeGreaterThan(0);
     expect(r.images[0].length).toBeGreaterThan(100);
   }, 120_000);
+
+  it('free-run still renders an image after the backend is switched to Agg', async () => {
+    // Regression: the per-lesson kernel is shared by every Code/Sandbox run, so
+    // a single `matplotlib.use('Agg')` anywhere in the lesson used to silence
+    // the inline auto-display for the rest of the session — leaving a free-run
+    // imshow with only stdout text and no image. The bridge now re-captures
+    // still-open figures explicitly, so the image survives a poisoned backend.
+    const poison = await mgr.execute(
+      COURSE,
+      LESSON,
+      ['import matplotlib', "matplotlib.use('Agg')", 'import matplotlib.pyplot as plt'].join('\n'),
+    );
+    expect(poison.status).toBe('ok');
+    const r = await mgr.execute(
+      COURSE,
+      LESSON,
+      ['import numpy as np', "plt.imshow(np.random.rand(12, 12), cmap='gray')", "print('text out')"].join('\n'),
+    );
+    expect(r.status).toBe('ok');
+    expect(r.stdout).toContain('text out');
+    // Captured despite Agg emitting no display_data of its own.
+    expect(r.images.length).toBe(1);
+    expect(r.images[0].length).toBeGreaterThan(100);
+    // A cell with no figure must not re-emit a stale one.
+    const empty = await mgr.execute(COURSE, LESSON, "print('no figure here')");
+    expect(empty.images.length).toBe(0);
+    // Restore the inline backend so later tests in this shared session are
+    // unaffected by the deliberate poison above.
+    await mgr.execute(COURSE, LESSON, "matplotlib.use('module://matplotlib_inline.backend_inline')");
+  }, 120_000);
 });
 
 // ===========================================================================

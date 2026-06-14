@@ -123,10 +123,56 @@ def drain_iopub(kc, msg_id, ready_timeout):
     return "".join(stdout_parts), "".join(stderr_parts), result, error, images
 
 
+# Backend-agnostic figure capture (run as a hidden cell after every user cell).
+#
+# The inline backend (`matplotlib_inline`) auto-emits the figure as `image/png`
+# display_data at end of cell — which `drain_iopub` already captures. But the
+# kernel session is shared by every Code/Sandbox run in a lesson, so a single
+# `matplotlib.use('Agg')` (or any non-inline backend switch) anywhere in the
+# lesson permanently silences that auto-display: figures still build but emit no
+# display_data, so the user sees only stdout text and the image vanishes for the
+# rest of the session. Here we re-capture any still-open figures explicitly and
+# re-emit them via `IPython.display` (which carries image/png regardless of the
+# matplotlib backend), then close them — exactly the per-cell semantics the
+# inline backend gives. No-op when matplotlib isn't loaded or the inline backend
+# already flushed+closed the figures (so the inline path never double-captures).
+# Wrapped in a function so no temp names leak into the user's namespace.
+_FIGURE_CAPTURE_CODE = """
+def __ai_capture_figs():
+    import sys
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is None:
+        return
+    nums = plt.get_fignums()
+    if not nums:
+        return
+    import io
+    from IPython.display import display, Image
+    for n in nums:
+        fig = plt.figure(n)
+        buf = io.BytesIO()
+        try:
+            fig.savefig(buf, format="png", bbox_inches="tight")
+        except Exception:
+            continue
+        display(Image(data=buf.getvalue()))
+    plt.close("all")
+__ai_capture_figs()
+del __ai_capture_figs
+"""
+
+
 def run_execute(kc, cmd):
     code = cmd.get("code", "")
     msg_id = kc.execute(code, store_history=False, allow_stdin=False)
     stdout, stderr, result, error, images = drain_iopub(kc, msg_id, ready_timeout=1.0)
+    # Re-capture figures the active backend may have failed to display (see
+    # `_FIGURE_CAPTURE_CODE`). Runs in the same session so it sees the user
+    # cell's open figures; its own output is discarded except the images.
+    cap_id = kc.execute(_FIGURE_CAPTURE_CODE, store_history=False, allow_stdin=False)
+    _, _, _, _, cap_images = drain_iopub(kc, cap_id, ready_timeout=1.0)
+    if cap_images:
+        images = images + cap_images
     emit(
         {
             "type": "execute_reply",
