@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "slug": "canny-pipeline",
+  "courseSlug": "edge-detection-basics",
+  "moduleId": "m1",
+  "title": "Inside the Canny pipeline: non-max suppression & hysteresis",
+  "eyebrow": "CANNY INTERNALS",
+  "description": "Open the cv2.Canny black box: how non-maximum suppression thins fat gradient ridges to one pixel, and how double-threshold hysteresis keeps faint connected edges while killing isolated noise.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "open-the-box",
+      "title": "Two steps hide inside cv2.Canny",
+      "type": "theory",
+      "data": {
+        "markdown": "## Opening the black box\n\nThe previous lesson called `cv2.Canny` and trusted it: image in, clean one-pixel-wide edge map out. Now we open the box. After the Gaussian blur and the Sobel gradient, **two** algorithms do the real shaping — and they are where Canny earns its reputation over a plain threshold on the gradient magnitude.\n\n- **Non-maximum suppression (NMS)** turns the *fat* gradient ridge into a *thin* line. The magnitude is large not only on the edge but on every pixel of the slope leading up to it, so a raw threshold gives edges several pixels wide. NMS keeps a pixel only if it is a local maximum **along the gradient direction** — the crest of the ridge — and zeroes the rest.\n- **Hysteresis thresholding** then decides which of those thin pixels are *real* edges, using two thresholds instead of one so it can keep faint-but-connected edges while rejecting isolated noise.\n\n```mermaid\nflowchart LR\n  A[Gaussian blur] --> B[Sobel gradient<br/>magnitude + direction]\n  B --> C[Non-max suppression<br/>thin to 1 px]\n  C --> D[Hysteresis<br/>double threshold]\n  D --> E[Binary edge map]\n```\n\nNMS reuses the **gradient direction** from the previous lesson: at each pixel it compares the magnitude to the two neighbours that lie *across* the edge.\n\n![A 3x3 pixel neighbourhood. The centre pixel has gradient magnitude 40; a black arrow labelled grad I points horizontally to the right, so the two compared neighbours are the left pixel (25) and the right pixel (24), both highlighted in yellow. The centre survives because 40 is at least as large as both of them.](/api/courses/edge-detection-basics/assets/images/nms-neighbour-compare.png)"
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+          "title": "OpenCV — Canny Edge Detection tutorial",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "nms-1d",
+      "title": "Non-max suppression in 1-D: keep only the crest",
+      "type": "plotImage",
+      "description": "Read the gradient magnitude across an edge; NMS zeroes every pixel except the local maximum.",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/plots/canny-pipeline-1.png",
+        "alt": "Line plot. The x-axis is pixel position across an edge (0 to 20); the y-axis is gradient magnitude. A blue curve rises smoothly to a peak of 40 at position 10 and falls away symmetrically — the fuzzy several-pixel-wide ridge. Red markers show the result after non-maximum suppression: every position is set to 0 except the single crest at position 10, which keeps its value of 40.",
+        "caption": "Figure 1 — The raw gradient magnitude is a broad ridge (blue). Non-maximum suppression keeps only the crest pixel (red) and sets the rest to zero, so the edge becomes one pixel wide.",
+        "sourceLanguage": "python",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Non-maximum suppression in 1-D. The gradient magnitude across an edge is a\n# broad, several-pixel-wide ridge (blue line): every pixel on the slope has a\n# non-zero gradient, so the raw edge is fat. NMS walks along the gradient\n# direction and keeps a pixel only if its magnitude is >= both neighbours,\n# collapsing the ridge to its single crest pixel (orange stem). Every other\n# pixel is set to 0, so the edge becomes one pixel wide.\nx = np.arange(0, 21)\nmag = np.round(40.0 * np.exp(-0.5 * ((x - 10) / 2.6) ** 2))\n\nkept = np.zeros_like(mag)\nfor i in range(1, len(mag) - 1):\n    if mag[i] > 0 and mag[i] >= mag[i - 1] and mag[i] >= mag[i + 1]:\n        kept[i] = mag[i]\n\nplt.figure(figsize=(7.2, 4.2))\nplt.plot(x, mag, \"-o\", color=\"#3b6ea5\", lw=2.0, ms=5,\n         label=\"Gradient magnitude (fuzzy ridge)\")\nmarkerline, stemlines, baseline = plt.stem(x, kept, basefmt=\" \")\nplt.setp(markerline, color=\"#d1495b\", ms=9)\nplt.setp(stemlines, color=\"#d1495b\", lw=2.4)\nmarkerline.set_label(\"After NMS (local maximum kept)\")\nplt.xticks(np.arange(0, 21, 2))\nplt.yticks(np.arange(0, 45, 10))\nplt.xlabel(\"Pixel position across the edge\")\nplt.ylabel(\"Gradient magnitude\")\nplt.title(\"Non-maximum suppression thins a fat ridge to one pixel\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\n    \"courses/edge-detection-basics/assets/plots/canny-pipeline-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n"
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        }
+      ]
+    },
+    {
+      "id": "check-nms",
+      "title": "Check: when does NMS keep a pixel?",
+      "type": "quiz",
+      "description": "Separate the NMS rule from the thresholding that comes after it.",
+      "data": {
+        "question": "In non-maximum suppression, a pixel is kept when…",
+        "options": [
+          "its gradient magnitude is ≥ the two neighbours lying along the gradient direction (i.e. across the edge)",
+          "its gradient magnitude is greater than all eight of its neighbours",
+          "its gradient magnitude is above the high threshold",
+          "its gradient direction falls into one of the four orientation bins"
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "NMS asks a purely local question: is this pixel the crest of the ridge in the direction the gradient points? It compares the magnitude to just the two neighbours across the edge — not to all eight (that would also delete legitimate ridge pixels running alongside a diagonal edge). Thresholding against 'high' is the separate hysteresis step. Binning the direction into four orientations is only the setup that tells NMS which two neighbours to look at — not the keep/drop criterion itself.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "hysteresis-rule",
+      "title": "Hysteresis: two thresholds, one connectivity rule",
+      "type": "theory",
+      "data": {
+        "markdown": "## Two thresholds, one connectivity rule\n\nNMS leaves us thin ridges, but many are faint — a real edge can dip in strength where it bends or where contrast drops. A **single** threshold forces an ugly choice: set it low and you keep noise; set it high and solid edges break into dashes. **Hysteresis** escapes the dilemma with *two* thresholds.\n\n![A vertical gradient-magnitude axis split by two horizontal lines into three bands: above the high line is STRONG (always an edge), between the high and low lines is WEAK (an edge only if linked to a strong one), below the low line is SUPPRESSED (dropped).](/api/courses/edge-detection-basics/assets/images/hysteresis-double-threshold.png)\n\nEvery surviving pixel is sorted into three classes:\n\n- **Strong** — magnitude $\\ge$ `high`. Unconditionally an edge.\n- **Weak** — `low` $\\le$ magnitude $<$ `high`. A *candidate*: kept only if it can be reached from a strong pixel through a chain of other kept pixels (8-connectivity).\n- **Suppressed** — magnitude $<$ `low`. Discarded outright.\n\n> The name borrows from *hysteresis* in physics: a weak pixel's fate depends on its **neighbourhood history**, not on its own value alone.\n\nThis connectivity rule is exactly what bridges small gaps without inviting noise. An isolated weak pixel in a textured region has no strong anchor and dies; a weak pixel continuing a strong contour is rescued. OpenCV suggests a `high`:`low` ratio of roughly **2:1 to 3:1**; because the values are in raw gradient-magnitude units, the right numbers depend on your image's contrast."
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+          "title": "Canny edge detector — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "hysteresis-1d",
+      "title": "Hysteresis along an edge contour",
+      "type": "plotImage",
+      "description": "Strong pixels anchor the edge; weak pixels survive only where they link back to one.",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/plots/canny-pipeline-2.png",
+        "alt": "Bar chart. The x-axis is pixel index along an edge contour (0 to 15); the y-axis is gradient magnitude. A dashed green line marks the high threshold at 60 and a dotted black line marks the low threshold at 30. Two green bars (indices 2 and 11) rise above high and are strong edges. Orange bars (indices 1, 3, 4, 5, 12) sit between the thresholds and are kept because each links back to a strong bar. Red hatched bars (indices 8 and 9) also sit between the thresholds but form an isolated island touching no strong bar, so they are dropped. Grey bars fall below low and are suppressed.",
+        "caption": "Figure 2 — Two strong pixels (green) anchor the contour. Weak pixels (orange) that chain back to a strong one are kept; the isolated weak island at indices 8–9 (red, hatched) touches no strong pixel and is dropped. Grey bars fall below the low threshold.",
+        "sourceLanguage": "python",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Hysteresis thresholding along a 1-D strip of gradient-magnitude values.\n# Two thresholds split the pixels into three classes:\n#   strong  (mag >= high)        -> always kept (green)\n#   weak    (low <= mag < high)  -> kept ONLY if linked, directly or through\n#                                   other kept pixels, to a strong pixel\n#   below low                    -> suppressed (grey)\n# Weak pixels that reach a strong pixel are kept (orange); an isolated weak\n# island that touches no strong pixel is dropped (red, hatched).\nidx = np.arange(16)\nmag = np.array([10, 35, 62, 50, 45, 40, 15, 12, 42, 38, 14, 70, 33, 20, 25, 9],\n               dtype=float)\nlow, high = 30.0, 60.0\n\nstrong = mag >= high\nweak = (mag >= low) & (mag < high)\n\n# 1-D connectivity: grow the kept set outward from strong pixels through weak.\nkept = strong.copy()\nchanged = True\nwhile changed:\n    changed = False\n    for i in range(len(mag)):\n        if weak[i] and not kept[i]:\n            left = i > 0 and kept[i - 1]\n            right = i < len(mag) - 1 and kept[i + 1]\n            if left or right:\n                kept[i] = True\n                changed = True\n\ncolors = []\nfor i in range(len(mag)):\n    if strong[i]:\n        colors.append(\"#2a9d4a\")          # strong\n    elif weak[i] and kept[i]:\n        colors.append(\"#e08a1e\")          # weak, kept (linked)\n    elif weak[i]:\n        colors.append(\"#d1495b\")          # weak, dropped (isolated)\n    else:\n        colors.append(\"#9aa0a6\")          # suppressed\n\nplt.figure(figsize=(7.6, 4.3))\nbars = plt.bar(idx, mag, color=colors, edgecolor=\"#333\", width=0.8)\nfor i in range(len(mag)):\n    if weak[i] and not kept[i]:\n        bars[i].set_hatch(\"//\")\nplt.axhline(high, color=\"#2a9d4a\", ls=\"--\", lw=1.4, label=\"high threshold = 60\")\nplt.axhline(low, color=\"#444\", ls=\":\", lw=1.4, label=\"low threshold = 30\")\nplt.xticks(idx)\nplt.yticks(np.arange(0, 81, 20))\nplt.xlabel(\"Pixel index along the edge contour\")\nplt.ylabel(\"Gradient magnitude\")\nplt.title(\"Hysteresis: weak pixels survive only if linked to a strong one\")\nplt.grid(True, axis=\"y\", alpha=0.3)\nplt.legend(loc=\"upper left\")\nplt.savefig(\n    \"courses/edge-detection-basics/assets/plots/canny-pipeline-2.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n"
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        }
+      ]
+    },
+    {
+      "id": "exercise",
+      "title": "Implement hysteresis thresholding",
+      "type": "code",
+      "description": "Grow the edge map outward from strong pixels through connected weak ones.",
+      "data": {
+        "taskMarkdown": "The final stage of Canny is **hysteresis thresholding**. Write `hysteresis(mag, low, high)` that takes a 2-D array of gradient magnitudes and returns a `uint8` edge map (`255` = edge, `0` = not), where:\n\n- **strong** pixels (`mag >= high`) are always edges;\n- **weak** pixels (`low <= mag < high`) are edges *only* if they are 8-connected — directly or through a chain of other kept weak pixels — to a strong pixel;\n- everything below `low` is dropped.\n\n```\nmag = [[100,  40,  40,   0,   0,  40]]      # low=30, high=60\nhysteresis(mag, 30, 60)\n  -> [[255, 255, 255,   0,   0,   0]]\n#       strong + linked weak kept        isolated weak dropped\n```\n\nGrow outward from the strong pixels: push every strong pixel onto a stack, then repeatedly pop one and adopt any weak 8-neighbour that has not been kept yet.",
+        "starterCode": "import numpy as np\n\n\ndef hysteresis(mag, low, high):\n    \"\"\"Binary edge map (uint8 0/255) from a 2-D gradient-magnitude array.\n\n    strong: mag >= high         -> always an edge\n    weak:   low <= mag < high    -> edge only if 8-connected to a strong one\n    else:   mag < low            -> dropped\n    \"\"\"\n    mag = np.asarray(mag, dtype=float)\n    # TODO:\n    # 1. strong = mag >= high ; weak = (mag >= low) & (mag < high)\n    # 2. seed a stack with every strong pixel and mark those pixels as edges\n    # 3. pop a pixel; for each of its 8 neighbours that is weak and not yet\n    #    kept, mark it as an edge and push it on the stack\n    # 4. return a uint8 array: 255 where kept, 0 elsewhere\n    raise NotImplementedError(\"implement hysteresis\")\n",
+        "tests": [
+          {
+            "name": "strong_pixel_is_always_kept",
+            "body": "mag = np.array([[0, 0, 0], [0, 100, 0], [0, 0, 0]], float)\nout = hysteresis(mag, 30, 60)\nassert out[1, 1] == 255 and int(out.sum()) == 255",
+            "hidden": false
+          },
+          {
+            "name": "isolated_weak_pixel_is_dropped",
+            "body": "mag = np.array([[0, 0, 0], [0, 40, 0], [0, 0, 0]], float)\nassert int(hysteresis(mag, 30, 60).sum()) == 0"
+          },
+          {
+            "name": "weak_diagonally_linked_to_strong_is_kept",
+            "body": "mag = np.array([[100, 0, 0], [0, 40, 0], [0, 0, 0]], float)\nout = hysteresis(mag, 30, 60)\nassert out[0, 0] == 255 and out[1, 1] == 255"
+          },
+          {
+            "name": "weak_chain_kept_isolated_island_dropped",
+            "body": "mag = np.array([[100, 40, 40, 0, 0, 40]], float)\nout = hysteresis(mag, 30, 60)\nassert out[0, 1] == 255 and out[0, 2] == 255 and out[0, 5] == 0"
+          }
+        ],
+        "solution": "import numpy as np\n\n\ndef hysteresis(mag, low, high):\n    mag = np.asarray(mag, dtype=float)\n    strong = mag >= high\n    weak = (mag >= low) & (mag < high)\n    out = np.zeros(mag.shape, dtype=np.uint8)\n    out[strong] = 255\n    seen = strong.copy()\n    stack = list(zip(*np.where(strong)))\n    h, w = mag.shape\n    while stack:\n        r, c = stack.pop()\n        for dr in (-1, 0, 1):\n            for dc in (-1, 0, 1):\n                if dr == 0 and dc == 0:\n                    continue\n                nr, nc = r + dr, c + dc\n                if 0 <= nr < h and 0 <= nc < w and weak[nr, nc] and not seen[nr, nc]:\n                    seen[nr, nc] = True\n                    out[nr, nc] = 255\n                    stack.append((nr, nc))\n    return out\n"
+      }
+    },
+    {
+      "id": "sandbox",
+      "title": "Play: watch a broken edge reconnect",
+      "type": "sandbox",
+      "description": "Lower the low threshold and watch the faded middle of the contour snap back onto the strong edge.",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# A synthetic gradient-magnitude map: one strong horizontal contour that\n# fades to weak strength in its middle, plus two isolated weak specks of\n# texture noise. Tune low/high below and watch which pixels survive.\nmag = np.zeros((9, 21), float)\nmag[4, :] = 70.0            # a strong horizontal edge...\nmag[4, 8:13] = 45.0         # ...that dips to weak strength in the middle\nmag[1, 3] = 42.0            # isolated weak speck (noise)\nmag[7, 16] = 40.0           # another isolated weak speck\n\nlow, high = 30.0, 60.0      # <-- tweak these two numbers\n\ndef hysteresis(mag, low, high):\n    strong = mag >= high\n    weak = (mag >= low) & (mag < high)\n    out = np.zeros(mag.shape, np.uint8)\n    out[strong] = 255\n    seen = strong.copy()\n    stack = list(zip(*np.where(strong)))\n    h, w = mag.shape\n    while stack:\n        r, c = stack.pop()\n        for dr in (-1, 0, 1):\n            for dc in (-1, 0, 1):\n                nr, nc = r + dr, c + dc\n                if 0 <= nr < h and 0 <= nc < w and weak[nr, nc] and not seen[nr, nc]:\n                    seen[nr, nc] = True\n                    out[nr, nc] = 255\n                    stack.append((nr, nc))\n    return out\n\nedges = hysteresis(mag, low, high)\n\nfig, ax = plt.subplots(1, 2, figsize=(9, 3))\nax[0].imshow(mag, cmap='magma'); ax[0].set_title('gradient magnitude')\nax[1].imshow(edges, cmap='gray'); ax[1].set_title(f'edges (low={low}, high={high})')\nfor a in ax:\n    a.axis('off')\n",
+        "encouragement": "Drop the low threshold toward 40 and watch the faded middle of the contour reconnect — then raise it again and see the edge break into dashes."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://ieeexplore.ieee.org/document/4767851",
+      "title": "A Computational Approach to Edge Detection",
+      "kind": "paper",
+      "author": "John F. Canny",
+      "year": 1986
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d22/tutorial_py_canny.html",
+      "title": "OpenCV — Canny Edge Detection tutorial",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+      "title": "Canny edge detector — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=sRFM5IEqR2w",
+      "title": "Canny Edge Detector — Computerphile",
+      "kind": "video"
+    }
+  ]
+}
