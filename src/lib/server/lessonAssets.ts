@@ -48,11 +48,15 @@ const EXTERNAL_URL_REGEX = /^https?:\/\//i;
 // A literal reference to the virtual `/inputs/<filename>` mount, captured at a
 // path boundary (mirrors `INPUTS_PATH_RE` in `codeRun.ts`): preceded by a
 // string/line start or a non-word, non-slash char so `foo/inputs/x` (an
-// unrelated directory) doesn't match. The filename class deliberately excludes
-// `/`, `{`, `'`, etc., so a flat literal like `'/inputs/scene.png'` is caught
-// while a dynamic path (`f'/inputs/{name}'`) is skipped — we can't know the
-// runtime filename, so we don't guess.
-const INPUTS_REF_REGEX = /(?:^|[^\w/])\/inputs\/([\w.\-]+)/g;
+// unrelated directory) doesn't match. The filename must start AND end with a
+// word char or hyphen — never a dot — so a flat literal like
+// `'/inputs/scene.png'` is caught while these are correctly skipped:
+//   - a bare mount / dir listing: `'/inputs/'`, `os.listdir('/inputs/')`
+//   - a prose sentence ending on the path: `# kafelek leży w /inputs/.`
+//   - a trailing period after a real name: `# wczytaj /inputs/scene.png.`
+//     (captures `scene.png`, not `scene.png.`)
+//   - a dynamic path: `f'/inputs/{name}'` (we can't know the runtime filename)
+const INPUTS_REF_REGEX = /(?:^|[^\w/])\/inputs\/([\w-](?:[\w.\-]*[\w-])?)/g;
 
 function parseLocalAssetPath(value: unknown, slug: string): string | null {
   if (typeof value !== 'string') return null;

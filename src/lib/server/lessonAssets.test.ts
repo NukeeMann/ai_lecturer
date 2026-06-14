@@ -294,6 +294,34 @@ describe('findLessonAssetIssues', () => {
     expect(issues.filter((i) => i.kind === 'undeclared-input')).toEqual([]);
   });
 
+  it('does not flag a bare /inputs/ mention in prose, a dir listing, or a trailing period', async () => {
+    const issues = await findLessonAssetIssues(
+      lesson([
+        {
+          id: 'prose-refs',
+          type: 'code',
+          title: 'ENL',
+          data: {
+            taskMarkdown: 't',
+            starterCode:
+              '# Kafelek (Cieśnina Gibraltarska) jest zamontowany w /inputs/.\n' +
+              "import os\nprint(os.listdir('/inputs/'))\n" +
+              "# Wczytaj plik /inputs/sar-echo-tile.png.\n" +
+              "img = cv2.imread('/inputs/sar-echo-tile.png')\n",
+            tests: [],
+            inputs: [
+              { kind: 'image', src: `/api/courses/${SLUG}/assets/images/sar-echo-tile.png`, alt: 'tile' },
+            ],
+          },
+        },
+      ]),
+      SLUG,
+    );
+    // The only real read (sar-echo-tile.png) is declared, and `/inputs/.`,
+    // `/inputs/'` (listing) and the trailing-period form must not be flagged.
+    expect(issues.filter((i) => i.kind === 'undeclared-input')).toEqual([]);
+  });
+
   it('ignores a dynamically-built /inputs path (cannot know the runtime filename)', async () => {
     const issues = await findLessonAssetIssues(
       lesson([
