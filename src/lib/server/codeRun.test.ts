@@ -86,6 +86,19 @@ describe('buildInputsMountCode', () => {
     expect(code).toContain('"/tmp/ai/inputs/x.png"');
   });
 
+  it('registers the real mount dir + virtual root for the test harness to rewrite', () => {
+    // The Submit/test path base64-hides user code from rewriteInputsPath, so the
+    // harness rewrites `/inputs` at runtime using these kernel-namespace globals.
+    const code = buildInputsMountCode([{ filename: 'x.png', b64: 'QUJD' }], '/tmp/ai/inputs');
+    expect(code).toContain(`globals()['__ai_inputs_dir'] = "/tmp/ai/inputs"`);
+    expect(code).toContain(`globals()['__ai_inputs_root'] = "/inputs"`);
+  });
+
+  it('does not register globals when mounting at the virtual root (Pyodide path)', () => {
+    const code = buildInputsMountCode([{ filename: 'x.png', b64: 'QUJD' }]);
+    expect(code).not.toContain('__ai_inputs_dir');
+  });
+
   it('escapes awkward filenames via JSON string literals', () => {
     const code = buildInputsMountCode([{ filename: 'a"b.txt', b64: 'QQ==' }]);
     expect(code).toContain('"/inputs/a\\"b.txt"');

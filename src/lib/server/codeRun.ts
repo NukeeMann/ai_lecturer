@@ -62,6 +62,17 @@ export function buildInputsMountCode(
     'import os, base64',
     `os.makedirs(${JSON.stringify(mountDir)}, exist_ok=True)`,
   ];
+  // The Submit/test path base64-encodes user code inside the harness, hiding it
+  // from the route's text-level `rewriteInputsPath`. Register the real mount dir
+  // (and the virtual root it stands in for) in the kernel namespace so the test
+  // harness can rewrite the virtual `/inputs` root at runtime instead. No-op on
+  // the Pyodide path, which mounts into a real `/inputs` VFS and never runs this.
+  if (mountDir !== INPUTS_MOUNT_PATH) {
+    lines.push(
+      `globals()['__ai_inputs_dir'] = ${JSON.stringify(mountDir)}`,
+      `globals()['__ai_inputs_root'] = ${JSON.stringify(INPUTS_MOUNT_PATH)}`,
+    );
+  }
   for (const f of files) {
     const filePath = JSON.stringify(`${mountDir}/${f.filename}`);
     lines.push(
