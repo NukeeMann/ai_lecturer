@@ -206,6 +206,15 @@
       "type": "sandbox",
       "data": {
         "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = plt.imread('/inputs/cfar-sea-tile.png') * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(np.float64)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = cv2.blur(img, (kt, kt)) * kt * kt\n    st2 = cv2.blur(img * img, (kt, kt)) * kt * kt\n    sg  = cv2.blur(img, (kg, kg)) * kg * kg\n    sg2 = cv2.blur(img * img, (kg, kg)) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\n# Zmieniaj alpha, guard i train; patrz, jak liczba detekcji rosnie i maleje.\nfor alpha in (3.0, 4.0, 5.0, 6.0):\n    print('alpha', alpha, '-> detekcje', int(ca_cfar(sar, 2, 8, alpha).sum()))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszoną grupką jasnych punktów (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: prawdziwy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
         "encouragement": "Podnoś alpha i powiększaj guard, aż zobaczysz, w którym momencie detektor przestaje gubić fałszywe alarmy, a zaczyna gubić same statki."
       }
     }

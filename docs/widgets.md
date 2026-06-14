@@ -272,6 +272,8 @@ With input + expected-output figures (image-processing exercise):
 
 Skip `inputs` / `outputMedia` for purely numeric or algorithmic tasks — they only add visual noise when there's no artefact to look at.
 
+**Every widget mounts only its own `inputs[]`.** Each Code/Sandbox run mounts the files *that widget* declares into `/inputs/` — there is no shared filesystem across widgets. So if a widget's code (`starterCode`, `solution`, `tests`) reads `/inputs/foo.png`, that widget **must** list `foo.png` in its own `inputs[]`, even when a sibling widget in the same lesson already declares the same file. A reference to an undeclared `/inputs/<file>` raises `FileNotFoundError` at run time.
+
 Full detail: [`src/widgets/Code/schema.ts`](../src/widgets/Code/schema.ts)
 · [`src/widgets/Code/sample.ts`](../src/widgets/Code/sample.ts).
 
@@ -597,7 +599,7 @@ observe behaviour. No correctness gate.
 |-----------------|--------|----------|----------------------------------------------------------------------|
 | `starterCode`   | string | yes      | Python skeleton that primes exploration. Often the lesson's code exercise minus assertions, plus a comment inviting a tweak. |
 | `encouragement` | string | yes      | One tasteful sentence. May be empty string. No exclamation marks, no emoji. |
-| `inputs`        | CodeInput[]      | no | Same semantics as the Code widget — reference artefacts mounted at `/inputs/<filename>` before the run. |
+| `inputs`        | CodeInput[]      | no | Same semantics as the Code widget — reference artefacts mounted at `/inputs/<filename>` before the run. A Sandbox mounts only *its own* `inputs[]`, so any `/inputs/<file>` its `starterCode` reads must be declared here (it can't borrow a sibling Code widget's mount). |
 | `outputMedia`   | CodeOutputMedia  | no | Same semantics as the Code widget — a reference image/video next to the run output. |
 | `requiresPackages` | string[]      | no | Same semantics as the Code widget — kernel precondition check, not an install request. |
 

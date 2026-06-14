@@ -90,10 +90,21 @@ describe('POST /api/code/run', () => {
       }),
     );
     expect(res.status).toBe(200);
-    // First execute writes the mount cell, second runs the user code.
+    // First execute writes the mount cell, second runs the user code. Both the
+    // mount cell and the user's `/inputs` reference are rewritten to a real
+    // writable dir (the host FS root isn't writable to the kernel user).
     expect(execute).toHaveBeenCalledTimes(2);
-    expect(execute.mock.calls[0][2]).toContain("os.makedirs('/inputs'");
-    expect(execute.mock.calls[1][2]).toContain('print(open');
+    const mountCell = execute.mock.calls[0][2] as string;
+    const userCell = execute.mock.calls[1][2] as string;
+    expect(mountCell).toContain('os.makedirs(');
+    expect(mountCell).not.toContain('"/inputs/x.bin"');
+    expect(userCell).toContain('print(open');
+    expect(userCell).not.toContain('"/inputs/x.bin"');
+    // The mount target and the rewritten user path resolve to the same dir.
+    const mountDir = /os\.makedirs\("([^"]+)"/.exec(mountCell)?.[1];
+    expect(mountDir).toBeTruthy();
+    expect(mountDir).not.toBe('/inputs');
+    expect(userCell).toContain(`"${mountDir}/x.bin"`);
     fetchSpy.mockRestore();
   });
 });

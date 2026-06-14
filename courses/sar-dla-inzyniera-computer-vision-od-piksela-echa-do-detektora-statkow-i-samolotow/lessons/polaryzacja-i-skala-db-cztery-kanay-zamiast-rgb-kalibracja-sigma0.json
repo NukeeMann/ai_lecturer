@@ -210,6 +210,14 @@
       "type": "sandbox",
       "data": {
         "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nstack = np.load('/inputs/polaryzacja-vvvh-sigma0.npy')\nvv = stack[..., 0]\nvh = stack[..., 1]\n\ndef to_db(x, floor=1e-5):\n    return 10.0 * np.log10(np.clip(x, floor, None))\n\n# Pobaw sie oknem dB i kanalami. Sprobuj np.:\n#  - zmienic vmin/vmax i zobaczyc, jak znika/pojawia sie morze,\n#  - narysowac VV/VH (stosunek) zamiast pojedynczego kanalu,\n#  - porownac histogram VV i VH w dB.\nvmin, vmax = -25.0, 2.0\nplt.imshow(to_db(vv), cmap='gray', vmin=vmin, vmax=vmax)\nplt.colorbar(label='sigma0 VV [dB]')\nplt.title('VV w dB — przesun vmin/vmax')",
+        "inputs": [
+          {
+            "kind": "file",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/inputs/polaryzacja-vvvh-sigma0.npy",
+            "filename": "polaryzacja-vvvh-sigma0.npy",
+            "caption": "Skalibrowany stos (256, 256, 2): VV i VH jako sigma0 liniowe — zamontowany w /inputs/."
+          }
+        ],
         "encouragement": "Przesuwaj vmin i vmax, aż zobaczysz, w którym oknie dB statki i brzeg są jednocześnie czytelne, a morze nie znika."
       }
     }

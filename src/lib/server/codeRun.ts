@@ -7,6 +7,10 @@
 // errorMessage) plus `images` and a coarse `status`. We keep the kernel path
 // structurally identical to the Pyodide path so the widgets are runtime-blind.
 
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+
 import type { KernelExecuteResult } from '@/lib/server/kernelManager';
 
 /** A lesson input file already fetched server-side, ready to write into the
@@ -17,24 +21,73 @@ export interface MountableInput {
   b64: string;
 }
 
+/** The virtual mount root lesson code references (`cv2.imread('/inputs/x.png')`).
+ *  In the Pyodide worker this is a real writable VFS path, but on the host
+ *  IPython kernel (US-201) the filesystem root isn't writable to the non-root
+ *  dev-server user — `os.makedirs('/inputs')` throws `PermissionError [Errno
+ *  13]`. So on the kernel path we map this virtual root to a real writable
+ *  directory (`resolveInputsDir`) and rewrite it in the cells we send. */
+export const INPUTS_MOUNT_PATH = '/inputs';
+
 /**
- * Build a Python cell that writes the given input files into `/inputs/<name>`
- * inside the kernel session — the same VFS path the Pyodide worker mounts to,
- * so user code (`cv2.imread('/inputs/x.png')`) reads them identically (US-201).
- * Executed as its own cell before the user's code so it never shifts the user
- * traceback's line numbers.
+ * Real, writable host directory that the virtual `/inputs` root maps to for a
+ * given lesson session. cv2 / PIL open the literal path with C-level I/O, so we
+ * can't shim it in Python — the path must resolve on the real filesystem. We
+ * key by course+lesson so a re-run reuses the same mounted files and two
+ * lessons can't collide on a shared filename.
  */
-export function buildInputsMountCode(files: MountableInput[]): string {
-  const lines = ['import os, base64', "os.makedirs('/inputs', exist_ok=True)"];
+export function resolveInputsDir(courseSlug: string, lessonSlug: string): string {
+  const base =
+    process.env.KERNEL_INPUTS_DIR ?? path.join(os.tmpdir(), 'ai-lecturer-kernel');
+  const key = crypto
+    .createHash('sha1')
+    .update(`${courseSlug}\n${lessonSlug}`)
+    .digest('hex')
+    .slice(0, 16);
+  return path.join(base, key, 'inputs');
+}
+
+/**
+ * Build a Python cell that writes the given input files into `<mountDir>/<name>`
+ * inside the kernel session (defaults to the virtual `/inputs` root). Paired
+ * with `rewriteInputsPath`, user code reading `/inputs/x.png` resolves here
+ * (US-201). Executed as its own cell before the user's code so it never shifts
+ * the user traceback's line numbers.
+ */
+export function buildInputsMountCode(
+  files: MountableInput[],
+  mountDir: string = INPUTS_MOUNT_PATH,
+): string {
+  const lines = [
+    'import os, base64',
+    `os.makedirs(${JSON.stringify(mountDir)}, exist_ok=True)`,
+  ];
   for (const f of files) {
-    const path = JSON.stringify(`/inputs/${f.filename}`);
+    const filePath = JSON.stringify(`${mountDir}/${f.filename}`);
     lines.push(
-      `with open(${path}, 'wb') as __ai_f:`,
+      `with open(${filePath}, 'wb') as __ai_f:`,
       `    __ai_f.write(base64.b64decode(${JSON.stringify(f.b64)}))`,
     );
   }
   if (files.length > 0) lines.push('del __ai_f');
   return lines.join('\n') + '\n';
+}
+
+// Matches the virtual `/inputs` mount root only at a path boundary: it must be
+// preceded by a string/line start or a non-word, non-slash char (a quote,
+// paren, comma…) and followed by `/`, end, or a closing/separator char. That
+// catches `'/inputs/x.png'` and `os.listdir('/inputs')` without mangling
+// identifiers (`/inputs2`) or unrelated paths that merely end in `/inputs`.
+const INPUTS_PATH_RE = /(^|[^\w/])\/inputs(?=$|[/'"`)\]\s,:])/g;
+
+/**
+ * Rewrite references to the virtual `/inputs` mount root in user code so they
+ * resolve to the real writable directory the files were mounted into. A no-op
+ * when `mountDir` is the virtual root itself (e.g. the Pyodide VFS).
+ */
+export function rewriteInputsPath(code: string, mountDir: string): string {
+  if (mountDir === INPUTS_MOUNT_PATH) return code;
+  return code.replace(INPUTS_PATH_RE, (_m, pre: string) => `${pre}${mountDir}`);
 }
 
 /** The single aggregated `final` event written to the NDJSON run stream. */
