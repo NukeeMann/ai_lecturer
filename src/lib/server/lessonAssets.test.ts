@@ -222,6 +222,96 @@ describe('findLessonAssetIssues', () => {
     expect(issues).toEqual([]);
   });
 
+  it('flags a /inputs/<file> read that the widget does not declare in inputs[]', async () => {
+    const issues = await findLessonAssetIssues(
+      lesson([
+        {
+          id: 'sar-detect',
+          type: 'code',
+          title: 'Detect ships',
+          data: {
+            taskMarkdown: 'Threshold the SAR tile.',
+            starterCode:
+              "import cv2\nimg = cv2.imread('/inputs/sar-echo-tile.png')\n",
+            tests: [
+              { name: 'reads_tile', body: "assert cv2.imread('/inputs/sar-echo-tile.png') is not None" },
+            ],
+            // No inputs[] declared — the mount never happens.
+          },
+        },
+      ]),
+      SLUG,
+    );
+
+    // Reported once per code field that reads it (starterCode + the test body).
+    const undeclared = issues.filter(
+      (i): i is Extract<AssetIssue, { kind: 'undeclared-input' }> => i.kind === 'undeclared-input',
+    );
+    expect(undeclared).toHaveLength(2);
+    expect(undeclared.every((u) => u.filename === 'sar-echo-tile.png')).toBe(true);
+    expect(undeclared.map((u) => u.origin).join('\n')).toContain('starterCode');
+    expect(undeclared.map((u) => u.origin).join('\n')).toContain('tests[0].body');
+  });
+
+  it('does not flag a /inputs/<file> read that IS declared (incl. filename override)', async () => {
+    const issues = await findLessonAssetIssues(
+      lesson([
+        {
+          id: 'sar-ok',
+          type: 'code',
+          title: 'Detect ships',
+          data: {
+            taskMarkdown: 'Threshold the SAR tile.',
+            starterCode: "import cv2\nimg = cv2.imread('/inputs/sar-echo-tile.png')\n",
+            tests: [],
+            inputs: [
+              {
+                kind: 'image',
+                // Opaque src; the mount name comes from the filename override.
+                src: `/api/courses/${SLUG}/assets/images/tile-001.png`,
+                filename: 'sar-echo-tile.png',
+                alt: 'SAR tile',
+              },
+            ],
+          },
+        },
+        {
+          id: 'sandbox-ok',
+          type: 'sandbox',
+          title: 'Play',
+          data: {
+            starterCode: "open('/inputs/scene.npy', 'rb')\n",
+            encouragement: '',
+            inputs: [
+              { kind: 'file', src: `/api/courses/${SLUG}/assets/inputs/scene.npy`, filename: 'scene.npy' },
+            ],
+          },
+        },
+      ]),
+      SLUG,
+    );
+
+    expect(issues.filter((i) => i.kind === 'undeclared-input')).toEqual([]);
+  });
+
+  it('ignores a dynamically-built /inputs path (cannot know the runtime filename)', async () => {
+    const issues = await findLessonAssetIssues(
+      lesson([
+        {
+          id: 'dynamic',
+          type: 'sandbox',
+          title: 'Loop over tiles',
+          data: {
+            starterCode: "for name in tiles:\n    cv2.imread(f'/inputs/{name}')\n",
+            encouragement: '',
+          },
+        },
+      ]),
+      SLUG,
+    );
+    expect(issues).toEqual([]);
+  });
+
   it('returns [] when the lesson has no image references at all', async () => {
     const issues = await findLessonAssetIssues(
       lesson([
@@ -257,6 +347,19 @@ describe('formatAssetIssuesError', () => {
     expect(msg).toContain('python3');
     expect(msg).toContain('curl');
     expect(msg).toContain('assets/images/');
+  });
+
+  it('lists undeclared-input issues with their own actionable guidance', () => {
+    const msg = formatAssetIssuesError([
+      {
+        kind: 'undeclared-input',
+        filename: 'sar-echo-tile.png',
+        origin: 'sections[3] (id=sar, type=code).data.starterCode',
+      },
+    ]);
+    expect(msg).toContain('UNDECLARED INPUT: /inputs/sar-echo-tile.png');
+    expect(msg).toContain("that widget's inputs[]");
+    expect(msg).toContain('FileNotFoundError');
   });
 });
 

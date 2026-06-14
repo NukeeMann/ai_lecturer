@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import type { Lesson, Section } from '@/lib/schemas/lesson';
+import { CodeInputSchema, inputMountName } from '@/widgets/Code/schema';
 
 import { courseDir } from './paths';
 
@@ -26,11 +27,32 @@ export type AssetIssue =
       kind: 'external-image';
       url: string;
       origin: string;
+    }
+  | {
+      /**
+       * A literal `/inputs/<filename>` path read by a Code/Sandbox widget's
+       * kernel code (`starterCode` / `solution` / `tests[].body`) that the
+       * widget does NOT declare in its own `inputs[]`. Each widget mounts only
+       * its own inputs, so an undeclared reference raises `FileNotFoundError`
+       * at run time (see `buildInputsMountCode` / `rewriteInputsPath`).
+       */
+      kind: 'undeclared-input';
+      filename: string;
+      origin: string;
     };
 
 const API_PREFIX_REGEX = /^\/api\/courses\/([^/]+)\/(.+)$/;
 const MARKDOWN_IMAGE_REGEX = /!\[[^\]]*\]\(([^)\s]+)/g;
 const EXTERNAL_URL_REGEX = /^https?:\/\//i;
+
+// A literal reference to the virtual `/inputs/<filename>` mount, captured at a
+// path boundary (mirrors `INPUTS_PATH_RE` in `codeRun.ts`): preceded by a
+// string/line start or a non-word, non-slash char so `foo/inputs/x` (an
+// unrelated directory) doesn't match. The filename class deliberately excludes
+// `/`, `{`, `'`, etc., so a flat literal like `'/inputs/scene.png'` is caught
+// while a dynamic path (`f'/inputs/{name}'`) is skipped — we can't know the
+// runtime filename, so we don't guess.
+const INPUTS_REF_REGEX = /(?:^|[^\w/])\/inputs\/([\w.\-]+)/g;
 
 function parseLocalAssetPath(value: unknown, slug: string): string | null {
   if (typeof value !== 'string') return null;
@@ -59,6 +81,65 @@ function classifyImageRef(
 interface CollectedRefs {
   local: { relativePath: string; origin: string }[];
   external: AssetIssue[];
+  undeclaredInputs: AssetIssue[];
+}
+
+/**
+ * For a Code / Sandbox widget, flag every literal `/inputs/<filename>` its
+ * kernel code reads that the widget does not declare in its own `inputs[]`.
+ * Each widget mounts only its own inputs, so an undeclared reference is a
+ * guaranteed run-time `FileNotFoundError` — we catch it at generation time and
+ * feed it back into the retry brief instead.
+ */
+function collectInputRefs(
+  data: Record<string, unknown>,
+  base: string,
+  acc: CollectedRefs,
+): void {
+  // Mount filenames THIS widget declares (text inputs aren't mounted → null).
+  const declared = new Set<string>();
+  const inputs = data.inputs;
+  if (Array.isArray(inputs)) {
+    for (const entry of inputs) {
+      const parsed = CodeInputSchema.safeParse(entry);
+      if (!parsed.success) continue;
+      const name = inputMountName(parsed.data);
+      if (name) declared.add(name);
+    }
+  }
+
+  // Code fragments that run on the kernel and may open a mounted path.
+  const fragments: { code: unknown; field: string }[] = [
+    { code: data.starterCode, field: 'starterCode' },
+    { code: data.solution, field: 'solution' },
+  ];
+  const tests = data.tests;
+  if (Array.isArray(tests)) {
+    tests.forEach((t, i) => {
+      if (t && typeof t === 'object') {
+        fragments.push({ code: (t as { body?: unknown }).body, field: `tests[${i}].body` });
+      }
+    });
+  }
+
+  const seen = new Set<string>();
+  for (const { code, field } of fragments) {
+    if (typeof code !== 'string') continue;
+    INPUTS_REF_REGEX.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = INPUTS_REF_REGEX.exec(code)) !== null) {
+      const filename = match[1];
+      if (declared.has(filename)) continue;
+      const key = `${field}:${filename}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      acc.undeclaredInputs.push({
+        kind: 'undeclared-input',
+        filename,
+        origin: `${base}.data.${field}`,
+      });
+    }
+  }
 }
 
 function pushImage(
@@ -126,6 +207,33 @@ function collectFromSection(
           `${base}.data.outputMedia.src`,
         );
       }
+      collectInputRefs(data, base, acc);
+      break;
+    }
+    case 'sandbox': {
+      const inputs = (data as { inputs?: unknown }).inputs;
+      if (Array.isArray(inputs)) {
+        inputs.forEach((entry, i) => {
+          if (entry && typeof entry === 'object') {
+            pushImage(
+              acc,
+              (entry as { src?: unknown }).src,
+              slug,
+              `${base}.data.inputs[${i}].src`,
+            );
+          }
+        });
+      }
+      const outputMedia = (data as { outputMedia?: unknown }).outputMedia;
+      if (outputMedia && typeof outputMedia === 'object') {
+        pushImage(
+          acc,
+          (outputMedia as { src?: unknown }).src,
+          slug,
+          `${base}.data.outputMedia.src`,
+        );
+      }
+      collectInputRefs(data, base, acc);
       break;
     }
     case 'theory': {
@@ -147,7 +255,7 @@ function collectFromSection(
 }
 
 function collect(lesson: Lesson, slug: string): CollectedRefs {
-  const acc: CollectedRefs = { local: [], external: [] };
+  const acc: CollectedRefs = { local: [], external: [], undeclaredInputs: [] };
   lesson.sections.forEach((s, i) => collectFromSection(s, i, slug, acc));
   return acc;
 }
@@ -167,8 +275,8 @@ export async function findLessonAssetIssues(
   lesson: Lesson,
   slug: string,
 ): Promise<AssetIssue[]> {
-  const { local, external } = collect(lesson, slug);
-  const issues: AssetIssue[] = [...external];
+  const { local, external, undeclaredInputs } = collect(lesson, slug);
+  const issues: AssetIssue[] = [...external, ...undeclaredInputs];
   if (local.length > 0) {
     const root = courseDir(slug);
     for (const ref of local) {
@@ -197,12 +305,16 @@ export async function findLessonAssetIssues(
 export function formatAssetIssuesError(issues: AssetIssue[]): string {
   const missing = issues.filter((i): i is Extract<AssetIssue, { kind: 'missing-local' }> => i.kind === 'missing-local');
   const external = issues.filter((i): i is Extract<AssetIssue, { kind: 'external-image' }> => i.kind === 'external-image');
+  const undeclared = issues.filter((i): i is Extract<AssetIssue, { kind: 'undeclared-input' }> => i.kind === 'undeclared-input');
   const lines: string[] = [];
   for (const m of missing) {
     lines.push(`- MISSING FILE: ${m.relativePath} (referenced by ${m.origin})`);
   }
   for (const e of external) {
     lines.push(`- EXTERNAL URL (must be cached locally): ${e.url} (referenced by ${e.origin})`);
+  }
+  for (const u of undeclared) {
+    lines.push(`- UNDECLARED INPUT: /inputs/${u.filename} read by ${u.origin} but not declared in that widget's inputs[]`);
   }
   const guidance: string[] = [
     `\nFix each issue before declaring the lesson done.`,
@@ -222,6 +334,14 @@ export function formatAssetIssuesError(issues: AssetIssue[]): string {
         `(create the directory first with \`mkdir -p\`), then rewrite the field / markdown reference to point at \`/api/courses/<slug>/assets/images/<descriptive-filename.ext>\` instead of the http(s) URL. ` +
         `Pick a stable, descriptive filename based on what the image shows (e.g. \`pinhole-camera-diagram.png\`), not the original CDN path. ` +
         `External http(s) URLs are NEVER acceptable in theory inline images, plotImage.src, demo.imageSrc, code inputs/outputMedia, or mp4 video.src.`,
+    );
+  }
+  if (undeclared.length > 0) {
+    guidance.push(
+      `For UNDECLARED INPUT entries: each Code/Sandbox widget mounts ONLY its own \`inputs[]\` into \`/inputs/\` — there is no shared filesystem across widgets, so a sibling declaring the same file does not help. ` +
+        `For each \`/inputs/<filename>\` the widget's code reads, add a matching entry to THAT widget's \`inputs[]\` whose mount name is \`<filename>\` (the basename of \`src\`, or the explicit \`filename\` override). ` +
+        `Alternatively, if the file is not actually needed, remove the \`/inputs/<filename>\` reference from the code. ` +
+        `An undeclared reference raises \`FileNotFoundError\` the moment the learner clicks Run.`,
     );
   }
   return (
