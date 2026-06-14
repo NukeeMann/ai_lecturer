@@ -5,6 +5,7 @@ import { Pause, Play, Volume2, VolumeX } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { Callout, type CalloutTone } from '@/components/Callout';
@@ -405,7 +406,7 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
       <style>{KEYFRAMES}</style>
       <div data-theory-body>
         <ReactMarkdown
-          remarkPlugins={[remarkDirective, remarkCallout, remarkMath]}
+          remarkPlugins={[remarkDirective, remarkGfm, remarkCallout, remarkMath]}
           rehypePlugins={[rehypeKatex]}
           components={components}
         >

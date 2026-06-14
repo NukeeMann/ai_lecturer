@@ -22,6 +22,7 @@ import {
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkDirective from 'remark-directive';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { remarkCallout } from '@/widgets/Theory/remarkCallout';
@@ -322,7 +323,7 @@ function StaticTheory({ markdown }: { markdown: string }) {
   return (
     <div data-theory-body>
       <ReactMarkdown
-        remarkPlugins={[remarkDirective, remarkCallout, remarkMath]}
+        remarkPlugins={[remarkDirective, remarkGfm, remarkCallout, remarkMath]}
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >
@@ -884,6 +885,9 @@ code, pre, textarea.static-code-textarea { font-family: ui-monospace, SFMono-Reg
 [data-theory-body] ul, [data-theory-body] ol { padding-left: 24px; margin: 0 0 12px; }
 [data-theory-body] li { margin: 0 0 4px; }
 [data-theory-body] blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--text-secondary); margin: 12px 0; }
+[data-theory-body] table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; display: block; overflow-x: auto; }
+[data-theory-body] th, [data-theory-body] td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; vertical-align: top; }
+[data-theory-body] th { background: var(--bg-subtle); font-weight: 600; }
 
 /* Code widget */
 .static-code-task { margin-bottom: 14px; }
