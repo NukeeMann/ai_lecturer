@@ -33,6 +33,11 @@ import {
   KernelRuntimeNotInstalledError,
   defaultBridgeScriptPath,
 } from '@/lib/server/kernelManager';
+import {
+  buildInputsMountCode,
+  resolveInputsDir,
+  rewriteInputsPath,
+} from '@/lib/server/codeRun';
 import { kernelPythonPath, __setKernelRuntimeDepsForTesting } from '@/lib/server/kernelRuntime';
 
 const BRIDGE = defaultBridgeScriptPath();
@@ -165,6 +170,41 @@ describe('US-205 E2E · real libraries through the kernel', () => {
     const r = await mgr.execute(COURSE, LESSON, code);
     expect(r.status).toBe('ok');
     expect(r.stdout).toContain('TF 6');
+  }, 120_000);
+});
+
+// ===========================================================================
+// Regression — Code/Sandbox `inputs` mount must NOT hit the host filesystem
+// root. The virtual `/inputs` root is rewritten to a real writable dir, so the
+// reported `PermissionError [Errno 13] Permission denied: '/inputs'` on Run
+// can't recur. Mirrors exactly what `POST /api/code/run` assembles.
+// ===========================================================================
+describe('regression · /inputs mount resolves to a writable dir', () => {
+  // 2x3 PNG (cv2.imencode of a solid colour) — a genuine, cv2-decodable image.
+  const PNG_B64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAFUlEQVQIHWOUE+FiAANGOREuBjAAAAZyAHsISLb5AAAAAElFTkSuQmCC';
+
+  it('mounts an input file and reads it back through the rewritten path', async () => {
+    const mountDir = resolveInputsDir(COURSE, LESSON);
+    // The mount cell threw `PermissionError` before the fix (os.makedirs on '/').
+    const mount = await mgr.execute(
+      COURSE,
+      LESSON,
+      buildInputsMountCode([{ filename: 'in.png', b64: PNG_B64 }], mountDir),
+    );
+    expect(mount.status).toBe('ok');
+    expect(mount.error).toBeNull();
+
+    // User code authored against the public `/inputs/<file>` contract still works.
+    const userCode = [
+      'import cv2',
+      "img = cv2.imread('/inputs/in.png')",
+      "print('SHAPE', None if img is None else img.shape)",
+    ].join('\n');
+    const r = await mgr.execute(COURSE, LESSON, rewriteInputsPath(userCode, mountDir));
+    expect(r.status).toBe('ok');
+    // cv2 decoded the real PNG from the rewritten path (2x3 BGR).
+    expect(r.stdout).toContain('SHAPE (2, 3, 3)');
   }, 120_000);
 });
 
