@@ -177,6 +177,15 @@
       "type": "sandbox",
       "data": {
         "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda_I = sar[20:80, 10:70] ** 2\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float)\n    return float(I.mean() ** 2 / I.var())\n\ndef multilook(img, looks):\n    img = np.asarray(img, dtype=np.float64)\n    if looks <= 1:\n        return img.copy()\n    h = (img.shape[0] // looks) * looks\n    w = (img.shape[1] // looks) * looks\n    return img[:h, :w].reshape(h // looks, looks, w // looks, looks).mean(axis=(1, 3))\n\n# Zmieniaj liczbe lookow i obserwuj, jak ENL rosnie, a obraz sie kurczy.\nfor looks in (1, 2, 3, 5, 8):\n    out = multilook(woda_I, looks)\n    print('looki', looks, '| ENL', round(enl(out), 1), '| ksztalt', out.shape)\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 w skali szarości: ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255), 256×256",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
         "encouragement": "Zwiększaj liczbę looków i zobacz, w którym momencie kafelek robi się za mały albo za gładki, by CFAR miał jeszcze na czym wykryć statek."
       }
     }

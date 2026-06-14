@@ -188,6 +188,15 @@
       "type": "sandbox",
       "data": {
         "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float) ** 2\n    return float(I.mean() ** 2 / I.var())\n\ndef boxcar(img, size):\n    return cv2.blur(img.astype(np.float64), (size, size))\n\ndef lee_filter(img, size, cu):\n    img = img.astype(np.float64)\n    mean = cv2.blur(img, (size, size))\n    mean_sq = cv2.blur(img * img, (size, size))\n    var = np.maximum(mean_sq - mean * mean, 0.0)\n    ci2 = var / (mean * mean + 1e-8)\n    w = np.clip(1.0 - (cu * cu) / (ci2 + 1e-8), 0.0, 1.0)\n    return mean + w * (img - mean)\n\n# Zmieniaj okno i cu; porownaj ENL wody dla boxcara i Lee.\nfor size in (3, 7, 11):\n    print('okno', size, '| boxcar ENL', round(enl(boxcar(woda, size)), 1),\n          '| Lee ENL', round(enl(lee_filter(woda, size, 0.25)), 1))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 w skali szarości: ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255)",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
         "encouragement": "Zmniejszaj cu i powiększaj okno, aż zobaczysz, w którym momencie Lee zaczyna gubić jasne punkty tak samo jak boxcar."
       }
     }

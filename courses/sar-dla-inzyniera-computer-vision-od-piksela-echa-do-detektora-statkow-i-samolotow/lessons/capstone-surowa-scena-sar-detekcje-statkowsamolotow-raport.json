@@ -148,6 +148,15 @@
       "type": "sandbox",
       "data": {
         "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef sea_mask(img, smooth=15, frac=0.45):\n    sm = uniform_filter(img.astype(float), smooth)\n    return ~(sm > frac * img.max())\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\ndef run_capstone(img, guard=2, train=8, alpha=5.0, chip=16, min_peak=90.0, sea=None):\n    if sea is None:\n        sea = sea_mask(img)\n    mask = ca_cfar(img, guard, train, alpha) & sea\n    targets = detect_targets(img, mask, chip=chip, min_peak=min_peak)\n    ships = [t for t in targets if t['is_ship']]\n    return {'n_candidates': len(targets), 'n_ships': len(ships), 'targets': targets}\n\n# Krec dwoma pokretlami osobno: alpha (czulosc CFAR) i min_peak (prog klasyfikatora).\nfor alpha in (4.0, 5.0, 6.0):\n    for min_peak in (70.0, 90.0, 120.0):\n        r = run_capstone(sar, alpha=alpha, min_peak=min_peak)\n        print('alpha', alpha, 'min_peak', min_peak, '-> kandydaci', r['n_candidates'], '| statki', r['n_ships'])\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszonymi jasnymi punktami (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: surowy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
         "encouragement": "Zobacz, że alpha steruje liczbą kandydatów CFAR, a min_peak — ilu z nich przejdzie jako statki; to dwa niezależne pokrętła czułości i precyzji."
       }
     },
