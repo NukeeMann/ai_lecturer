@@ -98,7 +98,7 @@ export function installApiShim(): void {
       return json(
         {
           error:
-            'This feature requires the full AI Lecturer app and is not available in the static export.',
+            'This feature is not available in the static version of this course.',
         },
         503,
       );

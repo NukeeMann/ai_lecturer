@@ -18,11 +18,16 @@
 // readProgressDoc / applyProgressPatch / loadCourseProgress) is unchanged —
 // cookies are an internal implementation detail.
 
-const KEY_PREFIX = 'ai-lecturer-static:progress:';
+// Neutral, brand-free storage key so an exported course carries no "AI
+// Lecturer" reference anywhere — not even in localStorage keys a curious
+// learner might inspect via devtools. (Renaming resets any progress saved
+// under the old key, which only matters when re-exporting an already-shared
+// course; fresh exports are unaffected.)
+const KEY_PREFIX = 'static-course:progress:';
 
 // ---- cookie backup ---------------------------------------------------------
 
-const COOKIE_PREFIX = 'aiLect_p__';
+const COOKIE_PREFIX = 'scp__'; // static-course progress (brand-free)
 const COOKIE_TTL_SECONDS = 365 * 24 * 60 * 60;
 /** Stay safely below the 4096-byte per-cookie hard limit. */
 const COOKIE_MAX_BYTES = 3500;

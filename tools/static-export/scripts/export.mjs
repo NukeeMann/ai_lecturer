@@ -69,6 +69,22 @@ async function readJson(file) {
   return JSON.parse(raw);
 }
 
+// Eyebrow/footer on a course index page. Only library exports get these — a
+// single-course export (MODE 1) omits `branding` entirely so the resulting
+// site carries no trace of the tool it came from.
+const LIBRARY_COURSE_BRANDING = {
+  eyebrow: 'AI Lecturer · Static course',
+  footerHtml:
+    'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a>',
+};
+
+// Defaults for the library HOME page (dist/library/index.html), used when
+// library.config.json doesn't override them. Kept here (not in the React
+// source) so the compiled bundle stays branding-free.
+const LIBRARY_HOME_EYEBROW = 'AI Lecturer · Static library';
+const LIBRARY_HOME_FOOTER_HTML =
+  'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a>';
+
 async function exists(p) {
   try {
     await fs.access(p);
@@ -505,6 +521,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
           indexHref: 'index.html',
           courseAssetBase: coursePrefix + `assets/course/${slug}/`,
           homeHref: coursePrefix + 'index.html',
+          branding: LIBRARY_COURSE_BRANDING,
         },
       }),
       'utf8',
@@ -596,9 +613,9 @@ async function exportLibrary({ collectionNames, allCollections }) {
         courseAssetBase: '',
         library: {
           title: libraryTitle,
-          eyebrow: userConfig.eyebrow ?? undefined,
+          eyebrow: userConfig.eyebrow ?? LIBRARY_HOME_EYEBROW,
           subtitle: userConfig.subtitle ?? undefined,
-          footerHtml: userConfig.footerHtml ?? undefined,
+          footerHtml: userConfig.footerHtml ?? LIBRARY_HOME_FOOTER_HTML,
           collections: libraryCollections,
         },
       },

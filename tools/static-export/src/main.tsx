@@ -44,10 +44,10 @@ function boot() {
   const payload = rewriteAssetUrls(readPayload());
   document.title =
     payload.kind === 'home'
-      ? (payload.library?.title ?? 'AI Lecturer library')
+      ? (payload.library?.title ?? 'Library')
       : payload.kind === 'lesson' && payload.lesson?.title
         ? `${payload.lesson.title} · ${payload.course?.title ?? ''}`
-        : (payload.course?.title ?? 'AI Lecturer course');
+        : (payload.course?.title ?? payload.courseSlug ?? 'Course');
 
   const mount = document.getElementById('root');
   if (!mount) throw new Error('[static-export] #root not found');

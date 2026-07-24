@@ -83,7 +83,9 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
           </a>
         ) : null}
         <header className="sx-course-head">
-          <div className="sx-eyebrow">AI Lecturer · Static course</div>
+          {payload.branding?.eyebrow ? (
+            <div className="sx-eyebrow">{payload.branding.eyebrow}</div>
+          ) : null}
           <h1>{course.title ?? payload.courseSlug}</h1>
           {course.description ? (
             <p className="sx-course-desc">{course.description}</p>
@@ -148,16 +150,12 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
           ))}
         </ol>
 
-        <footer className="sx-foot">
-          Exported from{' '}
-          <a
-            href="https://github.com/NukeeMann/ai_lecturer"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            AI Lecturer
-          </a>
-        </footer>
+        {payload.branding?.footerHtml ? (
+          <footer
+            className="sx-foot"
+            dangerouslySetInnerHTML={{ __html: payload.branding.footerHtml }}
+          />
+        ) : null}
       </main>
     </div>
   );

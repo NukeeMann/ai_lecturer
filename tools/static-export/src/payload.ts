@@ -63,6 +63,16 @@ export interface SxPayload {
    *  absent for the legacy single-course exports — that's how the UI decides
    *  whether to render the "← Library" back-link. */
   homeHref?: string;
+  /** Branding strings for the course index page (kind === 'index').
+   *  Set by the exporter in library mode only — single-course exports omit it
+   *  so the page carries no "AI Lecturer" eyebrow/footer at all. A missing
+   *  field means "render nothing", not "render a default". */
+  branding?: {
+    /** Eyebrow line above the course title. Omitted → no eyebrow. */
+    eyebrow?: string;
+    /** Footer HTML under the module list. Omitted → no footer. */
+    footerHtml?: string;
+  };
   /** Library bundle metadata (collections + courses). Only on kind === 'home'. */
   library?: {
     title: string;

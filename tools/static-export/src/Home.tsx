@@ -4,10 +4,6 @@
 import type { SxPayload } from './payload';
 import { AccentIcon } from './AccentIcon';
 
-const DEFAULT_EYEBROW = 'AI Lecturer · Static library';
-const DEFAULT_FOOTER_HTML =
-  'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a>';
-
 export function Home({ payload }: { payload: SxPayload }) {
   const lib = payload.library;
   if (!lib) {
@@ -30,14 +26,17 @@ export function Home({ payload }: { payload: SxPayload }) {
     0,
   );
 
-  const eyebrow = lib.eyebrow ?? DEFAULT_EYEBROW;
-  const footerHtml = lib.footerHtml ?? DEFAULT_FOOTER_HTML;
+  // Eyebrow/footer strings come entirely from the exporter (library.config.json
+  // or the built-in library defaults in export.mjs). None are hardcoded here,
+  // so the compiled bundle carries no branding text — a single-course export,
+  // which never renders this component, ships zero "AI Lecturer" strings.
+  const { eyebrow, footerHtml } = lib;
 
   return (
     <div className="sx-shell sx-shell--index">
       <main className="sx-main sx-main--index sx-main--home">
         <header className="sx-course-head">
-          <div className="sx-eyebrow">{eyebrow}</div>
+          {eyebrow ? <div className="sx-eyebrow">{eyebrow}</div> : null}
           <h1>{lib.title}</h1>
           <div className="sx-course-meta">
             {lib.collections.length} collection
@@ -94,10 +93,12 @@ export function Home({ payload }: { payload: SxPayload }) {
           </section>
         ))}
 
-        <footer
-          className="sx-foot"
-          dangerouslySetInnerHTML={{ __html: footerHtml }}
-        />
+        {footerHtml ? (
+          <footer
+            className="sx-foot"
+            dangerouslySetInnerHTML={{ __html: footerHtml }}
+          />
+        ) : null}
       </main>
     </div>
   );
