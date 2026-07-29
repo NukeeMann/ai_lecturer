@@ -4,11 +4,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Check, X } from 'lucide-react';
 
 import { Confetti } from '@/components/Confetti';
-<<<<<<< HEAD
 import { MarkdownInline } from '@/components/MarkdownInline';
-=======
 import { shuffledIndices } from '@/widgets/shuffle';
->>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
 
 import type { QuizData } from './schema';
 import {
@@ -296,17 +293,12 @@ export function QuizWidget({
               onMouseLeave={() => setHovered((cur) => (cur === i ? null : cur))}
               style={optionStyle(state, hovered === i)}
             >
-<<<<<<< HEAD
-              <span style={optionLetterStyle(state)}>{LETTERS[i] ?? `${i + 1}`}</span>
-              <span style={optionTextStyle(state)}>
-                <MarkdownInline>{option}</MarkdownInline>
-              </span>
-=======
               <span style={optionLetterStyle(state)}>
                 {LETTERS[displayPos] ?? `${displayPos + 1}`}
               </span>
-              <span style={optionTextStyle(state)}>{option}</span>
->>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
+              <span style={optionTextStyle(state)}>
+                <MarkdownInline>{option}</MarkdownInline>
+              </span>
               {showCheck && (
                 <Check
                   size={16}

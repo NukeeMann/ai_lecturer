@@ -39,16 +39,64 @@ function loadMermaid(): Promise<MermaidModule> {
   return mermaidPromise;
 }
 
+// Normalise any CSS colour value into a format mermaid's colour lib (khroma)
+// can parse. Design tokens may be authored in oklch() (e.g. the zajawa export
+// reskin), which khroma rejects with "Unsupported color format" — that error
+// bubbles out of mermaid.render() and blanks the whole diagram.
+//
+// The browser understands oklch()/hsl()/named colours natively, but merely
+// round-tripping through canvas `fillStyle` is NOT enough: Chrome serialises
+// oklch() straight back as oklch(). To force a plain sRGB value we actually
+// PAINT one pixel with the colour and read the rendered bytes back — that is
+// always rgba, whatever the input format was.
+let colorProbeCtx: CanvasRenderingContext2D | null | undefined;
+function normalizeColor(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || typeof document === 'undefined') return value;
+  // Already a format khroma reads directly — skip the canvas round-trip.
+  if (/^(#|rgb\(|rgba\(|hsl\(|hsla\()/i.test(trimmed)) return trimmed;
+  try {
+    if (colorProbeCtx === undefined) {
+      colorProbeCtx = document
+        .createElement('canvas')
+        .getContext('2d', { willReadFrequently: true });
+    }
+    const ctx = colorProbeCtx;
+    if (!ctx) return value;
+    // Validate: an unparseable value leaves fillStyle unchanged, so the two
+    // probes (from #000 then #fff) only agree when the colour actually parsed.
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = trimmed;
+    const onBlack = ctx.fillStyle;
+    ctx.fillStyle = '#fff';
+    ctx.fillStyle = trimmed;
+    if (onBlack !== ctx.fillStyle) return value;
+    // Paint & read back the rendered pixel → guaranteed sRGB rgba bytes.
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return a === 255
+      ? `rgb(${r}, ${g}, ${b})`
+      : `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+  } catch {
+    return value;
+  }
+}
+
 // Map the project's design tokens onto mermaid's `base` theme variables so the
 // diagram is legible in every theme. We read the *computed* values (resolving
 // var() chains) off the document root.
 function readThemeVariables(): Record<string, string> {
   if (typeof window === 'undefined') return {};
   const cs = window.getComputedStyle(document.documentElement);
-  const v = (name: string, fallback: string): string => {
-    const raw = cs.getPropertyValue(name).trim();
-    return raw.length > 0 ? raw : fallback;
+  // Colour tokens are normalised (oklch → rgb) for khroma; non-colour tokens
+  // (font family) are read verbatim via `raw`.
+  const raw = (name: string, fallback: string): string => {
+    const val = cs.getPropertyValue(name).trim();
+    return val.length > 0 ? val : fallback;
   };
+  const v = (name: string, fallback: string): string =>
+    normalizeColor(raw(name, fallback));
   const text = v('--text', '#18171a');
   const accentSubtle = v('--accent-subtle', '#eaf0fd');
   const accentBorder = v('--accent-border', '#c2d2f8');
@@ -74,7 +122,7 @@ function readThemeVariables(): Record<string, string> {
     clusterBkg: bgSubtle,
     clusterBorder: accentBorder,
     labelTextColor: text,
-    fontFamily: v('--font-sans', 'inherit'),
+    fontFamily: raw('--font-sans', 'inherit'),
   };
 }
 

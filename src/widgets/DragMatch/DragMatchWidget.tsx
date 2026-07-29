@@ -24,11 +24,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { Check, X } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
-<<<<<<< HEAD
 import { MarkdownInline } from '@/components/MarkdownInline';
-=======
 import { shuffleArray } from '@/widgets/shuffle';
->>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
 
 import {
   DragMatchDataSchema,
