@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 
 import { Callout, type CalloutTone } from '@/components/Callout';
+import { MermaidPre } from '@/components/MermaidDiagram';
 import { ZoomableImage } from '@/components/ZoomableImage';
 import { preprocessMath } from '@/lib/client/mathPreprocess';
 import { enqueue, type TtsJobHandle, type TtsJobStatus } from '@/lib/client/ttsQueue';
@@ -34,6 +35,9 @@ function normalizeTone(raw: unknown): CalloutTone {
 const components: Components = {
   img: (({ src, alt }: { src?: string; alt?: string }) =>
     src ? <ZoomableImage src={src} alt={alt ?? ''} /> : null) as Components['img'],
+  // ```mermaid fenced blocks → SVG diagram (lazy-loaded); other fenced blocks
+  // fall through to a normal <pre>.
+  pre: MermaidPre as Components['pre'],
   // Custom directive output ('callout' is not a standard HTML tag — react-markdown
   // accepts string keys at runtime; the cast keeps TypeScript happy).
   ...({
@@ -402,7 +406,7 @@ export function TheoryWidget({ data }: TheoryWidgetProps) {
       <style>{KEYFRAMES}</style>
       <div data-theory-body>
         <ReactMarkdown
-          remarkPlugins={[remarkDirective, remarkCallout, remarkGfm, remarkMath]}
+          remarkPlugins={[remarkDirective, remarkGfm, remarkCallout, remarkMath]}
           rehypePlugins={[rehypeKatex]}
           components={components}
         >

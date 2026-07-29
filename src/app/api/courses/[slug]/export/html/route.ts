@@ -30,9 +30,11 @@ import {
 import { CourseSchema, type Course } from '@/lib/schemas/course';
 import { LessonSchema, type Lesson } from '@/lib/schemas/lesson';
 import {
+  MERMAID_LOADER_JS,
   PYODIDE_LOADER_JS,
   STATIC_CLIENT_JS,
   STATIC_STYLES_CSS,
+  lessonHasMermaid,
   renderIndexHtml,
   renderLessonDataJs,
   renderLessonHtml,
@@ -170,6 +172,11 @@ export async function GET(_req: Request, { params }: RouteCtx) {
   archive.append(STATIC_STYLES_CSS, { name: `${slug}/assets/styles.css` });
   archive.append(PYODIDE_LOADER_JS, { name: `${slug}/assets/pyodide-loader.js` });
   archive.append(STATIC_CLIENT_JS, { name: `${slug}/assets/static-client.js` });
+  // Mermaid loader is only bundled when at least one lesson has a diagram —
+  // the per-lesson <script> tag is likewise emitted conditionally.
+  if (lessons.some((l) => lessonHasMermaid(l))) {
+    archive.append(MERMAID_LOADER_JS, { name: `${slug}/assets/mermaid-loader.js` });
+  }
 
   for (let i = 0; i < lessons.length; i++) {
     const lesson = lessons[i];

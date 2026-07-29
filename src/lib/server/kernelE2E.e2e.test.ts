@@ -33,6 +33,11 @@ import {
   KernelRuntimeNotInstalledError,
   defaultBridgeScriptPath,
 } from '@/lib/server/kernelManager';
+import {
+  buildInputsMountCode,
+  resolveInputsDir,
+  rewriteInputsPath,
+} from '@/lib/server/codeRun';
 import { kernelPythonPath, __setKernelRuntimeDepsForTesting } from '@/lib/server/kernelRuntime';
 
 const BRIDGE = defaultBridgeScriptPath();
@@ -169,6 +174,41 @@ describe('US-205 E2E · real libraries through the kernel', () => {
 });
 
 // ===========================================================================
+// Regression — Code/Sandbox `inputs` mount must NOT hit the host filesystem
+// root. The virtual `/inputs` root is rewritten to a real writable dir, so the
+// reported `PermissionError [Errno 13] Permission denied: '/inputs'` on Run
+// can't recur. Mirrors exactly what `POST /api/code/run` assembles.
+// ===========================================================================
+describe('regression · /inputs mount resolves to a writable dir', () => {
+  // 2x3 PNG (cv2.imencode of a solid colour) — a genuine, cv2-decodable image.
+  const PNG_B64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAIAAAASFvFNAAAAFUlEQVQIHWOUE+FiAANGOREuBjAAAAZyAHsISLb5AAAAAElFTkSuQmCC';
+
+  it('mounts an input file and reads it back through the rewritten path', async () => {
+    const mountDir = resolveInputsDir(COURSE, LESSON);
+    // The mount cell threw `PermissionError` before the fix (os.makedirs on '/').
+    const mount = await mgr.execute(
+      COURSE,
+      LESSON,
+      buildInputsMountCode([{ filename: 'in.png', b64: PNG_B64 }], mountDir),
+    );
+    expect(mount.status).toBe('ok');
+    expect(mount.error).toBeNull();
+
+    // User code authored against the public `/inputs/<file>` contract still works.
+    const userCode = [
+      'import cv2',
+      "img = cv2.imread('/inputs/in.png')",
+      "print('SHAPE', None if img is None else img.shape)",
+    ].join('\n');
+    const r = await mgr.execute(COURSE, LESSON, rewriteInputsPath(userCode, mountDir));
+    expect(r.status).toBe('ok');
+    // cv2 decoded the real PNG from the rewritten path (2x3 BGR).
+    expect(r.stdout).toContain('SHAPE (2, 3, 3)');
+  }, 120_000);
+});
+
+// ===========================================================================
 // AC 3 — Code flow: Submit with hidden tests → correct PASS and correct FAIL,
 // plus a rendered live figure.
 // ===========================================================================
@@ -224,6 +264,36 @@ describe('US-205 E2E · Sandbox free-run flow', () => {
     // which the bridge surfaces in `images` (US-201 capture path).
     expect(r.images.length).toBeGreaterThan(0);
     expect(r.images[0].length).toBeGreaterThan(100);
+  }, 120_000);
+
+  it('free-run still renders an image after the backend is switched to Agg', async () => {
+    // Regression: the per-lesson kernel is shared by every Code/Sandbox run, so
+    // a single `matplotlib.use('Agg')` anywhere in the lesson used to silence
+    // the inline auto-display for the rest of the session — leaving a free-run
+    // imshow with only stdout text and no image. The bridge now re-captures
+    // still-open figures explicitly, so the image survives a poisoned backend.
+    const poison = await mgr.execute(
+      COURSE,
+      LESSON,
+      ['import matplotlib', "matplotlib.use('Agg')", 'import matplotlib.pyplot as plt'].join('\n'),
+    );
+    expect(poison.status).toBe('ok');
+    const r = await mgr.execute(
+      COURSE,
+      LESSON,
+      ['import numpy as np', "plt.imshow(np.random.rand(12, 12), cmap='gray')", "print('text out')"].join('\n'),
+    );
+    expect(r.status).toBe('ok');
+    expect(r.stdout).toContain('text out');
+    // Captured despite Agg emitting no display_data of its own.
+    expect(r.images.length).toBe(1);
+    expect(r.images[0].length).toBeGreaterThan(100);
+    // A cell with no figure must not re-emit a stale one.
+    const empty = await mgr.execute(COURSE, LESSON, "print('no figure here')");
+    expect(empty.images.length).toBe(0);
+    // Restore the inline backend so later tests in this shared session are
+    // unaffected by the deliberate poison above.
+    await mgr.execute(COURSE, LESSON, "matplotlib.use('module://matplotlib_inline.backend_inline')");
   }, 120_000);
 });
 

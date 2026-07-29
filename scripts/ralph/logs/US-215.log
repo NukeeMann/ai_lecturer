@@ -1,0 +1,70 @@
+[2026-06-13T10:31:38+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:31:43+0200] Let me explore the relevant files for the upload pipeline and wizard.
+[2026-06-13T10:31:47+0200] Now let me look at the wizard create page and check for existing videoId parsing.
+[2026-06-13T10:32:03+0200] Now let me find the materials step UI in the wizard.
+[2026-06-13T10:32:13+0200] Now let me look at the StageMaterials component and the file picker/list UI in detail.
+[2026-06-13T10:33:05+0200] This gives me a clear picture. Let me check existing tests that assert on allowed extensions and the GET listing shape, plus the media test module for the injectable-fetcher pattern.
+[2026-06-13T10:33:53+0200] Key design decision: the YouTube source is written as a `.md` file, but `.md` is deliberately NOT on the upload allow-list. The DELETE and move paths gate on `sanitizeFilename`. Let me check what tests assert about sanitizeFilename rejecting `.md`.
+[2026-06-13T10:34:02+0200] No test forbids `.md` in sanitizeFilename. Let me find where the upload-sources route tests live, and check the GET listing test shape.
+[2026-06-13T10:34:17+0200] Let me see the test helper pattern for upload-sources tests (lines 625-700).
+[2026-06-13T10:34:42+0200] I have enough context. Let me implement. First, the core server module:
+[2026-06-13T10:35:04+0200] Now the API route:
+[2026-06-13T10:35:20+0200] Now update `sanitizeFilename` to accept `.md` so the YouTube source is deletable and gets promoted at finalization:
+[2026-06-13T10:35:39+0200] Now wire the UI. Let me check the page's imports and the upsert pattern for materials.
+[2026-06-13T10:35:46+0200] I'll add the `extractYouTubeId` import and a YouTube icon, then build the UI block. Let me add the import:
+[2026-06-13T10:36:12+0200] Now add the YouTube field UI right after the dropzone block (before the `generalError` block):
+[2026-06-13T10:36:28+0200] Now the tests. First the module unit test:
+[2026-06-13T10:36:51+0200] Now route-level tests in api.test.ts. Let me check the existing imports block:
+[2026-06-13T10:36:52+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:37:22+0200] Now add the route test block after the GET upload-sources describe. Let me find the end of that block:
+[2026-06-13T10:37:25+0200] I'll insert the YouTube route tests right after line 842 (end of GET upload-sources describe):
+[2026-06-13T10:37:52+0200] Let me add a sanitizeFilename `.md` assertion in sources.test.ts:
+[2026-06-13T10:37:57+0200] Now run typecheck, lint, and the relevant tests:
+[2026-06-13T10:38:40+0200] These errors are pre-existing in unrelated files. Let me lint only my changed files:
+[2026-06-13T10:38:57+0200] My new files lint clean; the page.tsx errors are all pre-existing (lines 2916+, unrelated to my StageMaterials edits). Now run the tests:
+[2026-06-13T10:39:04+0200] All 163 pass. Let me run the full test suite to ensure no regressions:
+[2026-06-13T10:39:28+0200] One failure in `generation.test.ts` — looks like a flaky race (reads a half-written marker JSON). Unrelated to my change. Let me confirm it's flaky/pre-existing by re-running it in isolation:
+[2026-06-13T10:39:37+0200] Confirmed flaky/pre-existing (passes in isolation; it's a JSON-parse race on a partially-written marker, unrelated to my work). Now browser verification. Let me detect dev servers:
+[2026-06-13T10:39:41+0200] I'll start a dev server:
+[2026-06-13T10:40:03+0200] Dev server ready. Let me write a Playwright test that mocks the API route (avoids real YouTube network) and verifies the field, validation, success row, and the "none" error:
+[2026-06-13T10:40:37+0200] All UI checks passed. The lone "console error" is the expected 422 HTTP response for the none-source case (browsers log non-2xx as resource errors) — not a JS error. 
+
+Now update progress log and prd.json. Let me check the prd.json entry:
+[2026-06-13T10:41:13+0200] Now stage and commit:
+[2026-06-13T10:41:26+0200] Committed. Now stop the dev server by its specific PID:
+[2026-06-13T10:41:37+0200] US-215 is complete and committed (`1168cbe`) with `passes: true` in HEAD.
+
+## Summary
+
+Implemented the YouTube-link source for the wizard's materials step.
+
+**New code**
+- `src/lib/server/youtubeSource.ts` — `addYouTubeSource(targetDir, rawInput)`: parses the videoId via the existing `extractYouTubeId`, fetches the transcript through an injectable fetcher (defaults to `fetchYouTubeTranscript`), and writes `youtube-<videoId>.md` with a provenance header (url, videoId, fetchedAt, source). Deterministic name → re-adding **overwrites** instead of duplicating. `source:'none'` → structured error, **no file written**. Test seam `__setYouTubeTranscriptFetcherForTesting`.
+- `src/app/api/courses/youtube-source/route.ts` — POST `{url, draftId?, slug?}`, mirrors upload-sources' draft/slug resolution. 422 for unparseable link / `source:none`, 400 for missing url, 201 on success. The file lands in the same `/sources/` dir, so GET lists it, DELETE removes it, and finalisation promotes it.
+
+**Touched**
+- `sources.ts`: `sanitizeFilename` now allows `.md` via a new `SOURCE_FILENAME_EXTENSIONS` set — making the generated file deletable/promotable **without** widening the upload allow-list (`validateUpload` still rejects `.md` uploads, since there's no MIME mapping). `.md` was already read as text downstream, so the whole pipeline works unchanged.
+- `create/page.tsx`: "Add YouTube link" input + button in `StageMaterials`, client-side validation with `extractYouTubeId`, upsert-by-name (no dup on re-add), inline field error for the none case.
+
+**Verification**
+- New + touched tests: youtubeSource (8) + api route (7) + sanitize (1) all pass. Full suite 1333/1334 — the single failure is the known-flaky `generation.test.ts` `.generating.json` marker race (passes in isolation, unrelated).
+- Typecheck clean; new files lint clean (page.tsx's remaining eslint errors are pre-existing, unrelated to the edits).
+- Playwright (headless, route-mocked to avoid real YouTube): field renders, invalid input errors, valid link adds a row, re-add doesn't duplicate, `source:none` shows a clear field error. Screenshots at `/tmp/us215-added.png`, `/tmp/us215-none-error.png`.
+[2026-06-13T10:41:37+0200] [result success turns=57 cost=$4.1637865000000005] US-215 is complete and committed (`1168cbe`) with `passes: true` in HEAD.
+
+## Summary
+
+Implemented the YouTube-link source for the wizard's materials step.
+
+**New code**
+- `src/lib/server/youtubeSource.ts` — `addYouTubeSource(targetDir, rawInput)`: parses the videoId via the existing `extractYouTubeId`, fetches the transcript through an injectable fetcher (defaults to `fetchYouTubeTranscript`), and writes `youtube-<videoId>.md` with a provenance header (url, videoId, fetchedAt, source). Deterministic name → re-adding **overwrites** instead of duplicating. `source:'none'` → structured error, **no file written**. Test seam `__setYouTubeTranscriptFetcherForTesting`.
+- `src/app/api/courses/youtube-source/route.ts` — POST `{url, draftId?, slug?}`, mirrors upload-sources' draft/slug resolution. 422 for unparseable link / `source:none`, 400 for missing url, 201 on success. The file lands in the same `/sources/` dir, so GET lists it, DELETE removes it, and finalisation promotes it.
+
+**Touched**
+- `sources.ts`: `sanitizeFilename` now allows `.md` via a new `SOURCE_FILENAME_EXTENSIONS` set — making the generated file deletable/promotable **without** widening the upload allow-list (`validateUpload` still rejects `.md` uploads, since there's no MIME mapping). `.md` was already read as text downstream, so the whole pipeline works unchanged.
+- `create/page.tsx`: "Add YouTube link" input + button in `StageMaterials`, client-side validation with `extractYouTubeId`, upsert-by-name (no dup on re-add), inline field error for the none case.
+
+**Verification**
+- New + touched tests: youtubeSource (8) + api route (7) + sanitize (1) all pass. Full suite 1333/1334 — the single failure is the known-flaky `generation.test.ts` `.generating.json` marker race (passes in isolation, unrelated).
+- Typecheck clean; new files lint clean (page.tsx's remaining eslint errors are pre-existing, unrelated to the edits).
+- Playwright (headless, route-mocked to avoid real YouTube): field renders, invalid input errors, valid link adds a row, re-add doesn't duplicate, `source:none` shows a clear field error. Screenshots at `/tmp/us215-added.png`, `/tmp/us215-none-error.png`.

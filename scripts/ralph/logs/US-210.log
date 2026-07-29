@@ -1,0 +1,39 @@
+[2026-06-13T09:34:20+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T09:34:21+0200] I'll start by reading the Ralph instructions, then explore the relevant existing code.
+[2026-06-13T09:34:28+0200] Let me look at existing patterns for schemas, home-dir paths, and a chat-related API route.
+[2026-06-13T09:34:40+0200] Let me look at the paths helper (slug validation) and a server-lib test pattern.
+[2026-06-13T09:35:09+0200] Now I have a clear picture. Let me write the schema, server lib, route, and tests.
+[2026-06-13T09:36:13+0200] Now let me run typecheck and the tests.
+[2026-06-13T09:36:28+0200] All tests pass and typecheck is clean. Let me run lint on the new files.
+[2026-06-13T09:36:38+0200] Clean. Now update prd.json and progress.txt, then commit.
+[2026-06-13T09:36:44+0200] No `ui` tag, so browser testing is skipped per instructions. Let me append progress and commit.
+[2026-06-13T09:37:05+0200] US-210 complete and committed.
+
+## Summary
+
+Implemented a persistent, file-based tutor chat history store per (course, module).
+
+**New files:**
+- `src/lib/schemas/chatHistory.ts` — Zod `ChatHistory` (`schemaVersion: 1` + `messages[{role: user|assistant, content, createdAt}]`), plus a permissive `ChatHistoryWrite` schema (allows `role: 'error'`) and `CHAT_HISTORY_MAX_MESSAGES = 200`.
+- `src/lib/server/chatHistory.ts` — path resolution (`~/.ai-lecturer/chats/<courseSlug>/<moduleId>.json`, overridable via `CHATS_ROOT_OVERRIDE`, slug-guarded), `readChatHistory` (returns empty on missing **or** invalid file, logs a warning, never throws → no 500), `normalizeChatHistory` (strips `error` messages, trims to last 200), `writeChatHistory` (atomic write via existing `atomic.ts`, lazy dirs, last-write-wins).
+- `src/app/api/chats/[courseSlug]/[moduleId]/route.ts` — GET (history, 400 on unsafe slug) and PUT (422 invalid payload, 400 bad JSON/slug, full overwrite).
+- `src/lib/server/chatHistory.test.ts` — 12 tests covering roundtrip, corrupt file, invalid content, limit trimming, error-message exclusion, and invalid-PUT rejection.
+
+**Key design decision:** the persisted schema only permits `user|assistant`, while the PUT payload schema additionally accepts `error` so the UI can submit its full transcript without a 422 — the server strips error messages before writing. This satisfies both "error messages not persisted" and "reject invalid PUT".
+
+**Quality checks:** 12/12 tests pass, `tsc --noEmit` clean, eslint clean. No `ui` tag, so browser testing was skipped per instructions. prd.json `US-210.passes` set to `true` and committed (`18658ab`).
+[2026-06-13T09:37:05+0200] [result success turns=15 cost=$0.906359] US-210 complete and committed.
+
+## Summary
+
+Implemented a persistent, file-based tutor chat history store per (course, module).
+
+**New files:**
+- `src/lib/schemas/chatHistory.ts` — Zod `ChatHistory` (`schemaVersion: 1` + `messages[{role: user|assistant, content, createdAt}]`), plus a permissive `ChatHistoryWrite` schema (allows `role: 'error'`) and `CHAT_HISTORY_MAX_MESSAGES = 200`.
+- `src/lib/server/chatHistory.ts` — path resolution (`~/.ai-lecturer/chats/<courseSlug>/<moduleId>.json`, overridable via `CHATS_ROOT_OVERRIDE`, slug-guarded), `readChatHistory` (returns empty on missing **or** invalid file, logs a warning, never throws → no 500), `normalizeChatHistory` (strips `error` messages, trims to last 200), `writeChatHistory` (atomic write via existing `atomic.ts`, lazy dirs, last-write-wins).
+- `src/app/api/chats/[courseSlug]/[moduleId]/route.ts` — GET (history, 400 on unsafe slug) and PUT (422 invalid payload, 400 bad JSON/slug, full overwrite).
+- `src/lib/server/chatHistory.test.ts` — 12 tests covering roundtrip, corrupt file, invalid content, limit trimming, error-message exclusion, and invalid-PUT rejection.
+
+**Key design decision:** the persisted schema only permits `user|assistant`, while the PUT payload schema additionally accepts `error` so the UI can submit its full transcript without a 422 — the server strips error messages before writing. This satisfies both "error messages not persisted" and "reject invalid PUT".
+
+**Quality checks:** 12/12 tests pass, `tsc --noEmit` clean, eslint clean. No `ui` tag, so browser testing was skipped per instructions. prd.json `US-210.passes` set to `true` and committed (`18658ab`).

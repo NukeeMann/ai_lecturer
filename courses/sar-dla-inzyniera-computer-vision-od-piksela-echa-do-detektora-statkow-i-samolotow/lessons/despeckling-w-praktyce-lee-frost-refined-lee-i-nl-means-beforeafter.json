@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "slug": "despeckling-w-praktyce-lee-frost-refined-lee-i-nl-means-beforeafter",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m2",
+  "title": "Despeckling w praktyce: Lee, Frost, Refined Lee i NL-means before/after",
+  "eyebrow": "CO JEST W DANYCH SAR",
+  "description": "Jak realnie wyczyścić speckle bez zabijania krawędzi i statków: rodzina filtrów adaptacyjnych (Lee, Frost, Refined Lee, NL-means) i kompromis ENL vs zachowanie krawędzi pod detekcję.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "po-co-despeckling",
+      "title": "Nie rozmywaj — filtruj adaptacyjnie",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A Tutorial on Speckle Reduction in SAR Images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        },
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital Image Enhancement and Noise Filtering by Use of Local Statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Poprzednia lekcja zostawiła Cię z przestrogą: speckle jest **multiplikatywny**, więc `cv2.GaussianBlur` to zła odpowiedź — rozmaże krawędzie i statki, nie respektując statystyki. Pytanie brzmi: czym go w takim razie czyścić?\n\nOdpowiedzią jest rodzina **filtrów adaptacyjnych**: **Lee**, **Frost**, **Refined Lee** i **NL-means**. Wszystkie robią jedną wspólną rzecz, której nie robi naiwne uśrednianie (boxcar):\n\n> **Patrzą na lokalną statystykę i decydują, *gdzie* wolno gładzić.** Na płaskim morzu — gładź mocno (tam jest tylko speckle). Na brzegu lądu albo na punktowym statku — cofnij się i zostaw oryginał (tam jest prawdziwa struktura).\n\nMost do Twojego CV: to dokładnie idea filtra **bilateralnego / edge-preserving smoothing**, którą znasz z optyki — tylko dostrojona do statystyki *mnożnikowej*, a nie do addytywnego szumu.\n\n![Trzy panele tego samego kafelka SAR: po lewej surowy widok 1-look z silnym ziarnem speckle, w środku wynik filtra boxcar 7x7 (morze wygładzone, ale brzeg ladu i jasne punkty rozmyte), po prawej wynik filtra Lee 7x7 (morze równie gładkie, lecz brzeg i punktowe cele wyraźnie ostrzejsze niż po boxcarze)](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/despeckling-before-after.png)\n\nKluczowy nawyk myślowy: despeckling to **kompromis na dwóch osiach**, nie operacja \"im gładziej, tym lepiej\".\n\n- **ENL** ($\\mu^2/\\sigma^2$ na płaskim płacie) — *ile* speckle zredukowałeś. Większy = gładziej.\n- **Zachowanie krawędzi i punktowych celów** — *ile* prawdziwej struktury zostało.\n\nTe dwie osie ciągną w przeciwne strony. **Więcej filtrowania nie zawsze jest lepsze**: przefiltruj za mocno i wymażesz właśnie te jasne piksele statku, których w kolejnym module będzie potrzebował CFAR. Punkt pracy dobierasz **pod detekcję**, nie pod \"najgładszy obraz wygrywa\"."
+      }
+    },
+    {
+      "id": "kompromis-enl-vs-krawedz",
+      "title": "Kompromis na liczbach: ENL vs ostrość krawędzi",
+      "description": "Dla rosnącego okna: boxcar i Lee oba podnoszą ENL, ale tylko Lee trzyma ostrość brzegu ląd/morze.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A Tutorial on Speckle Reduction in SAR Images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/despeckling-lee-vs-boxcar-1.png",
+        "alt": "Dwa wykresy liniowe obok siebie, oś X obu to rozmiar okna filtra od 1 do 11 pikseli. Lewy wykres — oś Y to ENL na płacie morza: niebieska linia boxcar rośnie stromo do ~126, czerwona linia Lee rośnie łagodniej do ~41. Prawy wykres — oś Y to zachowana ostrość krawędzi w procentach: niebieska linia boxcar spada z ~90% do ~13%, czerwona linia Lee spada tylko do ~42% i utrzymuje się powyżej boxcara dla każdego okna.",
+        "caption": "Rys. 1. Boxcar kupuje najwyższy ENL (lewy panel), ale płaci za to dramatycznym spadkiem ostrości krawędzi (prawy panel, niebieska linia leci do ~13%). Lee oddaje część redukcji speckle, za to trzyma krawędź dużo wyżej (~42%). To jest właśnie kompromis despecklingu.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\ndef boxcar(img, w):\n    if w <= 1:\n        return img.astype(float)\n    k = np.ones(w) / w\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode=\"same\"), 0, img.astype(float))\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode=\"same\"), 1, out)\n    return out\n\ndef lee(img, w, cu=1.0):\n    img = img.astype(float)\n    mean = boxcar(img, w)\n    mean_sq = boxcar(img * img, w)\n    var = np.maximum(mean_sq - mean * mean, 0.0)\n    ci2 = var / (mean * mean + 1e-8)\n    weight = np.clip(1.0 - (cu * cu) / (ci2 + 1e-8), 0.0, 1.0)\n    return mean + weight * (img - mean)\n\nrng = np.random.default_rng(0)\nH, W = 140, 140\nR = np.full((H, W), 1.0)\nR[:, 70:] = 6.0                                  # plaskie morze (R=1) | jasny lad (R=6)\nI = R * rng.gamma(1.0, 1.0, (H, W))              # speckle 1-look (CoV=1)\nsea = (slice(20, 120), slice(8, 60))             # plaski plat morza do ENL\n\ndef enl(p):\n    return p.mean() ** 2 / p.var()\n\ndef edge_sharpness(img):\n    prof = img[40:100, :].mean(axis=0)           # profil w poprzek krawedzi\n    return np.abs(np.diff(prof)).max()           # najwyzszy skok = ostrosc krawedzi\n\nref = edge_sharpness(R)                           # idealna krawedz bez speckle\nwindows = [1, 3, 5, 7, 9, 11]\nenl_box, enl_lee, sharp_box, sharp_lee = [], [], [], []\nfor w in windows:\n    b, l = boxcar(I, w), lee(I, w, cu=1.0)\n    enl_box.append(enl(b[sea]))\n    enl_lee.append(enl(l[sea]))\n    sharp_box.append(100.0 * edge_sharpness(b) / ref)\n    sharp_lee.append(100.0 * edge_sharpness(l) / ref)\n\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10.5, 4.4))\nax1.plot(windows, enl_box, \"o-\", color=\"#3949ab\", label=\"Boxcar (naiwna średnia)\")\nax1.plot(windows, enl_lee, \"s-\", color=\"#e53935\", label=\"Lee (świadomy speckle)\")\nax1.set_title(\"Redukcja speckle: ENL rośnie z oknem\")\nax1.set_xlabel(\"Rozmiar okna filtra [piksel]\")\nax1.set_ylabel(\"ENL na płacie morza [bezwymiarowe]\")\nax1.grid(True, alpha=0.3)\nax1.legend()\nax2.plot(windows, sharp_box, \"o-\", color=\"#3949ab\", label=\"Boxcar (naiwna średnia)\")\nax2.plot(windows, sharp_lee, \"s-\", color=\"#e53935\", label=\"Lee (świadomy speckle)\")\nax2.set_title(\"Zachowanie krawędzi: ostrość brzegu ląd/morze\")\nax2.set_xlabel(\"Rozmiar okna filtra [piksel]\")\nax2.set_ylabel(\"Zachowana ostrość krawędzi [%]\")\nax2.grid(True, alpha=0.3)\nax2.legend()\nfig.suptitle(\"Despeckling to kompromis: boxcar kupuje wyższy ENL ceną rozmytej krawędzi, Lee oddaje trochę ENL, by brzeg zachować\")\nfig.tight_layout()\nplt.savefig(\"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/despeckling-lee-vs-boxcar-1.png\", dpi=110, bbox_inches=\"tight\")\nprint(\"saved plot\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "boxcar-vs-lee",
+      "title": "Suwak: boxcar vs Lee na żywo",
+      "description": "Przełączaj filtr i okno; patrz, jak ENL na morzu rośnie, a profil krawędzi ostaje się (Lee) albo rozmywa (boxcar).",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Syntetyczna scena 1-look (uczciwa symulacja, by mechanizm byl widoczny):\n# plaskie morze R=1, jasny lad R=6 z ostra krawedzia w kolumnie 70 i punktowy cel (statek).\n_rng = np.random.default_rng(0)\nH, W = 130, 130\nR = np.full((H, W), 1.0)\nR[:, 70:] = 6.0\nR[60:63, 30:33] = 40.0                 # punktowy cel na morzu\nI_obs = R * _rng.gamma(1.0, 1.0, (H, W))   # speckle 1-look, CoV = 1\nSEA = (slice(15, 55), slice(6, 58))        # plaski plat morza (bez celu) do odczytu ENL\nEDGE = 70\n\ndef _boxcar(img, w):\n    if w <= 1:\n        return img.astype(float)\n    k = np.ones(w) / w\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 0, img.astype(float))\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 1, out)\n    return out\n\ndef _lee(img, w, cu=1.0):\n    img = img.astype(float)\n    mean = _boxcar(img, w)\n    mean_sq = _boxcar(img * img, w)\n    var = np.maximum(mean_sq - mean * mean, 0.0)\n    ci2 = var / (mean * mean + 1e-8)\n    weight = np.clip(1.0 - (cu * cu) / (ci2 + 1e-8), 0.0, 1.0)\n    return mean + weight * (img - mean)\n\ndef _enl(patch):\n    return float(patch.mean() ** 2 / patch.var())\n",
+        "renderCode": "okno = int(okno)\nout = _lee(I_obs, okno, cu=1.0) if filtr == 'Lee (swiadomy speckle)' else _boxcar(I_obs, okno)\nenl = _enl(out[SEA])\ndraw_in = np.sqrt(I_obs)\ndraw_out = np.sqrt(np.clip(out, 0, None))\nvmax = float(np.percentile(draw_in, 99))\nfig = plt.figure(figsize=(9.2, 7.0))\nax_in = fig.add_subplot(2, 2, 1)\nax_out = fig.add_subplot(2, 2, 2)\nax_prof = fig.add_subplot(2, 1, 2)\nax_in.imshow(draw_in, cmap='gray', vmax=vmax)\nax_in.set_title('Wejscie: 1 look (surowy speckle)')\nax_in.set_xlabel('azimuth [piksel]'); ax_in.set_ylabel('range [piksel]')\nax_out.imshow(draw_out, cmap='gray', vmax=vmax)\nax_out.set_title(filtr + '  ' + str(okno) + 'x' + str(okno) + '  ENL=' + format(enl, '.0f'))\nax_out.set_xlabel('azimuth [piksel]'); ax_out.set_ylabel('range [piksel]')\nprof_in = I_obs[40:100, :].mean(axis=0)\nprof_out = out[40:100, :].mean(axis=0)\nax_prof.axvline(EDGE, color='#9e9e9e', ls='--', lw=1, label='krawedz lad/morze')\nax_prof.plot(prof_in, color='#bdbdbd', lw=1, label='wejscie (speckle)')\nax_prof.plot(prof_out, color='#e53935', lw=2, label='po filtrze')\nax_prof.set_title('Profil w poprzek krawedzi: ostry skok = zachowana krawedz; pik ~kol. 31 = statek')\nax_prof.set_xlabel('kolumna = range [piksel]'); ax_prof.set_ylabel('intensywnosc [j.u.]')\nax_prof.legend(fontsize=8); ax_prof.grid(True, alpha=0.3)\nfig.suptitle('Boxcar gladzi wszystko po rowno; Lee gladzi morze, ale cofa sie na krawedzi i celu')\nfig.tight_layout()\nresult = filtr + ': ENL na morzu = ' + format(enl, '.1f') + ' (okno ' + str(okno) + 'x' + str(okno) + ')'\n",
+        "params": [
+          {
+            "name": "filtr",
+            "label": "Filtr",
+            "type": "select",
+            "default": "Lee (swiadomy speckle)",
+            "options": [
+              "Boxcar (naiwna srednia)",
+              "Lee (swiadomy speckle)"
+            ]
+          },
+          {
+            "name": "okno",
+            "label": "Rozmiar okna [piksel]",
+            "type": "slider",
+            "min": 1,
+            "max": 13,
+            "step": 2,
+            "default": 7
+          }
+        ],
+        "outputType": "both"
+      }
+    },
+    {
+      "id": "quiz-kompromis",
+      "title": "Szybki sprawdzian: po co adaptacja",
+      "description": "Po zabawie suwakiem — które zdania o despecklingu są prawdziwe?",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o despecklingu są prawdziwe? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "Boxcar przy dużym oknie daje najwyższy ENL, więc jest najlepszym wyborem do detekcji statków.",
+          "Despeckling to kompromis: filtr adaptacyjny (np. Lee) oddaje część redukcji speckle, by zachować krawędzie i punktowe cele.",
+          "Przefiltrowanie (za duże okno) może wymazać piksele statku, których w kolejnym kroku potrzebuje CFAR — punkt pracy dobiera się pod detekcję, nie pod 'najgładszy obraz'.",
+          "Skoro Lee i boxcar oba podnoszą ENL, są wymienne — wynik jest praktycznie taki sam."
+        ],
+        "correct": [
+          1,
+          2
+        ],
+        "explanation": "Boxcar faktycznie osiąga najwyższy ENL, ale właśnie dlatego, że uśrednia wszystko po równo — rozmywa brzeg ląd/morze i punktowe statki (prawy panel wykresu: ostrość leci do ~13%). To czyni go złym, nie dobrym, wyborem do detekcji (odp. 1 fałsz, odp. 4 fałsz — wyniki Lee i boxcara wcale nie są wymienne). Filtr adaptacyjny jak Lee świadomie oddaje część redukcji speckle, by zachować strukturę (odp. 2 prawda), a ponieważ za mocne filtrowanie kasuje jasne piksele celu, punkt pracy dobiera się pod CFAR/detekcję, nie pod najgładszy obraz (odp. 3 prawda).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "jak-dzialaja-filtry",
+      "title": "Jak Lee podejmuje decyzję — i czym różni się Frost, Refined Lee, NL-means",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+          "title": "Digital Image Enhancement and Noise Filtering by Use of Local Statistics",
+          "kind": "paper",
+          "author": "Jong-Sen Lee",
+          "year": 1980
+        },
+        {
+          "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+          "title": "A Model for Radar Images and Its Application to Adaptive Digital Filtering of Multiplicative Noise",
+          "kind": "paper",
+          "author": "Victor S. Frost, Josephine Abbott Stiles, K. S. Shanmugan, Julian C. Holtzman",
+          "year": 1982
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Filtr **Lee** to jedna formuła, którą warto rozłożyć na czynniki — to *jest* algorytm:\n\n$$ \\hat{I} = \\bar{I} + W \\cdot (I - \\bar{I}), \\qquad W = 1 - \\frac{C_u^2}{C_i^2} $$\n\nGloss każdego symbolu:\n\n- $\\hat{I}$ — wynik: odfiltrowana intensywność piksela [j.u.].\n- $I$ — surowa intensywność tego piksela [j.u.].\n- $\\bar{I}$ — **lokalna średnia** w oknie (np. 7×7) [j.u.] — to do niej gładzimy.\n- $W$ — **waga 0…1**: ile zostawić oryginału. $W=0$ → bierz samą średnią (gładź mocno); $W=1$ → zostaw oryginał (nie ruszaj).\n- $C_i = \\sigma / \\mu$ — **mierzony** lokalny współczynnik zmienności (std podzielony przez średnią w oknie); duży tam, gdzie jest prawdziwa struktura.\n- $C_u = 1/\\sqrt{L}$ — współczynnik zmienności **samego speckle**; $L$ to liczba looków. Dla surowego 1-look $C_u=1$; dla kafelka GRD o ENL≈30 → $C_u\\approx0{,}18$.\n\nMechanizm w jednym zdaniu: gdzie obraz jest płaski, $C_i$ spada do $C_u$ (jest tam *tylko* speckle), więc $W\\to0$ i piksel ląduje na lokalnej średniej. Gdzie jest krawędź albo statek, $C_i \\gg C_u$, więc $W\\to1$ i oryginał zostaje nietknięty.\n\n![Dwa panele tego samego kafelka SAR: po lewej prawdziwy kafelek w skali szarości, po prawej mapa lokalnego współczynnika zmienności Ci w oknie 7x7 w kolorach magma — linia brzegowa i jasne cele świecą na żółto (wysoki Ci), a jednorodne morze i wnętrze lądu są ciemnofioletowe (niski Ci); to właśnie ta mapa steruje wagą W filtra Lee](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/despeckling-cov-map.png)\n\nPozostałe filtry z tytułu to warianty tej samej idei:\n\n- **Frost** — zamiast twardej średniej liczy wagi malejące z odległością, dostrojone lokalnym $C_i$: w gładkich miejscach niemal średnia, przy krawędzi mocno zawężone okno.\n- **Refined Lee** — Lee z **kierunkowymi podoknami**: dobiera podokno wzdłuż krawędzi, żeby liczyć statystykę po *jednej* stronie brzegu, a nie w poprzek — mniej rozmywa kontury.\n- **NL-means** (*non-local means*) — uśrednia nie sąsiadów, lecz **odległe łatki, które wyglądają podobnie**; świetnie chroni teksturę, ale jest wolniejszy (`skimage.restoration.denoise_nl_means`)."
+      }
+    },
+    {
+      "id": "lee-na-kafelku",
+      "title": "Zaimplementuj filtr Lee na prawdziwym kafelku",
+      "description": "Policz lokalną średnią i wariancję oknem, złóż wagę W = 1 − Cu²/Ci² i zwróć odfiltrowany obraz.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Zaimplementuj klasyczny filtr **Lee**. Dla każdego piksela:\n\n$$ \\hat{I} = \\bar{I} + W \\cdot (I - \\bar{I}), \\qquad W = \\mathrm{clip}\\!\\left(1 - \\frac{C_u^2}{C_i^2},\\, 0,\\, 1\\right) $$\n\ngdzie $\\bar{I}$ to lokalna średnia w oknie `size`×`size`, $C_i^2 = \\sigma^2/\\mu^2$ to lokalny współczynnik zmienności do kwadratu (z lokalnej średniej i wariancji), a $C_u$ to współczynnik zmienności speckle (parametr `cu`).\n\nNapisz `lee_filter(img, size, cu)` zwracające obraz `float` tego samego kształtu. Lokalną średnią i średnią kwadratów policz **oknem pudełkowym** — `cv2.blur(x, (size, size))` jest do tego idealne; wariancja to `mean_sq − mean²` (przytnij do ≥ 0).\n\n```\nlee_filter(img, 7, 0.0)  # cu=0 -> W=1 wszedzie -> zwraca img bez zmian\n```\n\nW `starterCode` czeka prawdziwy kafelek Sentinel-1 zamontowany w `/inputs/` oraz płaski płat wody `woda` do odczytu ENL.",
+        "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\n# Prawdziwy kafelek Sentinel-1 (Ciesnina Gibraltarska), zamontowany w /inputs/.\n# Jasnosc piksela = amplituda (sila echa) w skali 0-255.\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]      # plaski plat wody do pomiaru ENL\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float) ** 2\n    return float(I.mean() ** 2 / I.var())\n\ndef lee_filter(img, size, cu):\n    # TODO:\n    #   mean    = cv2.blur(img.astype(float), (size, size))\n    #   mean_sq = cv2.blur(img.astype(float) ** 2, (size, size))\n    #   var     = max(mean_sq - mean**2, 0)\n    #   ci2     = var / (mean**2 + 1e-8)\n    #   W       = clip(1 - cu**2 / (ci2 + 1e-8), 0, 1)\n    #   return mean + W * (img - mean)\n    return img.astype(float)\n\nout = lee_filter(woda, 7, 0.5)\nprint('ENL wody przed:', round(enl(woda), 1), ' po Lee:', round(enl(out), 1))\n",
+        "tests": [
+          {
+            "name": "zachowuje_ksztalt",
+            "body": "out = lee_filter(woda, 7, 0.2)\nassert out.shape == woda.shape",
+            "hidden": false
+          },
+          {
+            "name": "cu_zero_to_identycznosc",
+            "body": "assert np.allclose(lee_filter(woda, 7, 0.0), woda.astype(float), atol=1e-6)",
+            "hidden": true
+          },
+          {
+            "name": "redukuje_speckle_na_plaskim_morzu",
+            "body": "assert enl(lee_filter(woda, 7, 0.5)) > enl(woda)",
+            "hidden": true
+          },
+          {
+            "name": "zachowuje_punktowy_cel",
+            "body": "field = np.ones((31, 31)); field[15, 15] = 50.0\nout = lee_filter(field, 7, 0.1)\nassert out[15, 15] > 20.0 and out[2, 2] < 5.0",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float) ** 2\n    return float(I.mean() ** 2 / I.var())\n\ndef lee_filter(img, size, cu):\n    img = img.astype(np.float64)\n    mean = cv2.blur(img, (size, size))\n    mean_sq = cv2.blur(img * img, (size, size))\n    var = np.maximum(mean_sq - mean * mean, 0.0)\n    ci2 = var / (mean * mean + 1e-8)\n    w = np.clip(1.0 - (cu * cu) / (ci2 + 1e-8), 0.0, 1.0)\n    return mean + w * (img - mean)\n\nout = lee_filter(woda, 7, 0.5)\nprint('ENL wody przed:', round(enl(woda), 1), ' po Lee:', round(enl(out), 1))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 w skali szarości: ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255)",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/despeckling-lee-output.png",
+          "alt": "Kafelek Sentinel-1 po filtrze Lee 7x7 z cu=0.25: woda zauważalnie gładsza niż na wejściu, a brzeg lądu i jasne punkty statków pozostają ostre",
+          "caption": "Oczekiwany wynik: filtr Lee 7×7, cu=0.25 — gładsze morze, zachowane krawędzie i cele."
+        },
+        "requiresPackages": [
+          "cv2"
+        ]
+      }
+    },
+    {
+      "id": "piaskownica-filtry",
+      "title": "Piaskownica: pożongluj filtrem i oknem",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport cv2\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]\n\ndef enl(patch):\n    I = np.asarray(patch, dtype=float) ** 2\n    return float(I.mean() ** 2 / I.var())\n\ndef boxcar(img, size):\n    return cv2.blur(img.astype(np.float64), (size, size))\n\ndef lee_filter(img, size, cu):\n    img = img.astype(np.float64)\n    mean = cv2.blur(img, (size, size))\n    mean_sq = cv2.blur(img * img, (size, size))\n    var = np.maximum(mean_sq - mean * mean, 0.0)\n    ci2 = var / (mean * mean + 1e-8)\n    w = np.clip(1.0 - (cu * cu) / (ci2 + 1e-8), 0.0, 1.0)\n    return mean + w * (img - mean)\n\n# Zmieniaj okno i cu; porownaj ENL wody dla boxcara i Lee.\nfor size in (3, 7, 11):\n    print('okno', size, '| boxcar ENL', round(enl(boxcar(woda, size)), 1),\n          '| Lee ENL', round(enl(lee_filter(woda, size, 0.25)), 1))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 w skali szarości: ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255)",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
+        "encouragement": "Zmniejszaj cu i powiększaj okno, aż zobaczysz, w którym momencie Lee zaczyna gubić jasne punkty tak samo jak boxcar."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1980.4766994",
+      "title": "Digital Image Enhancement and Noise Filtering by Use of Local Statistics",
+      "kind": "paper",
+      "author": "Jong-Sen Lee",
+      "year": 1980
+    },
+    {
+      "url": "https://doi.org/10.1109/TPAMI.1982.4767223",
+      "title": "A Model for Radar Images and Its Application to Adaptive Digital Filtering of Multiplicative Noise",
+      "kind": "paper",
+      "author": "Victor S. Frost, Josephine Abbott Stiles, K. S. Shanmugan, Julian C. Holtzman",
+      "year": 1982
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A Tutorial on Speckle Reduction in SAR Images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.restoration.html#skimage.restoration.denoise_nl_means",
+      "title": "skimage.restoration.denoise_nl_means — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P1448.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — rozdz. o redukcji speckle",
+      "kind": "book",
+      "author": "Chris Oliver, Shaun Quegan",
+      "year": 2004
+    }
+  ]
+}

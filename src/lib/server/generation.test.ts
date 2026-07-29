@@ -13,6 +13,7 @@ import {
   __resetForTesting,
   __setCoherencePassDisabledByDefault,
   __setEventsLogRotateBytesForTesting,
+  __setSourceUrlCheckDisabledByDefault,
   __setSpawnDepsForTesting,
   ClaudeUnavailableError,
   defaultCoherencePassCommand,
@@ -37,6 +38,7 @@ import {
   type SpawnDeps,
 } from '@/lib/server/generation';
 
+import { TtsNotInstalledError } from '@/lib/server/tts';
 import { POST as postGenerate, DELETE as deleteGenerate } from '@/app/api/courses/generate/route';
 import { GET as streamGenerate } from '@/app/api/courses/generate/stream/[id]/route';
 import { POST as postResume } from '@/app/api/courses/[slug]/resume/route';
@@ -263,12 +265,17 @@ beforeEach(async () => {
   // US-141 tests opt back in via `disableCoherencePass: false` (or by
   // toggling this flag locally).
   __setCoherencePassDisabledByDefault(true);
+  // Source-URL liveness gate: same deal — scripted pipeline runs must never
+  // issue real HTTP probes. The dedicated gate tests opt back in with an
+  // injected fake checker.
+  __setSourceUrlCheckDisabledByDefault(true);
 });
 
 afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
   __setCoherencePassDisabledByDefault(false);
+  __setSourceUrlCheckDisabledByDefault(false);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
@@ -1862,7 +1869,13 @@ describe('getActiveRunSummary (US-106)', () => {
     });
   });
 
-  it('cold-start: returns the live-PID marker and falls back to slug for the name', async () => {
+  it('cold-start: reconciles an unsupervised live-PID marker (not active, marker dropped)', async () => {
+    // A `.generating.json` whose child is still alive but isn't the in-memory
+    // active run is an orphan from a previous server instance — the pipeline
+    // that supervised it is gone. It must NOT be reported as active. The PID
+    // here is the test runner itself (alive), whose /proc cmdline does not
+    // mention the slug, so the kill gate refuses to signal it — but the marker
+    // is still unlinked so the banner stops showing "Generating…".
     const dir = path.join(coursesRoot, 'survivor');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
@@ -1876,14 +1889,55 @@ describe('getActiveRunSummary (US-106)', () => {
       'utf8',
     );
     const summary = await getActiveRunSummary();
-    expect(summary).toEqual({
-      active: true,
-      slug: 'survivor',
-      name: 'survivor',
-      stage: 'lesson:intro',
-      queue: [],
+    expect(summary.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
     });
   });
+
+  // Kill-path: a genuine orphaned generation child (cmdline carries `claude`
+  // AND the slug) left by a previous server instance must be SIGTERM'd so it
+  // stops burning Claude quota. Linux-only — the gate reads /proc/<pid>/cmdline.
+  (process.platform === 'linux' ? it : it.skip)(
+    'cold-start: SIGTERMs an orphaned generation child whose cmdline matches the slug',
+    async () => {
+      const { spawn } = await import('node:child_process');
+      // A detached, long-lived process whose argv embeds both `claude` and the
+      // slug so pidIsGenerationChildFor() positively identifies it. Its own
+      // process group (detached) means the group SIGTERM reaches it.
+      const child = spawn(
+        process.execPath,
+        ['-e', 'setTimeout(() => {}, 60000)', 'claude', 'killable-orphan'],
+        { detached: true, stdio: 'ignore' },
+      );
+      child.unref();
+      const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
+
+      const dir = path.join(coursesRoot, 'killable-orphan');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(
+        path.join(dir, '.generating.json'),
+        JSON.stringify({
+          childPid: child.pid,
+          slug: 'killable-orphan',
+          stage: 'lesson:intro',
+          startedAt: '2026-05-04T00:00:00.000Z',
+        }),
+        'utf8',
+      );
+
+      const summary = await getActiveRunSummary();
+      expect(summary.active).toBe(false);
+      // The reconciler SIGTERMs the orphan and drops the marker.
+      await Promise.race([
+        exited,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('orphan not killed')), 5000)),
+      ]);
+      await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    },
+  );
 
   // Resumable-scan coverage: any course dir with a `.generation-state.json`
   // and no live `.generating.json` is surfaced via `resumable[]` so the UI
@@ -4223,5 +4277,158 @@ describe('TTS post-processing (US-157)', () => {
     expect(ttsFail).toBeDefined();
     expect(ttsFail?.lessonSlug).toBe('lesson1');
     expect(ttsFail?.errorMessage).toMatch(/TTS engine missing/);
+  });
+
+  it('fails fast on TtsNotInstalledError — no retry attempts are burned on a missing engine', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const notInstalledStub = async () => {
+      throw new TtsNotInstalledError('/fake/venv/bin/tts');
+    };
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      runTts: notInstalledStub,
+      // Two retries available — the point of the test is that NONE of them
+      // are used: a missing engine fails identically on every attempt.
+      lessonMaxRetries: 2,
+    });
+
+    await runInitStages(scripted, 'demo', ['lesson1']);
+
+    const lesson = await scripted.nextChild();
+    await writeAutoTtsLesson('demo', 'lesson1', { audioSourceText: 'hello world' });
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    // Exactly three children total: research + design + ONE lesson attempt.
+    // A non-fatal TTS failure would have spawned attempts 2 and 3.
+    expect(scripted.children).toHaveLength(3);
+
+    const errorEv = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+      | undefined;
+    expect(errorEv).toBeDefined();
+    expect(errorEv?.failedLessons).toHaveLength(1);
+    expect(errorEv?.failedLessons?.[0].reason).toMatch(/not found at \/fake\/venv\/bin\/tts/);
+
+    // The fail-fast is surfaced in the live log so the user knows why the
+    // retry budget was skipped.
+    const failFastLog = run.events.find(
+      (e) => e.type === 'log' && e.line.includes('TTS engine unavailable'),
+    );
+    expect(failFastLog).toBeDefined();
+  });
+});
+
+// ── Source-URL liveness gate ─────────────────────────────────────────────────
+// The checker itself is unit-tested in sourceUrlCheck.test.ts; these tests
+// cover the runner wiring — a dead URL fails the attempt with an actionable
+// reason, warnings surface as log lines without failing anything.
+
+describe('source-URL liveness gate', () => {
+  async function writeLessonWithSource(slug: string, lessonSlug: string, url: string) {
+    const dir = path.join(coursesRoot, slug, 'lessons');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      path.join(dir, `${lessonSlug}.json`),
+      JSON.stringify({
+        schemaVersion: 1,
+        slug: lessonSlug,
+        courseSlug: slug,
+        moduleId: 'm1',
+        title: lessonSlug,
+        eyebrow: 'STUB',
+        description: 'Stub lesson',
+        estimatedMinutes: 5,
+        sections: [
+          { id: 's1', title: 'Read', type: 'theory', data: { markdown: 'Stub.' } },
+        ],
+        sources: [{ url, title: 'Cited source', kind: 'article' }],
+      }),
+      'utf8',
+    );
+  }
+
+  it('fails the lesson when a cited source URL is dead, with the URL in the reason', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const checkSourceUrls = vi.fn(async () => ({
+      issues: [
+        {
+          url: 'https://dead.example/x',
+          status: 404,
+          origins: ['lesson.sources[0] ("Cited source")'],
+        },
+      ],
+      warnings: [],
+    }));
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      lessonMaxRetries: 0,
+      disableSourceUrlCheck: false,
+      checkSourceUrls,
+    });
+
+    await runInitStages(scripted, 'demo', ['lesson1']);
+    const lesson = await scripted.nextChild();
+    await writeLessonWithSource('demo', 'lesson1', 'https://dead.example/x');
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    expect(checkSourceUrls).toHaveBeenCalledTimes(1);
+    const errorEv = run.events.find((e) => e.type === 'error') as
+      | { type: 'error'; message: string; failedLessons?: FailedLesson[] }
+      | undefined;
+    expect(errorEv).toBeDefined();
+    expect(errorEv?.failedLessons).toHaveLength(1);
+    expect(errorEv?.failedLessons?.[0].reason).toContain('https://dead.example/x');
+    expect(errorEv?.failedLessons?.[0].reason).toContain('DEAD URL (HTTP 404)');
+  });
+
+  it('surfaces warnings as log lines without failing the lesson', async () => {
+    await fs.mkdir(path.join(coursesRoot, 'demo'), { recursive: true });
+    const scripted = makeScriptedSpawn();
+    const checkSourceUrls = vi.fn(async () => ({
+      issues: [],
+      warnings: [
+        {
+          url: 'https://walled.example/a',
+          detail: 'HTTP 403',
+          origins: ['lesson.sources[0] ("Cited source")'],
+        },
+      ],
+    }));
+
+    const run = await startGeneration('demo', {
+      spawn: scripted.spawn,
+      isExecutableInPath: () => true,
+      disableSourceUrlCheck: false,
+      checkSourceUrls,
+    });
+
+    await runInitStages(scripted, 'demo', ['lesson1']);
+    const lesson = await scripted.nextChild();
+    await writeLessonWithSource('demo', 'lesson1', 'https://walled.example/a');
+    lesson.finishWithExit(0);
+
+    await waitForFinish(run);
+
+    const done = run.events.find((e) => e.type === 'done') as
+      | { type: 'done'; failedLessons: FailedLesson[] }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done?.failedLessons).toEqual([]);
+    const warningLog = run.events.find(
+      (e) =>
+        e.type === 'log' &&
+        e.line.includes('source-url check warning: https://walled.example/a — HTTP 403'),
+    );
+    expect(warningLog).toBeDefined();
   });
 });

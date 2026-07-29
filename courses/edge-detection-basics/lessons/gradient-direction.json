@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 1,
+  "slug": "gradient-direction",
+  "courseSlug": "edge-detection-basics",
+  "moduleId": "m1",
+  "title": "Gradient direction — the angle that orients every edge",
+  "eyebrow": "EDGES & GRADIENTS",
+  "description": "Sobel gives two numbers per pixel; their ratio is the gradient angle. Learn how θ = atan2(Gy, Gx) orients each edge and why Canny folds it into four bins.",
+  "estimatedMinutes": 9,
+  "sections": [
+    {
+      "id": "what-is-direction",
+      "title": "The gradient has a direction, not just a size",
+      "type": "theory",
+      "data": {
+        "markdown": "## The gradient has a direction, not just a size\n\nIn the Sobel lesson we kept the gradient **magnitude** — one number per pixel saying *how fast* the image changes. But the Sobel step actually hands us **two** numbers per pixel: $G_x$ (change left-to-right) and $G_y$ (change top-to-bottom). Together they form a little arrow, the gradient vector $\\nabla I = (G_x,\\, G_y)$.\n\n![Diagram of a slanted boundary between a dark region and a bright region. A red arrow labelled grad I points from the dark side toward the bright side, perpendicular to the boundary; a green dashed arrow lies along the boundary; the angle theta between the gradient arrow and the horizontal axis is marked.](/api/courses/edge-detection-basics/assets/images/gradient-direction-diagram.png)\n\nThat arrow has a **direction**, and the direction carries real information: the gradient always points *across* the edge, from the dark side toward the bright side — never along it. So the edge itself runs **perpendicular** to the gradient.\n\nWe read the angle off the two components with the two-argument arctangent:\n\n$$ \\theta = \\operatorname{atan2}(G_y,\\, G_x) $$\n\n- $\\theta$ (\"theta\") is the angle of the arrow, measured anticlockwise from the $+x$ axis.\n- $\\operatorname{atan2}(y, x)$ is $\\arctan(y/x)$ that *also* inspects the **signs** of $y$ and $x$, so it returns the correct angle in all four quadrants — range $(-180^{\\circ}, 180^{\\circ}]$ — instead of collapsing opposite directions onto each other.\n\nBecause an edge and its $180^{\\circ}$ flip trace the *same* line, we usually fold $\\theta$ into $[0^{\\circ}, 180^{\\circ})$: it is an **orientation**, not a signed heading. That single angle is exactly what the next stage of Canny consumes."
+      }
+    },
+    {
+      "id": "perpendicular-check",
+      "title": "Check: which way does the gradient point?",
+      "type": "quiz",
+      "description": "Pin down the relationship between the gradient vector and the edge before moving on.",
+      "data": {
+        "question": "At a clean boundary between a dark region and a bright region, which way does the gradient vector ∇I point?",
+        "options": [
+          "Across the edge — perpendicular to it, from the dark side toward the bright side",
+          "Along the edge — parallel to the boundary line",
+          "Straight up the +y axis, no matter how the edge is oriented",
+          "Across the edge, but from the bright side toward the dark side"
+        ],
+        "correct": [0],
+        "explanation": "The gradient points in the direction of fastest intensity increase, so at a dark→bright boundary it points straight across the edge toward the higher values — dark to bright. The edge line itself is therefore perpendicular to ∇I. 'Along the edge' confuses the edge's tangent with the gradient; the +y answer ignores that the angle depends on the edge's orientation; and the last option has the right axis but the wrong sign — intensity rises toward the bright side, so the arrow points dark→bright.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "from-angle-to-bins",
+      "title": "From a continuous angle to four bins",
+      "type": "theory",
+      "data": {
+        "markdown": "## From a continuous angle to four bins\n\nCanny's next step — **non-maximum suppression (NMS)** — thins the fuzzy gradient ridge down to a one-pixel-wide line. To do that it asks, at every pixel: *is this pixel a local maximum of the gradient magnitude along the gradient direction?* If a neighbour across the edge has a stronger gradient, this pixel is not the true crest and gets suppressed.\n\nComparing along an arbitrary real-valued angle would mean **interpolating** between pixels. Canny sidesteps that by **snapping** each angle to one of four directions that line up with the pixel grid and its diagonals:\n\n![Compass diagram with four coloured spokes through the origin labelled 0 degrees (horizontal), 45 degrees, 90 degrees (vertical) and 135 degrees; each spoke is a full line because an orientation and its 180-degree flip are the same direction.](/api/courses/edge-detection-basics/assets/images/nms-direction-bins.png)\n\n| Folded angle $\\theta$ | Bin | Neighbours compared |\n|---|---|---|\n| $[0^{\\circ}, 22.5^{\\circ}) \\cup [157.5^{\\circ}, 180^{\\circ})$ | **0°** | left & right |\n| $[22.5^{\\circ}, 67.5^{\\circ})$ | **45°** | the two ↗↙ diagonals |\n| $[67.5^{\\circ}, 112.5^{\\circ})$ | **90°** | up & down |\n| $[112.5^{\\circ}, 157.5^{\\circ})$ | **135°** | the two ↖↘ diagonals |\n\nWith the angle bucketed, NMS just peeks at two **integer-offset** neighbours — no interpolation, no floating-point indexing. The plot below shows this folding as a step function."
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+          "title": "Canny edge detector — Wikipedia",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "quantization",
+      "title": "How the angle is bucketed",
+      "type": "plotImage",
+      "description": "Trace any gradient angle up to the curve to read which of the four NMS bins it lands in.",
+      "data": {
+        "src": "/api/courses/edge-detection-basics/assets/plots/gradient-direction-1.png",
+        "alt": "Step plot. The x-axis is the gradient angle from 0 to 180 degrees; the y-axis is the assigned non-maximum-suppression bin: 0, 45, 90 or 135 degrees. The curve sits at 0 degrees for angles below 22.5 and above 157.5, steps up to 45 between 22.5 and 67.5, to 90 between 67.5 and 112.5, and to 135 between 112.5 and 157.5. Dotted vertical lines mark the 22.5, 67.5, 112.5 and 157.5 degree boundaries.",
+        "caption": "Figure 1 — Each continuous gradient angle is folded into one of four discrete NMS directions. The bin boundaries sit at the half-angles 22.5°, 67.5°, 112.5° and 157.5°.",
+        "sourceLanguage": "python",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Canny folds each gradient angle (0..180 deg) into one of four\n# discrete directions before non-maximum suppression. This plot shows\n# that mapping as a step function: read an angle off the x-axis, follow\n# it up to the curve, and the y-value is the bin its edge is tested in.\nangles = np.linspace(0, 180, 1000)\n\n\ndef to_bin(a):\n    a = a % 180\n    if a < 22.5 or a >= 157.5:\n        return 0\n    if a < 67.5:\n        return 45\n    if a < 112.5:\n        return 90\n    return 135\n\n\nbins = np.array([to_bin(a) for a in angles])\n\nplt.figure(figsize=(7.2, 4.2))\nplt.step(angles, bins, where=\"mid\", lw=2.2, color=\"#d1495b\")\nfor edge in (22.5, 67.5, 112.5, 157.5):\n    plt.axvline(edge, color=\"#888\", ls=\":\", lw=1.0)\nplt.yticks([0, 45, 90, 135], [\"0° (→)\", \"45° (↗)\", \"90° (↑)\", \"135° (↖)\"])\nplt.xticks(np.arange(0, 181, 22.5))\nplt.xlabel(\"Gradient angle from arctan2(gy, gx)  [degrees]\")\nplt.ylabel(\"Assigned NMS direction bin\")\nplt.title(\"Folding a continuous gradient angle into 4 NMS bins\")\nplt.grid(True, alpha=0.3)\nplt.savefig(\n    \"courses/edge-detection-basics/assets/plots/gradient-direction-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n"
+      },
+      "sources": [
+        {
+          "url": "https://ieeexplore.ieee.org/document/4767851",
+          "title": "A Computational Approach to Edge Detection",
+          "kind": "paper",
+          "author": "John F. Canny",
+          "year": 1986
+        }
+      ]
+    },
+    {
+      "id": "direction-map",
+      "title": "Compute the gradient direction",
+      "type": "code",
+      "description": "Turn the two Sobel derivatives into a per-pixel angle, then watch the orientations light up as colour.",
+      "data": {
+        "taskMarkdown": "Write `gradient_direction_deg(gray)` that returns the **per-pixel gradient direction in degrees**, folded into the range `[0, 180)`.\n\nThe recipe is three lines:\n\n1. `gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)` and `gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)` — the two first derivatives.\n2. `ang = np.rad2deg(np.arctan2(gy, gx))` — the signed angle in `(-180, 180]`.\n3. `np.mod(ang, 180.0)` — fold opposite directions together so the result is an **orientation** in `[0, 180)`.\n\n```\ngradient_direction_deg(vertical_edge_image)  ->  ~0°   (gradient runs left↔right)\ngradient_direction_deg(horizontal_edge_image) ->  ~90°  (gradient runs up↕down)\n```\n\nThe visualisation below the editor is already written: it encodes your angle as **hue** and the gradient strength as **brightness**, so each edge orientation gets its own colour. Press ▶ Run and the static reference image is replaced by *your* output — match it.",
+        "starterCode": "import cv2\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef gradient_direction_deg(gray):\n    \"\"\"Per-pixel gradient direction in degrees, folded to [0, 180).\"\"\"\n    # TODO:\n    # 1. gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)\n    # 2. gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)\n    # 3. ang = np.rad2deg(np.arctan2(gy, gx))   # (-180, 180]\n    # 4. return np.mod(ang, 180.0)              # fold to [0, 180)\n    raise NotImplementedError(\"implement gradient_direction_deg\")\n\n\n# ---- visualisation (already written for you) ----\n# The reference image on the left is mounted at /inputs/input-direction.png.\nimg = cv2.imread('/inputs/input-direction.png', cv2.IMREAD_GRAYSCALE)\ntheta_deg = gradient_direction_deg(img)\n\ngx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3)\ngy = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=3)\nmag = np.sqrt(gx * gx + gy * gy)\n\n# Hue = direction, Saturation = full, Value = gradient strength.\nhsv = np.zeros((*img.shape, 3), dtype=np.uint8)\nhsv[..., 0] = (theta_deg / 180.0 * 179).astype(np.uint8)   # OpenCV hue is 0..179\nhsv[..., 1] = 255\nhsv[..., 2] = (mag / mag.max() * 255).astype(np.uint8)\nrgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)\n\nplt.imshow(rgb)\nplt.axis('off')\n",
+        "tests": [
+          {
+            "name": "returns_orientation_in_0_to_180",
+            "body": "edge = np.zeros((16, 16), np.uint8)\nedge[:, 8:] = 255\nang = gradient_direction_deg(edge)\nassert ang.min() >= 0.0 and ang.max() < 180.0",
+            "hidden": false
+          },
+          {
+            "name": "vertical_edge_gives_horizontal_gradient",
+            "body": "edge = np.zeros((16, 16), np.uint8)\nedge[:, 8:] = 255\nang = gradient_direction_deg(edge)\ncenter = ang[8, 7:9]\nassert np.all((center < 10.0) | (center > 170.0))"
+          },
+          {
+            "name": "horizontal_edge_gives_vertical_gradient",
+            "body": "edge = np.zeros((16, 16), np.uint8)\nedge[8:, :] = 255\nang = gradient_direction_deg(edge)\ncenter = ang[7:9, 8]\nassert np.all(np.abs(center - 90.0) < 10.0)"
+          },
+          {
+            "name": "shape_matches_input",
+            "body": "edge = np.zeros((12, 20), np.uint8)\nedge[:, 10:] = 255\nassert gradient_direction_deg(edge).shape == (12, 20)"
+          }
+        ],
+        "solution": "import cv2\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef gradient_direction_deg(gray):\n    gx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)\n    gy = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)\n    ang = np.rad2deg(np.arctan2(gy, gx))   # (-180, 180]\n    return np.mod(ang, 180.0)              # fold to [0, 180)\n\n\nimg = cv2.imread('/inputs/input-direction.png', cv2.IMREAD_GRAYSCALE)\ntheta_deg = gradient_direction_deg(img)\n\ngx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3)\ngy = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=3)\nmag = np.sqrt(gx * gx + gy * gy)\n\nhsv = np.zeros((*img.shape, 3), dtype=np.uint8)\nhsv[..., 0] = (theta_deg / 180.0 * 179).astype(np.uint8)\nhsv[..., 1] = 255\nhsv[..., 2] = (mag / mag.max() * 255).astype(np.uint8)\nrgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)\n\nplt.imshow(rgb)\nplt.axis('off')\n",
+        "requiresPackages": ["cv2"],
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/edge-detection-basics/assets/input-direction.png",
+            "alt": "Synthetic 256×256 grayscale scene on a dark background: a bright filled disk in the upper right, a mid-grey filled square in the lower left, and a thin bright diagonal line running from the upper left down toward the disk. Mild blur and noise mimic a real photo.",
+            "caption": "Input — a procedural scene whose disk, square, and diagonal line between them cover every edge orientation."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/edge-detection-basics/assets/output-direction.png",
+          "alt": "The same scene with edges coloured by gradient direction: the disk's outline cycles through the full rainbow because its boundary faces every orientation; the square's vertical sides are one colour and its horizontal sides another; the diagonal line is a single consistent hue.",
+          "caption": "Reference output — hue encodes gradient direction, brightness encodes gradient strength. The disk sweeps the whole hue wheel; the square shows two colours (horizontal vs vertical edges); the diagonal is one hue.",
+          "live": true
+        }
+      },
+      "sources": [
+        {
+          "url": "https://numpy.org/doc/stable/reference/generated/numpy.arctan2.html",
+          "title": "numpy.arctan2 — NumPy documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/d2/d2c/tutorial_sobel_derivatives.html",
+          "title": "OpenCV — Sobel Derivatives tutorial",
+          "kind": "article"
+        }
+      ]
+    },
+    {
+      "id": "explore",
+      "title": "Play: orientation as colour",
+      "type": "sandbox",
+      "description": "No tests here — change the scene and see how the direction colours respond.",
+      "data": {
+        "starterCode": "import cv2\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n# Build your own scene and watch its edge orientations turn into colour.\n# Try: rotate the rectangle, add a second line at a different angle,\n# or draw concentric circles and see the hue sweep around each ring.\nimg = np.full((256, 256), 40, np.uint8)\ncv2.rectangle(img, (40, 60), (150, 200), 200, -1)\ncv2.line(img, (170, 20), (240, 230), 230, 4)\nimg = cv2.GaussianBlur(img, (5, 5), 1.0)\n\ngx = cv2.Sobel(img, cv2.CV_64F, 1, 0, ksize=3)\ngy = cv2.Sobel(img, cv2.CV_64F, 0, 1, ksize=3)\ntheta = np.mod(np.rad2deg(np.arctan2(gy, gx)), 180.0)\nmag = np.sqrt(gx * gx + gy * gy)\n\nhsv = np.zeros((*img.shape, 3), dtype=np.uint8)\nhsv[..., 0] = (theta / 180.0 * 179).astype(np.uint8)\nhsv[..., 1] = 255\nhsv[..., 2] = (mag / (mag.max() + 1e-9) * 255).astype(np.uint8)\nrgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)\n\nplt.imshow(rgb)\nplt.axis('off')\n",
+        "encouragement": "Rotate a shape or add a line at a new angle and watch its colour shift — direction is just an angle, and here you can see it."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://en.wikipedia.org/wiki/Image_gradient",
+      "title": "Image gradient — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://ieeexplore.ieee.org/document/4767851",
+      "title": "A Computational Approach to Edge Detection",
+      "kind": "paper",
+      "author": "John F. Canny",
+      "year": 1986
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Canny_edge_detector",
+      "title": "Canny edge detector — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://numpy.org/doc/stable/reference/generated/numpy.arctan2.html",
+      "title": "numpy.arctan2 — NumPy documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/d2/d2c/tutorial_sobel_derivatives.html",
+      "title": "OpenCV — Sobel Derivatives tutorial",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=sRFM5IEqR2w",
+      "title": "Canny Edge Detector — Computerphile",
+      "kind": "video"
+    }
+  ]
+}

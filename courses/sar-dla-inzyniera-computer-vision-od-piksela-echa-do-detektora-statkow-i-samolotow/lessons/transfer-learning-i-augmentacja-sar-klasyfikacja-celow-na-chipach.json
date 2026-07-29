@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "slug": "transfer-learning-i-augmentacja-sar-klasyfikacja-celow-na-chipach",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m5",
+  "title": "Transfer learning i augmentacja SAR: klasyfikacja celów na chipach",
+  "eyebrow": "AI NA SAR POD ATR",
+  "description": "Przenieś backbone z modeli optycznych na chipy SAR bez psucia statystyk i augmentuj po SAR-owemu — mnożnikowym speckle i obrotem aspektu, nie jitterem fotograficznym.",
+  "estimatedMinutes": 16,
+  "sections": [
+    {
+      "id": "dlaczego-transfer-peka",
+      "title": "Dlaczego naiwny transfer z ImageNet pęka na SAR",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TGRS.2019.2947634",
+          "title": "What, Where, and How to Transfer in SAR Target Recognition Based on Deep CNNs",
+          "kind": "paper",
+          "author": "Zhongling Huang, Zongxu Pan, Bin Lei",
+          "year": 2020
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target Classification Using the Deep Convolutional Networks for SAR Images (A-ConvNets)",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Masz gotowy backbone z ImageNet i kuszącą myśl: *„dorzucę głowę klasyfikatora, dofine-tune'uję na chipach SAR i gotowe”*. Na optyce to zwykle działa. Na surowym SAR — zwykle nie. Warto wiedzieć **co** się przenosi, a **co** pęka.\n\n![Po lewej gładki, optyczny chip pojazdu z miękkim gradientem; po prawej ten sam cel jako chip SAR — ziarnisty speckle i kilka jasnych punktowych rozpraszaczy na kadłubie](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/optical-vs-sar-chip.png)\n\n**Co przenosi się dobrze.** Środkowe i wysokie warstwy backbone'u kodują kształty, układ części i relacje przestrzenne — a sylwetka czołgu czy kadłuba statku to nadal kształt. Tę wiedzę chcesz zachować: zamrażasz wczesne warstwy i uczysz głównie górę sieci (head + ostatnie bloki).\n\n**Co pęka.** Pierwsze warstwy ImageNet to detektory krawędzi i gładkich gradientów dostrojone do *statystyk obrazów naturalnych*. SAR ich nie spełnia:\n\n| Założenie z RGB | Rzeczywistość SAR |\n| --- | --- |\n| addytywny, łagodny szum | **mnożnikowy speckle** (ziarnistość zależna od sygnału) |\n| 3 kanały RGB, normalizacja mean/std ImageNet | 1 kanał intensywności, inny zakres |\n| wartości ~0–255, łagodny rozkład | ogromny zakres dynamiki → konieczny **dB** |\n| tekstura i kolor obiektu | jasne **punktowe rozpraszacze** i sidelobe'y |\n\n**Praktyczny przepis.** (1) Skonwertuj do dB i znormalizuj per-dataset, nie wartościami ImageNet. (2) Powiel jeden kanał do trzech albo przelicz pierwszą warstwę. (3) Zamroź wczesne warstwy, dostrój resztę. (4) Augmentuj *po SAR-owemu* (następna sekcja) — na małych zbiorach jak MSTAR to ono najbardziej ratuje transfer. Bez tych kroków sieć „widzi” rozkład, którego nigdy nie trenowała, i myli speckle z teksturą obiektu."
+      }
+    },
+    {
+      "id": "rozklad-rgb-vs-sar",
+      "title": "Rozkład jasności: optyczny chip vs SAR",
+      "description": "Ten sam cel ma w SAR inny rozkład wartości niż na optyce — dlatego normalizacja ImageNet nie pasuje i potrzebny jest dB.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/transfer-learning-i-augmentacja-sar-klasyfikacja-celow-na-chipach-1.png",
+        "alt": "Nałożone histogramy gęstości wartości pikseli dwóch chipów. Niebieski (optyczny) jest wąski i skupiony wokół 0,42–0,9. Czerwony (SAR) ma ostry pik przy niskich wartościach (ciemne tło ze speckle) i długi, rozciągnięty ogon ku jasnym wartościom — wyraźnie cięższy rozkład.",
+        "caption": "Rys. 1. Rozkład jasności tego samego celu: optyczny chip jest skupiony, a SAR ma pik przy ciemnym tle i ciężki ogon — stąd potrzeba skali dB i normalizacji per-dataset zamiast wartości ImageNet.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Odtwarzamy oba chipy deterministycznie (ten sam przepis co assety lekcji).\ndef make_reflectivity(size=128):\n    refl = np.full((size, size), 0.04)\n    yy, xx = np.mgrid[0:size, 0:size]\n    cy, cx = size // 2, size // 2\n    body = (np.abs(xx - cx) < 22) & (np.abs(yy - cy) < 13)\n    refl[body] = 0.55\n    for (py, px, a) in [(cy - 6, cx - 15, 3.2), (cy + 5, cx + 13, 2.6),\n                        (cy - 1, cx + 1, 2.2), (cy + 8, cx - 5, 1.7),\n                        (cy - 8, cx + 9, 1.4)]:\n        refl[py, px] += a\n    return refl\n\nrng = np.random.default_rng(0)\nrefl = make_reflectivity()\nsar = np.sqrt(refl * rng.gamma(1.0, 1.0, refl.shape))  # 1-look speckle\nsar = np.clip(sar / np.percentile(sar, 99.5), 0, 1)\n\nrng2 = np.random.default_rng(1)\nopt = np.full((128, 128), 0.42)\nyy, xx = np.mgrid[0:128, 0:128]\nbody = (np.abs(xx - 64) < 22) & (np.abs(yy - 64) < 13)\nopt[body] = (0.55 + 0.35 * ((xx - 64) / 44.0))[body]\nopt = np.clip(opt + rng2.normal(0, 0.015, (128, 128)), 0, 1)\n\nbins = np.linspace(0, 1, 41)\nplt.figure(figsize=(7, 4.2))\nplt.hist(opt.ravel(), bins=bins, density=True, alpha=0.6,\n         color=\"#4C78A8\", label=\"Optyczny chip\")\nplt.hist(sar.ravel(), bins=bins, density=True, alpha=0.6,\n         color=\"#E45756\", label=\"SAR chip (speckle)\")\nplt.xlabel(\"Wartość piksela (amplituda, znormalizowana 0–1)\")\nplt.ylabel(\"Gęstość prawdopodobieństwa\")\nplt.title(\"Rozkład jasności pikseli: optyczny vs SAR\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/transfer-learning-i-augmentacja-sar-klasyfikacja-celow-na-chipach-1.png\",\n            dpi=110, bbox_inches=\"tight\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-dlaczego-imagenet-slabnie",
+      "title": "Szybki test: czemu ImageNet słabnie na SAR",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego backbone wytrenowany na ImageNet zwykle słabo radzi sobie na surowym chipie SAR? Zaznacz wszystkie trafne powody.",
+        "options": [
+          "Niskopoziomowe filtry (krawędzie, gładkie gradienty) są dostrojone do statystyk obrazów naturalnych, których mnożnikowy speckle i jasne punktowe rozpraszacze SAR nie spełniają.",
+          "Bez konwersji do dB ogromny zakres dynamiki SAR daje rozkład wartości inny niż ten, na którym liczono normalizację mean/std ImageNet.",
+          "SAR to jeden kanał intensywności, a backbone oczekuje 3 kanałów RGB o konkretnej normalizacji — trzeba ten wlot zaadaptować.",
+          "Sieci konwolucyjne w ogóle nie potrafią uczyć się na obrazach jednokanałowych (w skali szarości)."
+        ],
+        "correct": [
+          0,
+          1,
+          2
+        ],
+        "explanation": "Problemem są statystyki wejścia, nie 'niemożność' uczenia. Wczesne filtry ImageNet zakładają obrazy naturalne (addytywny szum, kolor, tekstura), a SAR ma mnożnikowy speckle i punktowe rozpraszacze — stąd (0). Bez dB rozkład wartości i normalizacja ImageNet nie pasują — stąd (1). Jednokanałowy wlot trzeba dopasować do 3-kanałowego backbone'u (powielenie kanału lub przeliczenie pierwszej warstwy) — stąd (2). Natomiast (4) jest fałszywe: CNN-y normalnie uczą się na obrazach w skali szarości — wystarczy poprawnie ustawić liczbę kanałów wejścia.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "augmentacja-po-sar-owemu",
+      "title": "Augmentacja po SAR-owemu, nie po fotograficznemu",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1117/12.242059",
+          "title": "MSTAR Extended Operating Conditions: A Tutorial",
+          "kind": "paper",
+          "author": "Eric R. Keydel, Shung Wu Lee, John T. Moore",
+          "year": 1996
+        },
+        {
+          "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+          "title": "Target Classification Using the Deep Convolutional Networks for SAR Images (A-ConvNets)",
+          "kind": "paper",
+          "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Augmentacja to twój najtańszy sposób, by mały zbiór chipów (MSTAR liczy tysiące, nie miliony obrazów) udawał większy. Ale **odruch z RGB jest tu pułapką**: jitter jasności, kontrastu, barwy czy rozmycie Gaussa zakładają fotografię — na SAR psują fizykę sygnału.\n\n![Cztery panele tego samego chipa SAR: oryginał, wersja ze świeżym mnożnikowym speckle (L=1), obrót aspektu o +35 stopni i odbicie poziome — kształt celu zachowany, zmienia się ziarnistość i orientacja](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-augmentation-grid.png)\n\n**Czego używać** — przekształceń zgodnych z tym, jak naprawdę zmienia się scena SAR:\n\n- **Mnożnikowy speckle-jitter** — losujesz nową realizację speckle zamiast dodawać szum; imituje to, że ten sam cel sfotografowany ponownie ma inną ziarnistość.\n- **Obrót aspektu (aspect angle)** — sygnatura celu silnie zależy od kąta, pod jakim radar go oświetla; obrót chipa imituje inny azymut. Właśnie dlatego MSTAR jawnie kataloguje warianty kąta.\n- **Odbicia i małe przesunięcia** — tanie i bezpieczne geometrycznie.\n\nModel speckle-jittera jest **mnożnikowy**, nie addytywny:\n\n$$\\tilde{x}(i,j) = x(i,j)\\cdot s,\\qquad s \\sim \\mathrm{Gamma}(L,\\,1/L),\\quad \\mathbb{E}[s]=1$$\n\ngdzie $x(i,j)$ to amplituda oryginalnego piksela w wierszu $i$ i kolumnie $j$ (bez jednostki, 0–1 po normalizacji); $s$ to mnożnik speckle losowany z rozkładu Gamma; $L$ („liczba looków”, typowo 1–8) steruje siłą — małe $L$ = mocny, gruboziarnisty speckle, duże $L$ = gładko; a $\\mathbb{E}[s]=1$ (wartość oczekiwana mnożnika równa 1) gwarantuje, że *średnia jasność celu się nie zmienia* — przesuwasz tylko ziarnistość. Addytywny szum Gaussa złamałby tę własność i nauczył sieć fałszywej statystyki."
+      }
+    },
+    {
+      "id": "exercise-speckle-jitter",
+      "title": "Zaimplementuj mnożnikowy speckle-jitter",
+      "description": "Napisz augmentację zgodną z fizyką SAR: mnożnikowy speckle o wartości oczekiwanej 1, sterowany liczbą looków L.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Uzupełnij `speckle_jitter(chip, looks, seed=0)`. Funkcja ma **pomnożyć** `chip` przez speckle losowany z rozkładu `Gamma(shape=looks, scale=1/looks)` — wtedy $\\mathbb{E}[s]=1$, więc średnia jasność celu się nie zmienia, a rośnie tylko ziarnistość. Nie przycinaj wyniku wewnątrz funkcji (przycinanie 0–1 to sprawa wyświetlania).\n\n```text\nspeckle_jitter(np.zeros((4,4)), 2)  -> same zera (mnożenie)\nmałe looks  -> większa wariancja (mocny speckle)\nduże looks  -> wynik bliski oryginałowi\n```\n\nUżyj `np.random.default_rng(seed)`, żeby wynik był powtarzalny.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nimport matplotlib.image as mpimg\n\n# Wczytaj syntetyczny chip SAR zamontowany w /inputs/.\nchip = mpimg.imread('/inputs/sar-target-chip.png')\nif chip.ndim == 3:\n    chip = chip[..., 0]  # PNG w skali szarosci -> jeden kanal w 0..1\n\ndef speckle_jitter(chip, looks, seed=0):\n    \"\"\"Mnoznikowy speckle L-look: zwroc chip * speckle, gdzie E[speckle]=1.\n    looks (L) steruje sila: male L = mocny speckle, duze L = gladko.\n    NIE przycinaj wyniku w tej funkcji (przycinanie to sprawa wyswietlania).\n    \"\"\"\n    rng = np.random.default_rng(seed)\n    # TODO: wylosuj speckle ~ Gamma(ksztalt=looks, skala=1/looks) o rozmiarze chip\n    # TODO: zwroc chip * speckle\n    return chip\n\n# Podglad: po ROZWIAZANIU obrazek po prawej (▶ Run) pokaze ziarnisty cel.\naug = np.clip(speckle_jitter(chip, looks=2, seed=7), 0, 1)\nplt.figure(figsize=(5, 5))\nplt.imshow(aug, cmap='gray', vmin=0, vmax=1)\nplt.title('speckle-jitter (L=2)')\nplt.axis('off')\nplt.show()\n",
+        "tests": [
+          {
+            "name": "zachowuje_ksztalt_i_jest_nieujemny",
+            "body": "c = np.random.default_rng(5).random((16, 24))\nout = speckle_jitter(c, 3, seed=0)\nassert out.shape == (16, 24)\nassert np.all(out >= 0)",
+            "hidden": false
+          },
+          {
+            "name": "mnoznikowy_wiec_zera_zostaja_zerami",
+            "body": "z = np.zeros((8, 8))\nassert np.all(speckle_jitter(z, 2, seed=1) == 0)",
+            "hidden": true
+          },
+          {
+            "name": "srednia_jasnosc_zachowana_E_s_rowne_1",
+            "body": "c = np.full((200, 200), 0.5)\nout = speckle_jitter(c, 4, seed=0)\nassert abs(out.mean() - 0.5) < 0.02",
+            "hidden": true
+          },
+          {
+            "name": "mniej_lookow_to_wieksza_wariancja",
+            "body": "c = np.full((300, 300), 0.4)\nv1 = speckle_jitter(c, 1, seed=2).var()\nv8 = speckle_jitter(c, 8, seed=2).var()\nassert v1 > v8",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nimport matplotlib.image as mpimg\n\nchip = mpimg.imread('/inputs/sar-target-chip.png')\nif chip.ndim == 3:\n    chip = chip[..., 0]\n\ndef speckle_jitter(chip, looks, seed=0):\n    rng = np.random.default_rng(seed)\n    chip = np.asarray(chip, dtype=float)\n    speckle = rng.gamma(shape=looks, scale=1.0 / looks, size=chip.shape)\n    return chip * speckle\n\naug = np.clip(speckle_jitter(chip, looks=2, seed=7), 0, 1)\nplt.figure(figsize=(5, 5))\nplt.imshow(aug, cmap='gray', vmin=0, vmax=1)\nplt.title('speckle-jitter (L=2)')\nplt.axis('off')\nplt.show()\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-target-chip.png",
+            "alt": "Syntetyczny chip SAR 128x128: ciemne, ziarniste tło i jaśniejszy, kompaktowy cel z kilkoma bardzo jasnymi punktowymi rozpraszaczami w środku.",
+            "caption": "Wejście: syntetyczny chip celu SAR (zamontowany w /inputs/sar-target-chip.png)."
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-target-chip-jittered.png",
+          "alt": "Ten sam chip SAR po mnożnikowym speckle-jitterze (L=2): kształt i jasność celu zachowane, ale ziarnistość tła i celu wyraźnie inna niż w oryginale.",
+          "caption": "Oczekiwany wynik dla looks=2, seed=7 — kształt celu ten sam, zmienia się tylko realizacja speckle. Po ▶ Run Twój obrazek zastąpi ten podgląd.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "sandbox-augmentacje",
+      "title": "Piaskownica: pobaw się augmentacjami SAR",
+      "description": "Zmieniaj liczbę looków i dorzucaj obroty/odbicia, by zobaczyć, co zachowuje sygnaturę celu, a co ją psuje.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Samodzielny, syntetyczny chip SAR (cel + mnoznikowy speckle) — bez sieci.\ndef make_chip(seed=0, size=128):\n    rng = np.random.default_rng(seed)\n    refl = np.full((size, size), 0.04)\n    refl[size//2-13:size//2+13, size//2-22:size//2+22] = 0.55\n    refl[size//2-6, size//2-15] += 3.0\n    refl[size//2+5, size//2+13] += 2.5\n    return np.sqrt(refl * rng.gamma(1.0, 1.0, refl.shape))\n\ndef speckle_jitter(chip, looks, seed=0):\n    s = np.random.default_rng(seed).gamma(looks, 1.0/looks, chip.shape)\n    return chip * s\n\nchip = make_chip()\n\n# Pobaw sie: zmien looks, dorzuc np.rot90 / odbicia [:, ::-1] i porownaj panele.\nvariants = {\n    'oryginal': chip,\n    'speckle L=1': speckle_jitter(chip, 1, seed=3),\n    'obrot 90': np.rot90(chip),\n    'odbicie': chip[:, ::-1],\n}\nfig, ax = plt.subplots(1, len(variants), figsize=(11, 3))\nfor a, (name, im) in zip(ax, variants.items()):\n    a.imshow(np.clip(im, 0, 1), cmap='gray', vmin=0, vmax=1)\n    a.set_title(name); a.axis('off')\nplt.show()\n",
+        "encouragement": "Pokręć liczbą looków i kątem obrotu i zobacz, kiedy sygnatura celu jeszcze się broni, a kiedy znika w ziarnie."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TGRS.2019.2947634",
+      "title": "What, Where, and How to Transfer in SAR Target Recognition Based on Deep CNNs",
+      "kind": "paper",
+      "author": "Zhongling Huang, Zongxu Pan, Bin Lei",
+      "year": 2020
+    },
+    {
+      "url": "https://doi.org/10.1109/TGRS.2016.2551720",
+      "title": "Target Classification Using the Deep Convolutional Networks for SAR Images (A-ConvNets)",
+      "kind": "paper",
+      "author": "Sizhe Chen, Haipeng Wang, Feng Xu, Ya-Qiu Jin",
+      "year": 2016
+    },
+    {
+      "url": "https://doi.org/10.1109/JSTARS.2017.2755672",
+      "title": "OpenSARShip: A Dataset Dedicated to Sentinel-1 Ship Interpretation",
+      "kind": "paper",
+      "author": "Lanqing Huang, Boli Liu, Boyang Li, Weiwei Guo, Wenhao Yu, Zenghui Zhang, Wenxian Yu",
+      "year": 2018
+    },
+    {
+      "url": "https://doi.org/10.1117/12.242059",
+      "title": "MSTAR Extended Operating Conditions: A Tutorial",
+      "kind": "paper",
+      "author": "Eric R. Keydel, Shung Wu Lee, John T. Moore",
+      "year": 1996
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Data_augmentation",
+      "title": "Data augmentation — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

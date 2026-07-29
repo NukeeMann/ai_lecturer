@@ -75,8 +75,60 @@ Minimal example:
 }
 ```
 
+### Mermaid diagrams
+
+Theory markdown also renders [Mermaid](https://mermaid.js.org/) diagrams from a
+fenced ```` ```mermaid ```` block (US-216). The diagram is drawn as an SVG in the
+lesson view, the print/PDF export, and the static HTML export — all from the same
+fenced block, no extra fields. The diagram inherits the active theme
+(light / dark / sunset) automatically.
+
+Syntax — just a fenced block whose info-string is `mermaid`:
+
+````markdown
+```mermaid
+flowchart LR
+  A[Raw frame] --> B[Grayscale] --> C[Threshold] --> D[Contours]
+```
+````
+
+**Supported diagram types:** `flowchart` (a.k.a. `graph`) and `sequenceDiagram`
+are the workhorses; `mindmap` also renders. Stick to these — exotic diagram
+types may not parse.
+
+**When to use it** — reach for a Mermaid diagram when the relationship between
+parts *is* the lesson:
+
+- **Pipelines / processing stages** — image-processing chains, ETL, a training loop.
+- **Data / control flow** — how a signal or request moves through a system.
+- **Concept maps** — how terms relate (is-a, depends-on, leads-to).
+- **Architectures / state machines** — module boxes and their connections, FSM states.
+
+**When NOT to use it:**
+
+- **Formulas / math** → use KaTeX (`$inline$` / `$$block$$`), not a diagram.
+- **Quantitative charts** (curves, distributions, error-vs-iteration) → use
+  `plotImage` (real axes, tick labels, units) or `histogram`. Mermaid has no
+  numeric axes.
+- **Photographic / pixel-accurate figures** (a kernel acting on a real image,
+  a sample output) → use an inline `![alt](url)` image or the Code widget's
+  `inputs` / `outputMedia`.
+
+**Guidelines:**
+
+- Keep diagrams **small — ~15 nodes max**. A diagram that needs more nodes is
+  usually two diagrams, or belongs in `plotImage`. Large graphs render slowly and
+  read worse than prose.
+- Write **valid Mermaid syntax** — a parse error falls back to showing the raw
+  source as a code block, not a diagram.
+- **Do NOT add inline `style` / `classDef` colour overrides.** The renderer maps
+  Mermaid's theme variables onto the lesson's CSS tokens so diagrams stay legible
+  across light / dark / sunset; hard-coded colours break that and can be invisible
+  on some themes. Use plain nodes and edges and let the theme drive the palette.
+
 Full detail: [`src/widgets/Theory/schema.ts`](../src/widgets/Theory/schema.ts)
-· [`src/widgets/Theory/sample.ts`](../src/widgets/Theory/sample.ts).
+· [`src/widgets/Theory/sample.ts`](../src/widgets/Theory/sample.ts)
+· renderer [`src/components/MermaidDiagram.tsx`](../src/components/MermaidDiagram.tsx).
 
 ---
 
@@ -122,11 +174,16 @@ Full detail: [`src/widgets/Quiz/schema.ts`](../src/widgets/Quiz/schema.ts)
 
 ## Code
 
-Graded Python coding exercise. Runs in-browser via Pyodide. The learner
-edits `starterCode` in a CodeMirror editor and submits; the worker runs each
-test body in a fresh copy of the user namespace and reports per-test
-results. Tests default to hidden-with-peek (the learner can see the test
-name + brief feedback, not the body).
+Graded Python coding exercise. Runs on the local per-lesson **IPython
+kernel** (US-201/US-202) — a real CPython venv at `~/.ai-lecturer/py-runtime`
+with `numpy`, **real OpenCV (`cv2`)**, `matplotlib`, `torch` (CPU), and
+`tensorflow` preinstalled (`scripts/setup-kernel.sh`); `scipy`,
+`scikit-image`, `PIL`, and `pandas` are NOT in the baseline venv. The learner
+edits `starterCode` in a CodeMirror editor and submits; each test body runs
+in a fresh copy of the user namespace and reports per-test results. Every
+run is capped at 30 s — design exercises to finish well under that. Tests
+default to hidden-with-peek (the learner can see the test name + brief
+feedback, not the body).
 
 | Field          | Type             | Required | Meaning                                                                            |
 |----------------|------------------|----------|------------------------------------------------------------------------------------|
@@ -136,6 +193,7 @@ name + brief feedback, not the body).
 | `solution`     | string           | no       | Reference implementation. Surfaced via the always-available *Peek solution* button — populate it for every shipped exercise. |
 | `inputs`       | CodeInput[]      | no       | Reference artefacts shown above the editor (image / video / downloadable file / raw text). Use for image-, signal-, or file-processing exercises so the learner sees the input they're operating on. |
 | `outputMedia`  | CodeOutputMedia  | no       | Single expected-output image or video, rendered alongside the editor's run output. Use it to show the learner the target their code should reproduce. Tests still verify numerically — the figure is for human reference. |
+| `requiresPackages` | string[]     | no       | Import names that must be importable in the kernel venv before Run proceeds — a **precondition check** with a "missing packages" banner (US-202/US-203), NOT an install request. Baseline venv ships `numpy`, `cv2`, `matplotlib`, `torch`, `tensorflow`; declaring anything else shows as missing until the user pip-installs it. |
 
 Each test has fields:
 
@@ -214,6 +272,8 @@ With input + expected-output figures (image-processing exercise):
 
 Skip `inputs` / `outputMedia` for purely numeric or algorithmic tasks — they only add visual noise when there's no artefact to look at.
 
+**Every widget mounts only its own `inputs[]`.** Each Code/Sandbox run mounts the files *that widget* declares into `/inputs/` — there is no shared filesystem across widgets. So if a widget's code (`starterCode`, `solution`, `tests`) reads `/inputs/foo.png`, that widget **must** list `foo.png` in its own `inputs[]`, even when a sibling widget in the same lesson already declares the same file. A reference to an undeclared `/inputs/<file>` raises `FileNotFoundError` at run time.
+
 Full detail: [`src/widgets/Code/schema.ts`](../src/widgets/Code/schema.ts)
 · [`src/widgets/Code/sample.ts`](../src/widgets/Code/sample.ts).
 
@@ -225,6 +285,11 @@ Fill-in-the-blank code exercise. The `template` is syntax-highlighted code
 with `{{slotId}}` placeholders that become inline inputs. Each slot is
 validated independently (exact / regex / oneOf) and an optional set of
 final Python tests run after every slot validates.
+
+Unlike Code/Sandbox, `finalTests` run **in-browser via Pyodide**, not on the
+kernel — keep them to stdlib + `numpy` (+ `matplotlib` if needed). `cv2`,
+`torch`, and `tensorflow` are NOT available here (the old in-worker cv2 shim
+was removed in US-206).
 
 | Field          | Type                     | Required | Meaning                                                              |
 |----------------|--------------------------|----------|----------------------------------------------------------------------|
@@ -431,7 +496,9 @@ Full detail:
 
 ## ParametricExplorer
 
-Live Pyodide-driven parameter explorer. `setupCode` runs once per
+Live parameter explorer driven by in-browser **Pyodide** (NOT the kernel
+venv — `cv2` / `torch` / `tensorflow` are unavailable; stick to `numpy` +
+`matplotlib` and Pyodide-bundled wheels). `setupCode` runs once per
 namespace; `renderCode` re-runs every time a control changes, with the
 parameter values bound as variables. Output can be a matplotlib plot, a
 single value, or both.
@@ -522,14 +589,19 @@ Full detail:
 
 ## Sandbox
 
-Open-ended Python playground — same Pyodide editor as Code, minus tests
-and grading. Use as the closer for hands-on lessons: invite the learner to
-tweak parameters and observe behaviour. No correctness gate.
+Open-ended Python playground — same kernel-backed editor as Code (real
+IPython kernel, same baseline venv: `numpy`, real `cv2`, `matplotlib`,
+`torch`, `tensorflow`; 30 s per-run cap), minus tests and grading. Use as
+the closer for hands-on lessons: invite the learner to tweak parameters and
+observe behaviour. No correctness gate.
 
 | Field           | Type   | Required | Meaning                                                              |
 |-----------------|--------|----------|----------------------------------------------------------------------|
 | `starterCode`   | string | yes      | Python skeleton that primes exploration. Often the lesson's code exercise minus assertions, plus a comment inviting a tweak. |
 | `encouragement` | string | yes      | One tasteful sentence. May be empty string. No exclamation marks, no emoji. |
+| `inputs`        | CodeInput[]      | no | Same semantics as the Code widget — reference artefacts mounted at `/inputs/<filename>` before the run. A Sandbox mounts only *its own* `inputs[]`, so any `/inputs/<file>` its `starterCode` reads must be declared here (it can't borrow a sibling Code widget's mount). |
+| `outputMedia`   | CodeOutputMedia  | no | Same semantics as the Code widget — a reference image/video next to the run output. |
+| `requiresPackages` | string[]      | no | Same semantics as the Code widget — kernel precondition check, not an install request. |
 
 Minimal example:
 

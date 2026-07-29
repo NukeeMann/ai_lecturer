@@ -11,7 +11,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Maximize2, Mic, Minimize2, Pause, Square, Volume2, X } from 'lucide-react';
+import { Maximize2, Mic, Minimize2, Pause, Square, Trash2, Volume2, X } from 'lucide-react';
 // Markdown + math + syntax-highlight stack. Code-fence highlighting goes
 // through `rehype-highlight` (lightweight, ships highlight.js's classes which
 // the github theme imported in src/app/layout.tsx styles globally) rather
@@ -31,6 +31,7 @@ import {
   type SttCaptureSession,
   type SttCaptureState,
 } from '@/lib/client/sttCapture';
+import { CHAT_HISTORY_SCHEMA_VERSION } from '@/lib/schemas/chatHistory';
 
 export interface ChatMessage {
   id: string;
@@ -38,6 +39,12 @@ export interface ChatMessage {
   text: string;
   pending?: boolean;
   stopped?: boolean;
+  /** ISO timestamp used when persisting; preserved across hydration. */
+  createdAt?: string;
+  /** True for messages loaded from the persisted store (US-211). They render
+   *  in the transcript but are excluded from the history window sent to
+   *  /api/lesson-chat, so persistence never grows the prompt. */
+  hydrated?: boolean;
 }
 
 const STOPPED_SUFFIX = '— stopped by user';
@@ -46,6 +53,10 @@ interface LessonChatProps {
   open: boolean;
   courseSlug: string;
   lessonSlug: string;
+  /** Module the current lesson belongs to (course.json lessonSlug→moduleId).
+   *  Persisted chat history is scoped per (course, module): every lesson in
+   *  the same module shares one transcript. Undefined until the lesson loads. */
+  moduleId?: string;
   onClose: () => void;
   /** Toggle the panel open/closed. Bound to Ctrl+Q so it must work in either state. */
   onToggle: () => void;
@@ -66,15 +77,51 @@ const MIN_LINES = 1;
 const MAX_LINES = 6;
 const TEXTAREA_VERTICAL_PADDING = 16;
 const DRAFT_DEBOUNCE_MS = 200;
+// Delay before the completed transcript is PUT to the per-module history store.
+// Only ever scheduled once a response has finished (sending === false), so it
+// never fires per-token during streaming.
+const HISTORY_SAVE_DEBOUNCE_MS = 600;
 
 export function draftStorageKey(courseSlug: string, lessonSlug: string): string {
   return `lessonChatDraft:${courseSlug}:${lessonSlug}`;
+}
+
+export function chatHistoryUrl(courseSlug: string, moduleId: string): string {
+  return `/api/chats/${encodeURIComponent(courseSlug)}/${encodeURIComponent(moduleId)}`;
+}
+
+/** Persisted shape for a single transcript message. */
+interface PersistedChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+}
+
+/**
+ * Project the in-memory transcript onto the persisted shape: keep user and
+ * assistant turns (including stopped partials), drop pending placeholders and
+ * transient error bubbles. Returned messages are what we PUT to the store and
+ * also what we diff against to avoid redundant writes.
+ */
+function toHistoryPayload(messages: ChatMessage[]): PersistedChatMessage[] {
+  const out: PersistedChatMessage[] = [];
+  for (const m of messages) {
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    if (m.pending) continue;
+    out.push({
+      role: m.role,
+      content: m.text,
+      createdAt: m.createdAt ?? '',
+    });
+  }
+  return out;
 }
 
 export function LessonChat({
   open,
   courseSlug,
   lessonSlug,
+  moduleId,
   onClose,
   onToggle,
   chatWidth = 320,
@@ -105,9 +152,24 @@ export function LessonChat({
   // flight (also reported upstream so the parent can drop the grid transition).
   const [handleHovered, setHandleHovered] = useState(false);
   const [handleDragging, setHandleDragging] = useState(false);
+  // Inline confirm step for the Clear history button (US-211). One click arms
+  // it (swaps the trash icon for a Clear / Cancel pair); the second confirms.
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const debounceRef = useRef<number | null>(null);
+  // Per-(course,module) history hydration + autosave bookkeeping (US-211).
+  // `hydratedKeyRef` is the chat key we've already loaded so we don't re-fetch
+  // (and clobber live messages) on every render; `lastSavedRef` holds the
+  // serialized payload we last persisted so the debounced save skips no-op
+  // writes — including the write that would otherwise echo a fresh hydration.
+  const hydratedKeyRef = useRef<string | null>(null);
+  // Set to the chat key only once its history fetch has resolved. The autosave
+  // effect waits on this (not merely on hydration having *started*) so an empty
+  // transcript can't be PUT over the store during the load round-trip.
+  const loadedKeyRef = useRef<string | null>(null);
+  const lastSavedRef = useRef<string | null>(null);
+  const saveDebounceRef = useRef<number | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const currentRequestIdRef = useRef<string | null>(null);
   const userStoppedRef = useRef<boolean>(false);
@@ -153,6 +215,11 @@ export function LessonChat({
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
   );
+  // Persistence is wired to the per-module store unless the parent seeds
+  // `initialMessages` (tests / storybook), in which case we stay fully
+  // in-memory and never touch the network.
+  const persistenceEnabled = initialMessages === undefined;
+  const chatKey = moduleId ? `${courseSlug}::${moduleId}` : null;
 
   // Track the section currently nearest the top of the viewport via
   // IntersectionObserver — used to scope the AI tutor's prompt context
@@ -298,6 +365,87 @@ export function LessonChat({
     };
   }, [draft, draftKey]);
 
+  // Hydrate the transcript from the per-module store when the panel is open
+  // and the module is known. Re-runs when the chat key changes (navigating to
+  // a lesson in a *different* module loads that module's history; a lesson in
+  // the SAME module keeps the current transcript). Loaded messages are tagged
+  // `hydrated` so they show in the view but stay out of the prompt window.
+  useEffect(() => {
+    if (!persistenceEnabled) return;
+    if (!open) return;
+    if (!chatKey || !moduleId) return;
+    if (hydratedKeyRef.current === chatKey) return;
+    hydratedKeyRef.current = chatKey;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(chatHistoryUrl(courseSlug, moduleId), {
+          cache: 'no-store',
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          messages?: PersistedChatMessage[];
+        };
+        if (cancelled) return;
+        const loaded: ChatMessage[] = (data.messages ?? []).map((m, i) => ({
+          id: `hist-${i}-${m.createdAt || 'na'}`,
+          role: m.role,
+          text: m.content,
+          createdAt: m.createdAt || undefined,
+          hydrated: true,
+        }));
+        // Record what's now on screen as "already saved" so the autosave
+        // effect doesn't immediately echo it straight back to the store.
+        lastSavedRef.current = JSON.stringify(toHistoryPayload(loaded));
+        loadedKeyRef.current = chatKey;
+        setMessages(loaded);
+      } catch {
+        // Network/parse failure — leave the in-memory transcript untouched and
+        // do NOT enable autosave for this key, so a transient error can't lead
+        // to overwriting a good store with an empty list.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [persistenceEnabled, open, chatKey, moduleId, courseSlug]);
+
+  // Debounced autosave of the completed transcript. Gated on `!sending` so it
+  // only ever fires after a response finishes — never per-token mid-stream —
+  // and skipped until this key has hydrated so we don't overwrite the store
+  // with an empty list during the load round-trip.
+  useEffect(() => {
+    if (!persistenceEnabled) return;
+    if (!chatKey || !moduleId) return;
+    if (sending) return;
+    if (loadedKeyRef.current !== chatKey) return;
+    const payload = toHistoryPayload(messages);
+    const serialized = JSON.stringify(payload);
+    if (serialized === lastSavedRef.current) return;
+    if (saveDebounceRef.current !== null) {
+      window.clearTimeout(saveDebounceRef.current);
+    }
+    saveDebounceRef.current = window.setTimeout(() => {
+      lastSavedRef.current = serialized;
+      void fetch(chatHistoryUrl(courseSlug, moduleId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schemaVersion: CHAT_HISTORY_SCHEMA_VERSION,
+          messages: payload,
+        }),
+      }).catch(() => {
+        // Best-effort persistence; in-memory transcript is the source of truth.
+      });
+    }, HISTORY_SAVE_DEBOUNCE_MS);
+    return () => {
+      if (saveDebounceRef.current !== null) {
+        window.clearTimeout(saveDebounceRef.current);
+        saveDebounceRef.current = null;
+      }
+    };
+  }, [persistenceEnabled, chatKey, moduleId, courseSlug, messages, sending]);
+
   // Autoresize the textarea: measure scrollHeight, clamp to MAX_LINES.
   // Re-runs when `expanded` flips because the textarea's available width
   // changes between the side panel and the fullscreen overlay, which can
@@ -335,6 +483,7 @@ export function LessonChat({
               role: 'assistant',
               text: partialText,
               stopped: true,
+              createdAt: m.createdAt,
             }
           : m,
       ),
@@ -345,12 +494,13 @@ export function LessonChat({
     const text = draft.trim();
     if (text.length === 0 || sending) return;
     const stamp = Date.now();
+    const createdAt = new Date(stamp).toISOString();
     const userId = `m-${stamp}-u`;
     const pendingId = `m-${stamp}-p`;
     setMessages((prev) => [
       ...prev,
-      { id: userId, role: 'user', text },
-      { id: pendingId, role: 'assistant', text: '', pending: true },
+      { id: userId, role: 'user', text, createdAt },
+      { id: pendingId, role: 'assistant', text: '', pending: true, createdAt },
     ]);
     setDraft('');
     setSending(true);
@@ -361,9 +511,13 @@ export function LessonChat({
       // ignore — draft already cleared from in-memory state
     }
 
+    // Exclude `hydrated` messages: the persisted transcript is shown in the
+    // view but must NOT enlarge the prompt window sent to /api/lesson-chat
+    // (US-211 AC — "persystencja nie zwiększa rozmiaru promptu"). Only the
+    // current session's turns are forwarded, exactly as before persistence.
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .filter((m) => !m.pending)
+      .filter((m) => !m.pending && !m.hydrated)
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }));
 
     const ac = new AbortController();
@@ -517,7 +671,12 @@ export function LessonChat({
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingId
-              ? { id: pendingId, role: 'assistant', text: finalText }
+              ? {
+                  id: pendingId,
+                  role: 'assistant',
+                  text: finalText,
+                  createdAt: m.createdAt,
+                }
               : m,
           ),
         );
@@ -804,6 +963,40 @@ export function LessonChat({
     }
   }, [sending]);
 
+  // Clear history (US-211): wipe the persisted file and the on-screen
+  // transcript. If a response is mid-stream we abort it first (same Stop
+  // semantics) so no late token re-populates the view; the pending row is
+  // dropped by the setMessages([]) below, so finalize maps find nothing to
+  // update and never re-add a message. `lastSavedRef` is set to the empty
+  // payload so the autosave effect treats the cleared state as already saved.
+  const handleClearHistory = useCallback(() => {
+    setConfirmingClear(false);
+    if (sending) {
+      userStoppedRef.current = true;
+      const ac = streamAbortRef.current;
+      const requestId = currentRequestIdRef.current;
+      if (ac) ac.abort();
+      if (requestId) {
+        void fetch(`/api/lesson-chat/${encodeURIComponent(requestId)}`, {
+          method: 'DELETE',
+        }).catch(() => {});
+      }
+    }
+    setMessages([]);
+    lastSavedRef.current = JSON.stringify([]);
+    if (saveDebounceRef.current !== null) {
+      window.clearTimeout(saveDebounceRef.current);
+      saveDebounceRef.current = null;
+    }
+    if (persistenceEnabled && moduleId) {
+      void fetch(chatHistoryUrl(courseSlug, moduleId), {
+        method: 'DELETE',
+      }).catch(() => {
+        // Best-effort; the view is already cleared.
+      });
+    }
+  }, [courseSlug, moduleId, persistenceEnabled, sending]);
+
   // Panel-scoped: catches Ctrl/Cmd+Enter regardless of which control inside
   // the chat panel has focus (e.g. the mic button after clicking it), so the
   // documented "{mod}+Enter to send" shortcut works after STT capture too.
@@ -1000,6 +1193,38 @@ export function LessonChat({
       <header style={headerStyle}>
         <h2 style={titleStyle}>AI Tutor</h2>
         <div style={headerActionsStyle}>
+          {confirmingClear ? (
+            <span style={clearConfirmRowStyle}>
+              <span style={clearConfirmLabelStyle}>Clear history?</span>
+              <button
+                type="button"
+                data-testid="lesson-chat-clear-confirm"
+                onClick={handleClearHistory}
+                style={clearConfirmBtnStyle}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                data-testid="lesson-chat-clear-cancel"
+                onClick={() => setConfirmingClear(false)}
+                style={clearCancelBtnStyle}
+              >
+                Cancel
+              </button>
+            </span>
+          ) : messages.length > 0 ? (
+            <button
+              type="button"
+              data-testid="lesson-chat-clear"
+              aria-label="Clear chat history"
+              title="Clear chat history"
+              onClick={() => setConfirmingClear(true)}
+              style={iconBtnStyle}
+            >
+              <Trash2 size={16} strokeWidth={2} />
+            </button>
+          ) : null}
           <button
             type="button"
             data-testid="lesson-chat-expand-toggle"
@@ -1314,6 +1539,44 @@ const iconBtnStyle: CSSProperties = {
   borderColor: 'transparent',
   borderRadius: 'var(--radius-sm)',
   color: 'var(--text-tertiary)',
+  cursor: 'pointer',
+};
+
+const clearConfirmRowStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 6,
+};
+
+const clearConfirmLabelStyle: CSSProperties = {
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--text-secondary, var(--text-tertiary))',
+};
+
+const clearConfirmBtnStyle: CSSProperties = {
+  height: 24,
+  padding: '0 8px',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--danger-border, #fecaca)',
+  borderRadius: 'var(--radius-sm)',
+  background: 'var(--danger-subtle, #fee2e2)',
+  color: 'var(--danger-text, #991b1b)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 500,
+  cursor: 'pointer',
+};
+
+const clearCancelBtnStyle: CSSProperties = {
+  height: 24,
+  padding: '0 8px',
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  background: 'transparent',
+  color: 'var(--text-tertiary)',
+  fontSize: 'var(--fs-sm)',
   cursor: 'pointer',
 };
 

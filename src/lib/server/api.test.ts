@@ -32,8 +32,15 @@ import { slugify } from '@/lib/server/paths';
 import {
   draftSourcesDir,
   courseSourcesDir,
+  extractedSiblingPath,
   makeDraftId,
 } from '@/lib/server/sources';
+import {
+  __setMediaTranscriberForTesting,
+  awaitPendingMediaTranscriptions,
+} from '@/lib/server/media';
+import { POST as postYouTubeSource } from '@/app/api/courses/youtube-source/route';
+import { __setYouTubeTranscriptFetcherForTesting } from '@/lib/server/youtubeSource';
 
 let coursesRoot: string;
 
@@ -94,6 +101,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   __resetGenerationForTesting();
+  __setYouTubeTranscriptFetcherForTesting(null);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
   await fs.rm(coursesRoot, { recursive: true, force: true });
@@ -833,6 +841,256 @@ describe('GET /api/courses/upload-sources (US-103)', () => {
   });
 });
 
+describe('POST /api/courses/youtube-source (US-215)', () => {
+  function ytReq(body: unknown): Request {
+    return new Request('http://x/api/courses/youtube-source', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('fetches a transcript and stages it as a provenance .md under a new draftId', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [
+        { tStart: 0, text: 'Intro to synthetic aperture radar.' },
+        { tStart: 4, text: 'How ATR works.' },
+      ],
+    }));
+    const res = await postYouTubeSource(
+      ytReq({ url: 'https://www.youtube.com/watch?v=abcdefghijk' }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      draftId: string;
+      file: { sanitizedName: string; size: number; type: string };
+    };
+    expect(typeof body.draftId).toBe('string');
+    expect(body.file.sanitizedName).toBe('youtube-abcdefghijk.md');
+    expect(body.file.type).toBe('text/markdown');
+
+    const onDisk = path.join(draftSourcesDir(body.draftId), 'youtube-abcdefghijk.md');
+    const written = await fs.readFile(onDisk, 'utf8');
+    expect(written).toContain('url: https://www.youtube.com/watch?v=abcdefghijk');
+    expect(written).toContain('transcriptSource: captions');
+    expect(written).toContain('Intro to synthetic aperture radar.');
+  });
+
+  it('returns 422 with a clear error and writes NO file when source is "none"', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'none',
+      segments: [],
+    }));
+    const draftId = makeDraftId();
+    await fs.mkdir(draftSourcesDir(draftId), { recursive: true });
+    const res = await postYouTubeSource(
+      ytReq({ url: 'https://youtu.be/abcdefghijk', draftId }),
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/no captions or description/i);
+    expect(await fs.readdir(draftSourcesDir(draftId))).toEqual([]);
+  });
+
+  it('rejects an invalid URL with 422 and no file', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => {
+      throw new Error('should not fetch');
+    });
+    const res = await postYouTubeSource(ytReq({ url: 'definitely not a link' }));
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/valid youtube/i);
+  });
+
+  it('returns 400 when the url field is missing', async () => {
+    const res = await postYouTubeSource(ytReq({}));
+    expect(res.status).toBe(400);
+  });
+
+  it('overwrites the same video on re-add (deterministic filename)', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'First.' }],
+    }));
+    const r1 = await postYouTubeSource(ytReq({ url: 'abcdefghijk' }));
+    const b1 = (await r1.json()) as { draftId: string };
+
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'Second.' }],
+    }));
+    const r2 = await postYouTubeSource(
+      ytReq({ url: 'https://youtu.be/abcdefghijk', draftId: b1.draftId }),
+    );
+    expect(r2.status).toBe(201);
+
+    const dir = draftSourcesDir(b1.draftId);
+    expect(await fs.readdir(dir)).toEqual(['youtube-abcdefghijk.md']);
+    const written = await fs.readFile(path.join(dir, 'youtube-abcdefghijk.md'), 'utf8');
+    expect(written).toContain('Second.');
+    expect(written).not.toContain('First.');
+  });
+
+  it('stages under <slug>/sources when a finalized slug is given, and the file is then listable + readable as text', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'description',
+      segments: [{ tStart: 0, text: 'Lecture description body.' }],
+    }));
+    const res = await postYouTubeSource(
+      ytReq({ url: 'abcdefghijk', slug: 'algebra' }),
+    );
+    expect(res.status).toBe(201);
+    // Appears in the GET listing like any other source file.
+    const getRes = await getUploadSources(
+      new Request('http://x/api/courses/upload-sources?slug=algebra'),
+    );
+    const getBody = (await getRes.json()) as { files: { sanitizedName: string }[] };
+    expect(getBody.files.map((f) => f.sanitizedName)).toContain('youtube-abcdefghijk.md');
+  });
+
+  it('the staged transcript is deletable via DELETE upload-sources', async () => {
+    __setYouTubeTranscriptFetcherForTesting(async () => ({
+      source: 'captions',
+      segments: [{ tStart: 0, text: 'Body.' }],
+    }));
+    const r1 = await postYouTubeSource(ytReq({ url: 'abcdefghijk' }));
+    const b1 = (await r1.json()) as { draftId: string };
+    const del = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(b1.draftId)}&filename=youtube-abcdefghijk.md`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(del.status).toBe(200);
+    expect(await fs.readdir(draftSourcesDir(b1.draftId))).toEqual([]);
+  });
+});
+
+describe('upload-sources media transcription (US-214)', () => {
+  afterEach(() => {
+    __setMediaTranscriberForTesting(null);
+  });
+
+  it('accepts a media upload, returns transcribing, and transcribes in the background', async () => {
+    __setMediaTranscriberForTesting(async () => ({
+      transcript: 'Recorded lecture words.',
+      durationMs: 5000,
+    }));
+
+    const fd = new FormData();
+    fd.append('files', fileFromString('lecture.mp4', 'video/mp4', 'fake-video-bytes'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      draftId: string;
+      files: { sanitizedName: string; transcriptionStatus?: string }[];
+    };
+    expect(body.files).toHaveLength(1);
+    // The request returns immediately with a `transcribing` marker — it must
+    // NOT block on the (potentially minutes-long) transcription.
+    expect(body.files[0].transcriptionStatus).toBe('transcribing');
+
+    // Let the background transcription resolve.
+    await awaitPendingMediaTranscriptions();
+
+    // GET now reports `done` and the transcript sibling exists.
+    const getRes = await getUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(body.draftId)}`,
+      ),
+    );
+    const getBody = (await getRes.json()) as {
+      files: { sanitizedName: string; transcriptionStatus?: string }[];
+    };
+    expect(getBody.files[0].transcriptionStatus).toBe('done');
+    const sibling = extractedSiblingPath(
+      path.join(draftSourcesDir(body.draftId), 'lecture.mp4'),
+    );
+    expect(await fs.readFile(sibling, 'utf8')).toContain('Recorded lecture words.');
+  });
+
+  it('marks the file failed (with install hint) when whisper is not installed — upload still succeeds', async () => {
+    const { SttNotInstalledError } = await import('@/lib/server/stt');
+    __setMediaTranscriberForTesting(async () => {
+      throw new SttNotInstalledError('/bin/whisper-cli', '/models/ggml.bin');
+    });
+
+    const fd = new FormData();
+    fd.append('files', fileFromString('talk.mp3', 'audio/mpeg', 'fake-audio'));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    // Upload itself is NOT broken by the missing tooling.
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { draftId: string };
+
+    await awaitPendingMediaTranscriptions();
+
+    const getRes = await getUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(body.draftId)}`,
+      ),
+    );
+    const getBody = (await getRes.json()) as {
+      files: { transcriptionStatus?: string; transcriptionReason?: string }[];
+    };
+    expect(getBody.files[0].transcriptionStatus).toBe('failed');
+    expect(getBody.files[0].transcriptionReason).toMatch(/setup-stt\.sh/);
+  });
+
+  it('rejects a media file above the media size cap but well above the document cap', async () => {
+    // 60 MiB > 50 MiB document cap but < 250 MiB media cap → accepted.
+    const sixtyMB = new Uint8Array(60 * 1024 * 1024);
+    __setMediaTranscriberForTesting(async () => ({ transcript: 'x', durationMs: 1 }));
+    const fd = new FormData();
+    fd.append('files', fileFromString('big.mp4', 'video/mp4', sixtyMB));
+    const res = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    expect(res.status).toBe(201);
+    await awaitPendingMediaTranscriptions();
+  });
+
+  it('DELETE removes the media file plus its transcript and status siblings', async () => {
+    __setMediaTranscriberForTesting(async () => ({
+      transcript: 'words',
+      durationMs: 1,
+    }));
+    const fd = new FormData();
+    fd.append('files', fileFromString('rec.m4a', 'audio/x-m4a', 'fake'));
+    const postRes = await postUploadSources(
+      new Request('http://x/api/courses/upload-sources', { method: 'POST', body: fd }),
+    );
+    const { draftId } = (await postRes.json()) as { draftId: string };
+    await awaitPendingMediaTranscriptions();
+
+    const dir = draftSourcesDir(draftId);
+    // Siblings exist before delete.
+    await fs.access(path.join(dir, '.extracted', 'rec.m4a.md'));
+    await fs.access(path.join(dir, '.extracted', 'rec.m4a.status.json'));
+
+    const delRes = await deleteUploadSources(
+      new Request(
+        `http://x/api/courses/upload-sources?draftId=${encodeURIComponent(draftId)}&filename=rec.m4a`,
+        { method: 'DELETE' },
+      ),
+    );
+    expect(delRes.status).toBe(200);
+    await expect(fs.access(path.join(dir, 'rec.m4a'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    await expect(
+      fs.access(path.join(dir, '.extracted', 'rec.m4a.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      fs.access(path.join(dir, '.extracted', 'rec.m4a.status.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
 describe('POST /api/courses with draftId (US-103)', () => {
   it('moves staged sources into the new course directory', async () => {
     const draftId = makeDraftId();
@@ -1032,14 +1290,19 @@ describe('GET /api/courses/active-run (US-106)', () => {
     });
   });
 
-  it('returns {active:true} for a live PID-tagged marker and pulls the title from course-spec.json', async () => {
+  it('reconciles an unsupervised live-PID marker: not active and unlinks the marker', async () => {
+    // A live-PID `.generating.json` with no in-memory active run is an orphan
+    // from a previous server instance — its detached child outlived the
+    // supervising pipeline and can never finalize. It must NOT be reported as
+    // active; the marker is unlinked so the banner stops showing "Generating…".
+    // process.pid is the test runner: alive, but its /proc cmdline lacks the
+    // slug, so the kill gate refuses to signal it.
     const dir = path.join(coursesRoot, 'demo-resume');
     await fs.mkdir(dir, { recursive: true });
     await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Resumed Course'));
     await fs.writeFile(
       path.join(dir, '.generating.json'),
       JSON.stringify({
-        // process.pid is always alive — guarantees the liveness probe passes.
         childPid: process.pid,
         slug: 'demo-resume',
         stage: 'lesson:intro',
@@ -1048,19 +1311,16 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false; queue: unknown[] }
-      | { active: true; slug: string; name: string; stage: string; queue: unknown[] };
-    expect(body).toEqual({
-      active: true,
-      slug: 'demo-resume',
-      name: 'Resumed Course',
-      stage: 'lesson:intro',
-      queue: [],
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
     });
   });
 
-  it('prefers course.json title over course-spec.json once init has completed', async () => {
+  it('prefers course.json title over course-spec.json for a resumable entry', async () => {
+    // Title resolution (course.json over course-spec.json) now surfaces via the
+    // resumable[] list rather than the removed "marker as active" path.
     const dir = path.join(coursesRoot, 'finished-init');
     await fs.mkdir(dir, { recursive: true });
     await atomicWriteJson(path.join(dir, 'course-spec.json'), sampleSpec('Old Title'));
@@ -1070,21 +1330,26 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     await fs.writeFile(
-      path.join(dir, '.generating.json'),
+      path.join(dir, '.generation-state.json'),
       JSON.stringify({
-        childPid: process.pid,
+        schemaVersion: 1,
         slug: 'finished-init',
-        stage: 'lesson:m1l1',
         startedAt: '2026-05-04T00:00:00.000Z',
+        lastUpdatedAt: '2026-05-04T00:05:00.000Z',
+        research: { status: 'done' },
+        design: { status: 'done' },
+        lessons: [{ slug: 'm1l1', status: 'failed', attempts: 3, lastError: 'rate limited' }],
+        config: { lessonMaxRetries: 2, lessonTimeoutMs: 60000 },
       }),
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; slug: string; name: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.name).toBe('Refined Title');
+    const body = (await res.json()) as {
+      active: boolean;
+      resumable?: Array<{ slug: string; name: string }>;
+    };
+    expect(body.active).toBe(false);
+    expect(body.resumable?.find((r) => r.slug === 'finished-init')?.name).toBe('Refined Title');
   });
 
   it('skips dot-prefixed dirs like /.drafts/ during cold-start scan', async () => {
@@ -1102,31 +1367,10 @@ describe('GET /api/courses/active-run (US-106)', () => {
     expect(body.active).toBe(false);
   });
 
-  it('falls back to log-derived stage when the marker has no stage', async () => {
-    const dir = path.join(coursesRoot, 'derive-stage');
-    await fs.mkdir(path.join(dir, 'logs'), { recursive: true });
-    await fs.writeFile(path.join(dir, 'logs', 'research_course.log'), 'research line\n');
-    await new Promise((r) => setTimeout(r, 12));
-    await fs.writeFile(path.join(dir, 'logs', 'intro.log'), 'lesson line\n');
-    await fs.writeFile(
-      path.join(dir, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug: 'derive-stage',
-        stage: null,
-        startedAt: '2026-05-04T00:00:00.000Z',
-      }),
-      'utf8',
-    );
-    const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; stage: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.stage).toBe('lesson:intro');
-  });
-
-  it('falls back to slug when neither course.json nor course-spec.json exist', async () => {
+  it('reconciles a marker even when no in-memory run owns it, regardless of name resolution', async () => {
+    // No course.json / course-spec.json — the slug-name fallback used to be
+    // surfaced via the active marker. That path is gone: an unsupervised live
+    // marker is reconciled to not-active and unlinked.
     const dir = path.join(coursesRoot, 'nameless-run');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(
@@ -1140,11 +1384,11 @@ describe('GET /api/courses/active-run (US-106)', () => {
       'utf8',
     );
     const res = await getActiveRunRoute();
-    const body = (await res.json()) as
-      | { active: false }
-      | { active: true; name: string };
-    expect(body.active).toBe(true);
-    if (body.active) expect(body.name).toBe('nameless-run');
+    const body = (await res.json()) as { active: boolean };
+    expect(body.active).toBe(false);
+    await expect(fs.access(path.join(dir, '.generating.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
   });
 });
 

@@ -4520,6 +4520,209 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-208",
+      "title": "Wstawianie nowej sekcji w środku lekcji: skill insert_section + POST /api/courses/[slug]/lessons/[lessonSlug]/sections/[sectionId]/insert",
+      "description": "Jako uczący się chcę dogenerować nową sekcję wstawianą bezpośrednio POD wskazaną sekcją (na bazie instrukcji), aby tutor mógł rozszerzyć lekcję o dodatkowe wyjaśnienie bez nadpisywania istniejącej treści.",
+      "acceptanceCriteria": [
+        "Nowy skill generacyjny insert_section (w tym samym katalogu skilli co regenerate_section) generuje DOKŁADNIE JEDNĄ nową sekcję (domyślnie theory) na podstawie kontekstu lekcji, sekcji-kotwicy i instrukcji użytkownika; output waliduje się Zod-schemą sekcji lekcji",
+        "POST /api/courses/[slug]/lessons/[lessonSlug]/sections/[sectionId]/insert przyjmuje { instruction }, spawnuje claude -p wzorcem z src/lib/server/regenerateSection.ts i wstawia wynikową sekcję bezpośrednio PO sekcji [sectionId], zapisując lekcję atomowo (src/lib/server/atomic.ts)",
+        "Przed zapisem powstaje snapshot lekcji (wzorzec .lesson-prev.json z regenerateLesson.ts) i działa ścieżka undo przywracająca stan sprzed wstawienia",
+        "Nowa sekcja otrzymuje unikalne id bez kolizji z istniejącymi; istniejące sekcje pozostają niezmienione co do treści i kolejności",
+        "Timeout / niewalidny output generacji → ustrukturyzowany błąd HTTP bez żadnej modyfikacji pliku lekcji",
+        "Testy jednostkowe: wstawienie po sekcji środkowej i po ostatniej, unikalność id, odrzucenie niewalidnego outputu, undo",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 208,
+      "passes": true,
+      "notes": "Fundament pod US-209 (UI szybkich akcji tutora). Reużyć: regenerateSection.ts (spawn + walidacja + resolver katalogu skilli), regenerateLesson.ts (snapshot/undo), istniejący regenerate/undo route jako wzór endpointu undo.",
+      "tags": []
+    },
+    {
+      "id": "US-209",
+      "title": "Szybkie akcje tutora przy sekcji: presety (Wyjaśnij prościej / Dodaj analogię / Dodaj przykład liczbowy / Rozpisz symbole wzoru) + własna instrukcja",
+      "description": "Jako uczący się chcę przy każdej sekcji lekcji mieć menu szybkich akcji, które jednym klikiem dogeneruje i wstawi pod sekcją nową sekcję wyjaśniającą, abym mógł pogłębić zrozumienie bez opuszczania lekcji i bez ręcznego pisania promptów.",
+      "acceptanceCriteria": [
+        "Każda sekcja w widoku lekcji ma (obok istniejącej ikony edycji) przycisk/menu szybkich akcji z 4 presetami: Wyjaśnij prościej, Dodaj analogię, Dodaj przykład liczbowy, Rozpisz symbole wzoru oraz pozycją Własna instrukcja… z polem tekstowym",
+        "Wybór akcji woła POST .../sections/[sectionId]/insert (US-208) z instrukcją presetu; podczas generacji pod sekcją-kotwicą widoczny jest stan ładowania, a reszta lekcji pozostaje w pełni używalna",
+        "Po sukcesie nowa sekcja renderuje się inline z wyróżnieniem nowości (wzorzec podświetlenia z regeneracji sekcji) i banerem Undo cofającym wstawienie",
+        "Błąd generacji → czytelny komunikat przy sekcji, lekcja bez zmian",
+        "Style oparte o tokeny motywu — menu i wyróżnienia działają w light/dark/sunset bez hardkodowanych kolorów",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 209,
+      "passes": true,
+      "notes": "Zależy od US-208. Instrukcje presetów pisać w stylu intuicja-najpierw (np. Rozpisz symbole wzoru: zdefiniuj każdy symbol każdego wzoru z sekcji, łącznie z ∑, indeksami i konwencjami). Widok lekcji ma ~5k linii — menu wydzielić do osobnego komponentu.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-210",
+      "title": "Trwała historia czatu tutora: plikowy store per (kurs, moduł) + API odczytu/zapisu",
+      "description": "Jako uczący się chcę, aby rozmowa z tutorem była zapisywana na dysku per kurs+moduł, aby przetrwała przeładowanie strony i przechodzenie między lekcjami w obrębie tego samego modułu.",
+      "acceptanceCriteria": [
+        "Schema Zod ChatHistory (schemaVersion + lista wiadomości {role: user|assistant, content, createdAt}) w src/lib/schemas/",
+        "Store w ~/.ai-lecturer/chats/<courseSlug>/<moduleId>.json zapisywany atomowo (src/lib/server/atomic.ts), katalogi tworzone leniwie",
+        "GET zwraca historię modułu (pustą gdy plik nie istnieje LUB nie przechodzi walidacji — wtedy warning w logu, nigdy 500); PUT waliduje payload i nadpisuje całość (single-user, last-write-wins)",
+        "Limit egzekwowany przy zapisie (np. ostatnie 200 wiadomości) — plik nie rośnie bez ograniczeń",
+        "Wiadomości typu error NIE są persystowane",
+        "Testy: roundtrip GET/PUT, plik uszkodzony, przycięcie do limitu, odrzucenie niewalidnego PUT",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 210,
+      "passes": true,
+      "notes": "Wzorzec plikowego API: src/app/api/progress/route.ts + src/lib/server/progress.ts. Fundament pod US-211 (wiring w LessonChat).",
+      "tags": []
+    },
+    {
+      "id": "US-211",
+      "title": "LessonChat: hydracja i autozapis historii per moduł + przycisk Clear history",
+      "description": "Jako uczący się chcę po powrocie do lekcji (lub przejściu do innej lekcji tego samego modułu) widzieć poprzednią rozmowę z tutorem oraz móc ją świadomie wyczyścić.",
+      "acceptanceCriteria": [
+        "Przy otwarciu panelu czatu ładowana jest historia modułu bieżącej lekcji (mapowanie lessonSlug→moduleId z course.json); stan messages inicjalizowany z historii",
+        "Pary wiadomości user+assistant zapisują się debounced PUT-em po zakończeniu odpowiedzi (bez zapisu per-token podczas streamingu); draft inputu zostaje w localStorage jak dotychczas",
+        "Nawigacja do innej lekcji TEGO SAMEGO modułu pokazuje tę samą rozmowę; do lekcji innego modułu — historię tamtego modułu",
+        "Przycisk Clear history (z potwierdzeniem) czyści plik i widok; semantyka Stop/in-flight (src/lib/lessonChat/inflight.ts) bez regresji i bez duplikacji wiadomości przy hydracji",
+        "Okno historii wysyłane do /api/lesson-chat pozostaje niezmienione — persystencja nie zwiększa rozmiaru promptu",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 211,
+      "passes": true,
+      "notes": "Zależy od US-210. Stan messages: src/components/LessonChat.tsx (~linia 94); wzorzec debounce draftu ~269–287. Uwaga: panel NIE unmountuje się przy zamknięciu (komentarz ~linia 100) — zapis nie może polegać na unmount/cleanup.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-212",
+      "title": "Fix: eksport statycznego HTML emituje widgety Code/Sandbox wymagające kernela jako interaktywne Pyodide (Run kończy się błędem importu)",
+      "description": "Jako użytkownik eksportujący kurs, którego widgety kodu wymagają prawdziwych pakietów (cv2/torch/tensorflow), po otwarciu eksportu dostaję interaktywny widget Pyodide, w którym Run wywala się na imporcie, zamiast czytelnej degradacji do trybu read-only.",
+      "acceptanceCriteria": [
+        "A failing test reproducing the bug exists before the fix",
+        "Powstaje jeden moduł z allowlistą pakietów ładowalnych w Pyodide (min.: numpy, matplotlib, scipy, scikit-image, pandas), używany przez ścieżkę eksportu",
+        "Widget code/sandbox z requiresPackages zawartym w allowliście eksportuje się jak dotychczas (interaktywny Pyodide); z dowolnym pakietem spoza allowlisty → read-only: podświetlony starter code, badge 'Requires local kernel runtime', bez przycisku Run",
+        "Eksport kursów bez kernel-only widgetów bez regresji — istniejące testy export/html/route.test.ts przechodzą",
+        "Weryfikacja na rozpakowanym ZIP w przeglądarce: kernel-only widget pokazuje badge i nie ma Run; widget numpy/matplotlib wykonuje Run poprawnie",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 212,
+      "passes": true,
+      "notes": "Reproduction: Export as static HTML na kursie z requiresPackages ['torch'] lub ['opencv-python'] (np. kurs YOLO/SAR), otwarcie lekcji i klik Run. Pliki: src/app/api/courses/[slug]/export/html/route.ts, src/lib/export/staticRender.tsx (pyodide-loader ~493, ~832). Semantyka requiresPackages = realne nazwy pakietów po US-204/US-206.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-213",
+      "title": "Ekstraktor tekstu z PPTX przy uploadzie źródeł (sibling .extracted, wzorzec DOCX/PDF)",
+      "description": "Jako twórca kursu chcę, aby wgrane slajdy .pptx były ekstrahowane do tekstu czytelnego dla agentów generacyjnych — dziś .pptx jest akceptowany w uploadzie, ale oznaczany binary-unsupported i model nie widzi treści slajdów.",
+      "acceptanceCriteria": [
+        "Upload .pptx tworzy sibling .extracted/<name>.pptx.md (dokładnie ten sam wzorzec co US-124 dla docx i US-127 dla pdf)",
+        "Ekstrakcja czysto Node-owa: unzipper (już w dependencies) + parsowanie XML slajdów (runy tekstowe <a:t> z ppt/slides/slideN.xml), bez nowych ciężkich zależności; notatki prelegenta (ppt/notesSlides/) dołączane, gdy obecne",
+        "Output zachowuje kolejność slajdów z nagłówkami '## Slajd N'; slajdy bez tekstu pomijane",
+        "'.pptx' dodany do EXTRACTABLE w src/lib/server/sources.ts — promptSource preferuje sibling .md i ustawia extractedFrom",
+        "Nieudana ekstrakcja → dotychczasowe binary-unsupported (upload nie wywala się); test 'marks .pptx as binary-unsupported' w sources.test.ts zaktualizowany do nowego zachowania",
+        "Testy na małym commitowanym fixture .pptx",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 213,
+      "passes": true,
+      "notes": "Wzór modułu: src/lib/server/docx.ts (mammoth) — tu zamiast mammoth: unzipper + parse XML. Wizard Clarify/Structure i generacja skorzystają automatycznie przez istniejący mechanizm .extracted (US-125).",
+      "tags": []
+    },
+    {
+      "id": "US-214",
+      "title": "Źródła audio/wideo: upload MP3/WAV/M4A/MP4 → lokalna transkrypcja whisper.cpp jako materiał źródłowy",
+      "description": "Jako twórca kursu chcę wgrać nagranie wykładu (audio lub wideo), które zostanie lokalnie stranskrybowane i potraktowane jak tekstowe źródło w Clarify/Structure/generacji.",
+      "acceptanceCriteria": [
+        "upload-sources akceptuje .mp3/.wav/.m4a/.mp4 (rozszerzenia + MIME w src/lib/server/sources.ts) z dedykowanym limitem rozmiaru dla mediów (co najmniej 200 MB dla .mp4)",
+        "Transkrypcja przez istniejącą infrastrukturę whisper.cpp (src/lib/server/stt.ts) — ffmpeg transcode do 16 kHz mono WAV pokrywa .m4a/.mp4; wynik zapisany jako sibling .extracted/<name>.md",
+        "Długa transkrypcja nie blokuje requesta uploadu w nieskończoność: status per plik (transcribing → done/failed) widoczny na liście źródeł w wizardzie i odpytywany do rozstrzygnięcia",
+        "Brak whisper/ffmpeg na maszynie → plik oznaczony jako nieprzetworzony z czytelną wskazówką instalacyjną (wzorzec SttNotInstalledError), upload nie wywala się",
+        "Gotowy transkrypt wchodzi do promptów generacji jak każdy sibling .extracted (extractedFrom ustawione)",
+        "Testy z mockiem transkrypcji (bez realnego whispera/ffmpeg w testach)",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 214,
+      "passes": true,
+      "notes": "Reużycie z stt.ts: transcode (ffmpeg -ac 1 -ar 16000) + runWhisper; whisper-cli natywnie czyta wav/ogg/mp3/flac, mp4/m4a idą przez transcode. Status per plik np. w .extracted/<name>.status.json. Spójność z setup.sh (whisper instalowany przez --skip-media flow).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-215",
+      "title": "Źródło z YouTube: pole na URL w kroku materiałów → transkrypt wideo jako plik źródłowy",
+      "description": "Jako twórca kursu chcę podać link do wykładu na YouTube, a aplikacja pobierze jego transkrypt i użyje go jako materiału źródłowego w całym pipeline generacji.",
+      "acceptanceCriteria": [
+        "W kroku materiałów wizarda (obok pickera plików) pole 'Add YouTube link' przyjmujące pełny URL lub videoId, z walidacją formatu",
+        "Transkrypt pobierany istniejącym fetchYouTubeTranscript (src/lib/video/transcript.ts); zapis do /sources/ jako .md z nagłówkiem provenance: URL, data pobrania, źródło (captions|description)",
+        "source='none' (brak napisów i opisu) → czytelny błąd przy polu, żaden plik nie powstaje",
+        "Dodane źródło pojawia się na liście źródeł i przechodzi przez cały pipeline jak zwykły plik tekstowy (Clarify, Structure, generacja lekcji)",
+        "Deterministyczna nazwa pliku (videoId w nazwie); ponowne dodanie tego samego wideo nadpisuje zamiast duplikować",
+        "Testy z mockiem fetchera: segmenty → md z provenance; none → błąd bez zapisu",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 215,
+      "passes": true,
+      "notes": "Fetcher zwraca segmenty z timestampami — w .md zapisać czysty tekst, opcjonalnie znacznik [mm:ss] na początku akapitu. Bez yt-dlp/ściągania audio — wyłącznie istniejący fetcher napisów (US-072).",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-216",
+      "title": "Theory: render diagramów Mermaid z bloków ```mermaid (lesson view + print/PDF + eksport statyczny)",
+      "description": "Jako uczący się chcę widzieć diagramy (flowchart/sequence/mindmap) opisane Mermaidem w sekcjach Theory, aby pipeline'y, przepływy danych i mapy pojęć były czytelne wizualnie zamiast jako ASCII-art czy wypunktowania.",
+      "acceptanceCriteria": [
+        "Fenced block ```mermaid w markdownie Theory renderuje się jako SVG po stronie klienta; biblioteka mermaid ładowana leniwie wyłącznie gdy na stronie występuje taki blok",
+        "Kolory diagramów spięte z tokenami motywu — diagram czytelny w light/dark/sunset (minimum: tło, tekst, krawędzie węzłów)",
+        "Błędna składnia mermaid → fallback do zwykłego bloku kodu + dyskretny komunikat o błędzie parsowania; widget nie crashuje",
+        "Strona print lekcji (PDF przez puppeteer) renderuje diagramy tą samą ścieżką TheoryWidget; PDF wygenerowany z fixture zawiera diagram",
+        "Eksport statyczny HTML dołącza mermaid przez CDN (wzorzec assets/pyodide-loader.js) i diagram działa w wyeksportowanym kursie",
+        "Kurs-fixture theory-test dostaje sekcję z przykładowym diagramem flowchart",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 216,
+      "passes": true,
+      "notes": "Render przez override komponentu code w react-markdown w TheoryWidget.tsx (język mermaid). Wyłącznie client-side (uwaga na SSR/hydrację). Zoom/lightbox poza zakresem tej story.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-217",
+      "title": "Skille generacyjne świadome Mermaid: wytyczne + przykład w docs/widgets.md i promptach skilli emitujących sekcje theory",
+      "description": "Jako twórca kursów chcę, aby agenci generujący treść wiedzieli, że Theory wspiera diagramy Mermaid i kiedy ich używać, dzięki czemu nowo generowane kursy będą zawierały diagramy tam, gdzie realnie poprawiają zrozumienie.",
+      "acceptanceCriteria": [
+        "docs/widgets.md: podsekcja Mermaid w opisie Theory — składnia bloku, wspierane typy (min. flowchart i sequence), kiedy używać (pipeline'y, przepływy danych, mapy pojęć, architektury) i kiedy NIE (wzory → KaTeX, wykresy danych → plotImage), zalecany limit rozmiaru diagramu",
+        "Prompty wszystkich skilli emitujących lub edytujących sekcje theory (minimum: generate_lesson, regenerate_section oraz insert_section z US-208) wspominają wsparcie Mermaid i zawierają jeden krótki przykład flowchart",
+        "Wytyczna w promptach: poprawna składnia mermaid, bez inline styles nadpisujących motyw, maksymalnie ~15 węzłów na diagram",
+        "generate_quiz_lesson celowo bez zmian (lekcje quiz-only nie mają theory) — odnotowane w notes",
+        "grep po katalogu skilli potwierdza, że każdy skill opisujący sekcje theory wymienia mermaid",
+        "Typecheck passes"
+      ],
+      "priority": 217,
+      "passes": true,
+      "notes": "Zależy od US-216 (render musi istnieć zanim agenci zaczną emitować diagramy) i od US-208 (skill insert_section). Lokalizację katalogu skilli potwierdza resolver w src/lib/server/generation.ts / regenerateSection.ts. DONE: podsekcja Mermaid w docs/widgets.md (Theory) + wytyczne+przykład flowchart w generate_lesson, regenerate_section, insert_section, regenerate_lesson. generate_quiz_lesson celowo BEZ ZMIAN — lekcje quiz-only (10-15 sekcji quiz/dragMatch) nie mają sekcji theory, więc wsparcie Mermaid ich nie dotyczy.",
+      "tags": []
     }
   ]
 }

@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 1,
+  "slug": "od-anchor-based-do-anchor-free-i-decoupled-head",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m2",
+  "title": "Od anchor-based do anchor-free i decoupled head",
+  "eyebrow": "MECHANIKA MODELU",
+  "description": "Prześledź ewolucję głowicy YOLO: od kotwic dobieranych k-means (YOLOv3/v5) do anchor-free regresji geometrii wprost i decoupled head — i zrozum, dlaczego oba cięcia poprawiają dokładność i prędkość.",
+  "estimatedMinutes": 13,
+  "sections": [
+    {
+      "id": "kotwice-ktore-trzeba-bylo-zgadnac",
+      "title": "Kotwice: rozmiary, które trzeba było zgadnąć",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/models/yolov8/",
+          "title": "Ultralytics YOLOv8 — dokumentacja modelu (anchor-free, decoupled head)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "**Kotwica (anchor box)** to wstępnie zdefiniowane pudło o ustalonym rozmiarze i proporcjach, przypięte do każdej komórki siatki. W YOLOv3/v4/v5 głowica **nie** regresowała pudła od zera — uczyła się **offsetu** względem kotwicy.\n\n![Porównanie głowic: po lewej anchor-based (YOLOv3/v5) — komórka siatki z trzema wstępnymi kotwicami o różnych proporcjach (przerywane) i jednym pudłem wyregresowanym jako offset (czerwone); po prawej anchor-free (YOLOX/YOLOv8/YOLO11) — jedna komórka z punktem w środku i czterema strzałkami l, t, r, b do krawędzi jednego pudła regresowanego wprost](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/anchor-based-vs-anchor-free-glowica.png)\n\nDla kotwicy o rozmiarze $(p_w, p_h)$ w komórce o rogu $(c_x, c_y)$ sieć przewidywała surowe $t_x, t_y, t_w, t_h$, a finalne pudło dekodowała jako:\n\n$$b_x = \\sigma(t_x) + c_x, \\quad b_y = \\sigma(t_y) + c_y$$\n$$b_w = p_w\\, e^{t_w}, \\quad b_h = p_h\\, e^{t_h}$$\n\nKotwica narzucała więc **a priori** rozmiar, a regresja tylko go korygowała. Skąd brały się rozmiary kotwic? Z **k-means** na wymiarach pudeł prawdziwych ze zbioru treningowego — zwykle **3 kotwice na skalę**, 9 łącznie.\n\nTo działało, ale niosło koszty:\n\n- **Hiperparametry zależne od danych** — liczba i rozmiary kotwic to ręczna decyzja; źle dobrane (np. brak bardzo szerokich kotwic dla statków) psują recall.\n- **Więcej kandydatów** — $A$ kotwic na komórkę to $A\\times$ więcej surowych predykcji i cięższa głowica.\n- **Przypisanie przez IoU** — etykietę dostawała kotwica o IoU z obiektem powyżej progu, czyli kolejny próg do strojenia.\n\nKrótko: kotwice wymagały zgadywania kształtów obiektów **przed** treningiem."
+      }
+    },
+    {
+      "id": "kotwice-k-means",
+      "title": "Kotwice jako centroidy k-means",
+      "description": "Tak anchor-based detektor dobiera rozmiary kotwic: klastruje wymiary pudeł treningowych. Anchor-free pomija ten krok.",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1904.01355",
+          "title": "FCOS: Fully Convolutional One-Stage Object Detection",
+          "kind": "paper",
+          "author": "Zhi Tian, Chunhua Shen, Hao Chen, Tong He",
+          "year": 2019
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/od-anchor-based-do-anchor-free-i-decoupled-head-1.png",
+        "alt": "Wykres punktowy wymiarów pudeł: oś X to szerokość pudła w pikselach (0–300), oś Y to wysokość w pikselach (0–220). Trzy chmury punktów (pudła GT) odpowiadają trzem typowym kształtom; nałożone trzy duże czarne znaczniki X to centroidy k-means w przybliżeniu (95, 61), (225, 68) i (60, 136) — to one stają się kotwicami anchor-based.",
+        "caption": "Rys. 1. W detektorach anchor-based rozmiary kotwic to centroidy k-means policzone na wymiarach pudeł prawdziwych ze zbioru treningowego. Detektor anchor-free w ogóle nie wykonuje tego kroku — regresuje geometrię wprost.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport numpy as np\n\n# Anchor-based detektory (YOLOv3/v5) dobierają wstępne rozmiary kotwic,\n# klastrując wymiary (szer., wys.) pudeł prawdziwych z treningu metodą k-means.\n# Tu symulujemy zbiór pojazdów/statków o trzech typowych kształtach i odtwarzamy\n# k=3 centroidy — to właśnie one stają się kotwicami. Anchor-free tego kroku NIE\n# wykonuje: regresuje geometrię wprost, więc znika ten zależny od danych\n# hiperparametr.\nrng = np.random.default_rng(0)\nclusters = [\n    (90, 60, 18, 12),    # samochody: szerokie, niskie\n    (220, 70, 45, 16),   # statki: bardzo szerokie\n    (60, 130, 14, 26),   # pionowe sylwetki/maszty\n]\npts = np.vstack([\n    np.column_stack((rng.normal(mw, sw, 80), rng.normal(mh, sh, 80)))\n    for (mw, mh, sw, sh) in clusters\n])\npts = np.clip(pts, 8, None)\n\n# Proste k-means (k=3) z ustalonym, deterministycznym startem.\nk = 3\ncentroids = np.array([[40.0, 40.0], [150.0, 90.0], [80.0, 160.0]])\nfor _ in range(25):\n    d = np.linalg.norm(pts[:, None, :] - centroids[None, :, :], axis=2)\n    labels = d.argmin(axis=1)\n    for j in range(k):\n        if np.any(labels == j):\n            centroids[j] = pts[labels == j].mean(axis=0)\n\ncolors = [\"#4f6df5\", \"#2a9d8f\", \"#d1495b\"]\nfig, ax = plt.subplots(figsize=(6.6, 5.0))\nfor j in range(k):\n    sel = pts[labels == j]\n    ax.scatter(sel[:, 0], sel[:, 1], s=14, color=colors[j], alpha=0.45,\n               label=f\"pudła GT — skupisko {j + 1}\")\nax.scatter(centroids[:, 0], centroids[:, 1], s=240, marker=\"X\",\n           color=\"#1b1f3b\", edgecolor=\"white\", linewidths=1.4, zorder=5,\n           label=\"kotwice = centroidy k-means\")\nfor cxy in centroids:\n    ax.annotate(f\"({cxy[0]:.0f}, {cxy[1]:.0f})\", xy=cxy,\n                xytext=(cxy[0] + 6, cxy[1] + 6), fontsize=9, color=\"#1b1f3b\")\n\nax.set_xlabel(\"Szerokość pudła [px]\")\nax.set_ylabel(\"Wysokość pudła [px]\")\nax.set_title(\"Kotwice anchor-based to centroidy k-means wymiarów pudeł GT\")\nax.set_xlim(0, 300)\nax.set_ylim(0, 220)\nax.grid(True, alpha=0.3)\nax.legend(loc=\"upper right\", fontsize=8.5)\nfig.tight_layout()\nfig.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/od-anchor-based-do-anchor-free-i-decoupled-head-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"centroids\", centroids.round(1).tolist())\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "sprawdzian-anchor-free",
+      "title": "Szybki sprawdzian: czym jest anchor-free i decoupled",
+      "type": "quiz",
+      "data": {
+        "question": "Zaznacz wszystkie prawdziwe stwierdzenia o głowicy detekcyjnej YOLO11.",
+        "options": [
+          "Jest anchor-free: każda komórka regresuje geometrię pudła wprost, bez odwołania do wstępnych kotwic",
+          "Jest decoupled: klasyfikacja i regresja pudła mają osobne gałęzie konwolucyjne",
+          "Wciąż dobiera rozmiary kotwic metodą k-means na zbiorze treningowym, tak jak YOLOv5",
+          "Anchor-free oznacza, że na wyjściu nie trzeba już stosować NMS"
+        ],
+        "correct": [
+          0,
+          1
+        ],
+        "explanation": "YOLO11 (jak YOLOv8) jest anchor-free — regresuje geometrię pudła bezpośrednio z każdej lokalizacji, więc krok klastrowania kotwic k-means z YOLOv3/v5 znika (odpowiedź 3 to właśnie ten częsty błąd). Jest też decoupled — klasyfikacja i regresja pudła liczone są w osobnych gałęziach konwolucji. Anchor-free nie ma natomiast nic wspólnego z NMS: NMS to deterministyczny post-processing usuwający nakładające się pudła i jest stosowany niezależnie od tego, czy głowica używa kotwic.",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "anchor-free-i-decoupled",
+      "title": "Anchor-free i decoupled head: dwa cięcia, które uprościły głowicę",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/2107.08430",
+          "title": "YOLOX: Exceeding YOLO Series in 2021",
+          "kind": "paper",
+          "author": "Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, Jian Sun",
+          "year": 2021
+        },
+        {
+          "url": "https://arxiv.org/abs/1904.01355",
+          "title": "FCOS: Fully Convolutional One-Stage Object Detection",
+          "kind": "paper",
+          "author": "Zhi Tian, Chunhua Shen, Hao Chen, Tong He",
+          "year": 2019
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Nowoczesne YOLO (YOLOv8, **YOLO11**) wykonują **dwa cięcia**, które upraszczają i poprawiają głowicę: stają się **anchor-free** i **decoupled**.\n\n**Anchor-free.** Zamiast korygować wstępną kotwicę, każda lokalizacja regresuje geometrię pudła **wprost** — w stylu FCOS przez **cztery odległości** od punktu do krawędzi: lewej, górnej, prawej i dolnej $(l, t, r, b)$. Znika krok k-means i wszystkie hiperparametry kotwic. Skoro na komórkę przypada **jedna** predykcja zamiast $A$, surowy zbiór kandydatów kurczy się ~$A$-krotnie, a głowica jest lżejsza.\n\n![Porównanie głowic: po lewej coupled head — mapa cech z necku wchodzi do jednej wspólnej gałęzi konwolucji, która dopiero na końcu rozdziela się na wyjścia klas i pudła; po prawej decoupled head — mapa cech rozgałęzia się od razu na dwie osobne gałęzie konwolucyjne, jedną dla klas i jedną dla pudła](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/coupled-vs-decoupled-head.png)\n\n**Decoupled head.** We wczesnym YOLO jedna **wspólna** gałąź konwolucji liczyła i klasę, i geometrię (coupled head). Problem: te zadania ciągną cechy w przeciwne strony — klasyfikacja chce reprezentacji **niewrażliwej** na drobne przesunięcia, regresja pudła przeciwnie, **wrażliwej** na położenie. YOLOX pokazał, że **rozdzielenie** ich na dwie osobne gałęzie podnosi dokładność i **przyspiesza zbieżność**.\n\n> **Sedno:** YOLO11 łączy oba pomysły — anchor-free + decoupled head. Geometrię pudła domyka jeszcze **DFL** (rozkład po krawędziach), który rozłożymy w lekcji o stratach.\n\nDwie konsekwencje warte zapamiętania:\n\n- **Mniej do strojenia** — brak kotwic to brak ich hiperparametrów.\n- **Czystszy podział pracy** — osobne gałęzie to mniej kompromisu między klasą a pudłem."
+      }
+    },
+    {
+      "id": "policz-kandydatow",
+      "title": "Policz surowych kandydatów: anchor-based vs anchor-free",
+      "description": "Anchor-free emituje jedną predykcję na komórkę; anchor-based — A. Policz, ile to surowych kandydatów na trzech skalach.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Głowica YOLO przewiduje na trzech skalach o krokach (stride) 8, 16 i 32. Dla kwadratowego wejścia o boku `input_size` siatka na danej skali ma $(\\texttt{input\\_size} // s)^2$ komórek, a każda komórka emituje `anchors_per_cell` predykcji.\n\nNapisz `count_predictions(input_size, strides, anchors_per_cell)`, które zwraca **łączną liczbę surowych kandydatów** zsumowaną po skalach. Użyj **dzielenia całkowitego**.\n\n```\n# anchor-free (1 predykcja/komórkę), wejście 640, strides 8/16/32:\ncount_predictions(640, [8, 16, 32], 1) == 8400\n# anchor-based z 3 kotwicami: 3x więcej\ncount_predictions(640, [8, 16, 32], 3) == 25200\n```",
+        "starterCode": "def count_predictions(input_size, strides, anchors_per_cell):\n    # input_size: int (bok kwadratowego wejscia, np. 640)\n    # strides: list[int] (kroki skal, np. [8, 16, 32])\n    # anchors_per_cell: int (1 dla anchor-free, A dla anchor-based)\n    # TODO: dla kazdej skali licz (input_size // s) ** 2 komorek,\n    # przemnoz przez anchors_per_cell i zsumuj po skalach.\n    return 0\n",
+        "tests": [
+          {
+            "name": "anchor_free_640_three_scales",
+            "body": "assert count_predictions(640, [8, 16, 32], 1) == 8400",
+            "hidden": false
+          },
+          {
+            "name": "anchor_based_three_anchors",
+            "body": "assert count_predictions(640, [8, 16, 32], 3) == 25200",
+            "hidden": true
+          },
+          {
+            "name": "single_scale_stride_32",
+            "body": "assert count_predictions(640, [32], 1) == 400",
+            "hidden": true
+          },
+          {
+            "name": "smaller_input_uses_floor_division",
+            "body": "assert count_predictions(320, [8, 16, 32], 1) == 2100",
+            "hidden": true
+          }
+        ],
+        "solution": "def count_predictions(input_size, strides, anchors_per_cell):\n    return sum((input_size // s) ** 2 for s in strides) * anchors_per_cell\n"
+      }
+    },
+    {
+      "id": "dopasuj-cechy",
+      "title": "Dopasuj cechę do paradygmatu głowicy",
+      "description": "Przeciągnij każdą cechę do paradygmatu głowicy, który ją charakteryzuje.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Przypisz każdą cechę do właściwego paradygmatu głowicy detekcyjnej.",
+        "items": [
+          {
+            "id": "i-kmeans",
+            "label": "Rozmiary kotwic dobierane metodą k-means na danych"
+          },
+          {
+            "id": "i-offset",
+            "label": "Regresja offsetu względem wstępnego pudła"
+          },
+          {
+            "id": "i-wprost",
+            "label": "Jedna predykcja na komórkę: geometria pudła wprost"
+          },
+          {
+            "id": "i-brak-hiper",
+            "label": "Brak hiperparametrów kotwic"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-anchor-based",
+            "label": "Anchor-based (YOLOv3 / v5)",
+            "accepts": [
+              "i-kmeans",
+              "i-offset"
+            ]
+          },
+          {
+            "id": "z-anchor-free",
+            "label": "Anchor-free (YOLOv8 / YOLO11)",
+            "accepts": [
+              "i-wprost",
+              "i-brak-hiper"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": true,
+        "requireAll": true,
+        "explanation": "Anchor-based (YOLOv3/v5) opiera się na wstępnych kotwicach: ich rozmiary dobiera k-means na wymiarach pudeł treningowych, a sieć uczy się offsetu względem najbliższej kotwicy. Anchor-free (YOLOv8/YOLO11) regresuje geometrię pudła wprost — jedna predykcja na komórkę — więc znikają kotwice i wszystkie ich hiperparametry."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1904.01355",
+      "title": "FCOS: Fully Convolutional One-Stage Object Detection",
+      "kind": "paper",
+      "author": "Zhi Tian, Chunhua Shen, Hao Chen, Tong He",
+      "year": 2019
+    },
+    {
+      "url": "https://arxiv.org/abs/2107.08430",
+      "title": "YOLOX: Exceeding YOLO Series in 2021",
+      "kind": "paper",
+      "author": "Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, Jian Sun",
+      "year": 2021
+    },
+    {
+      "url": "https://docs.ultralytics.com/models/yolov8/",
+      "title": "Ultralytics YOLOv8 — dokumentacja modelu (anchor-free, decoupled head)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/models/yolo11/",
+      "title": "Ultralytics YOLO11 — dokumentacja modelu (architektura i warianty)",
+      "kind": "article"
+    }
+  ]
+}

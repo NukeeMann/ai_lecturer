@@ -1,0 +1,76 @@
+[2026-06-13T09:37:41+0200] I'll start by reading the Ralph instructions, then understand the codebase for this task.
+[2026-06-13T09:37:44+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T09:37:46+0200] Now let me explore the key files.
+[2026-06-13T09:37:52+0200] Now let me look at the chat history store/API and how LessonChat is used in the lesson page.
+[2026-06-13T09:39:40+0200] Let me check the /api/lesson-chat route to understand the history window handling.
+[2026-06-13T09:40:34+0200] The lesson-chat route sends all provided history with no cap. Let me check the existing test file and the paths helper.
+[2026-06-13T09:40:46+0200] Now I'll implement. Start with the server: add `clearChatHistory` and a DELETE route.
+[2026-06-13T09:41:05+0200] Now the LessonChat component. First the imports, props, and ChatMessage type:
+[2026-06-13T09:41:37+0200] Now add the refs, hydration/save/clear logic. Add refs near the existing ones:
+[2026-06-13T09:42:11+0200] Now update `handleSend` to set `createdAt` and exclude hydrated messages from the history window:
+[2026-06-13T09:42:30+0200] Preserve `createdAt` when finalizing assistant messages:
+[2026-06-13T09:42:43+0200] Now add the clear-history handler. Let me add it after `handleStop`:
+[2026-06-13T09:42:55+0200] Now add the Clear history button to the header:
+[2026-06-13T09:43:04+0200] Now add the styles for the clear-confirm UI. Let me add them near `iconBtnStyle`:
+[2026-06-13T09:43:13+0200] Now wire `moduleId` into the page:
+[2026-06-13T09:43:20+0200] Now run typecheck and the relevant tests:
+[2026-06-13T09:43:36+0200] Typecheck passes. Now run the relevant tests:
+[2026-06-13T09:43:47+0200] Existing tests pass. Let me add tests for `clearChatHistory` and the DELETE route. Let me check existing test structure:
+[2026-06-13T09:43:56+0200] Let me add a DELETE describe block at the end of the test file:
+[2026-06-13T09:44:42+0200] I need to fix a subtle ordering bug: the save effect could fire an empty PUT before async hydration completes. Let me add a `loadedKeyRef` gate.
+[2026-06-13T09:45:03+0200] Now let me add component tests for hydration and clear. Let me view the end of the test file to match style:
+[2026-06-13T09:45:35+0200] All pass. Let me run the full test suite to ensure no regressions:
+[2026-06-13T09:45:59+0200] The 2 failures are in `generation.test.ts` (US-157 TTS) — unrelated to my changes, looks filesystem-flaky (ENOTEMPTY). Let me confirm by running it in isolation:
+[2026-06-13T09:46:09+0200] Confirmed pre-existing flakiness (passes in isolation — parallel /tmp contention). Now browser verification. Let me detect dev servers:
+[2026-06-13T09:46:24+0200] Dev server is up. Let me confirm the test course structure and pick lessons in the same module:
+[2026-06-13T09:46:52+0200] I'll seed history and test in the browser with pytorch course (m1/m2). Let me find how to open the chat panel:
+[2026-06-13T09:47:31+0200] The toggle is `data-testid="tutor-btn"`. Let me write the playwright test:
+[2026-06-13T09:48:25+0200] All functional checks pass. The 404s are unrelated resource loads (not my API). Let me confirm they aren't chat-related:
+[2026-06-13T09:48:34+0200] Confirmed — the 404s are pre-existing `/regenerate/status` polling (unrelated feature). All chat API calls returned 200/204. Browser verification is effectively complete. Now update progress.txt and prd.json, then commit.
+[2026-06-13T09:49:00+0200] Now flip `passes` to true for US-211 and run a final lint check on the touched files:
+[2026-06-13T09:49:28+0200] Lint has many pre-existing problems repo-wide. Let me check only my changed files:
+[2026-06-13T09:49:49+0200] Let me check whether the line-401 unused-disable warning is from my code:
+[2026-06-13T09:49:53+0200] My disable directive is unused (setMessages is in an async callback). Let me remove it:
+[2026-06-13T09:50:15+0200] Identical lint baseline — zero new problems introduced. Final typecheck + test, then commit:
+[2026-06-13T09:50:39+0200] Stray artifacts got staged (test/dev-server transients). Let me unstage and remove them, keeping only my intended changes:
+[2026-06-13T09:50:44+0200] Clean. Now commit:
+[2026-06-13T09:50:58+0200] Committed. US-211 is complete.
+
+## Summary
+
+Implemented per-module tutor chat history hydration, debounced autosave, and a Clear history control in `LessonChat`.
+
+**Changes:**
+- **`src/components/LessonChat.tsx`** — new optional `moduleId` prop; `ChatMessage` gained `createdAt?` + `hydrated?`. On open it hydrates the transcript via `GET /api/chats/<course>/<module>`; completed turns autosave via a debounced `PUT` (gated on `!sending`, so never per-token); a Clear history button with an inline confirm step empties the view and `DELETE`s the file. Hydrated messages render but are **excluded from the history window sent to `/api/lesson-chat`**, so persistence never grows the prompt.
+- **`src/lib/server/chatHistory.ts`** — `clearChatHistory()` (unlink, ENOENT = success).
+- **`src/app/api/chats/[courseSlug]/[moduleId]/route.ts`** — `DELETE` handler (204 / 400 on unsafe slug).
+- **lesson `page.tsx`** — passes `moduleId={lesson?.moduleId}`.
+- Tests added to both `chatHistory.test.ts` (DELETE) and `LessonChat.test.tsx` (hydration + Clear flows).
+
+**Verification:**
+- Typecheck: passes.
+- Tests: 27/27 on the touched files; full suite green except 2 pre-existing flaky `generation.test.ts` cases (pass in isolation — parallel `/tmp` contention, unrelated).
+- Lint: zero new problems vs. baseline.
+- Browser (playwright, 11/12): hydration on open, same-module nav shows the same conversation, other-module shows its own (not M1's), Clear-with-confirm empties view + store, and clear is module-scoped (M1 untouched). The 1 "fail" is false-positive console noise from a pre-existing `/regenerate/status` 404, not chat-related.
+
+Two design calls worth flagging (also in progress.txt): hydrated history is shown but kept out of the prompt to honor "persystencja nie zwiększa rozmiaru promptu"; and autosave waits on a separate `loadedKeyRef` (set after the GET resolves) so an empty list can't be PUT over the store mid-load.
+[2026-06-13T09:50:58+0200] [result success turns=80 cost=$5.6786525] Committed. US-211 is complete.
+
+## Summary
+
+Implemented per-module tutor chat history hydration, debounced autosave, and a Clear history control in `LessonChat`.
+
+**Changes:**
+- **`src/components/LessonChat.tsx`** — new optional `moduleId` prop; `ChatMessage` gained `createdAt?` + `hydrated?`. On open it hydrates the transcript via `GET /api/chats/<course>/<module>`; completed turns autosave via a debounced `PUT` (gated on `!sending`, so never per-token); a Clear history button with an inline confirm step empties the view and `DELETE`s the file. Hydrated messages render but are **excluded from the history window sent to `/api/lesson-chat`**, so persistence never grows the prompt.
+- **`src/lib/server/chatHistory.ts`** — `clearChatHistory()` (unlink, ENOENT = success).
+- **`src/app/api/chats/[courseSlug]/[moduleId]/route.ts`** — `DELETE` handler (204 / 400 on unsafe slug).
+- **lesson `page.tsx`** — passes `moduleId={lesson?.moduleId}`.
+- Tests added to both `chatHistory.test.ts` (DELETE) and `LessonChat.test.tsx` (hydration + Clear flows).
+
+**Verification:**
+- Typecheck: passes.
+- Tests: 27/27 on the touched files; full suite green except 2 pre-existing flaky `generation.test.ts` cases (pass in isolation — parallel `/tmp` contention, unrelated).
+- Lint: zero new problems vs. baseline.
+- Browser (playwright, 11/12): hydration on open, same-module nav shows the same conversation, other-module shows its own (not M1's), Clear-with-confirm empties view + store, and clear is module-scoped (M1 untouched). The 1 "fail" is false-positive console noise from a pre-existing `/regenerate/status` 404, not chat-related.
+
+Two design calls worth flagging (also in progress.txt): hydrated history is shown but kept out of the prompt to honor "persystencja nie zwiększa rozmiaru promptu"; and autosave waits on a separate `loadedKeyRef` (set after the GET resolves) so an empty list can't be PUT over the store mid-load.

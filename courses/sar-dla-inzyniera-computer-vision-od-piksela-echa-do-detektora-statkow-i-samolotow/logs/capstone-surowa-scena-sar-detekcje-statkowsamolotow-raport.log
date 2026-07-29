@@ -1,0 +1,187 @@
+=== Attempt 1 — 2026-06-12T16:17:23.306Z ===
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+This is the capstone lesson (m6, 20 min). Let me read the research, sources, and widgets docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	# Research: SAR dla inżyniera Computer Vision: od piksela echa do detektora statków i samolotów
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	# Sources: SAR dla inżyniera Computer Vision: od piksela echa do detektora statków i samolotów
+Now let me look at the widgets doc and existing lessons in this course for patterns/assets.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-v…)
+← total 288
+[system thinking_tokens]
+[system thinking_tokens]
+Let me examine the most relevant existing lessons (CFAR, ship detection, metrics) and the available inputs to reuse assets and match patterns.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-visio…)
+← === INPUTS DIR ===
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check the Python environment and probe the real tile with the intended pipeline before authoring.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+python3 -c "import numpy, scipy, matplot…)
+← np 1.26.4 scipy 1.13.1 mpl 3.9.2
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-visio…)
+← raw shape/dtype/range (128, 128) float32 0.19215687 1.0
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The pipeline works on the real tile (16384 px → 46 CFAR px → 18 candidates → 4 ships). Now let me generate the two PNG assets — a detection funnel plot and the expected-overlay image.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+cat > /tmp/capstone_funnel.py << 'EOF'
+i…)
+← saved courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport-1.png
+Now the expected-overlay image for the code widget's `outputMedia`:
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+cat > /tmp/capstone_overlay.py << 'EOF'
+…)
+← saved courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/capstone-detections-expected.png | ships 4 candidates 18
+Both assets generated. Now let me validate the capstone code solution against the deterministic tests I'll embed.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+python3 << 'EOF'
+import numpy as np
+from…)
+← T1 ok 0 0
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All 4 tests pass and the solution is correct. Now I'll author the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-o…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/lessons/capstone-surowa-scena-sar-detekcje…
+Now validate against `LessonSchema` and run the asset/external-URL checks.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+npx tsx -e "
+const fs = require('node:fs…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+cat > /tmp/validate_capstone.ts << 'EOF'…)
+← OK courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/lessons/capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport.json
+[system thinking_tokens]
+[system thinking_tokens]
+Validates. Now the asset-presence and external-URL gates:
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer/courses/sar-dla-inzyniera-computer-visio…)
+← === external image URLs inline (must be empty) ===
+[system thinking_tokens]
+[system thinking_tokens]
+All assets resolve, no external image URLs. Final check — typecheck and confirm scope (only the one new lesson + two assets touched):
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+npm run typecheck 2>&1 | tail -5
+echo "=…)
+[system task_started]
+[system task_notification]
+← > ai-lecturer@0.1.0 typecheck
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Typecheck is clean. Done.
+## Summary
+Authored the capstone lesson at `/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/lessons/capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport.json`, executing the `generate_lesson` skill end-to-end.
+**Lesson shape** (m6, 20 min, 0.5 theory/practice — balanced): 3 theory beats + 5 widgets, 8 sections total, starts on theory, ends on a quiz, no back-to-back theory:
+1. **theory** — "Cała ścieżka w jednym pliku": the 5-stage end-to-end pipeline (scene→tile → land mask → CFAR → chips→classifier → report), with the runnable-core vs SNAP/PyTorch-reference split + inline pipeline-chain image.
+2. **plotImage** — detection funnel (16384 px → 46 CFAR px → 18 candidates → 4 ships, log axis), generated fresh.
+3. **quiz** (single) — why mask land *before* CFAR (clutter-statistics reasoning).
+4. **theory** — what the report must contain (range/azimuth, class, confidence, geocoding), ships-vs-aircraft framing + inline result overlay.
+5. **code** (graded) — `run_capstone` glues provided `ca_cfar`/`sea_mask`/`detect_targets` into a report dict; runs on the real Sentinel-1 tile in `/inputs/`, 4 tests (1 visible), full solution, live `outputMedia`, `requiresPackages: ["scipy"]`.
+6. **sandbox** — independently tune `alpha` (CFAR sensitivity) and `min_peak` (classifier threshold).
+7. **theory** — 1:1 mapping to the SATIM ATR role (near-real-time/ONNX, data-agnostic robustness) + inline F1-vs-incidence-angle figure.
+8. **quiz** (multi) — final synthesis of the two-stage ATR pipeline.
+**Verification:**
+- Solution + all 4 tests pass (ran in Python).
+- `LessonSchema.safeParse` → **OK**.
+- 2 new PNGs generated and confirmed on disk; all 5 `/api/.../assets/...` references resolve; **zero** external image URLs.
+- `npm run typecheck` clean.
+- Sources: 5 lesson-level (paper/book/article mix, authors+years on papers/book) drawn from the capstone block in `sources.md`, plus section-level sources on theory beats. Reused existing course assets (`cfar-sea-tile.png`, `pipeline-scene-to-tile-chain.png`, `f1-vs-incidence-angle-robustness.png`).
+Scope respected: only the one new lesson file + its 2 assets created; no `scripts/ralph/`, `course.json`, or other lesson touched.
+[result success (428.2s)]

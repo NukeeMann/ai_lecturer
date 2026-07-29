@@ -699,3 +699,110 @@ describe('LessonChat (US-184) — Web Speech permission-denied error', () => {
     expect(textarea.value).toBe('preserved draft');
   });
 });
+
+describe('LessonChat (US-211) — history hydration + Clear history', () => {
+  const HISTORY = {
+    schemaVersion: 1,
+    messages: [
+      { role: 'user', content: 'earlier question', createdAt: '2026-06-13T10:00:00.000Z' },
+      { role: 'assistant', content: 'earlier answer', createdAt: '2026-06-13T10:00:01.000Z' },
+    ],
+  };
+
+  function mockChatsFetch(history: unknown = HISTORY) {
+    const calls: Array<{ url: string; method: string }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : (input as Request).url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      calls.push({ url, method });
+      if (url.includes('/api/chats/')) {
+        if (method === 'GET') {
+          return new Response(JSON.stringify(history), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        // PUT / DELETE
+        return new Response(null, { status: method === 'DELETE' ? 204 : 200 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { fetchMock, calls };
+  }
+
+  it('hydrates the transcript from the per-module store when opened', async () => {
+    mockChatsFetch();
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l1"
+        moduleId="m1"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('earlier answer')).not.toBeNull();
+    expect(screen.getByText('earlier question')).not.toBeNull();
+  });
+
+  it('Clear history asks for confirmation, then clears the view and DELETEs the file', async () => {
+    const { calls } = mockChatsFetch();
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l1"
+        moduleId="m1"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    // Wait for hydration so the Clear button (gated on messages.length) shows.
+    await screen.findByText('earlier answer');
+    const clearBtn = screen.getByTestId('lesson-chat-clear');
+
+    // First click arms the confirm step — nothing deleted yet.
+    await act(async () => {
+      fireEvent.click(clearBtn);
+    });
+    expect(screen.getByTestId('lesson-chat-clear-confirm')).not.toBeNull();
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+
+    // Confirm — view clears and a DELETE is issued.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('lesson-chat-clear-confirm'));
+    });
+    expect(screen.queryByText('earlier answer')).toBeNull();
+    expect(screen.getByTestId('lesson-chat-empty')).not.toBeNull();
+    expect(
+      calls.some((c) => c.method === 'DELETE' && c.url.includes('/api/chats/c/m1')),
+    ).toBe(true);
+  });
+
+  it('cancelling the Clear confirm leaves the transcript intact', async () => {
+    mockChatsFetch();
+    render(
+      <LessonChat
+        open
+        courseSlug="c"
+        lessonSlug="l1"
+        moduleId="m1"
+        onClose={() => {}}
+        onToggle={() => {}}
+      />,
+    );
+
+    await screen.findByText('earlier answer');
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('lesson-chat-clear'));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('lesson-chat-clear-cancel'));
+    });
+    expect(screen.getByText('earlier answer')).not.toBeNull();
+  });
+});

@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "slug": "capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m6",
+  "title": "Capstone: surowa scena SAR → detekcje statków/samolotów + raport",
+  "eyebrow": "EWALUACJA I CAPSTONE",
+  "description": "Złóż w jeden uruchamialny pipeline wszystko z kursu — kafelek SAR → maska lądu → CFAR → chipy → klasyfikator → raport — i zmapuj go 1:1 na zakres roli ATR w SATIM.",
+  "estimatedMinutes": 20,
+  "sections": [
+    {
+      "id": "cala-sciezka",
+      "title": "Cała ścieżka w jednym pliku",
+      "sources": [
+        {
+          "url": "https://doi.org/10.25966/nr2c-s697",
+          "title": "The SAR Handbook (end-to-end processing workflow)",
+          "kind": "book",
+          "author": "NASA SERVIR (Flores-Anderson et al., eds.)",
+          "year": 2019
+        },
+        {
+          "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+          "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery",
+          "kind": "paper",
+          "author": "David J. Crisp",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Przeszedłeś całą podróż pojedynczego piksela: *co echo znaczy* → *co siedzi w danych* → *jak zrobić z surowej sceny kafelek* → *CFAR i cechy* → *AI na chipach* → *metryki*. Czas **skleić to w jeden pipeline**, który bierze surowy kafelek SAR i zwraca **listę wykrytych statków/samolotów z krótkim raportem**.\n\nCała ścieżka to łańcuch etapów, gdzie każdy odsiewa obiekty dla następnego:\n\n![Schemat łańcucha przetwarzania SAR: od surowej sceny Sentinel-1, przez kalibrację do sigma0, multilooking i terrain correction, aż po gotowy do modelu kafelek amplitudy — strzałki prowadzą kolejno przez każdy krok preprocessingu](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/pipeline-scene-to-tile-chain.png)\n\n1. **Scena → kafelek** (Moduł 3): kalibracja do σ⁰, skala dB, despeckling, geokodowanie. Ciężki SNAP/`snappy` robisz **offline** — tu zostaje kodem referencyjnym.\n2. **Maska lądu**: CFAR zakłada clutter *morski*; jasny ląd trzeba wyciąć **zanim** puścisz detektor, inaczej zapali się na całym wybrzeżu.\n3. **CFAR (pre-detektor)** (Moduł 4): tani, adaptacyjny próg `T = μ + α·σ`, nastawiony na wysoką czułość — proponuje kandydatów.\n4. **Chipy → klasyfikator** (Moduł 5): wokół każdego kandydata wycinasz mały chip i lekki klasyfikator mówi *statek / samolot / fałszywy alarm*, podnosząc precyzję.\n5. **Raport**: pozycje (range/azimuth), klasy, liczności i parametry pracy — to jest deliverable.\n\nMost do Twojego CV: to klasyczny układ **propozycje regionów → klasyfikator** (R-CNN), tyle że pre-detektor jest statystyczny i napędzany fizyką sceny. W tej lekcji uruchamialny rdzeń sklejasz w `numpy`/`scipy`; ciężki trening sieci zostaje referencją."
+      }
+    },
+    {
+      "id": "lejek-detekcji",
+      "title": "Lejek detekcji: ile obiektów przeżywa każdy etap",
+      "description": "Liczby zmierzone na prawdziwym podkafelku Sentinel-1 z tej lekcji: od 16 384 pikseli sceny do 4 potwierdzonych statków.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+          "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+          "kind": "paper",
+          "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+          "year": 2016
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport-1.png",
+        "alt": "Wykres słupkowy w skali logarytmicznej. Oś X: cztery etapy pipeline'u — „Cała scena (piksele)” = 16384, „Nad progiem CFAR (piksele)” = 46, „Kandydaci (komponenty)” = 18, „Potwierdzone statki (CNN)” = 4. Oś Y: liczba obiektów w skali log od 1 do ~50000. Słupki maleją o rzędy wielkości z każdym etapem — szary, pomarańczowy, niebieski, zielony.",
+        "caption": "Rys. 1. Lejek detekcji na prawdziwym kafelku 128×128: CFAR redukuje 16 384 piksele do 46 pikseli nad progiem (18 spójnych kandydatów), a klasyfikator zostawia 4 potwierdzone statki. Każdy etap odsiewa o rzędy wielkości.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Lejek detekcji capstone'u: ile obiektow przezywa kazdy etap pipeline'u\n# (liczby zmierzone na prawdziwym podkafelku Sentinel-1 128x128 uzytym w lekcji).\nstages = [\"Cala scena\\n(piksele)\", \"Nad progiem\\nCFAR (piksele)\", \"Kandydaci\\n(komponenty)\", \"Potwierdzone\\nstatki (CNN)\"]\ncounts = [128 * 128, 46, 18, 4]\ncolors = [\"#90a4ae\", \"#fb8c00\", \"#1e88e5\", \"#43a047\"]\n\nfig, ax = plt.subplots(figsize=(8.6, 5.0))\nbars = ax.bar(np.arange(len(stages)), counts, color=colors, width=0.62)\nax.set_yscale(\"log\")\nfor rect, c in zip(bars, counts):\n    ax.text(rect.get_x() + rect.get_width() / 2, rect.get_height() * 1.15,\n            f\"{c}\", ha=\"center\", va=\"bottom\", fontsize=11, fontweight=\"bold\")\nax.set_xticks(np.arange(len(stages)))\nax.set_xticklabels(stages, fontsize=9)\nax.set_ylim(1, 5e4)\nax.set_xlabel(\"Etap pipeline'u (od surowej sceny do raportu)\")\nax.set_ylabel(\"Liczba obiektow (skala log)\")\nax.set_title(\"Lejek detekcji: kazdy etap odsiewa obiekty, az zostaje garstka celow do raportu\")\nax.grid(True, axis=\"y\", which=\"both\", alpha=0.3)\nfig.tight_layout()\nout = \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/capstone-surowa-scena-sar-detekcje-statkowsamolotow-raport-1.png\"\nplt.savefig(out, dpi=110, bbox_inches=\"tight\")\nprint(\"saved\", out)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-kolejnosc",
+      "title": "Szybki sprawdzian: dlaczego maska lądu przed CFAR",
+      "type": "quiz",
+      "data": {
+        "question": "W pipeline składasz maskę lądu i detektor CFAR. Dlaczego ląd maskuje się ZANIM puścisz CFAR, a nie po nim?",
+        "options": [
+          "Bo CFAR szacuje próg ze statystyki lokalnego clutteru morskiego; jasny ląd w pierścieniu tła zawyża μ i σ oraz sam generuje detekcje, więc trzeba go usunąć z gry przed liczeniem progu.",
+          "Bo maskowanie lądu jest kosztowne obliczeniowo i wykonane po CFAR niepotrzebnie spowolniłoby near-real-time.",
+          "Kolejność nie ma znaczenia — maska lądu i CFAR są niezależne i dają ten sam wynik w dowolnej kolejności.",
+          "Bo CFAR fizycznie nie działa na obrazach zawierających ląd i zwróci błąd, jeśli w scenie jest cokolwiek poza wodą."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "CFAR liczy próg T = μ + α·σ z pierścienia tła, zakładając, że to clutter morski. Jeśli w tym pierścieniu wyląduje jasny ląd, zawyży μ i σ (psując próg dla sąsiednich pikseli morza) i dodatkowo sam przekroczy próg, zalewając wynik fałszywymi alarmami wzdłuż wybrzeża. Dlatego ląd wycina się WCZEŚNIEJ — CFAR ogląda tylko wodę (odp. 1). To nie kwestia kosztu (odp. 2) ani błędu wykonania (odp. 4 — CFAR policzy się technicznie, tylko da śmieci), a kolejność jak najbardziej ma znaczenie (odp. 3).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "co-w-raporcie",
+      "title": "Raport: co musi się znaleźć w wyniku",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+          "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+          "kind": "paper",
+          "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Pipeline kończy się nie obrazkiem, lecz **raportem** — strukturą, którą można wpiąć w system operacyjny. Co powinien zawierać:\n\n- **Per cel:** pozycja w obrazie `(range, azimuth)`, **klasa** (statek / samolot / fałszywy alarm) i **pewność** (tu surogatem jest szczyt jasności chipa; w produkcji — softmax CNN). Pozycję obrazową przeliczasz na współrzędne mapy przez **geokodowanie** z Modułu 3 — surowy `(range, azimuth)` to nie szerokość/długość, dopóki nie nałożysz geometrii i DEM.\n- **Per scena:** liczba kandydatów, liczba potwierdzonych celów per klasa, użyte parametry (`Pfa`, rozmiary okien, próg klasyfikatora) — żeby wynik był **odtwarzalny**.\n\n![Prawdziwy podkafelek Sentinel-1 z nałożonym wynikiem capstone'u: zielone okręgi otaczają cztery jasne, zwarte echa uznane za statki, a czerwone krzyżyki oznaczają słabsze detekcje CFAR odrzucone przez klasyfikator jako fałszywe alarmy](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/capstone-detections-expected.png)\n\n> **Statki kontra samoloty.** Uruchamialny rdzeń tej lekcji idzie ścieżką *statek na morzu*, bo to czysty przypadek „jasny cel na ciemnym, jednorodnym tle”. Samoloty na płytach lotnisk to **ta sama architektura** (CFAR-lite/segmentacja → chip → klasyfikator), ale na **innym tle** — jasny, teksturowany beton zamiast ciemnej wody — więc pre-detektor i maskowanie wyglądają inaczej. Klasę `samolot` traktujemy tu jako kolejną etykietę klasyfikatora; ciężki model wielu klas zostaje referencją.\n\nRaport to też miejsce styku z **near-real-time**: im chudszy i bardziej deterministyczny, tym łatwiej go serializować (JSON), wysłać dalej i porównać między scenami przy ewaluacji `mAP`/F1 z poprzedniej lekcji."
+      }
+    },
+    {
+      "id": "sklej-pipeline-raport",
+      "title": "Sklej cały pipeline: scena → raport",
+      "description": "Z gotowych klocków (maska lądu, CFAR, chipy) złóż run_capstone zwracające raport — liczbę kandydatów, liczbę statków i listę celów.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Capstone uruchamialny: **sklej** gotowe klocki z poprzednich lekcji w jeden raport. W `starterCode` masz już `ca_cfar`, `sea_mask` i `detect_targets` — **nie zmieniaj ich**. Napisz tylko `run_capstone(img, guard=2, train=8, alpha=5.0, chip=16, min_peak=90.0, sea=None)`:\n\n1. jeśli `sea is None`, policz maskę morza: `sea = sea_mask(img)`,\n2. policz maskę CFAR **ograniczoną do morza**: `mask = ca_cfar(img, guard, train, alpha) & sea`,\n3. wytnij kandydatów: `targets = detect_targets(img, mask, chip, min_peak)`,\n4. statki = kandydaci z `is_ship == True`,\n5. zwróć raport: `{'n_candidates': int, 'n_ships': int, 'targets': lista}`.\n\n```\n# 2 jasne statki na płaskim morzu  ->  {'n_candidates': 2, 'n_ships': 2, 'targets': [...]}\n```\n\nW `/inputs/` czeka prawdziwy podkafelek Sentinel-1 — po rozwiązaniu zobaczysz na żywo statki (zielone) i odrzucone fałszywe alarmy (czerwone).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\n# Prawdziwy podkafelek Sentinel-1 (Ciesnina Gibraltarska) zamontowany w /inputs/.\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\n# --- Gotowe klocki z poprzednich lekcji (NIE zmieniaj) ---\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef sea_mask(img, smooth=15, frac=0.45):\n    # Lad = duze, jasne obszary. Wygladz mocno i odetnij; reszta to morze.\n    sm = uniform_filter(img.astype(float), smooth)\n    return ~(sm > frac * img.max())\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\n# --- TWOJE ZADANIE: sklej pipeline w jeden raport ---\ndef run_capstone(img, guard=2, train=8, alpha=5.0, chip=16, min_peak=90.0, sea=None):\n    # 1) maska morza: jesli sea is None -> sea = sea_mask(img)\n    # 2) maska CFAR ograniczona do morza:  ca_cfar(img, guard, train, alpha) & sea\n    # 3) kandydaci -> detect_targets(img, mask, chip, min_peak)\n    # 4) statki = kandydaci z is_ship == True\n    # Zwroc: {'n_candidates': int, 'n_ships': int, 'targets': lista}\n    return {'n_candidates': 0, 'n_ships': 0, 'targets': []}\n\nreport = run_capstone(sar, min_peak=90.0)\nprint('kandydaci:', report['n_candidates'], '| statki:', report['n_ships'])\n\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nfor t in report['targets']:\n    if t['is_ship']:\n        plt.scatter(t['cx'], t['cy'], s=140, facecolors='none', edgecolors='#43a047', linewidths=1.8)\n    else:\n        plt.scatter(t['cx'], t['cy'], s=55, marker='x', c='#e53935', linewidths=1.2)\nplt.title('Raport capstone: ' + str(report['n_ships']) + ' statki / ' + str(report['n_candidates']) + ' kandydatow')\n",
+        "tests": [
+          {
+            "name": "zwraca_raport_z_wymaganymi_kluczami",
+            "body": "import numpy as np\nr = run_capstone(np.full((40, 40), 7.0), sea=np.ones((40, 40), dtype=bool))\nassert set(['n_candidates', 'n_ships', 'targets']).issubset(r.keys())\nassert isinstance(r['n_candidates'], int) and isinstance(r['targets'], list)",
+            "hidden": false
+          },
+          {
+            "name": "plaskie_morze_zero_celow",
+            "body": "import numpy as np\nr = run_capstone(np.full((50, 50), 10.0), sea=np.ones((50, 50), dtype=bool))\nassert r['n_candidates'] == 0 and r['n_ships'] == 0",
+            "hidden": true
+          },
+          {
+            "name": "dwa_jasne_statki_na_plaskim_morzu",
+            "body": "import numpy as np\nimg = np.full((60, 60), 8.0)\nimg[15:18, 15:18] = 80.0\nimg[40:43, 40:43] = 80.0\nr = run_capstone(img, sea=np.ones((60, 60), dtype=bool), min_peak=40.0)\nassert r['n_candidates'] == 2 and r['n_ships'] == 2",
+            "hidden": true
+          },
+          {
+            "name": "maska_ladu_odrzuca_jasny_blok_ladu",
+            "body": "import numpy as np\nimg = np.full((60, 60), 8.0)\nimg[10:13, 10:13] = 90.0\nimg[45:55, 45:55] = 120.0\nsea = np.ones((60, 60), dtype=bool)\nsea[40:60, 40:60] = False\nr = run_capstone(img, sea=sea, min_peak=40.0)\nassert r['n_candidates'] == 1 and r['n_ships'] == 1 and r['targets'][0]['cy'] < 20",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef sea_mask(img, smooth=15, frac=0.45):\n    sm = uniform_filter(img.astype(float), smooth)\n    return ~(sm > frac * img.max())\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\ndef run_capstone(img, guard=2, train=8, alpha=5.0, chip=16, min_peak=90.0, sea=None):\n    img = img.astype(float)\n    if sea is None:\n        sea = sea_mask(img)\n    mask = ca_cfar(img, guard, train, alpha) & sea\n    targets = detect_targets(img, mask, chip=chip, min_peak=min_peak)\n    ships = [t for t in targets if t['is_ship']]\n    return {'n_candidates': len(targets), 'n_ships': len(ships), 'targets': targets}\n\nreport = run_capstone(sar, min_peak=90.0)\nprint('kandydaci:', report['n_candidates'], '| statki:', report['n_ships'])\n\nplt.imshow(sar, cmap='gray', vmax=np.percentile(sar, 99))\nfor t in report['targets']:\n    if t['is_ship']:\n        plt.scatter(t['cx'], t['cy'], s=140, facecolors='none', edgecolors='#43a047', linewidths=1.8)\n    else:\n        plt.scatter(t['cx'], t['cy'], s=55, marker='x', c='#e53935', linewidths=1.2)\nplt.title('Raport capstone: ' + str(report['n_ships']) + ' statki / ' + str(report['n_candidates']) + ' kandydatow')\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszonymi jasnymi punktami (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: surowy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/capstone-detections-expected.png",
+          "alt": "Ten sam podkafelek Sentinel-1 z nałożonym raportem capstone'u: zielone okręgi na czterech jasnych echach uznanych za statki i czerwone krzyżyki na słabszych kandydatach CFAR odrzuconych jako fałszywe alarmy.",
+          "caption": "Oczekiwany wynik: 4 statki (zielone) wyłonione z 18 kandydatów CFAR; reszta odrzucona (czerwone).",
+          "live": true
+        },
+        "requiresPackages": [
+          "scipy"
+        ]
+      }
+    },
+    {
+      "id": "piaskownica-raport",
+      "title": "Piaskownica: nastaw czułość i czytaj raport",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import uniform_filter, label\n\nsar = plt.imread('/inputs/cfar-sea-tile.png')\nif sar.ndim == 3:\n    sar = sar[..., :3].mean(-1)\nsar = sar.astype(float) * 255.0\n\ndef ca_cfar(img, guard, train, alpha):\n    img = img.astype(float)\n    kt, kg = 2 * train + 1, 2 * guard + 1\n    st  = uniform_filter(img, kt) * kt * kt\n    st2 = uniform_filter(img * img, kt) * kt * kt\n    sg  = uniform_filter(img, kg) * kg * kg\n    sg2 = uniform_filter(img * img, kg) * kg * kg\n    n = kt * kt - kg * kg\n    mean = (st - sg) / n\n    var = np.maximum((st2 - sg2) / n - mean * mean, 0.0)\n    return img > mean + alpha * np.sqrt(var)\n\ndef sea_mask(img, smooth=15, frac=0.45):\n    sm = uniform_filter(img.astype(float), smooth)\n    return ~(sm > frac * img.max())\n\ndef detect_targets(img, mask, chip=16, min_peak=40.0):\n    labels, n = label(mask)\n    half = chip // 2\n    H, W = img.shape\n    out = []\n    for lab in range(1, n + 1):\n        ys, xs = np.where(labels == lab)\n        cy, cx = int(round(ys.mean())), int(round(xs.mean()))\n        y0, y1 = max(0, cy - half), min(H, cy + half)\n        x0, x1 = max(0, cx - half), min(W, cx + half)\n        peak = float(img[y0:y1, x0:x1].max())\n        out.append({'cy': cy, 'cx': cx, 'peak': peak, 'is_ship': peak >= min_peak})\n    return out\n\ndef run_capstone(img, guard=2, train=8, alpha=5.0, chip=16, min_peak=90.0, sea=None):\n    if sea is None:\n        sea = sea_mask(img)\n    mask = ca_cfar(img, guard, train, alpha) & sea\n    targets = detect_targets(img, mask, chip=chip, min_peak=min_peak)\n    ships = [t for t in targets if t['is_ship']]\n    return {'n_candidates': len(targets), 'n_ships': len(ships), 'targets': targets}\n\n# Krec dwoma pokretlami osobno: alpha (czulosc CFAR) i min_peak (prog klasyfikatora).\nfor alpha in (4.0, 5.0, 6.0):\n    for min_peak in (70.0, 90.0, 120.0):\n        r = run_capstone(sar, alpha=alpha, min_peak=min_peak)\n        print('alpha', alpha, 'min_peak', min_peak, '-> kandydaci', r['n_candidates'], '| statki', r['n_ships'])\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png",
+            "alt": "Podkafelek SAR Sentinel-1 w skali szarości: ciemne, dość gładkie morze cieśniny z rozproszonymi jasnymi punktami (statki) i jaśniejszym fragmentem lądu w prawym górnym rogu.",
+            "caption": "Wejście: surowy podkafelek Sentinel-1 (amplituda, 0–255).",
+            "filename": "cfar-sea-tile.png"
+          }
+        ],
+        "encouragement": "Zobacz, że alpha steruje liczbą kandydatów CFAR, a min_peak — ilu z nich przejdzie jako statki; to dwa niezależne pokrętła czułości i precyzji."
+      }
+    },
+    {
+      "id": "mapowanie-satim",
+      "title": "Mapowanie 1:1 na rolę ATR w SATIM",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+          "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review (§ ewaluacja i odporność)",
+          "kind": "paper",
+          "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+          "year": 2016
+        },
+        {
+          "url": "https://onnxruntime.ai/docs/",
+          "title": "ONNX Runtime documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Ten sam pipeline jest szkieletem produktu **ATR** (*Automatic Target Recognition*), jaki buduje SATIM. Zmapujmy go wprost na zakres roli:\n\n| Etap capstone'u | Odpowiednik w SATIM |\n|---|---|\n| Scena → kafelek (σ⁰, dB, despeckle) | preprocessing Sentinel-1 / ICEYE / Capella / Synspective |\n| Maska lądu + CFAR | **detekcja** statków na morzu (adaptacyjny pre-detektor) |\n| Chipy → klasyfikator | **klasyfikacja** celów: statek / samolot / pojazd |\n| Raport (pozycje, klasy, liczności) | wynik operacyjny, near-real-time |\n\nDwa wymagania, które wracają w roli i o których łatwo zapomnieć patrząc tylko na metrykę:\n\n- **Near-real-time + ONNX.** Dwuetapowość *jest* tu kluczem: ciężka sieć pracuje tylko na garstce chipów (z lejka: 4–18, nie 16 384 piksele), a model eksportujesz do **ONNX**, by liczył się szybko na docelowym sprzęcie. To różnica między „działa w notebooku” a „działa na strumieniu scen”.\n- **Data-agnostic robustness.** Model musi trzymać formę przy zmianie **kąta padania**, sezonu i **typu satelity** — to priorytet ewaluacyjny SATIM. Stąd metryki z poprzedniej lekcji liczone *per warunek*, nie tylko globalnie.\n\n![Wykres F1 detektora w funkcji kąta padania: krzywa pokazuje, jak skuteczność spada przy skrajnych kątach, ilustrując ocenę odporności „data-agnostic” na różne geometrie akwizycji](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/f1-vs-incidence-angle-robustness.png)\n\nTo zamyka kurs: od *„piksel SAR to echo, nie kolor”* doszedłeś do uruchamialnego pipeline'u, który robi dokładnie to, co rola — wykrywa i klasyfikuje statki/samoloty na surowej scenie i oddaje raport."
+      }
+    },
+    {
+      "id": "quiz-synteza",
+      "title": "Sprawdzian końcowy: cały pipeline ATR",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o złożonym pipeline ATR (scena → CFAR → chipy → klasyfikator → raport) są prawdziwe? Zaznacz wszystkie.",
+        "options": [
+          "CFAR jako pierwszy etap nastawia się na wysoką czułość (świadomie wpuszcza fałszywe alarmy), a klasyfikator na chipach podnosi precyzję, odrzucając śmieci — role „łap wszystko” i „odsiej i nazwij” stroi się osobno.",
+          "Dwuetapowość jest kluczem do near-real-time: ciężka sieć ogląda tylko garstkę wyciętych chipów, a nie każdy piksel wielkiej sceny.",
+          "Surowa pozycja celu w obrazie (range, azimuth) jest od razu współrzędną geograficzną i nie wymaga geokodowania.",
+          "Odporność modelu należy mierzyć per warunek (kąt padania, typ satelity, sezon), a nie tylko jedną globalną liczbą, bo to wymóg 'data-agnostic'."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Odp. 1: rozdzielenie ról to sedno dwuetapowego ATR — CFAR (wysoka czułość, niska precyzja) + klasyfikator (podnosi precyzję), każdy strojony osobno. Odp. 2: właśnie dlatego architektura jest near-real-time — sieć liczy się na 4–18 chipach z lejka, nie na 16 384 pikselach. Odp. 4: 'data-agnostic' wymaga metryk per warunek, bo skuteczność realnie zmienia się z kątem padania i typem satelity. Odp. 3 jest fałszywa — (range, azimuth) to współrzędne obrazu w geometrii radaru; na szerokość/długość przelicza je dopiero geokodowanie/terrain correction z Modułu 3.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://apps.dtic.mil/sti/citations/ADA426096",
+      "title": "The State-of-the-Art in Ship Detection in Synthetic Aperture Radar Imagery",
+      "kind": "paper",
+      "author": "David J. Crisp",
+      "year": 2004
+    },
+    {
+      "url": "https://doi.org/10.3390/rs11070765",
+      "title": "A SAR Dataset of Ship Detection for Deep Learning under Complex Backgrounds (SSDD)",
+      "kind": "paper",
+      "author": "Tianwen Zhang, Xiaoling Zhang, et al.",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.25966/nr2c-s697",
+      "title": "The SAR Handbook (end-to-end processing workflow)",
+      "kind": "book",
+      "author": "NASA SERVIR (Flores-Anderson et al., eds.)",
+      "year": 2019
+    },
+    {
+      "url": "https://doi.org/10.1109/ACCESS.2016.2611492",
+      "title": "Automatic Target Recognition in Synthetic Aperture Radar Imagery: A State-of-the-Art Review",
+      "kind": "paper",
+      "author": "Khalid El-Darymli, Eric W. Gill, Peter McGuire, Desmond Power, Cecilia Moloney",
+      "year": 2016
+    },
+    {
+      "url": "https://documentation.dataspace.copernicus.eu/Data/SentinelMissions/Sentinel1.html",
+      "title": "Copernicus Data Space Ecosystem — Sentinel-1 data access documentation",
+      "kind": "article"
+    }
+  ]
+}

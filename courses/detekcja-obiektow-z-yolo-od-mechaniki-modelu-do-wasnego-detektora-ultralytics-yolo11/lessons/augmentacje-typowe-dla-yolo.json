@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "slug": "augmentacje-typowe-dla-yolo",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m3",
+  "title": "Augmentacje typowe dla YOLO",
+  "eyebrow": "DANE DO TRENINGU YOLO",
+  "description": "Zobacz, jak mozaika, MixUp i copy-paste syntetyzują trudniejsze obrazy treningowe, dlaczego augmentacja musi przeliczać też etykiety i po co wyłącza się ją w końcowych epokach (close_mosaic).",
+  "estimatedMinutes": 11,
+  "sections": [
+    {
+      "id": "intuicja-augmentacji",
+      "title": "Po co YOLO syntetyzuje obrazy",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/guides/yolo-data-augmentation/",
+          "title": "Ultralytics — YOLO data augmentation guide",
+          "kind": "article"
+        },
+        {
+          "url": "https://arxiv.org/abs/2004.10934",
+          "title": "YOLOv4: Optimal Speed and Accuracy of Object Detection",
+          "kind": "paper",
+          "author": "Alexey Bochkovskiy, Chien-Yao Wang, Hong-Yuan Mark Liao",
+          "year": 2020
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Mając kilkaset zdjęć pojazdów i statków, model łatwo **przeuczy się** na konkretne tła, skale i pozycje. **Augmentacja** w trakcie treningu w locie syntetyzuje z tych samych zdjęć nowe, trudniejsze warianty — model widzi obiekty w innych kontekstach, rozmiarach i sąsiedztwach, więc uczy się cechy obiektu, a nie tła. YOLO opiera się na trzech augmentacjach charakterystycznych dla detekcji:\n\n- **Mozaika (mosaic)** — skleja **4 obrazy w jeden** kafelek 2×2, a następnie losowo go przycina i skaluje. W jednym przebiegu model widzi cztery sceny naraz, mnóstwo małych obiektów i nowe sąsiedztwa klas.\n- **MixUp** — nakłada na siebie **dwa obrazy** jako ważoną sumę pikseli $I = \\lambda\\, I_A + (1-\\lambda)\\, I_B$; etykiety **obu** obrazów trafiają do wynikowej listy. Wymusza odporność na przezroczyste, nakładające się obiekty.\n- **Copy-Paste** — **wycina obiekt** z jednego obrazu i wkleja na inny, sztucznie zwiększając liczbę i różnorodność instancji rzadkich klas.\n\n![Ilustracja mozaiki: cztery różne obrazy źródłowe (A, B, C, D), każdy z ramkami car/ship/truck, sklejone w jeden obraz treningowy w układzie 2×2 rozdzielonym czarnymi liniami siatki](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/mozaika-2x2.png)\n\nKluczowa różnica względem klasyfikacji: gdy przesuwasz, skalujesz albo sklejasz obrazy, **bounding boxy muszą jechać razem z pikselami**. Augmentacja w detekcji to zawsze transformacja *obrazu i etykiet* jednocześnie — pomylenie tego cicho psuje dataset."
+      }
+    },
+    {
+      "id": "sciaga-augmentacji",
+      "title": "Trzy augmentacje YOLO — ściąga",
+      "description": "Co robi każda augmentacja, jej parametr w Ultralytics i kiedy ją przyciszyć lub wyłączyć.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "aug",
+            "label": "Augmentacja",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "co",
+            "label": "Co robi",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          },
+          {
+            "key": "param",
+            "label": "Parametr (Ultralytics)",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "kiedy",
+            "label": "Kiedy wyłączyć / uwaga",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "aug": "Mozaika (mosaic)",
+            "co": "Skleja 4 obrazy w kafelek 2×2, losowo przycina i skaluje",
+            "param": "mosaic=1.0 (domyślnie włączona)",
+            "kiedy": "Wyłączana w ostatnich epokach przez close_mosaic"
+          },
+          {
+            "aug": "MixUp (mixup)",
+            "co": "Ważona suma pikseli dwóch obrazów; etykiety obu zostają",
+            "param": "mixup=0.0 (domyślnie off dla n/s)",
+            "kiedy": "Włączaj ostrożnie i z niską wagą — silnie zaburza obraz"
+          },
+          {
+            "aug": "Copy-Paste (copy_paste)",
+            "co": "Wycina obiekt z jednego obrazu i wkleja na inny",
+            "param": "copy_paste=0.0",
+            "kiedy": "Najsilniejsza dla segmentacji i rzadkich klas"
+          }
+        ],
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "close-mosaic-i-etykiety",
+      "title": "close_mosaic i przeliczanie etykiet",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/guides/yolo-data-augmentation/",
+          "title": "Ultralytics — YOLO data augmentation guide (close_mosaic)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Mozaika i MixUp pomagają **w środku** treningu, ale tworzą obrazy, jakich model **nigdy nie zobaczy** na inferencji — pocięte kolaże i półprzezroczyste nakładki. Gdyby zostały włączone do końca, ostatnie epoki dostrajałyby model do sztucznego rozkładu danych. Dlatego Ultralytics domyślnie **wyłącza mozaikę w końcowych epokach** parametrem `close_mosaic` (domyślnie ostatnie 10) — model „schładza się” na czystych, nieprzekształconych obrazach, bliskich temu, co spotka na walidacji.\n\n![Oś czasu treningu: od epoki 0 do ~90 mozaika i mixup są włączone (niebieski pas), a ostatnie 10 epok (czerwony pas, close_mosaic=10) trenuje na obrazach bez augmentacji kolażowych](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/close-mosaic-timeline.png)\n\nWróćmy do etykiet. Gdy mozaika wkłada obraz źródłowy do jednej z czterech ćwiartek kafelka 2×2, każdy box `(c_x, c_y, w, h)` — znormalizowany względem **obrazu źródłowego** — trzeba przeliczyć na współrzędne **całego kafelka**. Rozmiar maleje o połowę, a środek dostaje przesunięcie zależne od ćwiartki:\n\n$$c_x' = \\frac{c_x}{2} + o_x, \\qquad c_y' = \\frac{c_y}{2} + o_y, \\qquad w' = \\frac{w}{2}, \\qquad h' = \\frac{h}{2}$$\n\ngdzie $o_x \\in \\{0,\\,0.5\\}$ (lewa/prawa kolumna) oraz $o_y \\in \\{0,\\,0.5\\}$ (górny/dolny wiersz, $y$ rośnie w dół). Tę właśnie transformację zaimplementujesz za chwilę."
+      }
+    },
+    {
+      "id": "check-close-mosaic",
+      "title": "Szybki sprawdzian: po co close_mosaic?",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego Ultralytics domyślnie wyłącza mozaikę w ostatnich epokach treningu (close_mosaic)?",
+        "options": [
+          "Bo mozaika zużywa zbyt dużo pamięci GPU, której pod koniec treningu brakuje",
+          "Bo mozaika tworzy sztuczne, pocięte sceny; ostatnie epoki na nieprzekształconych obrazach dostrajają model do realnego rozkładu, jaki zobaczy na walidacji i inferencji",
+          "Bo po close_mosaic model jest już w pełni nauczony i każda dalsza augmentacja tylko go psuje",
+          "Bo mozaika działa wyłącznie dla zadania segmentacji, a nie dla detekcji"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Mozaika i MixUp generują obrazy, których model nie spotka na inferencji (kolaże, nakładki). Trzymane do końca treningu dostrajałyby model do tego sztucznego rozkładu. Wyłączenie ich na ostatnie ~10 epok (close_mosaic) pozwala „schłodzić” model na czystych obrazach bliskich danym walidacyjnym. To nie kwestia pamięci GPU (odp. 1), nie znaczy, że więcej augmentacji zawsze szkodzi w środku treningu (odp. 3), a mozaika jak najbardziej działa dla detekcji (odp. 4).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "place-in-mosaic",
+      "title": "Zaimplementuj przeliczanie boxa do ćwiartki mozaiki",
+      "description": "Czysta funkcja liczbowa — bez NumPy i bez plików. Przelicz znormalizowany box na współrzędne całego kafelka 2×2.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Mozaika składa obraz treningowy z czterech zdjęć w układzie 2×2. Napisz funkcję `place_in_mosaic(box, quadrant)`, która przelicza box w formacie YOLO `(cx, cy, w, h)` — znormalizowany względem **obrazu źródłowego** — na współrzędne **całego kafelka**.\n\n`quadrant` to jeden z `\"tl\"`, `\"tr\"`, `\"bl\"`, `\"br\"` (top/bottom + left/right). Rozmiar zawsze maleje o połowę; środek dostaje przesunięcie `0.5` w prawo dla `\"tr\"`/`\"br\"` i `0.5` w dół dla `\"bl\"`/`\"br\"` (oś `y` rośnie w dół).\n\n```\nplace_in_mosaic((0.5, 0.5, 0.4, 0.4), \"tl\") == (0.25, 0.25, 0.2, 0.2)\nplace_in_mosaic((0.5, 0.5, 0.4, 0.4), \"br\") == (0.75, 0.75, 0.2, 0.2)\n```",
+        "starterCode": "def place_in_mosaic(box, quadrant):\n    # box: (cx, cy, w, h) znormalizowany wzgledem obrazu zrodlowego (YOLO)\n    # quadrant: \"tl\" | \"tr\" | \"bl\" | \"br\"\n    # zwroc (cx', cy', w', h') znormalizowane wzgledem calego kafelka 2x2\n    cx, cy, w, h = box\n    # TODO: zmniejsz rozmiar o polowe i dodaj przesuniecie cwiartki\n    return (0.0, 0.0, 0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "top_left_halves_size_and_keeps_origin",
+            "body": "r = place_in_mosaic((0.5, 0.5, 0.4, 0.4), \"tl\")\nassert all(abs(a - b) < 1e-9 for a, b in zip(r, (0.25, 0.25, 0.2, 0.2)))",
+            "hidden": false
+          },
+          {
+            "name": "top_right_shifts_x_only",
+            "body": "r = place_in_mosaic((0.5, 0.5, 0.4, 0.4), \"tr\")\nassert all(abs(a - b) < 1e-9 for a, b in zip(r, (0.75, 0.25, 0.2, 0.2)))",
+            "hidden": true
+          },
+          {
+            "name": "bottom_left_shifts_y_only",
+            "body": "r = place_in_mosaic((0.6, 0.2, 0.3, 0.5), \"bl\")\nassert all(abs(a - b) < 1e-9 for a, b in zip(r, (0.3, 0.6, 0.15, 0.25)))",
+            "hidden": true
+          },
+          {
+            "name": "bottom_right_shifts_both_axes",
+            "body": "r = place_in_mosaic((0.5, 0.5, 0.4, 0.4), \"br\")\nassert all(abs(a - b) < 1e-9 for a, b in zip(r, (0.75, 0.75, 0.2, 0.2)))",
+            "hidden": true
+          }
+        ],
+        "solution": "def place_in_mosaic(box, quadrant):\n    cx, cy, w, h = box\n    ox = 0.5 if quadrant in (\"tr\", \"br\") else 0.0\n    oy = 0.5 if quadrant in (\"bl\", \"br\") else 0.0\n    return (cx / 2 + ox, cy / 2 + oy, w / 2, h / 2)\n"
+      }
+    },
+    {
+      "id": "piaskownica-mozaiki",
+      "title": "Złóż mozaikę z czterech obrazów",
+      "description": "Sklej cztery syntetyczne obrazy w jeden kafelek 2×2 i wypisz przeliczone etykiety YOLO dla całego kafelka.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Cztery \"obrazy\" 100x100 (jednolity kolor) + po jednym boxie YOLO (cx, cy, w, h)\nNAMES = {0: \"car\", 1: \"truck\", 2: \"ship\"}\ntiles = [\n    (\"tl\", np.full((100, 100, 3), [200, 220, 255], np.uint8), (0, (0.5, 0.5, 0.4, 0.3))),\n    (\"tr\", np.full((100, 100, 3), [210, 245, 215], np.uint8), (0, (0.4, 0.6, 0.3, 0.4))),\n    (\"bl\", np.full((100, 100, 3), [250, 245, 200], np.uint8), (1, (0.6, 0.3, 0.5, 0.5))),\n    (\"br\", np.full((100, 100, 3), [245, 220, 250], np.uint8), (2, (0.3, 0.5, 0.35, 0.25))),\n]\n\nQUAD_POS = {\"tl\": (0, 0), \"tr\": (0, 1), \"bl\": (1, 0), \"br\": (1, 1)}\n\ndef place_in_mosaic(box, quadrant):\n    cx, cy, w, h = box\n    ox = 0.5 if quadrant in (\"tr\", \"br\") else 0.0\n    oy = 0.5 if quadrant in (\"bl\", \"br\") else 0.0\n    return (cx / 2 + ox, cy / 2 + oy, w / 2, h / 2)\n\n# Zlozenie pikseli w kafelek 200x200\nmosaic = np.zeros((200, 200, 3), np.uint8)\nlabels = []\nfor quad, img, (cls, box) in tiles:\n    r, c = QUAD_POS[quad]\n    mosaic[r*100:(r+1)*100, c*100:(c+1)*100] = img\n    cx, cy, w, h = place_in_mosaic(box, quad)\n    labels.append(f\"{cls} {cx:.4f} {cy:.4f} {w:.4f} {h:.4f}\")\n\nprint(\"Kafelek mozaiki:\", mosaic.shape)\nprint(\"Etykiety YOLO calego kafelka:\")\nprint(\"\\n\".join(labels))\n\n# Sprobuj: zmien box ktoremu po przesunieciu w+cx przekracza 1.0 i dodaj przyciecie do [0,1].\n",
+        "encouragement": "Podmień rozmiary boxów i sprawdź, kiedy obiekt po sklejeniu zaczyna wystawać poza kafelek."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/guides/yolo-data-augmentation/",
+      "title": "Ultralytics — YOLO data augmentation guide",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/2004.10934",
+      "title": "YOLOv4: Optimal Speed and Accuracy of Object Detection",
+      "kind": "paper",
+      "author": "Alexey Bochkovskiy, Chien-Yao Wang, Hong-Yuan Mark Liao",
+      "year": 2020
+    },
+    {
+      "url": "https://arxiv.org/abs/1710.09412",
+      "title": "mixup: Beyond Empirical Risk Minimization",
+      "kind": "paper",
+      "author": "Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz",
+      "year": 2018
+    },
+    {
+      "url": "https://arxiv.org/abs/2012.07177",
+      "title": "Simple Copy-Paste is a Strong Data Augmentation Method for Instance Segmentation",
+      "kind": "paper",
+      "author": "Golnaz Ghiasi, Yin Cui, Aravind Srinivas, Rui Qian, Tsung-Yi Lin, Ekin D. Cubuk, Quoc V. Le, Barret Zoph",
+      "year": 2021
+    }
+  ]
+}

@@ -1463,6 +1463,7 @@ export default function LessonShellPage({
         open={chatOpen}
         courseSlug={slug}
         lessonSlug={lessonSlug}
+        moduleId={lesson?.moduleId}
         onClose={closeChat}
         onToggle={toggleChat}
         chatWidth={chatWidth}

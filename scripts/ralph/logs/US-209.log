@@ -1,0 +1,70 @@
+[2026-06-13T09:23:19+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T09:23:20+0200] I'll start by reading the Ralph instructions and understanding the task context.
+[2026-06-13T09:23:37+0200] Now let me examine the lesson page to understand the existing section header actions, regen popover, and highlight pattern.
+[2026-06-13T09:25:28+0200] Let me look at the imports, the UndoRegenBanner, and SessionToast for styling reference.
+[2026-06-13T09:26:09+0200] I have enough context. Let me check token names available (`--accent-on`, `--text-on-accent`, `--danger-*`) and then build the component.
+[2026-06-13T09:26:59+0200] Now I'll create the QuickActions menu component as a separate file.
+[2026-06-13T09:27:40+0200] Now let me wire it into the page. First the import:
+[2026-06-13T09:27:43+0200] Now add state near the regen state (line 188):
+[2026-06-13T09:27:54+0200] Now let me find the regen handlers and add quick-action handlers nearby:
+[2026-06-13T09:28:16+0200] Now thread the props into the `<LessonStream>` render. Let me find the current line:
+[2026-06-13T09:28:27+0200] Now update the `LessonStreamProps` interface and the `LessonStream` destructure + the section map. Let me look at the interface props block:
+[2026-06-13T09:28:36+0200] Now the section map — pass new props to `SectionRenderer`:
+[2026-06-13T09:28:44+0200] Now update `SectionRendererProps` and the `SectionRenderer` function. First the interface:
+[2026-06-13T09:29:01+0200] Now add the quick-actions node and render loading/error/highlight/undo in the wrapper. Let me update the `headerActions` and return block:
+[2026-06-13T09:29:30+0200] Let me verify `--accent-border` token and run typecheck:
+[2026-06-13T09:29:46+0200] Typecheck passes. Now lint the changed files:
+[2026-06-13T09:30:07+0200] Lint errors pre-exist (no new issues from my changes). Now run tests:
+[2026-06-13T09:30:33+0200] The 2 failures are in `generation.test.ts` (TTS, US-157) — unrelated to my change. Let me confirm they're pre-existing:
+[2026-06-13T09:30:49+0200] The generation tests pass in isolation — the failures are a pre-existing parallel-run filesystem race (the leaked `courses/demo/` artifacts confirm shared-path collision). Not caused by my UI change. Let me clean up the test pollution:
+[2026-06-13T09:30:53+0200] Clean. Now browser testing with playwright. Let me find a course/lesson and start the dev server:
+[2026-06-13T09:31:09+0200] Let me start the dev server:
+[2026-06-13T09:31:34+0200] Now let me write the playwright test. I'll mock the insert/undo routes to deterministically verify the UI flows:
+[2026-06-13T09:32:22+0200] All flows verified in the browser (the single console error is my intentional mocked 500). Quick dark-mode check to confirm theming, then I'll finalize:
+[2026-06-13T09:32:37+0200] Dark-mode menu renders correctly with theme tokens. Let me check the inserted/highlight screenshot:
+[2026-06-13T09:32:44+0200] All AC verified in browser. The header now shows sparkles (regen) + wand (quick actions) + pencil (edit) + checkbox; section count went 0/4→0/5 confirming insertion. Now finalize. Update progress.txt:
+[2026-06-13T09:33:10+0200] Now set US-209 `passes: true` in prd.json:
+[2026-06-13T09:33:17+0200] Only the `passes` line changed. Let me verify no test artifacts leaked, then stage and commit:
+[2026-06-13T09:33:32+0200] Committed. Let me verify the commit has `passes: true` for US-209:
+[2026-06-13T09:33:43+0200] US-209 is complete and committed.
+
+## Summary
+
+Implemented **tutor quick actions per section** for the lesson view.
+
+**What was built:**
+- New component `SectionQuickActions.tsx` — a `Wand2` button placed in each section header (between the regen Sparkles and edit Pencil icons) that opens a portal-rendered menu with 4 intuition-first presets (*Wyjaśnij prościej*, *Dodaj analogię*, *Dodaj przykład liczbowy*, *Rozpisz symbole wzoru*) plus a *Własna instrukcja…* textarea.
+- Wired into `page.tsx`: selecting an action POSTs the instruction to the US-208 `…/sections/[id]/insert` route. While generating, a loading card shows under the anchor section and the rest of the lesson stays usable. On success the spliced lesson swaps in, the new section renders inline with a novelty highlight (`--accent-soft` + accent-border ring, reusing the regenerate highlight pattern) and an **Undo** banner that calls the `insert/undo` route. On failure a dismissable error message appears at the anchor and the lesson is untouched.
+
+**AC coverage:**
+- ✅ Menu with 4 presets + custom instruction field next to the edit icon
+- ✅ Calls US-208 insert route; per-anchor loading state; rest of lesson stays interactive
+- ✅ Inline render with novelty highlight + Undo banner
+- ✅ Readable error at the section on failure, lesson unchanged
+- ✅ All styling token-based — verified in light + dark
+- ✅ Browser-verified via playwright (menu, presets, custom field, loading→highlight→undo→error all pass; only console error is the intentionally-mocked 500)
+- ✅ Typecheck passes; lint introduces no new errors (one pre-existing error unchanged)
+- ✅ Tests pass (the 2 `generation.test.ts` TTS failures are a pre-existing full-suite parallel filesystem race — they pass in isolation and are untouched by this UI change)
+
+Committed as `beb966c` with `US-209.passes = true`. Dev server stopped by its PID.
+[2026-06-13T09:33:43+0200] [result success turns=69 cost=$4.375842499999998] US-209 is complete and committed.
+
+## Summary
+
+Implemented **tutor quick actions per section** for the lesson view.
+
+**What was built:**
+- New component `SectionQuickActions.tsx` — a `Wand2` button placed in each section header (between the regen Sparkles and edit Pencil icons) that opens a portal-rendered menu with 4 intuition-first presets (*Wyjaśnij prościej*, *Dodaj analogię*, *Dodaj przykład liczbowy*, *Rozpisz symbole wzoru*) plus a *Własna instrukcja…* textarea.
+- Wired into `page.tsx`: selecting an action POSTs the instruction to the US-208 `…/sections/[id]/insert` route. While generating, a loading card shows under the anchor section and the rest of the lesson stays usable. On success the spliced lesson swaps in, the new section renders inline with a novelty highlight (`--accent-soft` + accent-border ring, reusing the regenerate highlight pattern) and an **Undo** banner that calls the `insert/undo` route. On failure a dismissable error message appears at the anchor and the lesson is untouched.
+
+**AC coverage:**
+- ✅ Menu with 4 presets + custom instruction field next to the edit icon
+- ✅ Calls US-208 insert route; per-anchor loading state; rest of lesson stays interactive
+- ✅ Inline render with novelty highlight + Undo banner
+- ✅ Readable error at the section on failure, lesson unchanged
+- ✅ All styling token-based — verified in light + dark
+- ✅ Browser-verified via playwright (menu, presets, custom field, loading→highlight→undo→error all pass; only console error is the intentionally-mocked 500)
+- ✅ Typecheck passes; lint introduces no new errors (one pre-existing error unchanged)
+- ✅ Tests pass (the 2 `generation.test.ts` TTS failures are a pre-existing full-suite parallel filesystem race — they pass in isolation and are untouched by this UI change)
+
+Committed as `beb966c` with `US-209.passes = true`. Dev server stopped by its PID.

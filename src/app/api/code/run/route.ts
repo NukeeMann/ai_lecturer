@@ -8,7 +8,13 @@ import { NextResponse } from 'next/server';
 
 import { CodeRunSchema } from '@/lib/schemas/codeRun';
 import { kernelManager } from '@/lib/server/kernelManager';
-import { buildInputsMountCode, toCodeRunFinal, type MountableInput } from '@/lib/server/codeRun';
+import {
+  buildInputsMountCode,
+  resolveInputsDir,
+  rewriteInputsPath,
+  toCodeRunFinal,
+  type MountableInput,
+} from '@/lib/server/codeRun';
 import { mapKernelError } from '@/lib/server/codeRunHttp';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +45,11 @@ export async function POST(req: Request) {
 
   const { courseSlug, lessonSlug, code, inputs } = parsed.data;
 
+  // The host kernel runs as the (non-root) dev-server user, so the virtual
+  // `/inputs` root can't live at the filesystem root — map it to a real
+  // writable dir and rewrite the path in both the mount cell and user code.
+  const mountDir = resolveInputsDir(courseSlug, lessonSlug);
+
   try {
     // Mount lesson-provided files into the kernel session first.
     if (inputs && inputs.length > 0) {
@@ -57,15 +68,19 @@ export async function POST(req: Request) {
       const mount = await kernelManager.execute(
         courseSlug,
         lessonSlug,
-        buildInputsMountCode(files),
+        buildInputsMountCode(files, mountDir),
       );
       if (mount.status !== 'ok') {
-        // Mounting failed (e.g. /inputs not writable) — surface it as the run.
+        // Mounting failed — surface it as the run.
         return ndjson(toCodeRunFinal(mount));
       }
     }
 
-    const result = await kernelManager.execute(courseSlug, lessonSlug, code);
+    const result = await kernelManager.execute(
+      courseSlug,
+      lessonSlug,
+      rewriteInputsPath(code, mountDir),
+    );
     return ndjson(toCodeRunFinal(result));
   } catch (err) {
     const { status, body: errBody } = mapKernelError(err);

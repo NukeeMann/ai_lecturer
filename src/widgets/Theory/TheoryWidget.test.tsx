@@ -182,3 +182,23 @@ describe('TheoryWidget (US-186) — Read button + queue integration', () => {
     expect(screen.getAllByTestId('theory-tts-audio').length).toBe(2);
   });
 });
+
+describe('TheoryWidget — GFM markdown', () => {
+  it('renders a pipe table as a real <table>, not raw text', () => {
+    const markdown = [
+      '| Z optyki znika | W SAR pojawia się |',
+      '| --- | --- |',
+      '| kolor i albedo | reflektywność aktywna |',
+      '| cienie słoneczne | cień radarowy |',
+    ].join('\n');
+
+    const { container } = render(<TheoryWidget data={{ markdown }} />);
+
+    const table = container.querySelector('[data-theory-body] table');
+    expect(table).not.toBeNull();
+    expect(container.querySelectorAll('[data-theory-body] th').length).toBe(2);
+    expect(container.querySelectorAll('[data-theory-body] tbody tr').length).toBe(2);
+    // The pipe syntax must not leak through as literal text.
+    expect(container.querySelector('[data-theory-body]')?.textContent).not.toContain('| --- |');
+  });
+});

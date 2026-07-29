@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "slug": "tekstura-morfologia-i-change-detection-jako-feature-engineering-pod-ai",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m4",
+  "title": "Tekstura, morfologia i change detection jako feature engineering pod AI",
+  "eyebrow": "KLASYKA I CFAR",
+  "description": "Policz cechy tekstury GLCM i log-ratio zmian, oczyść maski CFAR morfologią — tani feature engineering i baseline, który zasila późniejszy model AI.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "tekstura-jako-cecha",
+      "title": "Od maski CFAR do cech: tekstura i GLCM",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+          "title": "Textural Features for Image Classification",
+          "kind": "paper",
+          "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+          "year": 1973
+        },
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+          "title": "skimage.feature.graycomatrix / graycoprops — scikit-image documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Z poprzedniej lekcji masz **maskę CFAR** — tanie „tu może być statek\". Ale zanim podasz te wykrycia klasyfikatorowi CNN, surowy piksel amplitudy to ubogie wejście: sieć pretrenowana na RGB nie wie, że ciemne = woda, a jasny punkt = metal. Klasyczne przetwarzanie domyka tę lukę trzema tanimi narzędziami **feature engineeringu**, które staną się dodatkowymi kanałami wejścia albo czystszymi propozycjami dla modelu: **tekstura**, **morfologia** i **change detection**.\n\nZacznijmy od tekstury. Most do Twojego CV: **GLCM** (*gray-level co-occurrence matrix*) to dokładnie te ręczne cechy tekstury, po które sięgałeś przed erą CNN. GLCM zlicza, jak często piksel o poziomie szarości $i$ sąsiaduje — na zadaną odległość $d$ i kierunek — z pikselem o poziomie $j$. Z tej macierzy liczymy cechy Haralicka; najprostsza i najbardziej wymowna to **kontrast**:\n\n$$ \\text{kontrast} = \\sum_{i}\\sum_{j} P(i,j)\\,(i-j)^2 $$\n\nGloss każdego symbolu:\n\n- $\\sum_i\\sum_j$ — „zsumuj po **każdej** parze poziomów szarości $i$ oraz $j$\" (dla 16 poziomów to $16\\times16=256$ składników).\n- $P(i,j)$ — znormalizowana częstość, że sąsiadująca para ma poziomy $i$ i $j$ [bez jednostki; wszystkie $P$ sumują się do 1].\n- $(i-j)^2$ — kwadrat różnicy poziomów [im bardziej sąsiedzi się różnią, tym większa „kara\"].\n\nIntuicja: gładkie morze ma sąsiadów prawie identycznych → $i\\approx j$ → $(i-j)^2\\approx 0$ → **niski kontrast**. Szorstki ląd, zabudowa czy nadbudówka statku — sąsiedzi skaczą → **wysoki kontrast**. Poniżej realny kafelek Sentinel-1: gładkie morze po lewej, szorstki ląd po prawej. Za chwilę policzysz z niego mapę kontrastu, która zgaśnie na morzu, a zapali się na lądzie i celach.\n\n![Realny kafelek SAR Sentinel-1 (Cieśnina Gibraltarska, 128×128, amplituda w skali szarości): lewa połowa to ciemne, gładkie morze o niskiej lokalnej zmienności, prawa połowa to jaśniejszy, silnie pofakturowany ląd/wybrzeże o dużej zmienności jasności](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/tekstura-glcm-land-tile.png)"
+      }
+    },
+    {
+      "id": "glcm-kontrast",
+      "title": "Policz mapę kontrastu GLCM na realnym kafelku",
+      "description": "Zaimplementuj kontrast Haralicka w NumPy i zbuduj z niego mapę tekstury kafelka Sentinel-1.",
+      "sources": [
+        {
+          "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+          "title": "skimage.feature.graycomatrix / graycoprops — scikit-image documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Policz **kontrast GLCM** jako mapę cechy tekstury na realnym kafelku Sentinel-1.\n\nW produkcji wywołałbyś `skimage.feature.graycomatrix` + `graycoprops(..., 'contrast')`. Tu zaimplementujesz to wprost w NumPy — bo dla pary sąsiadów w poziomie (odległość $d=1$, kąt $0°$) kontrast Haralicka upraszcza się do **średniej z $(i-j)^2$** po wszystkich poziomych parach sąsiednich pikseli, po wcześniejszej **kwantyzacji** obrazu do `levels` poziomów.\n\nNapisz `glcm_contrast(patch, levels=16)` zwracające `float`:\n\n```\nq    = patch skwantyzowane do 0..levels-1     # (patch * levels // 256), przyciete do zakresu\ndiff = q[:, 1:] - q[:, :-1]                   # roznica poziomow sasiadow w poziomie\nreturn mean(diff ** 2)                        # = sum_i sum_j P(i,j) (i-j)^2\n```\n\nW `starterCode` realny kafelek z `/inputs/` jest już wczytany, a rusztowanie zbuduje z Twojej funkcji mapę kontrastu blok po bloku — po rozwiązaniu zobaczysz, jak gaśnie na gładkim morzu i zapala się na szorstkim lądzie.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Realny kafelek SAR (Sentinel-1) zamontowany w /inputs/: lewa polowa to gladkie\n# morze, prawa to szorstki lad. plt.imread zwraca 0-1, skalujemy do 0-255.\ntile = (plt.imread('/inputs/tekstura-glcm-land-tile.png') * 255).astype(np.uint8)\n\ndef glcm_contrast(patch, levels=16):\n    # patch: 2D uint8; zwroc float = kontrast Haralicka (d=1, kat=0).\n    # 1) skwantyzuj patch do 0..levels-1:  q = patch * levels // 256, przytnij\n    # 2) diff = roznica poziomow sasiadow w poziomie:  q[:, 1:] - q[:, :-1]\n    # 3) zwroc srednia z diff**2\n    return 0.0\n\n# Rusztowanie: mapa kontrastu blok po bloku (16x16).\nblock = 16\nH, W = tile.shape\nny, nx = H // block, W // block\ncmap_blocks = np.zeros((ny, nx))\nfor i in range(ny):\n    for j in range(nx):\n        cmap_blocks[i, j] = glcm_contrast(tile[i*block:(i+1)*block, j*block:(j+1)*block])\n\nfig, ax = plt.subplots(figsize=(5.0, 4.6))\nim = ax.imshow(cmap_blocks, cmap='magma', interpolation='nearest')\nax.set_title('Mapa kontrastu GLCM (gladkie morze -> ciemne, szorstki lad -> jasne)')\nax.set_xlabel('blok w kierunku azimuth')\nax.set_ylabel('blok w kierunku range')\ncb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)\ncb.set_label('kontrast GLCM [j.u.]')\nfig.tight_layout()\nprint('sredni kontrast: gladka polowa', round(cmap_blocks[:, :nx//2].mean(), 3),\n      '| szorstka polowa', round(cmap_blocks[:, nx//2:].mean(), 3))\n",
+        "tests": [
+          {
+            "name": "zwraca_skalarny_float",
+            "body": "c = glcm_contrast(np.zeros((8, 8), dtype=np.uint8))\nassert isinstance(c, float)",
+            "hidden": false
+          },
+          {
+            "name": "plaski_patch_ma_zerowy_kontrast",
+            "body": "assert abs(glcm_contrast(np.full((16, 16), 100, dtype=np.uint8))) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "szachownica_kontrast_rowny_jeden",
+            "body": "chk = (np.indices((8, 8)).sum(0) % 2).astype(np.uint8) * 255\nassert abs(glcm_contrast(chk, levels=2) - 1.0) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "szorstki_lad_wiekszy_kontrast_niz_gladkie_morze",
+            "body": "chk = (np.indices((16, 16)).sum(0) % 2).astype(np.uint8) * 255\ngrad = np.tile(np.linspace(0, 255, 16).astype(np.uint8), (16, 1))\nassert glcm_contrast(chk) > glcm_contrast(grad)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Realny kafelek SAR (Sentinel-1) zamontowany w /inputs/: lewa polowa to gladkie\n# morze, prawa to szorstki lad. plt.imread zwraca 0-1, skalujemy do 0-255.\ntile = (plt.imread('/inputs/tekstura-glcm-land-tile.png') * 255).astype(np.uint8)\n\ndef glcm_contrast(patch, levels=16):\n    # patch: 2D uint8; zwroc float = kontrast Haralicka (d=1, kat=0).\n    # 1) skwantyzuj patch do 0..levels-1:  q = patch * levels // 256, przytnij\n    # 2) diff = roznica poziomow sasiadow w poziomie:  q[:, 1:] - q[:, :-1]\n    q = np.clip(patch.astype(np.int64) * levels // 256, 0, levels - 1)\n    diff = q[:, 1:].astype(np.float64) - q[:, :-1]\n    return float(np.mean(diff ** 2))\n\n# Rusztowanie: mapa kontrastu blok po bloku (16x16).\nblock = 16\nH, W = tile.shape\nny, nx = H // block, W // block\ncmap_blocks = np.zeros((ny, nx))\nfor i in range(ny):\n    for j in range(nx):\n        cmap_blocks[i, j] = glcm_contrast(tile[i*block:(i+1)*block, j*block:(j+1)*block])\n\nfig, ax = plt.subplots(figsize=(5.0, 4.6))\nim = ax.imshow(cmap_blocks, cmap='magma', interpolation='nearest')\nax.set_title('Mapa kontrastu GLCM (gladkie morze -> ciemne, szorstki lad -> jasne)')\nax.set_xlabel('blok w kierunku azimuth')\nax.set_ylabel('blok w kierunku range')\ncb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)\ncb.set_label('kontrast GLCM [j.u.]')\nfig.tight_layout()\nprint('sredni kontrast: gladka polowa', round(cmap_blocks[:, :nx//2].mean(), 3),\n      '| szorstka polowa', round(cmap_blocks[:, nx//2:].mean(), 3))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/tekstura-glcm-land-tile.png",
+            "alt": "Realny kafelek SAR Sentinel-1 (Cieśnina Gibraltarska) w skali szarości: lewa połowa to ciemne, gładkie morze, prawa to jaśniejszy, silnie pofakturowany ląd/wybrzeże.",
+            "caption": "Wejście: realny kafelek Sentinel-1 (amplituda, 128×128).",
+            "filename": "tekstura-glcm-land-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/tekstura-glcm-contrast-map.png",
+          "alt": "Mapa kontrastu GLCM 8×8: bloki nad gładkim morzem (lewa strona) są ciemne (niski kontrast), bloki nad szorstkim lądem (prawa-górna strona) są jasne (wysoki kontrast).",
+          "caption": "Oczekiwany wynik: mapa kontrastu GLCM — gaśnie na morzu, zapala się na lądzie.",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "morfologia",
+      "title": "Morfologia: czyszczenie maski CFAR",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+          "title": "Mathematical morphology — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Maska CFAR rzadko jest gotowa do użycia: pojedyncze piksele speckle przeskakują próg jako **fałszywe alarmy**, a większe cele bywają porozrywane na kawałki. **Morfologia binarna** czyści to za grosze — dwie podstawowe operacje:\n\n- **Erozja** — piksel zostaje `True` tylko wtedy, gdy **całe** jego otoczenie (element strukturalny, *SE*) jest `True`. Zjada cienkie wypustki i izolowane piksele.\n- **Dylatacja** — piksel zapala się, jeśli **choć jeden** sąsiad w SE jest `True`. Zarasta dziury i łączy bliskie fragmenty.\n\nSkładając je, dostajesz dwa narzędzia, których realnie używasz na maskach:\n\n- **Otwarcie** (*opening*) = erozja → dylatacja. Kasuje obiekty mniejsze od SE (izolowany speckle), a zwarte cele zostawia w mniej więcej pierwotnym rozmiarze. To Twój `cv2.morphologyEx(mask, MORPH_OPEN, se)`.\n- **Zamknięcie** (*closing*) = dylatacja → erozja. Scala porozrywany cel i zamyka w nim dziury.\n\n![Po lewej surowa maska CFAR: cztery zwarte białe bloki (statki) toną w gęstej chmurze pojedynczych białych pikseli — fałszywych alarmów speckle. Po prawej ta sama maska po otwarciu z elementem 3×3: rozsiany speckle zniknął, cztery cele zostały nienaruszone](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/morfologia-opening-before-after.png)\n\nJedna pułapka, którą zaraz zobaczysz na suwaku: **SE większy niż najmniejszy cel skasuje też cel.** Otwarcie usuwa wszystko mniejsze od elementu strukturalnego — więc rozmiar SE dobierasz do najmniejszego statku, który chcesz zachować."
+      }
+    },
+    {
+      "id": "morfologia-otwarcie",
+      "title": "Suwak SE: otwarcie kontra zamknięcie na żywo",
+      "description": "Zmieniaj rozmiar elementu strukturalnego i operację; patrz, jak speckle znika, a przy zbyt dużym SE zaczynają znikać same statki.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef _boxsum(mask, r):\n    k = 2 * r + 1\n    ap = np.pad(mask.astype(np.float64), r, mode='constant')\n    cs = np.cumsum(np.cumsum(ap, 0), 1)\n    cs = np.pad(cs, ((1, 0), (1, 0)))\n    H, W = mask.shape\n    return cs[k:k+H, k:k+W] - cs[0:H, k:k+W] - cs[k:k+H, 0:W] + cs[0:H, 0:W]\n\ndef _erode(mask, r):\n    if r <= 0:\n        return mask\n    return _boxsum(mask, r) >= (2 * r + 1) ** 2 - 0.5\n\ndef _dilate(mask, r):\n    if r <= 0:\n        return mask\n    return _boxsum(mask, r) > 0.5\n\ndef _opening(m, r):\n    return _dilate(_erode(m, r), r)\n\ndef _closing(m, r):\n    return _erode(_dilate(m, r), r)\n\n# Syntetyczna maska CFAR: 4 zwarte cele (statki) + rozsiany speckle (falszywe alarmy).\n_rng = np.random.default_rng(11)\n_H = _W = 140\nRAW = np.zeros((_H, _W), bool)\nSHIPS = [(30, 40, 3), (95, 55, 4), (55, 105, 3), (110, 110, 3)]\nfor _r0, _c0, _s in SHIPS:\n    RAW[_r0:_r0+_s, _c0:_c0+_s] = True\nRAW |= (_rng.random((_H, _W)) < 0.015)\n",
+        "renderCode": "se = int(se)\nif operacja == 'zamkniecie (closing)':\n    out = _closing(RAW, se)\nelif operacja == 'otwarcie+zamkniecie':\n    out = _closing(_opening(RAW, se), se)\nelse:\n    out = _opening(RAW, se)\nships_kept = sum(1 for r, c, s in SHIPS if out[r:r+s, c:c+s].any())\nfig, axes = plt.subplots(1, 2, figsize=(8.4, 4.4))\naxes[0].imshow(RAW, cmap='gray', interpolation='nearest')\naxes[0].set_title('Surowa maska CFAR')\naxes[1].imshow(out, cmap='gray', interpolation='nearest')\naxes[1].set_title(operacja + '  (SE=' + str(2*se+1) + 'x' + str(2*se+1) + ')')\nfor ax in axes:\n    ax.set_xlabel('azimuth [piksel]')\n    ax.set_ylabel('range [piksel]')\nfig.tight_layout()\nresult = 'Piksele True: ' + str(int(RAW.sum())) + ' -> ' + str(int(out.sum())) + '   |   zachowane statki: ' + str(ships_kept) + '/4'\n",
+        "params": [
+          {
+            "name": "se",
+            "label": "Element strukturalny (SE, połowa boku) [piksel]",
+            "type": "slider",
+            "min": 0,
+            "max": 4,
+            "step": 1,
+            "default": 1
+          },
+          {
+            "name": "operacja",
+            "label": "Operacja morfologiczna",
+            "type": "select",
+            "default": "otwarcie (opening)",
+            "options": [
+              "otwarcie (opening)",
+              "zamkniecie (closing)",
+              "otwarcie+zamkniecie"
+            ]
+          }
+        ],
+        "outputType": "both"
+      }
+    },
+    {
+      "id": "change-detection",
+      "title": "Change detection: log-ratio, nie różnica",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.225244",
+          "title": "Change Detection Techniques for ERS-1 SAR Data",
+          "kind": "paper",
+          "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+          "year": 1993
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Ostatnie pytanie operacyjne: **co się zmieniło** między dwoma przelotami nad tym samym akwenem? Wpłynął nowy statek, ruszył konwój, pojawił się rozlew. Masz dwie **współrejestrowane** sceny intensywności $I_1$ i $I_2$ tego samego fragmentu.\n\nNaiwnie sięgnąłbyś po **różnicę** $I_2 - I_1$. W SAR to błąd — z tego samego powodu, co przy speckle: szum jest **multiplikatywny**. Jaśniejszy obszar ma proporcjonalnie większy rozrzut, więc różnica „eksploduje\" na jasnym lądzie, a znika w ciemnym morzu; jeden próg nie obejmie obu (znasz to z lekcji o speckle i o dB).\n\nLekarstwo: **iloraz zamiast różnicy**, w skali log — operator **log-ratio**:\n\n$$ r = 10\\,\\log_{10}\\!\\frac{I_2}{I_1} $$\n\nGloss:\n\n- $I_1, I_2$ — intensywność **tego samego** piksela na dwóch akwizycjach [j.u., ta sama skala].\n- $\\dfrac{I_2}{I_1}$ — ile razy jaśniej/ciemniej [bez jednostki]. Tu kluczowa sztuczka: dla obszaru **bez zmian** multiplikatywny speckle w liczniku i mianowniku **się skraca**, więc iloraz $\\approx 1$ niezależnie od tego, czy to jasny port, czy ciemne morze.\n- $10\\log_{10}$ — zamiana na **dB** (jak w lekcji o kalibracji): symetryzuje zmianę — dwukrotny wzrost to $+3$ dB, dwukrotny spadek to $-3$ dB.\n\nEfekt: obszar niezmieniony siada przy $r \\approx 0$ dB; pojawienie się jasnego celu daje silny **dodatni** $r$, a zniknięcie — silny **ujemny**. To gotowy **kanał-cecha** albo region zainteresowania dla detektora.\n\n![Dwie współrejestrowane akwizycje SAR tego samego fragmentu morza w skali szarości; w akwizycji t2 (po prawej) w czerwonym okręgu pojawia się jasny punkt — nowy statek, którego nie ma w akwizycji t1 (po lewej)](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/change-detection-date1-date2.png)"
+      }
+    },
+    {
+      "id": "mapa-log-ratio",
+      "title": "Mapa log-ratio: zmiana wyskakuje, tło siada przy zerze",
+      "description": "Realny kafelek morski jako podkład; statek pojawia się w t2. Morze siedzi przy 0 dB, nowy cel świeci na kilka dB.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/36.225244",
+          "title": "Change Detection Techniques for ERS-1 SAR Data",
+          "kind": "paper",
+          "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+          "year": 1993
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/tekstura-morfologia-i-change-detection-jako-feature-engineering-pod-ai-1.png",
+        "alt": "Mapa log-ratio 10·log10(I2/I1) jako obraz w kolorach niebiesko-czerwonych: prawie cała scena morska jest blada (wartości ~0 dB, brak zmian), a w okolicy range≈70, azimuth≈85 jest mały, mocno czerwony punkt (+8 dB) — nowy statek. Osie podpisane range i azimuth w pikselach, pasek koloru w dB.",
+        "caption": "Rys. 1. Mapa log-ratio dwóch współrejestrowanych akwizycji: niezmienione morze siada przy 0 dB (speckle się skraca), a nowy statek wyskakuje jako silnie dodatni punkt.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom scipy.ndimage import gaussian_filter\nfrom PIL import Image\n\n# Realny kafelek morski (Sentinel-1, Ciesnina Gibraltarska) jako podklad sceny.\nbase = \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/cfar-sea-tile.png\"\nsea = np.asarray(Image.open(base).convert(\"L\")).astype(np.float64)\n\n# Wspolna reflektywnosc sceny (RCS); speckle multiplikatywny niezalezny per data.\nrefl = np.clip(gaussian_filter(sea, 3.0), 1.0, None)\nrefl2 = refl.copy()\nship_r, ship_c = 70, 84\nrefl2[ship_r:ship_r + 4, ship_c:ship_c + 4] = 700.0   # statek pojawia sie w t2\n\n\ndef speckle(R, seed, L=12):\n    # multilooking ENL~L: srednia z L niezaleznych spojrzen, speckle o sredniej 1\n    g = np.random.default_rng(seed)\n    return R * g.gamma(L, 1.0 / L, R.shape)\n\n\nI1 = speckle(refl, 101)\nI2 = speckle(refl2, 202)\n\neps = 1.0\nlog_ratio = 10.0 * np.log10((I2 + eps) / (I1 + eps))\nlog_ratio = gaussian_filter(log_ratio, 0.8)   # lekka regularyzacja przestrzenna mapy zmian\n\nfig, ax = plt.subplots(figsize=(5.6, 4.8))\nim = ax.imshow(log_ratio, cmap=\"RdBu_r\", vmin=-10, vmax=10)\nax.set_title(\"Mapa log-ratio  10·log10(I2/I1):  morze ~0 dB, nowy statek mocno dodatni\")\nax.set_xlabel(\"azimuth [piksel]\")\nax.set_ylabel(\"range [piksel]\")\ncb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)\ncb.set_label(\"log-ratio [dB]\")\nfig.tight_layout()\nout = \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/tekstura-morfologia-i-change-detection-jako-feature-engineering-pod-ai-1.png\"\nplt.savefig(out, dpi=110, bbox_inches=\"tight\")\nprint(\"saved\", out)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-log-ratio",
+      "title": "Szybki sprawdzian: różnica czy iloraz",
+      "type": "quiz",
+      "data": {
+        "question": "Porównujesz dwie współrejestrowane sceny Sentinel-1, żeby wykryć nowe statki. Którą miarę zmiany wybierasz i dlaczego?",
+        "options": [
+          "Różnicę I2 − I1, bo to najprostsza, liniowa miara zmiany.",
+          "Log-ratio 10·log10(I2/I1), bo speckle jest multiplikatywny — iloraz skraca jasność tła, więc ten sam próg działa tak samo na ciemnym morzu i jasnym lądzie.",
+          "Iloraz, ale wyłącznie dlatego, że logarytm ładniej wygląda na histogramie.",
+          "Różnicę I2 − I1 po wcześniejszym rozmyciu obu scen filtrem Gaussa, bo to usuwa speckle."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Speckle w SAR jest multiplikatywny: rozrzut rośnie proporcjonalnie do jasności, więc różnica I2−I1 eksploduje na jasnym lądzie i znika na ciemnym morzu — jeden próg nie obejmie obu (odp. 1 i 4 odpadają, a rozmycie Gaussa to lekarstwo na szum addytywny, nie multiplikatywny). W ilorazie I2/I1 multiplikatywny speckle tła się skraca, więc obszar bez zmian siada przy r≈0 dB niezależnie od jasności, a prawdziwa zmiana daje silny dodatni/ujemny sygnał. Logarytm (dB) nie jest kosmetyką (odp. 3) — symetryzuje wzrost i spadek oraz ściska ogromną dynamikę SAR.",
+        "multiSelect": false
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/TSMC.1973.4309314",
+      "title": "Textural Features for Image Classification",
+      "kind": "paper",
+      "author": "Robert M. Haralick, K. Shanmugam, Its'hak Dinstein",
+      "year": 1973
+    },
+    {
+      "url": "https://scikit-image.org/docs/stable/api/skimage.feature.html#skimage.feature.graycomatrix",
+      "title": "skimage.feature.graycomatrix / graycoprops — scikit-image documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/36.225244",
+      "title": "Change Detection Techniques for ERS-1 SAR Data",
+      "kind": "paper",
+      "author": "Eric J. M. Rignot, Jakob J. van Zyl",
+      "year": 1993
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Mathematical_morphology",
+      "title": "Mathematical morphology — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

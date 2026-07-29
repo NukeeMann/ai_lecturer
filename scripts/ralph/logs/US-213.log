@@ -1,0 +1,53 @@
+[2026-06-13T10:01:48+0200] [rate_limit five_hour status=allowed]
+[2026-06-13T10:01:49+0200] I'll start by reading the Ralph instructions and understanding the codebase patterns.
+[2026-06-13T10:01:55+0200] Now let me find the docx/pdf extractors and the upload route that calls them.
+[2026-06-13T10:02:04+0200] Now let me look at the test files and existing fixtures.
+[2026-06-13T10:02:20+0200] Now the sources.test.ts pptx test and unzipper availability.
+[2026-06-13T10:03:40+0200] I have the full picture. Let me check the unzipper API/types and the prd.json entry.
+[2026-06-13T10:03:53+0200] The established pattern is `import unzipper from 'unzipper'`. Now let me build a minimal pptx fixture. Let me check available zip tooling.
+[2026-06-13T10:04:08+0200] jszip is available. Let me generate a minimal pptx fixture (3 slides: one with notes, one plain, one empty to test skipping).
+[2026-06-13T10:04:25+0200] Need to run from the project dir where node_modules resolves.
+[2026-06-13T10:04:32+0200] The fixture works. Now let me create the pptx extractor module.
+[2026-06-13T10:05:12+0200] Let me fix the null-byte strip to use the explicit escape form like pdf.ts:
+[2026-06-13T10:05:26+0200] Now update `sources.ts`: add `.pptx` to the extractor branches.
+[2026-06-13T10:05:40+0200] Now update the stale comment in `loadStagedSourcesForPrompt` docstring that says pptx has no extractor:
+[2026-06-13T10:05:58+0200] Now update the upload route to call the pptx extractor, and the DELETE route to clean up the sibling.
+[2026-06-13T10:06:22+0200] Now write the pptx test. Let me first verify my extractor works against the fixture with a quick script.
+[2026-06-13T10:08:15+0200] Let me just write the real test and run it. First the test file:
+[2026-06-13T10:10:05+0200] Now update the existing sources.test.ts pptx test to reflect new behavior (sibling → text, no sibling → binary-unsupported):
+[2026-06-13T10:10:16+0200] Let me also add a `resolveSourcePathForPrompt` test for `.pptx` to mirror docx/pdf:
+[2026-06-13T10:10:25+0200] Now run the relevant tests and typecheck.
+[2026-06-13T10:11:06+0200] The base64 got mangled during paste (3223 vs 2972 bytes). Let me regenerate cleanly to a file and verify before inserting.
+[2026-06-13T10:11:22+0200] Now verify the extractor works against this clean fixture, then patch the test file's base64 constant programmatically.
+[2026-06-13T10:11:30+0200] The extractor works perfectly. Now patch the test file with the clean base64.
+[2026-06-13T10:11:40+0200] The base64 is now the clean 2972-byte fixture. Let me run the tests.
+[2026-06-13T10:11:44+0200] All passing. Now typecheck, lint, and the upload-sources route tests.
+[2026-06-13T10:12:02+0200] Let me run the upload-sources route tests and a broader server suite to check nothing regressed.
+[2026-06-13T10:12:25+0200] All 572 tests pass. Now update progress.txt and mark the story done in prd.json.
+[2026-06-13T10:13:02+0200] The untracked `courses/` files are unrelated test artifacts — not staging them. Committing now.
+[2026-06-13T10:13:14+0200] US-213 complete and committed.
+
+## Summary
+
+Added a pure-Node `.pptx` text extractor so uploaded slide decks are no longer `binary-unsupported` — the generation/wizard agents now see slide content through the existing `.extracted` sibling mechanism (same pattern as US-124 docx / US-127 pdf).
+
+**Changes:**
+- **`src/lib/server/pptx.ts`** (new) — `extractPptxToMarkdown()`. Opens the OOXML zip with `unzipper` (already a dependency), regex-scans `<a:t>` runs grouped by `<a:p>` paragraphs in `ppt/slides/slideN.xml`, orders slides numerically, emits `## Slajd N` sections. Speaker notes resolved via the slide's `_rels` notesSlide relationship and appended. Empty slides skipped; U+0000 stripped for spawn-argv safety. Returns the same `{ok,markdown,…}`/`{ok:false,reason}` shape as the docx/pdf extractors.
+- **`src/lib/server/sources.ts`** — `.pptx` added to `EXTRACTABLE_BINARY_EXTS` and the `resolveSourcePathForPrompt` sibling-preference branch (now docx|pdf|pptx); stale docstrings updated.
+- **`upload-sources/route.ts`** — POST extracts `.pptx` (failures logged, never block upload); DELETE cleans up the sibling. `moveDraftSourcesToCourse` needed no change (already generic over `<name>.md` siblings).
+- **Tests** — new `pptx.test.ts` (3 tests on a 2972-byte inlined jszip fixture: extraction + notes + Polish diacritics, `## Slajd N` ordering + empty-slide skip, non-zip → `ok:false`). The old "marks .pptx as binary-unsupported" test in `sources.test.ts` replaced with the new with/without-sibling behavior, plus two `resolveSourcePathForPrompt` `.pptx` cases.
+
+**Quality:** typecheck ✅, eslint ✅, full `src/lib/server` + upload-sources suite 572/572 ✅. `prd.json` US-213 `passes: true`, committed as `ef7c6bc`.
+[2026-06-13T10:13:14+0200] [result success turns=49 cost=$3.9386080000000003] US-213 complete and committed.
+
+## Summary
+
+Added a pure-Node `.pptx` text extractor so uploaded slide decks are no longer `binary-unsupported` — the generation/wizard agents now see slide content through the existing `.extracted` sibling mechanism (same pattern as US-124 docx / US-127 pdf).
+
+**Changes:**
+- **`src/lib/server/pptx.ts`** (new) — `extractPptxToMarkdown()`. Opens the OOXML zip with `unzipper` (already a dependency), regex-scans `<a:t>` runs grouped by `<a:p>` paragraphs in `ppt/slides/slideN.xml`, orders slides numerically, emits `## Slajd N` sections. Speaker notes resolved via the slide's `_rels` notesSlide relationship and appended. Empty slides skipped; U+0000 stripped for spawn-argv safety. Returns the same `{ok,markdown,…}`/`{ok:false,reason}` shape as the docx/pdf extractors.
+- **`src/lib/server/sources.ts`** — `.pptx` added to `EXTRACTABLE_BINARY_EXTS` and the `resolveSourcePathForPrompt` sibling-preference branch (now docx|pdf|pptx); stale docstrings updated.
+- **`upload-sources/route.ts`** — POST extracts `.pptx` (failures logged, never block upload); DELETE cleans up the sibling. `moveDraftSourcesToCourse` needed no change (already generic over `<name>.md` siblings).
+- **Tests** — new `pptx.test.ts` (3 tests on a 2972-byte inlined jszip fixture: extraction + notes + Polish diacritics, `## Slajd N` ordering + empty-slide skip, non-zip → `ok:false`). The old "marks .pptx as binary-unsupported" test in `sources.test.ts` replaced with the new with/without-sibling behavior, plus two `resolveSourcePathForPrompt` `.pptx` cases.
+
+**Quality:** typecheck ✅, eslint ✅, full `src/lib/server` + upload-sources suite 572/572 ✅. `prd.json` US-213 `passes: true`, committed as `ef7c6bc`.

@@ -113,7 +113,7 @@ export function buildTestHarness(
   const b64 = encodeBase64Utf8(payload);
 
   return `
-import json as __ai_json, base64 as __ai_b64, io as __ai_io, traceback as __ai_tb, contextlib as __ai_cl
+import json as __ai_json, base64 as __ai_b64, io as __ai_io, traceback as __ai_tb, contextlib as __ai_cl, re as __ai_re
 
 # Persistent per-lesson namespace: created once per kernel session and reused
 # across every run so user-defined names survive (parity with the Pyodide
@@ -185,9 +185,30 @@ def __ai_run_tests(__user_code, __tests, __capture):
     return results, png
 
 
+# The route mounts lesson inputs into a real writable dir and registers it as
+# __ai_inputs_dir (the virtual inputs root isn't writable for the dev-server
+# user). User code arrives base64-encoded, so the route's text rewrite can't
+# reach it — rewrite the virtual root to the real dir here at runtime instead.
+# No-op under Pyodide, where the inputs root is a real VFS path (globals unset).
+__ai_inputs_dir = globals().get('__ai_inputs_dir')
+__ai_inputs_root = globals().get('__ai_inputs_root')
+
+
+def __ai_rewrite_inputs(__src):
+    if not __ai_inputs_dir or not __ai_inputs_root:
+        return __src
+    __pat = r"(^|[^\\w/])" + __ai_re.escape(__ai_inputs_root) + r"(?=$|[/'\\"\`)\\]\\s,:])"
+    return __ai_re.sub(__pat, lambda __m: __m.group(1) + __ai_inputs_dir, __src)
+
+
 __ai_payload = __ai_json.loads(__ai_b64.b64decode('${b64}').decode('utf-8'))
 __ai_results, __ai_png = __ai_run_tests(
-    __ai_payload['code'], __ai_payload['tests'], __ai_payload['capture'],
+    __ai_rewrite_inputs(__ai_payload['code']),
+    [
+        {'name': __ai_t['name'], 'body': __ai_rewrite_inputs(__ai_t['body'])}
+        for __ai_t in __ai_payload['tests']
+    ],
+    __ai_payload['capture'],
 )
 __ai_out = {'testResults': __ai_results, 'png': __ai_png}
 print('${KERNEL_TEST_RESULT_MARKER}' + __ai_b64.b64encode(__ai_json.dumps(__ai_out).encode('utf-8')).decode('ascii'))

@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "slug": "input-preprocessing-obrazu",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m2",
+  "title": "INPUT: preprocessing obrazu",
+  "eyebrow": "MECHANIKA MODELU",
+  "description": "Prześledź w kodzie i na rysunkach drogę obrazu do sieci: letterbox z zachowaniem proporcji, normalizacja, układ kanałów CHW i batchowanie do tensora 640×640.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "po-co-staly-rozmiar",
+      "title": "Po co stały rozmiar wejścia i czym jest letterbox",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/guides/yolo-data-augmentation/",
+          "title": "Ultralytics — Data augmentation guide (LetterBox & transforms)",
+          "kind": "article"
+        },
+        {
+          "url": "https://arxiv.org/abs/1506.02640",
+          "title": "You Only Look Once: Unified, Real-Time Object Detection",
+          "kind": "paper",
+          "author": "Joseph Redmon, Santosh Divvala, Ross Girshick, Ali Farhadi",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Sieć YOLO11 ma w pełni konwolucyjny backbone, ale **batchowanie** i głowica wymagają, by każdy obraz trafił do modelu o **stałym, kwadratowym rozmiarze** — domyślnie $640\\times640$. Zdjęcia ze świata mają jednak różne proporcje (panorama 1280×720, kadr pionowy 720×1280), więc trzeba je sprowadzić do tego samego boku.\n\nNajprostszy pomysł — **naiwny resize** prosto do kwadratu — psuje **proporcje**: koło staje się elipsą, samochód „chudnie” albo „tyje”. Detektor uczy się wtedy zniekształconych kształtów, a boxy przestają pasować do obiektów.\n\nRozwiązaniem jest **letterbox**: skalujemy obraz *z zachowaniem proporcji* wspólnym współczynnikiem\n\n$$ s = \\min\\!\\left(\\frac{S}{h},\\ \\frac{S}{w}\\right), \\qquad w' = \\operatorname{round}(w\\cdot s), \\quad h' = \\operatorname{round}(h\\cdot s) $$\n\na brakujące piksele do pełnego boku $S$ **dopełniamy paddingiem** o neutralnej szarości (Ultralytics używa wartości $114$). Dla kadru 1280×720 i $S=640$ wychodzi $s=0{,}5$, obraz skalowany do $640\\times360$, a różnicę $640-360=280$ px dzielimy po równo na pasy u góry i u dołu ($140$ px każdy).\n\n![Diagram letterboxa: kwadratowe płótno 640×640 z niebieskim prostokątem obrazu 1280×720 przeskalowanego do 640×360 w środku oraz dwoma szarymi pasami paddingu (114) o wysokości 140 px nad i pod obrazem; po prawej pionowa strzałka opisana „640 px”](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/letterbox-geometria.png)\n\n> Letterbox jest **odwracalny**: zapamiętane $s$ oraz przesunięcia paddingu pozwalają później przeliczyć wykryte boxy z siatki 640×640 z powrotem na współrzędne oryginalnego obrazu."
+      }
+    },
+    {
+      "id": "naiwny-vs-letterbox",
+      "title": "Naiwny resize vs letterbox",
+      "description": "Ten sam kadr 1280×720 sprowadzony do 640×640 na dwa sposoby — zwróć uwagę, co dzieje się z kształtem dysku.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/input-preprocessing-obrazu-1.png",
+        "alt": "Dwa zestawione obrazy 640×640 z osiami pikselowymi 0–640. Po lewej naiwny resize: pomarańczowy dysk rozciągnięty w pionie do elipsy, bo proporcje 1280×720 zostały zgniecione do kwadratu. Po prawej letterbox: ten sam dysk pozostaje okręgiem, obraz przeskalowany do 640×360 leży na środku, a u góry i u dołu są szare pasy paddingu o wartości 114.",
+        "caption": "Rys. 1. Naiwny resize do 640×640 zniekształca proporcje (okrąg → elipsa). Letterbox skaluje wspólnym współczynnikiem i dopełnia różnicę szarym paddingiem, zachowując kształty.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\n\n\ndef make_scene(h, w):\n    # Synthetic 'photo': dark background, an orange disk, a blue horizon band.\n    img = np.full((h, w, 3), 0.16, dtype=float)\n    yy, xx = np.mgrid[0:h, 0:w]\n    cy, cx = h * 0.45, w * 0.5\n    r = min(h, w) * 0.33\n    disk = (xx - cx) ** 2 + (yy - cy) ** 2 <= r ** 2\n    img[disk] = [0.95, 0.6, 0.12]\n    band = slice(int(h * 0.82), int(h * 0.82) + max(4, h // 60))\n    img[band, :] = [0.2, 0.5, 0.9]\n    return img\n\n\ndef nn_resize(img, new_h, new_w):\n    h, w = img.shape[:2]\n    ys = np.minimum((np.arange(new_h) * h / new_h).astype(int), h - 1)\n    xs = np.minimum((np.arange(new_w) * w / new_w).astype(int), w - 1)\n    return img[ys][:, xs]\n\n\nH, W, S = 720, 1280, 640\nscene = make_scene(H, W)\n\n# Naive resize: stretch straight to S x S, breaking the aspect ratio.\nnaive = nn_resize(scene, S, S)\n\n# Letterbox: scale preserving aspect ratio, then pad to S x S with gray 114/255.\nscale = min(S / H, S / W)\nnh, nw = round(H * scale), round(W * scale)\nresized = nn_resize(scene, nh, nw)\ncanvas = np.full((S, S, 3), 114 / 255, dtype=float)\ntop, left = (S - nh) // 2, (S - nw) // 2\ncanvas[top:top + nh, left:left + nw] = resized\n\nfig, axes = plt.subplots(1, 2, figsize=(9.2, 4.8))\naxes[0].imshow(naive, extent=[0, S, S, 0])\naxes[0].set_title(\"Naiwny resize 1280x720 -> 640x640\\n(proporcje zniekształcone)\")\naxes[1].imshow(canvas, extent=[0, S, S, 0])\naxes[1].set_title(\"Letterbox 1280x720 -> 640x640\\n(proporcje zachowane, szary padding)\")\nfor ax in axes:\n    ax.set_xlabel(\"kolumna [piksel]\")\n    ax.set_ylabel(\"wiersz [piksel]\")\n    ax.set_xticks([0, 160, 320, 480, 640])\n    ax.set_yticks([0, 160, 320, 480, 640])\n    ax.grid(True, alpha=0.3)\nfig.suptitle(\"Resize do kwadratu: naiwne rozciąganie vs letterbox\", fontsize=13)\nfig.tight_layout()\nfig.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/input-preprocessing-obrazu-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"saved figure 1; scale\", scale, \"nh\", nh, \"nw\", nw, \"pad_top\", top, \"pad_left\", left)",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-letterbox",
+      "title": "Szybki sprawdzian: po co letterbox",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego YOLO przed wnioskowaniem stosuje letterbox zamiast zwykłego resize obrazu prosto do 640×640?",
+        "options": [
+          "Bo letterbox zachowuje proporcje obrazu (skaluje wspólnym współczynnikiem i dopełnia padding), więc obiekty nie są zniekształcane",
+          "Bo letterbox rozciąga obraz tak, by wypełnić cały kwadrat 640×640 bez żadnych marginesów",
+          "Bo letterbox przycina obraz do kwadratu, odrzucając brzegi wystające poza 640×640",
+          "Bo letterbox zmienia liczbę kanałów z 3 na 1, co przyspiesza wnioskowanie"
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Letterbox skaluje obraz jednym współczynnikiem s = min(S/h, S/w), więc proporcje są zachowane — okrąg pozostaje okręgiem. Różnicę do pełnego boku 640 wypełnia szary padding (114), a nie rozciąganie (to byłby naiwny resize, który deformuje kształty) ani przycinanie (to traciłoby fragmenty obiektów). Liczba kanałów się nie zmienia — to osobny krok normalizacji, nie letterbox.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "od-pikseli-do-tensora",
+      "title": "Od pikseli do tensora: kanały, normalizacja, batch",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/predict/",
+          "title": "Ultralytics — Predict mode (inference & preprocessing)",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+          "title": "OpenCV — Geometric Transformations of Images (resize)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Po letterboxie mamy poprawny **rozmiar**, ale nie poprawny **format**. Z dysku (np. przez `cv2.imread`) obraz przychodzi jako tablica `HWC` w kolejności kanałów **BGR**, typu `uint8` z wartościami w zakresie $[0, 255]$. Sieć oczekuje czegoś innego — i to kilka kroków dzieli piksel od tensora wejściowego.\n\n![Potok preprocessingu jako sześć połączonych strzałkami bloków: wejście HWC·BGR uint8 [0,255] → letterbox 640×640 → zamiana BGR na RGB → dzielenie przez 255 do float32 [0,1] → transpozycja HWC na CHW → dodanie wymiaru batcha do tensora NCHW (1, 3, 640, 640)](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/preprocessing-pipeline.png)\n\nKolejne operacje to:\n\n- **BGR → RGB** — Ultralytics i wagi pretrenowane oczekują kolejności RGB; pomyłka tutaj zamienia kanał czerwony z niebieskim i cicho psuje dokładność.\n- **Normalizacja** — skalujemy do `float32` i dzielimy przez 255: $x_{\\text{norm}} = x / 255 \\in [0, 1]$. To ten sam zakres, na którym model był trenowany.\n- **HWC → CHW** — PyTorch układa tensory obrazu jako *kanał-pierwszy* `(C, H, W)`, więc transponujemy osie.\n- **Batch (NCHW)** — dokładamy wymiar wsadu z przodu, otrzymując `(N, C, H, W)`; dla pojedynczego obrazu to `(1, 3, 640, 640)`.\n\nWynikiem jest **ciągły** w pamięci tensor `float32` o kształcie `(1, 3, 640, 640)` gotowy do przesłania na GPU. Ten sam potok stosuje się do całego wsadu naraz — stąd wymóg jednakowego boku 640 dla każdego obrazu w batchu."
+      }
+    },
+    {
+      "id": "exercise-letterbox",
+      "title": "Policz parametry letterboxa",
+      "description": "Zaimplementuj czystą arytmetykę letterboxa: współczynnik skali, nowe wymiary i przesunięcia paddingu. Bez treningu i bez GPU.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `letterbox(h, w, target=640)`, które dla obrazu o wysokości `h` i szerokości `w` policzy parametry letterboxa do kwadratu `target×target` z zachowaniem proporcji.\n\nZwróć krotkę `(scale, new_w, new_h, pad_left, pad_top)`, gdzie:\n\n- `scale = min(target/h, target/w)`,\n- `new_w = round(w * scale)`, `new_h = round(h * scale)`,\n- padding dzielony po równo, nadmiarowy piksel w dół/prawo: `pad_left = (target - new_w) // 2`, `pad_top = (target - new_h) // 2`.\n\n```\nletterbox(720, 1280) == (0.5, 640, 360, 0, 140)\nletterbox(1280, 720) == (0.5, 360, 640, 140, 0)\n```",
+        "starterCode": "def letterbox(h, w, target=640):\n    # h, w: wymiary obrazu wejściowego (int)\n    # target: bok kwadratowego wejścia sieci (np. 640)\n    # TODO: policz scale = min(target/h, target/w),\n    # nowe wymiary new_w/new_h (zaokrąglone) oraz przesunięcia\n    # paddingu pad_left/pad_top, i zwróć\n    # (scale, new_w, new_h, pad_left, pad_top).\n    return (1.0, w, h, 0, 0)\n",
+        "tests": [
+          {
+            "name": "landscape_1280x720_pads_top_bottom",
+            "body": "assert letterbox(720, 1280) == (0.5, 640, 360, 0, 140)",
+            "hidden": false
+          },
+          {
+            "name": "portrait_720x1280_pads_left_right",
+            "body": "assert letterbox(1280, 720) == (0.5, 360, 640, 140, 0)",
+            "hidden": true
+          },
+          {
+            "name": "square_500x500_needs_no_padding",
+            "body": "s, nw, nh, pl, pt = letterbox(500, 500)\nassert (nw, nh, pl, pt) == (640, 640, 0, 0)",
+            "hidden": true
+          },
+          {
+            "name": "aspect_ratio_is_preserved",
+            "body": "s, nw, nh, pl, pt = letterbox(720, 1280)\nassert abs(nw / nh - 1280 / 720) < 0.02",
+            "hidden": true
+          }
+        ],
+        "solution": "def letterbox(h, w, target=640):\n    scale = min(target / h, target / w)\n    new_w = round(w * scale)\n    new_h = round(h * scale)\n    pad_left = (target - new_w) // 2\n    pad_top = (target - new_h) // 2\n    return (scale, new_w, new_h, pad_left, pad_top)\n"
+      }
+    },
+    {
+      "id": "sandbox-preprocessing",
+      "title": "Złóż cały potok na syntetycznym obrazie",
+      "description": "Zbuduj pełny tensor wejściowy z zabawkowego obrazu BGR i podejrzyj kształt oraz zakres po każdym kroku.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\n\n# Zabawkowy obraz: HWC, BGR, uint8 [0,255], proporcje 1280x720.\nh, w, target = 720, 1280, 640\nimg_bgr = (np.random.default_rng(0).integers(0, 256, (h, w, 3))).astype(np.uint8)\n\n# 1) letterbox (parametry) — zmień target i proporcje i patrz, co się dzieje\nscale = min(target / h, target / w)\nnew_w, new_h = round(w * scale), round(h * scale)\npad_left, pad_top = (target - new_w) // 2, (target - new_h) // 2\n\ndef nn_resize(a, nh, nw):\n    ys = np.minimum((np.arange(nh) * a.shape[0] / nh).astype(int), a.shape[0] - 1)\n    xs = np.minimum((np.arange(nw) * a.shape[1] / nw).astype(int), a.shape[1] - 1)\n    return a[ys][:, xs]\n\ncanvas = np.full((target, target, 3), 114, dtype=np.uint8)\ncanvas[pad_top:pad_top + new_h, pad_left:pad_left + new_w] = nn_resize(img_bgr, new_h, new_w)\nprint('po letterbox:', canvas.shape, canvas.dtype)\n\n# 2) BGR -> RGB, 3) /255 float32, 4) HWC -> CHW, 5) batch NCHW\nrgb = canvas[:, :, ::-1]\nnorm = rgb.astype(np.float32) / 255.0\nchw = np.transpose(norm, (2, 0, 1))\ntensor = chw[None, ...]\nprint('tensor:', tensor.shape, tensor.dtype, 'zakres', float(tensor.min()), float(tensor.max()))\n",
+        "encouragement": "Zmieniaj target i proporcje wejścia i sprawdzaj, jak rosną pasy paddingu oraz kształt finalnego tensora."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/modes/predict/",
+      "title": "Ultralytics — Predict mode (inference & preprocessing)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/guides/yolo-data-augmentation/",
+      "title": "Ultralytics — Data augmentation guide (LetterBox & transforms)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.opencv.org/4.x/da/d6e/tutorial_py_geometric_transformations.html",
+      "title": "OpenCV — Geometric Transformations of Images (resize)",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1506.02640",
+      "title": "You Only Look Once: Unified, Real-Time Object Detection",
+      "kind": "paper",
+      "author": "Joseph Redmon, Santosh Divvala, Ross Girshick, Ali Farhadi",
+      "year": 2016
+    }
+  ]
+}

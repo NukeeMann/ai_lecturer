@@ -10,6 +10,12 @@ import {
   type RegenerateSectionResponse,
 } from '@/lib/schemas/regenerateSection';
 import type { Lesson } from '@/lib/schemas/lesson';
+import {
+  agentModel,
+  readCourseAgentContext,
+  workingMemoryBrief,
+  type CourseAgentContext,
+} from '@/lib/server/agentCourseContext';
 
 export class RegenerateSectionAgentParseError extends Error {
   /** Raw stdout from the agent, truncated to ~2KB for surfacing to the client. */
@@ -57,21 +63,33 @@ export interface RegenerateSectionAgentInput {
   instruction: string;
 }
 
-export function defaultRegenerateSectionCommand(): { command: string; args: string[] } {
+export function defaultRegenerateSectionCommand(
+  ctx: CourseAgentContext,
+): { command: string; args: string[] } {
   // Mirrors the natural-language brief pattern used by extend_course /
   // generate_lesson: claude's `-p` print mode treats slash commands as
   // literal prompt text, so we ask the agent to load the SKILL.md and
   // run it. The structured input arrives on stdin so we never have to
-  // splice JSON into argv.
+  // splice JSON into argv. `ctx` pins the model to the one that authored
+  // the course (Opus, or Sonnet for quiz-only — US-192) and points the
+  // agent at research.md / sources.md when they exist so the rewrite stays
+  // grounded in the course's working memory.
   const prompt =
     `Run the regenerate_section skill defined in scripts/ralph/skills/regenerate_section/regenerate_section.md. ` +
     `Read the JSON input from stdin (it has fields lessonContext, sectionId, and instruction). ` +
     `Follow the skill's rules to PRESERVE the section's id and type while rewriting only its content. ` +
+    workingMemoryBrief(ctx) +
     `Emit a single JSON object on stdout matching the skill's output schema (a top-level newSection object). ` +
     `Do NOT write any files. Do NOT touch any other section. Do NOT touch scripts/ralph/.`;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      '--model',
+      agentModel(ctx),
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 
@@ -86,7 +104,11 @@ export async function runRegenerateSectionAgent(
   input: RegenerateSectionAgentInput,
 ): Promise<RegenerateSectionResponse> {
   const spawnFn = depsOverride?.spawn ?? defaultSpawn;
-  const { command, args } = defaultRegenerateSectionCommand();
+  // The agent input carries no course schema, so quiz-only detection reads
+  // course.json from disk (best-effort — a missing file degrades to the
+  // Opus default and no working-memory pointers).
+  const ctx = readCourseAgentContext(input.lessonContext.courseSlug);
+  const { command, args } = defaultRegenerateSectionCommand(ctx);
 
   let child: ChildProcess;
   try {

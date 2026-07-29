@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "slug": "radar-to-nie-kamera-wasne-oswietlenie-zamiast-swiata-otoczenia",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m1",
+  "title": "Radar to nie kamera: własne oświetlenie zamiast światła otoczenia",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Piksel SAR to siła echa, a nie kolor — porównasz prawdziwy kafelek SAR z parą optyczną i nazwiesz, co znika, a co się pojawia.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "echo-nie-kolor",
+      "title": "Piksel to echo, nie kolor",
+      "sources": [
+        {
+          "url": "https://www.earthdata.nasa.gov/learn/backgrounders/what-is-sar",
+          "title": "What is Synthetic Aperture Radar? — NASA Earthdata",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Twój dotychczasowy świat to **kamera pasywna**: czujnik, który tylko *zbiera* światło słońca odbite od sceny. Bez słońca (noc, gruba chmura) — nie ma zdjęcia. Radar SAR działa odwrotnie: jest **aktywny**. Sam wysyła krótkie impulsy mikrofal w stronę ziemi i mierzy, jak silne **echo** wróciło do anteny. To jakbyś fotografował wyłącznie własną latarką — w dzień, w nocy, przez chmury, tak samo.\n\nStąd jedna myśl, która przestawia całą intuicję:\n\n> **Piksel SAR to siła echa, a nie kolor.** Nie mówi „jak jasna była scena”, tylko „ile mojego impulsu ta łatka terenu odbiła z powrotem do mnie”.\n\nTę odbitą część impulsu nazywamy **backscatterem** (rozproszeniem wstecznym). Jasność piksela rośnie wraz z mocą echa: $B \\propto P_{\\text{echo}}$ — gdzie $B$ to jasność piksela na obrazie, a $P_{\\text{echo}}$ to moc echa wracającego do anteny (w watach; im więcej energii wróci, tym jaśniejszy piksel). Żadnej fizyki poza tym na razie nie potrzebujesz.\n\nSpójrz na ten sam rejon — Cieśninę Gibraltarską — dwoma czujnikami:\n\n![Zdjęcie optyczne Sentinel-2 (barwy naturalne) rejonu Cieśniny Gibraltarskiej: brązowo-zielony ląd Maroka, błękitna woda, pojedyncze chmury; czarny trójkąt to brzeg kadru bez danych](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/strait-gibraltar-sentinel2-optical.png)\n\n![Ten sam rejon w SAR Sentinel-1 (skala szarości): woda cieśniny jest niemal czarna, górzysty, szorstki ląd jest jasny, a w cieśninie i przy porcie widać pojedyncze jasne punkty — statki](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/strait-gibraltar-sentinel1-sar.png)\n\nW optyce widzisz *kolory* lądu i morza. W SAR widzisz *siłę echa*: gładka woda jest ciemna, szorstki ląd jasny — i to **niezależnie od pory dnia i pogody** (obie sceny to genuine dane Copernicus, ten sam rejon, różne dni i czujniki)."
+      }
+    },
+    {
+      "id": "ciemna-woda",
+      "title": "Szybki sprawdzian: czarne morze",
+      "description": "Zanim pójdziemy dalej — dlaczego spokojna woda jest na SAR niemal czarna?",
+      "type": "quiz",
+      "data": {
+        "question": "Dlaczego spokojna tafla morza jest na obrazie SAR niemal czarna?",
+        "options": [
+          "Bo woda ma ciemny kolor, a SAR rejestruje kolor sceny jak aparat.",
+          "Bo gładka woda odbija impuls radaru w bok (od sensora), więc echo prawie nie wraca do anteny.",
+          "Bo woda pochłania mikrofale tak, jak gąbka pochłania światło.",
+          "Bo radar nie potrafi obrazować nad wodą i zostawia puste miejsce."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Piksel SAR to siła echa wracającego do anteny, a nie kolor. Gładka tafla działa jak lustro dla mikrofal: odbija impuls w bok (odbicie zwierciadlane), więc do sensora wraca znikoma energia — stąd ciemny piksel. To nie kwestia „ciemnej barwy” ani pochłaniania; gdy wiatr zmarszczy wodę (szorstkość), echo rośnie i ta sama woda jaśnieje.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "co-znika-co-sie-pojawia",
+      "title": "Co znika, a co się pojawia względem optyki",
+      "sources": [
+        {
+          "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+          "title": "Sentinel-1 Mission overview — ESA/Copernicus",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro piksel to echo, część rzeczy z optyki **znika**, a pojawiają się **nowe**. Warto je nazwać od razu — inaczej będziesz czytać SAR jak zepsute zdjęcie.\n\n| Z optyki znika | W SAR pojawia się |\n| --- | --- |\n| kolor i albedo (barwa obiektu) | jednokanałowa **reflektywność aktywna** (siła echa) |\n| cienie rzucane przez słońce | **cień radarowy** za wysokimi obiektami (zero echa) |\n| „gładkie = dobrze widoczne” | gładkie = **ciemne** (impuls odbity w bok), szorstkie/metal = **jasne** |\n| czysty, gładki ton | ziarnisty **speckle** (zajmiemy się nim w module 2) |\n\n**Most do Twojego CV:** w RGB pracujesz na albedo i barwie; w SAR masz jeden kanał intensywności, którego *nie* wolno czytać jak jasności w zdjęciu. „Ciemne” nie znaczy „czarny obiekt” — to geometria, szorstkość i kąt padania. „Jasne” nie znaczy „duże ani bliskie” — mały metalowy narożnik (kadłub statku, dźwig w porcie) działa jak **reflektor narożny** i potrafi przebić jasnością całe pole.\n\n![Powiększenie kafelka SAR z wybrzeża przy cieśninie: ciemna tafla wody, jasny szorstki ląd i jasne punkty (statki, infrastruktura portu) skupione przy linii brzegowej](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png)\n\nDlatego metalowe statki **świecą** na tle ciemnego morza — to jest dokładnie ten kontrast, który w module 4 wykorzysta detektor CFAR. W kolejnych lekcjach otworzymy ten piksel jeszcze głębiej (amplituda, faza, speckle), ale fundament masz już teraz: **reaguj na siłę echa, nie na „kolor sceny”.**"
+      }
+    },
+    {
+      "id": "histogram-echa",
+      "title": "Rozkład siły echa na prawdziwym kafelku",
+      "description": "Histogram wartości pikseli kafelka SAR — zwróć uwagę na dwie populacje rozdzielone progiem.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/radar-to-nie-kamera-1.png",
+        "alt": "Histogram wartości pikseli (0–255) kafelka SAR Sentinel-1. Wyraźny lewy garb przy niskich wartościach (~50–90) to słabe echa wody, długi ogon w stronę 150–255 to silne echa lądu i obiektów; czerwona przerywana pionowa linia przy 120 oznacza próg 'silne echo'.",
+        "caption": "Rys. 1. Na prawdziwym kafelku siła echa rozdziela się na dwie populacje: słabe echa wody (lewy garb) i silne echa lądu/obiektów (prawy ogon). Próg przy 120 oddziela jedno od drugiego.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nfrom PIL import Image\n\n# Rzeczywisty kafelek Sentinel-1 (Cieśnina Gibraltarska): jasność = siła echa.\ntile = np.asarray(Image.open(\n    \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png\"\n)).astype(np.float32)\n\nplt.figure(figsize=(7, 4))\nplt.hist(tile.ravel(), bins=64, range=(0, 255), color=\"#3949ab\", edgecolor=\"white\", linewidth=0.3)\nplt.axvline(120, color=\"#e53935\", linestyle=\"--\", linewidth=1.5, label=\"prog silne echo (=120)\")\nplt.title(\"Rozklad sily echa na kafelku SAR (Sentinel-1, Cies. Gibraltarska)\")\nplt.xlabel(\"Wartosc piksela = sila echa wstecznego [0-255]\")\nplt.ylabel(\"Liczba pikseli\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\n    \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/radar-to-nie-kamera-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"saved\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "slabe-vs-silne-echo",
+      "title": "Oddziel słabe echa od silnych na kafelku SAR",
+      "description": "Załaduj prawdziwy kafelek Sentinel-1 i zamień siłę echa na maskę silnych rozpraszaczy.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Kafelek `sar` (prawdziwy Sentinel-1 z Cieśniny Gibraltarskiej) jest już wczytany: każdy piksel to **siła echa** w skali 0–255. Napisz dwie funkcje, które wykorzystają to, co widać na histogramie powyżej:\n\n- `maska_silnych_ech(obraz, prog)` — zwraca tablicę `bool` (ten sam kształt co `obraz`), `True` tam, gdzie echo jest **≥ prog**.\n- `udzial_silnych_ech(obraz, prog)` — zwraca ułamek `0..1` pikseli o echu **≥ prog**.\n\n```\nmaska_silnych_ech(np.array([[0, 150]]), 120)  # -> [[False, True]]\nudzial_silnych_ech(np.array([[0, 150]]), 120)  # -> 0.5\n```\n\nDla `prog = 120` jasne pole maski to ląd, porty i statki; ciemne — woda.",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Rzeczywisty kafelek Sentinel-1 (Ciesnina Gibraltarska), zamontowany w /inputs/.\n# Jasnosc piksela = sila echa wstecznego: 0 = slabe (gladka woda), 255 = silne (lad/metal).\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float32)\n\ndef maska_silnych_ech(obraz, prog):\n    # TODO: zwroc tablice bool tego samego ksztaltu co `obraz`,\n    # True tam, gdzie echo (wartosc piksela) >= prog.\n    return np.zeros_like(obraz, dtype=bool)\n\ndef udzial_silnych_ech(obraz, prog):\n    # TODO: zwroc ulamek (0..1) pikseli o echu >= prog.\n    return 0.0\n\n# Podglad: silne rozpraszacze (lad / porty / statki) na kafelku\nmaska = maska_silnych_ech(sar, 120)\nplt.imshow(maska, cmap='gray')\nplt.title('Silne echa: lad, porty, statki')\nplt.axis('off')\n",
+        "tests": [
+          {
+            "name": "maska_jest_bool_i_poprawna",
+            "body": "a = np.array([[0, 150], [200, 50]], dtype=np.float32)\nm = maska_silnych_ech(a, 120)\nassert m.dtype == bool\nassert m.tolist() == [[False, True], [True, False]]",
+            "hidden": false
+          },
+          {
+            "name": "udzial_w_zakresie_0_1",
+            "body": "u = udzial_silnych_ech(sar, 120)\nassert 0.0 <= u <= 1.0",
+            "hidden": true
+          },
+          {
+            "name": "wyzszy_prog_to_mniej_silnych",
+            "body": "assert udzial_silnych_ech(sar, 200) <= udzial_silnych_ech(sar, 80)",
+            "hidden": true
+          },
+          {
+            "name": "silne_echa_jasniejsze_od_slabych",
+            "body": "m = maska_silnych_ech(sar, 120)\nassert sar[m].mean() > sar[~m].mean()",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float32)\n\ndef maska_silnych_ech(obraz, prog):\n    return obraz >= prog\n\ndef udzial_silnych_ech(obraz, prog):\n    return float((obraz >= prog).mean())\n\nmaska = maska_silnych_ech(sar, 120)\nplt.imshow(maska, cmap='gray')\nplt.title('Silne echa: lad, porty, statki')\nplt.axis('off')\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 (skala szarości): ciemna woda cieśniny, jasny szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (siła echa, 0–255)",
+            "filename": "sar-echo-tile.png"
+          }
+        ],
+        "outputMedia": {
+          "kind": "image",
+          "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-mask-reference.png",
+          "alt": "Maska binarna: białe obszary to silne echa (ląd, porty, statki) przy progu 120, czarne to słaba woda",
+          "caption": "Oczekiwany wynik: maska silnych ech dla progu 120",
+          "live": true
+        }
+      }
+    },
+    {
+      "id": "konsekwencje",
+      "title": "Szybki sprawdzian: konsekwencje „echa zamiast koloru”",
+      "description": "Zaznacz wszystkie prawdziwe stwierdzenia o obrazie SAR.",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o obrazie SAR są prawdziwe? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "SAR obrazuje w nocy i przez chmury, bo sam oświetla scenę mikrofalami (czujnik aktywny).",
+          "Jaśniejszy piksel zawsze oznacza większy lub bliższy obiekt.",
+          "Mały metalowy statek potrafi świecić jasno na tle ciemnego morza, bo działa jak reflektor narożny.",
+          "Backbone wytrenowany na ImageNet zadziała na surowym SAR tak samo dobrze jak na zdjęciach RGB."
+        ],
+        "correct": [
+          0,
+          2
+        ],
+        "explanation": "SAR jest czujnikiem aktywnym — niesie własne „oświetlenie” (mikrofale), więc pora dnia i chmury nie mają znaczenia (1. prawda). Jasność to siła echa, czyli geometria, materiał i szorstkość, a nie rozmiar ani odległość — mały metalowy narożnik (kadłub, dźwig) odbija impuls wprost do anteny i świeci jasno na tle ciemnego morza (3. prawda). Natomiast „jaśniejszy = większy/bliższy” jest fałszem (2.), a backbone z ImageNet zakłada statystyki zdjęć naturalnych (kolor, krawędzie), których SAR z multiplikatywnym speckle i ogromną dynamiką nie spełnia — naiwny transfer się sypie (4. fałsz; wrócimy do tego w module 5).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "zabawa-progiem",
+      "title": "Pobaw się progiem na prawdziwym kafelku",
+      "description": "Zmieniaj próg i obserwuj, jak rośnie albo znika maska silnych ech.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float32)\n\n# Pokrec progiem i zobacz, kiedy znikaja statki, a kiedy caly lad zlewa sie w plame.\nprog = 120\nmaska = sar >= prog\nprint(f'prog={prog} -> silne echa: {100 * maska.mean():.1f}% pikseli')\nplt.imshow(maska, cmap='gray')\nplt.axis('off')\n",
+        "encouragement": "Zmieniaj próg i patrz, kiedy gubisz statki, a kiedy całe wybrzeże zlewa się w jedną plamę — bez testów, bez presji.",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 (skala szarości) z ciemną wodą, jasnym lądem i jasnymi punktami statków",
+            "caption": "Ten sam kafelek Sentinel-1 do swobodnej eksploracji",
+            "filename": "sar-echo-tile.png"
+          }
+        ]
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+      "year": 2013
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-mission",
+      "title": "Sentinel-1 Mission overview — ESA/Copernicus",
+      "kind": "article"
+    },
+    {
+      "url": "https://www.earthdata.nasa.gov/learn/backgrounders/what-is-sar",
+      "title": "What is Synthetic Aperture Radar? — NASA Earthdata",
+      "kind": "article"
+    },
+    {
+      "url": "https://eo-college.org/courses/echoes-in-space/",
+      "title": "Echoes in Space: Introduction to Radar Remote Sensing — EO College",
+      "kind": "video"
+    }
+  ]
+}

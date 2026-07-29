@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "slug": "amplituda-faza-i-speckle-ziarnistosc-ktora-nie-jest-szumem-gaussowskim",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m2",
+  "title": "Amplituda, faza i speckle: ziarnistość, która NIE jest szumem gaussowskim",
+  "eyebrow": "CO JEST W DANYCH SAR",
+  "description": "Co naprawdę siedzi w pikselu SAR: amplituda i faza oraz speckle jako multiplikatywna interferencja — i czemu uśrednianie sąsiadów psuje rozdzielczość.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "amplituda-faza",
+      "title": "Otwórz piksel: amplituda i faza",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        },
+        {
+          "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P1448.aspx",
+          "title": "Understanding Synthetic Aperture Radar Images — rozdz. o statystyce speckle",
+          "kind": "book",
+          "author": "Chris Oliver, Shaun Quegan",
+          "year": 2004
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "W RGB jeden piksel to trójka liczb $(R, G, B)$. W pełnym produkcie SAR — **SLC** (*Single Look Complex*) — jeden piksel to **liczba zespolona**. To nie matematyczny kaprys: to zapis dwóch realnych rzeczy o echu, które wróciło do anteny.\n\nPomyśl o echu jak o fali wracającej do Ciebie. Opisują ją dwie liczby:\n\n- **Amplituda $A$** — *jak silne* jest echo (wysokość fali). To dokładnie ta „siła echa” z poprzedniego modułu — i to ją widzisz jako jasność piksela.\n- **Faza $\\varphi$** — *w którym miejscu cyklu* fala akurat wróciła (grzbiet czy dolina). Dla jednego piksela jest praktycznie losowa i nieczytelna.\n\n![Fazor na płaszczyźnie zespolonej: niebieska strzałka z początku układu o długości A pod kątem fi; długość strzałki opisana jako amplituda (siła echa), czerwony łuk kąta jako faza (miejsce w cyklu fali); grot to jeden piksel SLC jako liczba zespolona](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/amplituda-faza-phasor.png)\n\nDo detekcji najczęściej pracujesz nie na amplitudzie, lecz na **intensywności** (mocy echa):\n\n$$ I = A^2 $$\n\ngdzie $I$ to intensywność (moc echa, jednostki umowne — proporcjonalna do energii, jaka wróciła), a $A$ to amplituda (ta sama siła echa, którą widzisz jako jasność; typowo w skali $0\\text{–}255$ po wizualizacji). Podniesienie do kwadratu rozciąga kontrast — jasne cele (statki) jeszcze bardziej odskakują od ciemnego morza.\n\nA faza? Dla **jednego** obrazu pomijasz ją w detekcji — jest losowa. Ale **różnice** faz między dwoma przelotami niosą złoto: koherencję i interferometrię (zmiany terenu rzędu milimetrów). Zapamiętaj więc: *faza nie jest szumem do wyrzucenia* — jest po prostu bezużyteczna **per-piksel w jednym zdjęciu**.\n\n> **Most do Twojego CV:** amplituda ≈ kanał intensywności, który renderujesz; faza ≈ ukryty kanał, którego w pojedynczej klatce nie używasz, ale który istnieje i czeka na drugi przelot."
+      }
+    },
+    {
+      "id": "quiz-faza",
+      "title": "Szybki sprawdzian: faza pojedynczego piksela",
+      "description": "Zanim otworzymy speckle — co tak naprawdę niesie faza w jednym obrazie SLC?",
+      "type": "quiz",
+      "data": {
+        "question": "Co jest prawdą o fazie pojedynczego piksela w jednym obrazie SLC?",
+        "options": [
+          "Faza koduje kolor/odcień obiektu, podobnie jak barwa w RGB.",
+          "Faza pojedynczego piksela jest praktycznie losowa, więc w detekcji na jednym obrazie ją pomijasz — ale różnice faz między przelotami niosą koherencję i InSAR, więc to nie jest „szum do wyrzucenia”.",
+          "Faza to szum termiczny czujnika i należy ją odfiltrować jak szum z wysokiego ISO.",
+          "Bez fazy nie policzysz jasności piksela, bo to ona steruje intensywnością."
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Jasność piksela bierze się z amplitudy ($I = A^2$), nie z fazy — więc faza nie steruje intensywnością (odp. 4 fałsz). Dla pojedynczego piksela w jednym zdjęciu faza jest losowa i do detekcji ją pomijasz, ale to nie znaczy, że jest bezwartościowym szumem: różnice faz między dwoma przelotami dają koherencję i interferometrię (InSAR). To nie kolor (odp. 1) ani szum czujnika do odfiltrowania (odp. 3).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "speckle-koherencja",
+      "title": "Speckle: koherentne nakładanie ech, nie szum gaussowski",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A Tutorial on Speckle Reduction in SAR Images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Speckle_pattern",
+          "title": "Speckle pattern — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Ziarnistość obrazu SAR — **speckle** — wygląda jak szum z wysokiego ISO, ale to pułapka. To **nie** jest addytywny szum czujnika; to **prawdziwy, deterministyczny wzór interferencji**.\n\nSkąd się bierze? Jedna komórka rozdzielczości (jeden piksel) to zwykle nie jeden obiekt, lecz **wiele drobnych rozpraszaczy** — kamyki, zmarszczki fal, źdźbła. Każdy odsyła własne maleńkie echo z własną fazą, a antena dostaje ich **sumę zespoloną**. Fazory dodają się jak wektory:\n\n![Wędrówka losowa fazorów: kilkanaście szarych strzałek (echa pojedynczych rozpraszaczy) ułożonych głowa-do-ogona, a czerwona strzałka od początku do końca łańcucha to wypadkowe echo R o losowej długości](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/speckle-phasor-sum.png)\n\nCzasem ustawią się zgodnie (jasny piksel), czasem niemal się znoszą (ciemny) — i stąd ziarno, nawet nad idealnie jednorodnym polem.\n\nNajważniejsza konsekwencja dla Twojego kodu: speckle jest **multiplikatywny**, nie addytywny:\n\n$$ I = R \\cdot n $$\n\ngdzie $I$ to zmierzona intensywność piksela, $R$ to prawdziwa reflektywność terenu (to, co chcesz odzyskać), a $n$ to losowy mnożnik speckle (średnio $1$, ale o dużym rozrzucie — dla 1-look odchylenie też ≈ $1$). To **mnożnik, nie składnik** — dlatego jasny płat ma *proporcjonalnie* większy rozrzut niż ciemny (zobaczysz to na wykresie niżej).\n\n> **Nie sięgaj po `cv2.GaussianBlur`.** Rozmycie gaussowskie zakłada addytywny, stały szum i traktuje każdy piksel tak samo. Tu rozrzut zależy od jasności, więc rozmażesz krawędzie i punktowe cele (statki!) nie respektując statystyki. Potrzebujesz filtrów świadomych speckle (Lee, Frost, Refined Lee, NL-means — następna lekcja) albo **multilookingu**: uśredniania niezależnych „spojrzeń” na tę samą scenę.\n\nJak zmierzyć „ile speckle”? Skalarem **ENL** (*Equivalent Number of Looks*), liczonym na **płaskim** płacie: $\\text{ENL} = \\mu^2 / \\sigma^2$, gdzie $\\mu$ to średnia intensywność płata, a $\\sigma$ to jej odchylenie standardowe. Wyższy ENL = gładziej (mniej speckle). Dla 1-look $\\text{ENL} \\approx 1$; multilooking go podnosi."
+      }
+    },
+    {
+      "id": "addytywny-vs-multiplikatywny",
+      "title": "Dowód na multiplikatywność: rozrzut rośnie z jasnością",
+      "description": "Dla wielu poziomów jasności płata: jak odchylenie std zmienia się dla szumu addytywnego vs speckle.",
+      "sources": [
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+          "title": "A Tutorial on Speckle Reduction in SAR Images",
+          "kind": "paper",
+          "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+          "year": 2013
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/amplituda-faza-speckle-1.png",
+        "alt": "Wykres liniowy: oś X to średnia jasność płata (reflektywność R) od 0.2 do 4.0 j.u., oś Y to odchylenie standardowe wewnątrz płata. Niebieska linia (szum addytywny gaussowski) jest pozioma na poziomie ~0.5 niezależnie od jasności; czerwona linia (speckle multiplikatywny) rośnie liniowo od ~0.2 do ~4.0, równo ze średnią jasnością.",
+        "caption": "Rys. 1. Szum addytywny ma stały rozrzut niezależnie od jasności (linia pozioma), a speckle ma rozrzut proporcjonalny do średniej jasności (linia rosnąca) — to właśnie odróżnia speckle od szumu gaussowskiego.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\nrng = np.random.default_rng(0)\nsrednie = np.linspace(0.2, 4.0, 12)   # poziomy reflektywnosci R (jasnosci platu)\nstd_add, std_mul = [], []\nfor R in srednie:\n    add = R + rng.normal(0.0, 0.5, 40000)        # szum addytywny: stale sigma=0.5\n    mul = R * rng.exponential(1.0, 40000)         # speckle 1-look: I = R * wykladniczy(1)\n    std_add.append(add.std())\n    std_mul.append(mul.std())\n\nplt.figure(figsize=(7, 4.4))\nplt.plot(srednie, std_add, \"o-\", color=\"#3949ab\", label=\"szum addytywny (Gauss): std stałe\")\nplt.plot(srednie, std_mul, \"s-\", color=\"#e53935\", label=\"speckle multiplikatywny: std ∝ średnia\")\nplt.title(\"Dlaczego speckle to NIE szum gaussowski: std w obrębie płata vs jego jasność\")\nplt.xlabel(\"Średnia jasność płata = reflektywność R [j.u.]\")\nplt.ylabel(\"Odchylenie std. wewnątrz płata [j.u.]\")\nplt.grid(True, alpha=0.3)\nplt.legend()\nplt.savefig(\n    \"courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/plots/amplituda-faza-speckle-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"saved plot\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "quiz-speckle",
+      "title": "Szybki sprawdzian: speckle to NIE Gauss",
+      "description": "Zaznacz wszystkie prawdziwe stwierdzenia o speckle i jego redukcji.",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o speckle są prawdziwe? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "Speckle to multiplikatywny wzór interferencji — rozrzut wartości rośnie wraz ze średnią jasnością płata.",
+          "Speckle to addytywny szum gaussowski czujnika, więc `cv2.GaussianBlur` jest właściwym narzędziem do jego usunięcia.",
+          "Uśrednianie niezależnych spojrzeń na tę samą scenę (multilooking) podnosi ENL i redukuje speckle.",
+          "Wyższy ENL oznacza więcej speckle i mniej gładki obraz."
+        ],
+        "correct": [
+          0,
+          2
+        ],
+        "explanation": "Speckle jest multiplikatywny ($I = R \\cdot n$), więc na jaśniejszym płacie rozrzut jest proporcjonalnie większy — dokładnie to pokazuje rosnąca czerwona linia na wykresie (odp. 1 prawda). Multilooking, czyli uśrednianie niezależnych spojrzeń, uśrednia mnożnik speckle ku jego średniej i podnosi ENL (odp. 3 prawda). Natomiast `cv2.GaussianBlur` zakłada addytywny, stały szum i rozmaże krawędzie oraz statki (odp. 2 fałsz), a ENL działa odwrotnie: wyższy ENL = gładziej, mniej speckle (odp. 4 fałsz).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "enl-okno-usredniania",
+      "title": "Suwak ENL: dlaczego uśrednianie sąsiadów psuje rozdzielczość",
+      "description": "Zwiększaj okno uśredniania i patrz, jak ENL rośnie (mniej speckle), ale statek i krawędź się rozmywają.",
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as mpatches\n\n# Syntetyczna scena o znanej reflektywnosci R (uczciwa symulacja, by pokazac\n# mechanizm): morze (R=1), jasniejszy lad po prawej (R=5) i punktowy cel - statek.\n_rng = np.random.default_rng(0)\nH, W = 120, 120\nR = np.full((H, W), 1.0)\nR[:, 72:] = 5.0\nR[86:89, 40:43] = 60.0\n# Speckle 1-look = multiplikatywny mnoznik o rozkladzie wykladniczym (gamma k=1).\n_speckle = _rng.gamma(shape=1.0, scale=1.0, size=(H, W))\nI_obs = R * _speckle               # obserwowana intensywnosc (1 look)\nPATCH = (slice(12, 56), slice(12, 60))   # czysty plat morza do odczytu ENL\n\ndef _boxcar(img, w):\n    # Uśrednianie sasiadow oknem w x w (pure numpy, separowalnie).\n    if w <= 1:\n        return img.astype(float)\n    k = np.ones(w) / w\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 0, img.astype(float))\n    out = np.apply_along_axis(lambda m: np.convolve(m, k, mode='same'), 1, out)\n    return out\n\ndef _enl(patch):\n    return float(patch.mean() ** 2 / patch.var())\n",
+        "renderCode": "okno = int(okno)\nml = _boxcar(I_obs, okno)\nenl = _enl(ml[PATCH])\ndraw = np.sqrt(I_obs)                       # amplituda do wyswietlenia\ndml = np.sqrt(np.clip(ml, 0, None))\nvmax = float(np.percentile(draw, 99))\nfig, (a1, a2) = plt.subplots(1, 2, figsize=(8.6, 4.4))\na1.imshow(draw, cmap='gray', vmax=vmax)\na1.set_title('1 look (surowy speckle)')\na1.set_xlabel('azimuth [piksel]'); a1.set_ylabel('range [piksel]')\na1.add_patch(mpatches.Rectangle((12, 12), 48, 44, ec='#e53935', fc='none', lw=1.5))\na2.imshow(dml, cmap='gray', vmax=vmax)\na2.set_title('okno ' + str(okno) + 'x' + str(okno) + ': ENL≈' + format(enl, '.0f'))\na2.set_xlabel('azimuth [piksel]'); a2.set_ylabel('range [piksel]')\na2.add_patch(mpatches.Rectangle((12, 12), 48, 44, ec='#e53935', fc='none', lw=1.5))\nfig.suptitle('Usrednianie sasiadow: ENL rosnie, ale statek i krawedz sie rozmywaja')\nfig.tight_layout()\nresult = 'ENL ≈ ' + format(enl, '.1f') + ' na placie morza (okno ' + str(okno) + 'x' + str(okno) + ')'\n",
+        "params": [
+          {
+            "name": "okno",
+            "label": "Okno uśredniania (looki) [piksel]",
+            "type": "slider",
+            "min": 1,
+            "max": 13,
+            "step": 2,
+            "default": 1
+          }
+        ],
+        "outputType": "both"
+      }
+    },
+    {
+      "id": "policz-enl",
+      "title": "Policz ENL na płaskim płacie prawdziwego kafelka",
+      "description": "Zaimplementuj ENL = średnia²/wariancja na intensywności i zmierz go na płacie wody.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Na płaskim, jednorodnym płacie ENL mierzy, ile *efektywnych spojrzeń* uśredniono — czyli jak mało zostało speckle. Liczysz go na **intensywności** ($I = A^2$):\n\n$$ \\text{ENL} = \\frac{\\mu_I^2}{\\sigma_I^2} $$\n\ngdzie $\\mu_I$ i $\\sigma_I$ to średnia i odchylenie std. intensywności na płacie.\n\nNapisz `enl(amplituda)`, które przyjmuje płat **amplitudy** (2-D `ndarray`), podnosi go do kwadratu (→ intensywność) i zwraca `float` z wartością ENL.\n\n```\nenl(np.array([[2., 4.], [4., 2.]]))  # -> 100/36 ≈ 2.78\n```\n\nW `starterCode` czeka prawdziwy kafelek Sentinel-1 i wycięty z niego płaski płat wody `woda` — zobacz, że produkt GRD jest już mocno zmultilookowany (wysoki ENL).",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Prawdziwy kafelek Sentinel-1 (Ciesnina Gibraltarska), zamontowany w /inputs/.\n# Jasnosc piksela = amplituda (sila echa) w skali 0-255.\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]      # plaski, jednorodny plat wody (do pomiaru ENL)\n\ndef enl(amplituda):\n    # TODO: I = amplituda**2; zwroc float(I.mean()**2 / I.var())\n    return 0.0\n\nprint('ENL wody (GRD juz zmultilookowany):', round(enl(woda), 1))\n",
+        "tests": [
+          {
+            "name": "enl_znanej_tablicy",
+            "body": "assert np.isclose(enl(np.array([[2., 4.], [4., 2.]])), 100/36)",
+            "hidden": false
+          },
+          {
+            "name": "enl_niezalezny_od_skali",
+            "body": "p = np.array([[3., 5., 2.], [6., 4., 5.]])\nassert np.isclose(enl(p), enl(2 * p))",
+            "hidden": true
+          },
+          {
+            "name": "woda_grd_jest_juz_gladka",
+            "body": "assert enl(woda) > 20",
+            "hidden": true
+          },
+          {
+            "name": "multilooking_podnosi_enl",
+            "body": "ml = (woda[::2, ::2] + woda[1::2, ::2] + woda[::2, 1::2] + woda[1::2, 1::2]) / 4\nassert enl(ml) > enl(woda)",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\nsar = (plt.imread('/inputs/sar-echo-tile.png') * 255).astype(np.float64)\nwoda = sar[20:80, 10:70]\n\ndef enl(amplituda):\n    I = np.asarray(amplituda, dtype=float) ** 2\n    return float(I.mean() ** 2 / I.var())\n\nprint('ENL wody (GRD juz zmultilookowany):', round(enl(woda), 1))\n",
+        "inputs": [
+          {
+            "kind": "image",
+            "src": "/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-echo-tile.png",
+            "alt": "Kafelek SAR Sentinel-1 (skala szarości): ciemna, dość gładka woda cieśniny w lewej części, jaśniejszy szorstki ląd i jasne punkty statków przy wybrzeżu",
+            "caption": "Wejście: prawdziwy kafelek Sentinel-1 (amplituda, 0–255)",
+            "filename": "sar-echo-tile.png"
+          }
+        ]
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+      "year": 2013
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2277512",
+      "title": "A Tutorial on Speckle Reduction in SAR Images",
+      "kind": "paper",
+      "author": "Fabrizio Argenti, Alessandro Lapini, Tiziano Bianchi, Luciano Alparone",
+      "year": 2013
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Speckle_pattern",
+      "title": "Speckle pattern — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://us.artechhouse.com/Understanding-Synthetic-Aperture-Radar-Images-P1448.aspx",
+      "title": "Understanding Synthetic Aperture Radar Images — rozdz. o statystyce speckle",
+      "kind": "book",
+      "author": "Chris Oliver, Shaun Quegan",
+      "year": 2004
+    },
+    {
+      "url": "https://sentiwiki.copernicus.eu/web/s1-processing",
+      "title": "Sentinel-1 — looks i multilooking (ESA/Copernicus)",
+      "kind": "article"
+    }
+  ]
+}

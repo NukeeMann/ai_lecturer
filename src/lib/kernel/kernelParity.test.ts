@@ -11,10 +11,14 @@
 // Requires any python3 on PATH (stdlib only — no jupyter deps). If none is
 // found the suite is skipped, exactly like the kernelManager integration tests.
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 import { RUNNER_PY } from '@/lib/pyodide/runnerPython';
+import { buildInputsMountCode } from '@/lib/server/codeRun';
 
 import { extractHarnessPayload } from './client';
 import { buildTestHarness, RESET_NAMESPACE_CELL } from './kernelPython';
@@ -230,6 +234,46 @@ describeKernel('kernel test-runner parity with RUNNER_PY', () => {
     const rCheck = extractHarnessPayload(outCheck).payload?.testResults as RawTestResult[];
     expect(rDefine[0].passed).toBe(true); // token visible before reset
     expect(rCheck[0].passed).toBe(true); // and gone after reset
+  });
+
+  // Regression: on the Submit/test path the harness base64-encodes user code,
+  // so the route's text-level rewriteInputsPath can't reach a `/inputs/...` read
+  // inside it. The mount cell registers the real dir as kernel globals and the
+  // harness rewrites the virtual root at runtime — without this, the test code's
+  // open('/inputs/x') hits the unwritable virtual root and fails with
+  // FileNotFoundError (the "Assertion mismatch" symptom on real courses).
+  it('resolves a /inputs read in test code to the real mount dir', () => {
+    const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-parity-inputs-'));
+    try {
+      const bytes = Buffer.from('echo-tile-bytes');
+      const mountCell = buildInputsMountCode(
+        [{ filename: 'tile.bin', b64: bytes.toString('base64') }],
+        mountDir,
+      );
+      const harness = buildTestHarness(
+        "data = open('/inputs/tile.bin', 'rb').read()\n",
+        [{ name: 'reads input', body: "assert data == b'echo-tile-bytes'" }],
+      );
+      const [, harnessOut] = runKernelCells(py, [mountCell, harness]);
+      const results = extractHarnessPayload(harnessOut).payload
+        ?.testResults as RawTestResult[];
+      expect(results[0].passed).toBe(true);
+    } finally {
+      fs.rmSync(mountDir, { recursive: true, force: true });
+    }
+  });
+
+  it('leaves /inputs untouched when no mount globals are set (Pyodide parity)', () => {
+    // Without the mount cell, __ai_rewrite_inputs is a no-op, so the literal
+    // virtual root survives — matching the Pyodide path where /inputs is a real
+    // VFS mount the worker provides.
+    const [out] = runKernelCells(py, [
+      buildTestHarness("p = '/inputs/x.png'\n", [
+        { name: 'untouched', body: "assert p == '/inputs/x.png'" },
+      ]),
+    ]);
+    const results = extractHarnessPayload(out).payload?.testResults as RawTestResult[];
+    expect(results[0].passed).toBe(true);
   });
 
   it('does not leak the harness sentinel into user-visible stdout', () => {

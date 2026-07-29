@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "slug": "detekcja-vs-klasyfikacja-vs-segmentacja",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m1",
+  "title": "Detekcja vs klasyfikacja vs segmentacja",
+  "eyebrow": "FUNDAMENTY DETEKCJI",
+  "description": "Porównujemy trzy zadania wizji komputerowej i ustalamy, co dokładnie zwraca detektor: listę boxów z klasą i confidence — w odróżnieniu od jednej etykiety klasyfikacji i maski segmentacji.",
+  "estimatedMinutes": 10,
+  "sections": [
+    {
+      "id": "trzy-zadania",
+      "title": "Trzy zadania, trzy granularności odpowiedzi",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/tasks/",
+          "title": "Ultralytics — Tasks (Detect, Segment, Classify, Pose, OBB)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Wizja komputerowa to nie jedno zadanie, lecz rodzina zadań różniących się **granularnością odpowiedzi**. Zanim rozłożymy YOLO na części, ustalmy, gdzie na tej mapie leży detekcja.\n\n![Trzy panele na tej samej scenie portowej. Po lewej „Klasyfikacja”: jedna etykieta „statek (0.94)” dla całego obrazu. W środku „Detekcja”: dwa żółte bounding boxy podpisane „statek 0.92” i „statek 0.85”. Po prawej „Segmentacja”: maska kolorująca każdy piksel jako niebo, wodę lub statek.](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/klasyfikacja-detekcja-segmentacja.png)\n\n- **Klasyfikacja** odpowiada na pytanie *„co to jest?”* — zwraca **jedną etykietę na cały obraz** (np. „statek”), bez informacji *gdzie*. Wyjściem jest jeden wektor prawdopodobieństw klas o stałym rozmiarze.\n- **Detekcja** odpowiada na *„co i gdzie?”* — zwraca **listę obiektów**, a dla każdego: prostokąt otaczający (*bounding box*), klasę i pewność (*confidence*). Liczba obiektów nie jest z góry znana.\n- **Segmentacja** odpowiada na *„które piksele?”* — przypisuje **klasę każdemu pikselowi** (semantyczna) lub dodatkowo rozróżnia instancje (instancyjna). Najgęstsza odpowiedź, ale i najdroższa w adnotacji.\n\n> **Detekcja to zadanie typu „set prediction”:** wyjściem jest *zbiór* trójek (box, klasa, confidence) o zmiennej liczności — w przeciwieństwie do klasyfikacji, której wyjście ma zawsze stały kształt.\n\nW tym kursie budujemy **detektor pojazdów i statków**, więc interesuje nas środkowy panel: chcemy wiedzieć, *ile* obiektów jest na zdjęciu, *gdzie* się znajdują i *jak pewny* jest model. YOLO realizuje to w jednym przebiegu sieci — do tego „look once” wrócimy w następnej lekcji."
+      }
+    },
+    {
+      "id": "tabela-porownania",
+      "title": "Porównanie: pytanie, wyjście i koszt adnotacji",
+      "description": "Te same dane wejściowe (obraz), trzy różne kształty odpowiedzi — i rosnący koszt etykietowania.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "zadanie",
+            "label": "Zadanie",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "pytanie",
+            "label": "Na jakie pytanie odpowiada",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "wyjscie",
+            "label": "Wyjście modelu",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "adnotacja",
+            "label": "Koszt adnotacji",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "zadanie": "Klasyfikacja",
+            "pytanie": "Co to jest?",
+            "wyjscie": "1 etykieta klasy na cały obraz",
+            "adnotacja": "Niski (1 etykieta / obraz)"
+          },
+          {
+            "zadanie": "Detekcja",
+            "pytanie": "Co i gdzie?",
+            "wyjscie": "Lista wykryć: box (cx, cy, w, h) + klasa + confidence",
+            "adnotacja": "Średni (box / obiekt)"
+          },
+          {
+            "zadanie": "Segmentacja",
+            "pytanie": "Które piksele?",
+            "wyjscie": "Klasa dla każdego piksela (maska)",
+            "adnotacja": "Wysoki (maska / obiekt)"
+          }
+        ],
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "dopasuj-wyjscie",
+      "title": "Dopasuj wyjście do zadania",
+      "description": "Przeciągnij opis wyniku do zadania, które go produkuje.",
+      "type": "dragMatch",
+      "data": {
+        "prompt": "Każde z trzech zadań zwraca odpowiedź o innej granularności. Dopasuj opis wyjścia do właściwego zadania.",
+        "items": [
+          {
+            "id": "out-class",
+            "label": "Jedna etykieta klasy dla całego obrazu"
+          },
+          {
+            "id": "out-det",
+            "label": "Lista boxów (cx, cy, w, h) z klasą i confidence"
+          },
+          {
+            "id": "out-seg",
+            "label": "Etykieta klasy dla każdego piksela"
+          }
+        ],
+        "zones": [
+          {
+            "id": "z-klas",
+            "label": "Klasyfikacja",
+            "accepts": [
+              "out-class"
+            ]
+          },
+          {
+            "id": "z-det",
+            "label": "Detekcja",
+            "accepts": [
+              "out-det"
+            ]
+          },
+          {
+            "id": "z-seg",
+            "label": "Segmentacja",
+            "accepts": [
+              "out-seg"
+            ]
+          }
+        ],
+        "multipleItemsPerZone": false,
+        "requireAll": true,
+        "explanation": "Klasyfikacja → jeden wektor klas (jedna etykieta na obraz). Detekcja → zmiennej długości lista trójek box+klasa+confidence. Segmentacja → gęsta maska z klasą na każdy piksel. Kluczowa różnica to granularność: cały obraz, obiekt, piksel."
+      }
+    },
+    {
+      "id": "co-zwraca-detektor",
+      "title": "Szybki sprawdzian: co zwraca detektor?",
+      "type": "quiz",
+      "data": {
+        "question": "Detektor YOLO dostaje zdjęcie portu z trzema statkami. Co zwraca jako wynik?",
+        "options": [
+          "Jedną etykietę „statek” dla całego zdjęcia",
+          "Listę trzech wykryć — każde z bounding boxem, klasą i wartością confidence",
+          "Maskę przypisującą każdemu pikselowi klasę statek lub tło",
+          "Dokładnie jeden bounding box, bo „look once” znaczy jedno spojrzenie = jeden obiekt"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Detekcja to predykcja zbioru: dla zdjęcia z trzema statkami model zwraca listę trzech trójek (box, klasa, confidence). Wariant z jedną etykietą to klasyfikacja, a maska per-piksel to segmentacja. Hasło „look once” odnosi się do pojedynczego przebiegu sieci (bez osobnego etapu propozycji regionów), a nie do liczby wykryć — sieć i tak generuje gęsto tysiące kandydatów, z których zostają finalne wykrycia.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "anatomia-detekcji",
+      "title": "Anatomia jednego wykrycia: box + klasa + confidence",
+      "sources": [
+        {
+          "url": "https://en.wikipedia.org/wiki/Object_detection",
+          "title": "Object detection — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.ultralytics.com/tasks/detect/",
+          "title": "Ultralytics — Object Detection task",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro detektor zwraca *listę* wykryć, przyjrzyjmy się, z czego składa się **pojedyncze wykrycie**. To trójka: **geometria boxa**, **klasa** i **confidence**.\n\n![Zdjęcie biurka z przedmiotami (klawiatura, monitor, kubek, myszka) wykrytymi detektorem YOLO; każdy obiekt otoczony kolorowym prostokątem z podpisem klasy i wartością pewności](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/yolo-detekcja-biurko.jpg)\n*(Obraz: Wikimedia Commons, Mtheiler, CC BY-SA 4.0)*\n\n**Geometria boxa.** Prostokąt opisujemy środkiem i rozmiarem, a wartości **normalizujemy** do przedziału $[0,1]$ przez szerokość $W$ i wysokość $H$ obrazu:\n\n$$ c_x = \\frac{x_\\text{px}}{W}, \\quad c_y = \\frac{y_\\text{px}}{H}, \\quad w = \\frac{w_\\text{px}}{W}, \\quad h = \\frac{h_\\text{px}}{H} $$\n\nDzięki normalizacji te same etykiety działają niezależnie od rozdzielczości — to dokładnie format pliku `.txt` w datasecie YOLO (`klasa cx cy w h`), do którego wrócimy w module o danych.\n\n**Klasa.** Indeks ze słownika klas (np. `0=car`, `1=ship`). Model zwraca rozkład prawdopodobieństw po klasach, a finalnie wybieramy tę o najwyższym wyniku.\n\n**Confidence.** Pojedyncza liczba w $[0,1]$ rankingująca wykrycie. W YOLO łączy „czy tu w ogóle jest obiekt” (*objectness*) z prawdopodobieństwem klasy:\n\n$$ \\text{confidence} = P(\\text{obiekt}) \\cdot P(\\text{klasa} \\mid \\text{obiekt}) $$\n\nSurowa sieć produkuje **tysiące** takich kandydatów na gęstej siatce. Próg confidence odrzuca słabe wykrycia, a NMS usuwa duplikaty — ale to temat lekcji o wyjściu modelu. Tu zapamiętaj jedno: **jedno wykrycie = box + klasa + confidence**, a confidence pozwala wykrycia sortować i filtrować."
+      }
+    },
+    {
+      "id": "filtruj-po-confidence",
+      "title": "Filtruj wykrycia progiem confidence",
+      "description": "Pierwszy krok zamiany surowej listy kandydatów w finalne wykrycia: odrzuć te o niskiej pewności.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Surowy detektor zwraca setki kandydatów — pierwszym filtrem jest **próg confidence**. Napisz `filter_detections(detections, conf_threshold)`, które zwraca listę wykryć, których `conf` jest **≥** progu, **zachowując oryginalną kolejność**.\n\nKażde wykrycie to słownik: `{\"box\": [cx, cy, w, h], \"cls\": int, \"conf\": float}`.\n\n```\nfilter_detections([{\"box\": [.5, .5, .2, .3], \"cls\": 1, \"conf\": 0.92},\n                   {\"box\": [.1, .1, .1, .1], \"cls\": 0, \"conf\": 0.30}], 0.5)\n# -> [{\"box\": [.5, .5, .2, .3], \"cls\": 1, \"conf\": 0.92}]\n```",
+        "starterCode": "def filter_detections(detections, conf_threshold):\n    # detections: list[dict] z kluczami \"box\" ([cx, cy, w, h]),\n    #   \"cls\" (int) oraz \"conf\" (float w [0, 1]).\n    # Zwroc liste tych wykryc, ktorych \"conf\" >= conf_threshold,\n    # zachowujac oryginalna kolejnosc.\n    # TODO\n    return []\n",
+        "tests": [
+          {
+            "name": "keeps_only_high_confidence",
+            "body": "dets = [{\"box\": [.5, .5, .2, .3], \"cls\": 1, \"conf\": 0.92}, {\"box\": [.1, .1, .1, .1], \"cls\": 0, \"conf\": 0.30}]\nassert filter_detections(dets, 0.5) == [dets[0]]",
+            "hidden": false
+          },
+          {
+            "name": "threshold_is_inclusive",
+            "body": "dets = [{\"box\": [0, 0, 1, 1], \"cls\": 0, \"conf\": 0.5}]\nassert filter_detections(dets, 0.5) == [dets[0]]",
+            "hidden": true
+          },
+          {
+            "name": "empty_when_all_below_threshold",
+            "body": "dets = [{\"box\": [0, 0, 1, 1], \"cls\": 0, \"conf\": 0.2}]\nassert filter_detections(dets, 0.5) == []",
+            "hidden": true
+          },
+          {
+            "name": "preserves_input_order",
+            "body": "dets = [{\"box\": [0, 0, 1, 1], \"cls\": 0, \"conf\": 0.9}, {\"box\": [0, 0, 1, 1], \"cls\": 1, \"conf\": 0.7}]\nassert filter_detections(dets, 0.6) == dets",
+            "hidden": true
+          }
+        ],
+        "solution": "def filter_detections(detections, conf_threshold):\n    return [d for d in detections if d[\"conf\"] >= conf_threshold]\n"
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/tasks/",
+      "title": "Ultralytics — Tasks (Detect, Segment, Classify, Pose, OBB)",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Object_detection",
+      "title": "Object detection — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1405.0312",
+      "title": "Microsoft COCO: Common Objects in Context",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+      "year": 2014
+    },
+    {
+      "url": "https://szeliski.org/Book/",
+      "title": "Computer Vision: Algorithms and Applications, 2nd ed. — recognition chapter",
+      "kind": "book",
+      "author": "Richard Szeliski",
+      "year": 2022
+    }
+  ]
+}

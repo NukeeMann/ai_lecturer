@@ -120,6 +120,7 @@ Rules:
 - **≥ 3 entries per lesson** so the per-lesson agent can populate `lesson.sources` (≥ 3) directly from this list without re-doing the research.
 - Always include `kind`. Always include `author` + `year` for `kind: "paper"` and `kind: "book"`; optional otherwise.
 - Stable URLs only — DOI, arxiv, `en.wikipedia.org`, official project docs, IETF / W3C, official YouTube channel videos. **Do not** cite medium.com, towardsdatascience.com, dev.to, personal blogs, social-media posts, or random PDFs on Google Drive / Dropbox.
+- **Verify every URL before recording it.** Fetch each candidate (WebFetch, or `curl -sIL --max-time 10 "<url>"` via Bash) and confirm it resolves — no 404/410. Never write a URL or DOI from memory; copy DOIs from the paper's landing page (invented DOIs are the most common dead-link failure). Dead links recorded here propagate into every lesson's `sources` field, where the generation pipeline's liveness gate will fail the lesson attempt.
 - Re-use the same source across multiple lessons where it covers the lesson's scope — duplication across lesson sub-sections is fine and expected. Course-wide references (textbooks that span the whole topic) live under `## Course-wide references` and can be cited from any lesson.
 
 The `## <Lesson title>` headings here become deterministic anchors that `generate_lesson` reads when populating each lesson's `sources` field. If the `design_course` pass renames a lesson, that skill is responsible for updating the matching heading in `sources.md`.
@@ -222,6 +223,7 @@ Once `research.md` and `sources.md` are on disk, the webapp's generation backend
 - [ ] `/courses/<slug>/research.md` written with all six template sections.
 - [ ] `/courses/<slug>/sources.md` written with ≥ 3 stable, credible references per planned lesson (no medium / towardsdatascience / personal blogs).
 - [ ] Every entry in `sources.md` carries `kind` ∈ `{paper, video, article, book}`; `author` + `year` set for every `paper`/`book`.
+- [ ] Every URL in `sources.md` was verified to resolve in this session (WebFetch / `curl -sIL`) — no 404/410, no DOIs written from memory.
 - [ ] **No `course.json` written** — that file belongs to the `design_course` skill that runs next.
 - [ ] **No file written under `scripts/ralph/`** — this skill is fully decoupled from the ralph orchestrator.
 

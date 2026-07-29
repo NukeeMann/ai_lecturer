@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "slug": "output-od-surowej-siatki-do-finalnych-detekcji",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m2",
+  "title": "OUTPUT: od surowej siatki do finalnych detekcji",
+  "eyebrow": "MECHANIKA MODELU",
+  "description": "Rozłóż surowe wyjście YOLO11 (boxy + logity klas, 8400 lokalizacji), zdekoduj je i zobacz, jak próg confidence oraz NMS zamieniają gęstą siatkę w finalne wykrycia.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "surowa-siatka",
+      "title": "Surowa siatka: co naprawdę zwraca głowica",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/predict/#working-with-results",
+          "title": "Ultralytics — Predict mode: working with Results",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Głowica YOLO11 nie zwraca gotowych wykryć — zwraca **gęstą, surową siatkę kandydatów**, którą dopiero post-processing zamienia w finalne boxy. Dla wejścia $640\\times640$ sieć emituje predykcje na trzech skalach (P3/P4/P5, czyli siatki $80\\times80$, $40\\times40$, $20\\times20$), co daje łącznie\n\n$$ 80^2 + 40^2 + 20^2 = 6400 + 1600 + 400 = 8400 $$\n\nlokalizacji. Wyjście jednej skali ma kształt $(1,\\ 4+nc,\\ \\text{liczba lokalizacji})$, a po sklejeniu skal — $(1,\\ 4+nc,\\ 8400)$.\n\n![Schemat wyjścia głowicy YOLO11: po lewej blok tensora (1, 4+nc, 8400) rozłożony na 4 wartości geometrii boxa (DFL: l, t, r, b) i nc logitów klas, z adnotacją że 8400 lokalizacji to suma siatek 80×80, 40×40 i 20×20; po prawej siatka 20×20 skali P5 z jedną podświetloną komórką (i,j) emitującą zdekodowany box x1,y1,x2,y2](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/yolo-output-tensor-siatka.png)\n\nKażda lokalizacja niesie dwie rzeczy:\n\n- **geometrię boxa** — w YOLO11 (anchor-free) nie regresujemy offsetów względem anchorów, lecz cztery odległości brzegów od punktu siatki $(l, t, r, b)$, kodowane rozkładowo przez **DFL**. Po zdekodowaniu i przeskalowaniu o stride dostajemy róg-róg $(x_1, y_1, x_2, y_2)$ w układzie 640×640.\n- **logity klas** — `nc` wartości (np. `car`, `truck`, `ship`). Nowoczesne YOLO nie ma osobnej gałęzi *objectness*: **confidence** to po prostu sigmoida najwyższego logitu klasy,\n\n$$ p = \\sigma\\!\\left(\\max_k z_k\\right). $$\n\nSurowa siatka to więc 8400 nakładających się boxów — większość o znikomym confidence. Dwa kroki post-processingu, **próg confidence** i **NMS**, redukują ją do garstki wykryć. Na końcu odwracamy letterbox (zapamiętane $s$ oraz przesunięcia paddingu), aby przenieść boxy z siatki 640×640 z powrotem na współrzędne oryginalnego obrazu."
+      }
+    },
+    {
+      "id": "gesta-siatka-vs-nms",
+      "title": "Gęsta siatka kandydatów → finalne wykrycia",
+      "description": "Ten sam kadr 640×640: po lewej wszystkie surowe boxy (jasność = confidence), po prawej to, co zostaje po progu i NMS.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/output-od-surowej-siatki-do-finalnych-detekcji-1.png",
+        "alt": "Dwa zestawione obrazy 640×640 z osiami pikselowymi 0–640. Po lewej 32 nakładające się czerwone boxy skupione wokół dwóch obiektów (samochód w lewym dolnym rogu, statek w prawym górnym), przezroczystość rośnie z confidence. Po prawej zostają tylko dwa zielone boxy z etykietami confidence 0.93 i 0.73 — po jednym na obiekt — po zastosowaniu progu confidence ≥ 0.25 i NMS z progiem IoU 0.5.",
+        "caption": "Rys. 1. Surowa siatka 32 kandydatów (po lewej) zostaje sprowadzona do 2 finalnych wykryć (po prawej) przez próg confidence (≥ 0.25) i NMS (IoU > 0.5).",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport numpy as np\nimport matplotlib.pyplot as plt\nfrom matplotlib.patches import Rectangle\n\n\ndef iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    area_a = (a[2] - a[0]) * (a[3] - a[1])\n    area_b = (b[2] - b[0]) * (b[3] - b[1])\n    union = area_a + area_b - inter\n    return inter / union if union > 0 else 0.0\n\n\ndef nms(boxes, scores, iou_thr):\n    order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)\n    keep = []\n    while order:\n        i = order.pop(0)\n        keep.append(i)\n        order = [j for j in order if iou(boxes[i], boxes[j]) <= iou_thr]\n    return keep\n\n\nrng = np.random.default_rng(7)\n# Two ground-truth objects on a 640x640 letterboxed frame: a car and a ship.\ngts = [\n    (np.array([110.0, 360.0, 300.0, 470.0]), \"car\"),\n    (np.array([350.0, 170.0, 560.0, 300.0]), \"ship\"),\n]\nboxes, scores = [], []\nfor gt, _ in gts:\n    cx, cy = (gt[0] + gt[2]) / 2, (gt[1] + gt[3]) / 2\n    w, h = gt[2] - gt[0], gt[3] - gt[1]\n    for _ in range(13):\n        jx, jy = rng.normal(0, 14), rng.normal(0, 14)\n        jw, jh = rng.normal(1.0, 0.10), rng.normal(1.0, 0.10)\n        nw, nh = w * jw, h * jh\n        ncx, ncy = cx + jx, cy + jy\n        boxes.append([ncx - nw / 2, ncy - nh / 2, ncx + nw / 2, ncy + nh / 2])\n        d = np.hypot(jx, jy) / 22.0\n        scores.append(float(np.clip(0.9 - 0.5 * d + rng.normal(0, 0.05), 0.05, 0.98)))\n# A few low-confidence false candidates scattered around.\nfor _ in range(6):\n    x1, y1 = rng.uniform(0, 520), rng.uniform(0, 520)\n    boxes.append([x1, y1, x1 + rng.uniform(60, 130), y1 + rng.uniform(50, 110)])\n    scores.append(float(rng.uniform(0.05, 0.22)))\n\nconf_thr, iou_thr = 0.25, 0.5\nkeep_conf = [i for i, s in enumerate(scores) if s >= conf_thr]\nkept = [keep_conf[k] for k in nms([boxes[i] for i in keep_conf],\n                                   [scores[i] for i in keep_conf], iou_thr)]\n\nfig, axes = plt.subplots(1, 2, figsize=(10.4, 5.2))\nfor i, b in enumerate(boxes):\n    axes[0].add_patch(Rectangle((b[0], b[1]), b[2] - b[0], b[3] - b[1], fill=False,\n                                edgecolor=\"#c44e52\", lw=1.0, alpha=0.25 + 0.7 * scores[i]))\naxes[0].set_title(f\"Surowa siatka: {len(boxes)} kandydatow\\n(przed progiem i NMS)\")\nfor i in kept:\n    b = boxes[i]\n    axes[1].add_patch(Rectangle((b[0], b[1]), b[2] - b[0], b[3] - b[1], fill=False,\n                                edgecolor=\"#55a868\", lw=2.4))\n    axes[1].text(b[0], b[1] - 6, f\"{scores[i]:.2f}\", color=\"#2f6b46\", fontsize=9)\naxes[1].set_title(f\"Po progu (conf>={conf_thr}) i NMS (IoU>{iou_thr}):\\n{len(kept)} finalne wykrycia\")\n\nfor ax in axes:\n    ax.set_xlim(0, 640)\n    ax.set_ylim(640, 0)\n    ax.set_aspect(\"equal\")\n    ax.set_xlabel(\"kolumna [piksel]\")\n    ax.set_ylabel(\"wiersz [piksel]\")\n    ax.set_xticks([0, 160, 320, 480, 640])\n    ax.set_yticks([0, 160, 320, 480, 640])\n    ax.grid(True, alpha=0.3)\nfig.suptitle(\"Od gestej siatki kandydatow do finalnych detekcji\", fontsize=13)\nfig.tight_layout()\nfig.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/output-od-surowej-siatki-do-finalnych-detekcji-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"saved figure 1; raw\", len(boxes), \"kept\", len(kept), \"indices\", kept)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-progi",
+      "title": "Szybki sprawdzian: dwa progi post-processingu",
+      "type": "quiz",
+      "data": {
+        "question": "Jak mają się do siebie próg confidence i próg IoU używany w NMS?",
+        "options": [
+          "To dwa niezależne progi: confidence odsiewa słabe predykcje jeszcze przed NMS, a próg IoU steruje, jak agresywnie NMS scala nakładające się boxy.",
+          "To ten sam parametr pod dwiema nazwami — ustawienie jednego automatycznie ustawia drugi.",
+          "Oba progi są wyuczane podczas treningu razem z wagami sieci i nie da się ich zmienić przy wnioskowaniu.",
+          "Próg confidence działa dopiero po NMS, a próg IoU filtruje wejście jeszcze przed dekodowaniem boxów."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Confidence i IoU to dwa rozłączne pokrętła post-processingu. Próg confidence usuwa kandydatów o niskim wyniku zanim NMS w ogóle ruszy; próg IoU decyduje dopiero o tym, jak mocno NMS tłumi nakładające się boxy, które przeszły próg confidence. NMS jest deterministycznym krokiem po sieci — nie ma uczonych parametrów — a kolejność jest odwrotna niż w ostatniej odpowiedzi: najpierw dekodowanie i próg confidence, potem NMS.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-iou",
+      "title": "Policz IoU dwóch boxów",
+      "description": "Zaimplementuj miarę nakładania się boxów — sercem NMS. Czysta arytmetyka, bez sieci i bez GPU.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `iou(a, b)`, które dla dwóch boxów w formacie rogów `[x1, y1, x2, y2]` zwraca **Intersection over Union** jako `float`. Gdy boxy się nie przecinają, zwróć `0.0`.\n\n```\niou([0, 0, 2, 2], [1, 1, 3, 3]) == 1/7   # przecięcie 1, suma 7\niou([0, 0, 2, 2], [0, 0, 2, 2]) == 1.0   # identyczne\n```",
+        "starterCode": "def iou(a, b):\n    # a, b: boxy w formacie [x1, y1, x2, y2] (rogi)\n    # TODO: policz pole przecięcia i sumy, zwróć IoU jako float.\n    # Pamiętaj o przypadku braku przecięcia (zwróć 0.0).\n    return 0.0\n",
+        "tests": [
+          {
+            "name": "identical_boxes_iou_is_one",
+            "body": "assert iou([0, 0, 2, 2], [0, 0, 2, 2]) == 1.0",
+            "hidden": false
+          },
+          {
+            "name": "half_overlap_matches_formula",
+            "body": "assert abs(iou([0, 0, 2, 2], [1, 1, 3, 3]) - 1/7) < 1e-9",
+            "hidden": true
+          },
+          {
+            "name": "disjoint_boxes_iou_is_zero",
+            "body": "assert iou([0, 0, 1, 1], [2, 2, 3, 3]) == 0.0",
+            "hidden": true
+          },
+          {
+            "name": "contained_box_is_area_ratio",
+            "body": "assert abs(iou([0, 0, 4, 4], [1, 1, 3, 3]) - 0.25) < 1e-9",
+            "hidden": true
+          }
+        ],
+        "solution": "def iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    area_a = (a[2] - a[0]) * (a[3] - a[1])\n    area_b = (b[2] - b[0]) * (b[3] - b[1])\n    union = area_a + area_b - inter\n    return inter / union if union > 0 else 0.0\n"
+      }
+    },
+    {
+      "id": "nms-algorytm",
+      "title": "NMS: od gęstej siatki do jednego boxa na obiekt",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1704.04503",
+          "title": "Soft-NMS — Improving Object Detection With One Line of Code",
+          "kind": "paper",
+          "author": "Navaneeth Bodla, Bharat Singh, Rama Chellappa, Larry S. Davis",
+          "year": 2017
+        },
+        {
+          "url": "https://pytorch.org/vision/stable/generated/torchvision.ops.nms.html",
+          "title": "torchvision.ops.nms — PyTorch documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Po odsianiu kandydatów progiem confidence wciąż mamy **wiele boxów na jeden obiekt** — sąsiednie lokalizacje siatki opisują ten sam samochód. **Non-Maximum Suppression (NMS)** zostawia po jednym, najlepszym boxie na obiekt. To **deterministyczny krok post-processingu**, bez uczonych parametrów — działa na już zdekodowanych wyjściach, a nie podczas liczenia straty.\n\n![Trzy panele ilustrujące zachłanny NMS przy progu IoU 0.5: (1) trzy nakładające się boxy jednego obiektu posortowane wg confidence 0.92, 0.74, 0.61 oraz osobny box 0.55 drugiego obiektu; (2) wybrany najlepszy box 0.92, a boxy 0.74 i 0.61 wytłumione bo ich IoU z nim przekracza 0.5; (3) procedura powtórzona — zostają dwa boxy 0.92 i 0.55, po jednym na obiekt](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/nms-greedy-kroki.png)\n\nZachłanny algorytm, uruchamiany osobno dla każdej klasy:\n\n1. **Posortuj** kandydatów malejąco wg confidence.\n2. **Wybierz** box o najwyższym confidence i przenieś go do listy zachowanych.\n3. **Usuń** z reszty wszystkie boxy, których $\\text{IoU}$ z wybranym przekracza próg (domyślnie $0{,}7$ w Ultralytics, w przykładach często $0{,}5$).\n4. **Powtarzaj** dla pozostałych kandydatów, aż lista będzie pusta.\n\nSercem kroku 3 jest miara nakładania się — **IoU** (Intersection over Union):\n\n$$ \\text{IoU}(A, B) = \\frac{|A \\cap B|}{|A \\cup B|}. $$\n\nDwa progi rządzą tym potokiem i są **niezależne**: próg confidence odsiewa słabe predykcje *przed* NMS, a próg IoU steruje, *jak agresywnie* NMS scala nakładające się boxy. Zbyt wysoki próg IoU zostawia duplikaty; zbyt niski — skleja dwa sąsiednie obiekty w jeden. Warianty jak **Soft-NMS** zamiast twardego usuwania tylko *obniżają* confidence nakładających się boxów, co pomaga przy gęsto stojących obiektach."
+      }
+    },
+    {
+      "id": "exercise-nms",
+      "title": "Zaimplementuj zachłanny NMS",
+      "description": "Złóż próg IoU i confidence w jeden krok: zwróć indeksy boxów, które przeżywają zachłanne tłumienie.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `nms(boxes, scores, iou_thr)` — zachłanny Non-Maximum Suppression. Zwróć **listę indeksów** zachowanych boxów w kolejności malejącego confidence. Box jest tłumiony, gdy jego IoU z już zachowanym boxem przekracza `iou_thr`. Pomocnicze `iou(a, b)` masz już zdefiniowane w edytorze.\n\n```\nnms([[0,0,10,10], [1,1,11,11], [20,20,30,30]], [0.9, 0.8, 0.7], 0.5) == [0, 2]\n```",
+        "starterCode": "def iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - inter\n    return inter / union if union > 0 else 0.0\n\ndef nms(boxes, scores, iou_thr):\n    # boxes: lista [x1,y1,x2,y2]; scores: lista confidence; iou_thr: próg IoU.\n    # TODO: zachłanny NMS — zwróć listę indeksów zachowanych boxów\n    # w kolejności malejącego confidence. Box jest tłumiony, gdy jego\n    # IoU z już zachowanym przekracza iou_thr.\n    return []\n",
+        "tests": [
+          {
+            "name": "suppresses_overlapping_pair",
+            "body": "assert nms([[0,0,10,10], [1,1,11,11], [20,20,30,30]], [0.9, 0.8, 0.7], 0.5) == [0, 2]",
+            "hidden": false
+          },
+          {
+            "name": "keeps_all_when_disjoint",
+            "body": "assert nms([[0,0,5,5], [10,10,15,15]], [0.5, 0.9], 0.5) == [1, 0]",
+            "hidden": true
+          },
+          {
+            "name": "orders_by_descending_score",
+            "body": "assert nms([[0,0,1,1], [5,5,6,6], [10,10,11,11]], [0.2, 0.9, 0.5], 0.5) == [1, 2, 0]",
+            "hidden": true
+          },
+          {
+            "name": "high_threshold_keeps_overlaps",
+            "body": "assert nms([[0,0,10,10], [1,1,11,11]], [0.9, 0.8], 0.95) == [0, 1]",
+            "hidden": true
+          }
+        ],
+        "solution": "def iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - inter\n    return inter / union if union > 0 else 0.0\n\ndef nms(boxes, scores, iou_thr):\n    order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)\n    keep = []\n    while order:\n        i = order.pop(0)\n        keep.append(i)\n        order = [j for j in order if iou(boxes[i], boxes[j]) <= iou_thr]\n    return keep\n"
+      }
+    },
+    {
+      "id": "sandbox-progi",
+      "title": "Pokręć progami na syntetycznym zestawie",
+      "description": "Zmieniaj conf_thr i iou_thr na stałym zestawie boxów i obserwuj, ile wykryć przeżywa.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Syntetyczny zestaw zdekodowanych kandydatów (rogi x1,y1,x2,y2) + confidence.\nboxes = [\n    [110, 360, 300, 470], [118, 352, 308, 472], [104, 366, 296, 462],  # samochód\n    [350, 170, 560, 300], [360, 178, 566, 306], [344, 164, 552, 296],  # statek\n    [60, 60, 150, 140],                                                 # słaby fałszywy\n]\nscores = [0.91, 0.83, 0.40, 0.88, 0.71, 0.52, 0.14]\n\ndef iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    union = (a[2]-a[0])*(a[3]-a[1]) + (b[2]-b[0])*(b[3]-b[1]) - inter\n    return inter / union if union > 0 else 0.0\n\ndef nms(boxes, scores, iou_thr):\n    order = sorted(range(len(boxes)), key=lambda i: scores[i], reverse=True)\n    keep = []\n    while order:\n        i = order.pop(0)\n        keep.append(i)\n        order = [j for j in order if iou(boxes[i], boxes[j]) <= iou_thr]\n    return keep\n\n# Pokręć dwoma niezależnymi pokrętłami i patrz, ile boxów przeżywa.\nconf_thr = 0.25\niou_thr = 0.5\nidx = [i for i, s in enumerate(scores) if s >= conf_thr]\nkept = [idx[k] for k in nms([boxes[i] for i in idx], [scores[i] for i in idx], iou_thr)]\nprint('po progu confidence:', idx)\nprint('po NMS:', kept, '-> liczba wykryć:', len(kept))\n",
+        "encouragement": "Podnoś i obniżaj oba progi osobno i patrz, kiedy pojawiają się duplikaty, a kiedy znika prawdziwy obiekt."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/modes/predict/#working-with-results",
+      "title": "Ultralytics — Predict mode: working with Results",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1704.04503",
+      "title": "Soft-NMS — Improving Object Detection With One Line of Code",
+      "kind": "paper",
+      "author": "Navaneeth Bodla, Bharat Singh, Rama Chellappa, Larry S. Davis",
+      "year": 2017
+    },
+    {
+      "url": "https://pytorch.org/vision/stable/generated/torchvision.ops.nms.html",
+      "title": "torchvision.ops.nms — PyTorch documentation",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Object_detection",
+      "title": "Object detection (NMS) — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

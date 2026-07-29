@@ -12,6 +12,12 @@ import {
 } from '@/lib/schemas/regenerateLesson';
 import type { Course } from '@/lib/schemas/course';
 import type { Lesson } from '@/lib/schemas/lesson';
+import {
+  agentModel,
+  readCourseAgentContext,
+  workingMemoryBrief,
+  type CourseAgentContext,
+} from '@/lib/server/agentCourseContext';
 
 export class RegenerateLessonAgentParseError extends Error {
   /** Raw stdout from the agent, truncated to ~2KB for surfacing to the client. */
@@ -59,21 +65,33 @@ export interface RegenerateLessonAgentInput {
   instruction: string;
 }
 
-export function defaultRegenerateLessonCommand(): { command: string; args: string[] } {
+export function defaultRegenerateLessonCommand(
+  ctx: CourseAgentContext,
+): { command: string; args: string[] } {
   // Mirrors the natural-language brief pattern used by extend_course /
   // generate_lesson / regenerate_section: claude's `-p` print mode treats
   // slash commands as literal prompt text, so we ask the agent to load the
   // SKILL.md and run it. The structured input arrives on stdin so we never
-  // have to splice JSON into argv.
+  // have to splice JSON into argv. `ctx` pins the model to the one that
+  // authored the course (Opus, or Sonnet for quiz-only — US-192) and points
+  // the agent at research.md / sources.md when they exist so the rewrite
+  // stays grounded in the course's working memory.
   const prompt =
     `Run the regenerate_lesson skill defined in scripts/ralph/skills/regenerate_lesson/regenerate_lesson.md. ` +
     `Read the JSON input from stdin (it has fields courseSchema, currentLesson, and instruction). ` +
     `Follow the skill's rules to PRESERVE the lesson's slug, courseSlug, moduleId, and title while rewriting the lesson body end-to-end. ` +
+    workingMemoryBrief(ctx) +
     `Emit a single JSON object on stdout matching the skill's output schema (a top-level newLesson object). ` +
     `Do NOT write any files. Do NOT touch other lessons or course.json. Do NOT touch scripts/ralph/.`;
   return {
     command: 'claude',
-    args: ['-p', prompt, '--dangerously-skip-permissions'],
+    args: [
+      '-p',
+      prompt,
+      '--model',
+      agentModel(ctx),
+      '--dangerously-skip-permissions',
+    ],
   };
 }
 
@@ -88,7 +106,12 @@ export async function runRegenerateLessonAgent(
   input: RegenerateLessonAgentInput,
 ): Promise<RegenerateLessonResponse> {
   const spawnFn = depsOverride?.spawn ?? defaultSpawn;
-  const { command, args } = defaultRegenerateLessonCommand();
+  // The course schema is already in the input — read the quiz tag from it
+  // and only touch the filesystem for the research/sources existence probes.
+  const ctx = readCourseAgentContext(input.courseSchema.slug, {
+    knownIsQuizOnly: input.courseSchema.tags?.includes('quiz') ?? false,
+  });
+  const { command, args } = defaultRegenerateLessonCommand(ctx);
 
   let child: ChildProcess;
   try {

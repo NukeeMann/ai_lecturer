@@ -1,0 +1,249 @@
+{
+  "schemaVersion": 1,
+  "slug": "inference-i-eksport-modelu",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m4",
+  "title": "Inference i eksport modelu",
+  "eyebrow": "TRENING I WDROŻENIE",
+  "description": "Uruchom wnioskowanie na obrazach w trybie predict, a następnie wyeksportuj wytrenowany model do ONNX/TensorRT i poznaj podstawy szybkiego wdrożenia inferencji.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "predict-mode",
+      "title": "Predict mode: od wag do wykryć",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/predict/",
+          "title": "Ultralytics — Predict mode (inference on images/video)",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Trening za tobą — masz plik `best.pt` z wagami detektora pojazdów/statków. Czas go **uruchomić**. W Ultralytics inferencja to znowu dwie linijki:\n\n```python\nfrom ultralytics import YOLO\n\nmodel = YOLO(\"runs/detect/train/weights/best.pt\")\nresults = model.predict(\"port.jpg\", conf=0.25, iou=0.7, imgsz=640)\n```\n\nPod spodem `predict` przeprowadza **dokładnie ten sam łańcuch**, który rozłożyliśmy w module o mechanice modelu — tyle że bez liczenia straty:\n\n![Pięcioetapowy diagram przepływu inferencji YOLO: obraz wejściowy H×W×3 → letterbox do 640×640 z normalizacją → forward pass sieci YOLO11 → dekodowanie z progiem confidence i NMS po IoU → obiekt Results z boxami, confidence i klasami przeskalowanymi z powrotem do współrzędnych oryginalnego obrazu](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/inference-pipeline-predict.png)\n\nNajważniejsze są **dwa progi**, które sterują tym, co wyjdzie z modelu:\n\n- **`conf`** — próg *confidence*. Odrzuca predykcje, których wynik (objectness × prawdopodobieństwo klasy) jest za niski, **zanim** zadziała NMS. Niżej = więcej wykryć (i więcej fałszywych alarmów).\n- **`iou`** — próg IoU dla **NMS**. Decyduje, jak agresywnie scalane są nakładające się boxy *tego samego* obiektu. Wyżej = mniej łączenia (ryzyko duplikatów), niżej = mocniejsze tłumienie.\n\nWynik to obiekt `Results`: `results[0].boxes.xyxy` (rogi boxów), `.conf` i `.cls`. Co istotne, Ultralytics **sam odwraca letterbox** — współrzędne boxów dostajesz już w pikselach oryginalnego obrazu, nie w siatce 640×640. W następnym ćwiczeniu zaimplementujesz dokładnie to przekształcenie."
+      }
+    },
+    {
+      "id": "check-conf-vs-iou",
+      "title": "Szybki sprawdzian: conf vs iou",
+      "type": "quiz",
+      "data": {
+        "question": "Twój detektor zwraca po dwa nakładające się boxy na każdym statku (duplikaty), ale poza tym wykrywa wszystko poprawnie. Który próg w predict() zmienić, żeby usunąć duplikaty?",
+        "options": [
+          "Podnieść próg conf, bo to on filtruje nadmiarowe predykcje",
+          "Obniżyć próg iou w NMS, żeby mocniej scalał nakładające się boxy tego samego obiektu",
+          "To ten sam parametr — conf i iou sterują tym samym filtrowaniem",
+          "Zwiększyć imgsz, bo większe wejście automatycznie usuwa duplikaty"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "Duplikaty to objaw zbyt łagodnego NMS, a tym steruje próg iou. Obniżenie iou sprawia, że NMS uznaje dwa silnie nakładające się boxy za ten sam obiekt i zostawia tylko jeden. Próg conf (odp. 1) filtruje słabe predykcje po wyniku, a nie nakładanie — podniesienie go mogłoby przypadkiem wyciąć poprawne wykrycia, nie rozwiązując problemu duplikatów. conf i iou to dwa niezależne pokrętła (odp. 3 błędna), a imgsz (odp. 4) zmienia rozdzielczość wejścia, nie logikę NMS.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "exercise-unletterbox",
+      "title": "Odwróć letterbox: boxy z siatki 640 do pikseli oryginału",
+      "description": "Czysta funkcja liczbowa (sam Python) — odtwórz przeliczenie, które Ultralytics robi za ciebie po inferencji.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Sieć widzi obraz w letterboxie 640×640, więc surowe boxy są w tej siatce. `predict` przelicza je z powrotem do pikseli **oryginalnego** obrazu. Zaimplementuj to.\n\nNapisz `unletterbox_box(box, orig_w, orig_h, size=640)`:\n\n1. Skala `r = min(size/orig_w, size/orig_h)`, nowy rozmiar `round(orig_w*r) × round(orig_h*r)`, a padding wyśrodkowany: `pad_x = (size - new_w)/2`, `pad_y = (size - new_h)/2`.\n2. Dla każdego rogu `box=(x1,y1,x2,y2)` (w siatce 640) odejmij padding i podziel przez `r`.\n3. **Przytnij** wynik do `[0, orig_w]` (x) i `[0, orig_h]` (y) i zwróć krotkę `(x1,y1,x2,y2)`.\n\n```\n# obraz 1280x720 -> r=0.5, pad_x=0, pad_y=140\nunletterbox_box((50, 190, 150, 265), 1280, 720, 640) == (100.0, 100.0, 300.0, 250.0)\n```",
+        "starterCode": "def unletterbox_box(box, orig_w, orig_h, size=640):\n    # box: (x1, y1, x2, y2) w siatce letterboxa size x size\n    # orig_w, orig_h: wymiary oryginalnego obrazu w pikselach\n    # TODO 1: policz skale r = min(size/orig_w, size/orig_h)\n    # TODO 2: policz new_w, new_h (round) oraz pad_x, pad_y (wysrodkowany)\n    # TODO 3: dla kazdego rogu odejmij padding i podziel przez r\n    # TODO 4: przytnij do [0, orig_w] / [0, orig_h] i zwroc krotke\n    return box\n",
+        "tests": [
+          {
+            "name": "maps_box_back_to_original_pixels",
+            "body": "out = unletterbox_box((50, 190, 150, 265), 1280, 720, 640)\nassert all(abs(a - b) < 1e-6 for a, b in zip(out, (100.0, 100.0, 300.0, 250.0)))",
+            "hidden": false
+          },
+          {
+            "name": "square_image_is_identity",
+            "body": "out = unletterbox_box((10, 20, 30, 40), 640, 640, 640)\nassert all(abs(a - b) < 1e-6 for a, b in zip(out, (10.0, 20.0, 30.0, 40.0)))",
+            "hidden": true
+          },
+          {
+            "name": "clips_box_to_image_bounds",
+            "body": "out = unletterbox_box((-10, 140, 650, 510), 1280, 720, 640)\nassert all(abs(a - b) < 1e-6 for a, b in zip(out, (0.0, 0.0, 1280.0, 720.0)))",
+            "hidden": true
+          },
+          {
+            "name": "full_padded_box_covers_whole_image",
+            "body": "out = unletterbox_box((0, 140, 640, 500), 1280, 720, 640)\nassert all(abs(a - b) < 1e-6 for a, b in zip(out, (0.0, 0.0, 1280.0, 720.0)))",
+            "hidden": true
+          }
+        ],
+        "solution": "def unletterbox_box(box, orig_w, orig_h, size=640):\n    r = min(size / orig_w, size / orig_h)\n    new_w, new_h = round(orig_w * r), round(orig_h * r)\n    pad_x = (size - new_w) / 2\n    pad_y = (size - new_h) / 2\n    x1, y1, x2, y2 = box\n    x1 = (x1 - pad_x) / r\n    y1 = (y1 - pad_y) / r\n    x2 = (x2 - pad_x) / r\n    y2 = (y2 - pad_y) / r\n\n    def clip(v, hi):\n        return min(max(v, 0.0), hi)\n\n    return (clip(x1, orig_w), clip(y1, orig_h), clip(x2, orig_w), clip(y2, orig_h))\n"
+      }
+    },
+    {
+      "id": "eksport-onnx-tensorrt",
+      "title": "Eksport: ONNX, TensorRT i wdrożenie",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/export/",
+          "title": "Ultralytics — Export mode (ONNX, TensorRT, …)",
+          "kind": "article"
+        },
+        {
+          "url": "https://onnx.ai/onnx/",
+          "title": "ONNX — Open Neural Network Exchange (documentation)",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.nvidia.com/deeplearning/tensorrt/latest/index.html",
+          "title": "NVIDIA TensorRT documentation",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Plik `.pt` świetnie nadaje się do dalszego treningu, ale na produkcji rzadko chcesz ciągnąć całego PyTorcha. **Eksport** zamienia model na lżejszy, przenośny lub mocno zoptymalizowany format. W Ultralytics to jedna linijka:\n\n```python\nmodel.export(format=\"onnx\")        # -> best.onnx\nmodel.export(format=\"engine\", half=True)  # -> best.engine (TensorRT, FP16)\n```\n\n![Diagram eksportu: z best.pt (PyTorch) strzałka model.export() prowadzi do ONNX (.onnx) jako formatu wymiany niezależnego od frameworka; z ONNX dwie ścieżki — do ONNX Runtime (CPU/GPU, przenośność) oraz do TensorRT (.engine, NVIDIA GPU, maksymalna prędkość, FP16); obie kończą się blokiem „wdrożenie inferencji”](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/export-pipeline-onnx-tensorrt.png)\n\nDwa cele eksportu, które warto znać:\n\n> **ONNX** (Open Neural Network Exchange) to *format wymiany* — opis grafu sieci niezależny od frameworka. Wytrenowany w PyTorchu model uruchomisz potem w ONNX Runtime na CPU lub GPU, w C++, na serwerze albo na brzegu sieci, bez instalowania PyTorcha.\n\n> **TensorRT** to silnik inferencji NVIDIA. Bierze graf (np. z ONNX) i **kompiluje** go pod konkretne GPU: zrasta warstwy (layer fusion), dobiera najszybsze kernele i — co najważniejsze — pozwala policzyć w **FP16** (`half=True`) lub INT8. Efekt to często kilkukrotnie niższe opóźnienie niż surowy `.pt`, ale `.engine` jest *przywiązany* do danej karty i wersji TensorRT.\n\nReguła kciuka: **ONNX** gdy zależy ci na przenośności, **TensorRT** gdy walczysz o maksymalny FPS na GPU NVIDIA. Po eksporcie ten sam interfejs predict działa dalej — `YOLO(\"best.onnx\").predict(...)` — więc kod inferencji się nie zmienia."
+      }
+    },
+    {
+      "id": "tabela-formatow",
+      "title": "Formaty eksportu — szybki przegląd",
+      "description": "Wybierz format pod cel wdrożenia: przenośność, CPU, brzeg sieci czy maksymalny FPS na GPU NVIDIA.",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/export/",
+          "title": "Ultralytics — Export mode (ONNX, TensorRT, …)",
+          "kind": "article"
+        }
+      ],
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "format",
+            "label": "format=",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "plik",
+            "label": "Plik",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          },
+          {
+            "key": "sprzet",
+            "label": "Sprzęt / runtime",
+            "type": "string",
+            "sortable": true,
+            "filterable": true
+          },
+          {
+            "key": "kiedy",
+            "label": "Kiedy wybrać",
+            "type": "string",
+            "sortable": false,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "format": "torchscript",
+            "plik": ".torchscript",
+            "sprzet": "CPU / GPU (libtorch)",
+            "kiedy": "Wdrożenie w C++ bez Pythona, blisko ekosystemu PyTorch"
+          },
+          {
+            "format": "onnx",
+            "plik": ".onnx",
+            "sprzet": "CPU / GPU (ONNX Runtime)",
+            "kiedy": "Przenośność między frameworkami i platformami — domyślny wybór"
+          },
+          {
+            "format": "engine",
+            "plik": ".engine",
+            "sprzet": "GPU NVIDIA (TensorRT)",
+            "kiedy": "Maksymalny FPS na karcie NVIDIA, FP16/INT8"
+          },
+          {
+            "format": "openvino",
+            "plik": "_openvino_model/",
+            "sprzet": "CPU/iGPU Intel",
+            "kiedy": "Szybka inferencja na sprzęcie Intel (serwer, brzeg sieci)"
+          },
+          {
+            "format": "coreml",
+            "plik": ".mlpackage",
+            "sprzet": "Apple (Neural Engine)",
+            "kiedy": "Wdrożenie na iOS/macOS"
+          },
+          {
+            "format": "tflite",
+            "plik": ".tflite",
+            "sprzet": "Mobile / edge (TFLite)",
+            "kiedy": "Android i urządzenia wbudowane o ograniczonych zasobach"
+          }
+        ],
+        "initialSort": {
+          "key": "format",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    },
+    {
+      "id": "wykres-latencji",
+      "title": "Ten sam model, różne formaty: opóźnienie inferencji",
+      "description": "Liczby są ilustracyjne (zależą od GPU i wersji bibliotek) — chodzi o rząd wielkości i kierunek przyspieszenia.",
+      "sources": [
+        {
+          "url": "https://docs.nvidia.com/deeplearning/tensorrt/latest/index.html",
+          "title": "NVIDIA TensorRT documentation",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.ultralytics.com/modes/export/",
+          "title": "Ultralytics — Export mode (ONNX, TensorRT, …)",
+          "kind": "article"
+        }
+      ],
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/inference-i-eksport-modelu-1.png",
+        "alt": "Wykres słupkowy opóźnienia inferencji YOLO11n na jeden obraz 640×640 dla trzech formatów: PyTorch (.pt) ~12.0 ms (~83 FPS), ONNX Runtime ~8.5 ms (~118 FPS), TensorRT FP16 ~3.2 ms (~312 FPS). Oś Y to opóźnienie w milisekundach (mniej = lepiej), oś X to format/runtime modelu; nad każdym słupkiem podpisano milisekundy i przybliżone FPS.",
+        "caption": "Rys. 1. Przykładowe opóźnienie inferencji tego samego modelu w trzech formatach — eksport do ONNX, a zwłaszcza TensorRT FP16, znacząco podnosi przepustowość względem surowego .pt.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Przykladowe (ilustracyjne) opoznienia inferencji YOLO11n na jeden obraz 640x640.\n# Konkretne liczby zaleza od GPU/CPU i wersji bibliotek - to rzad wielkosci, nie benchmark.\nformats = [\"PyTorch\\n(.pt)\", \"ONNX\\nRuntime\", \"TensorRT\\nFP16\"]\nlatency_ms = [12.0, 8.5, 3.2]\ncolors = [\"#9FA8DA\", \"#5C6BC0\", \"#3F51B5\"]\n\nfps = [1000.0 / ms for ms in latency_ms]\n\nplt.figure(figsize=(7.2, 4.4))\nbars = plt.bar(formats, latency_ms, color=colors, width=0.6)\nfor bar, ms, f in zip(bars, latency_ms, fps):\n    plt.text(bar.get_x() + bar.get_width() / 2, ms + 0.25,\n             f\"{ms:.1f} ms\\n~{f:.0f} FPS\", ha=\"center\", va=\"bottom\", fontsize=9)\nplt.ylabel(\"Opóźnienie inferencji [ms] (mniej = lepiej)\")\nplt.xlabel(\"Format / runtime tego samego modelu\")\nplt.title(\"Inferencja YOLO11n: ten sam model, różne formaty (przykład)\")\nplt.ylim(0, max(latency_ms) * 1.3)\nplt.grid(True, axis=\"y\", alpha=0.3)\nplt.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/inference-i-eksport-modelu-1.png\",\n    dpi=110,\n    bbox_inches=\"tight\",\n)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "sandbox-fps",
+      "title": "Policz FPS i przyspieszenie",
+      "description": "Zamień opóźnienie [ms] na FPS i przyspieszenie względem PyTorcha — i pobaw się własnymi liczbami.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Przykladowe opoznienia inferencji (ms) dla YOLO11n, obraz 640x640.\n# Podstaw wlasne liczby (np. zmierzone results[0].speed po predict).\nlatency_ms = {\n    \"PyTorch (.pt)\": 12.0,\n    \"ONNX Runtime\": 8.5,\n    \"TensorRT FP16\": 3.2,\n}\n\nbaseline = latency_ms[\"PyTorch (.pt)\"]\nfor name, ms in latency_ms.items():\n    fps = 1000.0 / ms\n    speedup = baseline / ms\n    print(f\"{name:16s}: {ms:5.1f} ms  ->  {fps:6.1f} FPS  ({speedup:.2f}x)\")\n\n# Sprobuj: dodaj format OpenVINO, policz FPS dla batcha 8 (podziel laczny czas)\n# albo sprawdz, jakie opoznienie daje docelowo 30 FPS (ms = 1000/30).\n",
+        "encouragement": "Podstaw własne opóźnienia z pola speed obiektu Results i sprawdź, który format realnie dowozi twój docelowy FPS."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/modes/predict/",
+      "title": "Ultralytics — Predict mode (inference on images/video)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/modes/export/",
+      "title": "Ultralytics — Export mode (ONNX, TensorRT, …)",
+      "kind": "article"
+    },
+    {
+      "url": "https://onnx.ai/onnx/",
+      "title": "ONNX — Open Neural Network Exchange (documentation)",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.nvidia.com/deeplearning/tensorrt/latest/index.html",
+      "title": "NVIDIA TensorRT documentation",
+      "kind": "article"
+    }
+  ]
+}

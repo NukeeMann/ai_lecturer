@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "slug": "dlaczego-yolo-patrzy-tylko-raz",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m1",
+  "title": "Dlaczego YOLO „patrzy tylko raz”",
+  "eyebrow": "FUNDAMENTY DETEKCJI",
+  "description": "Intuicja detektora single-shot: jeden przebieg w przód zamiast osobnego etapu propozycji regionów — źródło przewagi prędkości nad detektorami dwuetapowymi (Faster R-CNN), z odniesieniem do RT-DETR.",
+  "estimatedMinutes": 12,
+  "sections": [
+    {
+      "id": "co-znaczy-look-once",
+      "title": "Co naprawdę znaczy „patrzy tylko raz”",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1506.02640",
+          "title": "You Only Look Once: Unified, Real-Time Object Detection",
+          "kind": "paper",
+          "author": "Joseph Redmon, Santosh Divvala, Ross Girshick, Ali Farhadi",
+          "year": 2016
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Nazwa **YOLO** (*You Only Look Once*) opisuje jedno: **architekturę przepływu**, a nie liczbę przewidywanych obiektów. „Once” odnosi się do **jednego przebiegu w przód** (single forward pass) przez sieć — obraz wchodzi raz i od razu wychodzi z niego komplet predykcji.\n\nKontrast jest najczytelniejszy względem detektorów **dwuetapowych**, takich jak Faster R-CNN:\n\n- **Dwuetapowy:** najpierw osobna sieć (RPN) proponuje setki kandydujących regionów, a potem druga głowica klasyfikuje i poprawia *każdy* z nich. To dwa etapy i wielokrotne przetwarzanie cech.\n- **Jednoetapowy (YOLO):** backbone → neck → głowica wykonują się **raz**, a gęsta siatka predykcji powstaje w jednym przejściu. Brak osobnego etapu propozycji regionów.\n\n![Porównanie dwóch potoków detekcji. U góry — dwuetapowy Faster R-CNN: Obraz → Backbone → RPN (propozycje) → Głowica RoI klasyfikująca N regionów w pętli. U dołu — jednoetapowy YOLO: Obraz → Backbone → Neck → gęsta głowica zwracająca boxy i klasy dla całej siatki naraz w jednym przebiegu](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/dwuetapowy-vs-jednoetapowy-pipeline.png)\n\n> **Uwaga na pułapkę:** „patrzy tylko raz” **nie** znaczy „jedna konwolucja” ani „jeden box na obraz”. YOLO nadal emituje **tysiące** kandydujących predykcji — po jednej na każdą komórkę wieloskalowej siatki. Wszystkie powstają jednak w *tym samym* przebiegu; dopiero próg confidence i NMS redukują je później do garstki finalnych wykryć. „Raz” dotyczy **przebiegu**, nie liczby predykcji."
+      }
+    },
+    {
+      "id": "ile-predykcji-w-jednym-przebiegu",
+      "title": "Jeden przebieg, tysiące kandydatów",
+      "description": "Ile predykcji powstaje w pojedynczym przebiegu 640×640 — po jednej na komórkę siatki, na trzech skalach map cech.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/dlaczego-yolo-patrzy-tylko-raz-1.png",
+        "alt": "Wykres słupkowy liczby predykcji na trzech skalach map cech dla wejścia 640×640. Stride 8 (siatka 80×80) daje 6400 komórek, stride 16 (40×40) daje 1600, stride 32 (20×20) daje 400. Suma to 8400 kandydatów w jednym przebiegu.",
+        "caption": "Rys. 1. Pojedynczy przebieg w przód dla obrazu 640×640 emituje 8400 kandydujących predykcji rozłożonych na trzech skalach (stride 8/16/32). „Jedno spojrzenie” to jeden przebieg, a nie jedna predykcja.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Single 640x640 forward pass through YOLO11 emits predictions on three\n# feature-map scales (strides 8, 16, 32). The number of grid cells per scale\n# is (640 / stride) ** 2; summed across scales this is the dense candidate set.\ninput_size = 640\nstrides = [8, 16, 32]\ngrid_sides = [input_size // s for s in strides]\ncells = [side * side for side in grid_sides]\ntotal = sum(cells)\nlabels = [f\"stride {s}\\n{side}x{side}\" for s, side in zip(strides, grid_sides)]\n\nfig, ax = plt.subplots(figsize=(6.4, 4.2))\nbars = ax.bar(labels, cells, color=[\"#4f6df5\", \"#6f86f7\", \"#90a0f9\"], edgecolor=\"#28306b\")\nfor bar, c in zip(bars, cells):\n    ax.text(bar.get_x() + bar.get_width() / 2, c + 80, f\"{c}\",\n            ha=\"center\", va=\"bottom\", fontsize=10)\n\nax.set_xlabel(\"Skala mapy cech (stride)\")\nax.set_ylabel(\"Liczba predykcji (komórek siatki)\")\nax.set_title(f\"Jeden przebieg 640x640 -> {total} kandydatow\")\nax.set_ylim(0, max(cells) * 1.18)\nax.grid(True, axis=\"y\", alpha=0.3)\nfig.tight_layout()\nfig.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/dlaczego-yolo-patrzy-tylko-raz-1.png\",\n    dpi=110, bbox_inches=\"tight\",\n)\nprint(\"total\", total, \"cells\", cells)",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "policz-predykcje",
+      "title": "Policz kandydatów z jednego przebiegu",
+      "description": "Zlicz, ile predykcji emituje pojedynczy przebieg YOLO na wieloskalowej siatce — bez treningu, czysta arytmetyka siatki.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "YOLO emituje jedną predykcję na każdą komórkę mapy cech, na kilku skalach o danych `strides`. Dla kwadratowego wejścia o boku `input_size` skala o danym `stride` ma siatkę `(input_size // stride)` na bok.\n\nNapisz `count_grid_predictions(input_size, strides)`, które zwraca **łączną liczbę komórek siatki** (czyli kandydujących predykcji) ze wszystkich skal w **jednym** przebiegu.\n\n```\ncount_grid_predictions(640, [8, 16, 32]) == 6400 + 1600 + 400 == 8400\n```",
+        "starterCode": "def count_grid_predictions(input_size, strides):\n    # input_size: int (bok kwadratowego wejscia, np. 640)\n    # strides: list[int] (np. [8, 16, 32])\n    # TODO: dla kazdej skali siatka ma bok (input_size // stride);\n    # zsumuj bok**2 po wszystkich skalach i zwroc laczna liczbe komorek.\n    return 0\n",
+        "tests": [
+          {
+            "name": "default_yolo_640_three_scales",
+            "body": "assert count_grid_predictions(640, [8, 16, 32]) == 8400",
+            "hidden": false
+          },
+          {
+            "name": "halved_input_scales_quadratically",
+            "body": "assert count_grid_predictions(320, [8, 16, 32]) == 2100",
+            "hidden": true
+          },
+          {
+            "name": "single_scale_only",
+            "body": "assert count_grid_predictions(640, [32]) == 400",
+            "hidden": true
+          },
+          {
+            "name": "uses_floor_division",
+            "body": "assert count_grid_predictions(100, [32]) == 9",
+            "hidden": true
+          }
+        ],
+        "solution": "def count_grid_predictions(input_size, strides):\n    return sum((input_size // stride) ** 2 for stride in strides)\n"
+      }
+    },
+    {
+      "id": "check-look-once",
+      "title": "Szybki sprawdzian: co znaczy „look once”?",
+      "type": "quiz",
+      "data": {
+        "question": "Co dokładnie oznacza, że YOLO „patrzy tylko raz” (you only look once)?",
+        "options": [
+          "Sieć wykonuje dokładnie jedną operację konwolucji na cały obraz",
+          "Obraz przechodzi przez sieć w jednym przebiegu w przód, bez osobnego etapu proponowania regionów",
+          "Model zwraca dokładnie jeden bounding box na obraz",
+          "Każdy obraz jest oglądany tylko raz w całym procesie treningu"
+        ],
+        "correct": [
+          1
+        ],
+        "explanation": "„Once” odnosi się do pojedynczego przebiegu w przód: backbone → neck → head wykonują się raz i od razu produkują gęstą siatkę predykcji, bez osobnego etapu propozycji regionów (jak RPN w Faster R-CNN). To nie jest „jedna konwolucja” (sieć ma wiele warstw) ani „jeden box na obraz” (jeden przebieg emituje tysiące kandydatów — w przykładzie z lekcji 8400 — które dopiero próg confidence i NMS redukują do finalnych wykryć). Nie dotyczy też treningu.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "dlaczego-szybsze",
+      "title": "Dlaczego jeden przebieg jest szybszy",
+      "sources": [
+        {
+          "url": "https://arxiv.org/abs/1506.01497",
+          "title": "Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks",
+          "kind": "paper",
+          "author": "Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun",
+          "year": 2015
+        },
+        {
+          "url": "https://arxiv.org/abs/2304.08069",
+          "title": "DETRs Beat YOLOs on Real-time Object Detection (RT-DETR)",
+          "kind": "paper",
+          "author": "Yian Zhao, Wenyu Lv, Shangliang Xu, Jinman Wei, Guanzhong Wang, Qingqing Dang, Yi Liu, Jie Chen",
+          "year": 2023
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Skąd bierze się przewaga prędkości jednoetapowej detekcji? Z **braku pętli po regionach**.\n\nW detektorze dwuetapowym koszt rośnie wraz z liczbą propozycji: RPN zwraca setki regionów, a głowica RoI musi przetworzyć **każdy z nich osobno**. Im więcej propozycji, tym dłuższe wnioskowanie — i tym mniej przewidywalna latencja.\n\n![Schemat kosztu obliczeń. Wspólny Backbone (uruchamiany raz) rozgałęzia się: w wariancie dwuetapowym strzałki prowadzą do wielu osobnych bloków „Klasyfikacja regionu” powtarzanych N razy; w wariancie jednoetapowym jedna strzałka prowadzi do pojedynczego bloku „Gęsta głowica (1x)” liczącego wszystkie predykcje naraz](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/koszt-glowicy-per-region.png)\n\nYOLO współdzieli całe obliczenie: jeden przebieg konwolucji wytwarza komplet predykcji dla **całej** siatki jednocześnie. Latencja jest w przybliżeniu **stała** względem liczby obiektów na obrazie — dlatego YOLO11 w wariantach `n`/`s` nadaje się do pracy w czasie rzeczywistym na skromnym, lokalnym GPU.\n\n**A co z dokładnością?** Historyczny kompromis „jednoetapowe = szybsze, ale słabsze” w dużej mierze zniknął. Nowoczesne detektory jednoetapowe (YOLOv8/YOLO11) dorównują dwuetapowym dokładnością, będąc znacznie szybsze.\n\nWarto też znać punkt odniesienia: **RT-DETR** to detektor jednoetapowy oparty na transformerze, który dodatkowo **eliminuje NMS** — przewiduje zbiór wykryć od razu (set prediction), bez ręcznego krok post-processingu. Pokazuje, że „jeden przebieg” nie jest własnością wyłącznie siatkowego YOLO — to ogólna recepta na szybką detekcję."
+      }
+    },
+    {
+      "id": "porownanie-detektorow",
+      "title": "Jedno- vs dwuetapowe vs RT-DETR",
+      "description": "Posortuj kolumny, by porównać liczbę etapów, etap propozycji regionów i zależność od NMS w trzech rodzinach detektorów.",
+      "type": "dataTable",
+      "data": {
+        "columns": [
+          {
+            "key": "model",
+            "label": "Detektor",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "etapy",
+            "label": "Etapy",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "rpn",
+            "label": "Osobny etap propozycji",
+            "type": "boolean",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "nms",
+            "label": "Wymaga NMS",
+            "type": "boolean",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "rdzen",
+            "label": "Rdzeń",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          },
+          {
+            "key": "predkosc",
+            "label": "Względna prędkość",
+            "type": "string",
+            "sortable": true,
+            "filterable": false
+          }
+        ],
+        "rows": [
+          {
+            "model": "Faster R-CNN",
+            "etapy": "Dwa",
+            "rpn": true,
+            "nms": true,
+            "rdzen": "CNN, anchor-based",
+            "predkosc": "Niższa"
+          },
+          {
+            "model": "YOLO11 (n/s)",
+            "etapy": "Jeden",
+            "rpn": false,
+            "nms": true,
+            "rdzen": "CNN, anchor-free",
+            "predkosc": "Bardzo wysoka"
+          },
+          {
+            "model": "RT-DETR",
+            "etapy": "Jeden",
+            "rpn": false,
+            "nms": false,
+            "rdzen": "Transformer (DETR)",
+            "predkosc": "Wysoka"
+          }
+        ],
+        "initialSort": {
+          "key": "etapy",
+          "dir": "asc"
+        },
+        "pageSize": 25
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://arxiv.org/abs/1506.02640",
+      "title": "You Only Look Once: Unified, Real-Time Object Detection",
+      "kind": "paper",
+      "author": "Joseph Redmon, Santosh Divvala, Ross Girshick, Ali Farhadi",
+      "year": 2016
+    },
+    {
+      "url": "https://arxiv.org/abs/1506.01497",
+      "title": "Faster R-CNN: Towards Real-Time Object Detection with Region Proposal Networks",
+      "kind": "paper",
+      "author": "Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun",
+      "year": 2015
+    },
+    {
+      "url": "https://arxiv.org/abs/2304.08069",
+      "title": "DETRs Beat YOLOs on Real-time Object Detection (RT-DETR)",
+      "kind": "paper",
+      "author": "Yian Zhao, Wenyu Lv, Shangliang Xu, Jinman Wei, Guanzhong Wang, Qingqing Dang, Yi Liu, Jie Chen",
+      "year": 2023
+    },
+    {
+      "url": "https://docs.ultralytics.com/tasks/detect/",
+      "title": "Ultralytics — Object Detection task",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Object_detection",
+      "title": "Object detection — Wikipedia",
+      "kind": "article"
+    }
+  ]
+}

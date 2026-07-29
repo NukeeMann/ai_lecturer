@@ -1,0 +1,3014 @@
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/research_course/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+I'll read the widget reference and the schema files before writing the research artefacts.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/courseSpec.ts)
+← 1	import { z } from 'zod';
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+← Exit code 2
+[system thinking_tokens]
+[system thinking_tokens]
+The spec parses cleanly against `CourseSpecSchema`, slug is safe, no `sources/` folder. There's a `yolo-kurs-do-wklejenia.txt` in the repo root — let me check whether it's relevant source material for grounding.
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/yolo-kurs-do-wklejenia.txt 2>&1; echo…)
+← 76 /home/nukeemann/projects/ai_lecturer/yolo-kurs-do-wklejenia.txt
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Input validates cleanly, no uploaded source materials (the `yolo-kurs-do-wklejenia.txt` is just the wizard-paste mirror of the spec — nothing new to ground on). I don't need Copernicus/SAR imagery for a text research pass. Writing the two artefacts now.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/research.md (file state is current in yo…
+Now the bibliography. I'll provide ≥3 stable sources per lesson for all 13 draft lessons, plus course-wide references (including RT-DETR for the comparison lesson).
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/sources.md (file state is current in you…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both artefacts written. Let me confirm the output is scoped correctly (no `course.json`, nothing under `scripts/ralph/`).
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer; echo "--- course dir ---"; ls -1 course…)
+← --- course dir ---
+Done. The `research_course` skill ran end-to-end against the YOLO course spec.
+## What I did
+1. **Validated input** — `course-spec.json` parses cleanly against `CourseSpecSchema` (required `topic`, `durationTarget: standard`, `draftStructure` all present; `level: advanced`, `theoryPracticeRatio: 0.5`). Slug is safe (`[a-z0-9-]`). No `sources/` folder and no uploaded materials named in the prompt — the repo-root `yolo-kurs-do-wklejenia.txt` is just the wizard-paste mirror of the spec, so nothing new to ground on. I did **not** need Copernicus/SAR imagery for a text research pass.
+2. **Wrote `research.md`** — all six template sections (Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation), tuned to *advanced / standard / 0.5 ratio* and the clarifications (vehicle/ship detector, small dataset, local GPU, speed-over-accuracy, API-level Ultralytics usage, images-only, one RT-DETR comparison lesson, fast pace). The Notes section flags the key runtime constraint — in-widget code must be CPU-only/fast (no `model.train()` in a `code` widget; real GPU training stays in narrative + figures) — and maps each topic to the right widget (IoU/NMS/letterbox/coordinate-conversion as `code`, threshold/IoU intuition as `ParametricExplorer`, PR/mAP curves as `PlotImage`, version/format tables as `DataTable`, component-role matching as `DragMatch`; noted Demo's `gauss` is irrelevant here).
+3. **Wrote `sources.md`** — course-wide references plus **4 stable sources per lesson** for all 13 draft lessons. Every entry carries `kind`; every `paper`/`book` has `author` + `year`. Sources are Ultralytics official docs/GitHub, arXiv/DOI primary papers (YOLO, Faster R-CNN, FPN, PANet, FCOS, YOLOX, Soft-NMS, CIoU, DFL, TOOD, Focal Loss, COCO, VOC, YOLOv4/MixUp/Copy-Paste, RT-DETR), Wikipedia, and official PyTorch/OpenCV/ONNX/TensorRT docs. No medium/towardsdatascience/blogs.
+**Verified:** `course.json` was **not** written (belongs to `design_course`), and `scripts/ralph/` has zero changes. The only new files are `research.md` and `sources.md` in the course directory.
+[result success (287.9s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md and all the required input files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/design_course/SKILL.md)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/course.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+All inputs read. Now let me check for any user-uploaded source materials and validate the course-spec against its schema.
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/courseSpec.ts)
+← 1	import { z } from 'zod';
+← total 92
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+No quiz tag → full course mode. No uploaded sources. Full course spec parses against the schema cleanly. Let me check the exact `slugify()` implementation so my lesson slugs match what `generate_lesson` will look up.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/server/paths.ts)
+← 1	import path from 'node:path';
+[system thinking_tokens]
+[system thinking_tokens]
+`slugify` uses NFKD + combining-mark strip, but Polish `ł` doesn't decompose under NFKD (it gets dropped entirely). Let me compute the exact slugs programmatically so they match what `generate_lesson` resolves.
+→ Bash(command: node -e '
+function slugify(input){return input.normalize("NFKD").replace(/\p{M}/…)
+← detekcja-vs-klasyfikacja-vs-segmentacja            <= Detekcja vs klasyfikacja vs segmentacja
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All 13 slugs are unique. I'll keep the 4-module / 13-lesson shape: every lesson maps to a strong (≥4-entry) source block, the summed wall-clock is ~176 min (≈2.9 h, inside the `standard` 1–3 h band), and the modular arc matches `research.md`'s suggested ordering. The learner's requested RT-DETR/two-stage contrast (q9) folds into the existing "Dlaczego YOLO patrzy tylko raz" lesson, which already carries the Faster R-CNN source plus the course-wide RT-DETR refs — so no new, unsourced lesson is invented. I'm keeping all lesson titles identical to `course-spec.draftStructure`, so **Step 2 (sources.md heading sync) is a no-op**.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/course.json (file state is current in yo…
+Now validate the written `course.json` against `CourseSchema`:
+→ Bash(command: npx tsx -e "
+import { CourseSchema } from './src/lib/schemas/course';
+import fs …)
+← OK CourseSchema.parse passed
+[system thinking_tokens]
+[system thinking_tokens]
+Validation passes. Let me confirm every lesson title still resolves to a `## ` heading in `sources.md` (i.e. the rename step is genuinely a no-op) and that no files outside the course dir changed.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+slug=detekcja-obiektow-z-yolo-od-mechani…)
+← All 13 lesson titles resolve to a sources.md heading (Step 2 no-op confirmed)
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The `design_course` skill executed end-to-end.
+## Summary
+**Inputs read:** `course-spec.json` (parses cleanly against `CourseSpecSchema`), `research.md`, `sources.md`. No `quiz` tag → full-course mode. No `sources/` upload subdir, so no user materials to incorporate.
+**Architect decisions:**
+- **Kept the 4-module / 13-lesson shape** from `draftStructure`. Although that's one over the soft `standard` cap (8–12), every lesson maps to a strong source block (≥4 entries each — none weak enough to merge/drop), and the summed wall-clock is **176 min (~2.9 h)**, inside the `standard` 1–3 h band. Module order follows `research.md`'s suggested-ordering graph: fundamentals → input/output/loss mechanics → data pipeline → train/eval/export.
+- **RT-DETR / two-stage contrast (learner's q9 request)** folded into the existing *"Dlaczego YOLO „patrzy tylko raz"* lesson rather than spun into a new, unsourced lesson — that lesson already carries the Faster R-CNN source plus the course-wide RT-DETR refs. Reflected in its summary.
+- **Refinements:** added 1-line module summaries; tightened the 13 lesson summaries to ~100–200 chars, baking in the key misconceptions (normalized `cx,cy,w,h`, mAP@0.5 vs 0.5:0.95, `close_mosaic`, anchor-free) so downstream `generate_lesson` has clear scope.
+- **Branding:** `accentColor: "indigo"`, `icon: "scan-search"`.
+**Output:** `/courses/<slug>/course.json` written and **validates against `CourseSchema`** (4 modules, 13 lessons, no duplicate slugs, `slug` matches dir, `schemaVersion: 1`).
+**Step 2 (sources.md heading sync):** **no-op** — all 13 lesson titles were kept identical to `course-spec.draftStructure`, and a programmatic check confirms each resolves to a `## ` heading in `sources.md`. Nothing edited there.
+**Scope hygiene:** the only new artifact is `course.json`; no tracked file modified, and `scripts/ralph/` is untouched.
+The webapp's generation backend can now walk `modules.flatMap(m => m.lessons)` and invoke `generate_lesson` once per lesson.
+[result success (164.1s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the input files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+Let me read the rest of SKILL.md and the input files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+Now the research and sources files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the widget schemas I plan to use.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Image/schema.ts)
+← File does not exist. Note: your current working directory is /home/nukeemann/projects/ai_lecturer.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+Let me find the Image widget schema and Theory schema.
+→ Bash(command: ls src/widgets/ && echo "---image---" && find src/widgets -ipath '*mage*schema*'…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+← AudioPlayer
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+No `image` widget type exists in the schema (despite SKILL.md mentioning it) — I'll use inline markdown images in theory plus a dataTable/dragMatch. Let me check DragMatch schema.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+No `image` widget type exists, so I'll use inline images in theory sections. Let me create the assets directory, generate a comparison figure, and download a real YOLO detection photo.
+→ Bash(command: mkdir -p "courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detekt…)
+← courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/yolo-detekcja-biurko.jpg: JPEG image data, JFIF standard 1.01, aspect ratio, density 1x1, seg…
+The YOLO photo downloaded. Now let me generate the three-task comparison figure.
+→ Write(file_path: /tmp/make_compare.py)
+← File created successfully at: /tmp/make_compare.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/make_compare.py && ls -la "courses/detekcja-obiektow-z-yolo-od-mech…)
+← saved courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/klasyfikacja-detekcja-segmentacja.png
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The figure is clear. Now I'll write the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/detekcja-vs-klasyfikacja-vs-segm…
+Now validate against LessonSchema and confirm no external image URLs survive.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+[system task_started]
+[system task_notification]
+← [eval]:27
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The inline `tsx -e` didn't resolve the `@/` path alias properly. Let me run a temp script file inside the repo instead.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/tmp_validate_lesson.ts)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/tmp_validate_lesson.ts (file state is current in your context — no need to Read it back)
+→ Bash(command: npx tsx tmp_validate_lesson.ts; rm -f tmp_validate_lesson.ts)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/detekcja-vs-klasyfikacja-vs-segmentacja.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The lesson validates against `LessonSchema` and all referenced assets exist locally with no external image URLs.
+## What I authored
+`courses/.../lessons/detekcja-vs-klasyfikacja-vs-segmentacja.json` — module `m1`, 10 min, balanced theory/practice (matching `research.md`'s 0.5 ratio). Polish prose, English technical terms kept as the learner requested.
+**6 sections** (2 theory beats + 4 widgets, starts on theory, ends on code, no back-to-back theory):
+1. **theory** — three vision tasks by output granularity, with the generated 3-panel comparison figure + a "set prediction" blockquote.
+2. **dataTable** — task → question → output → annotation cost.
+3. **dragMatch** — match output description to task (reinforces the table).
+4. **quiz** — "what does a detector return?" with distractors pulled straight from `research.md`'s misconceptions (classification confusion, segmentation mask, the "look once = one box" trap).
+5. **theory** — anatomy of one detection: normalized box `(cx,cy,w,h)`, class, confidence, with KaTeX for the normalization and `objectness × P(class)` confidence, plus a real Wikimedia YOLO detection photo.
+6. **code** — `filter_detections(detections, conf_threshold)`: 4 tests (1 visible smoke test) + reference solution. Pure-Python, CPU-only, no GPU/training — per the runtime constraint.
+**Assets** (both local, no external URLs in image positions):
+- `klasyfikacja-detekcja-segmentacja.png` — matplotlib figure I generated (harbor scene shown as classification label / detection boxes / per-pixel mask).
+- `yolo-detekcja-biurko.jpg` — downloaded from Wikimedia Commons (Mtheiler, CC BY-SA 4.0), attributed inline.
+**Sources**: 4 lesson-level (Ultralytics Tasks, Object detection Wikipedia, COCO paper w/ authors+year, Szeliski book w/ author+year) plus section-level sources on both theory beats.
+I did not touch `scripts/ralph/`, `course.json`, or any other lesson file.
+[result success (343.7s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+I'll read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research and sources files, plus the widget schemas I'll need.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the relevant widget schemas I plan to use (theory, quiz, code, plotImage, dataTable).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All schemas are clear. Now let me verify the Theory schema and set up the asset directories.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: mkdir -p courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detekto…)
+← mpl 3.9.2
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me generate the three figures. First the plotImage (predictions-per-scale bar chart) — I'll keep this script byte-identical to what I embed as `sourceCode`:
+→ Bash(command: cat > /tmp/plot1.py << 'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+import ma…)
+← total 8400 cells [6400, 1600, 400]
+[system thinking_tokens]
+[system thinking_tokens]
+Now the two inline schematic diagrams:
+→ Bash(command: cat > /tmp/img1.py << 'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+import mat…)
+← img1 ok
+Let me verify the figures render correctly before embedding them.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The plot and pipeline diagram are good. The third diagram has overlapping text — let me fix it.
+→ Bash(command: cat > /tmp/img2.py << 'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+import mat…)
+← img2 ok
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+All figures look good. Now I'll write the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/dlaczego-yolo-patrzy-tylko-raz.j…
+Now let me validate against the schema, verify the code solution passes its tests, and check for external image URLs.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+→ Bash(command: python3 -c "
+def count_grid_predictions(input_size, strides):
+    return sum((in…)
+← solution passes all tests
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Path-alias resolution failed in `-e` mode. Let me run it as a proper file via tsx:
+→ Bash(command: cat > /tmp/validate_lesson.ts << 'TSEOF'
+import fs from 'node:fs';
+import { Less…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/dlaczego-yolo-patrzy-tylko-raz.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Validation passes with the correct section flow. Let me do a final asset-presence check confirming every referenced local path exists on disk.
+→ Bash(command: cd courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ult…)
+← OK  assets/images/dwuetapowy-vs-jednoetapowy-pipeline.png
+Done. The lesson is authored and fully validated.
+## Summary
+Created `/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/dlaczego-yolo-patrzy-tylko-raz.json` — one lesson, validated against `LessonSchema` (`safeParse` → OK).
+**Lesson:** *Dlaczego YOLO „patrzy tylko raz”* (module `m1`, 12 min, Polish prose per `research.md`).
+**Section flow** — `theory → plotImage → code → quiz → theory → dataTable` (2 theory beats separated by widgets, 4 widgets total, ends on a widget, no back-to-back theory):
+1. **theory** — what "look once" really means: single forward pass vs Faster R-CNN's region-proposal stage; kills the #1 misconception (*"once" = the pass, not one box*). Inline pipeline-comparison diagram.
+2. **plotImage** — bar chart showing a single 640×640 pass emits **8400** candidates across strides 8/16/32 (real, computable numbers; full axes, labels, title, grid; `sourceCode` byte-identical to the script that rendered the PNG).
+3. **code** — `count_grid_predictions(input_size, strides)`: 4 tests (1 visible smoke + 3 hidden), runnable `solution` verified to pass all four.
+4. **quiz** — single-select on "look once", distractors drawn straight from the misconceptions list (one conv / one box / training pass).
+5. **theory** — why one pass is faster (no per-region loop), accuracy-gap-has-closed note, and the RT-DETR NMS-free touchpoint requested in the spec. Inline cost-comparison diagram.
+6. **dataTable** — Faster R-CNN vs YOLO11 vs RT-DETR (etapy / propozycje / NMS / rdzeń / prędkość), sortable.
+**Sources:** 5 lesson-level entries (YOLO, Faster R-CNN, RT-DETR papers + Ultralytics docs + Wikipedia), copied from `sources.md`; section-level sources attached to the two theory beats they lean on.
+**Assets:** 3 matplotlib PNGs generated and confirmed on disk; no external `http(s)` image URLs remain (all rewritten to `/api/courses/.../assets/...`). No files touched under `scripts/ralph/`; `course.json` and other lessons untouched. Copernicus credentials weren't needed — this lesson is conceptual, no SAR imagery.
+[result success (400.1s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the input files and the schema.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+The lesson is in module `m1`, title "Architektura: backbone → neck → head", `estimatedMinutes: 14`. Now let me read the research and sources files, plus the widget docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widget docs and the relevant widget schemas (Image, DragMatch, DataTable, Quiz, Code).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. Key constraint I noticed: there is **no `image` section type** in `SectionSchema` (the union has no `image`), so I cannot use an Image widget — hero/diagram figures must be **inline markdown images** inside theory sections. Since good Wikimedia images for YOLO's backbone→neck→head are scarce, I'll generate two clean schematic diagrams locally with matplotlib (they're inline images, not `plotImage`, so the axis rules don't apply) and cache them under the course assets.
+Let me first verify the toolchain and generate the diagrams.
+→ Bash(command: python3 -c "import matplotlib; print('mpl', matplotlib.__version__)" && ls cours…)
+← mpl 3.9.2
+→ Bash(command: cd courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ult…)
+← --- lessons ---
+[system thinking_tokens]
+[system thinking_tokens]
+Good — the existing lessons already use locally generated schematic diagrams. Let me look at one existing lesson to match the established style and conventions.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+This established the house style perfectly. Important: the previous lesson already used the "count grid predictions → 8400" code exercise and a bar plot. To avoid duplication, my architecture lesson will use a **distinct** code task (backbone feature-map spatial sizes through downsampling stages) and a different DataTable (YOLO11 n/s/m/l/x variants).
+Let me generate the two schematic diagrams.
+→ Write(file_path: /tmp/gen_arch_diagrams.py)
+← File created successfully at: /tmp/gen_arch_diagrams.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && python3 /tmp/gen_arch_diagrams.py && …)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-backbone-neck-head-pipeline.png
+Let me visually verify both diagrams render legibly.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Diagram 2 is clear. Diagram 1 is good but the two bottom legend labels overlap each other. Let me fix the label placement on both (spread them out so nothing collides).
+→ Edit(file_path: /tmp/gen_arch_diagrams.py)
+← The file /tmp/gen_arch_diagrams.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Edit(file_path: /tmp/gen_arch_diagrams.py)
+← The file /tmp/gen_arch_diagrams.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_arch_diagrams.py)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-backbone-neck-head-pipeline.png
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both diagrams are clean now. Theory beat 3 (the head) also warrants a figure, so let me add a third diagram showing the decoupled head's two-branch output.
+→ Bash(command: cat >> /tmp/gen_arch_diagrams.py << 'PYEOF'
+
+# ---------------------------------…)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/architektura-backbone-neck-head-pipeline.png
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three diagrams are clean. Let me verify the code exercise's expected values, then build the lesson JSON via Python (so newlines/escaping are guaranteed correct).
+→ Bash(command: python3 -c "
+def f(n,k): return [n//(2**i) for i in range(1,k+1)]
+print(f(640,5)…)
+← [320, 160, 80, 40, 20] [320, 160, 80] [320] [50, 25]
+Values check out. Now I'll build the lesson JSON via a Python script for safe escaping.
+→ Write(file_path: /tmp/build_lesson.py)
+← File created successfully at: /tmp/build_lesson.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/build_lesson.py)
+← backbone words: 228 chars: 1758
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All theory beats are in range (150–400 words). Now validate against `LessonSchema`.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The `@/` path alias likely isn't resolving under bare `tsx -e`. Let me check the project's tooling.
+→ Bash(command: cat tsconfig.json | grep -A6 paths; echo "---scripts---"; cat package.json | gre…)
+←     "paths": {
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "import('./src/lib/schemas/lesson').then(m => console.log(Object.keys…)
+← [ 'default', 'module.exports' ]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/architektura-backbone-neck-head.json
+The lesson validates against `LessonSchema`. Now let me run the final asset-presence and external-URL gates from the checklist, plus confirm no `scripts/ralph/` files were touched.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+LESSON="courses/detekcja-obiektow-z-yolo…)
+← === external image URLs in lesson (must be 0) ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All gates pass: no external image URLs, all three referenced assets exist, and nothing under `scripts/ralph/` or `course.json` was modified. Let me do a final confirmation of scope and that the lesson file landed.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+echo "=== full git status (porcelain) ==…)
+← === full git status (porcelain) ===
+Done. The lesson is written and validated.
+## Summary
+Authored exactly one lesson at `courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/architektura-backbone-neck-head.json` — `LessonSchema.safeParse` returns **OK**.
+**Lesson shape** (module `m1`, 14 min, theory/practice ≈ 0.5 — 3 theory beats + 4 widgets, never two theory back-to-back, ends on a widget):
+1. **theory** — Trzy bloki i rola backbone'u (multi-scale P3/P4/P5, strides 8/16/32) + pipeline diagram
+2. **dragMatch** — backbone/neck/head → role
+3. **theory** — Neck FPN+PAN dwukierunkowa fuzja + top-down/bottom-up diagram
+4. **quiz** — "po co neck?" (distractors drawn from the misconception list: P5-highest-resolution, NMS-in-neck)
+5. **theory** — anchor-free decoupled head + decoupled-head diagram (handles the `objectness` point accurately: v8/YOLO11 fold it into class confidence)
+6. **code** — `backbone_feature_sizes(input_size, num_stages)`, 4 tests (1 visible smoke + 3 hidden) + solution
+7. **dataTable** — YOLO11 n/s/m/l/x (params / mAP50-95 / GFLOPs, COCO val 640)
+**Deliberate choices:**
+- **No `image` widget** — that type isn't in `SectionSchema`'s discriminated union, so all figures are inline markdown images with specific Polish alt text.
+- **Three diagrams generated locally** with matplotlib (matching the course's existing self-made-diagram style) and cached under `assets/images/`, since good Wikimedia figures for YOLO's backbone→neck→head don't exist. Visually verified all three render legibly.
+- **Avoided duplicating** the prior lesson's "8400 grid predictions" code exercise / bar plot — used a distinct backbone downsampling-arithmetic task and a variant-comparison table instead.
+**Gates verified:** no external `http(s)://` image URLs survive; all 3 referenced `/api/.../assets/images/*.png` exist on disk; each theory beat is 213–228 words (within 150–400); lesson-level `sources` has 4 entries (YOLO11 docs, FPN paper, PANet paper, Ultralytics model configs) with section-level sources on the relevant theory beats; nothing under `scripts/ralph/` and no other lesson or `course.json` was touched.
+[result success (552.9s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then examine the course files and schema.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+This is a Polish-language course. The lesson is in module m2, estimatedMinutes 13. Let me read research.md and sources.md for context and the lesson's curated references.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now I understand the context. This is a Polish-language conceptual lesson on the evolution from anchor-based to anchor-free heads + decoupled head. Note the `SectionSchema` union does NOT include `image` — so hero figures must be inline markdown images or `plotImage`. Let me read the widget schemas I plan to use.
+→ Bash(command: for f in theory quiz code dataTable dragMatch sandbox plotImage; do echo "===== …)
+← ===== theory =====
+The `dataTable`, `dragMatch`, and `plotImage` JSON mirrors are missing. Let me read their Zod schemas directly (the source of truth).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all schemas. Now let me verify the Python/matplotlib environment and asset directories.
+→ Bash(command: python3 -c "import matplotlib, numpy; print('mpl', matplotlib.__version__, 'np',…)
+← mpl 3.9.2 np 1.26.4
+Let me look at an existing lesson in this course to match conventions (eyebrow, inline image style, asset paths).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check how the existing `plotImage` section in this course writes its `sourceCode` and savefig path.
+→ Bash(command: python3 -c "
+import json
+d=json.load(open('courses/detekcja-obiektow-z-yolo-od-m…)
+← SRC: /api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/dlaczego-yolo-patrzy-tylko-raz-1.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now I'll generate the three figures. Let me write a single generator script.
+→ Write(file_path: /tmp/gen_figs.py)
+← File created successfully at: /tmp/gen_figs.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_figs.py && ls -la courses/detekcja-obiektow-z-yolo-od-mechaniki…)
+← fig1 ok
+Let me visually verify the two diagrams.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both diagrams are clear. Now the `plotImage` k-means anchor-priors figure. I'll author its `sourceCode` exactly as it will appear in the lesson.
+→ Write(file_path: /tmp/plot1_src.py)
+← File created successfully at: /tmp/plot1_src.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/plot1_src.py && ls -la courses/detekcja-obiektow-z-yolo-od-mechanik…)
+← centroids [[94.7, 60.7], [225.3, 67.8], [59.6, 135.5]]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Plot is clear and well-labeled. Let me verify the code exercise's solution/tests numerically before embedding.
+→ Bash(command: python3 -c "
+def count_predictions(input_size, strides, anchors_per_cell):
+    r…)
+← 8400
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All checks pass. Now I'll author the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/od-anchor-based-do-anchor-free-i…
+Now validate against `LessonSchema` and confirm no external image URLs survive.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← [eval]:27
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+import('./src/lib/schemas/lesson').then(m => {
+  console.log('keys:…)
+← keys: [ 'default', 'module.exports' ]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/od-anchor-based-do-anchor-free-i-decoupled-head.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Validation passes, no external image URLs. Let me confirm all referenced assets exist and that the embedded `sourceCode` reproduces the committed PNG byte-for-byte.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+SLUG=detekcja-obiektow-z-yolo-od-mechani…)
+← --- referenced assets exist? ---
+The lesson is authored, validates, and all assets are in place. Done.
+## Summary
+Authored one lesson at `courses/detekcja-obiektow-.../lessons/od-anchor-based-do-anchor-free-i-decoupled-head.json` — module `m2`, 13 min, in Polish (matching the course), focused on the **evolution from anchor-based to anchor-free heads + decoupled head**.
+**Structure** (6 sections — 2 theory beats + 4 widgets, no back-to-back theory, ends on a widget):
+1. **theory** — *Kotwice: rozmiary, które trzeba było zgadnąć* — anchor boxes, offset regression with KaTeX decode equations, k-means priors, and their costs; inline anchor-based-vs-anchor-free diagram.
+2. **plotImage** — k-means anchor centroids over GT box dimensions (real axes, labels, units, legend, grid).
+3. **quiz** (multi-select) — distractors drawn straight from `research.md` misconceptions (anchors still used, NMS confusion).
+4. **theory** — *Anchor-free i decoupled head* — FCOS-style direct geometry regression + the coupled→decoupled split rationale (YOLOX); inline coupled-vs-decoupled head diagram.
+5. **code** — `count_predictions(...)` (the famous 8400 vs 25200 candidates); 4 tests (1 visible smoke + 3 hidden) + reference solution.
+6. **dragMatch** — feature → paradigm (anchor-based vs anchor-free).
+**Sources**: 4 lesson-level (FCOS, YOLOX papers + Ultralytics YOLOv8/YOLO11 docs), plus section-level citations on the theory/plot beats that lean on a specific reference.
+**Verification**:
+- `LessonSchema.safeParse` → **OK**
+- All 3 referenced assets (2 self-generated diagrams + 1 plot) exist on disk
+- Plot `sourceCode` reproduces the committed PNG **byte-for-byte**
+- Zero external `http(s)` image URLs
+I did not touch `scripts/ralph/`, `course.json`, or any other lesson file. No commit made (you didn't ask); the new lesson JSON and three PNG assets are staged in the working tree.
+[result success (465.9s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+I'll execute the generate_lesson skill end-to-end. Let me first read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+The lesson is in module `m2`, `estimatedMinutes: 12`, title "INPUT: preprocessing obrazu". Now let me read the research/sources files and the widget docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widget docs and the specific schemas I'll use (theory, quiz, code, sandbox, plotImage).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/plotImage.json)
+← File does not exist. Note: your current working directory is /home/nukeemann/projects/ai_lecturer.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The `docs/widgets.md` reference loaded fine (the schema Read errored only for a path typo, but I have the code.json schema). I have everything I need. Let me check the Python environment and asset directories before generating figures.
+→ Bash(command: python3 -c "import numpy, matplotlib; print('np', numpy.__version__, 'mpl', matp…)
+← np 1.26.4 mpl 3.9.2
+[system thinking_tokens]
+[system thinking_tokens]
+Let me look at an existing lesson to match conventions (plotImage sourceCode style, Polish prose, source formatting).
+→ Bash(command: cd courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ult…)
+← total 72
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Conventions are clear — existing lessons use self-generated matplotlib diagrams referenced via `/api/.../assets/` paths. Now I'll generate the three figures. Let me write and run the figure-generation scripts.
+→ Write(file_path: /tmp/fig1_plotimage.py)
+← File created successfully at: /tmp/fig1_plotimage.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/fig2_geometry.py)
+← File created successfully at: /tmp/fig2_geometry.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/fig3_pipeline.py)
+← File created successfully at: /tmp/fig3_pipeline.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && python3 /tmp/fig1_plotimage.py && pyt…)
+← saved figure 1; scale 0.5 nh 360 nw 640 pad_top 140 pad_left 0
+All three figures generated. Let me visually verify them.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+Both look excellent — the distortion contrast is clear and the geometry diagram is clean. Let me verify figure 3.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three figures are correct. Now I'll build the lesson JSON with a Python script — this guarantees the plotImage `sourceCode` matches the figure script byte-for-byte and handles all JSON escaping correctly.
+→ Write(file_path: /tmp/build_lesson.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls -la /tmp/build_lesson.py 2>/dev/null && echo EXISTS || echo MISSING)
+← -rw-r--r-- 1 nukeemann nukeemann 15962 Jun 10 11:56 /tmp/build_lesson.py
+A stale `/tmp/build_lesson.py` exists from a prior session. I'll write to a fresh filename.
+→ Write(file_path: /tmp/build_input_lesson.py)
+← File created successfully at: /tmp/build_input_lesson.py (file state is current in your context — no need to Read it back)
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: python3 /tmp/build_input_lesson.py && echo "=== verify code exercise solution pa…)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/input-preprocessing-obrazu.json
+Now validate against `LessonSchema`, and verify no external image URLs survive and the plotImage sourceCode reproduces the PNG byte-for-byte.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+import('./src/lib/schemas/lesson').then(m => {
+  console.log('keys:…)
+← keys: [ 'default', 'module.exports' ]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+import('./src/lib/schemas/lesson').then(m => {
+  console.log('defau…)
+← default keys: [
+The exports are under `m.default`. Let me run the validation correctly.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/input-preprocessing-obrazu.json
+Schema validation passes. Now the asset-gate checks: no external image URLs, every referenced asset exists, and the plotImage `sourceCode` reproduces the PNG byte-for-byte.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+LESSON="courses/detekcja-obiektow-z-yolo…)
+← === external inline image URLs (must be 0) ===
+[system thinking_tokens]
+[system thinking_tokens]
+All assets present, no external URLs. Now verify the embedded `sourceCode` reproduces the PNG byte-for-byte.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+LESSON="courses/detekcja-obiektow-z-yolo…)
+← saved figure 1; scale 0.5 nh 360 nw 640 pad_top 140 pad_left 0
+[system thinking_tokens]
+[system thinking_tokens]
+Byte-for-byte match confirmed. Final checks: theory word counts (150–400) and confirm I touched nothing else.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+LESSON="courses/detekcja-obiektow-z-yolo…)
+←      po-co-staly-rozmiar: 205 words, 1655 chars, inline_img=True
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: git status --porcelain | grep -E "input-preprocessing|letterbox-geometria|prepro…)
+← (Bash completed with no output)
+→ Bash(command: git status --porcelain | grep -E "input-preprocessing|letterbox|preprocessing-pi…)
+← --- direct ls ---
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: git status --porcelain | grep detekcja)
+← ?? courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The `generate_lesson` skill ran end-to-end and the lesson validates against `LessonSchema`.
+## `input-preprocessing-obrazu.json` — written & validated
+**Location:** `courses/detekcja-…-yolo11/lessons/input-preprocessing-obrazu.json` (module `m2`, `estimatedMinutes: 12`, Polish prose per `research.md`).
+**Structure** — 2 theory beats + 4 widgets (no back-to-back theory, ends on a widget):
+1. **theory** *Po co stały rozmiar wejścia i czym jest letterbox* (205 words) — fixed 640×640 input, naive-resize distortion, letterbox math `s = min(S/h, S/w)` + 114-gray padding; inline geometry diagram; section sources: Ultralytics aug guide + YOLO paper.
+2. **plotImage** *Naiwny resize vs letterbox* — naive (disk→ellipse) vs letterbox (disk stays round + gray bars), pixel axes/ticks/labels/title; `sourceCode` verified **byte-for-byte** against the saved PNG.
+3. **quiz** *Po co letterbox* — correct answer "preserves aspect ratio"; distractors = stretch-to-fill / crop / channel-change misconceptions.
+4. **theory** *Od pikseli do tensora* (217 words) — BGR→RGB, `/255` float32, HWC→CHW, NCHW `(1,3,640,640)`; inline pipeline diagram; section sources: Ultralytics predict + OpenCV resize.
+5. **code** *Policz parametry letterboxa* — `letterbox(h,w,target)` → `(scale, new_w, new_h, pad_left, pad_top)`; 4 tests (1 visible smoke), full runnable `solution`. Solution self-tested: all 4 pass.
+6. **sandbox** *Złóż cały potok* — full preprocessing pipeline on a synthetic BGR image.
+**Lesson-level `sources`:** 4 entries (3 articles + 1 paper with author/year), all stable hosts.
+**Gates verified:**
+- `LessonSchema.safeParse` → `success: true`
+- 0 external image URLs; all 3 generated assets exist on disk (`plots/input-preprocessing-obrazu-1.png`, `images/letterbox-geometria.png`, `images/preprocessing-pipeline.png`)
+- plotImage `sourceCode` reproduces the PNG byte-for-byte (sha256 match)
+**Scope:** only the one new lesson file + its three assets were created (all inside the already-untracked course dir). `scripts/ralph/`, `course.json`, and other lesson files were not touched.
+[result success (600.9s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, plus the course files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+Lesson found: module `m2`, 15 min. Now let me read the research, sources, and widget docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widget docs and the specific schemas I plan to use (code, quiz, plotImage, sandbox, theory).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	# Widgets reference
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/plotImage.json)
+← File does not exist. Note: your current working directory is /home/nukeemann/projects/ai_lecturer.
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/; echo "---PlotImage…)
+← audio-player.json
+[system thinking_tokens]
+[system thinking_tokens]
+Let me look at a sibling lesson to match conventions (Polish prose, plotImage asset paths, code style).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+→ Bash(command: find /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-me…)
+← /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/dlaczego-yolo-patrzy-tylko-raz-1.png
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all the context. The sibling lessons generate their own matplotlib figures (both inline diagram images and plotImage plots) into `assets/`. 
+My plan for this OUTPUT lesson (m2, 15 min, theory/practice 0.5): **theory(decode)** → **plotImage(dense grid → after NMS)** → **quiz(conf vs NMS threshold)** → **code(IoU)** → **theory(NMS algorithm)** → **code(NMS)** → **sandbox**. That's 2 theory beats + 5 widgets, no two theories adjacent, ends on a widget.
+Let me first generate the three figures, then write + validate the JSON. Writing the figure-generation script:
+→ Write(file_path: /tmp/gen_output_figs.py)
+← File created successfully at: /tmp/gen_output_figs.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_output_figs.py && ls -la courses/detekcja-obiektow-z-yolo-od-me…)
+← saved figure A
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Figures A and C are done. Now the plotImage figure (figure B) — pixel axes mandatory. I'll write the exact `sourceCode` and run it so the PNG matches byte-for-byte:
+→ Write(file_path: /tmp/gen_output_plot.py)
+← File created successfully at: /tmp/gen_output_plot.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_output_plot.py && ls -la courses/detekcja-obiektow-z-yolo-od-me…)
+← saved figure 1; raw 32 kept 2 indices [8, 15]
+All three figures rendered. Let me quickly verify them visually.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+Both look great. Let me check figure C (NMS steps):
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Excellent — all three figures are clear and correct. Now I'll build the lesson JSON via a Python builder (reads the plotImage `sourceCode` straight from the script that produced the PNG, guaranteeing a byte-faithful match and avoiding manual JSON escaping bugs):
+→ Write(file_path: /tmp/build_lesson.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls -la /tmp/build_lesson.py 2>&1; echo "exit:$?")
+← -rw-r--r-- 1 nukeemann nukeemann 15962 Jun 10 11:56 /tmp/build_lesson.py
+A leftover `/tmp/build_lesson.py` exists from a prior run. I'll write to a fresh filename.
+→ Write(file_path: /tmp/build_output_lesson.py)
+← File created successfully at: /tmp/build_output_lesson.py (file state is current in your context — no need to Read it back)
+Now run the builder, sanity-check the code exercises in plain Python, and validate against `LessonSchema`:
+→ Bash(command: python3 /tmp/build_output_lesson.py && echo "--- code exercise self-check ---" &…)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/output-od-surowej-siatki-do-finalnych-detekcji.json
+Code exercises verified. Now validate against `LessonSchema`:
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+tsx `-e` isn't resolving the `@/` path aliases. Let me run validation from a file inside the project so tsconfig paths apply.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/tmp_validate_lesson.mts)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/tmp_validate_lesson.mts (file state is current in your context — no need to Read it back)
+→ Bash(command: npx tsx tmp_validate_lesson.mts; rm -f tmp_validate_lesson.mts)
+← /home/nukeemann/projects/ai_lecturer/tmp_validate_lesson.mts:2
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Named export isn't resolving — let me check how the project's own tests import the schema, to mirror a known-working setup.
+→ Bash(command: sed -n '1,30p' src/lib/schemas/schemas.test.ts 2>/dev/null; echo "---vitest conf…)
+← import { describe, expect, it } from 'vitest';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+tsx's ESM loader is mis-resolving the alias. Let me validate through the project's own test runner (vitest), which is the blessed path:
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/tmp_validate.test.ts)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/tmp_validate.test.ts (file state is current in your context — no need to Read it back)
+→ Bash(command: npx vitest run tmp_validate.test.ts 2>&1 | tail -30; rm -f tmp_validate.test.ts)
+←  RUN  v4.1.5 /home/nukeemann/projects/ai_lecturer
+Vitest only includes `src/**`. Let me place the temp test there.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/src/tmp_validate.test.ts)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/src/tmp_validate.test.ts (file state is current in your context — no need to Read it back)
+→ Bash(command: npx vitest run src/tmp_validate.test.ts 2>&1 | tail -25; rm -f src/tmp_validate.…)
+←  RUN  v4.1.5 /home/nukeemann/projects/ai_lecturer
+The lesson validates against `LessonSchema`. Now the final asset-gate checks per the SKILL: confirm no external `http(s)` URLs survive in image positions, and every referenced local asset exists on disk.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+SLUG=detekcja-obiektow-z-yolo-od-mechani…)
+← --- external http(s) in inline image positions (should be empty) ---
+[system thinking_tokens]
+[system thinking_tokens]
+All gates pass. Let me confirm I only touched the intended files (one lesson + its three assets, nothing else):
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer; git status --porcelain | grep -i 'detek…)
+← ?? courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The lesson is authored, validates against `LessonSchema`, and passes the asset gate.
+## Summary
+Wrote **`courses/detekcja-obiektow-z-yolo-.../lessons/output-od-surowej-siatki-do-finalnych-detekcji.json`** (module `m2`, 15 min, theory/practice ≈ 0.5) — Polish prose with English technical terms, per the course convention.
+**Structure** (2 theory beats + 5 widgets, no two theories adjacent, ends on a widget):
+1. `theory` — **Surowa siatka**: what the anchor-free YOLO11 head emits — `(1, 4+nc, 8400)`, DFL box decode to `(x1,y1,x2,y2)`, confidence = `σ(max class logit)`, letterbox inverse. KaTeX + inline schematic.
+2. `plotImage` — **32 candidates → 2 detections** after confidence threshold + NMS (pixel axes, labels, title; `sourceCode` matches the saved PNG byte-for-byte).
+3. `quiz` — confidence vs NMS-IoU threshold independence (distractors straight from `research.md` misconceptions).
+4. `code` — implement `iou(a, b)`, 4 tests + reference solution.
+5. `theory` — **NMS algorithm**: greedy suppression, IoU formula, Soft-NMS aside. Inline 3-step diagram.
+6. `code` — implement greedy `nms(boxes, scores, iou_thr)`, 4 tests + solution (`iou` pre-seeded in starter).
+7. `sandbox` — tweak both thresholds on a fixed synthetic set.
+**Assets generated** (matplotlib, on disk): `yolo-output-tensor-siatka.png`, `nms-greedy-kroki.png`, `output-...-1.png`.
+**Verification:** code-exercise tests pass in plain Python; `LessonSchema.safeParse → true` (via vitest); no external image URLs; all 3 referenced asset paths resolve. `course.json`, other lessons, and `scripts/ralph/` were not touched. Temp scripts left only in `/tmp` and the repo working tree is clean of stray files.
+[result success (631.1s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the source files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research, sources, and widgets docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the widget docs and the relevant schemas, and check the python/matplotlib environment.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/plotImage.json)
+← File does not exist. Note: your current working directory is /home/nukeemann/projects/ai_lecturer.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Bash(command: python3 -c "import matplotlib, numpy; print('mpl', matplotlib.__version__, 'np',…)
+← mpl 3.9.2 np 1.26.4
+[system thinking_tokens]
+[system thinking_tokens]
+matplotlib/numpy are available. Let me read the plotImage schema (TS, since the JSON didn't exist).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all schemas. Now let me create the asset directories and generate the figures. Let me start with the plotImage (IoU vs GIoU/DIoU/CIoU loss curves).
+→ Bash(command: mkdir -p "courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detekt…)
+← done
+→ Write(file_path: /tmp/plot_iou_losses.py)
+← File created successfully at: /tmp/plot_iou_losses.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/plot_iou_losses.py && ls -la "courses/detekcja-obiektow-z-yolo-od-m…)
+← Exit code 134
+[system thinking_tokens]
+[system thinking_tokens]
+Need the non-interactive backend. Let me fix the script.
+→ Edit(file_path: /tmp/plot_iou_losses.py)
+← The file /tmp/plot_iou_losses.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/plot_iou_losses.py && ls -la "courses/detekcja-obiektow-z-yolo-od-m…)
+← total 308
+Let me view the plot to confirm it's correct and readable.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+DIoU (green) is hidden under CIoU (red) since they nearly coincide. Let me make DIoU dashed so both are visible.
+→ Edit(file_path: /tmp/plot_iou_losses.py)
+← The file /tmp/plot_iou_losses.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/plot_iou_losses.py && echo regenerated)
+← regenerated
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The plot is good. Now let me generate the three inline diagram images for the theory beats.
+→ Write(file_path: /tmp/diagrams.py)
+← File created successfully at: /tmp/diagrams.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/diagrams.py && ls -la "courses/detekcja-obiektow-z-yolo-od-mechanik…)
+← diagrams written
+Let me verify the three diagrams look correct.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three diagrams are clear. Now let me compute exact CIoU reference values for the code exercise tests.
+→ Bash(command: cd /tmp && python3 -c "
+import math
+def ciou(a, b):
+    ax1, ay1, ax2, ay2 = a
+ …)
+← identical 1.0
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All reference values computed. Now I'll build the lesson JSON via a Python builder (reading the plot script verbatim for `sourceCode`, and using raw strings for KaTeX to avoid escaping errors).
+→ Write(file_path: /tmp/build_lesson.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls -la /tmp/build_lesson.py 2>&1; rm -f /tmp/build_lesson.py; echo cleared)
+← -rw-r--r-- 1 nukeemann nukeemann 15962 Jun 10 11:56 /tmp/build_lesson.py
+A stale builder existed from a prior lesson run. Cleared it — now writing fresh.
+→ Write(file_path: /tmp/build_lesson_funkcje.py)
+← File created successfully at: /tmp/build_lesson_funkcje.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && python3 /tmp/build_lesson_funkcje.py …)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/funkcje-straty-i-label-assignment.json
+Now validate against LessonSchema and verify the code exercise solution passes its own tests, plus check no external image URLs leaked.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The alias `@/` needs tsconfig resolution. Let me run via a script file in the repo so tsconfig paths apply.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/tmp_validate_funkcje.ts)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/tmp_validate_funkcje.ts (file state is current in your context — no need to Read it back)
+→ Bash(command: npx tsx tmp_validate_funkcje.ts; echo "---exit $?---")
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/funkcje-straty-i-label-assignment.json
+Schema validates. Now let me verify the code solution passes its own tests, confirm no external image URLs leaked, and check all referenced assets exist on disk.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+SLUG="detekcja-obiektow-z-yolo-od-mechan…)
+← === code solution self-test ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All checks pass: solution passes all 4 tests, no external URLs, all 4 assets exist on disk. Let me remove the temporary validation file.
+→ Bash(command: rm -f tmp_validate_funkcje.ts && git status --short)
+← ?? courses/Higiena-miesa-3.zip
+Done. The lesson is authored, validated, and all assets are materialized.
+## Summary
+Authored exactly one lesson at `courses/detekcja-obiektow-…-yolo11/lessons/funkcje-straty-i-label-assignment.json` (module `m2`, 15 min), which **validates against `LessonSchema`**.
+**Structure — 3 theory beats + 5 widgets (8 sections, no two theories adjacent, ends on a widget):**
+1. *theory* — Z czego składa się strata YOLO (total loss = box(CIoU+DFL) + cls(BCE); corrects the "objectness is a separate loss" misconception for anchor-free v8/v11) + inline IoU-overlap diagram
+2. *plotImage* — IoU vs GIoU/DIoU/CIoU loss vs box drift (shows IoU's zero-gradient problem; real axes, labels, units, title, legend)
+3. *theory* — CIoU + DFL math (KaTeX for the CIoU terms and DFL expectation) + inline geometry diagram
+4. *code* — implement `ciou(a,b)`; 4 tests (1 visible smoke + 3 hidden), full reference `solution`
+5. *quiz* — single-answer, distractors drawn from `research.md` misconceptions
+6. *theory* — Label assignment / TaskAligned Assigner (alignment metric $t=s^\alpha u^\beta$) + inline assignment diagram
+7. *dragMatch* — CIoU/DFL/BCE/TAL → their roles
+8. *sandbox* — play with CIoU on shifting/distorting boxes
+**Sources:** 5 lesson-level entries (CIoU, DFL, TOOD, Focal Loss papers + YOLO11 docs), copied from `sources.md`; section-level sources attached to the theory beats that lean on a specific paper.
+**Assets** (all self-generated via matplotlib, locally hosted, no external image URLs):
+- `assets/plots/funkcje-straty-i-label-assignment-1.png` — `sourceCode` embedded byte-for-byte
+- `assets/images/iou-overlap.png`, `ciou-terms.png`, `tal-assignment.png`
+**Verified:** schema passes · solution passes all 4 tests · zero external `http(s)` image URLs · all 4 referenced asset paths exist on disk. No changes to `course.json`, other lessons, or `scripts/ralph/`. Prose is in Polish per the course's research note.
+[result success (653.3s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, then the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now the research and sources files. Let me find the relevant lesson sections.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have full context. The lesson is module `m3`, `estimatedMinutes: 13`, title "Format datasetu YOLO i data.yaml", balanced theory/practice (0.5). Let me check the exact widget schemas I'll use before authoring.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/plotImage.json)
+← File does not exist. Note: your current working directory is /home/nukeemann/projects/ai_lecturer.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/code.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/sandbox.json)
+← 1	{
+Let me locate the PlotImage schema and check matplotlib availability.
+→ Bash(command: ls /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/ 2>/dev/null; echo "…)
+← audio-player.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+matplotlib is available. Now I'll generate the three figures (one plotImage with axes + two inline schematic images). Let me create the asset dirs and write the generator scripts.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+S="courses/detekcja-obiektow-z-yolo-od-m…)
+← dirs ready
+[system thinking_tokens]
+[system thinking_tokens]
+→ Write(file_path: /tmp/fig_norm.py)
+← File created successfully at: /tmp/fig_norm.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/fig_norm.py)
+← cx,cy,w,h = 0.5 0.65 0.4 0.3
+[system thinking_tokens]
+[system thinking_tokens]
+→ Write(file_path: /tmp/fig_struct.py)
+← File created successfully at: /tmp/fig_struct.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/fig_line.py)
+← File created successfully at: /tmp/fig_line.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+python3 /tmp/fig_struct.py && python3 /t…)
+← ok struct
+Let me visually verify the three figures.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three figures render correctly with the right values (cx,cy,w,h = 0.5, 0.65, 0.4, 0.3) and readable axes on the plotImage. Now I'll build the lesson JSON via a Python script (robust escaping; embeds the plot's exact source byte-for-byte from the script that produced the PNG).
+→ Write(file_path: /tmp/build_lesson.py)
+← File created successfully at: /tmp/build_lesson.py (file state is current in your context — no need to Read it back)
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+python3 - <<'PY'
+def voc_to_yolo(box, im…)
+← all code tests pass
+Now validate against `LessonSchema` and run the asset/external-URL gates from the checklist.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+S="detekcja-obiektow-z-yolo-od-mechaniki…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The validator's `-e` eval doesn't pick up the `@/` path alias. Let me write a temp validation script as a file so tsx resolves tsconfig paths.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+cat > /tmp/validate_lesson.ts <<'TS'
+imp…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/format-datasetu-yolo-i-datayaml.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Schema passes, assets all present, no external URLs. Let me do a final content sanity check (theory word counts, section order/types).
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+python3 - <<'PY'
+import json
+F="courses/…)
+← title: Format datasetu YOLO i data.yaml | module: m3 | min: 13
+The lesson is authored and fully validated. Done.
+## Summary
+Created `/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/format-datasetu-yolo-i-datayaml.json` per the `generate_lesson` SKILL.md, end-to-end.
+**Lesson** — *Format datasetu YOLO i data.yaml* (module `m3`, 13 min, Polish prose with English technical terms, balanced 0.5 theory/practice). Six sections, no two theory back-to-back, ends on a widget:
+1. **theory** `struktura` (176 words) — the two parallel `images/`/`labels/` trees, basename pairing, train/val/test, empty-`.txt` background images. Inline schematic image.
+2. **plotImage** `normalizacja` — a 640×480 box figure with **real pixel axes/labels/title/grid**, showing rogi → środek+rozmiar → znormalizowane `0 0.5 0.65 0.4 0.3`. `sourceCode` is the exact script that rendered the PNG.
+3. **quiz** `check-normalizacja` — distractors are the two canonical dataset bugs (pixels vs normalized, corners vs center), with a worked arithmetic explanation.
+4. **theory** `linia-i-datayaml` (213 words) — the `class cx cy w h` row, KaTeX normalization equations, full `data.yaml` (`path/train/val/test/nc/names`), and the `nc == len(names)` rule. Inline annotated label-line image.
+5. **code** `cwiczenie-voc-yolo` — implement `voc_to_yolo(...)` (VOC pixel corners → YOLO normalized center/size); 4 tests (1 visible smoke + 3 hidden), full `solution`. Verified all tests pass.
+6. **sandbox** `piaskownica` — assemble a `data.yaml`, parse a label line, convert back to pixels.
+**Assets generated locally** (no external URLs anywhere): `assets/plots/format-datasetu-yolo-i-datayaml-1.png` + `assets/images/{struktura-datasetu-yolo,linia-etykiety-yolo}.png`, all rendered via Bash and visually verified.
+**Sources** — 4 entries (2 Ultralytics docs articles + VOC 2010 and COCO 2014 papers with author/year), plus section-level sources on both theory beats.
+**Gates passed:** `LessonSchema.safeParse` → OK; zero external `http(s)` image URLs; every referenced asset exists on disk. Touched nothing under `scripts/ralph/`, and did not modify `course.json`, `research.md`, `sources.md`, or any other lesson.
+[result success (421.7s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the full procedure.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The system reminder about `scripts/ralph/CLAUDE.md` is the orchestrator's workflow — my task explicitly says do NOT touch `scripts/ralph/`, so I'll ignore that and just execute the SKILL steps to author one lesson.
+Let me read the rest of the SKILL and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Module m3, lesson `adnotacja-i-konwersja-z-cocopascal-voc`, 14 min, Polish course. Now let me read research.md, sources.md, and the widgets doc.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widget docs and the schemas for the widgets I plan to use (DataTable, DragMatch, Code, Quiz, Sandbox).
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+Let me verify exact Zod constraints for the widgets I'll use, to avoid validation errors.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DragMatch/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. Let me check the Python/matplotlib environment and create the assets directory.
+→ Bash(command: python3 -c "import matplotlib, numpy; print('mpl', matplotlib.__version__, 'np',…)
+← mpl 3.9.2 np 1.26.4
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cat > /tmp/gen_yolo_figs.py << 'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+i…)
+← done
+Both figures generated. Let me visually verify them.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Figure 2 is great. Figure 1's VOC panel has overlapping corner labels — let me fix the positioning and regenerate.
+→ Edit(file_path: /tmp/gen_yolo_figs.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cd /tmp && python3 - << 'PYEOF'
+import re
+src = open("/tmp/gen_yolo_figs.py").re…)
+← Exit code 1
+The patch worked but I ran from `/tmp` (relative path). Re-run from project root.
+→ Bash(command: python3 /tmp/gen_yolo_figs.py && echo regenerated)
+← done
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both figures are clean now. Writing the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/adnotacja-i-konwersja-z-cocopasc…
+Now validate against `LessonSchema`, verify the code solution passes its tests, and confirm assets exist + no external image URLs.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+→ Bash(command: python3 - << 'PY'
+def voc_to_yolo(box, img_w, img_h):
+    xmin, ymin, xmax, ymax…)
+← all code tests pass
+→ Bash(command: f="courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ult…)
+← --- external image refs (should be empty) ---
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Validation snippet hit the `@/` path alias. Let me check how the project resolves it and run validation properly.
+→ Bash(command: grep -n '"paths"' -A6 tsconfig.json; echo "---"; grep -n 'tsx\|vitest\|"test"' p…)
+← 21:    "paths": {
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+tsx doesn't resolve the `@/` alias; vitest does. Let me validate via a temporary vitest test.
+→ Bash(command: cat vitest.config.ts 2>/dev/null | grep -n 'alias\|@' | head; echo "==="; cat > …)
+← 6:    alias: {
+→ Bash(command: rm -f _validate_lesson.test.ts
+cat > src/_validate_lesson.test.ts << 'TS'
+import…)
+←  RUN  v4.1.5 /home/nukeemann/projects/ai_lecturer
+The lesson validates against `LessonSchema`. Temp test removed. Let me do a final confirmation that I left no stray files and nothing under `scripts/ralph/` was touched.
+→ Bash(command: echo "--- git status (porcelain) ---"; git status --porcelain | grep -v '^?? cou…)
+← --- git status (porcelain) ---
+Done. The lesson is authored, validated, and self-contained.
+## What I produced
+**`courses/.../lessons/adnotacja-i-konwersja-z-cocopascal-voc.json`** — module `m3`, 14 min, Polish prose (English technical terms kept per the course's research note). It passes `LessonSchema.safeParse` (confirmed via vitest with the project's `@/` alias — the SKILL's bare `tsx` snippet can't resolve that alias, so I validated through vitest instead).
+**Structure** — 2 theory beats + 5 widgets, no two theories back-to-back, ends on a widget:
+1. **theory** — annotation tools + the three coordinate conventions, with an inline 3-panel figure; carries section-level VOC + COCO paper sources.
+2. **dataTable** — COCO vs VOC vs YOLO cheat-sheet (convention / units / normalized / file type).
+3. **quiz** — the #1 dataset misconception (pixels vs normalized, corners vs center); distractors are the VOC and COCO conventions verbatim.
+4. **theory** — the conversion math in KaTeX (VOC→YOLO and COCO→YOLO) + a worked numeric example figure + the two real-world pitfalls; section sources point at the Ultralytics COCO→YOLO docs and JSON2YOLO.
+5. **code** — implement `voc_to_yolo(box, img_w, img_h)`; 4 tests (1 visible smoke test + 3 hidden), full reference `solution`. I ran the solution against all four test bodies — they pass.
+6. **dragMatch** — match each format to its box convention.
+7. **sandbox** — convert a small vehicle/ship VOC mini-set to YOLO `.txt` lines.
+**Assets** — two matplotlib figures generated and saved under `assets/images/` (`box-trzy-formaty.png`, `voc-do-yolo-przyklad.png`), both referenced via local `/api/courses/.../assets/images/...` paths. `grep` confirms zero external `http(s)` image URLs.
+**Sources** — 5 lesson-level entries (3 articles + 2 papers; both papers carry author + year), all stable hosts.
+Untouched: `course.json`, other lessons, `research.md`, `sources.md`, and `scripts/ralph/` (all clean). No stray temp files left behind.
+[result success (450.2s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the steps, plus the course inputs and schema.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the research, sources, and the remaining part of the skill, plus widget docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Let me check existing lessons in this course for style conventions and verify the relevant widget schemas precisely.
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← total 164
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/ParametricExplorer/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+Let me look at one existing lesson for style/convention, especially a DataTable + plotImage example.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have everything I need. The course style uses locally-generated diagram PNGs (e.g. `box-trzy-formaty.png`). I'll generate two illustration PNGs for this lesson, then author the JSON. Lesson plan (m3, 11 min, balanced 0.5): theory → dataTable → theory → quiz → code → sandbox (2 theory + 4 widgets).
+Let me verify the Python plotting stack and generate the two illustrations.
+→ Bash(command: python3 -c "import matplotlib, numpy; print('mpl', matplotlib.__version__, 'np',…)
+← mpl 3.9.2 np 1.26.4
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cat > /tmp/gen_aug_images.py << 'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+…)
+← done
+Let me verify the images render sensibly.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both illustrations are clear. Now I'll author the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/augmentacje-typowe-dla-yolo.json…
+Now let me validate against `LessonSchema` and verify the code solution passes its own tests.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+→ Bash(command: cd /tmp && python3 -c "
+def place_in_mosaic(box, quadrant):
+    cx, cy, w, h = b…)
+← all code tests pass
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Validation harness loaded the module but `LessonSchema` came back undefined — likely the `@/` path alias didn't resolve under plain tsx. Let me check the project's tsx/path setup.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && grep -E '"(test|typecheck|build:schem…)
+←     "typecheck": "tsc --noEmit",
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+import('./src/lib/schemas/lesson').then(m => {
+  console.log('keys:…)
+← keys: [ 'default', 'module.exports' ] ... total 2
+[system thinking_tokens]
+[system thinking_tokens]
+The module loads as CJS interop — exports are under `default`. Let me adjust the validator accordingly.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/augmentacje-typowe-dla-yolo.json
+The lesson validates against `LessonSchema`. Done.
+## Summary
+Authored one lesson at `courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/augmentacje-typowe-dla-yolo.json` — validates clean against `LessonSchema`.
+**Structure** (m3, 11 min, balanced 0.5 theory/practice ratio → 2 theory beats + 4 widgets):
+`theory → dataTable → theory → quiz → code → sandbox`
+- **theory** *Po co YOLO syntetyzuje obrazy* — augmentation intuition; mosaic / MixUp / copy-paste, with the MixUp blend formula in KaTeX and the key "boxes travel with pixels" insight. Inline mosaic illustration.
+- **dataTable** — cheat-sheet of the three augmentations: what each does, its Ultralytics param + default, when to disable.
+- **theory** *close_mosaic i przeliczanie etykiet* — why mosaic/MixUp are switched off in the final epochs, plus the quadrant label-remap formula (KaTeX) that sets up the code task. Inline `close_mosaic` timeline figure.
+- **quiz** — targets the "more augmentation is always better / close_mosaic" misconception straight from `research.md`.
+- **code** — `place_in_mosaic(box, quadrant)`: pure-numeric, CPU-only YOLO-coordinate exercise (1 visible smoke test + 3 hidden), with full reference solution. Verified the solution passes all four tests.
+- **sandbox** — assembles a 2×2 mosaic from four synthetic numpy images and prints the remapped YOLO labels.
+**Sources**: 4 entries copied from the `## Augmentacje typowe dla YOLO` block in `sources.md` (Ultralytics aug guide, YOLOv4/mosaic, MixUp, Copy-Paste), with section-level sources on both theory beats.
+**Assets**: two illustration PNGs generated locally and cached under `assets/images/` (`mozaika-2x2.png`, `close-mosaic-timeline.png`) — no external image URLs, so the asset gate is satisfied. Prose is in Polish with English technical terms, matching the course convention. No other files touched.
+I did not need the Copernicus credentials — this lesson is about training-time augmentations, no SAR/satellite imagery required.
+[result success (346.0s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+← total 180
+[system thinking_tokens]
+[system thinking_tokens]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me check the Python/matplotlib environment and look at an existing plot's sourceCode for style consistency.
+→ Bash(command: python3 -c "import matplotlib, numpy; print('mpl', matplotlib.__version__, 'np',…)
+← mpl 3.9.2 np 1.26.4
+→ Bash(command: python3 -c "
+import json
+d=json.load(open('courses/detekcja-obiektow-z-yolo-od-m…)
+← import numpy as np
+[system thinking_tokens]
+[system thinking_tokens]
+The environment is ready. Let me generate the three assets. First, the LR-schedule plot (whose source becomes the `plotImage` sourceCode), then the two diagram images.
+→ Bash(command: mkdir -p courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detekto…)
+← PLOT OK
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cat > /tmp/diagrams.py <<'PYEOF'
+import matplotlib
+matplotlib.use("Agg")
+import …)
+← DIAGRAMS OK
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All three assets render correctly. Let me verify the exact LR values for the code-exercise test assertions.
+→ Bash(command: python3 -c "
+import math
+def lr_at_epoch(epoch, lr0, lrf, warmup_epochs, total_e…)
+← 0 0.00333333
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All assets verified. Now I'll build the lesson JSON via a Python script (for safe JSON escaping of KaTeX/code), embedding the plot's source byte-for-byte from the script I ran.
+→ Bash(command: cat > /tmp/build_lesson.py <<'PYEOF'
+import json
+
+SLUG = "detekcja-obiektow-z-yo…)
+← WROTE courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/trening-wasnego-detektora-na-lokalnym-gpu.json
+Now validate against `LessonSchema` and run the asset/external-URL gates.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← Exit code 1
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: npx tsx -e "
+import('./src/lib/schemas/lesson.ts').then(m => {
+  console.log('ke…)
+← keys: [ 'default', 'module.exports' ]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: cat > /tmp/validate_lesson.ts <<'TSEOF'
+import { readFileSync } from 'node:fs';
+…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/trening-wasnego-detektora-na-lokalnym-gpu.json
+Schema validation passes. Now the asset-presence and external-URL gates:
+→ Bash(command: DIR="courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-u…)
+← == external image refs (should be empty) ==
+All three referenced assets exist, no external URLs. Let me sanity-check that the code-exercise solution actually passes its own tests.
+→ Bash(command: python3 -c "
+import json
+d=json.load(open('courses/detekcja-obiektow-z-yolo-od-m…)
+← PASS warmup_ramps_linearly_to_lr0
+[system thinking_tokens]
+[system thinking_tokens]
+Let me confirm the two theory sections fall within the 150–400 word range.
+→ Bash(command: python3 -c "
+import json, re
+d=json.load(open('courses/detekcja-obiektow-z-yolo-…)
+← transfer-learning 151 words
+Done. The lesson is authored, validates, and all gates pass.
+## Summary
+Authored `courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/trening-wasnego-detektora-na-lokalnym-gpu.json` — the m4 capstone lesson (18 min, theory/practice ~0.5).
+**Structure** (2 theory beats + 5 widgets, no two theories adjacent, ends on a widget):
+1. **theory** — *Transfer learning: nie zaczynaj od zera* (start from COCO weights, the two-line `model.train` API) + inline pipeline diagram + code block
+2. **dataTable** — YOLO11 n/s/m/l/x variants (params / mAP@0.5:0.95 / when to pick), steering toward n/s for a local GPU
+3. **theory** — *Hiperparametry i harmonogram LR* (batch/imgsz/epochs/lr0, warm-up + cosine decay) + annotated `train()` diagram + KaTeX cosine-decay formula
+4. **plotImage** — the warm-up + cosine LR curve (real axes/labels/title, source byte-for-byte the script I ran)
+5. **quiz** — why warm-up (distractors drawn from research.md misconceptions)
+6. **code** — implement `lr_at_epoch(...)`, a CPU-only pure-`math` function (honoring the "no `model.train`/GPU in widgets" constraint) — 4 tests, solution verified passing
+7. **sandbox** — tweak the schedule and watch the curve
+**Assets generated on disk** (no external URLs anywhere): `assets/images/transfer-learning-pipeline.png`, `assets/images/anatomia-komendy-treningu.png`, `assets/plots/trening-wasnego-detektora-na-lokalnym-gpu-1.png`.
+**Verification:** `LessonSchema.safeParse` → OK; external-image grep → empty; every `/api/...` asset path resolves to a real file; the code solution passes all 4 tests; theory beats are 151 and 219 words. 6 lesson-level sources (5 Ultralytics docs + the SGDR cosine-annealing paper), with section-level sources attached where each beat leans on a specific reference.
+No changes made to `scripts/ralph/`, `course.json`, or any other lesson file.
+[result success (448.2s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+I'll start by reading the SKILL.md to understand the workflow, then the course inputs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+Let me read the rest of SKILL.md and the course context files in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read research.md, sources.md, and the widget docs.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I have all the context. This is the YOLO metrics lesson (m4, 14 min, Polish prose, theory/practice ≈0.5). Let me check the course's asset/lesson dirs and confirm matplotlib availability.
+→ Bash(command: ls -la courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora…)
+← total 576
+[system thinking_tokens]
+[system thinking_tokens]
+The target lesson doesn't exist yet. Let me peek at a sibling lesson to match the Polish style and plotImage conventions.
+→ Bash(command: cd courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ult…)
+← keys ['schemaVersion', 'slug', 'courseSlug', 'moduleId', 'title', 'eyebrow', 'description', 'estimatedMinutes', 'sections', 'sources']
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Lesson file is absent — good. Now I'll generate the four PNGs (two `plotImage` figures + two inline diagrams). Let me write and run the plot scripts.
+→ Write(file_path: /tmp/plot_pr.py)
+← File created successfully at: /tmp/plot_pr.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/plot_curves.py)
+← File created successfully at: /tmp/plot_curves.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/plot_inline.py)
+← File created successfully at: /tmp/plot_inline.py (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && python3 /tmp/plot_pr.py && python3 /t…)
+← Exit code 134
+[system thinking_tokens]
+[system thinking_tokens]
+Need the Agg backend. Let me add it to the scripts (so the embedded sourceCode also reproduces headlessly).
+→ Edit(file_path: /tmp/plot_pr.py)
+← The file /tmp/plot_pr.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Edit(file_path: /tmp/plot_curves.py)
+← The file /tmp/plot_curves.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Edit(file_path: /tmp/plot_inline.py)
+← The file /tmp/plot_inline.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer && python3 /tmp/plot_pr.py && python3 /t…)
+← saved PR curve
+All four PNGs generated. Let me visually verify them.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All four figures render correctly: the PR curve shows per-class AP + mean mAP@0.5, the learning curves show the val-loss uptick/plateau (supporting the diagnosis quiz), and both inline diagrams are clear. 
+Now I'll assemble the lesson JSON via a Python builder (safer escaping of KaTeX + reads the exact plot scripts for `sourceCode`).
+→ Write(file_path: /tmp/build_lesson.py)
+← <tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Write(file_path: /tmp/build_lesson_v2.py)
+← File created successfully at: /tmp/build_lesson_v2.py (file state is current in your context — no need to Read it back)
+[rate_limit_event]
+→ Bash(command: python3 /tmp/build_lesson_v2.py)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/metryki-i-czytanie-krzywych-uczenia.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+6 widgets exceeds the 2–5 cap. I'll drop the optional sandbox closer (keeping the diagnosis quiz, which ties directly to the learning-curves figure). That leaves 5 widgets ending on a quiz.
+→ Edit(file_path: /tmp/build_lesson_v2.py)
+← The file /tmp/build_lesson_v2.py has been updated successfully. (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/build_lesson_v2.py && echo "--- verify code solution passes its own…)
+← wrote courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/metryki-i-czytanie-krzywych-uczenia.json
+5 widgets, 2 theory, solution passes all tests. Now validate against `LessonSchema` and run the external-URL gate check.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+← [eval]:27
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+The dynamic-import shape returned undefined. Let me validate via a file using the project's path aliases instead.
+→ Bash(command: cat > /home/nukeemann/projects/ai_lecturer/tmp-validate-lesson.ts <<'EOF'
+import…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/metryki-i-czytanie-krzywych-uczenia.json
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Done. The lesson validates against `LessonSchema` and passes every gate.
+## Summary
+Authored `/courses/detekcja-obiektow-z-yolo-…/lessons/metryki-i-czytanie-krzywych-uczenia.json` (module `m4`, 14 min, Polish prose per the course's language rule).
+**Structure** — 2 theory beats + 5 widgets (within the 2–5 budget), no back-to-back theory, ends on a widget:
+1. `theory` — *Czym mierzymy jakość detektora?* — TP/FP/FN via IoU, precision/recall (KaTeX), PR curve → AP → mAP, and mAP@0.5 vs mAP@0.5:0.95. Inline TP/FP/FN figure; section sources.
+2. `plotImage` — per-class PR curves + mean mAP@0.5.
+3. `code` — `precision_recall(preds, gts, iou_thr)` with greedy IoU matching; 4 tests (1 visible smoke), reference `solution` verified to pass all of them.
+4. `quiz` — mAP@0.5 vs 0.5:0.95 (strict-metric misconception).
+5. `theory` — *Czytanie krzywych uczenia* — `results.png`, train/val gap, overfitting, early stopping/`best.pt`. Inline early-stopping figure; section sources.
+6. `plotImage` — learning curves (loss + mAP, with the val-loss uptick that sets up the final quiz).
+7. `quiz` (multi-select) — diagnose the overfitting curve.
+**Assets** — generated 4 matplotlib PNGs and confirmed all exist on disk; plotImage `sourceCode` is the exact (headless-`Agg`) script that produced each figure. No external `http(s)://` URLs in any image position.
+**Sources** — 4 lesson-level entries (Ultralytics performance-metrics + Val docs, Precision/recall Wikipedia, COCO paper with author/year), copied from the matching `sources.md` heading.
+Untouched: `course.json`, other lessons, `sources.md`, and `scripts/ralph/`.
+[result success (640.8s)]
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+← <system-reminder>[Truncated: PARTIAL view — showing lines 1-592 of 788 total (28264 tokens, cap 25000). Call Read with offset=593 limit=592 for the next page, or Grep to find a specific section. Do NO…
+[system thinking_tokens]
+[system thinking_tokens]
+I have the skill and schema. Let me read the rest of the SKILL.md and the course context files.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_lesson/SKILL.…)
+← 593	        "alt": "Two stacked line plots of a 1-D signal that jumps from 0 to 5 with three impulse spikes. Top: noisy input. Bottom: outputs of a 3-sample median filter (orange, spikes removed and s…
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+The target lesson is `inference-i-eksport-modelu`, module `m4`, 15 minutes. Now let me read research.md and sources.md, and the widgets doc.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Research: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	# Sources: Detekcja obiektów z YOLO — od mechaniki modelu do własnego detektora (Ultralytics YOLO11)
+[system thinking_tokens]
+[system thinking_tokens]
+Now let me read the widgets doc and check existing lessons in this course folder for style/conventions.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+← 1	# Widgets reference
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+← total 220
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Note: the `SectionSchema` union in lesson.ts has **no `image` type** despite the skill mentioning it. Let me verify against existing lessons and read the key widget schemas + a sample lesson for style.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer; echo "=== types used across this course…)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Code/schema.ts)
+← 1	import { z } from 'zod';
+← Exit code 2
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Confirmed: no `image` widget type — this course uses inline markdown images + `plotImage` for figures. Let me read a recent sibling lesson to match style precisely.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+I now have a clear picture of the established style. Let me verify the exact schemas for the widgets I'll use (DataTable, PlotImage, Sandbox, Quiz, Theory) to avoid `additionalProperties` errors.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/DataTable/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/PlotImage/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Sandbox/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Quiz/schema.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/Theory/schema.ts)
+← 1	import { z } from 'zod';
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+All schemas confirmed. Now I'll generate the three PNG assets (two inline diagram images + one quantitative plot). Let me write and run the generators.
+→ Write(file_path: /tmp/gen_inline_diagrams.py)
+← File created successfully at: /tmp/gen_inline_diagrams.py (file state is current in your context — no need to Read it back)
+→ Write(file_path: /tmp/gen_plot.py)
+← File created successfully at: /tmp/gen_plot.py (file state is current in your context — no need to Read it back)
+→ Bash(command: python3 /tmp/gen_inline_diagrams.py && python3 /tmp/gen_plot.py && ls -la course…)
+← inline diagrams written
+Let me visually verify the three generated images.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← (empty)
+[system thinking_tokens]
+[system thinking_tokens]
+All three images render correctly with proper Polish diacritics and full axes on the plot. Let me quickly verify the code exercise solution before embedding it.
+→ Bash(command: python3 -c "
+def unletterbox_box(box, orig_w, orig_h, size=640):
+    r = min(siz…)
+← t1 True
+All tests pass. Now I'll write the lesson JSON.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/inference-i-eksport-modelu.json …
+[system thinking_tokens]
+[system thinking_tokens]
+Now validate against `LessonSchema`, confirm no external image URLs survive, and verify the plotImage `sourceCode` reproduces the PNG byte-for-byte.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = 'courses/detekcja-obiek…)
+→ Bash(command: echo "=== external image URLs (must be empty) ==="; grep -nE '!\[[^]]*\]\(https?…)
+← Exit code 1
+← === external image URLs (must be empty) ===
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+No external URLs — good. The inline `tsx -e` didn't resolve the `@/` path aliases. Let me run the validator as a proper script file so tsconfig paths resolve.
+→ Bash(command: cat > /tmp/validate_lesson.ts <<'EOF'
+import { readFileSync } from 'node:fs';
+im…)
+← OK: courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/lessons/inference-i-eksport-modelu.json
+Validation passes. Now let me confirm the plotImage `sourceCode` reproduces the saved PNG byte-for-byte by extracting it from the JSON and re-running it.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+PLOT=courses/detekcja-obiektow-z-yolo-od…)
+← === diff before vs reproduced ===
+[system thinking_tokens]
+[system thinking_tokens]
+Byte-for-byte identical. Final checks: confirm every referenced asset exists on disk, and run typecheck.
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer
+echo "=== asset paths referenced in less…)
+← === asset paths referenced in lesson ===
+→ Bash(command: npm run typecheck 2>&1 | tail -15)
+[system task_started]
+[system task_notification]
+← > ai-lecturer@0.1.0 typecheck
+All checks pass. The lesson is complete.
+## Done — `inference-i-eksport-modelu.json`
+Authored one lesson at `/courses/detekcja-obiektow-z-yolo-.../lessons/inference-i-eksport-modelu.json`, validated against `LessonSchema`.
+**Structure** (m4, 15 min, Polish prose / English technical terms, ~0.5 theory/practice):
+`theory → quiz → code → theory → dataTable → plotImage → sandbox` (2 theory beats + 5 widgets; starts on theory, no back-to-back theory, ends on a widget).
+1. **Predict mode** (theory) — running inference, the `conf` vs `iou` thresholds, the `Results` object; inline pipeline diagram.
+2. **Quiz** — diagnoses the conf-vs-iou-threshold misconception (duplicate boxes → lower NMS IoU).
+3. **Code** — `unletterbox_box(...)`: rescale detections from the 640×640 letterbox grid back to original-image pixels (pure Python, 1 visible smoke test + 3 hidden, full reference solution; all four verified passing).
+4. **Export** (theory) — `model.export()`, ONNX as a portable interchange format, TensorRT as the compiled NVIDIA engine; inline export-flow diagram.
+5. **DataTable** — six export formats (torchscript/onnx/engine/openvino/coreml/tflite) × file / runtime / when-to-use.
+6. **PlotImage** — example inference latency per format (PyTorch/ONNX/TensorRT FP16) with full axes/labels/title.
+7. **Sandbox** — convert latency → FPS and compute speedup.
+**Sources:** 4 lesson-level entries copied wholesale from `sources.md` (Ultralytics Predict/Export, ONNX, NVIDIA TensorRT), plus section-level sources on both theory beats and the two reference widgets.
+**Assets** (all generated and confirmed on disk):
+- `assets/images/inference-pipeline-predict.png` (inline)
+- `assets/images/export-pipeline-onnx-tensorrt.png` (inline)
+- `assets/plots/inference-i-eksport-modelu-1.png` (plotImage — `sourceCode` reproduces it **byte-for-byte**)
+**Verification:** `LessonSchema.safeParse` → OK · `npm run typecheck` clean · no external `http(s)://` image URLs survive · every referenced asset path resolves · nothing under `scripts/ralph/` touched · no other lesson or `course.json` modified.
+One note worth flagging: the SKILL.md repeatedly references an `image` widget (US-050), but `SectionSchema` in `src/lib/schemas/lesson.ts` has no `image` type — so, matching every existing lesson in this course, I used inline markdown images for the diagrams and `plotImage` for the quantitative figure.
+[result success (449.5s)]
+## Prerequisite Order
+
+- `od-anchor-based-do-anchor-free-i-decoupled-head` relies on **IoU** ("przypisanie przez IoU", "kotwica o IoU z obiektem powyżej progu") with no definition, yet IoU is only formally introduced — formula `|A∩B|/|A∪B|` plus a full code exercise — two lessons later in `output-od-surowej-siatki-do-finalnych-detekcji`. Since the course chooses to teach IoU from scratch rather than assume it, either move a short IoU gloss earlier or add a forward-pointer in the anchor lesson.
+
+- `trening-wasnego-detektora-na-lokalnym-gpu` asks the learner to choose a model variant from a **mAP@0.5:0.95** column ("Im większy model, tym wyższe mAP"), and `architektura-backbone-neck-head` already shows a "mAP 50-95" column, but the metric is only defined in `metryki-i-czytanie-krzywych-uczenia` (the next lesson). The learner acts on mAP before it is explained; a one-line "mAP wyjaśnimy w lekcji o metrykach" pointer in the training lesson would close the gap.
+
+## Redundancy
+
+- `format-datasetu-yolo-i-datayaml` and `adnotacja-i-konwersja-z-cocopascal-voc` both teach the VOC→YOLO conversion **and ship a near-identical `voc_to_yolo(box, img_w, img_h)` code exercise** with the same formula and worked example, neither acknowledging the other. Pick one lesson as the canonical implementation exercise and have the second cite it (e.g. apply it to a mini-batch) instead of re-deriving and re-implementing it.
+
+- `architektura-backbone-neck-head` already explains **anchor-free** and **decoupled head** in its head section (including the objectness removal), and `od-anchor-based-do-anchor-free-i-decoupled-head` then re-explains both from scratch with no cross-reference. The second lesson does go deeper (k-means anchors, FCOS l/t/r/b, coupled-vs-decoupled), so a back-reference ("rozwinięcie tego, co zarysowaliśmy w architekturze") would frame it as a deepening rather than a repeat.
+
+- `dlaczego-yolo-patrzy-tylko-raz` (`count_grid_predictions`) and `od-anchor-based-do-anchor-free-i-decoupled-head` (`count_predictions`) both contain a code exercise computing the **8400-candidate grid count** by summing `(input_size // stride)²` across scales — the second is just the first times `anchors_per_cell`. Consider having the anchor lesson extend the earlier function rather than restate the same grid arithmetic.
+
+- The point that **modern YOLO has no separate objectness branch** (and that treating it as one is "częsty błąd") is made almost identically in `architektura-backbone-neck-head`, `output-od-surowej-siatki-do-finalnych-detekcji` and `funkcje-straty-i-label-assignment`, with no lesson signalling the others. Each context differs (head / decode / loss), but a single canonical statement plus brief recaps would avoid the triple repetition.
+
+## Notation Consistency
+
+- The definition of **confidence** is internally contradictory across the course. `detekcja-vs-klasyfikacja-vs-segmentacja` (`confidence = P(obiekt)·P(klasa|obiekt)`) and `inference-i-eksport-modelu` (`wynik (objectness × prawdopodobieństwo klasy)`) frame it via objectness, whereas `architektura-backbone-neck-head`, `output-od-surowej-siatki-do-finalnych-detekcji` and `funkcje-straty-i-label-assignment` explicitly state YOLO11 has **no objectness** and `confidence = σ(max_k z_k)` — and even call the objectness framing a common error. The YOLO11-specific lessons (esp. `inference-i-eksport-modelu`) should use the no-objectness definition, or the intro lesson should flag its formula as the classic/pre-YOLOv8 convention.
+
+- The metric **mAP@0.5:0.95** is rendered inconsistently: `architektura-backbone-neck-head` labels its column "mAP 50-95", while `trening-wasnego-detektora-na-lokalnym-gpu` and `metryki-i-czytanie-krzywych-uczenia` use "mAP@0.5:0.95" (the latter also using "mAP50-95" for the `results.csv` field). The bare-text `results.csv` name is justified, but the table column headers should agree on one form (e.g. `mAP@0.5:0.95`) so a learner moving between lessons reads it as the same quantity.

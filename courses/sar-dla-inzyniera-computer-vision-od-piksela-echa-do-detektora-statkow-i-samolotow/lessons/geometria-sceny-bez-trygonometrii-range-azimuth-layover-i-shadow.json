@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "slug": "geometria-sceny-bez-trygonometrii-range-azimuth-layover-i-shadow",
+  "courseSlug": "sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow",
+  "moduleId": "m1",
+  "title": "Geometria sceny bez trygonometrii: range, azimuth, layover i shadow",
+  "eyebrow": "FUNDAMENTY SAR",
+  "description": "Na widżecie z suwakiem kąta padania zobaczysz, jak powstają layover, foreshortening i cień — i co to znaczy dla położenia obiektów na obrazie SAR.",
+  "estimatedMinutes": 15,
+  "sections": [
+    {
+      "id": "range-azimuth",
+      "title": "Dwie osie obrazu: range i azimuth",
+      "sources": [
+        {
+          "url": "https://doi.org/10.25966/nr2c-s697",
+          "title": "The SAR Handbook (Ch. 2 — SAR basics and geometry)",
+          "kind": "book",
+          "author": "Africa Ixmucane Flores-Anderson, Kelsey E. Herndon, Rajesh Bahadur Thapa, Emil Cherrington (eds.), NASA SERVIR",
+          "year": 2019
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+          "title": "Synthetic-aperture radar — Wikipedia",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Zdjęcie z aparatu ma osie **x** i **y** — to po prostu pozycje w siatce pikseli. Obraz SAR też jest prostokątem pikseli, ale jego dwie osie powstają zupełnie inaczej, bo radar to **dalmierz**, a nie siatkówka.\n\n- **Azimuth** (oś wzdłuż obrazu) — kierunek *wzdłuż* toru lotu satelity. Tu pozycja działa jak na zwykłym zdjęciu: kolejne linie to kolejne momenty przelotu.\n- **Range** (oś w poprzek) — kierunek *w poprzek* toru. I tu jest haczyk: pozycja na tej osi to **zmierzona odległość echa**, czyli jak długo impuls leciał tam i z powrotem. Nie „gdzie obiekt jest w kadrze”, tylko „jak daleko jest od anteny”.\n\n![Schemat geometrii akwizycji SAR: satelita w lewym górnym rogu, zielona strzałka azimuth (kierunek lotu), czerwona linia ciągła slant range (odległość wzdłuż wiązki) do near range i przerywana do far range, na ziemi oś range (ground range) oraz kąt padania θ liczony od pionu](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-geometry-range-azimuth.png)\n\nRadar mierzy odległość **wzdłuż wiązki** — to **slant range**. Żeby nanieść piksele na mapę, trzeba ją przeliczyć na **ground range** (odległość po ziemi). Blisko sensora (near range) wiązka pada bardziej stromo, więc równe odcinki terenu „zlewają się” w krótkie odcinki slant range — dlatego near range bywa ściśnięty.\n\n> **Kąt padania θ** to kąt, pod jakim wiązka trafia w ziemię (liczony od pionu, w stopniach). Dla Sentinel-1 to typowo **30–45°**. Im większy θ (radar patrzy bardziej „z boku”), tym mocniejsze będą zniekształcenia, którymi zajmiemy się za chwilę.\n\n**Most do Twojego CV:** w RGB piksel `(i, j)` to czysta pozycja w gridzie. W SAR oś range to *wynik pomiaru odległości* — i właśnie dlatego wysoki obiekt potrafi wylądować w złym miejscu obrazu."
+      }
+    },
+    {
+      "id": "check-range",
+      "title": "Szybki sprawdzian: czym jest oś range",
+      "description": "Zanim wejdziemy w zniekształcenia — co tak naprawdę wyznacza pozycję na osi range?",
+      "type": "quiz",
+      "data": {
+        "question": "Co decyduje o tym, w którym miejscu osi *range* radar umieści obiekt?",
+        "options": [
+          "Zmierzona odległość echa od anteny (czas powrotu impulsu).",
+          "Jasność (kolor) obiektu, tak jak na zdjęciu optycznym.",
+          "Pozycja obiektu wzdłuż kierunku lotu satelity.",
+          "Wysokość Słońca nad horyzontem w chwili akwizycji."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Oś range to zmierzona odległość: radar ustawia obiekt według czasu powrotu jego echa, czyli jak daleko od anteny się znajduje. Właśnie dlatego wysoki obiekt (bliżej anteny) ląduje „za blisko” i powstaje layover. Pozycja wzdłuż toru lotu to druga oś — azimuth (odp. 3). Kolor i Słońce nie grają roli: SAR jest aktywny i mierzy siłę oraz czas echa, nie barwę (odp. 2 i 4).",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "znieksztalcenia",
+      "title": "Layover, foreshortening i cień: skąd się biorą",
+      "sources": [
+        {
+          "url": "https://natural-resources.canada.ca/maps-tools-publications/satellite-elevation-air-photos/tutorial-fundamentals-remote-sensing",
+          "title": "Fundamentals of Remote Sensing: geometric distortions (layover, foreshortening, shadow) — Natural Resources Canada",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+          "title": "A Tutorial on Synthetic Aperture Radar",
+          "kind": "paper",
+          "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+          "year": 2013
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Skoro oś range to *odległość echa*, to wszystko, co jest **bliżej** anteny, ląduje **wcześniej** na tej osi — niezależnie od tego, gdzie naprawdę leży na ziemi. Wysoki obiekt psuje więc kolejność. Stąd trzy klasyczne zniekształcenia bocznej geometrii SAR:\n\n| Zniekształcenie | Kiedy powstaje | Jak wygląda na obrazie |\n| --- | --- | --- |\n| **Foreshortening** | stok zwrócony do radaru | ściśnięty i **jasny** — dużo terenu wpada w mało binów odległości |\n| **Layover** | bardzo stromy stok lub mały kąt padania | szczyt ląduje **bliżej** niż podstawa — „kładzie się” na nią, kolejność odwrócona |\n| **Cień (shadow)** | teren za wysokim obiektem | **czarny** pas zerowego echa — wiązka tam nie dociera |\n\n![Schemat geometrii bocznej SAR na profilu grzbietu: radar z lewej strony wysyła równoległe promienie pod kątem; niebieska etykieta foreshortening wskazuje ściskany stok od strony radaru, fioletowa strzałka layover pokazuje szczyt przesunięty ku near range, a ciemny pas za grzbietem to cień radarowy (zero echa) wzdłuż osi range](/api/courses/sar-dla-inzyniera-computer-vision-od-piksela-echa-do-detektora-statkow-i-samolotow/assets/images/sar-distortions-layover-shadow.png)\n\nKluczowa intuicja: **foreshortening i layover to ta sama mechanika** (echo z góry wraca za wcześnie), tylko o różnym natężeniu. Przy stromym stoku albo małym kącie padania (radar patrzy stromo z góry) szczyt „przeskakuje” podstawę — to layover. Przy łagodniejszym stoku zostaje samo ściśnięcie, czyli foreshortening.\n\n**Cień** rośnie z kątem padania: im bardziej *płasko* patrzy radar (duże θ, tzw. grazing), tym dłuższy cień rzuca obiekt — dokładnie jak długi cień o zachodzie słońca.\n\n> **Uwaga dla modelu i georeferencji:** to **nie** są usterki sensora ani „brak danych”. Cień niesie informację o wysokości i geometrii, a layover przesuwa detekcję — jeśli zaznaczysz statek czy budynek na surowym obrazie, jego pozycja na mapie może być przesunięta, dopóki sceny nie skorygujesz geometrycznie (wrócimy do tego w module 3)."
+      }
+    },
+    {
+      "id": "explorer-kat-padania",
+      "title": "Suwak kąta padania: zobacz, jak rosną zniekształcenia",
+      "description": "Zmieniaj kąt padania i wysokość grzbietu; na górze scena boczna z cieniem, na dole obraz radaru wzdłuż osi range.",
+      "sources": [
+        {
+          "url": "https://natural-resources.canada.ca/maps-tools-publications/satellite-elevation-air-photos/tutorial-fundamentals-remote-sensing",
+          "title": "Fundamentals of Remote Sensing: geometric distortions (layover, foreshortening, shadow) — Natural Resources Canada",
+          "kind": "article"
+        }
+      ],
+      "type": "parametricExplorer",
+      "data": {
+        "setupCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef _grzbiet(x, wysokosc):\n    # asymetryczny grzbiet: lagodny stok od strony radaru (near), stromy w cien (far)\n    return wysokosc * np.clip(np.minimum((x - 30.0) / 15.0, (52.0 - x) / 7.0), 0, 1)\n",
+        "renderCode": "theta = np.deg2rad(kat_padania)\nx = np.linspace(0, 100, 600)\nh = _grzbiet(x, wysokosc)\n# tanE = cos/sin = nachylenie promienia radaru; mniejsze -> dluzszy cien\ntanE = np.cos(theta) / np.sin(theta)\ng = h + x * tanE\nlit = g >= np.maximum.accumulate(g)\n# rzut na os odleglosci: wysokosc przesuwa punkt ku near range -> layover\nr = x * np.sin(theta) - h * np.cos(theta)\n\ntop = max(float(np.max(h)) + 2, 5)\nfig, (ax1, ax2) = plt.subplots(2, 1, figsize=(7.2, 5.8))\nax1.fill_between(x, h, color='#a1887f')\nax1.plot(x, h, color='#5d4037', lw=1.5)\nax1.fill_between(x, 0, top, where=~lit, color='#37474f', alpha=0.30, step='mid')\nax1.set_xlim(0, 100)\nax1.set_ylim(0, top)\nax1.set_xlabel('pozycja na ziemi (near -> far)')\nax1.set_ylabel('wysokosc terenu')\nax1.set_title(f'Scena boczna: kat padania {kat_padania:.0f} st. (szare = cien radarowy)')\nax1.grid(True, alpha=0.3)\n\nax2.hist(r[lit], bins=80, range=(float(r.min()), float(r.max())), color='#3949ab')\nax2.set_xlabel('os range = odleglosc wzdluz wiazki (slant)')\nax2.set_ylabel('ile lat terenu trafia w bin (jasnosc)')\nax2.set_title('Obraz radaru: garb = foreshortening/layover, luka = cien')\nax2.grid(True, alpha=0.3)\nfig.tight_layout()\n",
+        "params": [
+          {
+            "name": "kat_padania",
+            "label": "Kąt padania θ [°]",
+            "type": "slider",
+            "min": 15,
+            "max": 70,
+            "step": 1,
+            "default": 45
+          },
+          {
+            "name": "wysokosc",
+            "label": "Wysokość grzbietu",
+            "type": "slider",
+            "min": 0,
+            "max": 30,
+            "step": 1,
+            "default": 18
+          }
+        ],
+        "outputType": "plot"
+      }
+    },
+    {
+      "id": "exercise-cien",
+      "title": "Policz cień radarowy z profilu terenu",
+      "description": "Z profilu wysokości i kąta padania wyznacz, które piksele są w cieniu.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Cień radarowy to obszar **za** wysokim obiektem, do którego wiązka nie dociera — zero echa, czarny piksel. Jak długi jest cień, zależy od **kąta padania** θ: im bardziej *płasko* patrzy radar (duże θ, np. 60°), tym dłuższy cień.\n\nNapisz `cien_radarowy(h, x, kat_padania_deg)`:\n\n- `h` — wysokości terenu wzdłuż profilu (1-D `array`),\n- `x` — pozycje na ziemi od **near** do **far range** (rosnące),\n- `kat_padania_deg` — kąt padania θ w stopniach,\n- zwraca maskę `bool` tego samego kształtu (`True` = piksel w cieniu).\n\nGeometria w jednej linijce: punkt jest **oświetlony**, dopóki jego linia widoczności nie zostanie zasłonięta przez wcześniejszy (bliższy) teren. Policz `g = h + x * (cos θ / sin θ)` i sprawdź, gdzie `g` spada poniżej dotychczasowego maksimum (`np.maximum.accumulate`). Człon `cos θ / sin θ` to nachylenie promienia (tangens kąta elewacji): dla θ ≈ 35° wynosi ≈ 1.43, a dla θ ≈ 60° ≈ 0.58 — mniejsze nachylenie = dłuższy cień.\n\n```\nx = np.arange(40.0); h = np.zeros_like(x); h[20] = 10.0\ncien_radarowy(h, x, 45)[21]  # -> True   (tuz za szczytem)\ncien_radarowy(h, x, 45)[20]  # -> False  (sam szczyt oswietlony)\n```",
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef cien_radarowy(h, x, kat_padania_deg):\n    # h: wysokosci terenu (1-D), x: pozycje near->far (rosnace), kat w stopniach.\n    # TODO: zwroc maske bool (True = cien). Podpowiedz:\n    #   theta = np.deg2rad(kat_padania_deg)\n    #   tanE  = np.cos(theta) / np.sin(theta)   # nachylenie promienia radaru\n    #   g = h + x * tanE\n    #   cien tam, gdzie g spada ponizej np.maximum.accumulate(g)\n    return np.zeros_like(np.asarray(h, dtype=float), dtype=bool)\n\n# Podglad na przykladowym grzbiecie:\nx = np.linspace(0, 100, 300)\nh = 18 * np.clip(np.minimum((x - 30) / 15, (52 - x) / 7), 0, 1)\nmaska = cien_radarowy(h, x, 45)\nplt.fill_between(x, h, color='#a1887f')\nplt.fill_between(x, 0, h.max() + 2, where=maska, color='#37474f', alpha=0.3)\nplt.title('Cien radarowy za grzbietem (kat padania 45 st.)')\nplt.xlabel('pozycja na ziemi (near -> far)')\nplt.ylabel('wysokosc terenu')\n",
+        "tests": [
+          {
+            "name": "cien_tuz_za_szczytem",
+            "body": "import numpy as np\nx = np.arange(40.0); h = np.zeros_like(x); h[20] = 10.0\nm = cien_radarowy(h, x, 45)\nassert bool(m[21]) is True\nassert bool(m[20]) is False",
+            "hidden": false
+          },
+          {
+            "name": "plaski_teren_bez_cienia",
+            "body": "import numpy as np\nx = np.arange(50.0); h = np.zeros_like(x)\nassert not cien_radarowy(h, x, 35).any()",
+            "hidden": true
+          },
+          {
+            "name": "wiekszy_kat_dluzszy_cien",
+            "body": "import numpy as np\nx = np.arange(80.0); h = np.zeros_like(x); h[20] = 10.0\nassert cien_radarowy(h, x, 60).sum() > cien_radarowy(h, x, 30).sum()",
+            "hidden": true
+          },
+          {
+            "name": "zwraca_maske_bool",
+            "body": "import numpy as np\nx = np.arange(30.0); h = np.zeros_like(x); h[10] = 5.0\nm = cien_radarowy(h, x, 40)\nassert m.dtype == bool\nassert m.shape == x.shape",
+            "hidden": true
+          }
+        ],
+        "solution": "import numpy as np\nimport matplotlib.pyplot as plt\n\ndef cien_radarowy(h, x, kat_padania_deg):\n    h = np.asarray(h, dtype=float)\n    x = np.asarray(x, dtype=float)\n    theta = np.deg2rad(kat_padania_deg)\n    tanE = np.cos(theta) / np.sin(theta)\n    g = h + x * tanE\n    lit = g >= np.maximum.accumulate(g)\n    return ~lit\n\nx = np.linspace(0, 100, 300)\nh = 18 * np.clip(np.minimum((x - 30) / 15, (52 - x) / 7), 0, 1)\nmaska = cien_radarowy(h, x, 45)\nplt.fill_between(x, h, color='#a1887f')\nplt.fill_between(x, 0, h.max() + 2, where=maska, color='#37474f', alpha=0.3)\nplt.title('Cien radarowy za grzbietem (kat padania 45 st.)')\nplt.xlabel('pozycja na ziemi (near -> far)')\nplt.ylabel('wysokosc terenu')\n"
+      }
+    },
+    {
+      "id": "check-konsekwencje",
+      "title": "Szybki sprawdzian: konsekwencje geometrii",
+      "description": "Zaznacz wszystkie prawdziwe stwierdzenia o geometrii SAR.",
+      "type": "quiz",
+      "data": {
+        "question": "Które stwierdzenia o geometrii bocznej SAR są prawdziwe? Zaznacz wszystkie, które pasują.",
+        "options": [
+          "Szczyt wysokiej góry może na obrazie wylądować bliżej near range niż jej podstawa (layover) — bo jego echo wraca wcześniej.",
+          "Cień radarowy to po prostu brak danych, więc można go bez straty informacji wypełnić interpolacją.",
+          "Im bardziej płasko (grazing, duży kąt padania) patrzy radar, tym dłuższe cienie za obiektami.",
+          "Foreshortening sprawia, że stok zwrócony do radaru wygląda na krótszy i jaśniejszy, niż jest w rzeczywistości."
+        ],
+        "correct": [
+          0,
+          2,
+          3
+        ],
+        "explanation": "Layover wynika z tego, że range to odległość echa: szczyt jest bliżej anteny, więc jego echo wraca wcześniej i ląduje przed podstawą (1. prawda). Cień rośnie z kątem padania — płaski, grazing radar rzuca długie cienie jak słońce o zachodzie (3. prawda). Foreshortening ściska stok zwrócony do radaru: dużo terenu trafia w mało binów odległości, więc wygląda krótko i jasno (4. prawda). Cień NIE jest jednak „brakiem danych” do zamalowania — to deterministyczna konsekwencja geometrii, niosąca informację o wysokości; ślepe wypełnienie skasowałoby tę informację i wprowadziło artefakty (2. fałsz).",
+        "multiSelect": true
+      }
+    },
+    {
+      "id": "piaskownica",
+      "title": "Pobaw się geometrią cienia",
+      "description": "Zmieniaj kąt padania i wysokość grzbietu i obserwuj, jak rośnie cień.",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "import numpy as np\nimport matplotlib.pyplot as plt\n\n# Pokrec katem padania i wysokoscia grzbietu i patrz, jak rosnie cien\n# oraz jak szczyt 'klada sie' ku near range (layover).\nkat = 45      # stopnie: maly = stromo z gory (wiecej layover), duzy = plasko (dlugi cien)\nwysokosc = 18\n\nx = np.linspace(0, 100, 600)\nh = wysokosc * np.clip(np.minimum((x - 30) / 15, (52 - x) / 7), 0, 1)\ntheta = np.deg2rad(kat)\ntanE = np.cos(theta) / np.sin(theta)\ng = h + x * tanE\nlit = g >= np.maximum.accumulate(g)\n\nprint(f'kat={kat} st., wysokosc={wysokosc} -> cien: {100 * (~lit).mean():.1f}% profilu')\nplt.fill_between(x, h, color='#a1887f')\nplt.fill_between(x, 0, h.max() + 2, where=~lit, color='#37474f', alpha=0.3)\nplt.title('Pobaw sie katem i wysokoscia')\nplt.xlabel('pozycja na ziemi (near -> far)')\nplt.ylabel('wysokosc terenu')\n",
+        "encouragement": "Pokręć kątem padania i wysokością i zobacz, kiedy cień zaczyna pożerać teren za grzbietem — bez testów, bez presji."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://doi.org/10.25966/nr2c-s697",
+      "title": "The SAR Handbook (Ch. 2 — SAR basics and geometry)",
+      "kind": "book",
+      "author": "Africa Ixmucane Flores-Anderson, Kelsey E. Herndon, Rajesh Bahadur Thapa, Emil Cherrington (eds.), NASA SERVIR",
+      "year": 2019
+    },
+    {
+      "url": "https://natural-resources.canada.ca/maps-tools-publications/satellite-elevation-air-photos/tutorial-fundamentals-remote-sensing",
+      "title": "Fundamentals of Remote Sensing: geometric distortions (layover, foreshortening, shadow) — Natural Resources Canada",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Synthetic-aperture_radar",
+      "title": "Synthetic-aperture radar — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1109/MGRS.2013.2248301",
+      "title": "A Tutorial on Synthetic Aperture Radar",
+      "kind": "paper",
+      "author": "Alberto Moreira, Pau Prats-Iraola, Marwan Younis, Gerhard Krieger, Irena Hajnsek, Konstantinos P. Papathanassiou",
+      "year": 2013
+    }
+  ]
+}

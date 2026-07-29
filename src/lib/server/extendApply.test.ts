@@ -9,6 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { POST as postApply } from '@/app/api/courses/[slug]/extend/apply/route';
 import {
   __resetForTesting as __resetGenerationForTesting,
+  __setActiveRunForTesting,
   __setSpawnDepsForTesting,
   type SpawnDeps,
 } from '@/lib/server/generation';
@@ -145,7 +146,21 @@ afterEach(async () => {
   __resetGenerationForTesting();
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
-  await fs.rm(coursesRoot, { recursive: true, force: true });
+  // The pipeline's fire-and-forget marker writes (`void writeGeneratingMarker`
+  // / `void removeGeneratingMarker` in generation.ts) can land a tick after
+  // `finished` flips, re-creating a file inside a directory rm is mid-walk
+  // through — which surfaces as ENOTEMPTY. Retry briefly instead of flaking.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rm(coursesRoot, { recursive: true, force: true });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOTEMPTY' || attempt >= 4) {
+        throw err;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
 });
 
 function buildProposedSchema(slug: string, opts: { addModule?: boolean; addLesson?: boolean } = {}) {
@@ -344,16 +359,7 @@ describe('POST /api/courses/[slug]/extend/apply (US-144)', () => {
   it('returns 409 when a generation is active for this slug', async () => {
     const slug = 'edge-detection-basics';
     await seedCourse(slug);
-    await fs.writeFile(
-      path.join(coursesRoot, slug, '.generating.json'),
-      JSON.stringify({
-        childPid: process.pid,
-        slug,
-        stage: 'research_course',
-        startedAt: '2026-05-08T00:00:00.000Z',
-      }),
-      'utf8',
-    );
+    __setActiveRunForTesting(slug);
 
     const proposedSchema = buildProposedSchema(slug, { addLesson: true });
     const res = await postApply(

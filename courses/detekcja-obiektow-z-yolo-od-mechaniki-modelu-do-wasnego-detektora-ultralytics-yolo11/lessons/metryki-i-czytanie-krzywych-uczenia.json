@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "slug": "metryki-i-czytanie-krzywych-uczenia",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m4",
+  "title": "Metryki i czytanie krzywych uczenia",
+  "eyebrow": "EWALUACJA",
+  "description": "Zinterpretuj precision, recall, mAP@0.5 i mAP@0.5:0.95 oraz krzywe PR i uczenia, by odróżnić realną jakość detektora od samego spadku straty.",
+  "estimatedMinutes": 14,
+  "sections": [
+    {
+      "id": "co-mierzy-detektor",
+      "title": "Czym mierzymy jakość detektora?",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/guides/yolo-performance-metrics/",
+          "title": "Ultralytics — YOLO Performance Metrics",
+          "kind": "article"
+        },
+        {
+          "url": "https://en.wikipedia.org/wiki/Precision_and_recall",
+          "title": "Precision and recall — Wikipedia",
+          "kind": "article"
+        },
+        {
+          "url": "https://arxiv.org/abs/1405.0312",
+          "title": "Microsoft COCO: Common Objects in Context",
+          "kind": "paper",
+          "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+          "year": 2014
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Trening zwraca liczby straty, ale **jakość detektora** mierzymy inaczej — przez zgodność predykcji z prawdą (*ground truth*). Każdą przewidzianą ramkę dopasowujemy do ramki prawdziwej przez **IoU**: jeśli $\\text{IoU} \\ge \\tau$ (zwykle $\\tau = 0.5$) i klasa się zgadza, predykcja to **trafienie (TP)**. Predykcja bez pasującego obiektu to **fałszywy alarm (FP)**, a pominięty obiekt to **przeoczenie (FN)**.\n\n![Klatka z trzema zielonymi przerywanymi ramkami ground truth: dwie pokryte niebieskimi ramkami predykcji oznaczonymi TP, jedna czerwona ramka predykcji bez obiektu oznaczona FP, oraz trzeci obiekt bez żadnej predykcji oznaczony FN](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/metryki-tp-fp-fn-klatka.png)\n\nZ tych trzech liczb liczymy dwie podstawowe metryki:\n\n$$\\text{Precision} = \\frac{TP}{TP + FP}, \\qquad \\text{Recall} = \\frac{TP}{TP + FN}$$\n\n- **Precision** odpowiada na pytanie: *ile z moich wykryć było prawdziwych?* (kara za FP).\n- **Recall** odpowiada: *ile obiektów udało się w ogóle znaleźć?* (kara za FN).\n\nTe metryki idą pod prąd: obniżając próg confidence łapiesz więcej obiektów (recall rośnie), ale wpuszczasz więcej śmieci (precision spada). Zamiast jednego progu rysujemy więc **krzywą Precision–Recall** — precision jako funkcję recall przy zmieniającym się progu confidence. Pole pod tą krzywą to **Average Precision (AP)** jednej klasy; uśrednione po klasach daje **mAP**.\n\nKluczowy jest też próg IoU. **mAP@0.5** używa jednego, łagodnego progu $\\tau = 0.5$. **mAP@0.5:0.95** (standard COCO) uśrednia AP po progach $\\tau \\in \\{0.5, 0.55, \\dots, 0.95\\}$ — nagradza precyzyjną lokalizację i jest **ostrzejszą**, nagłówkową liczbą."
+      }
+    },
+    {
+      "id": "krzywa-pr",
+      "title": "Krzywe Precision–Recall i AP",
+      "description": "Każda krzywa to jedna klasa; pole pod nią to AP, a uśrednienie po klasach daje mAP@0.5.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/metryki-i-czytanie-krzywych-uczenia-1.png",
+        "alt": "Wykres Precision (oś Y, 0–1) w funkcji Recall (oś X, 0–1) z trzema kolorowymi krzywymi dla klas car (AP 0.83), ship (AP 0.67) i truck (AP 0.52) oraz czarną przerywaną krzywą uśrednioną dla wszystkich klas (mAP@0.5 = 0.67); każda krzywa utrzymuje wysoką precyzję do pewnego recall, po czym opada.",
+        "caption": "Rys. 1. Krzywe Precision–Recall dla klas car/ship/truck przy progu IoU = 0.5. Pole pod każdą krzywą to AP danej klasy; czarna przerywana to uśredniona krzywa, której pole odpowiada mAP@0.5.",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Syntetyczne krzywe Precision-Recall dla detektora pojazdow/statkow (YOLO11n).\n# Kazda klasa ma inny ksztalt: wysoka precyzja az do \"ramienia\", potem spadek.\nrecall = np.linspace(0.0, 1.0, 200)\n\n\ndef pr_curve(shoulder, sharpness, p0):\n    return p0 / (1.0 + np.exp((recall - shoulder) * sharpness))\n\n\nclasses = {\n    \"car\":   pr_curve(0.85, 12.0, 0.99),\n    \"ship\":  pr_curve(0.70, 10.0, 0.97),\n    \"truck\": pr_curve(0.55, 9.0, 0.95),\n}\n\nplt.figure(figsize=(7.0, 5.2))\ncolors = {\"car\": \"#2563eb\", \"ship\": \"#0d9488\", \"truck\": \"#d97706\"}\nfor name, prec in classes.items():\n    ap = np.trapz(prec, recall)\n    plt.plot(recall, prec, color=colors[name], linewidth=2.0,\n             label=f\"{name} (AP={ap:.2f})\")\n\nmean_prec = np.mean(list(classes.values()), axis=0)\nmap50 = np.trapz(mean_prec, recall)\nplt.plot(recall, mean_prec, color=\"black\", linewidth=3.0, linestyle=\"--\",\n         label=f\"wszystkie klasy (mAP@0.5={map50:.2f})\")\n\nplt.xlim(0.0, 1.0)\nplt.ylim(0.0, 1.02)\nplt.xlabel(\"Recall (czulosc)\")\nplt.ylabel(\"Precision (precyzja)\")\nplt.title(\"Krzywe Precision-Recall na zbiorze walidacyjnym (IoU = 0.5)\")\nplt.grid(True, alpha=0.3)\nplt.legend(loc=\"lower left\", framealpha=0.95)\nplt.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/metryki-i-czytanie-krzywych-uczenia-1.png\",\n    dpi=110, bbox_inches=\"tight\")\nprint(\"saved PR curve\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "policz-precision-recall",
+      "title": "Policz precision i recall",
+      "description": "Dopasuj predykcje do ground truth progiem IoU i policz dwie podstawowe metryki detekcji.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Napisz `precision_recall(preds, gts, iou_thr=0.5)`, które dla jednego obrazu policzy **precision** i **recall**. `preds` i `gts` to listy ramek `[x1, y1, x2, y2]`. Każdą predykcję dopasuj **zachłannie** do jeszcze niezajętej ramki ground truth, jeśli ich `IoU >= iou_thr` → to **TP**; predykcja bez dopasowania to **FP**; niedopasowany obiekt to **FN**. Zwróć krotkę `(precision, recall)` (gdy mianownik wynosi 0, zwróć `0.0`). Funkcja `iou` jest już zdefiniowana.\n\n```\ngts   = [[0, 0, 10, 10], [20, 20, 30, 30]]\npreds = [[0, 0, 10, 10]]            # znaleziony jeden z dwoch obiektow\nprecision_recall(preds, gts) == (1.0, 0.5)\n```",
+        "starterCode": "def iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    area_a = (a[2] - a[0]) * (a[3] - a[1])\n    area_b = (b[2] - b[0]) * (b[3] - b[1])\n    union = area_a + area_b - inter\n    return inter / union if union > 0 else 0.0\n\n\ndef precision_recall(preds, gts, iou_thr=0.5):\n    # TODO: dopasuj zachlannie predykcje do ground truth wg IoU >= iou_thr,\n    # policz TP / FP / FN i zwroc krotke (precision, recall).\n    return (0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "wszystkie_obiekty_trafione",
+            "body": "assert precision_recall([[0, 0, 10, 10], [20, 20, 30, 30]], [[0, 0, 10, 10], [20, 20, 30, 30]]) == (1.0, 1.0)",
+            "hidden": false
+          },
+          {
+            "name": "pominiety_obiekt_obniza_recall",
+            "body": "assert precision_recall([[0, 0, 10, 10]], [[0, 0, 10, 10], [20, 20, 30, 30]]) == (1.0, 0.5)",
+            "hidden": true
+          },
+          {
+            "name": "falszywy_alarm_obniza_precision",
+            "body": "assert precision_recall([[0, 0, 10, 10], [100, 100, 110, 110]], [[0, 0, 10, 10], [20, 20, 30, 30]]) == (0.5, 0.5)",
+            "hidden": true
+          },
+          {
+            "name": "prog_iou_odrzuca_luzne_ramki",
+            "body": "assert precision_recall([[5, 0, 15, 10]], [[0, 0, 10, 10]], 0.5) == (0.0, 0.0)",
+            "hidden": true
+          }
+        ],
+        "solution": "def iou(a, b):\n    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])\n    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])\n    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)\n    inter = iw * ih\n    area_a = (a[2] - a[0]) * (a[3] - a[1])\n    area_b = (b[2] - b[0]) * (b[3] - b[1])\n    union = area_a + area_b - inter\n    return inter / union if union > 0 else 0.0\n\n\ndef precision_recall(preds, gts, iou_thr=0.5):\n    matched = [False] * len(gts)\n    tp = 0\n    fp = 0\n    for p in preds:\n        best_i = -1\n        best_iou = iou_thr\n        for gi, g in enumerate(gts):\n            if matched[gi]:\n                continue\n            v = iou(p, g)\n            if v >= best_iou:\n                best_iou = v\n                best_i = gi\n        if best_i >= 0:\n            matched[best_i] = True\n            tp += 1\n        else:\n            fp += 1\n    fn = matched.count(False)\n    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0\n    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0\n    return (precision, recall)\n"
+      }
+    },
+    {
+      "id": "ktora-metryka-jest-scisla",
+      "title": "Szybki sprawdzian: która metryka jest ostrzejsza?",
+      "type": "quiz",
+      "data": {
+        "question": "Twój detektor osiąga mAP@0.5 = 0.85, ale mAP@0.5:0.95 = 0.48. Która interpretacja jest poprawna?",
+        "options": [
+          "Model dobrze wykrywa obiekty, ale jego ramki są często nieprecyzyjnie zlokalizowane.",
+          "mAP@0.5:0.95 to artefakt pomiaru — skoro przy IoU 0.5 jest 0.85, model jest po prostu dobry.",
+          "Obie liczby mierzą to samo, więc realna jakość to ich średnia (~0.66).",
+          "Niski mAP@0.5:0.95 oznacza, że model myli klasy (np. car z truck)."
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "mAP@0.5 zalicza już ramkę o IoU ≥ 0.5 z obiektem, więc nagradza samo „znalezienie”. mAP@0.5:0.95 uśrednia AP po coraz ostrzejszych progach IoU aż do 0.95, więc karze nieprecyzyjną lokalizację. Duża różnica (0.85 vs 0.48) to typowy podpis modelu, który wykrywa obiekty, ale rysuje ramki zbyt luźno. To nie jest pomyłka klas (tę pokazuje confusion matrix) ani błąd pomiaru — mAP@0.5:0.95 jest celowo metryką ostrzejszą.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "czytanie-krzywych-uczenia",
+      "title": "Czytanie krzywych uczenia (results.png)",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/modes/val/",
+          "title": "Ultralytics — Validation (Val) mode",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.ultralytics.com/guides/yolo-performance-metrics/",
+          "title": "Ultralytics — YOLO Performance Metrics",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Spadająca strata treningowa **nie jest** dowodem dobrego modelu — to tylko znak, że sieć dopasowuje się do zbioru treningowego. O jakości decydują metryki liczone na **wydzielonym zbiorze walidacyjnym**. Ultralytics zapisuje je w `results.png` / `results.csv`: krzywe `train/box_loss`, `train/cls_loss`, `train/dfl_loss`, ich odpowiedniki `val/*` oraz `metrics/mAP50` i `metrics/mAP50-95`.\n\n![Wykres straty w funkcji epoki: strata treningowa (niebieska) spada monotonicznie, strata walidacyjna (pomarańczowa) najpierw spada, osiąga minimum około 55. epoki, a potem rośnie; pionowa zielona przerywana linia oznacza punkt zapisu best.pt](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/metryki-early-stopping-train-val.png)\n\nCo czytać z tych krzywych:\n\n- **Strata val powinna spadać razem z treningową.** Gdy `train/box_loss` dalej maleje, a `val/box_loss` zaczyna **rosnąć**, to klasyczne **przeuczenie (overfitting)** — model uczy się szczegółów zbioru treningowego, które nie generalizują.\n- **mAP to ostateczny sędzia.** Obserwuj, kiedy `mAP50-95` wychodzi na **plateau** — dalsze epoki niewiele dają. Ultralytics zapisuje `best.pt` z epoki o najlepszym fitness, a `patience` (early stopping) i tak przerwie trening, gdy metryki przestaną rosnąć.\n- **Rozjazd train–val.** Duża luka między stratą treningową a walidacyjną sygnalizuje zbyt mały lub mało zróżnicowany dataset albo zbyt pojemny model — pomaga więcej danych, augmentacje lub mniejszy wariant (YOLO11n).\n\n> **Reguła kciuka:** *loss w dół + mAP w górę* to dobry znak **tylko** wtedy, gdy dotyczy krzywych **walidacyjnych**. Sam spadek straty treningowej równie dobrze może być przeuczeniem."
+      }
+    },
+    {
+      "id": "krzywe-uczenia",
+      "title": "Krzywe uczenia: strata i mAP w czasie",
+      "description": "Lewy panel — strata train vs val; prawy — mAP@0.5 i mAP@0.5:0.95 po epokach.",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/metryki-i-czytanie-krzywych-uczenia-2.png",
+        "alt": "Dwa panele. Lewy: box loss (oś Y) w funkcji epoki (oś X) — krzywa treningowa (niebieska) spada monotonicznie, walidacyjna (pomarańczowa) spada do minimum około 64. epoki i potem rośnie; pionowa przerywana linia oznacza minimum straty val. Prawy: mAP (oś Y, 0–1) w funkcji epoki — mAP@0.5 (zielona) i mAP@0.5:0.95 (fioletowa) rosną i wychodzą na plateau, przy czym metryka 0.5:0.95 jest stale niższa.",
+        "caption": "Rys. 2. Krzywe uczenia detektora YOLO11n. Lekki wzrost val/box_loss po ~60. epoce przy płaskim mAP to sygnał przeuczenia i moment na early stopping (best.pt).",
+        "sourceCode": "import numpy as np\nimport matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\n\n# Syntetyczne krzywe uczenia w stylu Ultralytics results.png dla 100 epok.\nepoch = np.arange(1, 101)\n\n# Box loss: trening spada gladko; walidacja spada, ale po ~60. epoce lekko rosnie\n# (poczatek przeuczenia) - to sygnal do early stopping.\nbox_train = 0.90 + 2.60 * np.exp(-epoch / 18.0)\nbox_val = 1.05 + 2.30 * np.exp(-epoch / 16.0) + 0.004 * np.clip(epoch - 60, 0, None)\n\n# mAP rosnie i wychodzi na plateau; metryka scisla (0.5:0.95) zawsze nizsza.\nmap50 = 0.82 * (1.0 - np.exp(-epoch / 15.0))\nmap5095 = 0.55 * (1.0 - np.exp(-epoch / 20.0))\n\nfig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.0, 4.4))\n\nax1.plot(epoch, box_train, color=\"#2563eb\", linewidth=2.0, label=\"train/box_loss\")\nax1.plot(epoch, box_val, color=\"#d97706\", linewidth=2.0, label=\"val/box_loss\")\nax1.axvline(64, color=\"gray\", linestyle=\"--\", linewidth=1.2)\nax1.text(64, ax1.get_ylim()[1], \" min. straty val\", va=\"top\", fontsize=9, color=\"gray\")\nax1.set_xlabel(\"Epoka\")\nax1.set_ylabel(\"Box loss (strata lokalizacji)\")\nax1.set_title(\"Strata: trening vs walidacja\")\nax1.grid(True, alpha=0.3)\nax1.legend(loc=\"upper right\")\n\nax2.plot(epoch, map50, color=\"#16a34a\", linewidth=2.0, label=\"mAP@0.5\")\nax2.plot(epoch, map5095, color=\"#9333ea\", linewidth=2.0, label=\"mAP@0.5:0.95\")\nax2.set_xlabel(\"Epoka\")\nax2.set_ylabel(\"mAP\")\nax2.set_ylim(0.0, 1.0)\nax2.set_title(\"mAP w czasie treningu\")\nax2.grid(True, alpha=0.3)\nax2.legend(loc=\"lower right\")\n\nfig.suptitle(\"Krzywe uczenia detektora YOLO11n (pojazdy/statki)\", fontsize=13)\nplt.savefig(\n    \"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/metryki-i-czytanie-krzywych-uczenia-2.png\",\n    dpi=110, bbox_inches=\"tight\")\nprint(\"saved learning curves\")\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "diagnoza-krzywych",
+      "title": "Szybki sprawdzian: zdiagnozuj krzywe",
+      "type": "quiz",
+      "data": {
+        "question": "Na krzywych uczenia train/box_loss dalej spada, ale val/box_loss rośnie od ~60. epoki, a mAP50-95 stoi w miejscu. Co to oznacza i co z tym zrobić? Zaznacz wszystkie trafne odpowiedzi.",
+        "options": [
+          "To przeuczenie (overfitting): model dopasowuje się do zbioru treningowego kosztem generalizacji.",
+          "Do wdrożenia weź wagi best.pt (z epoki o najlepszej metryce walidacyjnej), a nie last.pt.",
+          "Wystarczy trenować jeszcze 100 epok — mAP na pewno wzrośnie.",
+          "Pomóc może więcej zróżnicowanych danych, augmentacje lub mniejszy wariant modelu."
+        ],
+        "correct": [
+          0,
+          1,
+          3
+        ],
+        "explanation": "Rosnąca strata walidacyjna przy spadającej treningowej i płaskim mAP to podręcznikowe przeuczenie — dalszy trening nie pomoże, bo metryka val już nie rośnie (dlatego bierzemy best.pt, nie last.pt). Lekarstwo działa po stronie danych i pojemności modelu: więcej zróżnicowanych przykładów, augmentacje (mozaika/mixup) albo mniejszy wariant (YOLO11n) — nie kolejne epoki na tym samym zbiorze.",
+        "multiSelect": true
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/guides/yolo-performance-metrics/",
+      "title": "Ultralytics — YOLO Performance Metrics",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/modes/val/",
+      "title": "Ultralytics — Validation (Val) mode",
+      "kind": "article"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Precision_and_recall",
+      "title": "Precision and recall — Wikipedia",
+      "kind": "article"
+    },
+    {
+      "url": "https://arxiv.org/abs/1405.0312",
+      "title": "Microsoft COCO: Common Objects in Context",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+      "year": 2014
+    }
+  ]
+}

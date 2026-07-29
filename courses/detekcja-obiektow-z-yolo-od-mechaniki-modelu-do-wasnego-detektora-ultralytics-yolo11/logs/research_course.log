@@ -1,0 +1,75 @@
+[system init claude-opus-4-8]
+[rate_limit_event]
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/research_course/SKILL.…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← 1	{
+[system thinking_tokens]
+[system thinking_tokens]
+I'll read the widget reference and the schema files before writing the research artefacts.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/docs/widgets.md)
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/courseSpec.ts)
+← 1	import { z } from 'zod';
+← 1	# Widgets reference
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+→ Bash(command: ls -la /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-…)
+← Exit code 2
+[system thinking_tokens]
+[system thinking_tokens]
+The spec parses cleanly against `CourseSpecSchema`, slug is safe, no `sources/` folder. There's a `yolo-kurs-do-wklejenia.txt` in the repo root — let me check whether it's relevant source material for grounding.
+→ Bash(command: wc -l /home/nukeemann/projects/ai_lecturer/yolo-kurs-do-wklejenia.txt 2>&1; echo…)
+← 76 /home/nukeemann/projects/ai_lecturer/yolo-kurs-do-wklejenia.txt
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Input validates cleanly, no uploaded source materials (the `yolo-kurs-do-wklejenia.txt` is just the wizard-paste mirror of the spec — nothing new to ground on). I don't need Copernicus/SAR imagery for a text research pass. Writing the two artefacts now.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/research.md (file state is current in yo…
+Now the bibliography. I'll provide ≥3 stable sources per lesson for all 13 draft lessons, plus course-wide references (including RT-DETR for the comparison lesson).
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechani…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/sources.md (file state is current in you…
+[system thinking_tokens]
+[system thinking_tokens]
+[system thinking_tokens]
+Both artefacts written. Let me confirm the output is scoped correctly (no `course.json`, nothing under `scripts/ralph/`).
+→ Bash(command: cd /home/nukeemann/projects/ai_lecturer; echo "--- course dir ---"; ls -1 course…)
+← --- course dir ---
+Done. The `research_course` skill ran end-to-end against the YOLO course spec.
+## What I did
+1. **Validated input** — `course-spec.json` parses cleanly against `CourseSpecSchema` (required `topic`, `durationTarget: standard`, `draftStructure` all present; `level: advanced`, `theoryPracticeRatio: 0.5`). Slug is safe (`[a-z0-9-]`). No `sources/` folder and no uploaded materials named in the prompt — the repo-root `yolo-kurs-do-wklejenia.txt` is just the wizard-paste mirror of the spec, so nothing new to ground on. I did **not** need Copernicus/SAR imagery for a text research pass.
+2. **Wrote `research.md`** — all six template sections (Topic summary, Prerequisites, Key concepts, Common misconceptions, Suggested ordering, Notes for lesson generation), tuned to *advanced / standard / 0.5 ratio* and the clarifications (vehicle/ship detector, small dataset, local GPU, speed-over-accuracy, API-level Ultralytics usage, images-only, one RT-DETR comparison lesson, fast pace). The Notes section flags the key runtime constraint — in-widget code must be CPU-only/fast (no `model.train()` in a `code` widget; real GPU training stays in narrative + figures) — and maps each topic to the right widget (IoU/NMS/letterbox/coordinate-conversion as `code`, threshold/IoU intuition as `ParametricExplorer`, PR/mAP curves as `PlotImage`, version/format tables as `DataTable`, component-role matching as `DragMatch`; noted Demo's `gauss` is irrelevant here).
+3. **Wrote `sources.md`** — course-wide references plus **4 stable sources per lesson** for all 13 draft lessons. Every entry carries `kind`; every `paper`/`book` has `author` + `year`. Sources are Ultralytics official docs/GitHub, arXiv/DOI primary papers (YOLO, Faster R-CNN, FPN, PANet, FCOS, YOLOX, Soft-NMS, CIoU, DFL, TOOD, Focal Loss, COCO, VOC, YOLOv4/MixUp/Copy-Paste, RT-DETR), Wikipedia, and official PyTorch/OpenCV/ONNX/TensorRT docs. No medium/towardsdatascience/blogs.
+**Verified:** `course.json` was **not** written (belongs to `design_course`), and `scripts/ralph/` has zero changes. The only new files are `research.md` and `sources.md` in the course directory.
+[result success (287.9s)]

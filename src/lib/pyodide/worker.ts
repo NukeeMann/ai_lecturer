@@ -67,7 +67,12 @@ interface RunRequest {
 
 const ctx = self as unknown as WorkerScope;
 
-const PYODIDE_VERSION = '0.26.4';
+// Keep this in lockstep with the `pyodide` dependency in package.json. The
+// loader script and every wheel `loadPackage` pulls come from this same CDN
+// tree, so a stale pin silently serves a different runtime than the bundled
+// wheels — which is how matplotlib (3.5.2 on the old 0.26.4 tree) stopped
+// resolving for the ParametricExplorer histogram.
+const PYODIDE_VERSION = '0.29.3';
 const PYODIDE_INDEX = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
 
 let pyodidePromise: Promise<PyodideAPI> | null = null;
@@ -139,7 +144,13 @@ def __ai_gauss(__pixels, __w, __h, __sigma):
 async function ensureGauss(py: PyodideAPI): Promise<void> {
   if (gaussInstalled) return;
   if (!pillowPromise) {
-    pillowPromise = py.loadPackage(['Pillow']);
+    // Don't cache a rejected promise: a transient CDN hiccup would otherwise
+    // wedge the widget for the rest of the session. Clear it on failure so the
+    // next call retries the download.
+    pillowPromise = py.loadPackage(['Pillow']).catch((err) => {
+      pillowPromise = null;
+      throw err;
+    });
   }
   await pillowPromise;
   await py.runPythonAsync(GAUSS_PY);
@@ -193,7 +204,12 @@ def __ai_pexp_run(setup_code, render_code, params, capture_plot, capture_value):
 async function ensurePexp(py: PyodideAPI): Promise<void> {
   if (pexpInstalled) return;
   if (!matplotlibPromise) {
-    matplotlibPromise = py.loadPackage(['matplotlib']);
+    // See ensureGauss: clear on failure so a transient load error can retry
+    // instead of permanently breaking the histogram for the session.
+    matplotlibPromise = py.loadPackage(['matplotlib']).catch((err) => {
+      matplotlibPromise = null;
+      throw err;
+    });
   }
   await matplotlibPromise;
   await py.runPythonAsync(PEXP_PY);

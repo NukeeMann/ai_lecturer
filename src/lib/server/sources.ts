@@ -16,24 +16,51 @@ import { coursesRoot, courseDir, assertSafeSlug, InvalidSlugError } from './path
 
 /** Per-file size cap for uploaded source materials. 50 MiB — large enough
  *  for typical lecture-deck PDFs/PPTX (~30–40 MB), small enough that a
- *  multi-file upload doesn't blow the Next.js dev server's RAM. */
+ *  multi-file upload doesn't blow the Next.js dev server's RAM. Media files
+ *  (.mp3/.wav/.m4a/.mp4, US-214) get the larger `MAX_MEDIA_FILE_SIZE_BYTES`
+ *  cap instead — see `maxUploadSizeForExtension`. */
 export const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
+/** Per-file size cap for uploaded audio/video sources (US-214). A 1-hour
+ *  lecture .mp4 easily exceeds the 50 MiB document cap, so media files are
+ *  allowed up to 250 MiB (the AC requires at least 200 MB for .mp4). */
+export const MAX_MEDIA_FILE_SIZE_BYTES = 250 * 1024 * 1024;
+
+/** Audio/video extensions (lower-case, with the dot) accepted as source
+ *  material (US-214). These are transcribed locally with whisper.cpp at
+ *  upload time (see src/lib/server/media.ts) into a `.extracted/<name>.md`
+ *  sibling, then consumed by the generation prompts like any other extracted
+ *  text source. */
+export const MEDIA_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.mp4',
+]);
+
 /** Allowed extensions (lower-case, including the dot). The ACs name PDF /
- *  PPTX / DOCX / TXT / JSON; everything else is rejected. */
+ *  PPTX / DOCX / TXT / JSON plus audio/video (US-214); everything else is
+ *  rejected. */
 export const ALLOWED_EXTENSIONS: ReadonlySet<string> = new Set([
   '.pdf',
   '.pptx',
   '.docx',
   '.txt',
   '.json',
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.mp4',
 ]);
 
 /** Per-extension allowed MIME types. Some browsers/operating systems lie
  *  about the MIME type for office documents (e.g. PPTX served as
  *  application/octet-stream by older Firefox), so we accept the empty
  *  string and `application/octet-stream` as a fallback whenever the
- *  extension is on the allow-list — extension is the source of truth. */
+ *  extension is on the allow-list — extension is the source of truth.
+ *  Media MIME types (US-214) likewise vary across browsers/OSes (e.g. .m4a
+ *  as audio/x-m4a or audio/mp4), so several aliases are listed and the
+ *  octet-stream fallback still applies. */
 export const MIME_TYPES_BY_EXTENSION: Readonly<Record<string, readonly string[]>> = {
   '.pdf': ['application/pdf'],
   '.pptx': [
@@ -44,9 +71,35 @@ export const MIME_TYPES_BY_EXTENSION: Readonly<Record<string, readonly string[]>
   ],
   '.txt': ['text/plain'],
   '.json': ['application/json'],
+  '.mp3': ['audio/mpeg', 'audio/mp3'],
+  '.wav': ['audio/wav', 'audio/x-wav', 'audio/wave', 'audio/vnd.wave'],
+  '.m4a': ['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'video/mp4'],
+  '.mp4': ['video/mp4', 'audio/mp4'],
 };
 
+/** Resolve the per-file size cap for a given (lower-case, dotted) extension:
+ *  the larger media cap for audio/video, the document cap for everything
+ *  else (US-214). */
+export function maxUploadSizeForExtension(ext: string): number {
+  return MEDIA_EXTENSIONS.has(ext.toLowerCase())
+    ? MAX_MEDIA_FILE_SIZE_BYTES
+    : MAX_FILE_SIZE_BYTES;
+}
+
 const FALLBACK_MIME_TYPES: ReadonlySet<string> = new Set(['', 'application/octet-stream']);
+
+/** Extensions that may legitimately live in a /sources/ dir, used by
+ *  `sanitizeFilename` to gate DELETE / move-on-finalisation. Beyond the
+ *  user-uploadable `ALLOWED_EXTENSIONS` this adds `.md` — NOT uploadable (it
+ *  has no `MIME_TYPES_BY_EXTENSION` entry, so `validateUpload` still rejects a
+ *  `.md` upload) but written directly by the US-215 YouTube-transcript source
+ *  as `youtube-<videoId>.md`. Allowing it here lets those generated files be
+ *  deleted and promoted to the course like any other source, without widening
+ *  the upload allow-list. */
+const SOURCE_FILENAME_EXTENSIONS: ReadonlySet<string> = new Set([
+  ...ALLOWED_EXTENSIONS,
+  '.md',
+]);
 
 /** Subdirectory under coursesRoot where staged-but-not-yet-bound uploads
  *  live. The leading dot keeps it out of GET /api/courses (which iterates
@@ -129,9 +182,12 @@ export function sanitizeFilename(input: string): string | null {
   // Strip leading dots so we don't accidentally create a hidden file.
   name = name.replace(/^\.+/, '');
   if (name.length === 0) return null;
-  // Validate extension.
+  // Validate extension. Uses the broader `SOURCE_FILENAME_EXTENSIONS` (uploads
+  // + `.md`) so a US-215 YouTube transcript file is treated as a safe
+  // basename for DELETE / move; `validateUpload` still gates actual uploads
+  // through `MIME_TYPES_BY_EXTENSION`, which has no `.md` entry.
   const ext = path.extname(name).toLowerCase();
-  if (!ALLOWED_EXTENSIONS.has(ext)) return null;
+  if (!SOURCE_FILENAME_EXTENSIONS.has(ext)) return null;
   return name;
 }
 
@@ -161,17 +217,20 @@ export function validateUpload(
   size: number,
 ): { ok: true; sanitized: string } | { ok: false; reason: string } {
   if (size < 0) return { ok: false, reason: 'Empty or invalid file' };
-  if (size > MAX_FILE_SIZE_BYTES) {
-    return {
-      ok: false,
-      reason: `File too large (${formatBytes(size)} > ${formatBytes(MAX_FILE_SIZE_BYTES)})`,
-    };
-  }
   const sanitized = sanitizeFilename(originalName);
   if (!sanitized) {
     return { ok: false, reason: `Unsupported filename "${originalName}"` };
   }
   const ext = path.extname(sanitized).toLowerCase();
+  // Size cap depends on the extension: media files (US-214) get the larger
+  // media cap. Checked after sanitisation so we know the extension first.
+  const sizeCap = maxUploadSizeForExtension(ext);
+  if (size > sizeCap) {
+    return {
+      ok: false,
+      reason: `File too large (${formatBytes(size)} > ${formatBytes(sizeCap)})`,
+    };
+  }
   const allowedMimes = MIME_TYPES_BY_EXTENSION[ext];
   if (!allowedMimes) {
     return { ok: false, reason: `Unsupported extension "${ext}"` };
@@ -198,6 +257,10 @@ export interface StoredSourceFile {
   sanitizedName: string;
   size: number;
   type: string;
+  /** US-214: for audio/video uploads, the transcription status at the moment
+   *  the POST returned — always `'transcribing'` since the work runs in the
+   *  background. Absent for non-media files. */
+  transcriptionStatus?: 'transcribing' | 'done' | 'failed';
 }
 
 /** Synchronously enumerate the absolute paths of every regular file under
@@ -288,10 +351,18 @@ export interface ResolvedSourcePath {
 export function resolveSourcePathForPrompt(absPath: string): ResolvedSourcePath {
   const ext = path.extname(absPath).toLowerCase();
   const originalName = path.basename(absPath);
-  // .docx (US-124) and .pdf (US-127) both pre-extract to a markdown sibling
-  // at upload time — when present, the sibling is what we hand to the Read
-  // tool / inline-load into wizard prompts. Same branch shape for both.
-  if (ext === '.docx' || ext === '.pdf') {
+  // .docx (US-124), .pdf (US-127) and .pptx (US-213) all pre-extract to a
+  // markdown sibling at upload time — when present, the sibling is what we
+  // hand to the Read tool / inline-load into wizard prompts. Audio/video
+  // (US-214) follow the same shape: whisper.cpp writes the transcript to the
+  // same `.extracted/<name>.md` sibling, so a finished transcript is picked
+  // up here transparently. Same branch shape for all of them.
+  if (
+    ext === '.docx' ||
+    ext === '.pdf' ||
+    ext === '.pptx' ||
+    MEDIA_EXTENSIONS.has(ext)
+  ) {
     const sibling = extractedSiblingPath(absPath);
     if (existsSync(sibling)) {
       return { readPath: sibling, originalName, extractedFrom: originalName };
@@ -332,15 +403,24 @@ const TEXT_SOURCE_EXTS: ReadonlySet<string> = new Set([
 ]);
 
 // Extensions that have a server-side text extractor (US-124 docx, US-127
-// pdf). For these we still need to verify a sibling exists on disk before
-// treating them as text — the upload route logs a warning and leaves no
-// sibling when the extractor failed at upload time, and pre-fix uploads
-// from before the story landed never had one written. Either case must
-// fall through to `binary-unsupported` so the prompt still reflects that
+// pdf, US-213 pptx). For these we still need to verify a sibling exists on
+// disk before treating them as text — the upload route logs a warning and
+// leaves no sibling when the extractor failed at upload time, and pre-fix
+// uploads from before the story landed never had one written. Either case
+// must fall through to `binary-unsupported` so the prompt still reflects that
 // the file is on disk but unreadable.
 const EXTRACTABLE_BINARY_EXTS: ReadonlySet<string> = new Set([
   '.docx',
   '.pdf',
+  '.pptx',
+  // US-214: audio/video transcribe to a `.extracted/<name>.md` sibling. Until
+  // the (async) transcription resolves — or if whisper/ffmpeg is missing —
+  // there is no sibling, so these fall through to `binary-unsupported`, same
+  // as a docx/pdf/pptx whose extractor failed.
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.mp4',
 ]);
 
 const BUDGET_EXHAUSTED_PLACEHOLDER =
@@ -361,7 +441,9 @@ function truncationMarker(remaining: number): string {
  * - For `.docx` the `.extracted/<name>.docx.md` sibling (US-124) is read
  *   instead of the binary; `extractedFrom` is set on the result.
  * - For `.txt`, `.md`, `.json` the file itself is read.
- * - For `.pdf` and `.pptx` (no extractor yet) the entry is returned with
+ * - For `.pdf` (US-127) and `.pptx` (US-213) the `.extracted/<name>.md`
+ *   sibling is read when present, exactly like `.docx`; an extractor failure
+ *   or a pre-fix upload with no sibling falls through to
  *   `kind: 'binary-unsupported'` — content omitted, originalName preserved.
  *   Keeping them in the array means the prompt can mention "user uploaded
  *   this but we can't read it" instead of silently dropping the upload.
@@ -422,8 +504,8 @@ export function loadStagedSourcesForPrompt(
     }
 
     if (!TEXT_SOURCE_EXTS.has(ext) && !resolved.extractedFrom) {
-      // .pptx and any other extension without an extractor — preserve the
-      // filename in the array so the model knows the file exists.
+      // Any other extension without an extractor — preserve the filename in
+      // the array so the model knows the file exists.
       result.push({ kind: 'binary-unsupported', originalName });
       continue;
     }
@@ -540,14 +622,20 @@ export async function moveDraftSourcesToCourse(
     }
     moved.push(finalName);
     // US-124: if a pre-extracted text sibling was produced at upload time
-    // (currently .docx → .extracted/<name>.md), move it alongside so the
-    // generation prompt resolver still finds it after finalisation. Final
-    // names of the docx and its sibling stay in sync even when the docx
+    // (.docx/.pdf/.pptx → .extracted/<name>.md, and US-214 media transcripts
+    // + their `<name>.status.json` marker), move them alongside so the
+    // generation prompt resolver still finds them after finalisation. Final
+    // names of the source and its siblings stay in sync even when the source
     // gets a `(2)` suffix in the destination.
-    const siblingSrc = path.join(srcDir, EXTRACTED_DIRNAME, `${name}.md`);
-    const siblingStat = await fs.stat(siblingSrc).catch(() => null);
-    if (siblingStat && siblingStat.isFile()) {
-      const siblingDest = path.join(targetDir, EXTRACTED_DIRNAME, `${finalName}.md`);
+    for (const suffix of ['.md', '.status.json']) {
+      const siblingSrc = path.join(srcDir, EXTRACTED_DIRNAME, `${name}${suffix}`);
+      const siblingStat = await fs.stat(siblingSrc).catch(() => null);
+      if (!siblingStat || !siblingStat.isFile()) continue;
+      const siblingDest = path.join(
+        targetDir,
+        EXTRACTED_DIRNAME,
+        `${finalName}${suffix}`,
+      );
       await fs.mkdir(path.dirname(siblingDest), { recursive: true });
       try {
         await fs.rename(siblingSrc, siblingDest);

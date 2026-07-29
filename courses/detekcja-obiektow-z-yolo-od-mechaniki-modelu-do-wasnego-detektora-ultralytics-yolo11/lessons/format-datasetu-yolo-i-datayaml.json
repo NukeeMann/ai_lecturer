@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "slug": "format-datasetu-yolo-i-datayaml",
+  "courseSlug": "detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11",
+  "moduleId": "m3",
+  "title": "Format datasetu YOLO i data.yaml",
+  "eyebrow": "DANE DO TRENINGU YOLO",
+  "description": "Struktura datasetu YOLO (obrazy + .txt ze znormalizowanymi boxami cx,cy,w,h, podział train/val/test) oraz poprawny data.yaml z nc i names.",
+  "estimatedMinutes": 13,
+  "sections": [
+    {
+      "id": "struktura",
+      "title": "Dwa drzewa katalogów: obrazy i etykiety",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/datasets/detect/",
+          "title": "Ultralytics — Detection datasets format",
+          "kind": "article"
+        },
+        {
+          "url": "https://docs.ultralytics.com/datasets/",
+          "title": "Ultralytics — Datasets overview",
+          "kind": "article"
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "YOLO nie czyta jednego wielkiego pliku z adnotacjami — oczekuje **dwóch równoległych drzew katalogów**: `images/` z obrazami i `labels/` z etykietami. Każdemu obrazowi odpowiada **dokładnie jeden plik `.txt` o tej samej nazwie bazowej** (`harbor_007.jpg` ↔ `harbor_007.txt`), tylko w gałęzi `labels/`. To po nazwie pliku Ultralytics paruje obraz z jego etykietą — nie po żadnym wewnętrznym indeksie ani kolejności.\n\n![Schemat: po lewej obraz harbor_007.jpg z dwoma boxami — niebieskim „car (0)” i zielonym „ship (2)”; po prawej drzewo katalogów dataset/ z równoległymi images/ i labels/ oraz zawartość pliku harbor_007.txt z dwiema liniami etykiet](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/struktura-datasetu-yolo.png)\n\nWewnątrz obu drzew powtarza się ten sam podział na **train / val / test**:\n\n```\ndataset/\n  data.yaml\n  images/{train,val,test}/...\n  labels/{train,val,test}/...\n```\n\nDwie zasady, o których początkujący zapominają:\n\n- **Obraz bez obiektów** to po prostu **pusty plik `.txt`** (albo jego brak). Taki obraz jest tłem (negatywem) i pomaga ograniczyć fałszywe wykrycia — to celowy element zbioru, nie błąd.\n- **`val` jest obowiązkowy** — to na nim liczone są metryki po każdej epoce. `test` jest opcjonalny. Bez rozłącznego zbioru `val` nie odróżnisz prawdziwego uczenia się od przeuczenia."
+      }
+    },
+    {
+      "id": "normalizacja",
+      "title": "Od pikseli do współrzędnych znormalizowanych",
+      "description": "Prześledź, jak rogi boxa w pikselach zamieniają się w środek i rozmiar znormalizowane do [0,1].",
+      "type": "plotImage",
+      "data": {
+        "src": "/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/format-datasetu-yolo-i-datayaml-1.png",
+        "alt": "Obraz 640×480 pikseli z jednym niebieskim bounding boxem samochodu. Osie X i Y są wyskalowane w pikselach (0–640 oraz 0–480, z początkiem w lewym górnym rogu). Czerwony punkt zaznacza środek boxa w (320, 312) px, czyli (0.500, 0.650) po normalizacji; strzałki opisują szerokość 256 px = 0.400 i wysokość 144 px = 0.300. Pod wykresem widnieje odpowiadająca linia etykiety YOLO: 0 0.500 0.650 0.400 0.300.",
+        "caption": "Rys. 1. Ten sam box wyrażony w pikselach i po normalizacji. Dzieląc środek i rozmiar przez W=640 i H=480, dostajemy wartości z linii etykiety `0 0.5 0.65 0.4 0.3`.",
+        "sourceCode": "import matplotlib\nmatplotlib.use(\"Agg\")\nimport matplotlib.pyplot as plt\nimport matplotlib.patches as patches\n\n# Obraz 640x480 (szer. W x wys. H), jeden obiekt klasy \"car\".\nW, H = 640, 480\nx1, y1, x2, y2 = 192, 240, 448, 384          # rog-lewy-gorny, rog-prawy-dolny [piksele]\nbw, bh = x2 - x1, y2 - y1                      # szerokosc, wysokosc boxa [piksele]\ncx_px, cy_px = x1 + bw / 2, y1 + bh / 2        # srodek boxa [piksele]\ncx, cy, w, h = cx_px / W, cy_px / H, bw / W, bh / H   # wartosci znormalizowane [0,1]\n\nfig, ax = plt.subplots(figsize=(6.4, 4.8))\nax.add_patch(patches.Rectangle((0, 0), W, H, facecolor=\"#eef2ff\", edgecolor=\"#1e293b\"))\nax.add_patch(patches.Rectangle((x1, y1), bw, bh, fill=False, edgecolor=\"#4f46e5\", linewidth=2.5))\nax.plot([cx_px], [cy_px], \"o\", color=\"#dc2626\", markersize=8, zorder=5)\nax.annotate(f\"srodek\\n({cx_px:.0f}, {cy_px:.0f}) px\\n({cx:.3f}, {cy:.3f}) norm\",\n            (cx_px, cy_px), (cx_px + 14, cy_px - 70), color=\"#dc2626\", fontsize=8,\n            ha=\"left\", va=\"center\")\nax.annotate(\"\", (x1, y2 + 22), (x2, y2 + 22), arrowprops=dict(arrowstyle=\"<->\", color=\"#4f46e5\"))\nax.text((x1 + x2) / 2, y2 + 34, f\"w = {bw} px = {w:.3f}\", color=\"#4f46e5\", ha=\"center\", fontsize=8)\nax.annotate(\"\", (x2 + 22, y1), (x2 + 22, y2), arrowprops=dict(arrowstyle=\"<->\", color=\"#4f46e5\"))\nax.text(x2 + 28, (y1 + y2) / 2, f\"h = {bh} px\\n= {h:.3f}\", color=\"#4f46e5\", ha=\"left\",\n        va=\"center\", fontsize=8)\n\nax.set_xlim(0, W)\nax.set_ylim(H, 0)                              # poczatek w lewym-gornym rogu (uklad obrazu)\nax.set_xticks(range(0, W + 1, 80))\nax.set_yticks(range(0, H + 1, 80))\nax.set_xlabel(\"x [piksele]\")\nax.set_ylabel(\"y [piksele]\")\nax.set_title(\"Bounding box: piksele -> wartosci znormalizowane (cx, cy, w, h)\")\nax.grid(True, alpha=0.3)\nfig.text(0.5, -0.02,\n         \"etykieta YOLO:  0  0.500  0.650  0.400  0.300   (class cx cy w h, znormalizowane przez W i H)\",\n         ha=\"center\", fontsize=8, family=\"monospace\")\nplt.savefig(\"courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/plots/format-datasetu-yolo-i-datayaml-1.png\",\n            dpi=110, bbox_inches=\"tight\")\nprint(\"cx,cy,w,h =\", cx, cy, w, h)\n",
+        "sourceLanguage": "python"
+      }
+    },
+    {
+      "id": "check-normalizacja",
+      "title": "Sprawdzenie: która linia jest poprawna?",
+      "type": "quiz",
+      "data": {
+        "question": "Plik etykiety YOLO ma opisać samochód na obrazie 640×480 px. Box obiektu w pikselach to xmin=192, ymin=240, xmax=448, ymax=384. Która linia jest poprawna?",
+        "options": [
+          "`0 192 240 448 384` — klasa, a potem rogi boxa w pikselach",
+          "`0 320 312 256 144` — klasa, środek i rozmiar, ale w pikselach",
+          "`0 0.5 0.65 0.4 0.3` — klasa, a potem środek i rozmiar znormalizowane do [0,1]",
+          "`0 0.3 0.5 0.7 0.8` — klasa, a potem rogi znormalizowane do [0,1]"
+        ],
+        "correct": [
+          2
+        ],
+        "explanation": "Format to `class cx cy w h` ze środkiem i rozmiarem **znormalizowanymi przez W i H**, nie rogami i nie pikselami. Liczymy: cx = (192+448)/2 / 640 = 320/640 = 0.5; cy = (240+384)/2 / 480 = 312/480 = 0.65; w = (448−192)/640 = 256/640 = 0.4; h = (384−240)/480 = 144/480 = 0.3. Daje to `0 0.5 0.65 0.4 0.3`. Odpowiedzi z pikselami (warianty 1–2) i z rogami zamiast środka (wariant 4) to dokładnie te dwa błędy, które najczęściej psują dataset YOLO.",
+        "multiSelect": false
+      }
+    },
+    {
+      "id": "linia-i-datayaml",
+      "title": "Linia etykiety i plik data.yaml",
+      "sources": [
+        {
+          "url": "https://docs.ultralytics.com/datasets/detect/",
+          "title": "Ultralytics — Detection datasets format",
+          "kind": "article"
+        },
+        {
+          "url": "https://doi.org/10.1007/s11263-009-0275-4",
+          "title": "The PASCAL Visual Object Classes (VOC) Challenge",
+          "kind": "paper",
+          "author": "Mark Everingham, Luc Van Gool, Christopher K. I. Williams, John Winn, Andrew Zisserman",
+          "year": 2010
+        }
+      ],
+      "type": "theory",
+      "data": {
+        "markdown": "Każdy obiekt na obrazie to **jedna linia** w pliku `.txt`, zawsze w pięciu polach oddzielonych spacją: `class cx cy w h`.\n\n![Rozłożona linia etykiety „0 0.500 0.650 0.400 0.300”: pierwszy token to indeks klasy, kolejne cztery to znormalizowany środek (cx, cy) oraz szerokość i wysokość (w, h) boxa, wszystkie w przedziale 0–1](/api/courses/detekcja-obiektow-z-yolo-od-mechaniki-modelu-do-wasnego-detektora-ultralytics-yolo11/assets/images/linia-etykiety-yolo.png)\n\nSzczegół, który jest **źródłem większości błędów w datasetach**: cztery liczby boxa są **znormalizowane do przedziału $[0,1]$** — to *nie* są piksele i *nie* są to rogi `xmin,ymin,xmax,ymax`. Dla obrazu o szerokości $W$ i wysokości $H$, gdzie $(x_c, y_c)$ to środek boxa w pikselach, a $w_\\text{px}, h_\\text{px}$ jego rozmiar w pikselach:\n\n$$ c_x = \\frac{x_c}{W}, \\quad c_y = \\frac{y_c}{H}, \\quad w = \\frac{w_\\text{px}}{W}, \\quad h = \\frac{h_\\text{px}}{H} $$\n\nDzięki normalizacji ta sama etykieta pozostaje poprawna niezależnie od rozdzielczości, do jakiej przeskalujesz obraz. Pole `class` to **indeks liczony od zera** do listy `names`.\n\nCałość spina plik **`data.yaml`**:\n\n```yaml\npath: ../dataset      # katalog bazowy datasetu\ntrain: images/train   # ścieżki względem path\nval: images/val\ntest: images/test     # opcjonalny\nnc: 3\nnames: [car, truck, ship]\n```\n\nDwie niezmienne reguły: kolejność w `names` definiuje indeksy klas (`car`→0, `truck`→1, `ship`→2), a **`nc` musi równać się długości `names`**. Rozjazd między `nc` a `names` to klasyczny cichy błąd — trening rusza bez wyjątku, ale model uczy się przypisywać złe etykiety."
+      }
+    },
+    {
+      "id": "cwiczenie-voc-yolo",
+      "title": "Konwersja VOC (rogi, piksele) → YOLO (środek, znormalizowany)",
+      "description": "Zaimplementuj przeliczenie, które najczęściej psuje dataset, gdy zrobi się je źle.",
+      "type": "code",
+      "data": {
+        "taskMarkdown": "Adnotacje w Pascal VOC zapisują box jako **rogi w pikselach** `(xmin, ymin, xmax, ymax)`. YOLO chce **środka i rozmiaru znormalizowanych** do `[0,1]`. Napisz `voc_to_yolo(box, img_w, img_h)`, gdzie `box = (xmin, ymin, xmax, ymax)` w pikselach, a funkcja zwraca krotkę `(cx, cy, w, h)` znormalizowaną przez szerokość i wysokość obrazu.\n\n```\nvoc_to_yolo((192, 240, 448, 384), 640, 480) == (0.5, 0.65, 0.4, 0.3)\n```",
+        "starterCode": "def voc_to_yolo(box, img_w, img_h):\n    # box = (xmin, ymin, xmax, ymax) w pikselach (rogi, konwencja VOC)\n    # zwroc (cx, cy, w, h) znormalizowane do [0, 1] (srodek + rozmiar, konwencja YOLO)\n    xmin, ymin, xmax, ymax = box\n    # TODO: policz srodek i rozmiar, a nastepnie podziel przez img_w / img_h\n    return (0.0, 0.0, 0.0, 0.0)\n",
+        "tests": [
+          {
+            "name": "samochod_640x480_daje_znane_wartosci",
+            "body": "r = voc_to_yolo((192, 240, 448, 384), 640, 480)\nassert all(abs(a - b) < 1e-6 for a, b in zip(r, (0.5, 0.65, 0.4, 0.3)))",
+            "hidden": false
+          },
+          {
+            "name": "box_na_caly_obraz_to_srodek_i_rozmiar_jeden",
+            "body": "r = voc_to_yolo((0, 0, 800, 600), 800, 600)\nassert all(abs(a - b) < 1e-6 for a, b in zip(r, (0.5, 0.5, 1.0, 1.0)))",
+            "hidden": true
+          },
+          {
+            "name": "statek_800x600_daje_znane_wartosci",
+            "body": "r = voc_to_yolo((120, 300, 360, 450), 800, 600)\nassert all(abs(a - b) < 1e-6 for a, b in zip(r, (0.3, 0.625, 0.3, 0.25)))",
+            "hidden": true
+          },
+          {
+            "name": "wszystkie_wartosci_w_przedziale_0_1",
+            "body": "r = voc_to_yolo((10, 20, 30, 60), 100, 200)\nassert all(0.0 <= v <= 1.0 for v in r)",
+            "hidden": true
+          }
+        ],
+        "solution": "def voc_to_yolo(box, img_w, img_h):\n    xmin, ymin, xmax, ymax = box\n    cx = ((xmin + xmax) / 2) / img_w\n    cy = ((ymin + ymax) / 2) / img_h\n    w = (xmax - xmin) / img_w\n    h = (ymax - ymin) / img_h\n    return (cx, cy, w, h)\n"
+      }
+    },
+    {
+      "id": "piaskownica",
+      "title": "Piaskownica: data.yaml i linia etykiety",
+      "description": "Zmieniaj nc, names i wartości w linii etykiety i obserwuj spójność (oraz przeliczenie na piksele).",
+      "type": "sandbox",
+      "data": {
+        "starterCode": "# Piaskownica: złóż mini data.yaml i sprawdź jedną linię etykiety.\n# Bez testów — zmieniaj wartości i patrz, co się dzieje.\n\nnames = [\"car\", \"truck\", \"ship\"]\ndata_yaml = {\n    \"path\": \"../dataset\",\n    \"train\": \"images/train\",\n    \"val\": \"images/val\",\n    \"nc\": len(names),   # sprobuj wpisac tu 2 albo 4 i zobacz niespojnosc\n    \"names\": names,\n}\nassert data_yaml[\"nc\"] == len(data_yaml[\"names\"]), \"nc musi rownac sie len(names)!\"\n\nline = \"2 0.300 0.625 0.300 0.250\"\ncls, cx, cy, w, h = line.split()\ncls = int(cls)\ncx, cy, w, h = float(cx), float(cy), float(w), float(h)\nprint(\"klasa:\", names[cls])\nprint(\"srodek (norm):\", cx, cy, \"  rozmiar (norm):\", w, h)\n# Na obrazie 800x600 te wartosci to:\nW, H = 800, 600\nprint(\"srodek (px):\", cx * W, cy * H, \"  rozmiar (px):\", w * W, h * H)\n",
+        "encouragement": "Zmień nc, dorzuć klasę do names albo przelicz inną linię na piksele i zobacz, kiedy plik przestaje być spójny."
+      }
+    }
+  ],
+  "sources": [
+    {
+      "url": "https://docs.ultralytics.com/datasets/detect/",
+      "title": "Ultralytics — Detection datasets format",
+      "kind": "article"
+    },
+    {
+      "url": "https://docs.ultralytics.com/datasets/",
+      "title": "Ultralytics — Datasets overview",
+      "kind": "article"
+    },
+    {
+      "url": "https://doi.org/10.1007/s11263-009-0275-4",
+      "title": "The PASCAL Visual Object Classes (VOC) Challenge",
+      "kind": "paper",
+      "author": "Mark Everingham, Luc Van Gool, Christopher K. I. Williams, John Winn, Andrew Zisserman",
+      "year": 2010
+    },
+    {
+      "url": "https://arxiv.org/abs/1405.0312",
+      "title": "Microsoft COCO: Common Objects in Context",
+      "kind": "paper",
+      "author": "Tsung-Yi Lin, Michael Maire, Serge Belongie, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, C. Lawrence Zitnick",
+      "year": 2014
+    }
+  ]
+}
