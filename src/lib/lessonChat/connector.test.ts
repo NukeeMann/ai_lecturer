@@ -166,6 +166,24 @@ describe('subprocessConnector', () => {
     ]);
   });
 
+  it('appends --model <name> when model is set', async () => {
+    const calls: Array<{ args: readonly string[] }> = [];
+    const fakeJson = JSON.stringify({ result: 'ok' });
+    const spawnSpy = ((_command: string, args: readonly string[]) => {
+      calls.push({ args });
+      return makeFakeProcess({ stdout: fakeJson });
+    }) as unknown as SpawnFn;
+    const connector = subprocessConnector({ spawnFn: spawnSpy, command: 'claude' });
+    await connector.chat({ userMessage: 'hi', model: 'opus' });
+    expect([...calls[0].args]).toEqual([
+      '-p',
+      '--output-format',
+      'json',
+      '--model',
+      'opus',
+    ]);
+  });
+
   it('rejects when claude exits non-zero', async () => {
     const connector = subprocessConnector({
       spawnFn: spawnReturning({

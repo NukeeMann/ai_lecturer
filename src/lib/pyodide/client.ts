@@ -49,9 +49,10 @@ export interface RunWithTestsResult extends RunResult {
   testResults: TestResult[];
   /**
    * Matplotlib figure captured after user code + tests finished, encoded as
-   * PNG bytes. Only present when the caller opts in via
-   * `runWithTests(code, tests, { captureLiveImage: true })` AND user code
-   * produced at least one figure (US-174).
+   * PNG bytes. Populated by the kernel runtime's live-capture path
+   * (`@/lib/kernel/client`, US-174) when the caller opts in; the legacy
+   * Pyodide worker no longer produces it (US-207). Kept on the shared shape
+   * because Code/Sandbox consume it via the kernel client.
    */
   png?: Uint8Array;
 }
@@ -84,10 +85,12 @@ export interface PyodideTestSpec {
 }
 
 /**
- * Lesson-provided file mounted into the Pyodide virtual filesystem at
- * `/inputs/<filename>` before user code runs. The worker fetches `src`
- * over HTTP once per lesson session and caches the bytes; user Python
- * code reads them like any other file (e.g. `cv2.imread('/inputs/x.png')`).
+ * Lesson-provided file mounted into the runtime's working directory at
+ * `/inputs/<filename>` before user code runs, so user Python reads them like
+ * any other file (e.g. `cv2.imread('/inputs/x.png')`). The mounting is done by
+ * the IPython kernel runtime (`@/lib/kernel/client`); the legacy Pyodide
+ * worker no longer mounts inputs (US-207). The shape lives here because it is
+ * the canonical definition the kernel client re-exports.
  */
 export interface PyodideInputFile {
   filename: string;
@@ -240,15 +243,12 @@ type WorkerPayload =
       type: 'run';
       code: string;
       requiresPackages?: string[];
-      inputs?: PyodideInputFile[];
     }
   | {
       type: 'runWithTests';
       code: string;
       tests: PyodideTestSpec[];
       requiresPackages?: string[];
-      captureLiveImage?: boolean;
-      inputs?: PyodideInputFile[];
     }
   | {
       type: 'gaussFilter';
@@ -319,25 +319,10 @@ function callWorker<T>(
 
 export interface RunWithTestsOptions {
   requiresPackages?: string[];
-  /**
-   * When true, the worker captures any matplotlib figure left open after
-   * user code (+ tests) ran, and attaches it to the result as `png` bytes.
-   * Off by default — the figure-capture path lazy-loads matplotlib + sets
-   * the AGG backend, so callers that don't need it pay nothing (US-174).
-   */
-  captureLiveImage?: boolean;
-  /**
-   * Lesson-provided files to mount into the Pyodide VFS at
-   * `/inputs/<filename>` before user code runs. Bytes are fetched in the
-   * worker and cached for the duration of the lesson.
-   */
-  inputs?: PyodideInputFile[];
 }
 
 export interface RunOptions {
   requiresPackages?: string[];
-  /** Same semantics as `RunWithTestsOptions.inputs`. */
-  inputs?: PyodideInputFile[];
 }
 
 export interface UsePyodideReturn {
@@ -394,13 +379,12 @@ export function usePyodide(): UsePyodideReturn {
   );
 
   const run = useCallback(
-    (code: string, requiresPackages?: string[], options?: RunOptions) =>
+    (code: string, requiresPackages?: string[]) =>
       callWorker<RunResult>(
         {
           type: 'run',
           code,
           requiresPackages,
-          inputs: options?.inputs,
         },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },
@@ -420,8 +404,6 @@ export function usePyodide(): UsePyodideReturn {
           code,
           tests,
           requiresPackages: options?.requiresPackages,
-          captureLiveImage: options?.captureLiveImage,
-          inputs: options?.inputs,
         },
         undefined,
         { timeoutMs: PYODIDE_EXECUTION_TIMEOUT_MS },

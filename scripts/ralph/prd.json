@@ -4287,6 +4287,239 @@
       "tags": [
         "ui"
       ]
+    },
+    {
+      "id": "US-196",
+      "title": "Provision local Jupyter kernel runtime (venv + real ML/CV libs) + GPU detection",
+      "description": "Jako autor/uczeń chcę jednorazowo zainstalowanego lokalnego środowiska Pythona (venv z kernelem Jupyter oraz prawdziwymi bibliotekami ML/CV), żeby widgety Code i Sandbox mogły wykonywać prawdziwy PyTorch/TensorFlow/OpenCV zamiast Pyodide w przeglądarce. Środowisko jest przygotowywane RAZ na trwałym hoście ralpha i współdzielone przez kolejne iteracje.",
+      "acceptanceCriteria": [
+        "Skrypt setup (np. scripts/setup-kernel.sh + .ps1, wpięty w setup.sh/setup.ps1) tworzy zarządzany venv w ~/.ai-lecturer/py-runtime; idempotentny przy ponownym uruchomieniu",
+        "Baseline instalacji: ipykernel, jupyter_client, numpy, opencv-python, matplotlib oraz CPU-wheel torch i tensorflow (jednorazowo ~1GB)",
+        "CUDA/GPU jako opt-in przez osobny udokumentowany krok wzorowany na scripts/setup-stt-cuda.sh; helper auto-wykrywa build CUDA i w razie braku spada na CPU (wzorzec whisperCudaAvailable() w src/lib/server/stt.ts)",
+        "Server-only probe raportuje czy runtime istnieje i jakie urządzenie wybierze (cpu/cuda); brak runtime'u zwraca typowany KernelRuntimeNotInstalledError (wzorzec SttNotInstalledError)",
+        "Udokumentowane zmienne środowiskowe: nadpisanie ścieżki venv oraz wymuszenie urządzenia (cpu/cuda/auto)",
+        "Testy jednostkowe pokrywają logikę detekcji/wyboru urządzenia z zastubowaną ciężką instalacją (bez wielo-GB pobierania w teście)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 196,
+      "passes": true,
+      "notes": "Host ralpha jest trwały → instalacja raz, współdzielona między iteracjami. CPU baseline ~1GB jednorazowo; CUDA opt-in. To precondition dla całego epiku Option-2.",
+      "tags": []
+    },
+    {
+      "id": "US-197",
+      "title": "Kernel manager (server): spawn/lifecycle/interrupt/restart IPython kernela per sesja lekcji",
+      "description": "Jako developer chcę server-only menedżera kernela, który spawnuje i nadzoruje prawdziwe kernele IPython per sesja lekcji, żeby kod widgetów wykonywał się w trwałym, przerywalnym procesie Pythona.",
+      "acceptanceCriteria": [
+        "Server-only moduł startuje kernel IPython przez jupyter_client na runtime z US-196 (ta sama dyscyplina spawn/child_process co src/lib/server/stt.ts i regenerateLesson.ts)",
+        "Jeden kernel per sesja kluczowana przez courseSlug + lessonSlug; reużywany między wykonaniami; bezczynne kernele reapowane po TTL",
+        "Wsparcie dla execute, interrupt (SIGINT), restart i shutdown; kernel jest force-killowany po przekroczeniu timeoutu wykonania",
+        "Bezpieczeństwo współbieżności: wykonania serializowane per sesja, żeby dwa runy nie przeplatały się na jednym kernelu",
+        "Brak runtime'u z US-196 → KernelRuntimeNotInstalledError",
+        "Testy integracyjne startują prawdziwy lekki kernel i weryfikują cykl execute / interrupt / restart / reap",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 197,
+      "passes": true,
+      "notes": "Wzorzec spawnu i process-tree kill jak przy claude -p / whisper. NIE używać szerokich sygnałów (pkill node) — zabiłoby proces agenta.",
+      "tags": []
+    },
+    {
+      "id": "US-198",
+      "title": "API wykonania kodu na kernelu + mapowanie Jupyter iopub → stabilny kontrakt JSON",
+      "description": "Jako developer chcę route'ów HTTP sterujących menedżerem kernela i tłumaczących komunikaty Jupyter iopub na stabilny kontrakt JSON, żeby widgety w przeglądarce mogły uruchamiać kod, streamować output i odbierać obrazy/błędy.",
+      "acceptanceCriteria": [
+        "Route'y: POST /api/code/run (streamuje output), POST /api/code/interrupt, POST /api/code/restart, POST /api/code/reset (czyści namespace sesji)",
+        "Żądanie niesie klucz sesji (courseSlug/lessonSlug/sectionId), kod oraz opcjonalne requiresPackages + pliki wejściowe",
+        "Mapowanie iopub na udokumentowany kształt JSON: stream (stdout/stderr), execute_result, display_data (w tym image/png dekodowany do bajtów/base64), error (ename/evalue/traceback) — znormalizowane do istniejących nazw pól RunResult (stdout/stderr/traceback/errorType/errorMessage)",
+        "Domyślny timeout wykonania 30s egzekwowany po stronie serwera (parytet z PYODIDE_EXECUTION_TIMEOUT_MS), zwracający typowany sygnał timeout mapowany przez klienta na istniejący UX restart/timeout",
+        "Brak runtime'u → czytelny, typowany błąd HTTP możliwy do wyrenderowania przez klienta",
+        "Testy integracyjne pokrywają każdy typ komunikatu, w tym obraz przez display_data oraz wyjątek",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 198,
+      "passes": true,
+      "notes": "Kontrakt JSON celowo lustruje pola RunResult/RunWithTestsResult z src/lib/pyodide/client.ts, żeby useKernel (US-199) był drop-in dla widgetów.",
+      "tags": []
+    },
+    {
+      "id": "US-199",
+      "title": "Hook klienta useKernel lustrzany do usePyodide (run/runWithTests/stop/reset/status)",
+      "description": "Jako developer widgetów chcę hooka useKernel odzwierciedlającego powierzchnię usePyodide, żeby Code i Sandbox mogły zmienić runtime minimalnym kosztem i z identycznymi kształtami wyników.",
+      "acceptanceCriteria": [
+        "Hook eksponuje status ('idle'|'loading'|'ready'|'error'), run(code, requiresPackages?, options?), runWithTests(code, tests, options?), stop(reason?) (mapowane na interrupt), reset(sessionKey), konsumując route'y z US-198",
+        "Zwraca TE SAME kształty RunResult / RunWithTestsResult co już konsumują Code/Sandbox, w tym png zdekodowany z display_data oraz traceback/errorType/errorMessage",
+        "Streaming output ujawniany przyrostowo tam gdzie UI to wspiera; KernelStopError lustruje PyodideStopError (reasons 'user'|'timeout') żeby istniejące catch-bloki widgetów portowały się 1:1",
+        "Testy jednostkowe z zamockowanym transportem weryfikują parytet kształtu wyniku (stdout, stderr, obraz, błąd, stop/timeout)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 199,
+      "passes": true,
+      "notes": "Klucz migracji: identyczne typy wyniku co src/lib/pyodide/client.ts. NIE dotyka jeszcze widgetów — to czyste API klienta.",
+      "tags": []
+    },
+    {
+      "id": "US-200",
+      "title": "Parytet test-runnera na kernelu: semantyka ukrytych testów (namespace, izolacja, assertionDetail)",
+      "description": "Jako uczeń chcę żeby zachowanie ukrytych testów widgetu Code było zachowane na runtime kernela, żeby zgłoszenia były oceniane dokładnie jak dotychczas.",
+      "acceptanceCriteria": [
+        "Odtworzenie kontraktu RUNNER_PY na kernelu: kod użytkownika exec'owany w trwałym namespace per lekcja; każdy test exec'owany w izolowanej kopii tego namespace; stdout/stderr przechwytywane per test",
+        "Detal AssertionError ujawniany jako assertionDetail; każdy inny wyjątek failuje test z jego tracebackiem; błąd w kodzie użytkownika failuje WSZYSTKIE testy ze współdzielonym tracebackiem (zgodność z obecnym zachowaniem)",
+        "Namespace utrzymuje się między wieloma runami w sesji i jest czyszczony przez reset",
+        "Testy parytetu weryfikują, że zwracany kształt testResults zgadza się z obecnym runnerem Pyodide dla reprezentatywnych przypadków pass / fail / assertion / błąd-kodu-użytkownika",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 200,
+      "passes": true,
+      "notes": "Referencja: RUNNER_PY w src/lib/pyodide/runnerPython.ts (namespace persistence, dict(copy) izolacja testów, traceback handling).",
+      "tags": []
+    },
+    {
+      "id": "US-201",
+      "title": "Migracja CodeRunner na runtime kernela (Run/Stop/restart/output/obraz/inputs)",
+      "description": "Jako uczeń chcę żeby Run/Stop/output edytora Code działały na prawdziwym kernelu, żeby inline runy używały prawdziwych bibliotek z tym samym UX.",
+      "acceptanceCriteria": [
+        "src/widgets/Code/CodeRunner.tsx używa useKernel zamiast usePyodide; ▶ Run (oraz Mod-Enter) wykonują się na sesji kernela",
+        "Stop przerywa wykonywaną komórkę przez SIGINT (bez pełnego teardownu chyba że potrzebny restart); baner timeout → restart oraz komunikat 'session restarted' zachowane",
+        "Panele stdout / stderr / wyjątku (w tym zwijany traceback) renderują się bez zmian; inline obraz z display_data jest pokazywany; pliki runInputs montowane do sesji kernela",
+        "Debounce'owany zapis postępu do /api/progress oraz zachowanie Reset bez zmian",
+        "3 out-of-scope widgety Pyodide (GaussDemo, ParametricExplorer, PlotImage) oraz CodeCloze nietknięte i nadal się budują",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 201,
+      "passes": true,
+      "notes": "CodeRunner używa run/stop/PyodideStopError/subscribePyodideRestart — wszystkie do podmiany na odpowiedniki useKernel. Zachować UX 1:1.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-202",
+      "title": "Migracja CodeWidget Submit + Run na kernel (ukryte testy, live figure, requiresPackages jako precondition)",
+      "description": "Jako uczeń chcę zgłaszać zadania Code na prawdziwym kernelu z ukrytymi testami i żywymi wykresami, żeby móc używać prawdziwego PyTorch/TensorFlow/OpenCV.",
+      "acceptanceCriteria": [
+        "src/widgets/Code/CodeWidget.tsx Submit + Run używają useKernel.runWithTests; panel ukrytych testów (hidden-with-peek) oraz render pass/fail zachowane",
+        "Żywy output matplotlib/figury zastępuje placeholder przez display_data (parytet ze starą ścieżką captureLiveImage)",
+        "requiresPackages traktowane jako PRECONDITION CHECK: widget weryfikuje że nazwane pakiety są importowalne w runtime i pokazuje akcjonowalny komunikat 'brakujący pakiet — uruchom setup' jeśli nie; NIE robi pip install w trakcie runu",
+        "Obsługa PyodideStopError zastąpiona odpowiednikiem KernelStopError (stop użytkownika + timeout)",
+        "src/widgets/Code/CodeWidget.test.tsx zaktualizowany do mocka kernela; istniejące asercje (np. podmiana live-image) zachowane",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 202,
+      "passes": true,
+      "notes": "requiresPackages przestaje znaczyć 'shim cv2' — to deklaracja preconditiona. Ciężkie biblioteki instalowane raz w US-196.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-203",
+      "title": "Migracja widgetu Sandbox na runtime kernela (free-run, live image, requiresPackages)",
+      "description": "Jako uczeń chcę żeby Sandbox uruchamiał dowolny kod Pythona na prawdziwym kernelu z żywym outputem obrazów, żebym mógł eksperymentować z prawdziwymi bibliotekami.",
+      "acceptanceCriteria": [
+        "src/widgets/Sandbox/SandboxWidget.tsx używa useKernel; free-run wykonuje się na sesji kernela; Stop przerywa",
+        "Żywy output obrazu zachowany przez display_data; UX zachęty (encouragement) bez zmian",
+        "requiresPackages traktowane jako precondition check (ta sama semantyka co US-202)",
+        "KernelStopError zastępuje PyodideStopError",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 203,
+      "passes": true,
+      "notes": "Sandbox dziś woła runWithTests(code, [], {captureLiveImage:true}) — zmapować na useKernel zachowując live image.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-204",
+      "title": "Authoring/schema/samples: requiresPackages = prawdziwe pakiety (usunąć semantykę shimu cv2)",
+      "description": "Jako autor kursu chcę żeby requiresPackages oznaczało prawdziwe pakiety pip (nie shim cv2), żeby authoring zgadzał się z nowym runtime.",
+      "acceptanceCriteria": [
+        "Komentarze schemy w src/widgets/Code/schema.ts + src/widgets/Sandbox/schema.ts opisują requiresPackages jako prawdziwe pakiety importowalne w runtime kernela (usunąć notkę 'cv2 = shim')",
+        "Tekst pomocniczy w src/widgets/Sandbox/SandboxEditor.tsx zaktualizowany; pole requiresPackages nadal poprawnie round-trip'uje (parse/serialize)",
+        "src/widgets/Code/sample.ts oraz src/widgets/Sandbox/sample.ts zaktualizowane do prawdziwych pakietów (cv2 = prawdziwy OpenCV)",
+        "Verify in browser using playwright-skill (zautoruj widget Sandbox, potwierdź że requiresPackages się zapisuje)",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 204,
+      "passes": true,
+      "notes": "Czysto authoringowa zmiana semantyki; faktyczne usunięcie shimu cv2 jest w US-206.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-205",
+      "title": "Kompleksowy test end-to-end: prawdziwe biblioteki + pełne przepływy Code/Sandbox (bez skip)",
+      "description": "Jako maintainer chcę testu end-to-end, który przepuszcza prawdziwe biblioteki przez kernel i ćwiczy każdy przepływ Code/Sandbox, żeby migracja była dowodliwie działająca.",
+      "acceptanceCriteria": [
+        "Test działa na trwałym runtime z US-196 i wykonuje PRAWDZIWE importy przy każdym runie (BEZ skip): import cv2 (np. Canny na obrazie wejściowym), import numpy, import torch (budowa + operacja na tensorze), import tensorflow (budowa + wykonanie trywialnej operacji)",
+        "Jednolinijkowy health-check runtime'u zamienia 'runtime nie przygotowany' na jawny, akcjonowalny FAIL (nigdy cichy skip/pass)",
+        "Przepływ Code: Submit z ukrytymi testami → asercja poprawnego PASS ORAZ poprawnego FAIL; wyrenderowana żywa figura",
+        "Przepływ Sandbox: free-run renderuje obraz matplotlib przez display_data",
+        "Przepływy kontrolne: Stop przerywa długą komórkę; przełączenie lekcji / reset czyści namespace; rozbiegana komórka trafia w timeout 30s i jest ubijana; brak runtime'u renderuje łagodny błąd",
+        "Udokumentowane jak uruchomić suite (oraz jednorazowy prerequisite setup)",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 205,
+      "passes": true,
+      "notes": "Host trwały → torch/tf/opencv zainstalowane raz w US-196; ten test importuje je naprawdę w każdej iteracji. ZERO skip-if-missing — brak runtime'u = czerwony build z komunikatem 'uruchom setup-kernel'.",
+      "tags": [
+        "ui"
+      ]
+    },
+    {
+      "id": "US-206",
+      "title": "Cleanup: usunięcie sztucznego shimu cv2 (prawdziwy OpenCV jest teraz w kernelu)",
+      "description": "Jako maintainer chcę usuniętego fałszywego shimu cv2 teraz gdy kernel dostarcza prawdziwy OpenCV, żeby było o jedną rozbieżną ścieżkę kodu mniej do utrzymania.",
+      "acceptanceCriteria": [
+        "Usunięty scripts/pyodide/cv2_shim.py; usunięte CV2_SHIM_PY + ensureCv2Shim (oraz hook requiresPackages.includes('cv2')) z src/lib/pyodide/worker.ts",
+        "Usunięta sekcja shimu cv2 z src/lib/pyodide/CLAUDE.md (lub zastąpiona notką że prawdziwy OpenCV działa teraz w kernelu)",
+        "Migracja przykładów/treści kursów zależnych od shimu na prawdziwy OpenCV; re-weryfikacja testów lekcji porównujących z outputem shimu (prawdziwy cv2 zmienia wartości pikseli — rozbieżności są udokumentowane w CLAUDE.md)",
+        "grep -ri 'cv2_shim\\|CV2_SHIM_PY\\|ensureCv2Shim' nie zwraca nic w src/ i scripts/",
+        "3 out-of-scope widgety Pyodide (GaussDemo, ParametricExplorer, PlotImage) oraz CodeCloze nadal się budują i działają",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 206,
+      "passes": true,
+      "notes": "Shim cv2 jest osiągalny wyłącznie przez Code/Sandbox requiresPackages:['cv2']; bezpieczny do usunięcia po migracji obu (US-202/203). To jest cleanup wprost wskazany przez usera ('obdudowanie funkcji opencv sztuczne').",
+      "tags": []
+    },
+    {
+      "id": "US-207",
+      "title": "Cleanup: dekomisja osieroconych ścieżek Pyodide używanych tylko przez Code/Sandbox",
+      "description": "Jako maintainer chcę usuniętych ścieżek kodu Pyodide, których używały WYŁĄCZNIE Code/Sandbox, zachowując wszystko czego potrzebują pozostałe widgety Pyodide.",
+      "acceptanceCriteria": [
+        "Usunięcie ścieżki live-PNG capture (LIVE_PNG_PY, ensureLivePngCapture) oraz montowania /inputs do VFS, ALE TYLKO po tym jak grep udowodni brak pozostałych konsumentów (CodeCloze/GaussDemo/ParametricExplorer/PlotImage/lesson page)",
+        "JAWNE zachowanie współdzielonej powierzchni wciąż używanej: run (GaussDemo, PlotImage), runWithTests (CodeCloze), gaussFilter (GaussDemo), runWithPlotParam (ParametricExplorer, PlotImage), resetNamespace (lesson page), PyodideStopError/stop/subscribePyodideRestart (CodeCloze)",
+        "Usunięcie wyłącznie martwych testów w src/lib/pyodide/ (i aktualizacja tych które referowały usunięte ścieżki); zachowanie testów dla zachowanych ścieżek",
+        "grep potwierdza zero referencji do każdego usuniętego eksportu/symbolu",
+        "Cała aplikacja typecheck'uje; 4 pozostałe widgety Pyodide zweryfikowane jako działające w przeglądarce",
+        "Verify in browser using playwright-skill",
+        "Typecheck passes",
+        "Tests pass"
+      ],
+      "priority": 207,
+      "passes": true,
+      "notes": "Po migracji TYLKO Code+Sandbox większość klienta Pyodide ZOSTAJE (4 widgety na nim polegają). Ta historia przycina WYŁĄCZNIE realnie osierocone ścieżki — guard grepem przed każdym usunięciem.",
+      "tags": [
+        "ui"
+      ]
     }
   ]
 }

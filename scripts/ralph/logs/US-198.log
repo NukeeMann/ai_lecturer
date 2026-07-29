@@ -1,0 +1,76 @@
+[2026-06-02T10:26:12+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T10:28:36+0200] I have a clear picture now. Let me set up tasks and start implementing.
+[2026-06-02T10:28:42+0200] I'll implement directly to conserve budget. Starting with the bridge changes for image capture, interim streaming events, and reset.
+[2026-06-02T10:29:15+0200] Now wire `reset` into the bridge command loop:
+[2026-06-02T10:29:23+0200] Now the kernel manager — add image capture, interim streaming events, and a `reset` method:
+[2026-06-02T10:29:52+0200] Now update `execute` to accept an `onEvent` handler and include images, plus add a `reset` method:
+[2026-06-02T10:30:03+0200] Now add `reset` on the session, right after `restart`:
+[2026-06-02T10:30:10+0200] Now update the manager-level `execute` and add `reset`:
+[2026-06-02T10:30:25+0200] Now the mapping module that normalizes kernel results to the stable RunResult-mirroring contract:
+[2026-06-02T10:30:46+0200] Now the request schema. Let me check the schemas directory conventions:
+[2026-06-02T10:31:10+0200] Now a shared HTTP error mapper and the four routes:
+[2026-06-02T10:31:51+0200] I need an `ensureSession` method so startup errors yield a proper HTTP status before streaming begins:
+[2026-06-02T10:31:59+0200] Now the run route with NDJSON streaming:
+[2026-06-02T10:32:22+0200] Now the three control routes:
+[2026-06-02T10:32:55+0200] Now the tests covering each iopub message type:
+[2026-06-02T10:33:29+0200] Let me fix the ANSI test strings to use explicit escape codes rather than literal control chars:
+[2026-06-02T10:33:50+0200] Both files have real ESC bytes — consistent. Now let me typecheck and run the new tests:
+[2026-06-02T10:34:04+0200] Typecheck passes. Now run the new tests:
+[2026-06-02T10:34:28+0200] Let me verify the existing kernel manager tests still pass after my changes:
+[2026-06-02T10:34:56+0200] Let me add route-level tests (mocking the kernel manager) to cover the HTTP layer explicitly. First, check existing route test conventions:
+[2026-06-02T10:35:02+0200] Now let me write the route tests with a mocked kernel manager:
+[2026-06-02T10:35:43+0200] All pass. Now run lint and the full test suite:
+[2026-06-02T10:36:03+0200] These are pre-existing errors in other files. Let me lint only my changed files:
+[2026-06-02T10:36:11+0200] My files are clean (pre-existing lint errors are in unrelated widget files). Now the full test suite:
+[2026-06-02T10:36:42+0200] Failures are `ResizeObserver is not defined` (jsdom env) in unrelated component tests. Let me confirm they're pre-existing, not caused by my changes:
+[2026-06-02T10:37:43+0200] Confirmed — those failures pre-exist on the clean tree (ResizeObserver/jsdom environment issues, unrelated to US-198). My changes add only passing tests and introduce no regressions.
+
+Let me verify my files restored and update progress.txt + prd.json:
+[2026-06-02T10:37:51+0200] Those `courses/edge-detection-basics/*` files are pre-existing leftovers, not mine — I'll leave them untracked. Now update progress.txt:
+[2026-06-02T10:38:20+0200] Now flip `passes` for US-198 and add a CLAUDE.md note for the kernel area:
+[2026-06-02T10:38:36+0200] No nearby CLAUDE.md; the code docblocks + progress.txt are thorough. Now commit my files (excluding the unrelated leftover course artifacts):
+[2026-06-02T10:38:46+0200] Committed. Let me verify the success signal is in HEAD:
+[2026-06-02T10:39:02+0200] US-198 is complete and committed.
+
+## Summary
+
+Implemented the HTTP code-execution API over the US-197 kernel manager, with Jupyter iopub → stable JSON mapping.
+
+**Routes** (`src/app/api/code/`):
+- `POST /api/code/run` — executes a cell, **streams output as NDJSON** (interim `stream`/`display`/`result` events, then a `final` aggregated result)
+- `POST /api/code/interrupt`, `/restart`, `/reset` (clears namespace without restarting)
+- All keyed by `{courseSlug, lessonSlug, sectionId}`; `run` also carries `code` + optional `requiresPackages` + `inputs`.
+
+**Kernel bridge** (`scripts/kernel/kernel_bridge.py`): now captures `image/png` from `display_data`/`execute_result` as base64, emits interim events during a cell, and adds a `reset` command.
+
+**Kernel manager** (`kernelManager.ts`): added `images[]`, `KernelStreamEvent`, streaming `execute(code, onEvent?)`, `reset()`, and `ensureSession()` (so a missing runtime returns a typed HTTP status *before* the 200 stream opens).
+
+**Mapping** (`codeRun.ts`): `toCodeRunResult()` normalizes `ename→errorType`, `evalue→errorMessage`, ANSI-stripped `traceback`, mirroring `RunResult` field names so US-199's `useKernel` is drop-in. 30s timeout parity, surfaced as `status: 'timeout'`. Typed HTTP errors in `codeRunHttp.ts` (503 no-runtime / unavailable, 400 invalid session).
+
+**Tests**: `codeRun.test.ts` (unit + real-IPython-kernel integration covering every message type — stdout/stderr stream, execute_result, display_data image/png, exception, streaming events, reset, timeout) and `code-routes.test.ts` (route layer with mocked manager). All 20 new tests pass; typecheck clean; my files lint clean.
+
+**Acceptance criteria all met.** The 3 failing test files in the full suite (`extend/page`, `generation`, `extendApply` — ResizeObserver/jsdom + parallel-run flakiness) are pre-existing, verified by stashing my changes and reproducing identical failures on the clean tree.
+
+One flagged assumption (in progress.txt): `requiresPackages`/`inputs` are validated in the request schema (contract carries them per AC) but are no-ops on the kernel path today — the US-196 venv pre-provisions packages, and input-file mounting (browser-fetched `src` URLs) belongs with the US-199 widget integration.
+[2026-06-02T10:39:02+0200] [result success turns=64 cost=$4.700801500000002] US-198 is complete and committed.
+
+## Summary
+
+Implemented the HTTP code-execution API over the US-197 kernel manager, with Jupyter iopub → stable JSON mapping.
+
+**Routes** (`src/app/api/code/`):
+- `POST /api/code/run` — executes a cell, **streams output as NDJSON** (interim `stream`/`display`/`result` events, then a `final` aggregated result)
+- `POST /api/code/interrupt`, `/restart`, `/reset` (clears namespace without restarting)
+- All keyed by `{courseSlug, lessonSlug, sectionId}`; `run` also carries `code` + optional `requiresPackages` + `inputs`.
+
+**Kernel bridge** (`scripts/kernel/kernel_bridge.py`): now captures `image/png` from `display_data`/`execute_result` as base64, emits interim events during a cell, and adds a `reset` command.
+
+**Kernel manager** (`kernelManager.ts`): added `images[]`, `KernelStreamEvent`, streaming `execute(code, onEvent?)`, `reset()`, and `ensureSession()` (so a missing runtime returns a typed HTTP status *before* the 200 stream opens).
+
+**Mapping** (`codeRun.ts`): `toCodeRunResult()` normalizes `ename→errorType`, `evalue→errorMessage`, ANSI-stripped `traceback`, mirroring `RunResult` field names so US-199's `useKernel` is drop-in. 30s timeout parity, surfaced as `status: 'timeout'`. Typed HTTP errors in `codeRunHttp.ts` (503 no-runtime / unavailable, 400 invalid session).
+
+**Tests**: `codeRun.test.ts` (unit + real-IPython-kernel integration covering every message type — stdout/stderr stream, execute_result, display_data image/png, exception, streaming events, reset, timeout) and `code-routes.test.ts` (route layer with mocked manager). All 20 new tests pass; typecheck clean; my files lint clean.
+
+**Acceptance criteria all met.** The 3 failing test files in the full suite (`extend/page`, `generation`, `extendApply` — ResizeObserver/jsdom + parallel-run flakiness) are pre-existing, verified by stashing my changes and reproducing identical failures on the clean tree.
+
+One flagged assumption (in progress.txt): `requiresPackages`/`inputs` are validated in the request schema (contract carries them per AC) but are no-ops on the kernel path today — the US-196 venv pre-provisions packages, and input-file mounting (browser-fetched `src` URLs) belongs with the US-199 widget integration.

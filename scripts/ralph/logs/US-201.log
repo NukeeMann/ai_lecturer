@@ -1,0 +1,98 @@
+[2026-06-02T10:57:18+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T10:57:20+0200] I'll start by reading the Ralph instructions, then understand the task context.
+[2026-06-02T10:57:27+0200] I have ~2994s. Let me read the key files in parallel.
+[2026-06-02T10:57:33+0200] The `/api/code/*` routes don't exist (confirmed from memory). I need to recreate them. Let me read the kernel client, manager, and US-198 log to understand the contract.
+[2026-06-02T10:57:38+0200] The US-198 routes/mapping/bridge changes were lost in a squash. Let me check the current state of the server-side kernel files to know what I need to recreate.
+[2026-06-02T10:57:47+0200] Routes + mapping (`codeRun.ts`, `codeRunHttp.ts`) need recreation. I also need to verify whether kernelManager's streaming/reset/images additions survived. Let me read it and the bridge.
+[2026-06-02T10:57:57+0200] kernelManager is still the US-197 version (no streaming/images/reset/ensureSession — those US-198 additions were also lost). Let me read the bridge and the pyodide client types to understand the full contract I must rebuild.
+[2026-06-02T10:58:14+0200] The bridge and kernelManager are both still US-197 versions — all US-198 additions (images, streaming, reset, ensureSession) were lost. This is large scope. Let me read the pyodide client types and find all CodeRunner consumers.
+[2026-06-02T10:58:32+0200] Now let me examine how each widget uses CodeRunner — critical for AC5 (out-of-scope widgets must stay on Pyodide while CodeRunner is shared).
+[2026-06-02T10:58:52+0200] Let me see exactly how the other widgets use `<CodeRunner` (what props, whether they rely on internal run/stop/status, progressKey).
+[2026-06-02T10:59:01+0200] Only Sandbox and Code render `<CodeRunner>`; the others just import the styling helpers. Let me confirm all `<CodeRunner` usages and read SandboxWidget.
+[2026-06-02T10:59:33+0200] Out-of-scope widgets (GaussDemo, ParametricExplorer, PlotImage, CodeCloze) do NOT use `<CodeRunner>` — so swapping CodeRunner's internal hook leaves them untouched. Good. Now the status-model concern: `useKernel` starts at `'idle'`, but CodeRunner treats `'idle'` as "Loading runtime…" and disables Run. Let me check the kernel client tests and the test-code-runner page.
+[2026-06-02T11:01:56+0200] Key findings: `test-code-runner` renders `<CodeRunner>` with no `progressKey`; client tests lock initial status to `'idle'`. My plan: swap CodeRunner to `useKernel`, simplify the route to emit a single aggregated `final` NDJSON event (no bridge streaming needed), add image capture + reset to the bridge/manager, and render inline images. Let me look at existing route + schema conventions and the kernelRuntime error.
+[2026-06-02T11:02:25+0200] I have enough context. Let me start building. First the bridge — add image capture and a `reset` command.
+[2026-06-02T11:02:51+0200] Now wire `reset` into the bridge command loop and reader:
+[2026-06-02T11:03:00+0200] Now kernelManager.ts: add `images` to the result type, populate it, and add `reset`.
+[2026-06-02T11:03:14+0200] Now add a `reset` method to the `KernelSession` and the manager. Let me add the session method after `restart`:
+[2026-06-02T11:03:29+0200] Let me check kernelManager.test.ts for assertions that my `images` field addition might break.
+[2026-06-02T11:03:39+0200] Both pass through `images: []` fine (tests assert individual fields). Now create the mapping module `codeRun.ts`:
+[2026-06-02T11:03:56+0200] Now create the HTTP error mapper and request schema. Let me check an existing zod schema's style first.
+[2026-06-02T11:04:14+0200] Let me verify `SafeSlugError` exists in paths.ts:
+[2026-06-02T11:04:22+0200] It's `InvalidSlugError`. Let me fix:
+[2026-06-02T11:04:58+0200] Now add the inputs-mount helper to `codeRun.ts`:
+[2026-06-02T11:05:07+0200] Now create the four routes:
+[2026-06-02T11:05:22+0200] Now the three control routes:
+[2026-06-02T11:05:41+0200] Now add the `onImages` option to the kernel client so CodeRunner can render inline images:
+[2026-06-02T11:06:29+0200] Now the core change — CodeRunner.tsx. First the imports:
+[2026-06-02T11:06:41+0200] Now add a scratch-session constant and inline-image styles near the top constants:
+[2026-06-02T11:06:48+0200] Now the hook usage and state. Let me update the component body:
+[2026-06-02T11:06:56+0200] Add `useMemo` to the React imports:
+[2026-06-02T11:06:59+0200] Now update `handleRun` (guard, image clearing, onImages, KernelStopError):
+[2026-06-02T11:07:08+0200] Update `handleReset` to clear images:
+[2026-06-02T11:07:14+0200] Now update `runDisabled` and the panel rendering (idle no longer = loading) plus add the inline images block:
+[2026-06-02T11:07:23+0200] Now add the inline-images render block after `OutputBody`:
+[2026-06-02T11:07:46+0200] Let me check time and run a typecheck to catch errors early.
+[2026-06-02T11:08:02+0200] Typecheck passes. Now let me write tests. Let me find an existing route test pattern:
+[2026-06-02T11:08:17+0200] Now write the mapping unit test and a route test with a mocked kernel manager:
+[2026-06-02T11:08:35+0200] My ANSI regex is missing the ESC byte. Let me fix it to match real escape sequences:
+[2026-06-02T11:09:02+0200] The regex actually contains the ESC byte (correct). My test strings lack ESC, so they'd fail. Let me fix the test to use real escape chars:
+[2026-06-02T11:09:14+0200] The test already has real ESC bytes — good. Let me verify line 64's assertion content:
+[2026-06-02T11:09:19+0200] Both consistent. Now the route test with a mocked kernel manager:
+[2026-06-02T11:09:38+0200] Now run the new tests plus the kernel/manager suites:
+[2026-06-02T11:09:59+0200] The `vi.mock` factory can't reference top-level vars (hoisting). Let me use `vi.hoisted`:
+[2026-06-02T11:10:18+0200] Route tests pass. Now check the CodeWidget tests — CodeRunner now uses `useKernel`, which may affect what those tests render:
+[2026-06-02T11:10:39+0200] All pass. Let me run lint on changed files and full typecheck:
+[2026-06-02T11:10:54+0200] Clean typecheck. Let me remove the unused eslint-disable directive:
+[2026-06-02T11:11:17+0200] Lint clean. Now let me check whether the kernel runtime is installed (needed for real browser execution) and start the dev server.
+[2026-06-02T11:11:30+0200] System python3 has jupyter_client+ipykernel, but the US-196 runtime venv isn't installed. For a real browser verification I'll point `AI_LECTURER_PY_RUNTIME` at a shim dir whose `bin/python` links to system python3.
+[2026-06-02T11:11:55+0200] Let me verify the server responds, then write the playwright test:
+[2026-06-02T11:12:14+0200] Real kernel execution works end-to-end. Let me quickly verify image capture and error mapping via the route:
+[2026-06-02T11:12:27+0200] All server-side paths verified: error mapping (ANSI-stripped), and `display_data` image capture. Now the required browser verification with playwright-skill:
+[2026-06-02T11:12:50+0200] Browser verification fully passes: Run enabled from idle, Stop morphs during execution, real kernel output "hello, world", Mod-Enter reuses the session, zero console errors. Now the full test suite to check for regressions:
+[2026-06-02T11:13:23+0200] The 21 failures are entirely in `extend/page.test.tsx` (+ its AppLogo ResizeObserver jsdom issue) — the documented pre-existing failures (US-200 memory confirms extend/page + extendApply + AppLogo fail on the base tree). None of my files are involved. Let me confirm quickly that these fail on the base commit too:
+[2026-06-02T11:13:50+0200] Confirmed: failures are the documented pre-existing ones (extend/page, extendApply, generation — flaky/jsdom, per US-198/US-200 notes). None are my files. Now let me finalize. Update progress.txt:
+[2026-06-02T11:14:21+0200] Now flip `passes` to true for US-201 in prd.json:
+[2026-06-02T11:14:26+0200] Let me verify the prd.json diff only touched US-201 (formatting risk):
+[2026-06-02T11:14:32+0200] Only US-201's `passes` line changed. Let me review the full set of changes before committing:
+[2026-06-02T11:14:41+0200] I'll stage only my files (excluding the pre-existing course leftovers and the playwright temp file):
+[2026-06-02T11:14:54+0200] Committed. Let me confirm the success signal is in HEAD:
+[2026-06-02T11:14:56+0200] The success signal is committed. US-201 is complete. Let me update the project memory with the now-recovered server layer (the prior memory flagged it as missing):
+[2026-06-02T11:15:29+0200] US-201 is complete and committed (`a6f00f4`), with `passes: true` confirmed in HEAD.
+
+## Summary
+
+Migrated `CodeRunner.tsx`'s inline ▶ Run / Mod-Enter from Pyodide to the real per-lesson IPython kernel, and **re-created the entire US-198 server layer that had been lost in squash-merge `71f7b36`** (only its log survived).
+
+**What I built:**
+- **CodeRunner.tsx** → `useKernel` instead of `usePyodide`. Stop maps to a SIGINT interrupt (no teardown), `display_data` images render inline, `runInputs` mount into the kernel session, debounced `/api/progress` save + client-side Reset unchanged. Fixed the status model: kernel `idle` is now treated as runnable (lazy server spawn), so the loading indicator only shows during the first-run boot.
+- **Routes** `src/app/api/code/{run,interrupt,restart,reset}/route.ts` — `/run` is non-streaming, writing one NDJSON `final` event.
+- **Mapping/errors/schema**: `codeRun.ts` (ANSI-stripped traceback, image passthrough, inputs-mount cell builder), `codeRunHttp.ts` (503 missing-runtime etc.), `schemas/codeRun.ts`.
+- **kernelManager.ts** (`images[]` + `reset()`), **kernel_bridge.py** (image/png capture + `reset` command), **kernel/client.ts** (`onImages` run option).
+
+**Verification:**
+- **Browser (playwright-skill)** on `/test-code-runner` against a real kernel: Run enabled from idle, Stop morph mid-run, stdout `hello, world`, Mod-Enter reuses the session, **zero console errors**.
+- **Curl smoke tests**: `print` output, ANSI-stripped `ValueError` traceback with `errorType`/`errorMessage`, and `display(Image(...))` → captured `images[]`.
+- **Typecheck + eslint clean.** New tests: `codeRun.test.ts` + `code-routes.test.ts` (9 routes + mapping) all green; Code/Sandbox widget tests pass (25). The 4 out-of-scope Pyodide widgets are untouched (they don't render `<CodeRunner>`).
+- Remaining suite failures (`extend/page`, `extendApply`, `generation`) are the documented pre-existing jsdom/flaky failures, not US-201.
+
+Memory updated with the recovered server layer and the local kernel-shim testing recipe. The dev server is left running for the orchestrator to reap with the worktree.
+[2026-06-02T11:15:29+0200] [result success turns=100 cost=$9.63027025] US-201 is complete and committed (`a6f00f4`), with `passes: true` confirmed in HEAD.
+
+## Summary
+
+Migrated `CodeRunner.tsx`'s inline ▶ Run / Mod-Enter from Pyodide to the real per-lesson IPython kernel, and **re-created the entire US-198 server layer that had been lost in squash-merge `71f7b36`** (only its log survived).
+
+**What I built:**
+- **CodeRunner.tsx** → `useKernel` instead of `usePyodide`. Stop maps to a SIGINT interrupt (no teardown), `display_data` images render inline, `runInputs` mount into the kernel session, debounced `/api/progress` save + client-side Reset unchanged. Fixed the status model: kernel `idle` is now treated as runnable (lazy server spawn), so the loading indicator only shows during the first-run boot.
+- **Routes** `src/app/api/code/{run,interrupt,restart,reset}/route.ts` — `/run` is non-streaming, writing one NDJSON `final` event.
+- **Mapping/errors/schema**: `codeRun.ts` (ANSI-stripped traceback, image passthrough, inputs-mount cell builder), `codeRunHttp.ts` (503 missing-runtime etc.), `schemas/codeRun.ts`.
+- **kernelManager.ts** (`images[]` + `reset()`), **kernel_bridge.py** (image/png capture + `reset` command), **kernel/client.ts** (`onImages` run option).
+
+**Verification:**
+- **Browser (playwright-skill)** on `/test-code-runner` against a real kernel: Run enabled from idle, Stop morph mid-run, stdout `hello, world`, Mod-Enter reuses the session, **zero console errors**.
+- **Curl smoke tests**: `print` output, ANSI-stripped `ValueError` traceback with `errorType`/`errorMessage`, and `display(Image(...))` → captured `images[]`.
+- **Typecheck + eslint clean.** New tests: `codeRun.test.ts` + `code-routes.test.ts` (9 routes + mapping) all green; Code/Sandbox widget tests pass (25). The 4 out-of-scope Pyodide widgets are untouched (they don't render `<CodeRunner>`).
+- Remaining suite failures (`extend/page`, `extendApply`, `generation`) are the documented pre-existing jsdom/flaky failures, not US-201.
+
+Memory updated with the recovered server layer and the local kernel-shim testing recipe. The dev server is left running for the orchestrator to reap with the worktree.

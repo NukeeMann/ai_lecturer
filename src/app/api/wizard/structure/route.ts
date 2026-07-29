@@ -93,7 +93,10 @@ export async function POST(req: Request) {
         // Structure generation drafts a full course outline with Opus and
         // routinely takes >60s; the connector default is meant for
         // interactive lesson chat.
-        timeoutMs: 240_000,
+        timeoutMs: 600_000,
+        // Pin Opus: same JSON-fragility reason as wizard/clarify. The CLI
+        // default (Sonnet) was producing malformed JSON for Polish prompts.
+        model: 'opus',
       });
       const result: CourseStructure = parseStructureResponse(reply);
       return NextResponse.json(result);

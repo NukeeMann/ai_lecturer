@@ -1,0 +1,107 @@
+[2026-06-02T12:00:42+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T12:00:44+0200] I'll start by reading the Ralph instructions as required.
+[2026-06-02T12:00:49+0200] I have ~50 min. Let me read the codebase patterns and the relevant Pyodide files.
+[2026-06-02T12:01:02+0200] Let me read the worker.ts and CLAUDE.md to understand the live-PNG capture path.
+[2026-06-02T12:01:05+0200] Now let me read client.ts and find all consumers of these paths.
+[2026-06-02T12:01:14+0200] Now let me grep for all consumers of these surfaces.
+[2026-06-02T12:01:34+0200] Key insight: Code/Sandbox widgets use `useKernel`, not pyodide. Let me verify CodeCloze's pyodide `runWithTests` call doesn't use captureLiveImage/inputs, and check the kernel client owns its own types.
+[2026-06-02T12:02:26+0200] The kernel client re-uses pyodide types. Let me read its imports to know exactly what shared types must stay.
+[2026-06-02T12:02:33+0200] Now let me check the test-pyodide page and the pyodide tests for references to the removed paths.
+[2026-06-02T12:02:36+0200] Let me read the relevant test block and the test-pyodide page.
+[2026-06-02T12:03:25+0200] Now I have a complete picture. Key findings:
+- Code/Sandbox/CodeRunner widgets use `useKernel`, NOT pyodide — their `captureLiveImage`/`inputs`/`requiresPackages` go to the **kernel** client (which has its own implementations).
+- Pyodide consumers: CodeCloze (`runWithTests`, no options), GaussDemo (`gaussFilter`), ParametricExplorer/PlotImage (`runWithPlotParam`), lesson page (`resetNamespace`), test-pyodide page (`run`/`runWithTests`, no options). **None** pass `inputs` or `captureLiveImage` to the pyodide worker → both paths are orphaned.
+- `PyodideInputFile`, `RunResult`, `RunWithTestsResult` (incl. `.png`) types are re-exported by the kernel client → must stay.
+
+Let me make the worker.ts edits.
+[2026-06-02T12:03:33+0200] Now remove the `/inputs` VFS mounting state and helpers:
+[2026-06-02T12:03:50+0200] Now remove the LIVE_PNG capture block:
+[2026-06-02T12:03:58+0200] Now the message-handler branches. The `resetNamespace` `clearMountedInputs()` call, the `run` `mountInputs` call, and the `runWithTests` live-png block:
+[2026-06-02T12:04:04+0200] Now the runWithTests tail. Let me read its current state:
+[2026-06-02T12:04:23+0200] Now `PyodideFS`/`FS` are orphaned. Let me confirm and remove them:
+[2026-06-02T12:04:41+0200] Now the pyodide client.ts. Remove the dead `inputs`/`captureLiveImage` options that only fed the now-removed worker paths (keeping shared types). First the `RunWithTestsResult.png` doc and `PyodideInputFile` doc need updating since the pyodide worker no longer drives them:
+[2026-06-02T12:04:56+0200] Now the WorkerPayload type — remove `inputs`/`captureLiveImage` from the pyodide `run`/`runWithTests` variants:
+[2026-06-02T12:05:01+0200] Now the `RunWithTestsOptions` and `RunOptions` interfaces:
+[2026-06-02T12:05:05+0200] Now the `run` and `runWithTests` useCallbacks that forward those fields:
+[2026-06-02T12:05:31+0200] Now remove the dead "lesson input mounting" test that exercises the removed `/inputs` worker path. Let me view the test file's structure:
+[2026-06-02T12:05:49+0200] Now check whether `FS` and `reset` are still referenced in the test file:
+[2026-06-02T12:05:53+0200] `reset` is still used; only `FS` is now orphaned. Remove it from the test interface:
+[2026-06-02T12:06:00+0200] Now update the pyodide CLAUDE.md to reflect the removed paths:
+[2026-06-02T12:06:12+0200] Now verify zero references to the removed symbols across `src/`:
+[2026-06-02T12:06:19+0200] Only the doc narrative remains — no code references. Let me confirm the worker has no dangling `data.inputs`/`data.captureLiveImage` references:
+[2026-06-02T12:06:23+0200] Clean. Now run typecheck and the pyodide-related tests:
+[2026-06-02T12:06:35+0200] Typecheck clean. Now run the affected unit tests:
+[2026-06-02T12:06:43+0200] Now run the pyodide runner test (the one I edited):
+[2026-06-02T12:06:50+0200] Now lint the changed files:
+[2026-06-02T12:07:01+0200] Tests + lint clean. Let me check budget and find a page hosting the Pyodide widgets for browser verification:
+[2026-06-02T12:07:22+0200] Let me check CDN connectivity (Pyodide loads from jsdelivr) and set up the dev server:
+[2026-06-02T12:07:30+0200] CDN reachable. Let me start the dev server:
+[2026-06-02T12:07:45+0200] Dev server up. Let me locate lessons containing each of the 4 Pyodide widgets:
+[2026-06-02T12:08:05+0200] GaussDemo = `demo` type. Targets:
+- GaussDemo + plotImage: `gauss-basics/lessons/wprowadzenie-do-filtrowania`
+- ParametricExplorer: `pexp-test/lessons/plot-mode`
+- CodeCloze: `cloze-test/lessons/box-blur`
+
+Let me find the output/interaction selectors in each widget:
+[2026-06-02T12:08:33+0200] I have the selectors. Let me ensure the playwright skill deps are installed:
+[2026-06-02T12:08:38+0200] Now write the verification script:
+[2026-06-02T12:13:35+0200] ParametricExplorer (runWithPlotParam) works and zero console errors. The other three timed out — likely selector/trigger assumptions, not breakage. Let me inspect GaussDemo's render and CodeCloze structure to fix my selectors:
+[2026-06-02T12:13:44+0200] GaussDemo paints the blur to a `<canvas data-gaussdemo-overlay>`, not a blob img. Let me see how the result is applied to find a reliable "ran" signal:
+[2026-06-02T12:13:55+0200] GaussDemo signals success via overlay canvas opacity. Let me check CodeCloze's submit/status rendering to fix that check too:
+[2026-06-02T12:14:18+0200] `submitDisabled` requires all slots filled correctly. Let me extract the box-blur cloze slot answers so I can fill them:
+[2026-06-02T12:14:25+0200] Slots: `aggregator`="sum", `divisor`="len(values)". Let me find the slot input selectors:
+[2026-06-02T12:14:35+0200] Slot inputs are `[data-testid="cloze-slot-<id>"]`. Let me verify how PlotImage renders its output image:
+[2026-06-02T12:14:54+0200] Now I have correct selectors for all 4. Let me rewrite the verification script:
+[2026-06-02T12:21:07+0200] Same pattern — pexp works, the gauss-basics and cloze-test pages don't, with zero console errors. Let me debug what's actually rendering on those pages:
+[2026-06-02T12:21:56+0200] Let me check budget, then investigate the cloze timeout and GaussDemo presence more precisely:
+[2026-06-02T12:22:12+0200] This lesson has no GaussDemo (`demo`). Let me find the GaussDemo lesson and check PlotImage's Run-button condition:
+[2026-06-02T12:22:28+0200] PlotImage's Run button lives inside the collapsible source panel (needs `plotimage-toggle-source` first). GaussDemo is in `filtr-gaussa-w-praktyce`. Let me run a focused script for the 3 remaining widgets with diagnostics:
+[2026-06-02T12:25:07+0200] GaussDemo, PlotImage, ParametricExplorer all ✅. Only CodeCloze fill didn't register ("0/2 slots"). Let me inspect the slot input's onChange/validation:
+[2026-06-02T12:25:41+0200] Validation runs on **blur**, not change — my fill never blurred. Let me run a cloze-only script that fills then blurs each slot:
+[2026-06-02T12:26:10+0200] CodeCloze ✅ "Solved". **All 4 Pyodide widgets verified working in-browser, zero console errors.** Now run the kernel + schema tests that depend on the pyodide client types, to be safe:
+[2026-06-02T12:26:22+0200] All 180 tests pass. Now update progress.txt and flip the prd.json `passes` flag. Let me find the US-207 entry:
+[2026-06-02T12:26:28+0200] [rate_limit five_hour status=allowed_warning]
+[2026-06-02T12:26:31+0200] Now append to progress.txt:
+[2026-06-02T12:27:05+0200] Now stage and commit:
+[2026-06-02T12:27:07+0200] [rate_limit five_hour status=allowed_warning]
+[2026-06-02T12:27:11+0200] A stray playwright temp file got staged. Remove it:
+[2026-06-02T12:27:24+0200] Committed with `passes: true` in prd.json. Let me verify it landed in HEAD:
+[2026-06-02T12:27:33+0200] US-207 complete. The commit `eac3813` is in HEAD with `passes: true` for US-207.
+
+## Summary
+
+Decommissioned the orphaned Pyodide worker paths that only the (now kernel-backed) Code/Sandbox widgets used:
+
+**Removed** (`src/lib/pyodide/worker.ts`):
+- Live-PNG capture: `LIVE_PNG_PY`, `livePngInstalled`, `ensureLivePngCapture`, the `__ai_capture_live_png` call + capture block in `runWithTests`.
+- `/inputs` VFS mounting: `WorkerInput`, `INPUTS_DIR`/`inputsDirReady`/`inputBytesCache`/`mountedFilenames`, `ensureInputsDir`/`fetchInputBytes`/`mountInputs`/`clearMountedInputs`, the `inputs`/`captureLiveImage` `RunRequest` fields and their call-sites, plus the now-dead `PyodideFS`/`FS`.
+- `src/lib/pyodide/client.ts`: the dead `inputs`/`captureLiveImage` options + their forwarding.
+
+**Preserved** (per AC, verified still-used): `run`, `runWithTests`, `gaussFilter`, `runWithPlotParam`, `resetNamespace`, `stop`, `subscribePyodideRestart`, `PyodideStopError`, and the shared shapes (`PyodideInputFile`, `RunResult`, `RunWithTestsResult` incl. `png`) that the kernel client re-exports.
+
+**Verification:**
+- grep: zero references to every removed symbol across live `src/` (only the CLAUDE.md narrative names one to describe the removal).
+- `npm run typecheck` clean; eslint clean; vitest green (pyodide 4 + kernel/schemas/code/sandbox 180 + widgets 52); deleted only the dead `/inputs` test.
+- Browser (playwright, `ui` tag): **all 4 Pyodide widgets working, 0 console errors** — GaussDemo (`gaussFilter`), ParametricExplorer + PlotImage (`runWithPlotParam`), CodeCloze (`runWithTests` → "Solved"). Screenshots in `/tmp/us207-*.png`.
+
+Note: I left the dev server (port 3199) running — per Ralph rules I avoid broad process kills; the orchestrator tears down the worktree and stragglers.
+[2026-06-02T12:27:34+0200] [rate_limit five_hour status=allowed_warning]
+[2026-06-02T12:27:34+0200] [result success turns=91 cost=$6.794795250000001] US-207 complete. The commit `eac3813` is in HEAD with `passes: true` for US-207.
+
+## Summary
+
+Decommissioned the orphaned Pyodide worker paths that only the (now kernel-backed) Code/Sandbox widgets used:
+
+**Removed** (`src/lib/pyodide/worker.ts`):
+- Live-PNG capture: `LIVE_PNG_PY`, `livePngInstalled`, `ensureLivePngCapture`, the `__ai_capture_live_png` call + capture block in `runWithTests`.
+- `/inputs` VFS mounting: `WorkerInput`, `INPUTS_DIR`/`inputsDirReady`/`inputBytesCache`/`mountedFilenames`, `ensureInputsDir`/`fetchInputBytes`/`mountInputs`/`clearMountedInputs`, the `inputs`/`captureLiveImage` `RunRequest` fields and their call-sites, plus the now-dead `PyodideFS`/`FS`.
+- `src/lib/pyodide/client.ts`: the dead `inputs`/`captureLiveImage` options + their forwarding.
+
+**Preserved** (per AC, verified still-used): `run`, `runWithTests`, `gaussFilter`, `runWithPlotParam`, `resetNamespace`, `stop`, `subscribePyodideRestart`, `PyodideStopError`, and the shared shapes (`PyodideInputFile`, `RunResult`, `RunWithTestsResult` incl. `png`) that the kernel client re-exports.
+
+**Verification:**
+- grep: zero references to every removed symbol across live `src/` (only the CLAUDE.md narrative names one to describe the removal).
+- `npm run typecheck` clean; eslint clean; vitest green (pyodide 4 + kernel/schemas/code/sandbox 180 + widgets 52); deleted only the dead `/inputs` test.
+- Browser (playwright, `ui` tag): **all 4 Pyodide widgets working, 0 console errors** — GaussDemo (`gaussFilter`), ParametricExplorer + PlotImage (`runWithPlotParam`), CodeCloze (`runWithTests` → "Solved"). Screenshots in `/tmp/us207-*.png`.
+
+Note: I left the dev server (port 3199) running — per Ralph rules I avoid broad process kills; the orchestrator tears down the worktree and stragglers.

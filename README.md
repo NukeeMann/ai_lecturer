@@ -223,6 +223,43 @@ npm run build:schemas  # regenerate src/widgets/schemas/*.json from each widget'
 </details>
 
 <details>
+<summary><b>Local Jupyter kernel runtime (real PyTorch/TensorFlow/OpenCV)</b></summary>
+
+<br/>
+
+The `code` / `sandbox` widgets can execute against a **real** local Python runtime
+instead of in-browser Pyodide. The runtime is a managed venv provisioned once on
+the host and shared across runs.
+
+```bash
+# CPU baseline (~1GB one-time): ipykernel, jupyter_client, numpy,
+# opencv-python, matplotlib, CPU-wheel torch + tensorflow.
+bash scripts/setup-kernel.sh
+
+# Optional GPU acceleration (opt-in; requires an NVIDIA driver). Reinstalls
+# torch from the CUDA wheel index and writes a .cuda-enabled marker.
+bash scripts/setup-kernel-cuda.sh
+```
+
+Both scripts are idempotent and also run automatically from `setup.sh` /
+`setup.ps1` (unless `--skip-media` / `-SkipMedia`). The CUDA step is always
+manual.
+
+The server-side probe lives at `src/lib/server/kernelRuntime.ts`
+(`probeKernelRuntime()` reports `{ installed, device }`; `requireKernelRuntime()`
+throws a typed `KernelRuntimeNotInstalledError` when the venv is missing).
+
+**Environment variables:**
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AI_LECTURER_PY_RUNTIME` | `~/.ai-lecturer/py-runtime` | Override the venv location (e.g. a different volume). |
+| `AI_LECTURER_KERNEL_DEVICE` | `auto` | `auto` → CUDA when the `.cuda-enabled` marker is present **and** `nvidia-smi` exits 0, else CPU. `cuda` / `cpu` force the device without probing. |
+| `AI_LECTURER_CUDA_INDEX_URL` | `https://download.pytorch.org/whl/cu121` | PyTorch CUDA wheel index used by `setup-kernel-cuda.sh`. |
+
+</details>
+
+<details>
 <summary><b>Stack</b></summary>
 
 <br/>

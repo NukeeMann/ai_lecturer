@@ -34,6 +34,11 @@ export interface ConnectorRequest {
    *  instead of inlining their content into the prompt. SDK connector ignores
    *  (it already allows tools by default). */
   allowTools?: boolean;
+  /** Optional `--model` override for the subprocess connector (e.g. `'opus'`
+   *  or `'claude-opus-4-7'`). Wizard Clarify/Structure pin Opus because it is
+   *  noticeably better at returning strict JSON for non-English prompts.
+   *  SDK connector ignores (model is chosen by the user's Claude Code config). */
+  model?: string;
 }
 
 export type ConnectorName = 'agent-sdk' | 'subprocess';
@@ -114,6 +119,7 @@ export function subprocessConnector(
         req.timeoutMs ?? timeoutMs,
         killGraceMs,
         req.allowTools === true,
+        req.model,
       );
     },
     chatStream(req, signal) {
@@ -125,6 +131,7 @@ export function subprocessConnector(
         signal,
         killGraceMs,
         req.allowTools === true,
+        req.model,
       );
     },
   };
@@ -137,6 +144,7 @@ function runClaudeCli(
   timeoutMs: number,
   killGraceMs: number,
   allowTools: boolean,
+  model?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
@@ -147,6 +155,7 @@ function runClaudeCli(
       // E2BIG. `claude -p` reads stdin when no prompt arg is supplied.
       const args = ['-p', '--output-format', 'json'];
       if (allowTools) args.push('--dangerously-skip-permissions');
+      if (model) args.push('--model', model);
       child = spawnFn(command, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -272,12 +281,14 @@ async function* streamClaudeCli(
   signal: AbortSignal,
   killGraceMs: number,
   allowTools: boolean,
+  model?: string,
 ): AsyncGenerator<ChatStreamEvent> {
   let child: ChildProcess;
   try {
     // Same E2BIG concern as runClaudeCli: feed the prompt over stdin.
     const args = ['-p'];
     if (allowTools) args.push('--dangerously-skip-permissions');
+    if (model) args.push('--model', model);
     child = spawnFn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
   } catch (err) {
     yield { type: 'error', message: `claude spawn failed: ${(err as Error).message}` };

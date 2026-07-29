@@ -1,0 +1,53 @@
+[2026-06-02T11:54:08+0200] [rate_limit five_hour status=allowed]
+[2026-06-02T11:54:40+0200] Now let me find course content depending on the shim and check the client API.
+[2026-06-02T11:54:55+0200] The course content is large. Let me focus on actual shim-dependent lessons — those with `requiresPackages: ['cv2']` and tests comparing pixel values. Let me check the most likely ones.
+[2026-06-02T11:55:10+0200] These two lessons only reference the shim in prose; their tests are structural (dtype/shape/max) which real OpenCV also satisfies. Let me find all shim-specific prose across courses and check the README.
+[2026-06-02T11:55:27+0200] The shim-specific course prose is in 3 files (edge-detection-basics README + 2 lessons). Tests there are structural, not pixel-comparison. Now let me verify the Code widget execution path to understand whether removing the Pyodide cv2 shim breaks those lessons.
+[2026-06-02T11:55:48+0200] CodeWidget uses `useKernel` (line 28, 566) — Submit/Run run on the real IPython kernel with real OpenCV. So removing the Pyodide cv2 shim won't break the edge-detection lessons; they need only prose updates. Now let me make all the edits.
+[2026-06-02T11:56:08+0200] Now delete the shim file and update the runner test (remove the cv2 describe block + now-unused imports).
+[2026-06-02T11:56:34+0200] Now rewrite `src/lib/pyodide/CLAUDE.md` to replace the shim docs with a note that real OpenCV runs in the kernel, documenting the pixel-value divergence.
+[2026-06-02T11:56:56+0200] Now update the course prose. First the two lessons:
+[2026-06-02T11:57:05+0200] Now the README "Runtime environment" section:
+[2026-06-02T11:57:17+0200] Now update the stale Codebase Patterns line in progress.txt:
+[2026-06-02T11:57:30+0200] Now verify the grep AC and check for remaining shim references in source:
+[2026-06-02T11:57:38+0200] The AC wants the grep to return nothing in src/ and scripts/. My new docs reintroduce the literal tokens. Let me reword to describe the removal without the exact symbol names.
+[2026-06-02T11:58:01+0200] Source is clean (only historical logs/archive and the prd.json's own AC text retain the strings). Let me check the story's tags and run quality checks.
+[2026-06-02T11:58:07+0200] No `ui` tag → skip browser testing. Run typecheck and lint:
+[2026-06-02T11:58:32+0200] Typecheck + lint clean. Now run the relevant tests — the pyodide runner plus the out-of-scope widgets that must still build/work.
+[2026-06-02T11:58:51+0200] Let me confirm the pyodide runner test actually executed (it boots Pyodide-in-node):
+[2026-06-02T11:59:07+0200] runner.test.ts passes (cv2 block removed). Let me quickly check the smoke-test lesson for shim-specific content:
+[2026-06-02T11:59:18+0200] All checks pass. No `cv2`/shim references remain in the smoke-test lesson (just a `Pillow` precondition). Now flip `passes` for US-206 and write the progress report.
+[2026-06-02T11:59:32+0200] Now append the progress report:
+[2026-06-02T11:59:55+0200] Now stage and commit. Let me verify the staged changes look right first.
+[2026-06-02T12:00:15+0200] US-206 complete and committed. Summary:
+
+**Removed the legacy Pyodide `cv2` shim** now that the IPython kernel runtime (US-196/201) provides real OpenCV — eliminating the divergent code path.
+
+- **Deleted** `scripts/pyodide/cv2_shim.py`.
+- **`worker.ts`**: removed the inlined `CV2_SHIM_PY` constant, `ensureCv2Shim`, the `cv2InstalledOnce`/`cv2PackagesPromise` flags, and both `requiresPackages.includes('cv2')` preload hooks (in `run` + `runWithTests`). Reworded the `requiresPackages` comment (worker now ignores it; kept for wire-compat).
+- **`runner.test.ts`**: dropped the `describe('cv2 shim')` block + its now-unused `node:fs`/`node:path` imports.
+- **`CLAUDE.md`**: rewritten to describe the worker as the legacy path (GaussDemo/ParametricExplorer/PlotImage/CodeCloze only) and to **document the pixel-value divergence** (real Canny sigma≈1.4 5×5+L2; real Sobel `[1,2,1]`) so lesson tests stay structural.
+- **Course content**: migrated the shim caveat prose in `edge-detection-basics` (README + `sobel-gradients`/`canny-edges` lessons) to "real OpenCV in the kernel". Their tests were already structural (dtype/shape/`max==255`/binary) — no value changes needed.
+
+**Verification:**
+- `grep -ri 'cv2_shim|CV2_SHIM_PY|ensureCv2Shim'` → **clean** in `src/` and live `scripts/` (only append-only `logs/`/`archive/` and the prd.json's own AC text retain the tokens — rewriting the spec to satisfy its own grep would be self-defeating).
+- `npm run typecheck` clean; eslint clean; targeted `vitest run` = **46 passed** (pyodide runner + Code + Sandbox + CodeCloze + ParametricExplorer all still build/run).
+- No `ui` tag → browser testing skipped per Ralph rules.
+
+`passes: true` set for US-206 and committed (`4723a26`).
+[2026-06-02T12:00:15+0200] [result success turns=47 cost=$2.676031] US-206 complete and committed. Summary:
+
+**Removed the legacy Pyodide `cv2` shim** now that the IPython kernel runtime (US-196/201) provides real OpenCV — eliminating the divergent code path.
+
+- **Deleted** `scripts/pyodide/cv2_shim.py`.
+- **`worker.ts`**: removed the inlined `CV2_SHIM_PY` constant, `ensureCv2Shim`, the `cv2InstalledOnce`/`cv2PackagesPromise` flags, and both `requiresPackages.includes('cv2')` preload hooks (in `run` + `runWithTests`). Reworded the `requiresPackages` comment (worker now ignores it; kept for wire-compat).
+- **`runner.test.ts`**: dropped the `describe('cv2 shim')` block + its now-unused `node:fs`/`node:path` imports.
+- **`CLAUDE.md`**: rewritten to describe the worker as the legacy path (GaussDemo/ParametricExplorer/PlotImage/CodeCloze only) and to **document the pixel-value divergence** (real Canny sigma≈1.4 5×5+L2; real Sobel `[1,2,1]`) so lesson tests stay structural.
+- **Course content**: migrated the shim caveat prose in `edge-detection-basics` (README + `sobel-gradients`/`canny-edges` lessons) to "real OpenCV in the kernel". Their tests were already structural (dtype/shape/`max==255`/binary) — no value changes needed.
+
+**Verification:**
+- `grep -ri 'cv2_shim|CV2_SHIM_PY|ensureCv2Shim'` → **clean** in `src/` and live `scripts/` (only append-only `logs/`/`archive/` and the prd.json's own AC text retain the tokens — rewriting the spec to satisfy its own grep would be self-defeating).
+- `npm run typecheck` clean; eslint clean; targeted `vitest run` = **46 passed** (pyodide runner + Code + Sandbox + CodeCloze + ParametricExplorer all still build/run).
+- No `ui` tag → browser testing skipped per Ralph rules.
+
+`passes: true` set for US-206 and committed (`4723a26`).

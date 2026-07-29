@@ -19,11 +19,12 @@ for sigma in (0.5, 1.0, 2.0):
 };
 
 // Sandbox variant that mirrors Code's `inputs[]` + `outputMedia` contract:
-// the input image is mounted by the worker at /inputs/cameraman.jpg (basename
+// the input image is mounted by the runtime at /inputs/cameraman.jpg (basename
 // derived from `src`) and the matplotlib figure produced by Run replaces the
-// placeholder image because `outputMedia.live === true`. Lesson-authoring
-// agents can use this as a reference for sandbox sections that should
-// explore image processing.
+// placeholder image because `outputMedia.live === true`. `requiresPackages`
+// here are real pip packages (cv2 = real OpenCV, matplotlib) that must be
+// importable in the kernel runtime. Lesson-authoring agents can use this as a
+// reference for sandbox sections that should explore image processing.
 export const SAMPLE_SANDBOX_BLUR_PLAYGROUND: SandboxData = {
   starterCode: `import cv2
 import numpy as np

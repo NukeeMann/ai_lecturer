@@ -1,0 +1,56 @@
+=== Attempt 1 — 2026-05-28T10:55:46.275Z ===
+[system init claude-sonnet-4-6]
+[rate_limit_event]
+I'll start by reading the skill definition, the lesson schema, and the course.json in parallel, then scan the source materials for wągrzyca content.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/scripts/ralph/skills/generate_quiz_lesson/S…)
+← 1	---
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/lib/schemas/lesson.ts)
+← 1	import { z } from 'zod';
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjn…)
+← 1	{
+Good — the lesson is in `m12`, `estimatedMinutes: 14`. Now I'll read the widget schemas and the most relevant source files in parallel.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/quiz.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/src/widgets/schemas/drag-match.json)
+← 1	{
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjn…)
+← 1	--- page 1 ---
+I have solid source material on wągrzyca świńska. Let me read more of Part 12 and check related parts for additional detail.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjn…)
+← 258	wypełnione płynem. Sporadycznie wągry występują w mózgu, wątrobie, nerkach, płucach i węzłach chłonnych.
+→ Read(file_path: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjn…)
+← 1	--- page 1 ---
+I have all the source facts I need. Now composing the 14-section lesson JSON and writing it.
+→ Write(file_path: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjn…)
+← File created successfully at: /home/nukeemann/projects/ai_lecturer/courses/higiena-miesa-powtorka-egzaminacyjna-z-notatek-k1-i-k2/lessons/wagrzyca-swinska-cysticercus-cellulosae-taenia-solium.json (fi…
+Now validating against `LessonSchema`.
+→ Bash(command: npx tsx -e "
+const fs = require('node:fs');
+const path = '/home/nukeemann/projec…)
+← Exit code 1
+→ Bash(command: npx tsx -e "
+import { LessonSchema } from './src/lib/schemas/lesson.js';
+import …)
+← OK: ./courses/higiena-miesa-powtorka-egzaminacyjna-z-notatek-k1-i-k2/lessons/wagrzyca-swinska-cysticercus-cellulosae-taenia-solium.json
+`LessonSchema.safeParse` returns `success: true` — 14 sections, all valid.
+**Lesson written and validated:**
+- File: `/courses/higiena-miesa-powtorka-egzaminacyjna-z-notatek-k1-i-k2/lessons/wagrzyca-swinska-cysticercus-cellulosae-taenia-solium.json`
+- 14 sections (12 quiz + 2 dragMatch), all grounded in Parts 12 of the source notes.
+**Content coverage:**
+| # | ID | Type | Topic |
+|---|---|---|---|
+| 1 | q-czynnik-etiologiczny | quiz | Cysticercus cellulosae = larwa Taenia solium |
+| 2 | q-zywiciel-ostateczny | quiz | Człowiek jako jedyny żywiciel ostateczny |
+| 3 | q-zywiciele-posredni | quiz | Świnie i dziki jako żywiciele pośredni |
+| 4 | q-tasiemiec-uzbrojony | quiz | Uzbrojony vs nieuzbrojony (haczyki na skoleksie) |
+| 5 | q-autoinwazja | quiz | Mechanizm autoinwazji (antyperystaltyczne ruchy jelit) |
+| 6 | match-ksztalt-wagra-lokalizacja | dragMatch | Kształt wągra (wrzecionowaty/kulisty/nieregularny) ↔ lokalizacja |
+| 7 | q-miejsca-predylekcyjne-multiselect | quiz (multiSelect) | Język, przepona, polędwiczka jako predylekcyjne; płuca nie |
+| 8 | q-narzady-wewnetrzne | quiz | Zwyrodnienie wągrów w narządach (poza sercem) |
+| 9 | q-lokalizacja-czlowiek | quiz | ~80% w gałce ocznej i OUN |
+| 10 | q-max-wagry | quiz | Do 1000 wągrów w uogólnionej wągrzycy |
+| 11 | q-objawy-mozgu | quiz | Napady Jacksona, zaburzenia psychiczne |
+| 12 | q-eozynofilia | quiz | Eozynofilia tylko w ok. 10% |
+| 13 | match-wagier-tasiemiec | dragMatch | cellulosae/bovis/tenuicollis/cerebralis ↔ Taenia solium/saginata/hydatigena/multiceps |
+| 14 | q-ocena-sanitarna | quiz | Mięso niezdatne do spożycia |
+[result success (452.2s)]

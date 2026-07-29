@@ -24,7 +24,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { Check, X } from 'lucide-react';
 
 import { Callout } from '@/components/Callout';
+<<<<<<< HEAD
 import { MarkdownInline } from '@/components/MarkdownInline';
+=======
+import { shuffleArray } from '@/widgets/shuffle';
+>>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
 
 import {
   DragMatchDataSchema,
@@ -286,9 +290,14 @@ function zoneFeedbackStyle(state: 'correct' | 'incorrect' | 'idle'): CSSProperti
   return {};
 }
 
-function buildInitialPlacement(data: DragMatchData): DragMatchPlacement {
+function buildInitialPlacement(
+  data: DragMatchData,
+  bankIds?: readonly string[],
+): DragMatchPlacement {
   const out: DragMatchPlacement = {};
-  out[DRAG_MATCH_BANK_ID] = data.items.map((i) => i.id);
+  out[DRAG_MATCH_BANK_ID] = bankIds
+    ? bankIds.slice()
+    : data.items.map((i) => i.id);
   for (const z of data.zones) out[z.id] = [];
   return out;
 }
@@ -306,6 +315,17 @@ export function DragMatchWidget({
   const [submitted, setSubmitted] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const completedOnceRef = useRef(false);
+  // Shuffle the bank order on mount only — identity on first render keeps
+  // SSR output stable (avoids React hydration mismatch).
+  const initialBankShuffledRef = useRef(false);
+  useEffect(() => {
+    if (initialBankShuffledRef.current) return;
+    initialBankShuffledRef.current = true;
+    setPlacement((prev) => ({
+      ...prev,
+      [DRAG_MATCH_BANK_ID]: shuffleArray(prev[DRAG_MATCH_BANK_ID] ?? []),
+    }));
+  }, []);
 
   const onCompleteRef = useRef(onComplete);
   useEffect(() => {
@@ -416,7 +436,8 @@ export function DragMatchWidget({
   }, []);
 
   const handleReset = useCallback(() => {
-    setPlacement(buildInitialPlacement(data));
+    const shuffledBank = shuffleArray(data.items.map((i) => i.id));
+    setPlacement(buildInitialPlacement(data, shuffledBank));
     setSubmitted(false);
   }, [data]);
 

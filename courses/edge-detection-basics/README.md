@@ -37,27 +37,20 @@ documented inline in its module docstring.
 
 ## Runtime environment
 
-The two lessons execute their Python under **Pyodide** in a Web Worker. The
-import `import cv2` does NOT resolve to real OpenCV — there is no native
-OpenCV port for WebAssembly. Instead, the worker loads a small **cv2 shim**
-built on `scipy.ndimage` + `scikit-image` (canonical source:
-`scripts/pyodide/cv2_shim.py`; mirrored into `src/lib/pyodide/worker.ts` as
-`CV2_SHIM_PY`). The shim re-binds itself into `sys.modules['cv2']`, so user
-code can import and call the implemented subset (`cv2.Sobel`, `cv2.Canny`,
-`cv2.imread`, `cv2.imwrite`, plus the `IMREAD_*` / `CV_*` constants) as if
-it were OpenCV. See `src/lib/pyodide/CLAUDE.md` for the technical details
-on which functions are wired up and how to extend the shim.
+The two lessons execute their Python on the lesson's **IPython kernel
+runtime** (US-196/US-201), which has **real OpenCV** (`opencv-python`)
+installed. So `import cv2` resolves to genuine OpenCV: `cv2.Sobel`,
+`cv2.Canny`, `cv2.imread`, etc. produce exactly the pixel values a learner
+would get running the same code in a regular Python env with
+`opencv-python` installed.
 
-The shim is *visually* close to OpenCV but **numerically diverges**: the
-3×3 kernels used by `scipy.ndimage.sobel` and the default sigma used by
-`skimage.feature.canny` are not identical to OpenCV's, so a Sobel-magnitude
-or Canny edge-map produced in the player can have different pixel values
-than the same code run under real OpenCV. Visually the results match
-(edges in the same places, similar relative strength), but a pixel-exact
-comparison will fail. Learners who run the same code outside the player
-(in a regular Python env with `opencv-python` installed) should expect
-this divergence — the *technique* is correct, only the implementation
-backend changes.
+> Historical note: earlier revisions of this course ran under **Pyodide**
+> with a hand-written `cv2` *shim* over `scipy.ndimage` + `scikit-image`,
+> which diverged numerically from OpenCV (different Sobel kernel, different
+> Canny sigma). That shim was removed in US-206. The lesson tests were
+> written as **structural** checks (`dtype`, `shape`, binary edge map,
+> `max == 255`) precisely so they hold under either backend — and they pass
+> against real OpenCV unchanged. See `src/lib/pyodide/CLAUDE.md` for details.
 
 The synthetic input images each lesson builds in Python (`img = np.zeros…`)
 are constructed to be visually similar to the reference PNGs in `assets/`

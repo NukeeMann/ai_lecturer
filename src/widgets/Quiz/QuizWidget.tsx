@@ -1,10 +1,14 @@
 'use client';
 
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, X } from 'lucide-react';
 
 import { Confetti } from '@/components/Confetti';
+<<<<<<< HEAD
 import { MarkdownInline } from '@/components/MarkdownInline';
+=======
+import { shuffledIndices } from '@/widgets/shuffle';
+>>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
 
 import type { QuizData } from './schema';
 import {
@@ -136,6 +140,15 @@ export function QuizWidget({
   const [confettiTrigger, setConfettiTrigger] = useState(0);
   const confettiOriginRef = useRef<HTMLDivElement | null>(null);
   const confettiFiredRef = useRef(false);
+  // Identity order on first render → matches SSR output (no hydration mismatch).
+  // Shuffled in the effect below, once per mount, so answer positions vary each visit.
+  const [displayOrder, setDisplayOrder] = useState<number[]>(() =>
+    data.options.map((_, i) => i),
+  );
+
+  useEffect(() => {
+    setDisplayOrder(shuffledIndices(data.options.length));
+  }, [data.options]);
 
   const correctSet = useMemo(() => new Set(data.correct), [data.correct]);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
@@ -255,7 +268,8 @@ export function QuizWidget({
         aria-label="Answer options"
         style={optionsStackStyle}
       >
-        {data.options.map((option, i) => {
+        {displayOrder.map((i, displayPos) => {
+          const option = data.options[i];
           const isSelected = selectedSet.has(i);
           const isCorrect = correctSet.has(i);
           const stateInput = {
@@ -282,10 +296,17 @@ export function QuizWidget({
               onMouseLeave={() => setHovered((cur) => (cur === i ? null : cur))}
               style={optionStyle(state, hovered === i)}
             >
+<<<<<<< HEAD
               <span style={optionLetterStyle(state)}>{LETTERS[i] ?? `${i + 1}`}</span>
               <span style={optionTextStyle(state)}>
                 <MarkdownInline>{option}</MarkdownInline>
               </span>
+=======
+              <span style={optionLetterStyle(state)}>
+                {LETTERS[displayPos] ?? `${displayPos + 1}`}
+              </span>
+              <span style={optionTextStyle(state)}>{option}</span>
+>>>>>>> 7261a83fcd140013cdcd55ae54e2b91467d1dc3e
               {showCheck && (
                 <Check
                   size={16}

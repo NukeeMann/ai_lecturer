@@ -87,7 +87,10 @@ export const CodeDataSchema = z.object({
   solution: z.string().optional(),
   inputs: z.array(CodeInputSchema).optional(),
   outputMedia: CodeOutputMediaSchema.optional(),
-  // 'cv2' resolves to a shim, not real OpenCV — see src/lib/pyodide/CLAUDE.md
+  // Real pip packages that must be importable in the kernel runtime (US-196),
+  // e.g. ['cv2', 'numpy'] for real OpenCV/NumPy. Declared names are checked as
+  // a precondition before a run (US-202) — they are NOT installed at run time.
+  // Accepts import names (e.g. 'cv2') or PyPI dist names (e.g. 'Pillow').
   requiresPackages: z.array(z.string()).optional(),
 });
 

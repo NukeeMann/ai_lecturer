@@ -11,29 +11,44 @@ import {
 import type { CodeData } from './schema';
 
 const runWithTestsMock = vi.fn();
+const checkPackagesMock = vi.fn();
+const stopMock = vi.fn();
 
-vi.mock('@/lib/pyodide/client', () => ({
-  usePyodide: () => ({
+// US-202: Code Submit + Run now execute on the real kernel via `useKernel`.
+// Mock the kernel client (CodeWidget + CodeRunner both consume it).
+vi.mock('@/lib/kernel/client', () => ({
+  useKernel: () => ({
     status: 'ready',
     run: vi.fn(),
     runWithTests: runWithTestsMock,
-    runWithPlotParam: vi.fn(),
-    gaussFilter: vi.fn(),
-    resetNamespace: vi.fn(),
-    stop: vi.fn(),
+    checkPackages: checkPackagesMock,
+    stop: stopMock,
+    reset: vi.fn(),
   }),
-  subscribePyodideRestart: () => () => {},
-  PyodideStopError: class PyodideStopError extends Error {
-    reason = 'user' as const;
+  KernelStopError: class KernelStopError extends Error {
+    reason: 'user' | 'timeout';
+    constructor(reason: 'user' | 'timeout' = 'user') {
+      super('stopped');
+      this.name = 'KernelStopError';
+      this.reason = reason;
+    }
   },
-  PYODIDE_EXECUTION_TIMEOUT_MS: 30_000,
 }));
 
-// Import AFTER vi.mock so the mocked usePyodide is what the widget sees.
+// CodeRunner still imports `subscribePyodideRestart` from the pyodide client to
+// surface the legacy restart banner; stub it so no real worker is touched.
+vi.mock('@/lib/pyodide/client', () => ({
+  subscribePyodideRestart: () => () => {},
+}));
+
+// Import AFTER vi.mock so the mocked useKernel is what the widget sees.
 import { CodeWidget } from './CodeWidget';
 
 beforeEach(() => {
   runWithTestsMock.mockReset();
+  checkPackagesMock.mockReset();
+  checkPackagesMock.mockResolvedValue([]);
+  stopMock.mockReset();
 });
 
 afterEach(() => {
@@ -117,5 +132,67 @@ describe('CodeWidget (US-174) — live matplotlib figure capture', () => {
     expect(img).not.toBeNull();
     expect(img!.getAttribute('src')).toBe('/placeholder.png');
     expect(img!.getAttribute('src') ?? '').not.toMatch(/^blob:/);
+  });
+});
+
+describe('CodeWidget (US-202) — requiresPackages precondition check', () => {
+  it('blocks Run and shows an actionable message when a package is missing', async () => {
+    checkPackagesMock.mockResolvedValueOnce(['torch']);
+
+    const { container } = render(
+      <CodeWidget data={makeLiveData({ requiresPackages: ['torch'] })} />,
+    );
+
+    const runBtn = container.querySelector(
+      '[data-testid="codewidget-run"]',
+    ) as HTMLButtonElement | null;
+    expect(runBtn).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(runBtn!);
+    });
+
+    await waitFor(() => {
+      const banner = container.querySelector(
+        '[data-codewidget-missing-packages]',
+      );
+      expect(banner).not.toBeNull();
+      expect(banner!.getAttribute('data-packages')).toBe('torch');
+      expect(banner!.textContent ?? '').toMatch(/run setup/i);
+    });
+
+    // Precondition failed → the kernel run is never attempted.
+    expect(checkPackagesMock).toHaveBeenCalledTimes(1);
+    expect(checkPackagesMock).toHaveBeenCalledWith(['torch']);
+    expect(runWithTestsMock).not.toHaveBeenCalled();
+  });
+
+  it('runs normally when all required packages are importable', async () => {
+    checkPackagesMock.mockResolvedValueOnce([]);
+    runWithTestsMock.mockResolvedValueOnce({
+      testResults: [],
+      stdout: '',
+      stderr: '',
+      png: new Uint8Array([137, 80, 78, 71]),
+    });
+
+    const { container } = render(
+      <CodeWidget data={makeLiveData({ requiresPackages: ['numpy'] })} />,
+    );
+
+    const runBtn = container.querySelector(
+      '[data-testid="codewidget-run"]',
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      fireEvent.click(runBtn!);
+    });
+
+    await waitFor(() => {
+      expect(runWithTestsMock).toHaveBeenCalledTimes(1);
+    });
+    expect(
+      container.querySelector('[data-codewidget-missing-packages]'),
+    ).toBeNull();
   });
 });
