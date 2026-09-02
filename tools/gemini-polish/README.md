@@ -33,10 +33,12 @@ npm run export -- <course-slug>
 ```
 
 Tworzy `out/<slug>/` z batchami: `NNN.prompt.md` (gotowy prompt),
-`NNN.map.json` (sidecar dla apply — nie ruszać), `MANIFEST.md` (spis).
+`NNN.map.json` (sidecar dla apply — nie ruszać), `NNN.result.json` (pusty stub
+`[]` — **tutaj** wkleisz odpowiedź Gemini), `MANIFEST.md` (spis).
 To jest podstawa zarówno pracy automatycznej, jak i ręcznej.
-Ponowny export **odmówi** skasowania folderu, w którym są już `NNN.result.json`
-(`--fresh` wymusza czysty start).
+Ponowny export **odmówi** skasowania folderu tylko wtedy, gdy są w nim już
+**wypełnione** `NNN.result.json` (puste stuby `[]` nie blokują — są nadpisywane;
+`--fresh` wymusza czysty start).
 
 ### Ścieżka A — automatycznie przez API (Gemini CLI)
 
@@ -62,7 +64,9 @@ Wymaga zalogowanego Gemini CLI (najlepiej OAuth — „Login with Google").
 
 1. Otwórz `out/<slug>/MANIFEST.md` — lista batchy.
 2. Dla każdego `NNN.prompt.md`: wklej **cały plik** do Gemini (web/AI Studio),
-   odpowiedź (tablicę JSON) zapisz jako `out/<slug>/NNN.result.json`.
+   a odpowiedź (tablicę JSON) wklej do gotowego `out/<slug>/NNN.result.json`,
+   **nadpisując** jego początkowe `[]`. (Plik jest już utworzony przez export —
+   nie tworzysz go ręcznie; `map.json` zostaw w spokoju, to nie tu idzie wynik.)
 3. Podgląd i zapis:
 
 ```bash
@@ -86,8 +90,8 @@ result, resztę wypisuje jako *pending*. Pojedynczy batch: `--file NNN`.
 
 ```
 out/<slug>/NNN.prompt.md    ← wklej całość do Gemini (ścieżka B)
-out/<slug>/NNN.map.json     ← sidecar (nie ruszać)
-out/<slug>/NNN.result.json  ← odpowiedź Gemini (auto lub wklejona ręcznie)
+out/<slug>/NNN.map.json     ← sidecar dla apply (nie ruszać — NIE tu idzie wynik)
+out/<slug>/NNN.result.json  ← odpowiedź Gemini (stub `[]` z exportu → nadpisz wynikiem)
 out/<slug>/MANIFEST.md      ← spis batchy
 reports/<slug>/*.diff.md      ← per-pole przed/po + status (nadpisywany per run!)
 reports/<slug>/*.concerns.md  ← podejrzane błędy + dodane zdania (addedContext)

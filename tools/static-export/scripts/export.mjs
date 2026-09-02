@@ -85,6 +85,17 @@ const LIBRARY_HOME_EYEBROW = 'AI Lecturer · Static library';
 const LIBRARY_HOME_FOOTER_HTML =
   'Exported from <a href="https://github.com/NukeeMann/ai_lecturer" target="_blank" rel="noopener noreferrer">AI Lecturer</a>';
 
+// Internal widget/test-fixture collections — dev references, NOT learner
+// courses. These are ALWAYS dropped from a library export, in every mode
+// (--all-collections, --from-config, or even an explicit --collection). This is
+// a hard guarantee: the "Widget Demos" collection must never ship in a library.
+const EXCLUDED_COLLECTIONS = ['Widget Demos'];
+function isExcludedCollection(name) {
+  const n = String(name ?? '').trim().toLowerCase();
+  // Exact blocklist match, plus a defensive catch for any "Widget Demos"-like label.
+  return EXCLUDED_COLLECTIONS.some((e) => e.toLowerCase() === n) || n.includes('widget demo');
+}
+
 async function exists(p) {
   try {
     await fs.access(p);
@@ -411,15 +422,33 @@ async function readCollectionsFile() {
 }
 
 async function exportLibrary({ collectionNames, allCollections }) {
-  const all = await readCollectionsFile();
+  const allRaw = await readCollectionsFile();
+  // Hard exclude internal widget/test-fixture collections in EVERY mode.
+  const all = allRaw.filter((c) => !isExcludedCollection(c.name));
+  const droppedNames = allRaw
+    .filter((c) => isExcludedCollection(c.name))
+    .map((c) => c.name);
 
   let picked;
   if (allCollections) {
     picked = all;
+    if (droppedNames.length > 0) {
+      console.log(
+        `[static-export] excluded demo/test collection(s): ${droppedNames.map((n) => `"${n}"`).join(', ')}`,
+      );
+    }
   } else {
-    const wantedLower = collectionNames.map((n) => n.toLowerCase());
+    // Warn + skip if the user explicitly named an excluded collection (rather
+    // than dying with a confusing "not found" — it's excluded on purpose).
+    for (const n of collectionNames.filter((n) => isExcludedCollection(n))) {
+      console.warn(
+        `[static-export] WARN: "${n}" is an internal demo/test collection — excluded from library exports, skipping.`,
+      );
+    }
+    const wanted = collectionNames.filter((n) => !isExcludedCollection(n));
+    const wantedLower = wanted.map((n) => n.toLowerCase());
     picked = all.filter((c) => wantedLower.includes(c.name.toLowerCase()));
-    const missing = collectionNames.filter(
+    const missing = wanted.filter(
       (n) =>
         !all.some((c) => c.name.toLowerCase() === n.toLowerCase()),
     );

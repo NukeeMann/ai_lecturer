@@ -77,7 +77,7 @@ const tot = lessonReports.reduce(
 );
 
 console.error(`[gemini-polish:apply] ${mode} · course=${o.slug}`);
-console.error(`  result files applied: ${filesApplied}` + (filesPending.length ? ` · pending (no .result.json yet): ${filesPending.join(', ')}` : ''));
+console.error(`  result files applied: ${filesApplied}` + (filesPending.length ? ` · pending (still empty [] / no reply yet): ${filesPending.join(', ')}` : ''));
 console.error(`  fields applied:   ${tot.applied}`);
 console.error(`  fields rejected:  ${tot.rejected} (protected-token mismatch — kept original)`);
 console.error(`  fields missing:   ${tot.missing} (model dropped/truncated an id)`);

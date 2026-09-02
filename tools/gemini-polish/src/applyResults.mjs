@@ -50,6 +50,16 @@ export function extractJsonArray(text) {
   return null;
 }
 
+// A saved reply counts as USABLE only when it parses to a NON-EMPTY array.
+// Missing, still-empty (the pre-created `[]` stub), or unparseable text all mean
+// "no reply yet" → treated as PENDING everywhere (export guard, apply, run),
+// never an error. This is what keeps the empty NNN.result.json stubs that export
+// pre-creates from blocking a re-export or crashing apply.
+export function isUsableResult(rawText) {
+  const arr = extractJsonArray(String(rawText ?? ''));
+  return Boolean(arr && arr.length);
+}
+
 function resultIndex(arr) {
   const byId = new Map();
   for (const r of Array.isArray(arr) ? arr : []) {
@@ -197,7 +207,10 @@ export async function applyResults(courseSlug, { outDir, file = null, dryRun = f
     if (file && base !== file) continue;
     const mapPath = path.join(outDir, `${base}.map.json`);
     const resultPath = path.join(outDir, `${base}.result.json`);
-    if (!(await exists(resultPath))) {
+    // Missing OR still-empty (the pre-created `[]` stub / an unparseable paste)
+    // → pending, not an error. Only a real, non-empty reply gets applied.
+    const raw = (await exists(resultPath)) ? await fs.readFile(resultPath, 'utf8').catch(() => '') : '';
+    if (!isUsableResult(raw)) {
       pending.push(base);
       continue;
     }

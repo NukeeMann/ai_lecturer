@@ -12,19 +12,26 @@ import { loadCourseLessons } from './loadCourse.mjs';
 import { collectFields } from './walker.mjs';
 import { hintFor, buildBatchPrompt } from './prompt.mjs';
 import { maskProtected } from './protectedTokens.mjs';
+import { isUsableResult } from './applyResults.mjs';
 
 function pad(n, w = 3) {
   return String(n).padStart(w, '0');
 }
 
 export async function exportPrompts(courseSlug, { lesson = null, maxChars = 10000, maxFields = 150, outDir, fresh = false } = {}) {
-  // Guard FIRST: never silently destroy finished work. NNN.result.json files
-  // are pasted/generated replies — re-exporting would orphan or delete them.
+  // Guard FIRST: never silently destroy finished work. A re-export wipes the
+  // folder, so it must refuse when there are real, FILLED-IN replies to lose.
+  // The empty `[]` stubs we pre-create below (see the write loop) parse as
+  // usable=false, so they never block a plain re-export — only genuine pastes do.
   const existing = await fs.readdir(outDir).catch(() => []);
-  const existingResults = existing.filter((e) => e.endsWith('.result.json'));
-  if (existingResults.length > 0 && !fresh) {
+  let usableResults = 0;
+  for (const name of existing.filter((e) => e.endsWith('.result.json'))) {
+    const raw = await fs.readFile(path.join(outDir, name), 'utf8').catch(() => '');
+    if (isUsableResult(raw)) usableResults++;
+  }
+  if (usableResults > 0 && !fresh) {
     throw new Error(
-      `out dir already contains ${existingResults.length} result file(s) (${outDir}).\n` +
+      `out dir already contains ${usableResults} filled-in result file(s) (${outDir}).\n` +
         `  Apply them first (npm run apply) or pass --fresh to wipe and start over.`,
     );
   }
@@ -105,9 +112,15 @@ export async function exportPrompts(courseSlug, { lesson = null, maxChars = 1000
     };
     await fs.writeFile(path.join(outDir, `${name}.map.json`), JSON.stringify(map, null, 2));
 
+    // .result.json — pre-created EMPTY (`[]`) so it's obvious where Gemini's
+    // answer goes: open this file and REPLACE the `[]` with the JSON array
+    // Gemini returns. The empty stub reads as "pending" everywhere (apply, run
+    // and a re-export all skip it), so it costs nothing until you fill it in.
+    await fs.writeFile(path.join(outDir, `${name}.result.json`), '[]\n');
+
     manifest.push(
       `- **${name}** — ${allItems.length} pól · ~${chars} znaków · lekcje: ${lessonSlugs.join(', ')}` +
-        `  → paste \`${name}.prompt.md\`, save reply to \`${name}.result.json\``,
+        `  → wklej \`${name}.prompt.md\` do Gemini, odpowiedź (tablicę JSON) wklej do \`${name}.result.json\` (nadpisując \`[]\`)`,
     );
   }
 
