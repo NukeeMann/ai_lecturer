@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -1293,7 +1294,7 @@ export function LessonChat({
                       {showTypingDots ? (
                         <TypingDots />
                       ) : (
-                        <MessageBody message={m} />
+                        <MessageBody role={m.role} text={m.text} />
                       )}
                       {m.stopped ? (
                         <>
@@ -1797,22 +1798,27 @@ const stoppedSuffixStyle: CSSProperties = {
 // For streaming partials, ReactMarkdown is called every render with whatever
 // the buffer contains so far; incomplete syntax (e.g. an unclosed code fence)
 // renders as raw text, never crashes.
-function MessageBody({ message }: { message: ChatMessage }) {
-  if (message.role === 'error') {
-    return <>{message.text}</>;
-  }
-  const source = preprocessMath(message.text);
-  return (
-    <div className="lesson-chat-md">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex, rehypeHighlight]}
-      >
-        {source}
-      </ReactMarkdown>
-    </div>
-  );
-}
+//
+// Memoized on role + text: the parent re-renders on every keystroke in the
+// composer, and re-running the markdown/KaTeX/highlight pipeline for every
+// message in the transcript made typing visibly lag.
+const REMARK_PLUGINS = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS = [rehypeKatex, rehypeHighlight];
+
+const MessageBody = memo(
+  function MessageBody({ role, text }: { role: ChatMessage['role']; text: string }) {
+    if (role === 'error') {
+      return <>{text}</>;
+    }
+    return (
+      <div className="lesson-chat-md">
+        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
+          {preprocessMath(text)}
+        </ReactMarkdown>
+      </div>
+    );
+  },
+);
 
 function TypingDots() {
   return (
