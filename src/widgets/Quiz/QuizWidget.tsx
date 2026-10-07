@@ -6,6 +6,7 @@ import { Check, X } from 'lucide-react';
 import { Confetti } from '@/components/Confetti';
 import { MarkdownInline } from '@/components/MarkdownInline';
 import { shuffledIndices } from '@/widgets/shuffle';
+import { remapOptionRefs } from './explanationRefs';
 
 import type { QuizData } from './schema';
 import {
@@ -345,7 +346,9 @@ export function QuizWidget({
         <div data-quiz-explanation style={explanationStyle}>
           <div style={explanationTitleStyle}>Explanation</div>
           <div style={explanationBodyStyle}>
-            <MarkdownInline>{data.explanation}</MarkdownInline>
+            <MarkdownInline>
+              {remapOptionRefs(data.explanation, displayOrder, LETTERS)}
+            </MarkdownInline>
           </div>
         </div>
       )}

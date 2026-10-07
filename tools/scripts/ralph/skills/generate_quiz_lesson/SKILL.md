@@ -136,7 +136,7 @@ Every `quiz` section must have:
 }
 ```
 
-- **`explanation` is MANDATORY and MUST be 1–3 sentences.** It justifies the right answer specifically — name the rule / concept / formula that makes the correct option correct, and (when useful) name the misconception each distractor encodes. Do NOT paraphrase the question. Do NOT ship a one-word explanation.
+- **`explanation` is MANDATORY and MUST be 1–3 sentences.** It justifies the right answer specifically — name the rule / concept / formula that makes the correct option correct, and (when useful) name the misconception each distractor encodes. Do NOT paraphrase the question. Do NOT ship a one-word explanation. Options are shuffled and relabelled A, B, C… for the learner, so **never refer to an option by number or letter** ("Opcja 2", "options 1 and 3", "B is wrong") — name it by its content instead ("the claim that the cross product is commutative is false").
 - **`options` are 2–4 entries**, with plausible distractors (wrong answers a learner could *realistically* pick). Avoid throwaway "obviously wrong" options.
 - **`correct` is an array of integer indices into `options`.** For single-answer quizzes set `multiSelect: false` and use exactly one index. For "select all that apply" set `multiSelect: true` and use ≥ 1 indices.
 

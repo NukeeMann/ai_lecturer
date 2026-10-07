@@ -85,7 +85,13 @@ function serializeSectionBody(section: Section): string {
       const options = section.data.options
         .map((opt, i) => `${i + 1}. ${opt}`)
         .join('\n');
-      return `Question: ${section.data.question}\nOptions:\n${options}`;
+      // The learner sees these options shuffled and lettered A, B, C…, so
+      // their letters do not map onto these numbers.
+      return (
+        `Question: ${section.data.question}\nOptions (authored order; the learner sees them ` +
+        `shuffled and lettered A, B, C… — match the learner's letter references by option text, ` +
+        `never by position):\n${options}`
+      );
     }
     case 'code': {
       const parts: string[] = [];
