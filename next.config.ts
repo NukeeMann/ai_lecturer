@@ -13,7 +13,10 @@ const nextConfig: NextConfig = {
   // puppeteer-core ships dynamic requires (e.g. websocket transports) that
   // Turbopack can't statically resolve. Mark it external so it's loaded via
   // plain Node module resolution at runtime.
-  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "unzipper", "puppeteer-core"],
+  // sql.js (Anki .apkg builder) loads its sql-wasm.wasm from its own
+  // directory at runtime — external keeps that lookup pointing at
+  // node_modules instead of the bundled chunks dir.
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist", "unzipper", "puppeteer-core", "sql.js"],
 };
 
 export default nextConfig;

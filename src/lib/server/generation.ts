@@ -4,7 +4,8 @@
 // Pipeline: TWO natural-language `claude -p` briefs for the course init —
 // research_course (writes research.md + sources.md) then design_course
 // (writes course.json) — followed by ONE `claude -p` per lesson driven
-// directly from course.json, then a final coherence_pass. No ralph.sh, no
+// directly from course.json, then a coherence_pass, then the flashcards
+// stage (one `claude -p` per module → flashcards/deck.apkg). No ralph.sh, no
 // worktrees, no branches, no git push. Every stage runs with stdout+stderr
 // captured to the run's event log AND tee'd to
 // `/courses/<slug>/.generation.log`. Per-stage output is also tee'd to
@@ -76,6 +77,13 @@ import {
   type GenerationState,
 } from './generationState';
 import { loadSecretsEnv } from './secrets';
+import { readCourse } from './courses';
+import {
+  defaultFlashcardsCommand,
+  modulesWithLessons,
+  readModuleFlashcards,
+  writeCourseApkg,
+} from './flashcards';
 
 export interface FailedLesson {
   slug: string;
@@ -315,6 +323,17 @@ export interface SpawnDeps {
    * the timeout path without waiting wall-clock seconds. Ignored when
    * `isRalphOrchestrated()` returns false. */
   coherencePassTimeoutMs?: number;
+  /** Factory for the per-module generate_flashcards spawn in the final
+   * flashcards stage. Defaults to `defaultFlashcardsCommand`. */
+  flashcardsCommand?: (
+    slug: string,
+    moduleId: string,
+    previousAttemptReason?: string,
+    isQuizOnly?: boolean,
+  ) => { command: string; args: string[] };
+  /** When true, the flashcards stage is skipped. Same test-default contract
+   * as `disableCoherencePass` (see `__setFlashcardsDisabledByDefault`). */
+  disableFlashcards?: boolean;
   cwd?: string;
   sigkillGraceMs?: number;
   /** Number of retries per lesson (additional attempts after the first). */
@@ -1473,6 +1492,14 @@ function isRalphOrchestrated(): boolean {
 let coherencePassDisabledByDefault = false;
 export function __setCoherencePassDisabledByDefault(disabled: boolean): void {
   coherencePassDisabledByDefault = disabled;
+}
+
+// Flashcards stage default toggle — same contract as the coherence flag:
+// production runs the stage, pipeline test suites switch it off so their
+// scripted spawn sequences stay unchanged.
+let flashcardsDisabledByDefault = false;
+export function __setFlashcardsDisabledByDefault(disabled: boolean): void {
+  flashcardsDisabledByDefault = disabled;
 }
 
 // Source-URL liveness gate default toggle — same contract as the coherence
@@ -2981,6 +3008,91 @@ async function startGenerationInner(
     return 'coherence-report.md';
   }
 
+  /**
+   * Final stage — Anki flashcards. One generate_flashcards agent per module
+   * that has lessons on disk, skipping modules whose flashcards file already
+   * validates (so resume after Pause only does the missing ones), then
+   * rebuild flashcards/deck.apkg. Best-effort like the coherence pass: a
+   * failed module never fails the course. Returns 'paused' / 'cancelled'
+   * when the user interrupted it so the caller can hand off to the matching
+   * finalizer.
+   */
+  async function runFlashcardsStage(): Promise<'ok' | 'paused' | 'cancelled'> {
+    const stageName = 'flashcards';
+    emit({ type: 'stage', name: stageName, status: 'started' });
+    const factory = deps.flashcardsCommand ?? defaultFlashcardsCommand;
+    const flashLogStream = createWriteStream(path.join(genLogs, 'flashcards.log'), { flags: 'w' });
+    flashLogStream.on('error', () => {
+      /* swallow late writes */
+    });
+    const maxAttempts = Math.min(2, lessonMaxRetries + 1);
+    const failedModules: string[] = [];
+    let interrupted: 'paused' | 'cancelled' | null = null;
+    const interruption = () => (paused ? 'paused' : cancelled ? 'cancelled' : null);
+
+    try {
+      const course = await readCourse(slug);
+      const modules = course ? await modulesWithLessons(slug, course) : [];
+      for (const mod of modules) {
+        interrupted = interruption();
+        if (interrupted) break;
+        if ((await readModuleFlashcards(slug, mod.id)).ok) {
+          emit({ type: 'log', line: `flashcards: ${mod.id} already has valid flashcards — skipping` });
+          continue;
+        }
+        let reason: string | undefined;
+        let ok = false;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          emit({ type: 'log', line: `flashcards: ${mod.id} (${mod.title}) — attempt ${attempt}/${maxAttempts}` });
+          const result = await spawnChild(factory(slug, mod.id, reason, isQuizOnly), {
+            timeoutMs: lessonTimeoutMs,
+            extraLogStream: flashLogStream,
+          });
+          if (interruption()) break;
+          if (result.timedOut) {
+            reason = `Timed out after ${Math.round(lessonTimeoutMs / 1000)}s`;
+            continue;
+          }
+          const check = await readModuleFlashcards(slug, mod.id);
+          if (check.ok) {
+            ok = true;
+            break;
+          }
+          reason =
+            result.exit !== 0
+              ? `claude exited with code ${result.exit}\n${result.stderrTail}`.trim()
+              : check.reason;
+        }
+        interrupted = interruption();
+        if (interrupted) break;
+        if (!ok) {
+          failedModules.push(mod.id);
+          emit({ type: 'log', line: `flashcards: ${mod.id} failed — ${reason ?? 'unknown error'}` });
+        }
+      }
+      if (!interrupted) {
+        const apkg = await writeCourseApkg(slug);
+        emit({
+          type: 'log',
+          line: apkg
+            ? 'flashcards: wrote flashcards/deck.apkg'
+            : 'flashcards: no module produced flashcards — no deck written',
+        });
+      }
+    } catch (err) {
+      failedModules.push('(stage)');
+      emit({ type: 'log', line: `flashcards: ${err instanceof Error ? err.message : String(err)}` });
+    }
+    flashLogStream.end();
+
+    if (interrupted) {
+      emit({ type: 'stage', name: stageName, status: 'error' });
+      return interrupted;
+    }
+    emit({ type: 'stage', name: stageName, status: failedModules.length === 0 ? 'done' : 'error' });
+    return 'ok';
+  }
+
   activeRun = run;
   runsById.set(id, run);
 
@@ -3393,6 +3505,23 @@ async function startGenerationInner(
       total > 0
     ) {
       coherenceReportPath = await runCoherencePass();
+    }
+
+    // Anki flashcards from whatever lessons made it to disk. Runs for
+    // quiz-only courses too and also when some lessons failed — modules
+    // without a valid lesson are skipped inside the stage.
+    const disableFlashcards = deps.disableFlashcards ?? flashcardsDisabledByDefault;
+    if (!cancelled && !paused && !disableFlashcards) {
+      const outcome = await runFlashcardsStage();
+      if (outcome === 'paused') {
+        await finalizePaused();
+        return;
+      }
+      if (outcome === 'cancelled') {
+        await writeFailedReport(failedReport);
+        finalize('error', 'Cancelled by user', failedLessons);
+        return;
+      }
     }
     finalize('done', undefined, failedLessons, coherenceReportPath);
   })();

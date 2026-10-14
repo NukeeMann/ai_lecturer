@@ -36,6 +36,7 @@ import {
 import { AppLogoLink } from '@/components/AppLogo';
 import { AvatarMenu } from '@/components/AvatarMenu';
 import { Callout } from '@/components/Callout';
+import { FlashcardsTocModule } from '@/components/FlashcardsDeck';
 import { formBodyStyle } from '@/components/EditorForm';
 import { openShortcutsModal } from '@/components/GlobalShortcutsHost';
 import { LessonChat } from '@/components/LessonChat';
@@ -2599,6 +2600,7 @@ function TocExpanded({
       data-testid="toc-modules"
       style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
     >
+      <FlashcardsTocModule courseSlug={slug} />
       {course.modules.map((mod) => {
         const open = openModules[mod.id] !== false; // default open
         return (
@@ -2797,6 +2799,7 @@ function TocCollapsedDots({
         padding: '4px 0',
       }}
     >
+      <FlashcardsTocModule courseSlug={slug} collapsed />
       {flat.map((les) => {
         const status: LessonStatus =
           lessonsState[les.slug]?.status ?? 'not_started';

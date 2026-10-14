@@ -10,6 +10,9 @@
 //     inside a lesson).
 
 import { useEffect, useMemo } from 'react';
+import { Layers } from 'lucide-react';
+import { FlashcardsDeckBody } from '@/components/FlashcardsDeck';
+import { strings } from '@/lib/i18n/strings';
 import type { SxPayload, SxNavLesson, SxNavModule } from './payload';
 import { getLessonCompletion, getResumeLessonSlug } from './progressStore';
 
@@ -102,6 +105,25 @@ export function CourseIndex({ payload }: { payload: SxPayload }) {
         </header>
 
         <ol className="sx-modules">
+          {payload.flashcards ? (
+            <li className="sx-module sx-module--flashcards">
+              <div className="sx-module-head">
+                <span className="sx-module-index">
+                  <Layers size={12} strokeWidth={2.25} aria-hidden /> Anki
+                </span>
+                <h2>{strings.flashcards.heading}</h2>
+              </div>
+              <div className="sx-flashcards-body">
+                <FlashcardsDeckBody
+                  totalCards={payload.flashcards.totalCards}
+                  subdecks={payload.flashcards.subdecks}
+                  downloadHref={payload.flashcards.href}
+                  downloadName={payload.flashcards.downloadName}
+                  compact={false}
+                />
+              </div>
+            </li>
+          ) : null}
           {payload.nav.map((m, mi) => (
             <li key={m.id} className="sx-module">
               <div className="sx-module-head">

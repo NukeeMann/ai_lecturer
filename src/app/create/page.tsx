@@ -2093,7 +2093,7 @@ interface CurriculumLesson {
 type LessonSlotStatus = 'pending' | 'started' | 'done' | 'error';
 
 interface StageEntry {
-  name: string;          // SSE stage name ('research_course' / 'design_course' / 'lesson:<slug>' / 'coherence-pass')
+  name: string;          // SSE stage name ('research_course' / 'design_course' / 'lesson:<slug>' / 'coherence-pass' / 'flashcards')
   diskName: string;      // basename used for URL/disk lookup
   status: StageStatus;
   liveLines: string[];   // streamed lines for the active session
@@ -2107,7 +2107,7 @@ interface StageEntry {
 // Pipeline stages whose SSE name and disk-log basename match 1:1. Anything
 // not in this set is treated as a per-lesson stage (`lesson:<slug>` SSE
 // event vs `<slug>.log` on disk).
-const PIPELINE_STAGE_NAMES = new Set(['research_course', 'design_course', 'coherence-pass']);
+const PIPELINE_STAGE_NAMES = new Set(['research_course', 'design_course', 'coherence-pass', 'flashcards']);
 
 // Map an SSE stage event name to the on-disk basename used in /logs/<stage>.
 // Per-lesson stages are prefixed with 'lesson:' (see
@@ -2128,6 +2128,8 @@ export function stageDisplayLabel(sseName: string): string {
       return 'Design course';
     case 'coherence-pass':
       return 'Coherence pass';
+    case 'flashcards':
+      return 'Anki flashcards';
     default:
       return sseName;
   }

@@ -26,4 +26,25 @@ export const strings = {
   sources: {
     heading: 'Sources',
   },
+  flashcards: {
+    heading: 'Anki flashcards',
+    download: 'Download deck',
+    cards: (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`,
+    subdecks: (n: number) => `${n} ${n === 1 ? 'subdeck' : 'subdecks'}`,
+    empty: 'No flashcards for this course yet.',
+    generate: 'Generate flashcards',
+    generateMissing: (n: number) => `Generate missing (${n})`,
+    regenerate: 'Regenerate',
+    regenerateConfirm:
+      'Regenerate the flashcards for every module? Cards that still cover the same fact keep their identity, so re-importing updates them without losing review progress.',
+    generating: (done: number, total: number) => `Generating… ${done}/${total} modules`,
+    failed: 'Some modules failed — try again.',
+    howTo: 'How to import',
+    howToSteps: [
+      'Computer: install Anki (free, apps.ankiweb.net) and open the downloaded file.',
+      'Android: open the file with AnkiDroid (free).',
+      'iPhone / iPad: open the file and pick AnkiMobile. Without it, import on a computer, sync, then study at ankiweb.net.',
+      'Downloading again later updates the cards and keeps your progress.',
+    ],
+  },
 } as const;

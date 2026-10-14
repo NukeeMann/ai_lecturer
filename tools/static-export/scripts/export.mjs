@@ -21,6 +21,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -253,6 +255,65 @@ async function loadCourseWithLessons(slug) {
   return { course, nav, lessons, courseDir };
 }
 
+// ---- Anki flashcards deck ------------------------------------------------
+//
+// When the course has flashcards (courses/<slug>/flashcards/*.json, written
+// by the app's generation pipeline), build the .apkg with the app's own
+// builder (scripts/build-apkg.ts via the main project's tsx — read-only use
+// of ../../src) into <courseOutDir>/flashcards/<slug>.apkg. Returns the
+// payload fields minus the page-relative href, or null when there is no deck.
+// A failed build only drops the deck — the rest of the export still ships.
+const execFileP = promisify(execFile);
+
+async function buildFlashcardsDeck(slug, courseOutDir) {
+  if (!(await exists(path.join(repoRoot, 'courses', slug, 'flashcards')))) return null;
+  const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+  const outFile = path.join(courseOutDir, 'flashcards', `${slug}.apkg`);
+  try {
+    const { stdout } = await execFileP(
+      process.execPath,
+      [
+        tsxCli,
+        '--tsconfig',
+        path.join(repoRoot, 'tsconfig.json'),
+        path.join(here, 'build-apkg.ts'),
+        slug,
+        outFile,
+      ],
+      { cwd: repoRoot, maxBuffer: 4 * 1024 * 1024 },
+    );
+    const info = JSON.parse(stdout.trim().split('\n').pop() ?? '{}');
+    if (!info.written) return null;
+    console.log(
+      `[static-export]   ${slug}: Anki deck — ${info.totalCards} card(s) in ${info.subdecks} subdeck(s)`,
+    );
+    return {
+      file: `flashcards/${slug}.apkg`,
+      downloadName: info.downloadName,
+      totalCards: info.totalCards,
+      subdecks: info.subdecks,
+    };
+  } catch (err) {
+    console.warn(
+      `[static-export] WARN: could not build the Anki deck for ${slug} — exporting without it\n${err?.stderr || err?.message || err}`,
+    );
+    return null;
+  }
+}
+
+// Page-relative payload entry for a deck built by buildFlashcardsDeck.
+// `toCourseRoot` is the relative prefix from the page to the course's root
+// folder ('' for the course index, '../' for lesson pages).
+function flashcardsPayload(deck, toCourseRoot) {
+  if (!deck) return undefined;
+  return {
+    href: toCourseRoot + deck.file,
+    downloadName: deck.downloadName,
+    totalCards: deck.totalCards,
+    subdecks: deck.subdecks,
+  };
+}
+
 async function buildBundle() {
   const bundleDir = path.join(toolDir, '.bundle');
   process.env.SX_OUTDIR = bundleDir;
@@ -357,6 +418,7 @@ async function exportSingleCourse(slug) {
   }
 
   const faviconName = await copyFaviconInto(distDir);
+  const deck = await buildFlashcardsDeck(slug, distDir);
 
   // index.html — at depth 0
   await fs.writeFile(
@@ -374,6 +436,7 @@ async function exportSingleCourse(slug) {
         lessonHrefBase: 'lessons/',
         indexHref: 'index.html',
         courseAssetBase: 'assets/course/',
+        flashcards: flashcardsPayload(deck, ''),
       },
     }),
     'utf8',
@@ -398,6 +461,7 @@ async function exportSingleCourse(slug) {
           lessonHrefBase: '',
           indexHref: lessonPrefix + 'index.html',
           courseAssetBase: lessonPrefix + 'assets/course/',
+          flashcards: flashcardsPayload(deck, lessonPrefix),
         },
       }),
       'utf8',
@@ -531,6 +595,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
   for (const [slug, { course, nav, lessons }] of courseData.entries()) {
     const courseRoot = path.join(distDir, slug);
     await fs.mkdir(path.join(courseRoot, 'lessons'), { recursive: true });
+    const deck = await buildFlashcardsDeck(slug, courseRoot);
 
     // Course index — depth 1 from library root
     const coursePrefix = relPrefix(1);
@@ -551,6 +616,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
           courseAssetBase: coursePrefix + `assets/course/${slug}/`,
           homeHref: coursePrefix + 'index.html',
           branding: LIBRARY_COURSE_BRANDING,
+          flashcards: flashcardsPayload(deck, ''),
         },
       }),
       'utf8',
@@ -576,6 +642,7 @@ async function exportLibrary({ collectionNames, allCollections }) {
             indexHref: relPrefix(1) + 'index.html', // course index
             courseAssetBase: lessonPrefix + `assets/course/${slug}/`,
             homeHref: lessonPrefix + 'index.html', // library home
+            flashcards: flashcardsPayload(deck, relPrefix(1)),
           },
         }),
         'utf8',

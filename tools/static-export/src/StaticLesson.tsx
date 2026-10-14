@@ -10,6 +10,7 @@ import { widgetRegistry, type WidgetType } from '@/widgets/registry';
 import { Callout } from '@/components/Callout';
 import { MarkdownInline } from '@/components/MarkdownInline';
 import { SectionSourcesPopover } from '@/components/Sources';
+import { FlashcardsDeckBlock } from '@/components/FlashcardsDeck';
 import type { Source } from '@/lib/schemas/lesson';
 import type { SxPayload } from './payload';
 import {
@@ -315,6 +316,16 @@ export function StaticLesson({ payload }: { payload: SxPayload }) {
         <a className="sx-toc-home" href={payload.indexHref} onClick={closeToc}>
           ← {payload.course?.title ?? 'Course'}
         </a>
+        {payload.flashcards ? (
+          <div className="sx-toc-flashcards">
+            <FlashcardsDeckBlock
+              totalCards={payload.flashcards.totalCards}
+              subdecks={payload.flashcards.subdecks}
+              downloadHref={payload.flashcards.href}
+              downloadName={payload.flashcards.downloadName}
+            />
+          </div>
+        ) : null}
         {payload.nav.map((m) => (
           <div key={m.id} className="sx-toc-module">
             <div className="sx-toc-module-title">{m.title}</div>

@@ -282,12 +282,14 @@ The `/create` wizard walks through three Claude-backed stages, each handled by a
 1. **Clarify** (`/api/wizard/clarify`) — generates focused questions to narrow scope, level, duration, and theory/practice ratio.
 2. **Structure** (`/api/wizard/structure`) — turns answers + optional uploaded sources into an editable module/lesson outline you can rearrange before committing.
 3. **Generate** (`/api/courses/generate`) — spawns one `claude -p` against the `init_course` skill (research + finalised `course.json`), then iterates lessons and spawns one `claude -p` per lesson against the `generate_lesson` skill. Stage events stream to the wizard over SSE; stdout/stderr is teed to `/courses/<slug>/.generation.log` plus per-stage logs under `/courses/<slug>/logs/` so completed-stage scrollback survives a reload. Per-lesson calls retry up to `LESSON_MAX_RETRIES + 1` times (default 3) with each attempt subject to `LESSON_TIMEOUT_SEC` (default 1800 s); concurrency is gated to a single active run with a FIFO queue behind it.
+4. **Anki flashcards** — after the lessons, one `claude -p` per module runs the `generate_flashcards` skill and writes `/courses/<slug>/flashcards/<moduleId>.json`. The server bundles them into a single Anki package (`flashcards/deck.apkg`): one deck named after the course, one subdeck per module. The course sidebar shows an **Anki flashcards** block with a *Download deck* button; opening the file in Anki, AnkiDroid or AnkiMobile imports it. Note GUIDs are stable, so re-importing a regenerated deck updates the cards and keeps review progress. The stage is best-effort: a failed module never fails the course.
 
 Once a course exists you can also:
 
 - **Extend** it with new lessons (`/api/courses/[slug]/extend`) — same skill chain, new outline appended.
 - **Regenerate** a single lesson or a single section in-place (`…/lessons/[slug]/regenerate`, `…/sections/[id]/regenerate`) — surgical re-runs when one part missed the mark.
 - **Import** a previously exported ZIP from another machine.
+- **Generate Anki flashcards** for a course made before the flashcards stage existed, or fill in failed modules, from the sidebar's *Anki flashcards* block (`POST /api/courses/[slug]/flashcards`; the deck downloads from `…/flashcards/apkg`).
 - **Chat** with a lesson-context-aware assistant via the in-lesson side panel (the dock posts the current lesson + focused widget to `/api/lesson-chat`).
 
 </details>

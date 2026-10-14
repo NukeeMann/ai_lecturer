@@ -73,6 +73,16 @@ export interface SxPayload {
     /** Footer HTML under the module list. Omitted → no footer. */
     footerHtml?: string;
   };
+  /** Anki deck for the whole course (built by export.mjs from the app's
+   *  flashcards). Absent when the course has no flashcards. */
+  flashcards?: {
+    /** Page-relative URL of the .apkg file. */
+    href: string;
+    /** Name the browser should save the file under (course title). */
+    downloadName?: string;
+    totalCards: number;
+    subdecks: number;
+  };
   /** Library bundle metadata (collections + courses). Only on kind === 'home'. */
   library?: {
     title: string;

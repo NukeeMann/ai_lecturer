@@ -47,6 +47,7 @@ dist/<slug>/
   lessons/<lessonSlug>.html  # one page per lesson
   assets/app/…               # the shared widget bundle (hashed)
   assets/course/…            # copied audio / plots / images
+  flashcards/<slug>.apkg     # Anki deck (only when the course has flashcards)
 ```
 
 ## Export a library (one or more collections)
@@ -103,6 +104,16 @@ sandbox (Pyodide — needs internet for the CDN on first run), codeCloze,
 dragMatch, parametricExplorer, histogram, dataTable, plotImage, demo,
 audioPlayer & transcriptCloze (audio is copied into the export), video.
 Per-section completion is remembered in the visitor's `localStorage`.
+
+**Anki flashcards:** when the course has flashcards
+(`courses/<slug>/flashcards/*.json`, written by the app's generation
+pipeline), the exporter builds the deck with the app's own builder
+(`scripts/build-apkg.ts`, run through the main project's `tsx`) and ships it
+as `flashcards/<slug>.apkg`. The course page and every lesson sidebar get an
+*Anki flashcards* block with a **Download deck** button and short import
+instructions. The deck uses the same note GUIDs as the app, so re-importing a
+newer export updates the learner's cards instead of duplicating them. If the
+deck can't be built, the export continues without it and prints a warning.
 
 **Intentionally excluded:** the AI tutor / lesson chat, and any in-app edit /
 regenerate UI.

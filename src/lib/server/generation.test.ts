@@ -12,6 +12,7 @@ import {
   __getQueueForTesting,
   __resetForTesting,
   __setCoherencePassDisabledByDefault,
+  __setFlashcardsDisabledByDefault,
   __setEventsLogRotateBytesForTesting,
   __setSourceUrlCheckDisabledByDefault,
   __setSpawnDepsForTesting,
@@ -265,6 +266,8 @@ beforeEach(async () => {
   // US-141 tests opt back in via `disableCoherencePass: false` (or by
   // toggling this flag locally).
   __setCoherencePassDisabledByDefault(true);
+  // Flashcards stage: same reason — off unless a test opts in.
+  __setFlashcardsDisabledByDefault(true);
   // Source-URL liveness gate: same deal — scripted pipeline runs must never
   // issue real HTTP probes. The dedicated gate tests opt back in with an
   // injected fake checker.
@@ -275,6 +278,7 @@ afterEach(async () => {
   __resetForTesting();
   __setSpawnDepsForTesting(null);
   __setCoherencePassDisabledByDefault(false);
+  __setFlashcardsDisabledByDefault(false);
   __setSourceUrlCheckDisabledByDefault(false);
   delete process.env.COURSES_ROOT_OVERRIDE;
   delete process.env.GENERATION_QUEUE_FILE_OVERRIDE;
