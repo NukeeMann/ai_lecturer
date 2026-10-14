@@ -108,7 +108,7 @@ Per-section completion is remembered in the visitor's `localStorage`.
 **Anki flashcards:** when the course has flashcards
 (`courses/<slug>/flashcards/*.json`, written by the app's generation
 pipeline), the exporter builds the deck with the app's own builder
-(`scripts/build-apkg.ts`, run through the main project's `tsx`) and ships it
+(`scripts/build-apkg.cts`, run through the main project's `tsx`) and ships it
 as `flashcards/<slug>.apkg`. The course page and every lesson sidebar get an
 *Anki flashcards* block with a **Download deck** button and short import
 instructions. The deck uses the same note GUIDs as the app, so re-importing a

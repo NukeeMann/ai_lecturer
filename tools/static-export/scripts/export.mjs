@@ -259,7 +259,7 @@ async function loadCourseWithLessons(slug) {
 //
 // When the course has flashcards (courses/<slug>/flashcards/*.json, written
 // by the app's generation pipeline), build the .apkg with the app's own
-// builder (scripts/build-apkg.ts via the main project's tsx — read-only use
+// builder (scripts/build-apkg.cts via the main project's tsx — read-only use
 // of ../../src) into <courseOutDir>/flashcards/<slug>.apkg. Returns the
 // payload fields minus the page-relative href, or null when there is no deck.
 // A failed build only drops the deck — the rest of the export still ships.
@@ -276,7 +276,7 @@ async function buildFlashcardsDeck(slug, courseOutDir) {
         tsxCli,
         '--tsconfig',
         path.join(repoRoot, 'tsconfig.json'),
-        path.join(here, 'build-apkg.ts'),
+        path.join(here, 'build-apkg.cts'),
         slug,
         outFile,
       ],

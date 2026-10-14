@@ -6,8 +6,13 @@
 // (the app resolves courses/ against cwd). Reads ../../courses and
 // ../../src read-only; writes only the given output file.
 //
+// Why .cts: this folder's package.json is "type": "module", but tsx compiles
+// the app's src/*.ts (no "type" → CommonJS) to CJS. An ESM entry importing
+// them by name fails on Node ≥ 22 ("does not provide an export named …");
+// a CommonJS entry just require()s them, which works on Node 20–26.
+//
 //   node <repo>/node_modules/tsx/dist/cli.mjs --tsconfig <repo>/tsconfig.json \
-//     tools/static-export/scripts/build-apkg.ts <slug> <out.apkg>
+//     tools/static-export/scripts/build-apkg.cts <slug> <out.apkg>
 //
 // Last stdout line: {"written":bool,"totalCards":n,"subdecks":n,"downloadName":"…"}
 
@@ -24,7 +29,7 @@ import {
 async function main() {
   const [slug, outFile] = process.argv.slice(2);
   if (!slug || !outFile) {
-    console.error('usage: build-apkg.ts <course-slug> <out.apkg>');
+    console.error('usage: build-apkg.cts <course-slug> <out.apkg>');
     process.exit(2);
   }
   const course = await readCourse(slug);
