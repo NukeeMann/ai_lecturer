@@ -102,7 +102,9 @@ a:hover { text-decoration: underline; }
 }
 .sx-sources h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
 .sx-sources ol { padding-left: 20px; }
-.sx-sources li { margin: 4px 0; }
+/* Source URLs are single unbreakable words — without this a long link
+   (archive.org, khanacademy…) widens the whole page on phones. */
+.sx-sources li { margin: 4px 0; overflow-wrap: anywhere; }
 
 .sx-pager {
   display: flex;
@@ -355,6 +357,17 @@ a:hover { text-decoration: underline; }
   overflow-x: auto;
 }
 [data-theory-body] .katex { color: var(--text); }
+
+/* ---- Display math: scroll inside its own box, never widen the page ----- */
+/* katex.min.css gives .katex-display no overflow handling, so a wide $$…$$
+   outside the theory body (quiz, callout, …) would push past the viewport.
+   overflow-y: hidden keeps sub-pixel glyph overflow from turning the box
+   into a vertical scroller that traps swipes on iOS. */
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 
 /* ---- Images: centered horizontally by default inside every widget ------ */
 /* Embedded theory markdown images render as a bare <img> (left-aligned by
