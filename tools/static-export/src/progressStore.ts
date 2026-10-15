@@ -475,6 +475,15 @@ export function applyProgressPatch(patch: any): void {
   if (patch.sectionState && typeof patch.sectionState === 'object') {
     l.sectionState = { ...l.sectionState, ...patch.sectionState };
   }
+  // Shallow per-section merge (mirrors src/lib/server/progress.ts): settings-only
+  // widget saves keep the stored `done` / `score`.
+  if (patch.mergeSectionState && typeof patch.mergeSectionState === 'object') {
+    const next = { ...(l.sectionState ?? {}) };
+    for (const [id, fields] of Object.entries(patch.mergeSectionState)) {
+      if (fields && typeof fields === 'object') next[id] = { ...(next[id] ?? {}), ...(fields as object) };
+    }
+    l.sectionState = next;
+  }
   if (
     patch.manuallyCompletedSections &&
     typeof patch.manuallyCompletedSections === 'object'

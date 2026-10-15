@@ -1,13 +1,14 @@
-// Progress persistence for the EEG widgets: PATCH /api/progress with the
-// FULL section state (`{ done, widgetState, score }`).
+// Progress persistence for the EEG widgets: PATCH /api/progress.
 //
-// The server replaces the whole per-section object on every PATCH, so a
-// partial `{ widgetState }` would wipe `done`. Always send everything.
+// `sectionState` REPLACES the whole per-section object, so completion saves
+// send everything (`{ done, widgetState, score }`). Settings-only saves omit
+// `done` and go out as `mergeSectionState`, which the server shallow-merges
+// (keeps the stored `done` / `score`).
 // Nothing is written when `progressKey` is absent (static export, previews).
 //
 // No React here (see useWidgetProgress.ts for the hook).
 
-import type { ZodType } from 'zod';
+import type { ZodType, ZodTypeDef } from 'zod';
 
 import type { EegProgressKey } from './types';
 
@@ -18,7 +19,12 @@ export const WIDGET_STATE_MAX_CHARS = 64 * 1024;
 export const SETTINGS_SAVE_DEBOUNCE_MS = 800;
 
 export interface WidgetProgress {
-  done: boolean;
+  /**
+   * Section completion. Omit it for settings-only saves: the patch is then
+   * sent as `mergeSectionState`, which keeps the stored `done` / `score`
+   * instead of replacing the whole section object.
+   */
+  done?: boolean;
   /** Widget-owned JSON; version it yourself, e.g. `{ v: 1, … }`. */
   widgetState?: Record<string, unknown>;
   /** Integer counts (e.g. correct first attempts / gradable steps). */
@@ -34,7 +40,8 @@ export interface SaveOptions {
 
 /** Build the PATCH body (exported for tests / custom transports). */
 export function buildProgressPatch(key: EegProgressKey, state: WidgetProgress): Record<string, unknown> {
-  const section: Record<string, unknown> = { done: state.done === true };
+  const merge = state.done === undefined;
+  const section: Record<string, unknown> = merge ? {} : { done: state.done === true };
   if (state.widgetState) {
     const size = JSON.stringify(state.widgetState).length;
     if (size <= WIDGET_STATE_MAX_CHARS) section.widgetState = state.widgetState;
@@ -51,7 +58,7 @@ export function buildProgressPatch(key: EegProgressKey, state: WidgetProgress): 
   return {
     courseSlug: key.courseSlug,
     lessonSlug: key.lessonSlug,
-    sectionState: { [key.sectionId]: section },
+    [merge ? 'mergeSectionState' : 'sectionState']: { [key.sectionId]: section },
   };
 }
 
@@ -129,7 +136,7 @@ export function createProgressSaver(delayMs = SETTINGS_SAVE_DEBOUNCE_MS, base: S
 }
 
 /** Validate persisted widget state (unknown JSON) against the widget's schema; null if absent/invalid. */
-export function parseWidgetState<T>(raw: unknown, schema: ZodType<T>): T | null {
+export function parseWidgetState<T>(raw: unknown, schema: ZodType<T, ZodTypeDef, unknown>): T | null {
   if (raw === null || raw === undefined) return null;
   const r = schema.safeParse(raw);
   return r.success ? r.data : null;

@@ -20,6 +20,7 @@ import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
+import { EegViewerDataSchema } from '@/widgets/EegViewer/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
 
@@ -40,6 +41,7 @@ const widgets: Record<string, ZodSchema> = {
   'transcript-cloze': TranscriptClozeDataSchema,
   'stt-demo': SttDemoDataSchema,
   'tts-demo': TtsDemoDataSchema,
+  'eeg-viewer': EegViewerDataSchema,
 };
 
 const topLevel: Record<string, ZodSchema> = {

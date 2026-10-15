@@ -46,6 +46,8 @@ function assertSafeAssetPath(parts: string[]): string {
 
 function contentTypeFor(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
+  // EEG recordings (assets/eeg/*.json) are served as JSON but cannot be uploaded via PUT.
+  if (ext === '.json') return 'application/json';
   return CONTENT_TYPES[ext] ?? 'application/octet-stream';
 }
 

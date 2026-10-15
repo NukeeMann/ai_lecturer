@@ -34,6 +34,9 @@ export const POLISHABLE_BY_TYPE = {
   video: ['data.title'],
   sttDemo: ['data.prompt'],
   ttsDemo: ['data.defaultText', 'data.placeholderText'],
+  // EEG widgets: only learner-facing prose. Answer-key labels, electrode/montage
+  // names, attribution text (bibliographic) and all coordinates stay FROZEN.
+  eegViewer: ['data.prompt', 'data.task.prompt', 'data.task.explanation', 'data.caption'],
   // demo, histogram, dataTable, parametricExplorer, custom: nothing prose-bearing
   // beyond SECTION_COMMON (their data is numeric/code/identifiers).
 };

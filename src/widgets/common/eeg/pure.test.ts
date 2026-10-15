@@ -291,6 +291,12 @@ describe('progress', () => {
       sectionState: { s: { done: true, widgetState: { v: 1, marks: [] }, score: { correct: 2, total: 2 } } },
     });
     expect(buildProgressPatch(key, { done: false })).toEqual({ courseSlug: 'c', lessonSlug: 'l', sectionState: { s: { done: false } } });
+    // Settings-only save: no `done` → merge patch that keeps the stored done/score.
+    expect(buildProgressPatch(key, { widgetState: { v: 1 } })).toEqual({
+      courseSlug: 'c',
+      lessonSlug: 'l',
+      mergeSectionState: { s: { widgetState: { v: 1 } } },
+    });
   });
 
   it('drops an oversized widgetState but keeps done/score', () => {

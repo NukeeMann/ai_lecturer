@@ -24,6 +24,7 @@ import type { QuizData } from '@/widgets/Quiz/schema';
 import type { SandboxData } from '@/widgets/Sandbox/schema';
 import type { TheoryData } from '@/widgets/Theory/schema';
 import type { DemoData } from '@/widgets/Demo/schema';
+import { eegPrintSummary } from '@/widgets/common/eeg/printSummary';
 
 export const dynamic = 'force-dynamic';
 
@@ -294,6 +295,44 @@ function PrintDemo({ data }: { data: DemoData }) {
   );
 }
 
+const EEG_PRINT_TYPES = new Set(['eegViewer', 'montageLab', 'eegFigureMark', 'patternDrill', 'eegCase', 'figureSequence']);
+
+function PrintEeg({ type, data }: { type: string; data: unknown }) {
+  const s = eegPrintSummary(type, data);
+  return (
+    <div data-print-eeg>
+      {s.prompt
+        ? s.prompt.split(/\n{2,}/).map((p, i) => (
+            <p key={i} style={{ margin: '4px 0' }}>
+              {p}
+            </p>
+          ))
+        : null}
+      {s.figures.map((f, i) => (
+        <figure key={i} style={{ margin: '8px 0', pageBreakInside: 'avoid' }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={f.src} alt={f.alt} style={{ maxWidth: '100%', height: 'auto' }} />
+          {f.caption ? <figcaption style={{ fontSize: '9pt', color: '#444' }}>{f.caption}</figcaption> : null}
+          {f.attribution ? (
+            <figcaption style={{ fontSize: '8pt', color: '#666' }}>
+              {f.attribution.text} · {f.attribution.license}
+              {f.attribution.restricted ? ' · private use only' : ''}
+            </figcaption>
+          ) : null}
+        </figure>
+      ))}
+      <p style={{ margin: '4px 0', fontStyle: 'italic', color: '#444' }}>{s.note}</p>
+      {s.caption ? <p style={{ margin: '4px 0', fontSize: '9pt', color: '#444' }}>{s.caption}</p> : null}
+      {s.attribution ? (
+        <p style={{ margin: '4px 0', fontSize: '8pt', color: '#666' }}>
+          {s.attribution.text} · {s.attribution.license}
+          {s.attribution.restricted ? ' · private use only' : ''}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function PrintSection({ section, n }: { section: Section; n: number }) {
   let body: React.ReactNode;
   switch (section.type) {
@@ -313,6 +352,10 @@ function PrintSection({ section, n }: { section: Section; n: number }) {
       body = <PrintDemo data={section.data} />;
       break;
     default:
+      if (EEG_PRINT_TYPES.has(section.type)) {
+        body = <PrintEeg type={section.type} data={(section as { data?: unknown }).data} />;
+        break;
+      }
       body = (
         <p
           data-print-unsupported

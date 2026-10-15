@@ -83,6 +83,7 @@ import { DemoEditor } from '@/widgets/Demo/DemoEditor';
 import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
+import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
 import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
@@ -1740,6 +1741,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'dragMatch' && (
         <DragMatchEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'eegViewer' && (
+        <EegViewerEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3574,6 +3584,15 @@ function LessonHeaderMenu({
   );
 }
 
+/** Props every EEG widget body receives (see src/widgets/common/eeg/types.ts). */
+interface EegSectionBodyProps {
+  data?: unknown;
+  progressKey?: { courseSlug: string; lessonSlug: string; sectionId: string };
+  onComplete?: () => void;
+  initialWidgetState?: unknown;
+  alreadyCompleted?: boolean;
+}
+
 interface SectionRendererProps {
   section: Section;
   sectionNumber: number;
@@ -3627,6 +3646,7 @@ function SectionRenderer({
   onCloseRegen,
   onAcceptRegen,
   onCacheVideoTranscript,
+  initialWidgetState,
 }: SectionRendererProps) {
   // Runtime check guards against unknown widget types (e.g. malformed lesson
   // JSON or future schema additions); the static union covers the 6 known ones.
@@ -3809,6 +3829,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit drag match',
       () => onOpenPanel(section.id),
       'drag-match-edit-btn',
+    );
+  } else if (section.type === 'eegViewer') {
+    const Body = widgetRegistry.eegViewer.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit EEG viewer',
+      () => onOpenPanel(section.id),
+      'eeg-viewer-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;

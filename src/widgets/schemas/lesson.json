@@ -682,6 +682,21 @@
                       },
                       "encouragement": {
                         "type": "string"
+                      },
+                      "inputs": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/definitions/lesson/properties/sections/items/anyOf/2/properties/data/properties/inputs/items"
+                        }
+                      },
+                      "outputMedia": {
+                        "$ref": "#/definitions/lesson/properties/sections/items/anyOf/2/properties/data/properties/outputMedia"
+                      },
+                      "requiresPackages": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     },
                     "required": [
@@ -1438,6 +1453,849 @@
                         "type": "string"
                       }
                     },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "description": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/description"
+                  },
+                  "sources": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/sources"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "eegViewer"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "recording"
+                              },
+                              "src": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "src"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "simulation"
+                              },
+                              "preset": {
+                                "type": "string",
+                                "enum": [
+                                  "phaseReversalF8",
+                                  "endOfChainFp1",
+                                  "blink",
+                                  "lateralEyeMovementLeft",
+                                  "wideFieldInPhaseCancellation",
+                                  "earReferenceContaminationT7",
+                                  "averageReferenceContaminationBlink",
+                                  "alphaReactivity",
+                                  "electrodePopP7",
+                                  "lineNoise50T8",
+                                  "muscleTemporal"
+                                ]
+                              },
+                              "spec": {
+                                "type": "object",
+                                "properties": {
+                                  "durationSec": {
+                                    "type": "number",
+                                    "exclusiveMinimum": 0,
+                                    "maximum": 120
+                                  },
+                                  "sampleRate": {
+                                    "type": "integer",
+                                    "minimum": 64,
+                                    "maximum": 1024,
+                                    "default": 256
+                                  },
+                                  "seed": {
+                                    "type": "integer",
+                                    "default": 1
+                                  },
+                                  "background": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "pink",
+                                          "none"
+                                        ],
+                                        "default": "pink"
+                                      },
+                                      "amplitudeUv": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 500,
+                                        "default": 10
+                                      }
+                                    },
+                                    "additionalProperties": false,
+                                    "default": {}
+                                  },
+                                  "components": {
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "discharge"
+                                            },
+                                            "center": {
+                                              "anyOf": [
+                                                {
+                                                  "type": "string",
+                                                  "minLength": 1
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "theta": {
+                                                      "type": "number",
+                                                      "minimum": 0,
+                                                      "maximum": 180
+                                                    },
+                                                    "phi": {
+                                                      "type": "number",
+                                                      "minimum": -360,
+                                                      "maximum": 360
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "theta",
+                                                    "phi"
+                                                  ],
+                                                  "additionalProperties": false
+                                                }
+                                              ]
+                                            },
+                                            "spreadDeg": {
+                                              "type": "number",
+                                              "minimum": 5,
+                                              "maximum": 120,
+                                              "default": 30
+                                            },
+                                            "polarity": {
+                                              "type": "string",
+                                              "enum": [
+                                                "negative",
+                                                "positive"
+                                              ],
+                                              "default": "negative"
+                                            },
+                                            "peakUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 3000,
+                                              "default": 120
+                                            },
+                                            "waveform": {
+                                              "type": "string",
+                                              "enum": [
+                                                "spike",
+                                                "sharp",
+                                                "spikeWave",
+                                                "slow"
+                                              ],
+                                              "default": "spike"
+                                            },
+                                            "durationMs": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "slowWaveMs": {
+                                              "type": "number",
+                                              "minimum": 100,
+                                              "maximum": 1000
+                                            },
+                                            "times": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "number",
+                                                "minimum": 0
+                                              },
+                                              "minItems": 1
+                                            },
+                                            "label": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "center",
+                                            "times"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "rhythm"
+                                            },
+                                            "center": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/center"
+                                            },
+                                            "spreadDeg": {
+                                              "type": "number",
+                                              "minimum": 5,
+                                              "maximum": 180,
+                                              "default": 40
+                                            },
+                                            "freqHz": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 100
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 1000
+                                            },
+                                            "onsetSec": {
+                                              "type": "number",
+                                              "minimum": 0
+                                            },
+                                            "offsetSec": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0
+                                            },
+                                            "waxing": {
+                                              "type": "boolean",
+                                              "default": false
+                                            },
+                                            "rampSec": {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 5,
+                                              "default": 0.3
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "center",
+                                            "freqHz",
+                                            "amplitudeUv"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "blink"
+                                            },
+                                            "times": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/times"
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 2000,
+                                              "default": 150
+                                            },
+                                            "durationMs": {
+                                              "type": "number",
+                                              "minimum": 150,
+                                              "maximum": 600,
+                                              "default": 300
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "times"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "lateralEyeMovement"
+                                            },
+                                            "direction": {
+                                              "type": "string",
+                                              "enum": [
+                                                "left",
+                                                "right"
+                                              ]
+                                            },
+                                            "times": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/times"
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 1000,
+                                              "default": 70
+                                            },
+                                            "holdSec": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 10,
+                                              "default": 1
+                                            },
+                                            "lateralRectusSpikes": {
+                                              "type": "boolean",
+                                              "default": false
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "direction",
+                                            "times"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "muscle"
+                                            },
+                                            "center": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/center"
+                                            },
+                                            "spreadDeg": {
+                                              "type": "number",
+                                              "minimum": 5,
+                                              "maximum": 90,
+                                              "default": 25
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 500,
+                                              "default": 30
+                                            },
+                                            "bursts": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "onsetSec": {
+                                                    "type": "number",
+                                                    "minimum": 0
+                                                  },
+                                                  "durationSec": {
+                                                    "type": "number",
+                                                    "exclusiveMinimum": 0
+                                                  }
+                                                },
+                                                "required": [
+                                                  "onsetSec",
+                                                  "durationSec"
+                                                ],
+                                                "additionalProperties": false
+                                              },
+                                              "minItems": 1
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "center",
+                                            "bursts"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "electrodePop"
+                                            },
+                                            "electrode": {
+                                              "type": "string",
+                                              "minLength": 1
+                                            },
+                                            "times": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/times"
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 2000,
+                                              "default": 150
+                                            },
+                                            "decayMs": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 5000,
+                                              "default": 250
+                                            },
+                                            "polarity": {
+                                              "type": "string",
+                                              "enum": [
+                                                "negative",
+                                                "positive"
+                                              ],
+                                              "default": "positive"
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "electrode",
+                                            "times"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "lineNoise"
+                                            },
+                                            "electrodes": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "minItems": 1
+                                            },
+                                            "freqHz": {
+                                              "type": "number",
+                                              "enum": [
+                                                50,
+                                                60
+                                              ],
+                                              "default": 50
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 500,
+                                              "default": 20
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "electrodes"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "ecg"
+                                            },
+                                            "heartRateBpm": {
+                                              "type": "number",
+                                              "minimum": 30,
+                                              "maximum": 240,
+                                              "default": 90
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 500,
+                                              "default": 15
+                                            },
+                                            "center": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/center",
+                                              "default": {
+                                                "theta": 130,
+                                                "phi": -110
+                                              }
+                                            },
+                                            "spreadDeg": {
+                                              "type": "number",
+                                              "minimum": 10,
+                                              "maximum": 120,
+                                              "default": 55
+                                            },
+                                            "includeChannel": {
+                                              "type": "boolean",
+                                              "default": true
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind"
+                                          ],
+                                          "additionalProperties": false
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "kind": {
+                                              "type": "string",
+                                              "const": "sweat"
+                                            },
+                                            "electrodes": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              },
+                                              "minItems": 1
+                                            },
+                                            "amplitudeUv": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 1000,
+                                              "default": 60
+                                            },
+                                            "freqHz": {
+                                              "type": "number",
+                                              "exclusiveMinimum": 0,
+                                              "maximum": 0.5,
+                                              "default": 0.2
+                                            },
+                                            "label": {
+                                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec/properties/components/items/anyOf/0/properties/label"
+                                            }
+                                          },
+                                          "required": [
+                                            "kind",
+                                            "electrodes"
+                                          ],
+                                          "additionalProperties": false
+                                        }
+                                      ]
+                                    },
+                                    "default": []
+                                  },
+                                  "electrodes": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1
+                                    }
+                                  },
+                                  "annotate": {
+                                    "type": "boolean",
+                                    "default": true
+                                  }
+                                },
+                                "required": [
+                                  "durationSec"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "kind"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "initial": {
+                        "type": "object",
+                        "properties": {
+                          "montage": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "sensitivityUvPerMm": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 2000
+                          },
+                          "secondsPerPage": {
+                            "type": "number",
+                            "exclusiveMinimum": 0,
+                            "maximum": 60
+                          },
+                          "lffHz": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                                "maximum": 10
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hffHz": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "exclusiveMinimum": 0,
+                                "maximum": 200
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "notchHz": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "enum": [
+                                  50,
+                                  60
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "startSec": {
+                            "type": "number",
+                            "minimum": 0
+                          },
+                          "filterPhase": {
+                            "type": "string",
+                            "enum": [
+                              "zero",
+                              "causal"
+                            ]
+                          }
+                        },
+                        "additionalProperties": false,
+                        "default": {}
+                      },
+                      "controls": {
+                        "type": "object",
+                        "properties": {
+                          "montage": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "sensitivity": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "timebase": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "filters": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "caliper": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "navigation": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        },
+                        "additionalProperties": false,
+                        "default": {}
+                      },
+                      "allowedMontages": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1
+                      },
+                      "annotations": {
+                        "type": "string",
+                        "enum": [
+                          "hidden",
+                          "toggle",
+                          "always"
+                        ],
+                        "default": "toggle"
+                      },
+                      "task": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "markEvents"
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "mode": {
+                            "type": "string",
+                            "enum": [
+                              "point",
+                              "range"
+                            ],
+                            "default": "point"
+                          },
+                          "targets": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "onsetSec": {
+                                  "type": "number",
+                                  "minimum": 0
+                                },
+                                "offsetSec": {
+                                  "type": "number",
+                                  "minimum": 0
+                                },
+                                "channels": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "required": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "onsetSec",
+                                "label"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "minItems": 1
+                          },
+                          "toleranceSec": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 10,
+                            "default": 0.5
+                          },
+                          "requireChannel": {
+                            "type": "boolean",
+                            "default": false
+                          },
+                          "maxMarks": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "explanation": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "prompt",
+                          "targets",
+                          "explanation"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "caption": {
+                        "type": "string"
+                      },
+                      "attribution": {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "license": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri"
+                          },
+                          "restricted": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "text",
+                          "license"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "simulationLabel": {
+                        "type": "string"
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 200,
+                        "maximum": 1600
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
                     "additionalProperties": false
                   }
                 },

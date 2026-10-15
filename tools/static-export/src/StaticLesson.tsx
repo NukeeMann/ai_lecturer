@@ -16,6 +16,7 @@ import type { SxPayload } from './payload';
 import {
   getLessonCompletion,
   isSectionDone,
+  loadCourseProgress,
   onProgressChange,
   setSectionAuto,
   setSectionManual,
@@ -40,6 +41,36 @@ const INTERACTIVE_TYPES: ReadonlySet<string> = new Set([
   'dragMatch',
   'transcriptCloze',
 ]);
+
+/**
+ * EEG widgets (src/widgets/common/eeg) share one prop contract. They count as
+ * interactive (own onComplete) when they ask the learner something: an
+ * eegViewer task, montageLab challenges; the graded ones always.
+ */
+const EEG_TYPES: ReadonlySet<string> = new Set([
+  'eegViewer',
+  'montageLab',
+  'eegFigureMark',
+  'patternDrill',
+  'eegCase',
+  'figureSequence',
+]);
+
+function isEegInteractive(type: string, data: unknown): boolean {
+  const d = (data ?? {}) as { task?: unknown; challenges?: unknown[] };
+  switch (type) {
+    case 'eegViewer':
+      return !!d.task;
+    case 'montageLab':
+      return Array.isArray(d.challenges) && d.challenges.length > 0;
+    case 'eegFigureMark':
+    case 'patternDrill':
+    case 'eegCase':
+      return true;
+    default:
+      return false;
+  }
+}
 
 interface SectionLike {
   id: string;
@@ -99,7 +130,8 @@ function SectionView({
   // Static / passive widgets are auto-marked after a sustained view.
   // Interactive widgets drive their own completion via onComplete callbacks
   // wired up in the switch below.
-  const useAutoMark = !INTERACTIVE_TYPES.has(section.type);
+  const useAutoMark =
+    !INTERACTIVE_TYPES.has(section.type) && !isEegInteractive(section.type, section.data);
   useAutoCompleteOnView({
     enabled: useAutoMark && !done,
     onComplete,
@@ -181,7 +213,17 @@ function SectionView({
     // demo, histogram, plotImage, parametricExplorer, dataTable, theory,
     // sttDemo, ttsDemo, custom — data only (same as the app).
     default:
-      body = <Body data={data} />;
+      body = EEG_TYPES.has(section.type) ? (
+        <Body
+          data={data}
+          progressKey={progressKey}
+          onComplete={onComplete}
+          initialWidgetState={(loadCourseProgress(courseSlug).lessons[lessonSlug]?.sectionState?.[section.id] as { widgetState?: unknown } | undefined)?.widgetState}
+          alreadyCompleted={done}
+        />
+      ) : (
+        <Body data={data} />
+      );
       break;
   }
 

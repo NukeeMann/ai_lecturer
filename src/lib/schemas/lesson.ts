@@ -15,6 +15,7 @@ import { AudioPlayerDataSchema } from '@/widgets/AudioPlayer/schema';
 import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
+import { EegViewerDataSchema } from '@/widgets/EegViewer/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -155,6 +156,17 @@ export const TtsDemoSectionSchema = z.object({
   data: TtsDemoDataSchema,
 });
 
+// EEG-reading widgets (see docs/widgets.md → "EEG widgets"). Listed once
+// here and spread into BOTH unions below — the generation pipeline validates
+// with SectionSchemaWithSentinel first, so a type missing there is rejected.
+export const EegViewerSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('eegViewer'),
+  data: EegViewerDataSchema,
+});
+
+const EEG_SECTION_SCHEMAS = [EegViewerSectionSchema] as const;
+
 export const CustomSectionSchema = z.object({
   ...sectionBase,
   type: z.literal('custom'),
@@ -178,6 +190,7 @@ export const SectionSchema = z.discriminatedUnion('type', [
   TranscriptClozeSectionSchema,
   SttDemoSectionSchema,
   TtsDemoSectionSchema,
+  ...EEG_SECTION_SCHEMAS,
   CustomSectionSchema,
 ]);
 
@@ -247,6 +260,7 @@ export const SectionSchemaWithSentinel = z.discriminatedUnion('type', [
   TranscriptClozeSectionWithSentinelSchema,
   SttDemoSectionSchema,
   TtsDemoSectionSchema,
+  ...EEG_SECTION_SCHEMAS,
   CustomSectionSchema,
 ]);
 

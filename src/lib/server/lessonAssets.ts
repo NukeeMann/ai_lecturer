@@ -251,6 +251,13 @@ function collectFromSection(
       }
       break;
     }
+    case 'eegViewer': {
+      const source = (data as { source?: { kind?: unknown; src?: unknown } }).source;
+      if (source && source.kind === 'recording') {
+        pushImage(acc, source.src, slug, `${base}.data.source.src`);
+      }
+      break;
+    }
     default:
       // Other section types either carry no asset paths or (AudioPlayer /
       // TranscriptCloze) are materialized by the dedicated TTS post-processor.

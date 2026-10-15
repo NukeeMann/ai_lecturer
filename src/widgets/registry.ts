@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import {
+  Activity,
   BarChart3,
   Code,
   FileText,
@@ -37,6 +38,7 @@ import { SandboxWidget } from './Sandbox/SandboxWidget';
 import { SttDemoWidget } from './SttDemo/SttDemoWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 import { VideoWidget } from './Video/VideoWidget';
+import { EegViewerWidget } from './EegViewer/EegViewerWidget';
 
 export type WidgetType =
   | 'theory'
@@ -55,6 +57,7 @@ export type WidgetType =
   | 'transcriptCloze'
   | 'sttDemo'
   | 'ttsDemo'
+  | 'eegViewer'
   | 'custom';
 
 export interface WidgetRegistryEntry {
@@ -160,6 +163,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'TTS Demo',
     icon: Volume2,
     accentVar: '--widget-tts-demo',
+  },
+  eegViewer: {
+    component: EegViewerWidget as ComponentType<{ data?: unknown }>,
+    label: 'EEG Viewer',
+    icon: Activity,
+    accentVar: '--widget-eeg-viewer',
   },
   custom: {
     component: CustomPlaceholder,
