@@ -9,3 +9,4 @@ export * from './pipeline';
 export * from './localize';
 export * from './synth';
 export * from './scoring';
+export * from './edf';
