@@ -67,6 +67,12 @@ describe('display settings helpers', () => {
     expect(s.startSec).toBe(0);
   });
 
+  it('caps authored pages at 5 s on narrow screens only', () => {
+    const d = EegViewerDataSchema.parse({ source: data.source, initial: { secondsPerPage: 20 } });
+    expect(resolveInitialSettings(d, { availableMontages: ['LB'], durationSec: 60, narrow: true }).secondsPerPage).toBe(5);
+    expect(resolveInitialSettings(d, { availableMontages: ['LB'], durationSec: 60, narrow: false }).secondsPerPage).toBe(20);
+  });
+
   it('keeps explicit null filters (off)', () => {
     const d = EegViewerDataSchema.parse({ source: data.source, initial: { lffHz: null, notchHz: 50 } });
     const s = resolveInitialSettings(d, { availableMontages: ['LB'], durationSec: 10, narrow: false });

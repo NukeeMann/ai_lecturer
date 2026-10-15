@@ -144,6 +144,7 @@ export interface ViewerSettings {
 
 /** Width below which the viewer defaults to 5 s pages (traces stay legible on phones). */
 export const NARROW_VIEWER_PX = 560;
+export const NARROW_SECONDS_PER_PAGE = 5;
 
 export function resolveInitialSettings(
   data: EegViewerData,
@@ -153,7 +154,9 @@ export function resolveInitialSettings(
   const wanted = init.montage?.toUpperCase();
   const montage =
     (wanted && opts.availableMontages.find((m) => m.toUpperCase() === wanted)) ?? opts.availableMontages[0] ?? 'LB';
-  const secondsPerPage = init.secondsPerPage ?? (opts.narrow ? 5 : DISPLAY_DEFAULTS.secondsPerPage);
+  // Phones: at most 5 s per page so traces stay legible (the learner can still widen it).
+  const authored = init.secondsPerPage ?? DISPLAY_DEFAULTS.secondsPerPage;
+  const secondsPerPage = opts.narrow ? Math.min(authored, NARROW_SECONDS_PER_PAGE) : authored;
   return {
     montage,
     sensitivityUvPerMm: init.sensitivityUvPerMm ?? DISPLAY_DEFAULTS.sensitivityUvPerMm,

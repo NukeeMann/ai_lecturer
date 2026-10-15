@@ -112,3 +112,7 @@ You're done after emitting the single JSON object on stdout. The route:
 4. Snapshots the existing lesson, splices your section in directly after the anchor, and writes the lesson atomically.
 
 You do not need to do anything else. Persistence and undo are the route's job, not yours.
+
+## EEG-reading courses
+
+When inserting into an EEG course, prefer the EEG widgets (`eegViewer`, `montageLab`, `eegFigureMark`, `patternDrill`, `eegCase`, `figureSequence`) and follow the rules in `docs/widgets.md → EEG widgets`: real EEG for recognition, synthetic only for mechanisms (badged), mandatory attribution, `assets/private/` + `restricted: true` for copyrighted figures, answer keys traceable to the source.

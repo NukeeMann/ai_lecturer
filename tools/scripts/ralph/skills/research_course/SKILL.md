@@ -85,6 +85,7 @@ Synthesise from `courseSpec` contents + any uploaded source materials (Read each
 - Where a code exercise is more illuminating than a quiz
 - Where a Demo widget would help (visual / interactive intuition)
 - Where a Sandbox is a good fit (exploration with no grading gate)
+- EEG courses: which EEG widgets each beat should use, which real figures/recordings (with licence) feed them, and that lesson agents must not edit `src/`
 ```
 
 Tailor depth to `courseSpec.level` (beginner / intermediate / advanced) and `courseSpec.durationTarget` (short / standard / extensive / comprehensive — see the sizing table in `design_course/SKILL.md` for the lesson-count budget). Respect `courseSpec.theoryPracticeRatio` when describing Notes for lesson generation — a low ratio (0.2) means lean hands-on, a high ratio (0.8) means lean theory.

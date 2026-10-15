@@ -47,6 +47,12 @@ must pay for itself across 2–3 future lessons; one-off content stays in
 | PlotImage             | `plotImage`          | static figure     |
 | Sandbox               | `sandbox`            | free coding       |
 | Video                 | `video`              | embedded video    |
+| EegViewer             | `eegViewer`          | read real/simulated EEG |
+| MontageLab            | `montageLab`         | montage simulator |
+| EegFigureMark         | `eegFigureMark`      | mark on a figure  |
+| PatternDrill          | `patternDrill`       | recognition drill |
+| EegCase               | `eegCase`            | staged case       |
+| FigureSequence        | `figureSequence`     | step/slide/compare figures |
 | Custom                | `custom`             | escape hatch      |
 
 ---
@@ -667,6 +673,480 @@ Minimal example:
 Full detail:
 [`src/widgets/Video/schema.ts`](../src/widgets/Video/schema.ts) ·
 [`src/widgets/Video/sample.ts`](../src/widgets/Video/sample.ts).
+
+---
+
+## EEG widgets
+
+Six widgets for **EEG-reading** courses (first used by the paediatric EEG
+course). They share infrastructure in `src/lib/eeg/` (electrodes, ACNS
+montages, display filters, synthetic presets, scoring, EDF import) and
+`src/widgets/common/eeg/` (TraceCanvas, FigureCanvas, HeadMap, marking,
+progress). UI chrome is English; all content strings come from the lesson
+JSON (write them in the course language).
+
+**Rules that apply to every EEG widget — follow them strictly:**
+
+- **Pattern recognition only on REAL EEG.** Real figures (atlas pages,
+  open-access CC BY figures) go into `eegFigureMark`, `patternDrill`,
+  `eegCase`, `figureSequence`; real recordings (converted with
+  `tools/eeg-convert`) into `eegViewer` / `eegCase.viewer`.
+- **Synthetic signals only to demonstrate a mechanism** (montage and phase
+  reversal, polarity, end-of-chain, reference contamination, filters,
+  sensitivity, typical artifacts) — via `montageLab` or an `eegViewer` with
+  `source.kind: "simulation"`. Both always show a **SYMULACJA** badge; never
+  present a simulation as a real recording in prose either.
+- **Every figure carries `attribution`** `{ text, license, url?, restricted? }`.
+  Copyrighted material used for private study (e.g. Springer atlas pages, AES
+  figures marked "© Mayo … All rights reserved") lives under
+  `courses/<slug>/assets/private/` **and** has `restricted: true` — the static
+  exporter then warns (`--exclude-restricted` drops it).
+- **Answer keys** (targets, distractors, `correct`, `expected`) must come from
+  the source itself (the figure's own arrows/caption, the atlas solution, the
+  dataset's expert annotation) or be checked against it — never guessed.
+  Coordinates are normalised 0..1 of the image (origin top-left).
+- Asset paths are full `/api/courses/<slug>/assets/...` strings; recordings
+  live in `assets/eeg/*.json` (format `ai-lecturer-eeg@1`).
+- Polarity convention everywhere: a channel is V(G1) − V(G2) and **negative
+  is drawn up**.
+- Do not edit `src/` while generating lessons for an EEG course: these six
+  widgets are the toolkit.
+
+Simulation presets (`source.preset` / `scenario.preset`): `phaseReversalF8`,
+`endOfChainFp1`, `blink`, `lateralEyeMovementLeft`,
+`wideFieldInPhaseCancellation`, `earReferenceContaminationT7`,
+`averageReferenceContaminationBlink`, `alphaReactivity`, `electrodePopP7`,
+`lineNoise50T8`, `muscleTemporal` (or a custom `spec`, see
+`src/lib/eeg/synth.ts`). Montage ids: `LB` (double banana), `TB`, `AVG`,
+`CZ`, `EAR`, `NEO`.
+
+### eegViewer
+
+Multichannel EEG reader: montage, sensitivity (µV/mm), timebase (s/page),
+LFF/HFF/notch (50 Hz in Poland), paging, caliper (Δt, Hz, µV), expert
+annotations from the recording, optional `task` (`markEvents`: point or
+range marks scored against `targets` with `toleranceSec`). Use it for
+"find the seizure onset", "measure the spike", "switch montage and see the
+reversal", filter/sensitivity effects. Key fields: `source`
+(`{kind:"recording", src}` or `{kind:"simulation", preset|spec}`),
+`initial`, `controls`, `allowedMontages`, `annotations`
+(`hidden|toggle|always`), `task`, `caption`, `attribution`.
+
+```json
+{
+  "id": "eegViewer-example",
+  "title": "Example",
+  "type": "eegViewer",
+  "data": {
+    "prompt": "Znajdź wyładowania i ustal, gdzie jest **odwrócenie fazy**.",
+    "source": {
+      "kind": "simulation",
+      "preset": "phaseReversalF8"
+    },
+    "initial": {
+      "montage": "LB",
+      "sensitivityUvPerMm": 10,
+      "secondsPerPage": 10
+    },
+    "task": {
+      "kind": "markEvents",
+      "prompt": "Zaznacz każdą iglicę.",
+      "mode": "point",
+      "targets": [
+        {
+          "id": "s1",
+          "onsetSec": 1.6,
+          "channels": [
+            "F8"
+          ],
+          "label": "Iglica F8"
+        },
+        {
+          "id": "s2",
+          "onsetSec": 4.3,
+          "channels": [
+            "F8"
+          ],
+          "label": "Iglica F8"
+        },
+        {
+          "id": "s3",
+          "onsetSec": 7.4,
+          "channels": [
+            "F8"
+          ],
+          "label": "Iglica F8"
+        }
+      ],
+      "toleranceSec": 0.3,
+      "explanation": "Ujemne wychylenia „wskazują na siebie” w kanałach **Fp2-F8** i **F8-T8**: to ujemne odwrócenie fazy, więc maksimum pola leży pod **F8**."
+    }
+  }
+}
+```
+
+Schema: [`src/widgets/EegViewer/schema.ts`](../src/widgets/EegViewer/schema.ts).
+
+### montageLab
+
+Always-synthetic lab: a 4 s epoch around one event, a 10-20 head map coloured
+by its field, the same epoch in the chosen montage; the learner can drag the
+source, flip polarity and change spread. Phase reversals, isoelectric
+channels and end-of-chain / referential maxima are computed from the data and
+explained. Optional `challenges` are answered by clicking an electrode
+(`answer.kind: "electrode"`) or a channel (`"channel"`). Remember: negative
+phase reversal at E = the channels X-E and E-Y deflect **towards** each other;
+X-E is positive (drawn down) and E-Y negative (drawn up).
+
+```json
+{
+  "id": "montageLab-example",
+  "title": "Example",
+  "type": "montageLab",
+  "data": {
+    "prompt": "Przełączaj montaże i obserwuj, jak zmienia się obraz **tego samego** wyładowania.",
+    "scenario": {
+      "preset": "phaseReversalF8"
+    },
+    "montages": [
+      "LB",
+      "TB",
+      "AVG",
+      "CZ"
+    ],
+    "initialMontage": "LB",
+    "challenges": [
+      {
+        "id": "max",
+        "prompt": "Kliknij na główce elektrodę, pod którą leży maksimum ujemności.",
+        "answer": {
+          "kind": "electrode",
+          "electrodes": [
+            "F8"
+          ]
+        },
+        "explanation": "W montażu podwójnego banana kanały **Fp2-F8** i **F8-T8** wychylają się do siebie — ujemne odwrócenie fazy na **F8**."
+      }
+    ]
+  }
+}
+```
+
+Schema: [`src/widgets/MontageLab/schema.ts`](../src/widgets/MontageLab/schema.ts).
+
+### eegFigureMark
+
+"Mark the fragment" on a real figure: point or box marks, zoom/pan, Check
+against `targets`, specific feedback for `distractors` (common wrong clicks),
+expert overlay, optional `calibration` (`pxPerSecond`, `uvPerPx`, `rows`) for
+a caliper on the image.
+
+```json
+{
+  "id": "eegFigureMark-example",
+  "title": "Example",
+  "type": "eegFigureMark",
+  "data": {
+    "prompt": "Zaznacz ramką **mrugnięcie** (artefakt z gałek ocznych).",
+    "figure": {
+      "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig84.png",
+      "alt": "Routine EEG, longitudinal bipolar montage, 10 s: lateral eye movements and a blink",
+      "width": 2018,
+      "height": 1600,
+      "attribution": {
+        "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 84",
+        "license": "CC BY-NC-SA 4.0",
+        "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+      }
+    },
+    "mode": "box",
+    "targets": [
+      {
+        "id": "blink",
+        "rect": {
+          "x": 0.29,
+          "y": 0.17,
+          "w": 0.06,
+          "h": 0.5
+        },
+        "label": "Mrugnięcie — dodatniość czołowa"
+      }
+    ],
+    "calibration": {
+      "pxPerSecond": 189,
+      "uvPerPx": 0.91
+    },
+    "explanation": "Mrugnięcie to **dodatnia** fala nad Fp1/Fp2 (rogówka jest dodatnia): w kanałach Fp1-F3 / Fp2-F4 wychylenie w dół, symetrycznie, bez pola mózgowego za okolicą czołową."
+  }
+}
+```
+
+Schema: [`src/widgets/EegFigureMark/schema.ts`](../src/widgets/EegFigureMark/schema.ts).
+
+### patternDrill
+
+Rapid recognition deck (2–9 `categories`, keys 1–9): interleaved cards,
+immediate feedback, `contrastItemId` shows the confusable partner on a miss,
+missed cards return 3–5 cards later, end summary with confusions.
+`session.showCriteriaChecklist` adds the six IFCN criteria for an
+epileptiform discharge (override wording with `criteriaLabels`). Use `crop`
+to show only the relevant part of a busy figure.
+
+```json
+{
+  "id": "patternDrill-example",
+  "title": "Example",
+  "type": "patternDrill",
+  "data": {
+    "prompt": "Artefakt czy wyładowanie? Odpowiadaj szybko — liczy się pierwsze wrażenie.",
+    "categories": [
+      {
+        "id": "artifact",
+        "label": "Artefakt"
+      },
+      {
+        "id": "epileptiform",
+        "label": "Wyładowanie padaczkowe"
+      },
+      {
+        "id": "normal",
+        "label": "Wariant prawidłowy"
+      }
+    ],
+    "items": [
+      {
+        "id": "fig84",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig84.png",
+          "alt": "Lateral eye movements with lateral rectus spikes",
+          "width": 2018,
+          "height": 1600,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 84",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "answer": "artifact",
+        "explanation": "Kolce m. prostego bocznego przy ruchu gałek: przeciwne wychylenia F7/F8, brak pola mózgowego.",
+        "contrastItemId": "fig90"
+      },
+      {
+        "id": "fig90",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig90.png",
+          "alt": "Electrode pop at P7",
+          "width": 2007,
+          "height": 1603,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 90",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "answer": "artifact",
+        "explanation": "Pop elektrody P7: nagłe wychylenie tylko w kanałach z P7, bez pola na sąsiednich elektrodach."
+      }
+    ],
+    "session": {
+      "showCriteriaChecklist": true
+    }
+  }
+}
+```
+
+Schema: [`src/widgets/PatternDrill/schema.ts`](../src/widgets/PatternDrill/schema.ts).
+
+### eegCase
+
+Staged case: `vignette`, a `figure` (or `viewer`), then `steps` that unlock
+one by one — `choice` / `multi` (`correct` indices), `mark` (targets on the
+figure), `measure` (`quantity` frequencyHz | durationMs | amplitudeUv,
+`expected`, `tolerance`), `reveal` (think first, then the expert text) — and
+a closing expert `summary`. One retry before the answer is shown. Mirrors a
+systematic reading: background → finding → name → significance.
+
+```json
+{
+  "id": "eegCase-example",
+  "title": "Example",
+  "type": "eegCase",
+  "data": {
+    "vignette": "**16-latek**, epizody „zawieszania się” w szkole. Rutynowe EEG w czuwaniu; technik zgłasza „rytmiczny wzorzec po lewej”.",
+    "figure": {
+      "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig90.png",
+      "alt": "Routine EEG, bipolar montage, 10 s, rhythmic sharp waveforms confined to P7",
+      "width": 2007,
+      "height": 1603,
+      "attribution": {
+        "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 90",
+        "license": "CC BY-NC-SA 4.0",
+        "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+      }
+    },
+    "calibration": {
+      "pxPerSecond": 189
+    },
+    "steps": [
+      {
+        "id": "where",
+        "kind": "choice",
+        "prompt": "Przy której elektrodzie jest maksimum rytmicznego wzorca?",
+        "options": [
+          "P7",
+          "T7",
+          "O1",
+          "Cz"
+        ],
+        "correct": [
+          0
+        ],
+        "explanation": "Kanały **T7-P7** i **P7-O1** wychylają się przeciwnie — odwrócenie fazy na **P7**, a sąsiednie łańcuchy są spokojne."
+      },
+      {
+        "id": "mark",
+        "kind": "mark",
+        "prompt": "Zaznacz ramką fragment, w którym widać odwrócenie fazy wokół P7.",
+        "mode": "box",
+        "targets": [
+          {
+            "id": "p7",
+            "rect": {
+              "x": 0.3,
+              "y": 0.62,
+              "w": 0.32,
+              "h": 0.1
+            },
+            "label": "T7-P7 / P7-O1"
+          }
+        ],
+        "explanation": "Wzorzec jest tylko w kanałach zawierających P7 — pole „jednej elektrody”."
+      },
+      {
+        "id": "why",
+        "kind": "multi",
+        "prompt": "Co przemawia za artefaktem elektrody, a nie za napadem? (zaznacz wszystkie)",
+        "options": [
+          "Wzorzec ograniczony do kanałów z P7 — brak pola na sąsiednich elektrodach",
+          "Brak ewolucji częstotliwości, amplitudy i rozległości",
+          "Rytmiczne fale ostre",
+          "Pacjent ma epizody zawieszania się"
+        ],
+        "correct": [
+          0,
+          1
+        ],
+        "explanation": "Napad ma pole mózgowe i **ewoluuje**; artefakt elektrody jest ograniczony do jednej elektrody i monotonny."
+      },
+      {
+        "id": "grid",
+        "kind": "measure",
+        "prompt": "Cyrklem zmierz odstęp między dwiema pionowymi liniami siatki.",
+        "quantity": "durationMs",
+        "expected": 1000,
+        "tolerance": 80,
+        "explanation": "Linie siatki są co **1 s** (10 s na stronę)."
+      },
+      {
+        "id": "confirm",
+        "kind": "reveal",
+        "prompt": "Jak potwierdzisz artefakt w pracowni?",
+        "content": "Sprawdź impedancję P7, obejrzyj wideo i pacjenta, popraw lub wymień elektrodę — artefakt znika po poprawie kontaktu."
+      }
+    ],
+    "summary": "**Pop elektrody P7 udający rytmiczny napad.** Zawsze szukaj pola: wzorzec obecny tylko w kanałach jednej elektrody, bez ewolucji, to artefakt."
+  }
+}
+```
+
+Schema: [`src/widgets/EegCase/schema.ts`](../src/widgets/EegCase/schema.ts).
+
+### figureSequence
+
+Real figures as a `stepper`, a `slider` (e.g. maturation by age —
+`sliderLabel: "Wiek"`) or `compare` (two panes side by side, e.g. the same
+epoch in two montages, a normal variant vs a true discharge).
+
+```json
+{
+  "id": "figureSequence-example",
+  "title": "Example",
+  "type": "figureSequence",
+  "data": {
+    "prompt": "Przesuń suwak i obserwuj, jak **przyspiesza rytm podstawowy** (PDR) z wiekiem.",
+    "layout": "slider",
+    "sliderLabel": "Wiek",
+    "frames": [
+      {
+        "id": "m11",
+        "label": "11 mies.",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig37.png",
+          "alt": "Awake EEG of an 11-month-old, 5–6 Hz PDR",
+          "width": 2018,
+          "height": 1255,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 37",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "caption": "PDR **5–6 Hz** (11 miesięcy)."
+      },
+      {
+        "id": "m12",
+        "label": "12 mies.",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig38.png",
+          "alt": "Awake EEG of a 12-month-old, 6–7 Hz PDR",
+          "width": 1920,
+          "height": 1196,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 38",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "caption": "PDR **6–7 Hz** (12 miesięcy)."
+      },
+      {
+        "id": "m16",
+        "label": "16 mies.",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig39.png",
+          "alt": "Awake EEG of a 16-month-old, 7–8 Hz PDR",
+          "width": 1920,
+          "height": 1194,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 39",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "caption": "PDR **7–8 Hz** (16 miesięcy)."
+      },
+      {
+        "id": "y10",
+        "label": "10 lat",
+        "figure": {
+          "src": "/api/courses/eeg-widgets-test/assets/figures/aes-fig43.png",
+          "alt": "Awake EEG of a 10-year-old, 10 Hz PDR",
+          "width": 2018,
+          "height": 1257,
+          "attribution": {
+            "text": "St. Louis EK, Frey LC (eds). *Electroencephalography (EEG): An Introductory Text and Atlas*. AES 2016, Fig. 43",
+            "license": "CC BY-NC-SA 4.0",
+            "url": "https://doi.org/10.5698/978-0-9979756-0-4"
+          }
+        },
+        "caption": "PDR **10 Hz** (10 lat)."
+      }
+    ]
+  }
+}
+```
+
+Schema: [`src/widgets/FigureSequence/schema.ts`](../src/widgets/FigureSequence/schema.ts).
 
 ---
 

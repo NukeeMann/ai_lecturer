@@ -18,7 +18,7 @@ Paths: `/courses/<slug>/…` means the `courses/` directory at the repository ro
 
 1. Receive two arguments from the invoking prompt: the course `slug` and the `module-id`. Both must match `[a-z0-9-]+` (same rule as `assertSafeSlug` in `src/lib/server/paths.ts`); stop otherwise.
 2. Read `/courses/<slug>/course.json`. Find the module by `id` → its `title` and its `lessons[]` (slugs + titles, in order).
-3. Read **every** lesson file of that module: `/courses/<slug>/lessons/<lesson-slug>.json`. Skip lesson files that don't exist. The material is the lesson content — theory markdown, quiz questions and their explanations, dragMatch pairs, dataTable rows, code comments, transcripts.
+3. Read **every** lesson file of that module: `/courses/<slug>/lessons/<lesson-slug>.json`. Skip lesson files that don't exist. The material is the lesson content — theory markdown, quiz questions and their explanations, dragMatch pairs, dataTable rows, code comments, transcripts. For EEG widgets use only their text (prompts, explanations, case vignettes/summaries, drill explanations) — cards are text-only, so never card an image-dependent fact ("what is shown in this figure").
 4. If `/courses/<slug>/flashcards/<module-id>.json` already exists, read it. You are regenerating: **reuse the `id` of every card that still covers the same fact** (rewording is fine — the id is what lets Anki update the card in place and keep the learner's review history). New facts get new ids; drop cards whose fact is no longer in the lessons.
 5. Extract the facts worth remembering (see *What to card*), then write cards following *How to write a card*.
 6. Write the file and validate it (Step 6). Never leave an invalid file behind.

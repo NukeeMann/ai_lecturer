@@ -1,9 +1,8 @@
 # Widgets
 
-This folder contains every widget the lesson stream can render. The current
-set is twelve built-in types (`theory`, `quiz`, `code`, `codeCloze`, `demo`,
-`sandbox`, `histogram`, `plotImage`, `parametricExplorer`, `dragMatch`,
-`dataTable`, `video`) plus a `custom` placeholder. Each widget is
+This folder contains every widget the lesson stream can render. The full set is
+listed in `registry.ts` (core widgets, audio/TTS widgets and the six EEG
+widgets) plus a `custom` placeholder. Each widget is
 self-contained: a Zod data schema, a React component, an editor form, and a
 registry entry — no other module needs to know it exists.
 
@@ -25,6 +24,50 @@ src/widgets/
     <Name>Editor.tsx      — side-panel form, props: { initial, onCancel, onSave }
     sample.ts             — typed sample data (used by storybook-style fixtures, init skills)
 ```
+
+## All touch points (read this first)
+
+The five steps below are the core, but a widget is only fully wired when ALL
+of these are done (verified while adding the EEG widgets, Oct 2026):
+
+1. `src/widgets/<Name>/` — `schema.ts` (Node-safe: no React imports),
+   `<Name>Widget.tsx`, `<Name>Editor.tsx`, `sample.ts`, tests.
+2. `src/widgets/registry.ts` — `WidgetType` union **and** registry entry.
+3. `src/styles/tokens.css` — `--widget-<kebab-name>` in **all six** theme
+   blocks: light, dark, sunset and sunset variants A/B/C.
+4. `src/lib/schemas/lesson.ts` — the section variant in **both**
+   `SectionSchema` **and** `SectionSchemaWithSentinel` (the generation
+   pipeline validates with the sentinel union first; a type missing there
+   makes every generated lesson fail while the API still accepts it).
+5. `src/widgets/schemas/build.ts` + `npm run build:schemas` (commit the JSON).
+6. Lesson page `src/app/courses/[slug]/lessons/[lessonSlug]/page.tsx` —
+   `SectionRenderer` branch (props: data, progressKey, onComplete,
+   `initialWidgetState`, alreadyCompleted as needed) and `WidgetEditPanel`
+   branch.
+7. `src/lib/lessonChat/context.ts` → `serializeSectionBody` — the switch is
+   exhaustive (`never`), so typecheck fails until you add a case. Put answer
+   keys under a "tutor only" line.
+8. `tools/static-export/src/StaticLesson.tsx` — `INTERACTIVE_TYPES` (or the
+   EEG helper) and the prop switch; the exporter passes RAW lesson JSON, so
+   widgets must `safeParse` their own data.
+9. Print/PDF: `src/app/courses/[slug]/lessons/[lessonSlug]/print/page.tsx`
+   — otherwise the type prints as "omitted".
+10. Asset gate: `src/lib/server/lessonAssets.ts` — add the widget's asset
+    paths (images, recordings) so generation fails on missing files.
+11. `tools/gemini-polish/src/polishableMap.mjs` — the prose fields that may be
+    language-polished (everything else stays frozen).
+12. Generator docs: `docs/widgets.md` (table + entry + example), the
+    `generate_lesson` SKILL (Step 3 list, rules, checklist), and the
+    per-widget lines in `regenerate_section`, `regenerate_lesson`,
+    `insert_section`, `generate_flashcards`.
+13. Persisting widget state: send `{ done, widgetState, score }` with
+    `sectionState`, or omit `done` and use `mergeSectionState` for
+    settings-only saves (see `src/widgets/common/eeg/progress.ts`). The AI
+    tutor can see live widget state through `useTutorBridge`
+    (`src/lib/lessonChat/tutorBridge.tsx`).
+
+`.scratch/eeg-course/scripts/integrate_widget.py` (local, untracked) automates
+2, 4, 5 and 6 for EEG-style widgets.
 
 ## Steps to add a new widget type
 
