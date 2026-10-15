@@ -18,8 +18,9 @@ import type { UseFigureMarksResult } from './useFigureMarks';
 
 export interface FigureMarkBoardProps {
   figure: FigureRef;
-  fm: UseFigureMarksResult;
-  mode: 'point' | 'box';
+  /** Marking state; omit for a view-only board (pan + caliper). */
+  fm?: UseFigureMarksResult;
+  mode?: 'point' | 'box';
   calibration?: FigureCalibration;
   canvasRef?: Ref<FigureCanvasHandle>;
   /** Current caliper readout (text) — e.g. for the tutor's live state. */
@@ -44,15 +45,16 @@ export function markAt(marks: UseFigureMarksResult['marks'], p: { x: number; y: 
   return null;
 }
 
-export function FigureMarkBoard({ figure, fm, mode, calibration, canvasRef, onCaliperText, hideCaption }: FigureMarkBoardProps) {
-  const [tool, setTool] = useState<Tool>(fm.checked ? 'pan' : 'mark');
+export function FigureMarkBoard({ figure, fm, mode = 'point', calibration, canvasRef, onCaliperText, hideCaption }: FigureMarkBoardProps) {
+  const marking = !!fm && !fm.checked;
+  const [tool, setTool] = useState<Tool>(marking ? 'mark' : 'pan');
   const [caliper, setCaliper] = useState<FigureCaliper | null>(null);
   const [natural, setNatural] = useState<{ width: number; height: number } | null>(
     figure.width && figure.height ? { width: figure.width, height: figure.height } : null,
   );
 
   // After Check there is nothing to mark: fall back to panning.
-  const effectiveTool: Tool = fm.checked && tool === 'mark' ? 'pan' : tool;
+  const effectiveTool: Tool = !marking && tool === 'mark' ? 'pan' : tool;
   const interaction = effectiveTool === 'mark' ? mode : effectiveTool === 'caliper' ? 'caliper' : 'pan';
 
   const caliperText = useMemo(() => {
@@ -65,15 +67,16 @@ export function FigureMarkBoard({ figure, fm, mode, calibration, canvasRef, onCa
     onCaliperText?.(caliperText);
   }, [caliperText, onCaliperText]);
 
-  const overlay: FigureOverlayItem[] = useMemo(
-    () => (caliper && caliperText ? [...fm.overlay, { kind: 'caliper', from: caliper.from, to: caliper.to, label: caliperText }] : fm.overlay),
-    [fm.overlay, caliper, caliperText],
-  );
+  const baseOverlay = fm?.overlay;
+  const overlay: FigureOverlayItem[] = useMemo(() => {
+    const base = baseOverlay ?? [];
+    return caliper && caliperText ? [...base, { kind: 'caliper', from: caliper.from, to: caliper.to, label: caliperText }] : base;
+  }, [baseOverlay, caliper, caliperText]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', minWidth: 0 }}>
       <div role="toolbar" aria-label="Figure tools" style={eegToolbarStyle}>
-        {!fm.checked ? (
+        {marking ? (
           <ToolButton active={effectiveTool === 'mark'} onClick={() => setTool('mark')} title={mode === 'box' ? 'Drag a box around each finding' : 'Click each finding'}>
             <MousePointer2 size={13} aria-hidden />
             Mark
@@ -87,7 +90,7 @@ export function FigureMarkBoard({ figure, fm, mode, calibration, canvasRef, onCa
           <ToolButton
             active={effectiveTool === 'caliper'}
             onClick={() => {
-              setTool((t) => (t === 'caliper' ? (fm.checked ? 'pan' : 'mark') : 'caliper'));
+              setTool((t) => (t === 'caliper' ? (marking ? 'mark' : 'pan') : 'caliper'));
               setCaliper(null);
             }}
             title="Caliper: drag horizontally to measure duration and frequency"
@@ -96,10 +99,12 @@ export function FigureMarkBoard({ figure, fm, mode, calibration, canvasRef, onCa
             Caliper
           </ToolButton>
         ) : null}
-        <span style={eegMutedTextStyle}>
-          {fm.marks.length} mark{fm.marks.length === 1 ? '' : 's'}
-        </span>
-        {!fm.checked && fm.marks.length > 0 ? (
+        {fm ? (
+          <span style={eegMutedTextStyle}>
+            {fm.marks.length} mark{fm.marks.length === 1 ? '' : 's'}
+          </span>
+        ) : null}
+        {fm && marking && fm.marks.length > 0 ? (
           <ToolButton onClick={fm.clearMarks} title="Remove all marks">
             <Trash2 size={13} aria-hidden />
             Clear
@@ -116,19 +121,19 @@ export function FigureMarkBoard({ figure, fm, mode, calibration, canvasRef, onCa
         interaction={interaction}
         overlay={overlay}
         onPoint={(p) => {
-          if (effectiveTool !== 'mark' || fm.checked) return;
+          if (!fm || !marking || effectiveTool !== 'mark') return;
           const hit = markAt(fm.marks, p);
           if (hit) fm.removeMark(hit);
           else if (fm.canAddMore) fm.addPoint(p);
         }}
         onBox={(r) => {
-          if (effectiveTool === 'mark' && fm.canAddMore) fm.addBox(r);
+          if (fm && marking && effectiveTool === 'mark' && fm.canAddMore) fm.addBox(r);
         }}
         onCaliperChange={setCaliper}
         onLoad={(n) => setNatural((cur) => cur ?? n)}
       />
 
-      {!fm.checked && effectiveTool === 'mark' ? (
+      {fm && marking && effectiveTool === 'mark' ? (
         <span style={eegMutedTextStyle}>
           {mode === 'box' ? 'Drag a box around each finding' : 'Click each finding'} — click a mark again to remove it.
           {!fm.canAddMore ? ' Mark limit reached.' : ''}

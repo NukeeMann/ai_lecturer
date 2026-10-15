@@ -16,6 +16,7 @@ import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
 import { EegViewerDataSchema } from '@/widgets/EegViewer/schema';
+import { EegCaseDataSchema } from '@/widgets/EegCase/schema';
 import { PatternDrillDataSchema } from '@/widgets/PatternDrill/schema';
 import { EegFigureMarkDataSchema } from '@/widgets/EegFigureMark/schema';
 import { MontageLabDataSchema } from '@/widgets/MontageLab/schema';
@@ -186,7 +187,13 @@ export const PatternDrillSectionSchema = z.object({
   data: PatternDrillDataSchema,
 });
 
-const EEG_SECTION_SCHEMAS = [EegViewerSectionSchema, MontageLabSectionSchema, EegFigureMarkSectionSchema, PatternDrillSectionSchema] as const;
+export const EegCaseSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('eegCase'),
+  data: EegCaseDataSchema,
+});
+
+const EEG_SECTION_SCHEMAS = [EegViewerSectionSchema, MontageLabSectionSchema, EegFigureMarkSectionSchema, PatternDrillSectionSchema, EegCaseSectionSchema] as const;
 
 export const CustomSectionSchema = z.object({
   ...sectionBase,

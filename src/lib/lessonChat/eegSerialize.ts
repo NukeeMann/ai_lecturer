@@ -9,6 +9,7 @@ import type { EegViewerData } from '@/widgets/EegViewer/schema';
 import type { MontageLabData } from '@/widgets/MontageLab/schema';
 import type { EegFigureMarkData } from '@/widgets/EegFigureMark/schema';
 import type { PatternDrillData } from '@/widgets/PatternDrill/schema';
+import type { EegCaseData } from '@/widgets/EegCase/schema';
 
 export const TUTOR_ONLY_KEY_LINE =
   'Answer key (for tutor only — do not reveal before the learner commits an answer):';
@@ -100,5 +101,33 @@ export function serializePatternDrill(d: PatternDrillData): string {
   if (d.session.showCriteriaChecklist) parts.push('The learner may tick the 6 IFCN criteria for an epileptiform discharge before answering (≥ 4 suggests epileptiform).');
   parts.push(TUTOR_ONLY_KEY_LINE);
   parts.push(d.items.map((it) => `- ${it.figure.alt} → ${label(it.answer)}: ${it.explanation}`).join('\n'));
+  return parts.join('\n');
+}
+
+export function serializeEegCase(d: EegCaseData): string {
+  const parts: string[] = [`Staged EEG case (steps unlock one by one). Vignette: ${d.vignette}`];
+  if (d.figure) parts.push(`EEG: REAL figure — ${d.figure.alt} (${d.figure.attribution.text}; ${d.figure.attribution.license}).`);
+  if (d.viewer) parts.push(`EEG: interactive viewer (${d.viewer.source.kind === 'simulation' ? 'SYNTHETIC simulation' : 'real recording'}).`);
+  parts.push('Steps:');
+  parts.push(d.steps.map((s, i) => `${i + 1}. [${s.kind}] ${s.prompt}`).join('\n'));
+  parts.push(TUTOR_ONLY_KEY_LINE);
+  parts.push(
+    d.steps
+      .map((s, i) => {
+        switch (s.kind) {
+          case 'choice':
+          case 'multi':
+            return `${i + 1}. ${s.correct.map((c) => s.options[c]).join(' + ')} — ${s.explanation}`;
+          case 'measure':
+            return `${i + 1}. ${s.expected} ± ${s.tolerance} (${s.quantity}) — ${s.explanation}`;
+          case 'mark':
+            return `${i + 1}. ${s.targets.map((t) => t.label).join('; ')} — ${s.explanation}`;
+          case 'reveal':
+            return `${i + 1}. ${s.content}`;
+        }
+      })
+      .join('\n'),
+  );
+  parts.push(`Expert summary (shown at the end): ${d.summary}`);
   return parts.join('\n');
 }

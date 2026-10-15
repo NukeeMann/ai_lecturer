@@ -72,6 +72,14 @@ export function eegPrintSummary(type: string, data: unknown): EegPrintSummary {
         figures: [],
       };
     }
+    case 'eegCase': {
+      const c = data as { vignette?: string; figure?: EegPrintFigure & { attribution: Attribution }; steps?: { prompt: string }[] };
+      return {
+        prompt: [c.vignette, ...(c.steps ?? []).map((s, i) => `${i + 1}. ${s.prompt}`)].filter(Boolean).join('\n\n') || undefined,
+        note: 'Staged EEG case — answer the steps in the app to get feedback and the expert summary.',
+        figures: c.figure ? [{ src: c.figure.src, alt: c.figure.alt, caption: c.figure.caption, attribution: c.figure.attribution }] : [],
+      };
+    }
     default:
       return { prompt: d.prompt, note: `Interactive EEG exercise (${type}) — open the lesson in the app.`, figures: [], caption: d.caption };
   }

@@ -84,6 +84,7 @@ import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
+import { EegCaseEditor } from '@/widgets/EegCase/EegCaseEditor';
 import { PatternDrillEditor } from '@/widgets/PatternDrill/PatternDrillEditor';
 import { EegFigureMarkEditor } from '@/widgets/EegFigureMark/EegFigureMarkEditor';
 import { MontageLabEditor } from '@/widgets/MontageLab/MontageLabEditor';
@@ -1780,6 +1781,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'patternDrill' && (
         <PatternDrillEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'eegCase' && (
+        <EegCaseEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3927,6 +3937,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit pattern drill',
       () => onOpenPanel(section.id),
       'pattern-drill-edit-btn',
+    );
+  } else if (section.type === 'eegCase') {
+    const Body = widgetRegistry.eegCase.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit EEG case',
+      () => onOpenPanel(section.id),
+      'eeg-case-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;

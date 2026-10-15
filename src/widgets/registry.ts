@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import {
   Activity,
+  Stethoscope,
   ScanLine,
   SquareDashedMousePointer,
   BrainCircuit,
@@ -42,6 +43,7 @@ import { SttDemoWidget } from './SttDemo/SttDemoWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 import { VideoWidget } from './Video/VideoWidget';
 import { EegViewerWidget } from './EegViewer/EegViewerWidget';
+import { EegCaseWidget } from './EegCase/EegCaseWidget';
 import { PatternDrillWidget } from './PatternDrill/PatternDrillWidget';
 import { EegFigureMarkWidget } from './EegFigureMark/EegFigureMarkWidget';
 import { MontageLabWidget } from './MontageLab/MontageLabWidget';
@@ -64,6 +66,7 @@ export type WidgetType =
   | 'sttDemo'
   | 'ttsDemo'
   | 'eegViewer'
+  | 'eegCase'
   | 'patternDrill'
   | 'eegFigureMark'
   | 'montageLab'
@@ -196,6 +199,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Pattern Drill',
     icon: ScanLine,
     accentVar: '--widget-pattern-drill',
+  },
+  eegCase: {
+    component: EegCaseWidget as ComponentType<{ data?: unknown }>,
+    label: 'EEG Case',
+    icon: Stethoscope,
+    accentVar: '--widget-eeg-case',
   },
   custom: {
     component: CustomPlaceholder,
