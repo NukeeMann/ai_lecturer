@@ -10,6 +10,7 @@ import type { MontageLabData } from '@/widgets/MontageLab/schema';
 import type { EegFigureMarkData } from '@/widgets/EegFigureMark/schema';
 import type { PatternDrillData } from '@/widgets/PatternDrill/schema';
 import type { EegCaseData } from '@/widgets/EegCase/schema';
+import type { FigureSequenceData } from '@/widgets/FigureSequence/schema';
 
 export const TUTOR_ONLY_KEY_LINE =
   'Answer key (for tutor only — do not reveal before the learner commits an answer):';
@@ -129,5 +130,16 @@ export function serializeEegCase(d: EegCaseData): string {
       .join('\n'),
   );
   parts.push(`Expert summary (shown at the end): ${d.summary}`);
+  return parts.join('\n');
+}
+
+export function serializeFigureSequence(d: FigureSequenceData): string {
+  const parts: string[] = [`Figure sequence (${d.layout}) of REAL EEG figures${d.sliderLabel ? ` along "${d.sliderLabel}"` : ''}.`];
+  if (d.prompt) parts.push(`Prompt: ${d.prompt}`);
+  parts.push(
+    d.frames
+      .map((f) => `- ${f.label}: ${f.figure.alt}${f.caption ? ` — ${f.caption}` : ''} (${f.figure.attribution.text}; ${f.figure.attribution.license})`)
+      .join('\n'),
+  );
   return parts.join('\n');
 }

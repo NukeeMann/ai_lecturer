@@ -1,0 +1,127 @@
+{
+  "$ref": "#/definitions/figure-sequenceData",
+  "definitions": {
+    "figure-sequenceData": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "layout": {
+          "type": "string",
+          "enum": [
+            "stepper",
+            "slider",
+            "compare"
+          ],
+          "default": "stepper"
+        },
+        "frames": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "figure": {
+                "type": "object",
+                "properties": {
+                  "src": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "alt": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "caption": {
+                    "type": "string"
+                  },
+                  "width": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "attribution": {
+                    "type": "object",
+                    "properties": {
+                      "text": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "license": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "url": {
+                        "type": "string",
+                        "format": "uri"
+                      },
+                      "restricted": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "license"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "src",
+                  "alt",
+                  "attribution"
+                ],
+                "additionalProperties": false
+              },
+              "caption": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "figure"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 2
+        },
+        "sliderLabel": {
+          "type": "string"
+        },
+        "initialFrame": {
+          "type": "string"
+        },
+        "compareDefaults": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "frames"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

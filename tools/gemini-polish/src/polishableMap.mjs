@@ -40,6 +40,7 @@ export const POLISHABLE_BY_TYPE = {
   montageLab: ['data.prompt', 'data.challenges[].prompt', 'data.challenges[].explanation', 'data.caption'],
   eegFigureMark: ['data.prompt', 'data.figure.caption', 'data.distractors[].note', 'data.explanation'],
   patternDrill: ['data.prompt', 'data.categories[].label', 'data.categories[].description', 'data.items[].explanation'],
+  figureSequence: ['data.prompt', 'data.sliderLabel', 'data.frames[].label', 'data.frames[].caption'],
   eegCase: ['data.vignette', 'data.figure.caption', 'data.steps[].prompt', 'data.steps[].options[]', 'data.steps[].explanation', 'data.steps[].content', 'data.summary'],
   // demo, histogram, dataTable, parametricExplorer, custom: nothing prose-bearing
   // beyond SECTION_COMMON (their data is numeric/code/identifiers).

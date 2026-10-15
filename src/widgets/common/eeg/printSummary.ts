@@ -80,6 +80,19 @@ export function eegPrintSummary(type: string, data: unknown): EegPrintSummary {
         figures: c.figure ? [{ src: c.figure.src, alt: c.figure.alt, caption: c.figure.caption, attribution: c.figure.attribution }] : [],
       };
     }
+    case 'figureSequence': {
+      const s = data as { frames?: { label: string; caption?: string; figure: EegPrintFigure & { attribution: Attribution } }[] };
+      return {
+        prompt: d.prompt,
+        note: 'Figure sequence — in the app you can step, slide or compare the frames side by side.',
+        figures: (s.frames ?? []).map((f) => ({
+          src: f.figure.src,
+          alt: f.figure.alt,
+          caption: [f.label, f.caption ?? f.figure.caption].filter(Boolean).join(' — '),
+          attribution: f.figure.attribution,
+        })),
+      };
+    }
     default:
       return { prompt: d.prompt, note: `Interactive EEG exercise (${type}) — open the lesson in the app.`, figures: [], caption: d.caption };
   }

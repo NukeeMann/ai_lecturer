@@ -84,6 +84,7 @@ import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
+import { FigureSequenceEditor } from '@/widgets/FigureSequence/FigureSequenceEditor';
 import { EegCaseEditor } from '@/widgets/EegCase/EegCaseEditor';
 import { PatternDrillEditor } from '@/widgets/PatternDrill/PatternDrillEditor';
 import { EegFigureMarkEditor } from '@/widgets/EegFigureMark/EegFigureMarkEditor';
@@ -1790,6 +1791,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'eegCase' && (
         <EegCaseEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'figureSequence' && (
+        <FigureSequenceEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3954,6 +3964,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit EEG case',
       () => onOpenPanel(section.id),
       'eeg-case-edit-btn',
+    );
+  } else if (section.type === 'figureSequence') {
+    const Body = widgetRegistry.figureSequence.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit figure sequence',
+      () => onOpenPanel(section.id),
+      'figure-sequence-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;

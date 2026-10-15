@@ -15,6 +15,7 @@ import type { Lesson, Section } from '@/lib/schemas/lesson';
 import { renderLiveStateBlock } from './liveState';
 import {
   serializeEegCase,
+  serializeFigureSequence,
   serializeEegFigureMark,
   serializeEegViewer,
   serializeMontageLab,
@@ -253,6 +254,8 @@ function serializeSectionBody(section: Section): string {
       return serializePatternDrill(section.data);
     case 'eegCase':
       return serializeEegCase(section.data);
+    case 'figureSequence':
+      return serializeFigureSequence(section.data);
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {

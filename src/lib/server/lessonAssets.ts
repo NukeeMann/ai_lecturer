@@ -279,6 +279,16 @@ function collectFromSection(
       if (c.viewer?.source?.kind === 'recording') pushImage(acc, c.viewer.source.src, slug, `${base}.data.viewer.source.src`);
       break;
     }
+    case 'figureSequence': {
+      const frames = (data as { frames?: unknown }).frames;
+      if (Array.isArray(frames)) {
+        frames.forEach((f, i) => {
+          const figure = (f as { figure?: { src?: unknown } } | null)?.figure;
+          pushImage(acc, figure?.src, slug, `${base}.data.frames[${i}].figure.src`);
+        });
+      }
+      break;
+    }
     default:
       // Other section types either carry no asset paths or (AudioPlayer /
       // TranscriptCloze) are materialized by the dedicated TTS post-processor.
