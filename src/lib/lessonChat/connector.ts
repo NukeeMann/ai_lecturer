@@ -14,9 +14,27 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 
+import { StreamJsonTranslator } from './streamJson';
+
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+}
+
+/** An image handed to the model as a content block alongside the prompt. */
+export interface ImageAttachment {
+  mediaType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+  /** Base64-encoded bytes. */
+  data: string;
+  /** Text placed right before the image so the model can tell images apart. */
+  label?: string;
+}
+
+/** A stdio MCP server started by the CLI for this call only. */
+export interface McpStdioServerSpec {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
 }
 
 export interface ConnectorRequest {
@@ -39,12 +57,42 @@ export interface ConnectorRequest {
    *  noticeably better at returning strict JSON for non-English prompts.
    *  SDK connector ignores (model is chosen by the user's Claude Code config). */
   model?: string;
+  // --- Agentic options (LessonChat). Any of these switches `chat()` onto
+  // the streaming path, which speaks stream-json to the CLI. ---
+  /** Images sent as content blocks after the prompt text. */
+  images?: ImageAttachment[];
+  /** Built-in tools the agent can see (`--tools`). Undefined keeps the CLI
+   *  default set; `[]` disables every built-in tool. */
+  tools?: string[];
+  /** Tools the agent may call without a permission prompt (`--allowedTools`).
+   *  Anything else that would prompt is denied (`--permission-mode dontAsk`). */
+  allowedTools?: string[];
+  /** MCP servers for this call only; all other MCP config is ignored. */
+  mcpServers?: Record<string, McpStdioServerSpec>;
+  /** Working directory for the agent process. */
+  cwd?: string;
+}
+
+/** One tool call the agent made while answering (shown as research log). */
+export interface ChatActivity {
+  id: string;
+  kind: 'search' | 'fetch' | 'image' | 'tool';
+  label: string;
+  /** http(s) URL the step refers to (page fetched, image source page). */
+  url?: string;
+  status: 'running' | 'ok' | 'error';
+  /** Failure reason, when status is 'error'. */
+  detail?: string;
 }
 
 export type ConnectorName = 'agent-sdk' | 'subprocess';
 
 export type ChatStreamEvent =
   | { type: 'token'; text: string }
+  /** The text streamed since the previous boundary was a preamble to a tool
+   *  call, not part of the answer — the client moves it to the research log. */
+  | { type: 'interim' }
+  | { type: 'activity'; activity: ChatActivity }
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -108,9 +156,12 @@ export function subprocessConnector(
   const timeoutMs = opts.timeoutMs ?? SUBPROCESS_TIMEOUT_MS;
   const killGraceMs = opts.killGraceMs ?? SUBPROCESS_KILL_GRACE_MS;
 
-  return {
+  const connector: Connector = {
     name: 'subprocess',
     chat(req) {
+      if (isAgenticRequest(req)) {
+        return collectStream(connector, req, req.timeoutMs ?? AGENTIC_TIMEOUT_MS);
+      }
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       return runClaudeCli(
         spawnFn,
@@ -123,18 +174,111 @@ export function subprocessConnector(
       );
     },
     chatStream(req, signal) {
-      const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
-      return streamClaudeCli(
-        spawnFn,
-        command,
-        prompt,
-        signal,
-        killGraceMs,
-        req.allowTools === true,
-        req.model,
-      );
+      return streamClaudeCli(spawnFn, command, req, signal, killGraceMs);
     },
   };
+  return connector;
+}
+
+/** Research turns (several searches + page reads) take far longer than a
+ *  plain answer; this bounds the non-streaming fallback only. */
+const AGENTIC_TIMEOUT_MS = 300_000;
+
+export function isAgenticRequest(req: ConnectorRequest): boolean {
+  return (
+    (req.images !== undefined && req.images.length > 0) ||
+    req.tools !== undefined ||
+    req.allowedTools !== undefined ||
+    req.mcpServers !== undefined
+  );
+}
+
+/** Run `chatStream` to completion and return the answer text. */
+async function collectStream(
+  connector: Connector,
+  req: ConnectorRequest,
+  timeoutMs: number,
+): Promise<string> {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  let text = '';
+  let segmentStart = 0;
+  try {
+    for await (const ev of connector.chatStream(req, ac.signal)) {
+      if (ev.type === 'token') text += ev.text;
+      else if (ev.type === 'interim') {
+        // Drop tool-call preambles, mirroring what the chat UI shows.
+        text = text.slice(0, segmentStart);
+        segmentStart = text.length;
+      } else if (ev.type === 'error') throw new Error(ev.message);
+      else if (ev.type === 'done') break;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  if (ac.signal.aborted) throw new Error(`claude CLI timed out after ${timeoutMs}ms`);
+  if (text.trim().length === 0) throw new Error('claude produced no answer text');
+  return text;
+}
+
+/** The single stream-json user message carrying prompt text + images. */
+export function buildStreamJsonUserMessage(req: ConnectorRequest): {
+  type: 'user';
+  message: { role: 'user'; content: Array<Record<string, unknown>> };
+  parent_tool_use_id: null;
+} {
+  const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
+  const content: Array<Record<string, unknown>> = [{ type: 'text', text: prompt }];
+  for (const img of req.images ?? []) {
+    if (img.label) content.push({ type: 'text', text: img.label });
+    content.push({
+      type: 'image',
+      source: { type: 'base64', media_type: img.mediaType, data: img.data },
+    });
+  }
+  return { type: 'user', message: { role: 'user', content }, parent_tool_use_id: null };
+}
+
+export function buildStreamArgs(req: ConnectorRequest): string[] {
+  // stream-json both ways: input carries image blocks, output carries token
+  // deltas plus tool-use events. Session files would only litter
+  // ~/.claude/projects with one-shot tutor turns.
+  const args = [
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
+    '--verbose',
+    '--include-partial-messages',
+    '--no-session-persistence',
+  ];
+  if (req.tools !== undefined) args.push('--tools', req.tools.join(','));
+  if (req.allowedTools !== undefined && req.allowedTools.length > 0) {
+    args.push('--allowedTools', req.allowedTools.join(' '));
+  }
+  if (req.mcpServers !== undefined) {
+    args.push('--mcp-config', JSON.stringify({ mcpServers: toMcpConfig(req.mcpServers) }));
+    args.push('--strict-mcp-config');
+  }
+  if (req.tools !== undefined || req.allowedTools !== undefined) {
+    args.push('--permission-mode', 'dontAsk');
+  }
+  if (req.allowTools === true) args.push('--dangerously-skip-permissions');
+  if (req.model) args.push('--model', req.model);
+  return args;
+}
+
+function toMcpConfig(
+  servers: Record<string, McpStdioServerSpec>,
+): Record<string, McpStdioServerSpec & { type: 'stdio'; alwaysLoad: true }> {
+  const out: Record<string, McpStdioServerSpec & { type: 'stdio'; alwaysLoad: true }> = {};
+  for (const [name, spec] of Object.entries(servers)) {
+    // alwaysLoad: with --tools restricting the built-ins there is no
+    // ToolSearch to un-defer MCP tools, so they must be in the first prompt.
+    out[name] = { type: 'stdio', ...spec, alwaysLoad: true };
+  }
+  return out;
 }
 
 function runClaudeCli(
@@ -264,9 +408,9 @@ function runClaudeCli(
 }
 
 /**
- * Streaming variant: spawns `claude -p "<prompt>"` (NO --output-format) so
- * the assistant text streams to stdout in real time. Reads stdout line by
- * line and emits each line as a `token` event, then a final `done`.
+ * Streaming variant: spawns `claude -p` in stream-json mode, writes one user
+ * message (prompt + images) to stdin and translates each stdout JSON line
+ * into chat events (see StreamJsonTranslator).
  *
  * Cancellation: when the abort signal fires we kill the child with
  * SIGTERM, then SIGKILL after `killGraceMs`. The async generator returns
@@ -277,19 +421,16 @@ function runClaudeCli(
 async function* streamClaudeCli(
   spawnFn: SpawnFn,
   command: string,
-  prompt: string,
+  req: ConnectorRequest,
   signal: AbortSignal,
   killGraceMs: number,
-  allowTools: boolean,
-  model?: string,
 ): AsyncGenerator<ChatStreamEvent> {
   let child: ChildProcess;
   try {
-    // Same E2BIG concern as runClaudeCli: feed the prompt over stdin.
-    const args = ['-p'];
-    if (allowTools) args.push('--dangerously-skip-permissions');
-    if (model) args.push('--model', model);
-    child = spawnFn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    child = spawnFn(command, buildStreamArgs(req), {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      ...(req.cwd ? { cwd: req.cwd } : {}),
+    });
   } catch (err) {
     yield { type: 'error', message: `claude spawn failed: ${(err as Error).message}` };
     return;
@@ -298,9 +439,12 @@ async function* streamClaudeCli(
     child.stdin.on('error', () => {
       // child exited early; reported via stderr/close.
     });
-    child.stdin.end(prompt);
+    // Same E2BIG concern as runClaudeCli: the prompt (and images) go over
+    // stdin. Closing stdin ends the session after this one turn.
+    child.stdin.end(`${JSON.stringify(buildStreamJsonUserMessage(req))}\n`);
   }
 
+  const translator = new StreamJsonTranslator();
   const queue: ChatStreamEvent[] = [];
   let resolveWaiter: (() => void) | null = null;
   let finished = false;
@@ -317,28 +461,23 @@ async function* streamClaudeCli(
     }
   };
 
-  const flushLines = (chunk: string, forceTail: boolean) => {
-    stdoutBuffer += chunk;
-    const lines = stdoutBuffer.split('\n');
-    // Keep the trailing partial fragment (no newline yet) in the buffer
-    // unless the stream is closing, in which case flush it.
-    stdoutBuffer = forceTail ? '' : (lines.pop() ?? '');
-    for (const line of lines) {
-      if (line.length > 0) {
-        queue.push({ type: 'token', text: line + '\n' });
-      } else {
-        queue.push({ type: 'token', text: '\n' });
-      }
+  const translateLine = (line: string) => {
+    if (line.trim().length === 0) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return; // stray non-JSON output (warnings) — not part of the protocol
     }
-    if (forceTail && lines.length === 0 && chunk.length > 0 && !chunk.endsWith('\n')) {
-      // chunk had no newlines AND we're forcing tail flush
-      queue.push({ type: 'token', text: chunk });
-    }
-    wake();
+    for (const ev of translator.push(parsed)) queue.push(ev);
   };
 
   child.stdout?.on('data', (chunk: Buffer | string) => {
-    flushLines(chunk.toString(), false);
+    stdoutBuffer += chunk.toString();
+    const lines = stdoutBuffer.split('\n');
+    stdoutBuffer = lines.pop() ?? '';
+    for (const line of lines) translateLine(line);
+    wake();
   });
   child.stderr?.on('data', (chunk: Buffer | string) => {
     stderrBuffer += chunk.toString();
@@ -349,9 +488,12 @@ async function* streamClaudeCli(
     wake();
   });
   child.on('close', (code: number | null) => {
-    // Flush any trailing partial line.
+    if (killTimer !== null) {
+      clearTimeout(killTimer);
+      killTimer = null;
+    }
     if (stdoutBuffer.length > 0) {
-      queue.push({ type: 'token', text: stdoutBuffer });
+      translateLine(stdoutBuffer);
       stdoutBuffer = '';
     }
     if (aborted) {
@@ -360,11 +502,9 @@ async function* streamClaudeCli(
       wake();
       return;
     }
-    if (code !== 0) {
+    if (!translator.sawResult) {
       const msg = stderrBuffer.trim() || `exit code ${code}`;
       queue.push({ type: 'error', message: `claude exited ${code}: ${msg}` });
-    } else {
-      queue.push({ type: 'done' });
     }
     finished = true;
     wake();
@@ -398,19 +538,19 @@ async function* streamClaudeCli(
     while (true) {
       while (queue.length > 0) {
         const ev = queue.shift()!;
+        if (aborted) return;
         yield ev;
+        if (ev.type === 'done' || ev.type === 'error') return;
       }
-      if (finished) return;
+      if (finished || aborted) return;
       await new Promise<void>((resolve) => {
         resolveWaiter = resolve;
       });
     }
   } finally {
+    // An abort returns right away; the SIGKILL escalation timer stays armed
+    // until the child actually closes (cleared in the close handler).
     signal.removeEventListener('abort', onAbort);
-    if (killTimer !== null) {
-      clearTimeout(killTimer);
-      killTimer = null;
-    }
   }
 }
 
@@ -419,7 +559,10 @@ async function* streamClaudeCli(
 // ---------------------------------------------------------------------------
 
 interface AgentSdkLike {
-  query: (args: { prompt: string }) => AsyncIterable<unknown>;
+  query: (args: {
+    prompt: string | AsyncIterable<unknown>;
+    options?: Record<string, unknown>;
+  }) => AsyncIterable<unknown>;
 }
 
 export interface AgentSdkConnectorOptions {
@@ -453,9 +596,12 @@ export async function agentSdkConnector(
     throw new Error('Agent SDK has unexpected shape: query() not found');
   }
 
-  return {
+  const connector: Connector = {
     name: 'agent-sdk',
     async chat(req) {
+      if (isAgenticRequest(req)) {
+        return collectStream(connector, req, req.timeoutMs ?? AGENTIC_TIMEOUT_MS);
+      }
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       let assistantText = '';
       let resultFallback = '';
@@ -490,6 +636,10 @@ export async function agentSdkConnector(
       return text;
     },
     async *chatStream(req, signal) {
+      if (isAgenticRequest(req)) {
+        yield* streamAgentSdk(sdk, req, signal);
+        return;
+      }
       const prompt = assemblePrompt(req.userMessage, req.systemPrompt, req.history);
       const stream = sdk.query({ prompt });
       const iter = stream[Symbol.asyncIterator]();
@@ -541,6 +691,62 @@ export async function agentSdkConnector(
       yield { type: 'done' };
     },
   };
+  return connector;
+}
+
+/**
+ * Agentic turn through the SDK: same stream-json messages as the CLI, so the
+ * same translator applies. Options mirror buildStreamArgs().
+ */
+async function* streamAgentSdk(
+  sdk: AgentSdkLike,
+  req: ConnectorRequest,
+  signal: AbortSignal,
+): AsyncGenerator<ChatStreamEvent> {
+  const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  if (signal.aborted) return;
+  signal.addEventListener('abort', onAbort, { once: true });
+  const userMessage = buildStreamJsonUserMessage(req);
+  const options: Record<string, unknown> = {
+    includePartialMessages: true,
+    persistSession: false,
+    abortController,
+  };
+  if (req.tools !== undefined) options.tools = req.tools;
+  if (req.allowedTools !== undefined) options.allowedTools = req.allowedTools;
+  if (req.mcpServers !== undefined) {
+    options.mcpServers = toMcpConfig(req.mcpServers);
+    options.strictMcpConfig = true;
+  }
+  if (req.tools !== undefined || req.allowedTools !== undefined) options.permissionMode = 'dontAsk';
+  if (req.cwd) options.cwd = req.cwd;
+
+  const translator = new StreamJsonTranslator();
+  try {
+    const stream = sdk.query({
+      prompt: (async function* () {
+        yield userMessage;
+      })(),
+      options,
+    });
+    for await (const raw of stream) {
+      if (signal.aborted) return;
+      for (const ev of translator.push(raw)) {
+        yield ev;
+        if (ev.type === 'done' || ev.type === 'error') return;
+      }
+    }
+  } catch (err) {
+    if (signal.aborted) return;
+    yield { type: 'error', message: (err as Error).message };
+    return;
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+  }
+  if (!signal.aborted && !translator.sawResult) {
+    yield { type: 'error', message: 'Agent SDK stream ended without a result' };
+  }
 }
 
 // ---------------------------------------------------------------------------

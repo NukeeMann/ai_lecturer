@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  CHAT_ACTIVITY_MAX_ENTRIES,
   CHAT_HISTORY_MAX_MESSAGES,
   CHAT_HISTORY_SCHEMA_VERSION,
   ChatHistorySchema,
@@ -73,6 +74,7 @@ export async function readChatHistory(
 /**
  * Normalise an incoming write payload into the persisted shape:
  * - drops `error` messages (transient UI bubbles are never persisted)
+ * - keeps attached images and the research log, capping the log length
  * - trims to the most recent {@link CHAT_HISTORY_MAX_MESSAGES} messages
  */
 export function normalizeChatHistory(payload: ChatHistoryWrite): ChatHistory {
@@ -82,6 +84,10 @@ export function normalizeChatHistory(payload: ChatHistoryWrite): ChatHistory {
       role: m.role as 'user' | 'assistant',
       content: m.content,
       createdAt: m.createdAt,
+      ...(m.images && m.images.length > 0 ? { images: m.images } : {}),
+      ...(m.activity && m.activity.length > 0
+        ? { activity: m.activity.slice(0, CHAT_ACTIVITY_MAX_ENTRIES) }
+        : {}),
     }));
 
   const trimmed =

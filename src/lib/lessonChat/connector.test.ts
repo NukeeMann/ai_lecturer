@@ -264,28 +264,181 @@ describe('subprocessConnector', () => {
   });
 });
 
+const jsonl = (...objs: unknown[]) => objs.map((o) => JSON.stringify(o)).join('\n') + '\n';
+
+const textDelta = (text: string) => ({
+  type: 'stream_event',
+  event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
+});
+
 describe('subprocessConnector.chatStream', () => {
-  it('emits each line of stdout as a token event then a done event', async () => {
-    const child = new EventEmitter() as FakeProcess;
-    child.stdout = new EventEmitter();
-    child.stderr = new EventEmitter();
-    child.kill = vi.fn();
+  it('streams stream-json text deltas as tokens, then done on the result message', async () => {
+    const child = makeFakeProcess({ hangs: true });
+    const out = jsonl(
+      { type: 'system', subtype: 'init' },
+      { type: 'stream_event', event: { type: 'message_start', message: { id: 'msg_1' } } },
+      { type: 'stream_event', event: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } },
+      textDelta('Hello, '),
+      textDelta('world.'),
+      // The completed message repeats the text — must not be emitted twice.
+      { type: 'assistant', message: { id: 'msg_1', content: [{ type: 'text', text: 'Hello, world.' }] } },
+      { type: 'result', subtype: 'success', is_error: false, result: 'Hello, world.' },
+    );
     setImmediate(() => {
-      child.stdout.emit('data', Buffer.from('Hello, '));
-      child.stdout.emit('data', Buffer.from('world.\nNext line.'));
+      // Split mid-line to exercise line buffering.
+      child.stdout.emit('data', Buffer.from(out.slice(0, 57)));
+      child.stdout.emit('data', Buffer.from(out.slice(57)));
       child.emit('close', 0);
     });
-    const spawnFn = (() => child) as unknown as SpawnFn;
-    const connector = subprocessConnector({ spawnFn });
-    const events = [] as Array<{ type: string; text?: string; message?: string }>;
-    const ac = new AbortController();
-    for await (const ev of connector.chatStream({ userMessage: 'hi' }, ac.signal)) {
+    const connector = subprocessConnector({ spawnFn: (() => child) as unknown as SpawnFn });
+    const events: ChatStreamEvent[] = [];
+    for await (const ev of connector.chatStream({ userMessage: 'hi' }, new AbortController().signal)) {
       events.push(ev);
     }
-    expect(events.at(-1)).toEqual({ type: 'done' });
-    const tokens = events.filter((e) => e.type === 'token').map((e) => e.text).join('');
-    expect(tokens).toContain('Hello, world.');
-    expect(tokens).toContain('Next line.');
+    expect(events).toEqual([
+      { type: 'token', text: 'Hello, ' },
+      { type: 'token', text: 'world.' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('writes one stream-json user message with the prompt and image blocks to stdin', async () => {
+    const child = makeFakeProcess({
+      stdout: jsonl({ type: 'result', subtype: 'success', is_error: false, result: 'ok' }),
+    });
+    const spawnSpy = vi.fn(() => child);
+    const connector = subprocessConnector({ spawnFn: spawnSpy as unknown as SpawnFn });
+    const events: ChatStreamEvent[] = [];
+    for await (const ev of connector.chatStream(
+      {
+        userMessage: 'What is on the image?',
+        images: [{ mediaType: 'image/png', data: 'iVBORw0K', label: 'Image 1 attached:' }],
+        tools: ['WebSearch', 'WebFetch'],
+        allowedTools: ['WebSearch', 'WebFetch', 'mcp__tutor__fetch_web_image'],
+        mcpServers: { tutor: { command: '/usr/bin/node', args: ['/srv/mcp.mjs'], env: { CHAT_MEDIA_ROOT: '/m' } } },
+        cwd: '/m',
+      },
+      new AbortController().signal,
+    )) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ type: 'token', text: 'ok' }, { type: 'done' }]);
+
+    const [cmd, args, opts] = spawnSpy.mock.calls[0] as unknown as [string, string[], { cwd?: string }];
+    expect(cmd).toBe('claude');
+    expect(opts.cwd).toBe('/m');
+    expect(args).toEqual(expect.arrayContaining(['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--include-partial-messages']));
+    expect(args[args.indexOf('--tools') + 1]).toBe('WebSearch,WebFetch');
+    expect(args[args.indexOf('--allowedTools') + 1]).toBe('WebSearch WebFetch mcp__tutor__fetch_web_image');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+    expect(args).toContain('--strict-mcp-config');
+    const mcp = JSON.parse(args[args.indexOf('--mcp-config') + 1]);
+    expect(mcp.mcpServers.tutor).toEqual({
+      type: 'stdio',
+      command: '/usr/bin/node',
+      args: ['/srv/mcp.mjs'],
+      env: { CHAT_MEDIA_ROOT: '/m' },
+      alwaysLoad: true,
+    });
+
+    const written = child.stdin.written;
+    expect(written.endsWith('\n')).toBe(true);
+    const msg = JSON.parse(written);
+    expect(msg.type).toBe('user');
+    expect(msg.message.role).toBe('user');
+    const content = msg.message.content as Array<Record<string, unknown>>;
+    expect(content[0]).toMatchObject({ type: 'text' });
+    expect(String(content[0].text)).toContain('What is on the image?');
+    expect(content[1]).toEqual({ type: 'text', text: 'Image 1 attached:' });
+    expect(content[2]).toEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0K' },
+    });
+  });
+
+  it('moves a tool-call preamble out of the answer and reports tool activity', async () => {
+    const child = makeFakeProcess({
+      stdout: jsonl(
+        { type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } },
+        textDelta('Let me search.'),
+        { type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text: 'Let me search.' }] } },
+        {
+          type: 'assistant',
+          message: { id: 'm1', content: [{ type: 'tool_use', id: 'tu1', name: 'WebSearch', input: { query: 'vertex waves EEG' } }] },
+        },
+        {
+          type: 'assistant',
+          message: {
+            id: 'm1',
+            content: [{ type: 'tool_use', id: 'tu2', name: 'WebFetch', input: { url: 'https://www.example.org/eeg/vertex', prompt: 'x' } }],
+          },
+        },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'results' }] } },
+        { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu2', is_error: true, content: [{ type: 'text', text: 'HTTP 403' }] }] } },
+        { type: 'stream_event', event: { type: 'message_start', message: { id: 'm2' } } },
+        textDelta('Answer.'),
+        { type: 'result', subtype: 'success', is_error: false, result: 'Answer.' },
+      ),
+    });
+    const connector = subprocessConnector({ spawnFn: (() => child) as unknown as SpawnFn });
+    const events: ChatStreamEvent[] = [];
+    for await (const ev of connector.chatStream({ userMessage: 'hi' }, new AbortController().signal)) {
+      events.push(ev);
+    }
+    expect(events).toEqual([
+      { type: 'token', text: 'Let me search.' },
+      { type: 'interim' },
+      { type: 'activity', activity: { id: 'tu1', kind: 'search', label: 'vertex waves EEG', status: 'running' } },
+      {
+        type: 'activity',
+        activity: { id: 'tu2', kind: 'fetch', label: 'example.org/eeg/vertex', url: 'https://www.example.org/eeg/vertex', status: 'running' },
+      },
+      { type: 'activity', activity: { id: 'tu1', kind: 'search', label: 'vertex waves EEG', status: 'ok' } },
+      {
+        type: 'activity',
+        activity: {
+          id: 'tu2',
+          kind: 'fetch',
+          label: 'example.org/eeg/vertex',
+          url: 'https://www.example.org/eeg/vertex',
+          status: 'error',
+          detail: 'HTTP 403',
+        },
+      },
+      { type: 'token', text: 'Answer.' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('emits an error event when the result message reports a failure', async () => {
+    const child = makeFakeProcess({
+      stdout: jsonl({ type: 'result', subtype: 'error_max_turns', is_error: true }),
+    });
+    const connector = subprocessConnector({ spawnFn: (() => child) as unknown as SpawnFn });
+    const events: ChatStreamEvent[] = [];
+    for await (const ev of connector.chatStream({ userMessage: 'hi' }, new AbortController().signal)) {
+      events.push(ev);
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: 'error' });
+    expect((events[0] as { message: string }).message).toMatch(/error_max_turns/);
+  });
+
+  it('chat() routes agentic requests through the stream and drops preambles', async () => {
+    const child = makeFakeProcess({
+      stdout: jsonl(
+        { type: 'assistant', message: { id: 'a', content: [{ type: 'text', text: 'Checking…' }] } },
+        { type: 'assistant', message: { id: 'a', content: [{ type: 'tool_use', id: 't', name: 'WebSearch', input: { query: 'q' } }] } },
+        { type: 'assistant', message: { id: 'b', content: [{ type: 'text', text: 'Final answer.' }] } },
+        { type: 'result', subtype: 'success', is_error: false, result: 'Final answer.' },
+      ),
+    });
+    const spawnSpy = vi.fn(() => child);
+    const connector = subprocessConnector({ spawnFn: spawnSpy as unknown as SpawnFn });
+    const out = await connector.chat({ userMessage: 'hi', tools: ['WebSearch'] });
+    expect(out).toBe('Final answer.');
+    const args = (spawnSpy.mock.calls[0] as unknown as [string, string[]])[1];
+    expect(args).toContain('stream-json');
   });
 
   it('kills the child and ends without `done` when the abort signal fires', async () => {
@@ -451,6 +604,49 @@ describe('agentSdkConnector', () => {
     }
     expect(yielded).toBeGreaterThanOrEqual(2);
     expect(events.some((e) => e.type === 'done')).toBe(false);
+  });
+
+  it('agentic chatStream passes images as a streamed user message and tool options to query()', async () => {
+    let captured: { prompt: unknown; options?: Record<string, unknown> } | undefined;
+    const fakeSdk = {
+      query: (args: { prompt: unknown; options?: Record<string, unknown> }) => {
+        captured = args;
+        return (async function* () {
+          yield { type: 'stream_event', event: { type: 'message_start', message: { id: 'x' } } };
+          yield { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'Seen.' } } };
+          yield { type: 'result', subtype: 'success', is_error: false, result: 'Seen.' };
+        })();
+      },
+    };
+    const connector = await agentSdkConnector({ sdk: fakeSdk });
+    const events: ChatStreamEvent[] = [];
+    for await (const ev of connector.chatStream(
+      {
+        userMessage: 'Look',
+        images: [{ mediaType: 'image/jpeg', data: '/9j/', label: 'Image 1:' }],
+        tools: ['WebSearch'],
+        allowedTools: ['WebSearch'],
+        mcpServers: { tutor: { command: 'node', args: ['s.mjs'] } },
+      },
+      new AbortController().signal,
+    )) {
+      events.push(ev);
+    }
+    expect(events).toEqual([{ type: 'token', text: 'Seen.' }, { type: 'done' }]);
+    expect(captured?.options).toMatchObject({
+      tools: ['WebSearch'],
+      allowedTools: ['WebSearch'],
+      includePartialMessages: true,
+      persistSession: false,
+      permissionMode: 'dontAsk',
+      strictMcpConfig: true,
+      mcpServers: { tutor: { type: 'stdio', command: 'node', args: ['s.mjs'], alwaysLoad: true } },
+    });
+    const sent: unknown[] = [];
+    for await (const m of captured!.prompt as AsyncIterable<unknown>) sent.push(m);
+    expect(sent).toHaveLength(1);
+    const content = (sent[0] as { message: { content: Array<Record<string, unknown>> } }).message.content;
+    expect(content.map((c) => c.type)).toEqual(['text', 'text', 'image']);
   });
 
   it('throws if loadSdk rejects (mimics package missing)', async () => {

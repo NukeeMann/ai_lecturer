@@ -31,11 +31,27 @@ function fakeConnector(
 
 let tmpRoot: string;
 let originalRoot: string | undefined;
+let originalMediaRoot: string | undefined;
+let mediaRoot: string;
+
+// 1×1 transparent PNG.
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+);
+const IMG_A = `${'a'.repeat(32)}.png`;
+const IMG_B = `${'b'.repeat(32)}.png`;
 
 beforeAll(() => {
   tmpRoot = mkdtempSync(path.join(tmpdir(), 'lesson-chat-route-'));
   originalRoot = process.env.COURSES_ROOT_OVERRIDE;
   process.env.COURSES_ROOT_OVERRIDE = tmpRoot;
+  originalMediaRoot = process.env.CHAT_MEDIA_ROOT_OVERRIDE;
+  mediaRoot = path.join(tmpRoot, 'chat-media');
+  process.env.CHAT_MEDIA_ROOT_OVERRIDE = mediaRoot;
+  mkdirSync(mediaRoot, { recursive: true });
+  writeFileSync(path.join(mediaRoot, IMG_A), PNG_1PX);
+  writeFileSync(path.join(mediaRoot, IMG_B), PNG_1PX);
 
   const lessonsDir = path.join(tmpRoot, 'c', 'lessons');
   mkdirSync(lessonsDir, { recursive: true });
@@ -68,6 +84,11 @@ afterAll(() => {
   } else {
     process.env.COURSES_ROOT_OVERRIDE = originalRoot;
   }
+  if (originalMediaRoot === undefined) {
+    delete process.env.CHAT_MEDIA_ROOT_OVERRIDE;
+  } else {
+    process.env.CHAT_MEDIA_ROOT_OVERRIDE = originalMediaRoot;
+  }
   rmSync(tmpRoot, { recursive: true, force: true });
 });
 
@@ -75,6 +96,7 @@ afterEach(() => {
   connectorModule._resetConnectorCacheForTesting();
   _resetInflightForTesting();
   vi.restoreAllMocks();
+  delete process.env.LESSON_CHAT_WEB;
 });
 
 function makeStreamRequest(body: unknown): Request {
@@ -375,5 +397,130 @@ describe('POST /api/lesson-chat', () => {
     expect(res.status).toBe(502);
     const body = (await res.json()) as { error: string };
     expect(body.error).toMatch(/boom/);
+  });
+
+  it('gives the tutor web tools, the image MCP server and the source-rigor rules', async () => {
+    let captured: ConnectorRequest | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return 'ok';
+      }),
+    );
+    await POST(makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'Find an example.' }));
+    expect(captured?.tools).toEqual(['WebSearch', 'WebFetch']);
+    expect(captured?.allowedTools).toEqual(['WebSearch', 'WebFetch', 'mcp__tutor__fetch_web_image']);
+    const server = captured?.mcpServers?.tutor;
+    expect(server?.args?.[0]).toMatch(/scripts[\\/]tutor[\\/]media-mcp-server\.mjs$/);
+    expect(server?.env).toEqual({ CHAT_MEDIA_ROOT: mediaRoot });
+    expect(captured?.cwd).toBe(mediaRoot);
+    expect(captured?.systemPrompt).toMatch(/Source hierarchy/);
+    expect(captured?.systemPrompt).toMatch(/only way to show a web image is mcp__tutor__fetch_web_image/);
+    // No images → no image-reading rules.
+    expect(captured?.systemPrompt).not.toMatch(/The learner attached image/);
+  });
+
+  it('LESSON_CHAT_WEB=off removes web access and the research rules', async () => {
+    process.env.LESSON_CHAT_WEB = 'off';
+    let captured: ConnectorRequest | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return 'ok';
+      }),
+    );
+    await POST(makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'hi' }));
+    expect(captured?.tools).toEqual([]);
+    expect(captured?.mcpServers).toBeUndefined();
+    expect(captured?.systemPrompt).not.toMatch(/Source hierarchy/);
+  });
+
+  it('attaches the current and earlier learner images as labelled image blocks', async () => {
+    let captured: ConnectorRequest | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return 'ok';
+      }),
+    );
+    const res = await POST(
+      makeRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        message: 'And this one?',
+        images: [IMG_B],
+        history: [
+          { role: 'user', content: 'What is this?', images: [IMG_A] },
+          { role: 'assistant', content: 'A vertex wave.' },
+        ],
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(captured?.images).toEqual([
+      {
+        mediaType: 'image/png',
+        data: PNG_1PX.toString('base64'),
+        label: 'Image 1 attached by the learner to the current question:',
+      },
+      {
+        mediaType: 'image/png',
+        data: PNG_1PX.toString('base64'),
+        label: 'Earlier image E1 (attached by the learner to an earlier message):',
+      },
+    ]);
+    expect(captured?.history?.[0].content).toBe('What is this?\n[Attached images: E1 — shown below]');
+    expect(captured?.systemPrompt).toMatch(/The learner attached image/);
+  });
+
+  it('accepts an image-only message and asks the tutor to describe it', async () => {
+    let captured: ConnectorRequest | undefined;
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured = req;
+        return 'ok';
+      }),
+    );
+    const res = await POST(makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: '', images: [IMG_A] }));
+    expect(res.status).toBe(200);
+    expect(captured?.userMessage).toMatch(/User question: \(The learner sent only the attached image/);
+  });
+
+  it('400 when neither text nor images are sent', async () => {
+    const res = await POST(makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: '   ' }));
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when an attached image is not in the media store', async () => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(fakeConnector(async () => 'unused'));
+    const res = await POST(
+      makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'x', images: [`${'c'.repeat(32)}.png`] }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when an image name is not a media-store file name', async () => {
+    const res = await POST(
+      makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'x', images: ['../../etc/passwd'] }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('forwards activity and interim events over SSE', async () => {
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(
+        async () => 'unused',
+        async function* () {
+          yield { type: 'token', text: 'Let me check.' };
+          yield { type: 'interim' };
+          yield { type: 'activity', activity: { id: 't1', kind: 'search', label: 'POSTS EEG', status: 'running' } };
+          yield { type: 'token', text: 'Answer' };
+          yield { type: 'done' };
+        },
+      ),
+    );
+    const res = await POST(makeStreamRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'hi' }));
+    const events = await readSseEvents(res);
+    expect(events.map((e) => e.event)).toEqual(['meta', 'token', 'interim', 'activity', 'token', 'done']);
+    expect(JSON.parse(events[3].data)).toEqual({ id: 't1', kind: 'search', label: 'POSTS EEG', status: 'running' });
   });
 });

@@ -9,16 +9,18 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Maximize2, Mic, Minimize2, Pause, Square, Trash2, Volume2, X } from 'lucide-react';
+import { ImagePlus, Maximize2, Mic, Minimize2, Pause, Square, Trash2, Volume2, X } from 'lucide-react';
 // Markdown + math + syntax-highlight stack. Code-fence highlighting goes
 // through `rehype-highlight` (lightweight, ships highlight.js's classes which
 // the github theme imported in src/app/layout.tsx styles globally) rather
 // than `react-syntax-highlighter` — no per-render component override required,
 // and the highlight.js classes already integrate with the prose styling.
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -33,6 +35,20 @@ import {
   type SttCaptureState,
 } from '@/lib/client/sttCapture';
 import { CHAT_HISTORY_SCHEMA_VERSION } from '@/lib/schemas/chatHistory';
+import {
+  imagesFromClipboard,
+  prepareChatImage,
+  uploadChatImage,
+} from '@/lib/client/chatImage';
+import {
+  ActivityStatus,
+  AttachmentStrip,
+  ChatMarkdownImage,
+  ResearchLog,
+  UserImages,
+  type ChatActivityItem,
+  type ComposerAttachment,
+} from './LessonChatMedia';
 
 export interface ChatMessage {
   id: string;
@@ -46,9 +62,17 @@ export interface ChatMessage {
    *  in the transcript but are excluded from the history window sent to
    *  /api/lesson-chat, so persistence never grows the prompt. */
   hydrated?: boolean;
+  /** Chat-media file names (`<id>.<ext>`) the learner attached (user turns). */
+  images?: string[];
+  /** Research log: searches, pages read, image checks, tool preambles. */
+  activity?: ChatActivityItem[];
 }
 
 const STOPPED_SUFFIX = '— stopped by user';
+/** Images per message — the route enforces the same cap. */
+const MAX_ATTACHMENTS = 4;
+/** Preamble notes moved into the research log are clipped to this length. */
+const NOTE_MAX_CHARS = 300;
 
 interface LessonChatProps {
   open: boolean;
@@ -96,6 +120,8 @@ interface PersistedChatMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  images?: string[];
+  activity?: ChatActivityItem[];
 }
 
 /**
@@ -109,11 +135,21 @@ function toHistoryPayload(messages: ChatMessage[]): PersistedChatMessage[] {
   for (const m of messages) {
     if (m.role !== 'user' && m.role !== 'assistant') continue;
     if (m.pending) continue;
-    out.push({
+    const entry: PersistedChatMessage = {
       role: m.role,
       content: m.text,
       createdAt: m.createdAt ?? '',
-    });
+    };
+    if (m.images && m.images.length > 0) entry.images = m.images;
+    if (m.activity && m.activity.length > 0) {
+      // Live tool-use ids only matter while streaming.
+      entry.activity = m.activity.map((a) => {
+        const { id, ...rest } = a;
+        void id;
+        return rest;
+      });
+    }
+    out.push(entry);
   }
   return out;
 }
@@ -212,6 +248,16 @@ export function LessonChat({
   const sttErrorTimerRef = useRef<number | null>(null);
   const [sttState, setSttState] = useState<SttCaptureState>('idle');
   const [sttError, setSttError] = useState<string | null>(null);
+  // Images queued in the composer. Each uploads to the chat media store as
+  // soon as it's added (paste / drop / picker); Send forwards the stored
+  // file names. The ref mirrors state so async upload callbacks never act
+  // on a stale list.
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const attachErrorTimerRef = useRef<number | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const draftKey = useMemo(
     () => draftStorageKey(courseSlug, lessonSlug),
     [courseSlug, lessonSlug],
@@ -394,6 +440,8 @@ export function LessonChat({
           text: m.content,
           createdAt: m.createdAt || undefined,
           hydrated: true,
+          ...(m.images && m.images.length > 0 ? { images: m.images } : {}),
+          ...(m.activity && m.activity.length > 0 ? { activity: m.activity } : {}),
         }));
         // Record what's now on screen as "already saved" so the autosave
         // effect doesn't immediately echo it straight back to the store.
@@ -473,37 +521,165 @@ export function LessonChat({
   }, [messages.length]);
 
   const trimmedDraft = draft.trim();
-  const canSend = trimmedDraft.length > 0 && !sending;
+  const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.file);
+  const attachmentsBusy = attachments.some((a) => a.status === 'uploading');
+  const attachmentsFailed = attachments.some((a) => a.status === 'error');
+  const canSend =
+    (trimmedDraft.length > 0 || readyAttachments.length > 0) &&
+    !sending &&
+    !attachmentsBusy &&
+    !attachmentsFailed;
 
-  const finalizeStopped = useCallback((pendingId: string, partialText: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === pendingId
-          ? {
-              id: pendingId,
-              role: 'assistant',
-              text: partialText,
-              stopped: true,
-              createdAt: m.createdAt,
-            }
-          : m,
-      ),
-    );
+  const commitAttachments = useCallback((next: ComposerAttachment[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
   }, []);
+
+  const flagAttachError = useCallback((msg: string) => {
+    if (attachErrorTimerRef.current !== null) window.clearTimeout(attachErrorTimerRef.current);
+    setAttachError(msg);
+    attachErrorTimerRef.current = window.setTimeout(() => {
+      setAttachError(null);
+      attachErrorTimerRef.current = null;
+    }, 5000);
+  }, []);
+
+  const addImageFiles = useCallback(
+    (files: File[]) => {
+      const images = files.filter((f) => f.type.startsWith('image/'));
+      if (images.length === 0) return;
+      const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
+      if (room <= 0) {
+        flagAttachError(`Up to ${MAX_ATTACHMENTS} images per message.`);
+        return;
+      }
+      if (images.length > room) {
+        flagAttachError(`Only ${MAX_ATTACHMENTS} images per message — extra images were skipped.`);
+      }
+      const stamp = Date.now();
+      const added = images.slice(0, room).map((file, i) => ({
+        source: file,
+        attachment: {
+          localId: `att-${stamp}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+          previewUrl: URL.createObjectURL(file),
+          status: 'uploading' as const,
+        },
+      }));
+      commitAttachments([...attachmentsRef.current, ...added.map((a) => a.attachment)]);
+      const patch = (localId: string, change: Partial<ComposerAttachment>) => {
+        commitAttachments(
+          attachmentsRef.current.map((a) => (a.localId === localId ? { ...a, ...change } : a)),
+        );
+      };
+      for (const { source, attachment } of added) {
+        void (async () => {
+          try {
+            const blob = await prepareChatImage(source);
+            const uploaded = await uploadChatImage(blob);
+            patch(attachment.localId, { status: 'ready', file: uploaded.file });
+          } catch (err) {
+            patch(attachment.localId, { status: 'error', error: (err as Error).message });
+          }
+        })();
+      }
+    },
+    [commitAttachments, flagAttachError],
+  );
+
+  const removeAttachment = useCallback(
+    (localId: string) => {
+      const target = attachmentsRef.current.find((a) => a.localId === localId);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      commitAttachments(attachmentsRef.current.filter((a) => a.localId !== localId));
+    },
+    [commitAttachments],
+  );
+
+  // Release preview object URLs when the panel unmounts.
+  useEffect(() => {
+    return () => {
+      for (const a of attachmentsRef.current) URL.revokeObjectURL(a.previewUrl);
+      if (attachErrorTimerRef.current !== null) window.clearTimeout(attachErrorTimerRef.current);
+    };
+  }, []);
+
+  const handlePaste = useCallback(
+    (e: ReactClipboardEvent<HTMLElement>) => {
+      const files = imagesFromClipboard(e.clipboardData);
+      if (files.length === 0) return;
+      e.preventDefault();
+      addImageFiles(files);
+    },
+    [addImageFiles],
+  );
+
+  const handleDragOver = useCallback((e: ReactDragEvent<HTMLElement>) => {
+    if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: ReactDragEvent<HTMLElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: ReactDragEvent<HTMLElement>) => {
+      if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+      e.preventDefault();
+      setDragActive(false);
+      addImageFiles(Array.from(e.dataTransfer.files));
+    },
+    [addImageFiles],
+  );
+
+  const finalizeStopped = useCallback(
+    (pendingId: string, partialText: string, activity?: ChatActivityItem[]) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === pendingId
+            ? {
+                id: pendingId,
+                role: 'assistant',
+                text: partialText,
+                stopped: true,
+                createdAt: m.createdAt,
+                ...(activity && activity.length > 0 ? { activity } : {}),
+              }
+            : m,
+        ),
+      );
+    },
+    [],
+  );
 
   const handleSend = useCallback(() => {
     const text = draft.trim();
-    if (text.length === 0 || sending) return;
+    const current = attachmentsRef.current;
+    if (sending) return;
+    if (current.some((a) => a.status !== 'ready' || !a.file)) return;
+    const images = current.map((a) => a.file as string);
+    if (text.length === 0 && images.length === 0) return;
     const stamp = Date.now();
     const createdAt = new Date(stamp).toISOString();
     const userId = `m-${stamp}-u`;
     const pendingId = `m-${stamp}-p`;
     setMessages((prev) => [
       ...prev,
-      { id: userId, role: 'user', text, createdAt },
+      {
+        id: userId,
+        role: 'user',
+        text,
+        createdAt,
+        ...(images.length > 0 ? { images } : {}),
+      },
       { id: pendingId, role: 'assistant', text: '', pending: true, createdAt },
     ]);
     setDraft('');
+    for (const a of current) URL.revokeObjectURL(a.previewUrl);
+    commitAttachments([]);
     setSending(true);
     userStoppedRef.current = false;
     try {
@@ -519,7 +695,11 @@ export function LessonChat({
     const history = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .filter((m) => !m.pending && !m.hydrated)
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.text }));
+      .map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.text,
+        ...(m.images && m.images.length > 0 ? { images: m.images } : {}),
+      }));
 
     const ac = new AbortController();
     streamAbortRef.current = ac;
@@ -549,6 +729,7 @@ export function LessonChat({
             lessonSlug,
             sectionId: activeSectionId ?? undefined,
             message: text,
+            ...(images.length > 0 ? { images } : {}),
             history,
           }),
           signal: ac.signal,
@@ -587,8 +768,27 @@ export function LessonChat({
       const decoder = new TextDecoder();
       let buf = '';
       let accumulated = '';
+      let activity: ChatActivityItem[] = [];
       let receivedDone = false;
       let receivedError: string | null = null;
+
+      const publishPending = () => {
+        const snapshot = accumulated;
+        const activitySnapshot = activity;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === pendingId
+              ? {
+                  id: pendingId,
+                  role: 'assistant',
+                  text: snapshot,
+                  pending: true,
+                  ...(activitySnapshot.length > 0 ? { activity: activitySnapshot } : {}),
+                }
+              : m,
+          ),
+        );
+      };
 
       const handleEvent = (event: string, data: string) => {
         let parsed: unknown = {};
@@ -597,19 +797,43 @@ export function LessonChat({
         } catch {
           parsed = {};
         }
-        const obj = parsed as { requestId?: string; text?: string; message?: string };
+        const obj = parsed as {
+          requestId?: string;
+          text?: string;
+          message?: string;
+        } & Partial<ChatActivityItem>;
         if (event === 'meta' && typeof obj.requestId === 'string') {
           currentRequestIdRef.current = obj.requestId;
         } else if (event === 'token' && typeof obj.text === 'string') {
           accumulated += obj.text;
-          const snapshot = accumulated;
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === pendingId
-                ? { id: pendingId, role: 'assistant', text: snapshot, pending: true }
-                : m,
-            ),
-          );
+          publishPending();
+        } else if (event === 'interim') {
+          // What streamed so far was the tutor talking itself into a tool
+          // call ("let me search…"), not the answer: file it in the log.
+          const note = accumulated.trim();
+          accumulated = '';
+          if (note.length > 0) {
+            activity = [
+              ...activity,
+              {
+                kind: 'note',
+                label: note.length > NOTE_MAX_CHARS ? `${note.slice(0, NOTE_MAX_CHARS - 1)}…` : note,
+              },
+            ];
+          }
+          publishPending();
+        } else if (event === 'activity' && typeof obj.id === 'string' && typeof obj.kind === 'string') {
+          const entry: ChatActivityItem = {
+            id: obj.id,
+            kind: obj.kind,
+            label: typeof obj.label === 'string' ? obj.label : '',
+            ...(typeof obj.url === 'string' ? { url: obj.url } : {}),
+            ...(obj.status ? { status: obj.status } : {}),
+            ...(typeof obj.detail === 'string' ? { detail: obj.detail } : {}),
+          };
+          const at = activity.findIndex((a) => a.id === entry.id);
+          activity = at >= 0 ? activity.map((a, i) => (i === at ? entry : a)) : [...activity, entry];
+          publishPending();
         } else if (event === 'done') {
           receivedDone = true;
         } else if (event === 'error') {
@@ -652,7 +876,7 @@ export function LessonChat({
         flushBufferedEvents();
       } catch (err) {
         if (ac.signal.aborted || userStoppedRef.current) {
-          finalizeStopped(pendingId, accumulated);
+          finalizeStopped(pendingId, accumulated, activity);
           setSending(false);
           streamAbortRef.current = null;
           return;
@@ -664,11 +888,12 @@ export function LessonChat({
       }
 
       if (userStoppedRef.current) {
-        finalizeStopped(pendingId, accumulated);
+        finalizeStopped(pendingId, accumulated, activity);
       } else if (receivedError !== null) {
         setBubbleError(receivedError);
       } else if (receivedDone || accumulated.length > 0) {
         const finalText = accumulated;
+        const finalActivity = activity;
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingId
@@ -677,6 +902,7 @@ export function LessonChat({
                   role: 'assistant',
                   text: finalText,
                   createdAt: m.createdAt,
+                  ...(finalActivity.length > 0 ? { activity: finalActivity } : {}),
                 }
               : m,
           ),
@@ -687,7 +913,17 @@ export function LessonChat({
       setSending(false);
       streamAbortRef.current = null;
     })();
-  }, [activeSectionId, courseSlug, draft, draftKey, finalizeStopped, lessonSlug, messages, sending]);
+  }, [
+    activeSectionId,
+    commitAttachments,
+    courseSlug,
+    draft,
+    draftKey,
+    finalizeStopped,
+    lessonSlug,
+    messages,
+    sending,
+  ]);
 
   const clearTtsErrorTimer = useCallback((id: string) => {
     const t = ttsErrorTimerRef.current.get(id);
@@ -1139,9 +1375,18 @@ export function LessonChat({
       data-expanded={expanded ? 'true' : 'false'}
       data-active-section-id={activeSectionId ?? ''}
       onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       style={{ ...composedAsideStyle, position: expanded ? 'fixed' : 'relative' }}
     >
       <style>{lessonChatGlobalKeyframes}</style>
+      {dragActive ? (
+        <div data-testid="lesson-chat-drop-overlay" style={dropOverlayStyle} aria-hidden>
+          Drop images to attach
+        </div>
+      ) : null}
       <audio
         ref={ttsAudioRef}
         data-testid="lesson-chat-tts-audio"
@@ -1260,6 +1505,9 @@ export function LessonChat({
         {messages.length === 0 ? (
           <p data-testid="lesson-chat-empty" style={emptyStyle}>
             Ask anything about this lesson — I have its content as context.
+            <br />
+            Paste or drop an image to ask about it; I can also look up sources
+            and verified examples on the web.
           </p>
         ) : (
           <ul style={composedListStyle}>
@@ -1291,11 +1539,17 @@ export function LessonChat({
                 >
                   <div style={assistantColumnStyle}>
                     <div style={bubbleStyle}>
+                      {m.role === 'user' && m.images && m.images.length > 0 ? (
+                        <UserImages files={m.images} />
+                      ) : null}
                       {showTypingDots ? (
                         <TypingDots />
-                      ) : (
+                      ) : m.role === 'user' && m.text.length === 0 ? null : (
                         <MessageBody role={m.role} text={m.text} />
                       )}
+                      {m.pending && m.activity && m.activity.length > 0 ? (
+                        <ActivityStatus activity={m.activity} />
+                      ) : null}
                       {m.stopped ? (
                         <>
                           {'\n'}
@@ -1308,6 +1562,9 @@ export function LessonChat({
                         </>
                       ) : null}
                     </div>
+                    {m.role === 'assistant' && !m.pending && m.activity && m.activity.length > 0 ? (
+                      <ResearchLog activity={m.activity} />
+                    ) : null}
                     {hasSpeakable ? (
                       <div style={ttsFooterRowStyle}>
                         <button
@@ -1394,11 +1651,16 @@ export function LessonChat({
       </div>
 
       <footer style={footerStyle}>
+        <AttachmentStrip
+          attachments={attachments}
+          onRemove={removeAttachment}
+          style={expanded ? composerControlsExpandedStyle : undefined}
+        />
         <textarea
           ref={textareaRef}
           data-testid="lesson-chat-textarea"
           aria-label="Message AI tutor"
-          placeholder="Ask about this lesson…"
+          placeholder={attachments.length > 0 ? 'Ask about the image…' : 'Ask about this lesson…'}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={handleTextareaKeyDown}
@@ -1446,6 +1708,32 @@ export function LessonChat({
                 aria-hidden
               />
             ) : null}
+            <button
+              type="button"
+              data-testid="lesson-chat-attach"
+              aria-label="Attach image"
+              title="Attach image (you can also paste or drop one)"
+              disabled={sending || attachments.length >= MAX_ATTACHMENTS}
+              onClick={() => fileInputRef.current?.click()}
+              style={
+                sending || attachments.length >= MAX_ATTACHMENTS ? sttBtnDisabledStyle : sttBtnStyle
+              }
+            >
+              <ImagePlus size={14} strokeWidth={2} />
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              data-testid="lesson-chat-file-input"
+              onChange={(e) => {
+                addImageFiles(Array.from(e.target.files ?? []));
+                // Reset so picking the same file again still fires onChange.
+                e.target.value = '';
+              }}
+            />
           </div>
           <div style={btnGroupStyle}>
             <button
@@ -1479,10 +1767,38 @@ export function LessonChat({
             {sttError}
           </span>
         ) : null}
+        {attachError || attachmentsFailed ? (
+          <span
+            data-testid="lesson-chat-attach-error"
+            role="status"
+            style={sttErrorChipStyle}
+          >
+            {attachError ??
+              `Couldn't attach an image: ${
+                attachments.find((a) => a.status === 'error')?.error ?? 'upload failed'
+              } — remove it to send.`}
+          </span>
+        ) : null}
       </footer>
     </aside>
   );
 }
+
+const dropOverlayStyle: CSSProperties = {
+  position: 'absolute',
+  inset: 8,
+  zIndex: 5,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '2px dashed var(--accent)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--accent-subtle)',
+  color: 'var(--accent-text)',
+  fontSize: 'var(--fs-sm)',
+  fontWeight: 500,
+  pointerEvents: 'none',
+};
 
 const asideHiddenStyle: CSSProperties = {
   gridColumn: '3 / 4',
@@ -1804,6 +2120,11 @@ const stoppedSuffixStyle: CSSProperties = {
 // message in the transcript made typing visibly lag.
 const REMARK_PLUGINS = [remarkGfm, remarkMath];
 const REHYPE_PLUGINS = [rehypeKatex, rehypeHighlight];
+// Every markdown image goes through the verification policy in
+// LessonChatMedia (verified store / lesson asset / blocked).
+const MARKDOWN_COMPONENTS: Components = {
+  img: ({ src, alt }) => <ChatMarkdownImage src={src} alt={alt} />,
+};
 
 const MessageBody = memo(
   function MessageBody({ role, text }: { role: ChatMessage['role']; text: string }) {
@@ -1812,7 +2133,11 @@ const MessageBody = memo(
     }
     return (
       <div className="lesson-chat-md">
-        <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS}>
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={MARKDOWN_COMPONENTS}
+        >
           {preprocessMath(text)}
         </ReactMarkdown>
       </div>

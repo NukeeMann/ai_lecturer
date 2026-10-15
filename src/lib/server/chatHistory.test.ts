@@ -99,6 +99,36 @@ describe('PUT /api/chats/[courseSlug]/[moduleId]', () => {
     expect(await getRes.json()).toEqual(payload);
   });
 
+  it('persists attached images and the research log', async () => {
+    const image = `${'d'.repeat(32)}.png`;
+    const payload = {
+      schemaVersion: 1,
+      messages: [
+        { ...msg('user', 'what is this?'), images: [image] },
+        {
+          ...msg('assistant', 'A vertex wave.'),
+          activity: [
+            { kind: 'search', label: 'vertex waves EEG', status: 'ok' },
+            { kind: 'fetch', label: 'commons.wikimedia.org/wiki/File:X', url: 'https://commons.wikimedia.org/wiki/File:X', status: 'ok' },
+            { kind: 'note', label: 'Let me check the source page.' },
+          ],
+        },
+      ],
+    };
+    const putRes = await putChat(putRequest(payload), ctx());
+    expect(putRes.status).toBe(200);
+    const getRes = await getChat(new Request('http://x'), ctx());
+    expect(await getRes.json()).toEqual(payload);
+  });
+
+  it('rejects image entries that are not media-store file names', async () => {
+    const res = await putChat(
+      putRequest({ schemaVersion: 1, messages: [{ ...msg('user', 'x'), images: ['../secret.png'] }] }),
+      ctx(),
+    );
+    expect(res.status).toBe(422);
+  });
+
   it('writes the file atomically under the lazily-created directory', async () => {
     const file = chatHistoryFile(COURSE, MODULE);
     await expect(fs.access(path.dirname(file))).rejects.toThrow();

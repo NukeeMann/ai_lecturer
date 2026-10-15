@@ -7,8 +7,12 @@ import {
   selectConnector,
   type ChatStreamEvent,
   type Connector,
+  type ConnectorRequest,
+  type ImageAttachment,
 } from '@/lib/lessonChat/connector';
 import { buildPromptContext } from '@/lib/lessonChat/context';
+import { MEDIA_FILE_RE, readMediaFile } from '@/lib/lessonChat/media';
+import { tutorAgentOptions } from '@/lib/lessonChat/tutorAgent';
 import { InvalidSlugError, lessonFile } from '@/lib/server/paths';
 import {
   registerInflight,
@@ -17,18 +21,35 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/** Images per message the composer allows (keep in sync with LessonChat). */
+const MAX_IMAGES_PER_MESSAGE = 4;
+/** Images per prompt: the current message's plus the most recent earlier
+ *  ones, so follow-ups ("and in the lower channels?") still see them. */
+const MAX_PROMPT_IMAGES = 6;
+
+const MediaFileSchema = z.string().regex(MEDIA_FILE_RE);
+
 const ChatMessageSchema = z.object({
   role: z.enum(['user', 'assistant']),
   content: z.string(),
+  images: z.array(MediaFileSchema).max(MAX_IMAGES_PER_MESSAGE).optional(),
 });
 
-const RequestSchema = z.object({
-  courseSlug: z.string().min(1),
-  lessonSlug: z.string().min(1),
-  sectionId: z.string().optional(),
-  message: z.string().min(1),
-  history: z.array(ChatMessageSchema).optional(),
-});
+const RequestSchema = z
+  .object({
+    courseSlug: z.string().min(1),
+    lessonSlug: z.string().min(1),
+    sectionId: z.string().optional(),
+    message: z.string(),
+    images: z.array(MediaFileSchema).max(MAX_IMAGES_PER_MESSAGE).optional(),
+    history: z.array(ChatMessageSchema).optional(),
+  })
+  .refine((d) => d.message.trim().length > 0 || (d.images?.length ?? 0) > 0, {
+    message: 'message or images required',
+    path: ['message'],
+  });
+
+type HistoryItem = z.infer<typeof ChatMessageSchema>;
 
 const UNAVAILABLE_BODY = {
   error: 'AI Tutor unavailable: install Claude Code CLI or sign in to Claude Max.',
@@ -39,7 +60,8 @@ interface ResolvedRequest {
   lessonSlug: string;
   sectionId?: string;
   message: string;
-  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  images?: string[];
+  history?: HistoryItem[];
   lesson: Lesson;
 }
 
@@ -70,7 +92,7 @@ async function resolveRequest(
     };
   }
 
-  const { courseSlug, lessonSlug, sectionId, message, history } = parsed.data;
+  const { courseSlug, lessonSlug, sectionId, message, images, history } = parsed.data;
 
   let file: string;
   try {
@@ -132,6 +154,7 @@ async function resolveRequest(
       lessonSlug,
       sectionId,
       message,
+      images,
       history,
       lesson: lessonParsed.data,
     },
@@ -148,16 +171,104 @@ function sseEncode(event: string, data: unknown): Uint8Array {
   return new TextEncoder().encode(`event: ${event}\ndata: ${payload}\n\n`);
 }
 
+class MissingImageError extends Error {}
+
+/**
+ * Load the learner's images for the prompt: every image of the current
+ * message, then earlier ones newest-first up to MAX_PROMPT_IMAGES. Earlier
+ * messages get an inline marker ("[Attached images: E1]") matching the label
+ * in front of each image block, so the model can tell which is which.
+ */
+async function loadPromptImages(
+  current: string[],
+  history: HistoryItem[],
+): Promise<{ attachments: ImageAttachment[]; history: ChatMessageForPrompt[] }> {
+  const attachments: ImageAttachment[] = [];
+  const load = async (file: string, label: string) => {
+    const media = await readMediaFile(file);
+    if (!media) throw new MissingImageError(file);
+    attachments.push({ mediaType: media.mediaType, data: media.bytes.toString('base64'), label });
+  };
+
+  for (let i = 0; i < current.length; i++) {
+    await load(current[i], `Image ${i + 1} attached by the learner to the current question:`);
+  }
+
+  const outHistory: ChatMessageForPrompt[] = history.map((m) => ({ role: m.role, content: m.content }));
+  let earlier = 0;
+  for (let h = history.length - 1; h >= 0; h--) {
+    const files = history[h].images ?? [];
+    if (files.length === 0) continue;
+    const tags: string[] = [];
+    let dropped = 0;
+    for (const file of files) {
+      if (attachments.length >= MAX_PROMPT_IMAGES) {
+        dropped += 1;
+        continue;
+      }
+      earlier += 1;
+      const tag = `E${earlier}`;
+      tags.push(tag);
+      try {
+        await load(file, `Earlier image ${tag} (attached by the learner to an earlier message):`);
+      } catch (err) {
+        // An earlier image that vanished from the store shouldn't block the
+        // follow-up question — only the current message's images must exist.
+        if (!(err instanceof MissingImageError)) throw err;
+        tags.pop();
+        dropped += 1;
+      }
+    }
+    const notes: string[] = [];
+    if (tags.length > 0) notes.push(`[Attached images: ${tags.join(', ')} — shown below]`);
+    if (dropped > 0) notes.push(`[${dropped} attached image(s) not included this turn]`);
+    outHistory[h] = { ...outHistory[h], content: `${outHistory[h].content}\n${notes.join(' ')}`.trim() };
+  }
+  return { attachments, history: outHistory };
+}
+
+type ChatMessageForPrompt = { role: 'user' | 'assistant'; content: string };
+
 export async function POST(req: Request) {
   const resolved = await resolveRequest(req);
   if (!resolved.ok) return resolved.response;
 
-  const { sectionId, message, history, lesson } = resolved.data;
+  const { sectionId, message, images, history, lesson } = resolved.data;
+
+  let prompt: Awaited<ReturnType<typeof loadPromptImages>>;
+  try {
+    prompt = await loadPromptImages(images ?? [], history ?? []);
+  } catch (err) {
+    if (err instanceof MissingImageError) {
+      return NextResponse.json(
+        { error: 'Attached image not found — attach it again.' },
+        { status: 400 },
+      );
+    }
+    throw err;
+  }
+
+  const agent = tutorAgentOptions();
+  if (agent.cwd) await fs.mkdir(agent.cwd, { recursive: true });
+
   const { systemPrompt, contextBlock } = buildPromptContext({
     lesson,
     currentSectionId: sectionId,
+    research: agent.mcpServers !== undefined,
+    learnerImages: prompt.attachments.length > 0,
   });
-  const userMessage = `${contextBlock}\n\nUser question: ${message}`;
+  const question =
+    message.trim().length > 0
+      ? message
+      : '(The learner sent only the attached image(s), without a comment. Describe what they show and relate it to the lesson.)';
+  const userMessage = `${contextBlock}\n\nUser question: ${question}`;
+  const connectorReq: ConnectorRequest = {
+    systemPrompt,
+    userMessage,
+    history: history === undefined ? undefined : prompt.history,
+    images: prompt.attachments,
+    ...agent,
+  };
 
   const connector = await selectConnector();
   if (!connector) {
@@ -165,11 +276,11 @@ export async function POST(req: Request) {
   }
 
   if (wantsEventStream(req)) {
-    return streamResponse(connector, { systemPrompt, userMessage, history });
+    return streamResponse(connector, connectorReq);
   }
 
   try {
-    const assistant = await connector.chat({ systemPrompt, userMessage, history });
+    const assistant = await connector.chat(connectorReq);
     return NextResponse.json({ assistant });
   } catch (err) {
     console.error('[lesson-chat] connector failed', err);
@@ -180,13 +291,7 @@ export async function POST(req: Request) {
   }
 }
 
-interface ConnectorCallArgs {
-  systemPrompt: string;
-  userMessage: string;
-  history?: Array<{ role: 'user' | 'assistant'; content: string }>;
-}
-
-function streamResponse(connector: Connector, args: ConnectorCallArgs): Response {
+function streamResponse(connector: Connector, args: ConnectorRequest): Response {
   const requestId = randomUUID();
   const abortController = new AbortController();
   registerInflight(requestId, abortController);
@@ -207,6 +312,10 @@ function streamResponse(connector: Connector, args: ConnectorCallArgs): Response
           const ev = next.value;
           if (ev.type === 'token') {
             controller.enqueue(sseEncode('token', { text: ev.text }));
+          } else if (ev.type === 'interim') {
+            controller.enqueue(sseEncode('interim', {}));
+          } else if (ev.type === 'activity') {
+            controller.enqueue(sseEncode('activity', ev.activity));
           } else if (ev.type === 'error') {
             controller.enqueue(sseEncode('error', { message: ev.message }));
             break;

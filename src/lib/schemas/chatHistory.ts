@@ -16,10 +16,36 @@ export const ChatMessageRoleSchema = z.enum(['user', 'assistant']);
 
 export type ChatMessageRole = z.infer<typeof ChatMessageRoleSchema>;
 
+/** Chat media file name (`<sha256-prefix>.<ext>`, see lessonChat/media). */
+const ChatImageFileSchema = z.string().regex(/^[a-f0-9]{32}\.(png|jpg|gif|webp)$/);
+
+/**
+ * One step of the tutor's research log (a search, a page read, an image
+ * check, or a preamble note it wrote before calling a tool).
+ */
+export const ChatActivityEntrySchema = z.object({
+  kind: z.enum(['search', 'fetch', 'image', 'tool', 'note']),
+  label: z.string(),
+  // Not `.url()`: one odd entry must never make the whole transcript fail
+  // validation and silently stop saving. The UI only links http(s) values.
+  url: z.string().max(2048).optional(),
+  status: z.enum(['running', 'ok', 'error']).optional(),
+  detail: z.string().optional(),
+});
+
+export type ChatActivityEntry = z.infer<typeof ChatActivityEntrySchema>;
+
+/** Research-log entries kept per message on disk. */
+export const CHAT_ACTIVITY_MAX_ENTRIES = 40;
+
 export const ChatMessageSchema = z.object({
   role: ChatMessageRoleSchema,
   content: z.string(),
   createdAt: z.string(),
+  /** Images the learner attached (user messages). */
+  images: z.array(ChatImageFileSchema).optional(),
+  /** Research log of the answer (assistant messages). */
+  activity: z.array(ChatActivityEntrySchema).optional(),
 });
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
@@ -42,6 +68,8 @@ export const ChatHistoryWriteMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'error']),
   content: z.string(),
   createdAt: z.string(),
+  images: z.array(ChatImageFileSchema).optional(),
+  activity: z.array(ChatActivityEntrySchema).optional(),
 });
 
 export type ChatHistoryWriteMessage = z.infer<

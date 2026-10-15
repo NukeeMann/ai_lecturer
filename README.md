@@ -20,7 +20,7 @@
 
 AI Lecturer is a single-user, locally-hosted study environment that produces Distill / 3blue1brown / Khan-Academy-style lessons on demand. Describe a topic (optionally with your own PDFs / DOCX as source material), answer a few clarifying questions, and the app drives your local `claude` CLI to research and write a multi-module course you can step through immediately — complete with quizzes, runnable Python, draggable matchings, parametric explorers, plots, and an in-lesson AI tutor that sees what you're looking at.
 
-Everything is local. Courses are plain JSON on disk, progress lives in `~/.ai-lecturer/`, and the only "cloud" call is your own `claude` login. No database, no Anthropic API key in this repo, no telemetry.
+Everything is local. Courses are plain JSON on disk, progress lives in `~/.ai-lecturer/`, and the only "cloud" call is your own `claude` login (through which the AI tutor may also search and read the web — set `LESSON_CHAT_WEB=off` to turn that off). No database, no Anthropic API key in this repo, no telemetry.
 
 ---
 
@@ -111,7 +111,7 @@ A lesson is a vertical stream of widgets you read top-to-bottom. Typical flow:
 2. A **demo** widget shows a worked example — sometimes pre-rendered, sometimes a `parametricExplorer` you can drag sliders on.
 3. A **code** widget gives you a runnable Python cell (Pyodide, with NumPy / matplotlib) and an optional hidden test it checks your output against.
 4. A **quiz** or **dragMatch** widget pins down whether you got it.
-5. The **lesson-chat** dock (right side) lets you ask the AI tutor "why does this loop terminate?" — it sees the lesson JSON, so it answers in context.
+5. The **lesson-chat** dock (right side) lets you ask the AI tutor "why does this loop terminate?" — it sees the lesson JSON, so it answers in context. Paste, drop or attach a screenshot (an EEG trace, a diagram) and it reads the image too. When you ask for examples or sources it researches the web, preferring guidelines and peer-reviewed sources and flagging weaker ones; a web image is only shown after the tutor's image check (downloaded, looked at, source page confirmed), always captioned with its source and a reliability badge. Each answer keeps a collapsible research log of what was searched and read.
 
 Progress (per-widget completion + lesson scores) auto-saves to `~/.ai-lecturer/progress.json` and survives reloads, exports, and re-imports.
 
