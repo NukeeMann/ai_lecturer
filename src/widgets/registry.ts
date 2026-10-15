@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import {
   Activity,
+  SquareDashedMousePointer,
   BrainCircuit,
   BarChart3,
   Code,
@@ -40,6 +41,7 @@ import { SttDemoWidget } from './SttDemo/SttDemoWidget';
 import { TheoryWidget } from './Theory/TheoryWidget';
 import { VideoWidget } from './Video/VideoWidget';
 import { EegViewerWidget } from './EegViewer/EegViewerWidget';
+import { EegFigureMarkWidget } from './EegFigureMark/EegFigureMarkWidget';
 import { MontageLabWidget } from './MontageLab/MontageLabWidget';
 
 export type WidgetType =
@@ -60,6 +62,7 @@ export type WidgetType =
   | 'sttDemo'
   | 'ttsDemo'
   | 'eegViewer'
+  | 'eegFigureMark'
   | 'montageLab'
   | 'custom';
 
@@ -178,6 +181,12 @@ export const widgetRegistry: Record<WidgetType, WidgetRegistryEntry> = {
     label: 'Montage Lab',
     icon: BrainCircuit,
     accentVar: '--widget-montage-lab',
+  },
+  eegFigureMark: {
+    component: EegFigureMarkWidget as ComponentType<{ data?: unknown }>,
+    label: 'EEG Figure Mark',
+    icon: SquareDashedMousePointer,
+    accentVar: '--widget-eeg-figure-mark',
   },
   custom: {
     component: CustomPlaceholder,

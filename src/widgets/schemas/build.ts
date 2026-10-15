@@ -21,6 +21,7 @@ import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
 import { EegViewerDataSchema } from '@/widgets/EegViewer/schema';
+import { EegFigureMarkDataSchema } from '@/widgets/EegFigureMark/schema';
 import { MontageLabDataSchema } from '@/widgets/MontageLab/schema';
 import { CourseSchema } from '@/lib/schemas/course';
 import { LessonSchema } from '@/lib/schemas/lesson';
@@ -43,6 +44,7 @@ const widgets: Record<string, ZodSchema> = {
   'stt-demo': SttDemoDataSchema,
   'tts-demo': TtsDemoDataSchema,
   'eeg-viewer': EegViewerDataSchema,
+  'eeg-figure-mark': EegFigureMarkDataSchema,
   'montage-lab': MontageLabDataSchema,
 };
 

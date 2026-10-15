@@ -258,6 +258,11 @@ function collectFromSection(
       }
       break;
     }
+    case 'eegFigureMark': {
+      const figure = (data as { figure?: { src?: unknown } }).figure;
+      pushImage(acc, figure?.src, slug, `${base}.data.figure.src`);
+      break;
+    }
     default:
       // Other section types either carry no asset paths or (AudioPlayer /
       // TranscriptCloze) are materialized by the dedicated TTS post-processor.

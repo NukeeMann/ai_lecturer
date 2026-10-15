@@ -84,6 +84,7 @@ import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
+import { EegFigureMarkEditor } from '@/widgets/EegFigureMark/EegFigureMarkEditor';
 import { MontageLabEditor } from '@/widgets/MontageLab/MontageLabEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
@@ -1760,6 +1761,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'montageLab' && (
         <MontageLabEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'eegFigureMark' && (
+        <EegFigureMarkEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3873,6 +3883,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit montage lab',
       () => onOpenPanel(section.id),
       'montage-lab-edit-btn',
+    );
+  } else if (section.type === 'eegFigureMark') {
+    const Body = widgetRegistry.eegFigureMark.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit figure exercise',
+      () => onOpenPanel(section.id),
+      'eeg-figure-mark-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;

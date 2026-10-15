@@ -38,6 +38,7 @@ export const POLISHABLE_BY_TYPE = {
   // names, attribution text (bibliographic) and all coordinates stay FROZEN.
   eegViewer: ['data.prompt', 'data.task.prompt', 'data.task.explanation', 'data.caption'],
   montageLab: ['data.prompt', 'data.challenges[].prompt', 'data.challenges[].explanation', 'data.caption'],
+  eegFigureMark: ['data.prompt', 'data.figure.caption', 'data.distractors[].note', 'data.explanation'],
   // demo, histogram, dataTable, parametricExplorer, custom: nothing prose-bearing
   // beyond SECTION_COMMON (their data is numeric/code/identifiers).
 };

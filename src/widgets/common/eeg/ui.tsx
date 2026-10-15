@@ -34,7 +34,11 @@ const controlBase: CSSProperties = {
   height: 30,
   padding: '0 8px',
   borderRadius: 'var(--radius-md)',
-  border: '1px solid var(--border)',
+  // Longhands only: buttons override borderColor when active/primary, and
+  // React warns when a shorthand and its longhand are mixed across renders.
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
   background: 'var(--bg-elevated)',
   color: 'var(--text-secondary)',
   fontSize: 'var(--fs-xs)',

@@ -7,6 +7,7 @@
 
 import type { EegViewerData } from '@/widgets/EegViewer/schema';
 import type { MontageLabData } from '@/widgets/MontageLab/schema';
+import type { EegFigureMarkData } from '@/widgets/EegFigureMark/schema';
 
 export const TUTOR_ONLY_KEY_LINE =
   'Answer key (for tutor only — do not reveal before the learner commits an answer):';
@@ -64,5 +65,26 @@ export function serializeMontageLab(d: MontageLabData): string {
     );
   }
   if (d.caption) parts.push(`Caption: ${d.caption}`);
+  return parts.join('\n');
+}
+
+function pct(v: number): string {
+  return `${Math.round(v * 100)}%`;
+}
+
+export function serializeEegFigureMark(d: EegFigureMarkData): string {
+  const parts: string[] = [
+    `Mark-the-fragment exercise on a REAL EEG figure: ${d.figure.alt} (${d.figure.attribution.text}; ${d.figure.attribution.license}).`,
+    `Task (${d.mode === 'box' ? 'draw boxes' : 'click points'}): ${d.prompt}`,
+  ];
+  if (d.figure.caption) parts.push(`Caption: ${d.figure.caption}`);
+  parts.push(TUTOR_ONLY_KEY_LINE);
+  parts.push(
+    d.targets
+      .map((t) => `- ${t.label} — region x ${pct(t.rect.x)}–${pct(t.rect.x + t.rect.w)}, y ${pct(t.rect.y)}–${pct(t.rect.y + t.rect.h)} of the image`)
+      .join('\n'),
+  );
+  if (d.distractors?.length) parts.push(`Known look-alikes: ${d.distractors.map((x) => x.note).join(' | ')}`);
+  parts.push(`Explanation shown after checking: ${d.explanation}`);
   return parts.join('\n');
 }

@@ -2524,6 +2524,224 @@
                   },
                   "type": {
                     "type": "string",
+                    "const": "eegFigureMark"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "figure": {
+                        "type": "object",
+                        "properties": {
+                          "src": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "alt": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "caption": {
+                            "type": "string"
+                          },
+                          "width": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "height": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "attribution": {
+                            "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/attribution"
+                          }
+                        },
+                        "required": [
+                          "src",
+                          "alt",
+                          "attribution"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "mode": {
+                        "type": "string",
+                        "enum": [
+                          "point",
+                          "box"
+                        ],
+                        "default": "point"
+                      },
+                      "targets": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "rect": {
+                              "type": "object",
+                              "properties": {
+                                "x": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "y": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "w": {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 1
+                                },
+                                "h": {
+                                  "type": "number",
+                                  "exclusiveMinimum": 0,
+                                  "maximum": 1
+                                }
+                              },
+                              "required": [
+                                "x",
+                                "y",
+                                "w",
+                                "h"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "label": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "required": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "rect",
+                            "label"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "minItems": 1
+                      },
+                      "distractors": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "rect": {
+                              "$ref": "#/definitions/lesson/properties/sections/items/anyOf/18/properties/data/properties/targets/items/properties/rect"
+                            },
+                            "note": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "rect",
+                            "note"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "maxMarks": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0
+                      },
+                      "boxIoU": {
+                        "type": "number",
+                        "minimum": 0.05,
+                        "maximum": 1
+                      },
+                      "calibration": {
+                        "type": "object",
+                        "properties": {
+                          "pxPerSecond": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "uvPerPx": {
+                            "type": "number",
+                            "exclusiveMinimum": 0
+                          },
+                          "rows": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "label": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "yPx": {
+                                  "type": "number",
+                                  "minimum": 0
+                                }
+                              },
+                              "required": [
+                                "label",
+                                "yPx"
+                              ],
+                              "additionalProperties": false
+                            }
+                          }
+                        },
+                        "required": [
+                          "pxPerSecond"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "explanation": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "revealKey": {
+                        "type": "boolean",
+                        "default": true
+                      }
+                    },
+                    "required": [
+                      "prompt",
+                      "figure",
+                      "targets",
+                      "explanation"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "description": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/description"
+                  },
+                  "sources": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/sources"
+                  },
+                  "type": {
+                    "type": "string",
                     "const": "custom"
                   },
                   "data": {

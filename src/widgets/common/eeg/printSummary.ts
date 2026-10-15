@@ -55,6 +55,14 @@ export function eegPrintSummary(type: string, data: unknown): EegPrintSummary {
         caption: d.caption,
       };
     }
+    case 'eegFigureMark': {
+      const f = (data as { figure?: EegPrintFigure & { attribution: Attribution } }).figure;
+      return {
+        prompt: d.prompt,
+        note: 'Exercise: mark the findings on the figure (open the lesson in the app to check your answer).',
+        figures: f ? [{ src: f.src, alt: f.alt, caption: f.caption, attribution: f.attribution }] : [],
+      };
+    }
     default:
       return { prompt: d.prompt, note: `Interactive EEG exercise (${type}) — open the lesson in the app.`, figures: [], caption: d.caption };
   }
