@@ -36,12 +36,46 @@ export async function readOrInitProgress(): Promise<Progress> {
   return ProgressSchema.parse(json);
 }
 
+/**
+ * Upper bound for one section's serialized `widgetState` in a PATCH. The
+ * whole progress file is re-read and rewritten on every PATCH, so a runaway
+ * widget must not be able to bloat it. Enforced on writes only — reading an
+ * existing progress.json never fails because of it.
+ */
+export const MAX_WIDGET_STATE_CHARS = 64 * 1024;
+
+const PatchSectionStateSchema = SectionStateSchema.superRefine((state, ctx) => {
+  if (state.widgetState === undefined) return;
+  const size = JSON.stringify(state.widgetState).length;
+  if (size > MAX_WIDGET_STATE_CHARS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['widgetState'],
+      message: `widgetState is ${size} chars once serialized; the limit is ${MAX_WIDGET_STATE_CHARS}`,
+    });
+  }
+});
+
 export const ProgressPatchSchema = z.object({
   courseSlug: z.string().min(1),
   lessonSlug: z.string().min(1),
   status: z.enum(['started', 'finished']).optional(),
   markVisited: z.boolean().optional(),
-  sectionState: z.record(SectionStateSchema).optional(),
+  /**
+   * Per-section REPLACEMENT: each listed section's stored object becomes
+   * exactly the value sent. The Code widget's reset relies on this (it sends
+   * `{}` to clear `userCode`/`done`), and widgets that persist `widgetState`
+   * send their full state.
+   */
+  sectionState: z.record(PatchSectionStateSchema).optional(),
+  /**
+   * Per-section shallow MERGE into the stored object, applied after
+   * `sectionState`. For writers that only want to set some fields without
+   * knowing the rest — e.g. the lesson page marking sections `done: true`
+   * (auto-advance, Space) must not wipe the `widgetState`/`score` a widget
+   * wrote directly to the server.
+   */
+  mergeSectionState: z.record(PatchSectionStateSchema).optional(),
   manuallyCompletedSections: z.record(z.boolean()).optional(),
 });
 
@@ -86,6 +120,14 @@ export function applyProgressPatch(
       ...(lesson.sectionState ?? {}),
       ...patch.sectionState,
     };
+  }
+
+  if (patch.mergeSectionState) {
+    const merged = { ...(lesson.sectionState ?? {}) };
+    for (const [sectionId, fields] of Object.entries(patch.mergeSectionState)) {
+      merged[sectionId] = { ...(merged[sectionId] ?? {}), ...fields };
+    }
+    lesson.sectionState = merged;
   }
 
   if (patch.manuallyCompletedSections) {

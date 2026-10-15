@@ -123,6 +123,44 @@ regenerate UI.
 in a static export they render but show an "unavailable" notice instead of
 calling a backend.
 
+## Restricted (private-use) content
+
+The exporter copies `courses/<slug>/assets/**` wholesale. Some course
+material is licensed for private study only, e.g. scanned atlas figures or
+figures marked "© … All rights reserved". Mark it with one of these:
+
+- put the file under `courses/<slug>/assets/private/…`, and/or
+- reference it with an attribution carrying `"restricted": true`
+  (e.g. `figure.attribution.restricted` in the EEG widgets).
+
+Before building, every exported course is scanned for files under
+`assets/private/`, for `"restricted": true` anywhere in course or lesson JSON,
+and for any string pointing at `assets/private/` (e.g. inline markdown
+images). If anything turns up, the exporter:
+
+- prints a prominent multi-line **WARNING** with the course, the counts, the
+  licences found and examples. It prints it before the build and again at
+  the very end, and the final "deploy:" hint then says *do not publish*;
+- writes the same text to **`RESTRICTED-CONTENT-WARNING.txt`** in the export
+  root (`dist/<slug>/` or `dist/library/`).
+
+The export is not blocked. To build a copy you can share, add
+`--exclude-restricted` (works in both modes):
+
+```bash
+npm run export -- <course-slug> --exclude-restricted
+npm run export -- --from-config --exclude-restricted
+```
+
+This skips `assets/private/**` and the files of figures flagged
+`"restricted": true` that live elsewhere under `assets/`. The lessons still
+refer to them, so those figures show as missing, and captions and attribution
+text stay in the pages. Replace the figures before publishing; the warning
+file says so too.
+
+Tests for the detection: `npm test` (Node's built-in runner, no extra
+dependencies).
+
 ## Notes
 
 - Code cells fetch Pyodide from the jsDelivr CDN on first run, so the

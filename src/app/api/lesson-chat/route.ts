@@ -11,6 +11,7 @@ import {
   type ImageAttachment,
 } from '@/lib/lessonChat/connector';
 import { buildPromptContext } from '@/lib/lessonChat/context';
+import { LIVE_STATE_REQUEST_MAX_CHARS } from '@/lib/lessonChat/liveState';
 import { MEDIA_FILE_RE, readMediaFile } from '@/lib/lessonChat/media';
 import { tutorAgentOptions } from '@/lib/lessonChat/tutorAgent';
 import { InvalidSlugError, lessonFile } from '@/lib/server/paths';
@@ -43,6 +44,9 @@ const RequestSchema = z
     message: z.string(),
     images: z.array(MediaFileSchema).max(MAX_IMAGES_PER_MESSAGE).optional(),
     history: z.array(ChatMessageSchema).optional(),
+    /** Live state the widget in `sectionId` published via the TutorBridge.
+     *  Learner-generated: the prompt builder truncates it and labels it as data. */
+    widgetState: z.string().max(LIVE_STATE_REQUEST_MAX_CHARS).optional(),
   })
   .refine((d) => d.message.trim().length > 0 || (d.images?.length ?? 0) > 0, {
     message: 'message or images required',
@@ -62,6 +66,7 @@ interface ResolvedRequest {
   message: string;
   images?: string[];
   history?: HistoryItem[];
+  widgetState?: string;
   lesson: Lesson;
 }
 
@@ -92,7 +97,8 @@ async function resolveRequest(
     };
   }
 
-  const { courseSlug, lessonSlug, sectionId, message, images, history } = parsed.data;
+  const { courseSlug, lessonSlug, sectionId, message, images, history, widgetState } =
+    parsed.data;
 
   let file: string;
   try {
@@ -156,6 +162,7 @@ async function resolveRequest(
       message,
       images,
       history,
+      widgetState,
       lesson: lessonParsed.data,
     },
   };
@@ -233,7 +240,7 @@ export async function POST(req: Request) {
   const resolved = await resolveRequest(req);
   if (!resolved.ok) return resolved.response;
 
-  const { sectionId, message, images, history, lesson } = resolved.data;
+  const { sectionId, message, images, history, widgetState, lesson } = resolved.data;
 
   let prompt: Awaited<ReturnType<typeof loadPromptImages>>;
   try {
@@ -254,6 +261,7 @@ export async function POST(req: Request) {
   const { systemPrompt, contextBlock } = buildPromptContext({
     lesson,
     currentSectionId: sectionId,
+    activeWidgetState: widgetState,
     research: agent.mcpServers !== undefined,
     learnerImages: prompt.attachments.length > 0,
   });

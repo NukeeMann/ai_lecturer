@@ -64,11 +64,14 @@ import {
 } from '@/lib/hooks/useKeyboardShortcuts';
 import {
   areAllSectionsDone,
+  autoAdvanceRequestBody,
   buildAutoAdvancePatch,
   countDoneSections,
+  mergeSectionStates,
   pathForAdvanceTarget,
   resolveAdvanceTarget,
 } from '@/lib/lessons/advance';
+import { TutorBridgeProvider } from '@/lib/lessonChat/tutorBridge';
 import { bottomBarNextAction } from '@/lib/lessons/bottomBarNext';
 import { usePyodide } from '@/lib/pyodide/client';
 import type { Course } from '@/lib/schemas/course';
@@ -288,6 +291,16 @@ export default function LessonShellPage({
       window.localStorage.setItem(CHAT_OPEN_KEY, 'false');
     } catch {
       // Persistence unavailable — close still works for the session.
+    }
+  }, []);
+
+  // Opened by widgets through the TutorBridge ("Ask the tutor about this view").
+  const openChat = useCallback(() => {
+    setChatOpen(true);
+    try {
+      window.localStorage.setItem(CHAT_OPEN_KEY, 'true');
+    } catch {
+      // Persistence unavailable — open still works for the session.
     }
   }, []);
 
@@ -600,10 +613,11 @@ export default function LessonShellPage({
             cp.lessons[lessonSlug] = {
               ...existing,
               status: 'finished',
-              sectionState: {
-                ...(existing.sectionState ?? {}),
-                ...patch.sectionState,
-              },
+              // Merge, not replace: keep widgetState/score/userCode.
+              sectionState: mergeSectionStates(
+                existing.sectionState,
+                patch.sectionState,
+              ),
             };
             courses[slug] = cp;
             return { ...base, courses };
@@ -612,12 +626,9 @@ export default function LessonShellPage({
           void fetch('/api/progress', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              courseSlug: slug,
-              lessonSlug,
-              status: patch.status,
-              sectionState: patch.sectionState,
-            }),
+            body: JSON.stringify(
+              autoAdvanceRequestBody(slug, lessonSlug, patch),
+            ),
           }).catch(() => {
             // Optimistic local update already applied; persistence retry
             // would need an inline error UI we don't have yet.
@@ -847,13 +858,16 @@ export default function LessonShellPage({
       return { ...base, courses };
     });
 
+    // Merge on the server: `current` is the page's possibly stale copy, and
+    // replacing the stored section would drop state a widget saved itself
+    // (widgetState, score).
     void fetch('/api/progress', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         courseSlug: slug,
         lessonSlug,
-        sectionState: { [sectionId]: nextState },
+        mergeSectionState: { [sectionId]: { done: true } },
       }),
     }).catch(() => {
       // Optimistic update already applied; no inline error UI yet.
@@ -1412,68 +1426,73 @@ export default function LessonShellPage({
         onToggleModule={toggleModule}
       />
 
-      <main
-        data-testid="lesson-content"
-        style={{
-          gridColumn: '2 / 3',
-          gridRow: '2 / 3',
-          minWidth: 0,
-          overflow: 'auto',
-          scrollbarGutter: 'stable',
-          padding: 'var(--space-6) var(--space-6) var(--space-7)',
-          background: 'var(--bg)',
-        }}
-      >
-        {!loaded ? (
-          <ContentSkeleton />
-        ) : error ? (
-          <LessonNotFound slug={slug} message={error} />
-        ) : lesson ? (
-          <LessonStream
-            course={course}
-            lesson={lesson}
-            slug={slug}
-            lessonSlug={lessonSlug}
-            progress={progress}
-            editingSections={editingSections}
-            onToggleEdit={handleToggleEdit}
-            onSaveTheory={handleSaveTheory}
-            panelSectionId={panelSectionId}
-            onOpenPanel={handleOpenPanel}
-            regenSectionId={regenSectionId}
-            onToggleRegen={handleToggleRegen}
-            onCloseRegen={handleCloseRegen}
-            onAcceptRegen={handleAcceptRegen}
-            onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
-            onOpenRegenLesson={handleOpenRegenLesson}
-            onExportPdf={handleExportLessonPdf}
-            undoBannerVisible={undoBannerVisible}
-            undoBannerFading={undoBannerFading}
-            undoBannerError={undoBannerError}
-            onUndoRegenLesson={handleUndoRegenLesson}
-            onDismissUndoBanner={handleDismissBanner}
-            onToggleSectionManualComplete={handleToggleSectionManualComplete}
-            autoDone={autoDone}
-            onSectionAutoComplete={markSectionAutoDone}
-            onCacheVideoTranscript={handleCacheVideoTranscript}
-          />
-        ) : null}
-      </main>
+      {/* Widgets publish their live state / "ask about this view" requests
+          here and LessonChat consumes them. Renders no DOM, so the shell's
+          grid children are unchanged. */}
+      <TutorBridgeProvider onOpenChat={openChat}>
+        <main
+          data-testid="lesson-content"
+          style={{
+            gridColumn: '2 / 3',
+            gridRow: '2 / 3',
+            minWidth: 0,
+            overflow: 'auto',
+            scrollbarGutter: 'stable',
+            padding: 'var(--space-6) var(--space-6) var(--space-7)',
+            background: 'var(--bg)',
+          }}
+        >
+          {!loaded ? (
+            <ContentSkeleton />
+          ) : error ? (
+            <LessonNotFound slug={slug} message={error} />
+          ) : lesson ? (
+            <LessonStream
+              course={course}
+              lesson={lesson}
+              slug={slug}
+              lessonSlug={lessonSlug}
+              progress={progress}
+              editingSections={editingSections}
+              onToggleEdit={handleToggleEdit}
+              onSaveTheory={handleSaveTheory}
+              panelSectionId={panelSectionId}
+              onOpenPanel={handleOpenPanel}
+              regenSectionId={regenSectionId}
+              onToggleRegen={handleToggleRegen}
+              onCloseRegen={handleCloseRegen}
+              onAcceptRegen={handleAcceptRegen}
+              onOpenLessonSources={() => setLessonSourcesPanelOpen(true)}
+              onOpenRegenLesson={handleOpenRegenLesson}
+              onExportPdf={handleExportLessonPdf}
+              undoBannerVisible={undoBannerVisible}
+              undoBannerFading={undoBannerFading}
+              undoBannerError={undoBannerError}
+              onUndoRegenLesson={handleUndoRegenLesson}
+              onDismissUndoBanner={handleDismissBanner}
+              onToggleSectionManualComplete={handleToggleSectionManualComplete}
+              autoDone={autoDone}
+              onSectionAutoComplete={markSectionAutoDone}
+              onCacheVideoTranscript={handleCacheVideoTranscript}
+            />
+          ) : null}
+        </main>
 
-      <LessonChat
-        open={chatOpen}
-        courseSlug={slug}
-        lessonSlug={lessonSlug}
-        moduleId={lesson?.moduleId}
-        onClose={closeChat}
-        onToggle={toggleChat}
-        chatWidth={chatWidth}
-        minWidth={CHAT_MIN_WIDTH}
-        maxWidth={CHAT_MAX_WIDTH}
-        onResize={handleChatResize}
-        onResizeStart={handleChatResizeStart}
-        onResizeEnd={handleChatResizeEnd}
-      />
+        <LessonChat
+          open={chatOpen}
+          courseSlug={slug}
+          lessonSlug={lessonSlug}
+          moduleId={lesson?.moduleId}
+          onClose={closeChat}
+          onToggle={toggleChat}
+          chatWidth={chatWidth}
+          minWidth={CHAT_MIN_WIDTH}
+          maxWidth={CHAT_MAX_WIDTH}
+          onResize={handleChatResize}
+          onResizeStart={handleChatResizeStart}
+          onResizeEnd={handleChatResizeEnd}
+        />
+      </TutorBridgeProvider>
 
       <BottomBar
         prevLesson={prevLesson}
@@ -3259,6 +3278,7 @@ function LessonStream({
             alreadyCompleted={persistedDone}
             manuallyCompleted={manuallyDone}
             initialUserCode={sectionState[section.id]?.userCode}
+            initialWidgetState={sectionState[section.id]?.widgetState}
             courseSlug={slug}
             lessonSlug={lessonSlug}
             onComplete={() => markSectionDone(section.id)}
@@ -3563,6 +3583,13 @@ interface SectionRendererProps {
   /** True if the learner manually marked this section complete via the header checkbox (US-065). */
   manuallyCompleted: boolean;
   initialUserCode?: string;
+  /**
+   * The section's persisted `sectionState[id].widgetState` as loaded with the
+   * page (undefined when the widget never saved one). Pass it to widgets that
+   * restore their own state. It is a snapshot from page load, not live
+   * data: widgets read it once on mount and keep their own state after that.
+   */
+  initialWidgetState?: Record<string, unknown>;
   courseSlug: string;
   lessonSlug: string;
   onComplete: () => void;

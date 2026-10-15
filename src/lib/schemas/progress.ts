@@ -14,6 +14,19 @@ export const SectionStateSchema = z.object({
       total: z.number().int().nonnegative(),
     })
     .optional(),
+  /**
+   * Widget-owned JSON that lets a widget restore what the learner did
+   * (marks, answers, viewer settings…) after a reload. The shape belongs to
+   * the widget, which should version it itself (e.g. `{ v: 1, … }`) and
+   * validate it on restore. Keep it small: it lives in progress.json, which is
+   * rewritten on every PATCH (the PATCH route caps it, see
+   * MAX_WIDGET_STATE_CHARS in src/lib/server/progress.ts).
+   *
+   * A plain `sectionState` PATCH REPLACES the section's whole object, so a
+   * widget must always send its full state together (`{ done, widgetState,
+   * score }`), never `{ widgetState }` alone.
+   */
+  widgetState: z.record(z.unknown()).optional(),
 });
 
 export type SectionState = z.infer<typeof SectionStateSchema>;

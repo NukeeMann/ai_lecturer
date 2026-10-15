@@ -13,6 +13,12 @@
 //   npm run export -- --all-collections
 //     → tools/static-export/dist/library/  (one home page with all sections)
 //
+// Restricted (private-use) content — files under courses/<slug>/assets/private/
+// or figures marked "restricted": true — is detected per course (see
+// restricted.mjs). The exporter prints a prominent WARNING before and after
+// building and writes RESTRICTED-CONTENT-WARNING.txt into the export root.
+// --exclude-restricted leaves those files out of the copy.
+//
 // The widget bundle is built ONCE with Vite and shared by every page in the
 // output, so adding more courses/collections only adds tiny HTML files and
 // per-course assets. It NEVER writes outside tools/static-export/ and never
@@ -24,6 +30,15 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import {
+  countExcludedFiles,
+  formatRestrictedWarning,
+  hasRestrictedContent,
+  makeRestrictedAssetFilter,
+  scanRestrictedContent,
+  WARNING_FILE_NAME,
+  writeRestrictedWarningFile,
+} from './restricted.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const toolDir = path.resolve(here, '..');
@@ -52,6 +67,14 @@ Usage:
 
 Collections are read from ~/.ai-lecturer/collections.json (the same file the
 main app uses). Collection names are matched case-insensitively.
+
+Options (both modes):
+  --exclude-restricted
+      Do not copy restricted (private-use) files: courses/<slug>/assets/private/**
+      and the files of figures whose attribution has "restricted": true.
+      Lessons that use them will show missing figures. Without this flag such
+      content is exported, with a WARNING on the console and in
+      RESTRICTED-CONTENT-WARNING.txt in the export folder.
 `);
 }
 
@@ -151,6 +174,7 @@ function parseArgs(argv) {
     collections: [],
     allCollections: false,
     fromConfig: false,
+    excludeRestricted: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -161,6 +185,8 @@ function parseArgs(argv) {
       out.allCollections = true;
     } else if (a === '--from-config') {
       out.fromConfig = true;
+    } else if (a === '--exclude-restricted') {
+      out.excludeRestricted = true;
     } else if (a === '--collection') {
       const val = argv[++i];
       if (!val) die('--collection requires a value');
@@ -380,17 +406,78 @@ async function copyFaviconInto(distDir) {
   return hashedName;
 }
 
+// ---- Restricted (private-use) content -------------------------------------
+
+/**
+ * Scan one loaded course for restricted content. Returns the report, or null
+ * when the course has none.
+ */
+async function scanCourseRestricted(slug, { course, lessons, courseDir }) {
+  const report = await scanRestrictedContent({
+    courseSlug: slug,
+    courseDir,
+    course,
+    lessons,
+  });
+  return hasRestrictedContent(report) ? report : null;
+}
+
+/** Print the restricted-content WARNING prominently (red/bold on a TTY). */
+function printRestrictedWarning(reports, { excluded }) {
+  if (reports.length === 0) return;
+  const text = formatRestrictedWarning(reports, { excluded });
+  const color = process.stderr.isTTY && !process.env.NO_COLOR;
+  console.warn(`\n${color ? `\x1b[1;31m${text}\x1b[0m` : text}`);
+}
+
+/**
+ * Copy courses/<slug>/assets to `dest`. With --exclude-restricted, the
+ * private/ folder and restricted figure files are skipped.
+ */
+async function copyCourseAssets(slug, dest, { excludeRestricted, report }) {
+  const src = path.join(repoRoot, 'courses', slug, 'assets');
+  if (!(await exists(src))) return false;
+  await fs.cp(src, dest, {
+    recursive: true,
+    ...(excludeRestricted ? { filter: makeRestrictedAssetFilter(src, report) } : {}),
+  });
+  if (excludeRestricted && report) {
+    console.log(
+      `[static-export]   ${slug}: --exclude-restricted left out ${countExcludedFiles(report)} restricted file(s)`,
+    );
+  }
+  return true;
+}
+
+/** Write RESTRICTED-CONTENT-WARNING.txt into the export root (if needed). */
+async function writeRestrictedReport(distDir, reports, { excluded }) {
+  if (reports.length === 0) return;
+  await writeRestrictedWarningFile(
+    distDir,
+    formatRestrictedWarning(reports, { excluded }),
+    { generatedAt: new Date().toISOString() },
+  );
+}
+
 // ---- MODE 1: single-course (legacy) --------------------------------------
 
-async function exportSingleCourse(slug) {
+async function exportSingleCourse(slug, { excludeRestricted = false } = {}) {
   console.log(`[static-export] course: ${slug}`);
-  const { course, nav, lessons } = await loadCourseWithLessons(slug);
+  const { course, nav, lessons, courseDir } = await loadCourseWithLessons(slug);
   if (lessons.length === 0) {
     die('no lessons found for this course (nothing to export)');
   }
   console.log(
     `[static-export] ${nav.length} module(s), ${lessons.length} lesson(s)`,
   );
+
+  const restrictedReport = await scanCourseRestricted(slug, {
+    course,
+    lessons,
+    courseDir,
+  });
+  const restrictedReports = restrictedReport ? [restrictedReport] : [];
+  printRestrictedWarning(restrictedReports, { excluded: excludeRestricted });
 
   const { bundleDir, entryFile, cssFiles } = await buildBundle();
   const jsRefBase = entryFile.replace(/^assets\//, 'assets/app/');
@@ -409,11 +496,12 @@ async function exportSingleCourse(slug) {
     { recursive: true },
   );
 
-  const courseAssets = path.join(repoRoot, 'courses', slug, 'assets');
-  if (await exists(courseAssets)) {
-    await fs.cp(courseAssets, path.join(distDir, 'assets', 'course'), {
-      recursive: true,
-    });
+  const copiedAssets = await copyCourseAssets(
+    slug,
+    path.join(distDir, 'assets', 'course'),
+    { excludeRestricted, report: restrictedReport },
+  );
+  if (copiedAssets) {
     console.log('[static-export] copied course assets');
   }
 
@@ -468,7 +556,10 @@ async function exportSingleCourse(slug) {
     );
   }
 
-  return distDir;
+  await writeRestrictedReport(distDir, restrictedReports, {
+    excluded: excludeRestricted,
+  });
+  return { distDir, restrictedReports };
 }
 
 // ---- MODE 2: library (collections) ---------------------------------------
@@ -485,7 +576,11 @@ async function readCollectionsFile() {
   return data.collections;
 }
 
-async function exportLibrary({ collectionNames, allCollections }) {
+async function exportLibrary({
+  collectionNames,
+  allCollections,
+  excludeRestricted = false,
+}) {
   const allRaw = await readCollectionsFile();
   // Hard exclude internal widget/test-fixture collections in EVERY mode.
   const all = allRaw.filter((c) => !isExcludedCollection(c.name));
@@ -563,6 +658,14 @@ async function exportLibrary({ collectionNames, allCollections }) {
     die('no exportable courses across the chosen collections');
   }
 
+  const restrictedBySlug = new Map();
+  for (const [slug, loaded] of courseData.entries()) {
+    const report = await scanCourseRestricted(slug, loaded);
+    if (report) restrictedBySlug.set(slug, report);
+  }
+  const restrictedReports = [...restrictedBySlug.values()];
+  printRestrictedWarning(restrictedReports, { excluded: excludeRestricted });
+
   const { bundleDir, entryFile, cssFiles } = await buildBundle();
   const jsRefBase = entryFile.replace(/^assets\//, 'assets/app/');
   const cssRefsBase = cssFiles.map((c) =>
@@ -580,12 +683,10 @@ async function exportLibrary({ collectionNames, allCollections }) {
 
   // Per-course assets at dist/library/assets/course/<slug>/...
   for (const slug of courseData.keys()) {
-    const src = path.join(repoRoot, 'courses', slug, 'assets');
-    if (await exists(src)) {
-      await fs.cp(src, path.join(distDir, 'assets', 'course', slug), {
-        recursive: true,
-      });
-    }
+    await copyCourseAssets(slug, path.join(distDir, 'assets', 'course', slug), {
+      excludeRestricted,
+      report: restrictedBySlug.get(slug) ?? null,
+    });
   }
   console.log('[static-export] copied per-course assets');
 
@@ -719,7 +820,10 @@ async function exportLibrary({ collectionNames, allCollections }) {
     'utf8',
   );
 
-  return distDir;
+  await writeRestrictedReport(distDir, restrictedReports, {
+    excluded: excludeRestricted,
+  });
+  return { distDir, restrictedReports };
 }
 
 // ---- Entrypoint -----------------------------------------------------------
@@ -770,28 +874,48 @@ async function main() {
     die('cannot mix a positional <course-slug> with --collection(s) / --from-config.');
   }
 
-  let distDir;
+  let result;
   if (wantsLibrary) {
-    distDir = await exportLibrary({
+    result = await exportLibrary({
       collectionNames: args.collections,
       allCollections: args.allCollections,
+      excludeRestricted: args.excludeRestricted,
     });
   } else {
     if (!args.positional) {
       usage();
       die('missing <course-slug> or --collection(s) / --all-collections / --from-config');
     }
-    distDir = await exportSingleCourse(args.positional);
+    result = await exportSingleCourse(args.positional, {
+      excludeRestricted: args.excludeRestricted,
+    });
   }
+  const { distDir, restrictedReports } = result;
 
   const rel = path.relative(process.cwd(), distDir);
   console.log(`\n[static-export] ✓ done → ${rel}/`);
   console.log(
     `[static-export] preview locally:  npx serve "${rel}"   (or any static server)`,
   );
-  console.log(
-    `[static-export] deploy: upload the contents of "${rel}/" to any static host.\n`,
-  );
+  if (restrictedReports.length > 0 && !args.excludeRestricted) {
+    console.log(
+      `[static-export] deploy: DO NOT publish "${rel}/": it contains restricted (private-use) content, see below.\n`,
+    );
+  } else {
+    console.log(
+      `[static-export] deploy: upload the contents of "${rel}/" to any static host.\n`,
+    );
+  }
+
+  // Repeat the warning last, so the Vite output cannot scroll it away.
+  if (restrictedReports.length > 0) {
+    printRestrictedWarning(restrictedReports, {
+      excluded: args.excludeRestricted,
+    });
+    console.warn(
+      `[static-export] restricted-content report: ${path.join(rel, WARNING_FILE_NAME)}\n`,
+    );
+  }
 }
 
 main().catch((err) => {

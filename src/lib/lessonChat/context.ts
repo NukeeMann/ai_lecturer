@@ -7,13 +7,22 @@
  * learner is currently looking at.
  *
  * Total context is capped at CONTEXT_CHAR_LIMIT chars; if exceeded we truncate
- * the assembled body tail and append '… [truncated]'.
+ * the assembled body tail and append '… [truncated]'. The live state of the
+ * active widget (≤ LIVE_STATE_MAX_CHARS, see liveState.ts) is appended after
+ * that, outside the cap, so truncation never drops it.
  */
 import type { Lesson, Section } from '@/lib/schemas/lesson';
+import { renderLiveStateBlock } from './liveState';
 
 export interface BuildPromptContextInput {
   lesson: Lesson;
   currentSectionId?: string;
+  /**
+   * What the widget in `currentSectionId` currently shows, as the widget
+   * published it through the TutorBridge. It is appended after the lesson body
+   * (truncation can never cut it) and capped at LIVE_STATE_MAX_CHARS.
+   */
+  activeWidgetState?: string;
   /** The tutor has web tools this turn → append the source-rigor rules. */
   research?: boolean;
   /** The learner attached images → append the image-reading rules. */
@@ -77,16 +86,24 @@ const TRUNCATION_SUFFIX = '… [truncated]';
 export function buildPromptContext(
   input: BuildPromptContextInput,
 ): BuildPromptContextResult {
-  const { lesson, currentSectionId, research, learnerImages } = input;
+  const { lesson, currentSectionId, activeWidgetState, research, learnerImages } =
+    input;
 
   const header = renderLessonHeader(lesson);
   const body = renderAllSections(lesson, currentSectionId);
 
   const assembled = `${header}\n\n${body}`;
-  const contextBlock =
+  const lessonBlock =
     assembled.length <= CONTEXT_CHAR_LIMIT
       ? assembled
       : truncateBody(header, body);
+  const liveState = renderLiveStateBlock({
+    lesson,
+    sectionId: currentSectionId,
+    state: activeWidgetState,
+  });
+  const contextBlock =
+    liveState.length > 0 ? `${lessonBlock}\n\n${liveState}` : lessonBlock;
 
   const systemPrompt = [
     SYSTEM_PROMPT,

@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   areAllSectionsDone,
+  autoAdvanceRequestBody,
   buildAutoAdvancePatch,
   countDoneSections,
   isSectionDone,
+  mergeSectionStates,
   pathForAdvanceTarget,
   resolveAdvanceTarget,
 } from './advance';
+import { applyProgressPatch, ProgressPatchSchema } from '@/lib/server/progress';
+import type { Progress } from '@/lib/schemas/progress';
 
 const lessonWith = (sectionIds: string[]) => ({
   sections: sectionIds.map((id) => ({ id })) as Array<{ id: string }>,
@@ -203,6 +207,81 @@ describe('buildAutoAdvancePatch (US-081)', () => {
     ).toEqual({
       status: 'finished',
       sectionState: { s1: { done: true } },
+    });
+  });
+});
+
+describe('auto-advance keeps widget state when marking done', () => {
+  const widgetState = { v: 1, marks: [{ t: 3.2 }], submitted: true };
+  const score = { correct: 1, total: 2 };
+
+  it('mergeSectionStates sets done and keeps widgetState/score/userCode', () => {
+    const existing = {
+      s1: { widgetState, score },
+      s2: { userCode: 'print(1)' },
+      s3: { done: true },
+    };
+    const merged = mergeSectionStates(existing, {
+      s1: { done: true },
+      s2: { done: true },
+      s4: { done: true },
+    });
+    expect(merged).toEqual({
+      s1: { done: true, widgetState, score },
+      s2: { done: true, userCode: 'print(1)' },
+      s3: { done: true },
+      s4: { done: true },
+    });
+    // Pure: the input is untouched.
+    expect(existing.s1).toEqual({ widgetState, score });
+  });
+
+  it('mergeSectionStates handles a lesson without any stored section state', () => {
+    expect(mergeSectionStates(undefined, { s1: { done: true } })).toEqual({
+      s1: { done: true },
+    });
+  });
+
+  it('autoAdvanceRequestBody sends the sections as a merge, never as a replacement', () => {
+    const patch = buildAutoAdvancePatch([{ id: 's1' }], {
+      liveAutoDone: { s1: true },
+    });
+    const body = autoAdvanceRequestBody('c', 'l', patch);
+    expect(body).toEqual({
+      courseSlug: 'c',
+      lessonSlug: 'l',
+      status: 'finished',
+      mergeSectionState: { s1: { done: true } },
+    });
+    expect('sectionState' in body).toBe(false);
+  });
+
+  it('server state written by a widget survives the auto-advance PATCH even when the page copy is stale', () => {
+    // The widget PATCHed its full state straight to the server; the page
+    // never saw it (its persisted copy has nothing for s1), so the auto-advance
+    // patch includes s1. The server must merge, not replace.
+    const server: Progress = {
+      courses: {
+        c: {
+          lessons: {
+            l: {
+              status: 'started',
+              sectionState: { s1: { done: true, widgetState, score } },
+            },
+          },
+        },
+      },
+    };
+    const patch = buildAutoAdvancePatch([{ id: 's1' }, { id: 's2' }], {
+      persistedSectionState: {},
+      liveAutoDone: { s1: true, s2: true },
+    });
+    const body = ProgressPatchSchema.parse(autoAdvanceRequestBody('c', 'l', patch));
+    const next = applyProgressPatch(server, body, '2026-10-15T10:00:00.000Z');
+    expect(next.courses.c.lessons.l.status).toBe('finished');
+    expect(next.courses.c.lessons.l.sectionState).toEqual({
+      s1: { done: true, widgetState, score },
+      s2: { done: true },
     });
   });
 });

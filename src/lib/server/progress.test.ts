@@ -7,6 +7,7 @@ import {
   GET as getProgress,
   PATCH as patchProgress,
 } from '@/app/api/progress/route';
+import { MAX_WIDGET_STATE_CHARS } from '@/lib/server/progress';
 
 let tmpRoot: string;
 let progressPath: string;
@@ -285,5 +286,103 @@ describe('PATCH /api/progress', () => {
     const entries = await fs.readdir(dir);
     expect(entries.some((n) => n.endsWith('.tmp'))).toBe(false);
     expect(entries).toContain(path.basename(progressPath));
+  });
+});
+
+describe('PATCH /api/progress — widgetState and mergeSectionState', () => {
+  const widgetState = { v: 1, marks: [{ t: 12.4, channel: 'T7-P7' }], submitted: true };
+
+  const sectionsOnDisk = async () =>
+    JSON.parse(await fs.readFile(progressPath, 'utf8')).courses.c1.lessons.l1
+      .sectionState;
+
+  it('persists widgetState sent with the full section state', async () => {
+    const res = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: {
+          s1: { done: true, widgetState, score: { correct: 1, total: 1 } },
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await sectionsOnDisk()).toEqual({
+      s1: { done: true, widgetState, score: { correct: 1, total: 1 } },
+    });
+  });
+
+  it('mergeSectionState sets done without dropping widgetState or score', async () => {
+    await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: { s1: { widgetState, score: { correct: 0, total: 2 } } },
+      }),
+    );
+    const res = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        mergeSectionState: { s1: { done: true }, s2: { done: true } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(await sectionsOnDisk()).toEqual({
+      s1: { done: true, widgetState, score: { correct: 0, total: 2 } },
+      s2: { done: true },
+    });
+  });
+
+  it('a plain sectionState patch still replaces the section — the Code widget reset ({}) clears it', async () => {
+    await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: { code1: { userCode: 'x = 1', done: true } },
+      }),
+    );
+    await patchProgress(
+      makeRequest({ courseSlug: 'c1', lessonSlug: 'l1', sectionState: { code1: {} } }),
+    );
+    expect(await sectionsOnDisk()).toEqual({ code1: {} });
+  });
+
+  it('applies sectionState before mergeSectionState in one patch', async () => {
+    await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: { s1: { widgetState } },
+        mergeSectionState: { s1: { done: true } },
+      }),
+    );
+    expect(await sectionsOnDisk()).toEqual({ s1: { widgetState, done: true } });
+  });
+
+  it('400s on a non-object widgetState', async () => {
+    const res = await patchProgress(
+      makeRequest({
+        courseSlug: 'c1',
+        lessonSlug: 'l1',
+        sectionState: { s1: { widgetState: ['not', 'an', 'object'] } },
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('400s when a widgetState is larger than MAX_WIDGET_STATE_CHARS, in either patch field', async () => {
+    const huge = { v: 1, blob: 'x'.repeat(MAX_WIDGET_STATE_CHARS) };
+    for (const field of ['sectionState', 'mergeSectionState'] as const) {
+      const res = await patchProgress(
+        makeRequest({
+          courseSlug: 'c1',
+          lessonSlug: 'l1',
+          [field]: { s1: { widgetState: huge } },
+        }),
+      );
+      expect(res.status).toBe(400);
+    }
+    await expect(fs.access(progressPath)).rejects.toThrow();
   });
 });

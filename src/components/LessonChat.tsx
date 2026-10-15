@@ -35,6 +35,7 @@ import {
   type SttCaptureState,
 } from '@/lib/client/sttCapture';
 import { CHAT_HISTORY_SCHEMA_VERSION } from '@/lib/schemas/chatHistory';
+import { useTutorBridgeHost } from '@/lib/lessonChat/tutorBridge';
 import {
   imagesFromClipboard,
   prepareChatImage,
@@ -66,6 +67,12 @@ export interface ChatMessage {
   images?: string[];
   /** Research log: searches, pages read, image checks, tool preambles. */
   activity?: ChatActivityItem[];
+}
+
+/** Result of queueing one image in the composer (upload finished or failed). */
+interface AttachOutcome {
+  ok: boolean;
+  error?: string;
 }
 
 const STOPPED_SUFFIX = '— stopped by user';
@@ -180,6 +187,16 @@ export function LessonChat({
   );
   const [sending, setSending] = useState(false);
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  // Live widget state + "Ask the tutor about this view" (lesson page only;
+  // null in tests and anywhere without a TutorBridgeProvider).
+  const tutorBridge = useTutorBridgeHost();
+  // Section an "ask about this view" request came from. The next message is
+  // scoped to it even if the scroll-based active section says otherwise
+  // (the widget may sit below the top strip the observer watches). It is
+  // consumed by that send.
+  const pinnedSectionIdRef = useRef<string | null>(null);
+  // Bumped to focus the composer once the panel is open (after an ask).
+  const [composerFocusRequest, setComposerFocusRequest] = useState(0);
   // Temporary fullscreen-overlay expansion. Toggled by the header button;
   // does NOT unmount this component, so messages, draft, and an in-flight
   // streaming request all survive the round-trip back to the side panel.
@@ -544,14 +561,19 @@ export function LessonChat({
     }, 5000);
   }, []);
 
+  // Queues images in the composer and uploads them. The returned promise
+  // never rejects; it resolves with one outcome per accepted image once its
+  // upload settles (empty when nothing was accepted). Paste/drop/picker
+  // ignore it; the TutorBridge ask handler awaits it.
   const addImageFiles = useCallback(
-    (files: File[]) => {
+    (files: File[]): Promise<AttachOutcome[]> => {
       const images = files.filter((f) => f.type.startsWith('image/'));
-      if (images.length === 0) return;
+      if (images.length === 0) return Promise.resolve([]);
       const room = MAX_ATTACHMENTS - attachmentsRef.current.length;
       if (room <= 0) {
-        flagAttachError(`Up to ${MAX_ATTACHMENTS} images per message.`);
-        return;
+        const error = `Up to ${MAX_ATTACHMENTS} images per message.`;
+        flagAttachError(error);
+        return Promise.resolve(images.map(() => ({ ok: false, error })));
       }
       if (images.length > room) {
         flagAttachError(`Only ${MAX_ATTACHMENTS} images per message — extra images were skipped.`);
@@ -571,20 +593,59 @@ export function LessonChat({
           attachmentsRef.current.map((a) => (a.localId === localId ? { ...a, ...change } : a)),
         );
       };
-      for (const { source, attachment } of added) {
-        void (async () => {
+      return Promise.all(
+        added.map(async ({ source, attachment }): Promise<AttachOutcome> => {
           try {
             const blob = await prepareChatImage(source);
             const uploaded = await uploadChatImage(blob);
             patch(attachment.localId, { status: 'ready', file: uploaded.file });
+            return { ok: true };
           } catch (err) {
-            patch(attachment.localId, { status: 'error', error: (err as Error).message });
+            const error = (err as Error).message;
+            patch(attachment.localId, { status: 'error', error });
+            return { ok: false, error };
           }
-        })();
-      }
+        }),
+      );
     },
     [commitAttachments, flagAttachError],
   );
+
+  // "Ask the tutor about this view" (TutorBridge): pre-fill the composer,
+  // scope the next message to the asking widget's section and attach its
+  // picture through the same path as a pasted image. Never auto-sends.
+  // The page opens the panel (onOpenChat) before this runs.
+  useEffect(() => {
+    if (!tutorBridge) return undefined;
+    return tutorBridge.registerAskHandler(async ({ sectionId, prompt, image }) => {
+      pinnedSectionIdRef.current = sectionId;
+      setActiveSectionId(sectionId);
+      if (prompt.length > 0) {
+        setDraft((prev) =>
+          prev.trim().length === 0 ? prompt : `${prev.trimEnd()}\n\n${prompt}`,
+        );
+      }
+      setComposerFocusRequest((n) => n + 1);
+      if (!image) return;
+      const type = image.type.startsWith('image/') ? image.type : 'image/png';
+      const ext = type.split('/')[1]?.replace(/[^a-z0-9]/gi, '') || 'png';
+      const file = new File([image], `widget-view.${ext}`, { type });
+      const [outcome] = await addImageFiles([file]);
+      if (!outcome?.ok) {
+        throw new Error(outcome?.error ?? 'Could not attach the image.');
+      }
+    });
+  }, [tutorBridge, addImageFiles]);
+
+  // Focus the composer after an ask, once the panel is actually rendered.
+  useEffect(() => {
+    if (!open || composerFocusRequest === 0) return;
+    const el = textareaRef.current;
+    if (!el) return;
+    el.focus();
+    const end = el.value.length;
+    el.setSelectionRange(end, end);
+  }, [open, composerFocusRequest]);
 
   const removeAttachment = useCallback(
     (localId: string) => {
@@ -662,6 +723,11 @@ export function LessonChat({
     if (current.some((a) => a.status !== 'ready' || !a.file)) return;
     const images = current.map((a) => a.file as string);
     if (text.length === 0 && images.length === 0) return;
+    // Scope: the widget the learner asked about, else the section in view.
+    // Its live state (what the widget shows right now) goes along.
+    const sectionId = pinnedSectionIdRef.current ?? activeSectionId;
+    pinnedSectionIdRef.current = null;
+    const widgetState = tutorBridge?.getState(sectionId);
     const stamp = Date.now();
     const createdAt = new Date(stamp).toISOString();
     const userId = `m-${stamp}-u`;
@@ -727,9 +793,10 @@ export function LessonChat({
           body: JSON.stringify({
             courseSlug,
             lessonSlug,
-            sectionId: activeSectionId ?? undefined,
+            sectionId: sectionId ?? undefined,
             message: text,
             ...(images.length > 0 ? { images } : {}),
+            ...(widgetState ? { widgetState } : {}),
             history,
           }),
           signal: ac.signal,
@@ -923,6 +990,7 @@ export function LessonChat({
     lessonSlug,
     messages,
     sending,
+    tutorBridge,
   ]);
 
   const clearTtsErrorTimer = useCallback((id: string) => {

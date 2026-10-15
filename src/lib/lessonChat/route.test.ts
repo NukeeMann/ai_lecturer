@@ -11,6 +11,11 @@ import {
   _inflightSizeForTesting,
   _resetInflightForTesting,
 } from './inflight';
+import {
+  LIVE_STATE_HEADING,
+  LIVE_STATE_MAX_CHARS,
+  LIVE_STATE_REQUEST_MAX_CHARS,
+} from './liveState';
 
 function fakeConnector(
   chatImpl: (req: ConnectorRequest) => Promise<string>,
@@ -522,5 +527,76 @@ describe('POST /api/lesson-chat', () => {
     const events = await readSseEvents(res);
     expect(events.map((e) => e.event)).toEqual(['meta', 'token', 'interim', 'activity', 'token', 'done']);
     expect(JSON.parse(events[3].data)).toEqual({ id: 't1', kind: 'search', label: 'POSTS EEG', status: 'running' });
+  });
+});
+
+describe('POST /api/lesson-chat — live widget state', () => {
+  const captureUserMessage = () => {
+    const captured: { userMessage?: string } = {};
+    vi.spyOn(connectorModule, 'selectConnector').mockResolvedValue(
+      fakeConnector(async (req) => {
+        captured.userMessage = req.userMessage;
+        return 'ok';
+      }),
+    );
+    return captured;
+  };
+
+  it('adds the published state of the active section to the prompt, as data', async () => {
+    const captured = captureUserMessage();
+    const res = await POST(
+      makeRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        sectionId: 's1',
+        message: 'Is this a phase reversal?',
+        widgetState: 'Montage: LB. Marks: 12.4 s on F8-T8. Submitted: no.',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(captured.userMessage).toContain(LIVE_STATE_HEADING);
+    expect(captured.userMessage).toContain(
+      '<live_widget_state>\nMontage: LB. Marks: 12.4 s on F8-T8. Submitted: no.\n</live_widget_state>',
+    );
+    // Context first, then the question.
+    expect(captured.userMessage!.indexOf(LIVE_STATE_HEADING)).toBeLessThan(
+      captured.userMessage!.indexOf('User question: Is this a phase reversal?'),
+    );
+  });
+
+  it(`truncates a long state to ${LIVE_STATE_MAX_CHARS} chars`, async () => {
+    const captured = captureUserMessage();
+    await POST(
+      makeRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        sectionId: 's1',
+        message: 'q',
+        widgetState: 'w'.repeat(LIVE_STATE_REQUEST_MAX_CHARS),
+      }),
+    );
+    const inner = captured
+      .userMessage!.split('<live_widget_state>\n')[1]
+      .split('\n</live_widget_state>')[0];
+    expect(inner.length).toBe(LIVE_STATE_MAX_CHARS);
+  });
+
+  it('ignores the state without a sectionId', async () => {
+    const captured = captureUserMessage();
+    await POST(makeRequest({ courseSlug: 'c', lessonSlug: 'l', message: 'q', widgetState: 'x' }));
+    expect(captured.userMessage).not.toContain(LIVE_STATE_HEADING);
+  });
+
+  it('400 when widgetState exceeds the request cap', async () => {
+    const res = await POST(
+      makeRequest({
+        courseSlug: 'c',
+        lessonSlug: 'l',
+        sectionId: 's1',
+        message: 'q',
+        widgetState: 'w'.repeat(LIVE_STATE_REQUEST_MAX_CHARS + 1),
+      }),
+    );
+    expect(res.status).toBe(400);
   });
 });
