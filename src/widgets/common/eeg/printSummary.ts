@@ -46,6 +46,15 @@ export function eegPrintSummary(type: string, data: unknown): EegPrintSummary {
         attribution: d.attribution,
       };
     }
+    case 'montageLab': {
+      const m = data as { challenges?: { prompt: string }[] };
+      return {
+        prompt: [d.prompt, ...(m.challenges ?? []).map((c, i) => `${i + 1}. ${c.prompt}`)].filter(Boolean).join('\n\n') || undefined,
+        note: `Interactive montage lab (${d.simulationLabel ?? 'SYMULACJA'} — synthetic signal demonstrating a mechanism, not a real recording). Open the lesson in the app to switch montages and move the simulated source.`,
+        figures: [],
+        caption: d.caption,
+      };
+    }
     default:
       return { prompt: d.prompt, note: `Interactive EEG exercise (${type}) — open the lesson in the app.`, figures: [], caption: d.caption };
   }

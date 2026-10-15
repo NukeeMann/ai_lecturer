@@ -16,6 +16,7 @@ import { SttDemoDataSchema } from '@/widgets/SttDemo/schema';
 import { TranscriptClozeDataSchema } from '@/widgets/TranscriptCloze/schema';
 import { TtsDemoDataSchema } from '@/widgets/TtsDemo/schema';
 import { EegViewerDataSchema } from '@/widgets/EegViewer/schema';
+import { MontageLabDataSchema } from '@/widgets/MontageLab/schema';
 
 export const SourceKindSchema = z.enum(['paper', 'video', 'article', 'book']);
 
@@ -165,7 +166,13 @@ export const EegViewerSectionSchema = z.object({
   data: EegViewerDataSchema,
 });
 
-const EEG_SECTION_SCHEMAS = [EegViewerSectionSchema] as const;
+export const MontageLabSectionSchema = z.object({
+  ...sectionBase,
+  type: z.literal('montageLab'),
+  data: MontageLabDataSchema,
+});
+
+const EEG_SECTION_SCHEMAS = [EegViewerSectionSchema, MontageLabSectionSchema] as const;
 
 export const CustomSectionSchema = z.object({
   ...sectionBase,

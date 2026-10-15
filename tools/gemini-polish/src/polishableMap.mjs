@@ -37,6 +37,7 @@ export const POLISHABLE_BY_TYPE = {
   // EEG widgets: only learner-facing prose. Answer-key labels, electrode/montage
   // names, attribution text (bibliographic) and all coordinates stay FROZEN.
   eegViewer: ['data.prompt', 'data.task.prompt', 'data.task.explanation', 'data.caption'],
+  montageLab: ['data.prompt', 'data.challenges[].prompt', 'data.challenges[].explanation', 'data.caption'],
   // demo, histogram, dataTable, parametricExplorer, custom: nothing prose-bearing
   // beyond SECTION_COMMON (their data is numeric/code/identifiers).
 };

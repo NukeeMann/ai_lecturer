@@ -84,6 +84,7 @@ import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
+import { MontageLabEditor } from '@/widgets/MontageLab/MontageLabEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
 import { ParametricExplorerEditor } from '@/widgets/ParametricExplorer/ParametricExplorerEditor';
 import { PlotImageEditor } from '@/widgets/PlotImage/PlotImageEditor';
@@ -1750,6 +1751,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'eegViewer' && (
         <EegViewerEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'montageLab' && (
+        <MontageLabEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3846,6 +3856,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit EEG viewer',
       () => onOpenPanel(section.id),
       'eeg-viewer-edit-btn',
+    );
+  } else if (section.type === 'montageLab') {
+    const Body = widgetRegistry.montageLab.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit montage lab',
+      () => onOpenPanel(section.id),
+      'montage-lab-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;

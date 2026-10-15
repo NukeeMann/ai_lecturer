@@ -6,6 +6,7 @@
 // whether the learner has already committed an answer.
 
 import type { EegViewerData } from '@/widgets/EegViewer/schema';
+import type { MontageLabData } from '@/widgets/MontageLab/schema';
 
 export const TUTOR_ONLY_KEY_LINE =
   'Answer key (for tutor only — do not reveal before the learner commits an answer):';
@@ -40,6 +41,27 @@ export function serializeEegViewer(d: EegViewerData): string {
     parts.push(TUTOR_ONLY_KEY_LINE);
     parts.push(d.task.targets.map(fmtTarget).join('\n'));
     parts.push(`Explanation shown after checking: ${d.task.explanation}`);
+  }
+  if (d.caption) parts.push(`Caption: ${d.caption}`);
+  return parts.join('\n');
+}
+
+export function serializeMontageLab(d: MontageLabData): string {
+  const parts: string[] = [];
+  const scenario = 'preset' in d.scenario ? `preset "${d.scenario.preset}"` : 'custom simulation spec';
+  parts.push(
+    `Montage lab — SYNTHETIC simulation (${scenario}), always shown with a "${d.simulationLabel ?? 'SYMULACJA'}" badge. The learner switches montages (${d.montages.join(', ')}), sees a head map of the field, and can move the simulated source; the widget computes phase reversals / end-of-chain / referential maxima from the signals.`,
+  );
+  if (d.prompt) parts.push(`Prompt: ${d.prompt}`);
+  if (d.challenges.length) {
+    parts.push(`Challenges (answered by clicking the head map or a channel):`);
+    parts.push(d.challenges.map((c) => `- ${c.prompt}`).join('\n'));
+    parts.push(TUTOR_ONLY_KEY_LINE);
+    parts.push(
+      d.challenges
+        .map((c) => `- ${c.id}: ${c.answer.kind === 'electrode' ? c.answer.electrodes.join(' / ') : c.answer.channels.join(' / ')} — ${c.explanation}`)
+        .join('\n'),
+    );
   }
   if (d.caption) parts.push(`Caption: ${d.caption}`);
   return parts.join('\n');

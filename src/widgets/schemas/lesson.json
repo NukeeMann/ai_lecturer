@@ -2324,6 +2324,206 @@
                   },
                   "type": {
                     "type": "string",
+                    "const": "montageLab"
+                  },
+                  "data": {
+                    "type": "object",
+                    "properties": {
+                      "prompt": {
+                        "type": "string"
+                      },
+                      "scenario": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "preset": {
+                                "type": "string",
+                                "enum": [
+                                  "phaseReversalF8",
+                                  "endOfChainFp1",
+                                  "blink",
+                                  "lateralEyeMovementLeft",
+                                  "wideFieldInPhaseCancellation",
+                                  "earReferenceContaminationT7",
+                                  "averageReferenceContaminationBlink",
+                                  "alphaReactivity",
+                                  "electrodePopP7",
+                                  "lineNoise50T8",
+                                  "muscleTemporal"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "preset"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "spec": {
+                                "$ref": "#/definitions/lesson/properties/sections/items/anyOf/16/properties/data/properties/source/anyOf/1/properties/spec"
+                              }
+                            },
+                            "required": [
+                              "spec"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "montages": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "minItems": 1,
+                        "default": [
+                          "LB",
+                          "TB",
+                          "AVG",
+                          "CZ",
+                          "EAR"
+                        ]
+                      },
+                      "initialMontage": {
+                        "type": "string"
+                      },
+                      "editable": {
+                        "type": "object",
+                        "properties": {
+                          "moveSource": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "polarity": {
+                            "type": "boolean",
+                            "default": true
+                          },
+                          "spread": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        },
+                        "additionalProperties": false,
+                        "default": {}
+                      },
+                      "challenges": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "answer": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "electrode"
+                                    },
+                                    "electrodes": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "minItems": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "electrodes"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "channel"
+                                    },
+                                    "channels": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      },
+                                      "minItems": 1
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "channels"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              ]
+                            },
+                            "explanation": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "prompt",
+                            "answer",
+                            "explanation"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "default": []
+                      },
+                      "caption": {
+                        "type": "string"
+                      },
+                      "simulationLabel": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "scenario"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "type",
+                  "data"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/id"
+                  },
+                  "title": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/title"
+                  },
+                  "description": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/description"
+                  },
+                  "sources": {
+                    "$ref": "#/definitions/lesson/properties/sections/items/anyOf/0/properties/sources"
+                  },
+                  "type": {
+                    "type": "string",
                     "const": "custom"
                   },
                   "data": {

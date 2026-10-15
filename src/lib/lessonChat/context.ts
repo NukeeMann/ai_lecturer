@@ -13,7 +13,7 @@
  */
 import type { Lesson, Section } from '@/lib/schemas/lesson';
 import { renderLiveStateBlock } from './liveState';
-import { serializeEegViewer } from './eegSerialize';
+import { serializeEegViewer, serializeMontageLab } from './eegSerialize';
 
 export interface BuildPromptContextInput {
   lesson: Lesson;
@@ -239,6 +239,8 @@ function serializeSectionBody(section: Section): string {
     }
     case 'eegViewer':
       return serializeEegViewer(section.data);
+    case 'montageLab':
+      return serializeMontageLab(section.data);
     case 'custom':
       return `Custom widget: ${JSON.stringify(section.data)}`;
     default: {
