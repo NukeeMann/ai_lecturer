@@ -39,6 +39,7 @@ export const POLISHABLE_BY_TYPE = {
   eegViewer: ['data.prompt', 'data.task.prompt', 'data.task.explanation', 'data.caption'],
   montageLab: ['data.prompt', 'data.challenges[].prompt', 'data.challenges[].explanation', 'data.caption'],
   eegFigureMark: ['data.prompt', 'data.figure.caption', 'data.distractors[].note', 'data.explanation'],
+  patternDrill: ['data.prompt', 'data.categories[].label', 'data.categories[].description', 'data.items[].explanation'],
   // demo, histogram, dataTable, parametricExplorer, custom: nothing prose-bearing
   // beyond SECTION_COMMON (their data is numeric/code/identifiers).
 };

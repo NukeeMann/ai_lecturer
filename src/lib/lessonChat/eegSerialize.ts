@@ -8,6 +8,7 @@
 import type { EegViewerData } from '@/widgets/EegViewer/schema';
 import type { MontageLabData } from '@/widgets/MontageLab/schema';
 import type { EegFigureMarkData } from '@/widgets/EegFigureMark/schema';
+import type { PatternDrillData } from '@/widgets/PatternDrill/schema';
 
 export const TUTOR_ONLY_KEY_LINE =
   'Answer key (for tutor only — do not reveal before the learner commits an answer):';
@@ -86,5 +87,18 @@ export function serializeEegFigureMark(d: EegFigureMarkData): string {
   );
   if (d.distractors?.length) parts.push(`Known look-alikes: ${d.distractors.map((x) => x.note).join(' | ')}`);
   parts.push(`Explanation shown after checking: ${d.explanation}`);
+  return parts.join('\n');
+}
+
+export function serializePatternDrill(d: PatternDrillData): string {
+  const label = (id: string) => d.categories.find((c) => c.id === id)?.label ?? id;
+  const parts: string[] = [
+    `Pattern-recognition drill on REAL EEG figures (${d.items.length} cards, interleaved, missed cards repeat).`,
+    `Categories: ${d.categories.map((c, i) => `${i + 1}. ${c.label}`).join('; ')}.`,
+  ];
+  if (d.prompt) parts.push(`Prompt: ${d.prompt}`);
+  if (d.session.showCriteriaChecklist) parts.push('The learner may tick the 6 IFCN criteria for an epileptiform discharge before answering (≥ 4 suggests epileptiform).');
+  parts.push(TUTOR_ONLY_KEY_LINE);
+  parts.push(d.items.map((it) => `- ${it.figure.alt} → ${label(it.answer)}: ${it.explanation}`).join('\n'));
   return parts.join('\n');
 }

@@ -63,6 +63,15 @@ export function eegPrintSummary(type: string, data: unknown): EegPrintSummary {
         figures: f ? [{ src: f.src, alt: f.alt, caption: f.caption, attribution: f.attribution }] : [],
       };
     }
+    case 'patternDrill': {
+      const drill = data as { items?: { figure: EegPrintFigure & { attribution: Attribution } }[]; categories?: { label: string }[] };
+      const cats = (drill.categories ?? []).map((c) => c.label).join(' · ');
+      return {
+        prompt: d.prompt,
+        note: `Pattern-recognition drill (${drill.items?.length ?? 0} cards; categories: ${cats}). Open the lesson in the app to practise with feedback.`,
+        figures: [],
+      };
+    }
     default:
       return { prompt: d.prompt, note: `Interactive EEG exercise (${type}) — open the lesson in the app.`, figures: [], caption: d.caption };
   }

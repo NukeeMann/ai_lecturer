@@ -263,6 +263,16 @@ function collectFromSection(
       pushImage(acc, figure?.src, slug, `${base}.data.figure.src`);
       break;
     }
+    case 'patternDrill': {
+      const drillItems = (data as { items?: unknown }).items;
+      if (Array.isArray(drillItems)) {
+        drillItems.forEach((it, i) => {
+          const figure = (it as { figure?: { src?: unknown } } | null)?.figure;
+          pushImage(acc, figure?.src, slug, `${base}.data.items[${i}].figure.src`);
+        });
+      }
+      break;
+    }
     default:
       // Other section types either carry no asset paths or (AudioPlayer /
       // TranscriptCloze) are materialized by the dedicated TTS post-processor.

@@ -84,6 +84,7 @@ import { CodeClozeEditor } from '@/widgets/CodeCloze/CodeClozeEditor';
 import { DataTableEditor } from '@/widgets/DataTable/DataTableEditor';
 import { DragMatchEditor } from '@/widgets/DragMatch/DragMatchEditor';
 import { EegViewerEditor } from '@/widgets/EegViewer/EegViewerEditor';
+import { PatternDrillEditor } from '@/widgets/PatternDrill/PatternDrillEditor';
 import { EegFigureMarkEditor } from '@/widgets/EegFigureMark/EegFigureMarkEditor';
 import { MontageLabEditor } from '@/widgets/MontageLab/MontageLabEditor';
 import { HistogramEditor } from '@/widgets/Histogram/HistogramEditor';
@@ -1770,6 +1771,15 @@ function WidgetEditPanel({ section, courseSlug, open, onClose, onSave }: WidgetE
       )}
       {section?.type === 'eegFigureMark' && (
         <EegFigureMarkEditor
+          key={section.id}
+          initial={section.data}
+          initialSources={section.sources}
+          onCancel={onClose}
+          onSave={(next, sources) => onSave(section.id, next, sources)}
+        />
+      )}
+      {section?.type === 'patternDrill' && (
+        <PatternDrillEditor
           key={section.id}
           initial={section.data}
           initialSources={section.sources}
@@ -3900,6 +3910,23 @@ function SectionRenderer({
       panelOpen ? 'Close edit' : 'Edit figure exercise',
       () => onOpenPanel(section.id),
       'eeg-figure-mark-edit-btn',
+    );
+  } else if (section.type === 'patternDrill') {
+    const Body = widgetRegistry.patternDrill.component as ComponentType<EegSectionBodyProps>;
+    body = (
+      <Body
+        data={section.data}
+        progressKey={progressKey}
+        onComplete={onComplete}
+        initialWidgetState={initialWidgetState}
+        alreadyCompleted={alreadyCompleted}
+      />
+    );
+    pencilNode = pencilButton(
+      panelOpen,
+      panelOpen ? 'Close edit' : 'Edit pattern drill',
+      () => onOpenPanel(section.id),
+      'pattern-drill-edit-btn',
     );
   } else if (section.type === 'dataTable') {
     const Body = widgetRegistry.dataTable.component;
