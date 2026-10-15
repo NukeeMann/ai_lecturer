@@ -157,7 +157,10 @@ const controlButton: CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   borderRadius: 'var(--radius-sm)',
-  border: '1px solid var(--border)',
+  // Longhands only: the pan toggle overrides borderColor when active.
+  borderWidth: 1,
+  borderStyle: 'solid',
+  borderColor: 'var(--border)',
   background: 'var(--bg-elevated)',
   color: 'var(--text-secondary)',
   cursor: 'pointer',
