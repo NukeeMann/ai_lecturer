@@ -207,6 +207,8 @@ npm run dev                                # http://localhost:3000
 
 Open `http://localhost:3000`, hit **Create course**, and go.
 
+**From another device on the same network / hotspot:** `npm run dev:lan` (or `npm run build && npm run start:lan`; `-- --port 4000` to change the port). It prints the LAN URLs (e.g. `http://192.168.2.2:3000`) to open on the other machine. The app has no authentication — anyone who can reach the port can use your Claude login and your courses, so use trusted networks only. If macOS asks, allow incoming connections for Node.
+
 Course generation runs whatever account `claude` is logged in to locally — there is no Anthropic API key in this repo and no SDK call. The webapp spawns the CLI as a subprocess.
 
 ### Other scripts
