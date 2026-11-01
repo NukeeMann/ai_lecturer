@@ -18,6 +18,8 @@ export class CollectionNotFoundError extends Error {
 }
 
 export function getCollectionsPath(): string {
+  const override = process.env.COLLECTIONS_FILE_OVERRIDE;
+  if (override && override.length > 0) return override;
   return path.join(os.homedir(), '.ai-lecturer', 'collections.json');
 }
 

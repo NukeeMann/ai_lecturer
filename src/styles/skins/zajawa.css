@@ -1,0 +1,97 @@
+/* Optional "zajawa" skin for the main app — the look of tools/static-export
+   (src/zajawa-theme.css there): alabaster background, matcha accent, serif
+   display headings, faint calligraphy watermark. Light-only by design.
+
+   Off unless <html data-skin="zajawa"> — layout.tsx sets that from
+   AI_LECTURER_SKIN=zajawa (the packaged macOS app does; see tools/mac-app).
+
+   The repeated [data-skin] raises specificity to (0,4,0) so these tokens beat
+   every theme/accent/sunset-variant rule in tokens.css (max (0,3,0)). Keep
+   the token values in sync with tools/static-export/src/zajawa-theme.css. */
+:root[data-skin="zajawa"][data-skin][data-skin] {
+  /* tła */
+  --bg:          oklch(96.2% 0.008 78);   /* alabaster (zajawa --theme) */
+  --bg-elevated: oklch(94.6% 0.010 75);   /* karty/moduły/toc */
+  --bg-subtle:   oklch(93.4% 0.011 75);
+  --bg-hover:    oklch(91.0% 0.012 74);
+  --bg-active:   oklch(88.5% 0.014 72);
+  --bg-inverse:  oklch(13% 0.012 250);
+
+  /* obramowania */
+  --border:        oklch(87.5% 0.014 72);
+  --border-strong: oklch(80% 0.016 70);
+  --border-focus:  var(--accent);
+
+  /* tekst */
+  --text:            oklch(13% 0.012 250);
+  --text-secondary:  oklch(40% 0.010 65);
+  --text-tertiary:   oklch(52% 0.010 65);
+  --text-quaternary: oklch(65% 0.012 70);
+  --text-inverse:    oklch(96.2% 0.008 78);
+  --text-on-accent:  #ffffff;
+
+  /* akcent — MATCHA (przygaszona herbaciana zieleń; foto-zajawa ma niebieski) */
+  --accent:              oklch(53% 0.105 130);
+  --accent-hover:        oklch(47% 0.105 130);
+  --accent-active:       oklch(42% 0.105 130);
+  --accent-text:         oklch(46% 0.110 130);   /* ciemniejszy → czytelny link na alabastrze */
+  --accent-subtle:       oklch(93% 0.040 130);
+  --accent-subtle-hover: oklch(90% 0.050 130);
+  --accent-border:       oklch(82% 0.060 130);
+  --accent-soft:         var(--accent-subtle);
+
+  /* status (zachowane jako funkcjonalne, lekko przygaszone/ciepłe) */
+  --success: oklch(50% 0.10 155);  --success-subtle: oklch(93% 0.04 155);  --success-border: oklch(82% 0.06 155);
+  --warning: oklch(58% 0.11 70);   --warning-subtle: oklch(94% 0.04 75);   --warning-border: oklch(85% 0.06 75);
+  --danger:  oklch(52% 0.15 25);   --danger-subtle:  oklch(93% 0.04 25);   --danger-border:  oklch(84% 0.07 25);
+  --insight: oklch(48% 0.11 300);  --insight-subtle: oklch(93% 0.04 300);  --insight-border: oklch(84% 0.06 300);
+
+  /* kod */
+  --code-bg:      oklch(94% 0.010 75);
+  --code-text:    oklch(13% 0.012 250);
+  --code-keyword: oklch(48% 0.11 300);
+  --code-string:  oklch(48% 0.10 155);
+  --code-comment: oklch(60% 0.010 70);
+  --code-fn:      var(--accent);
+  --code-number:  oklch(55% 0.11 60);
+
+  /* widget „demo" był jaskrawo niebieski — na akcent */
+  --widget-demo: var(--accent);
+
+  /* cienie — ciepłe, nieco mocniejsze (widoczne na alabastrze) */
+  --shadow-xs: 0 1px 2px rgba(60,50,40,.05);
+  --shadow-sm: 0 1px 3px rgba(60,50,40,.07), 0 1px 2px rgba(60,50,40,.05);
+  --shadow-md: 0 2px 6px rgba(60,50,40,.07), 0 4px 12px rgba(60,50,40,.05);
+  --shadow-lg: 0 4px 12px rgba(60,50,40,.10), 0 12px 32px rgba(60,50,40,.07);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+
+  /* zaokrąglenia — odrobinę ostrzej (zajawa ≈ 8px) */
+  --radius-lg:  8px;
+  --radius-xl:  10px;
+  --radius-2xl: 12px;
+
+  /* serif do nagłówków */
+  --serif: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+  --font-display: var(--serif);
+}
+
+/* The skin forces one light palette, so the light/dark toggle does nothing. */
+:root[data-skin="zajawa"] [data-testid="theme-toggle"] {
+  display: none !important;
+}
+
+:root[data-skin="zajawa"] body::before {
+  content: '';
+  position: fixed;
+  top: -5%;
+  right: -7%;
+  width: clamp(300px, 46vw, 920px);
+  aspect-ratio: 2500 / 2000;
+  background: url('/skins/zajawa/iweki_black.png') no-repeat top right / contain;
+  opacity: 0.06;
+  pointer-events: none;
+  z-index: -1;
+}
+@media (max-width: 880px) {
+  :root[data-skin="zajawa"] body::before { width: 78vw; right: -14%; top: -2%; opacity: 0.05; }
+}

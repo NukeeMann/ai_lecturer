@@ -1,6 +1,32 @@
 import type { NextConfig } from "next";
 
+// Standalone build for the macOS app (tools/mac-app). Off by default so the
+// regular `next dev` / `next build` flow is untouched; the packager sets
+// AI_LECTURER_STANDALONE=1 and its own NEXT_DIST_DIR so it never clobbers .next.
+const standalone = process.env.AI_LECTURER_STANDALONE === "1";
+
 const nextConfig: NextConfig = {
+  ...(standalone
+    ? {
+        output: "standalone" as const,
+        distDir: process.env.NEXT_DIST_DIR || ".next-mac",
+        // Course data is read from COURSES_ROOT_OVERRIDE at runtime; without
+        // these excludes the tracer follows process.cwd() and drags the whole
+        // repo (courses, tools, scratch) into the bundle.
+        outputFileTracingExcludes: {
+          "*": [
+            "courses/**",
+            "tools/**",
+            "scripts/**",
+            ".scratch/**",
+            ".course-backups/**",
+            ".git/**",
+            ".next/**",
+            "docs/**",
+          ],
+        },
+      }
+    : {}),
   // `npm run dev:lan`: Next dev blocks HMR/dev resources from non-localhost
   // origins unless allowed. Private-range wildcards cover home/hotspot LANs.
   allowedDevOrigins: [

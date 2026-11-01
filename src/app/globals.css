@@ -1,4 +1,5 @@
 @import "../styles/tokens.css";
+@import "../styles/skins/zajawa.css";
 
 @tailwind base;
 @tailwind components;
@@ -420,4 +421,21 @@
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   color: var(--text-tertiary);
+}
+
+/* Read-only mode (AI_LECTURER_READ_ONLY=1, see src/proxy.ts and tools/mac-app):
+   hide the authoring affordances. src/proxy.ts is what actually enforces it;
+   this only keeps dead buttons off the screen. */
+html[data-read-only="true"] a[href^="/create"],
+html[data-read-only="true"] [data-testid="new-course-cta"],
+html[data-read-only="true"] [data-testid="new-collection-cta"],
+html[data-read-only="true"] [data-testid="import-course-card"],
+html[data-read-only="true"] [data-testid="empty-create-cta"],
+html[data-read-only="true"] [data-testid^="course-menu-btn-"],
+html[data-read-only="true"] [data-testid^="collection-actions-"],
+html[data-read-only="true"] [data-testid="regen-lesson-btn"],
+html[data-read-only="true"] [data-testid="lesson-sources-edit-toggle"],
+html[data-read-only="true"] [data-testid="undo-regen-lesson-banner"],
+html[data-read-only="true"] button[title="Regenerate section"] {
+  display: none !important;
 }

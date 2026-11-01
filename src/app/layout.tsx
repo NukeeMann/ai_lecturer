@@ -53,6 +53,9 @@ export default function RootLayout({
       data-density="comfortable"
       data-font="geist"
       data-sunset-variant="A"
+      data-read-only={process.env.AI_LECTURER_READ_ONLY === "1" ? "true" : undefined}
+      data-skin={process.env.AI_LECTURER_SKIN || undefined}
+      data-tutor-default={process.env.AI_LECTURER_TUTOR_DEFAULT_OPEN === "1" ? "open" : undefined}
       className={`${GeistSans.variable} ${GeistMono.variable} ${ibmPlexSans.variable} ${sourceSerif.variable} h-full antialiased`}
       suppressHydrationWarning
     >

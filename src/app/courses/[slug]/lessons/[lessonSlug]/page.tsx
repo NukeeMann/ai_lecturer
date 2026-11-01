@@ -25,6 +25,7 @@ import {
   HelpCircle,
   Library,
   Loader2,
+  MessageCircle,
   MoreHorizontal,
   Pencil,
   Printer,
@@ -244,7 +245,11 @@ export default function LessonShellPage({
         setTocCollapsed(true);
       }
       const chatStored = window.localStorage.getItem(CHAT_OPEN_KEY);
-      if (chatStored === 'true') {
+      // <html data-tutor-default="open"> (AI_LECTURER_TUTOR_DEFAULT_OPEN=1,
+      // set by the packaged macOS app) opens the tutor until the learner
+      // closes it once; after that their stored choice wins.
+      const defaultOpen = document.documentElement.dataset.tutorDefault === 'open';
+      if (chatStored === 'true' || (chatStored === null && defaultOpen)) {
         setChatOpen(true);
       }
       const hydratedWidth = readChatWidth();
@@ -2304,25 +2309,39 @@ function TutorToolbarButton({
   onToggleChat: () => void;
 }) {
   const isMac = useIsMacPlatform();
+  // Labelled chat-bubble pill rather than a bare icon button: the tutor is
+  // the main thing to find in this header. The shortcut lives in the tooltip.
+  const shortcut = `${keyLabel('ctrl', isMac)}${isMac ? 'Q' : '+Q'}`;
   return (
-    <ToolbarIconBtn
-      testId="tutor-btn"
-      ariaLabel={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
+    <button
+      type="button"
+      data-testid="tutor-btn"
+      aria-label={chatOpen ? 'Close AI tutor' : 'Open AI tutor'}
+      aria-pressed={chatOpen ? true : undefined}
+      data-active={chatOpen ? 'true' : undefined}
+      title={`${chatOpen ? 'Close' : 'Open'} AI tutor (${shortcut})`}
       onClick={onToggleChat}
-      active={chatOpen}
+      style={{
+        height: 32,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '0 12px 0 10px',
+        borderRadius: 'var(--radius-full, 999px)',
+        borderWidth: 1,
+        borderStyle: 'solid',
+        borderColor: chatOpen ? 'var(--accent)' : 'var(--accent-border)',
+        background: chatOpen ? 'var(--accent)' : 'var(--accent-subtle)',
+        color: chatOpen ? 'var(--text-on-accent)' : 'var(--accent-text)',
+        fontSize: 'var(--fs-sm)',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
+      }}
     >
-      <span
-        data-testid="tutor-btn-shortcut"
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: 11,
-          letterSpacing: '0.02em',
-        }}
-      >
-        {keyLabel('ctrl', isMac)}
-        {isMac ? 'Q' : '+Q'}
-      </span>
-    </ToolbarIconBtn>
+      <MessageCircle size={16} strokeWidth={2} aria-hidden />
+      AI Tutor
+    </button>
   );
 }
 
